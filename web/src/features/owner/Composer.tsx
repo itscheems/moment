@@ -288,6 +288,7 @@ export function Composer({
             disabled={pending}
             id={`${variant}-composer-content`}
             onChange={(event) => {
+              allowLeaveRef.current = false;
               if (draft) setDraft(null);
               setContent(event.target.value);
               setDirty(true);

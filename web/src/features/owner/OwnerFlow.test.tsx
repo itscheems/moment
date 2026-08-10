@@ -488,6 +488,59 @@ describe("owner composing flow", () => {
     expect(screen.getByLabelText("此刻想到什么？")).toHaveValue("");
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
     expect(screen.getAllByText("跨 surface 的恢复草稿")).toHaveLength(1);
+
+    const inline = screen.getByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "发布后继续写的新草稿" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
+      "发布后继续写的新草稿",
+    );
+
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(false);
+    fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
+    expect(window.location.pathname).toBe("/");
+    expect(confirm).toHaveBeenCalledWith(
+      "这段内容还没有发布。离开后仍会保留本地草稿。",
+    );
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
+  it("restores autosave and leave guards after another tab clears inline", async () => {
+    preauthenticate();
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "会被另一标签页清理" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    window.localStorage.removeItem(composeDraftKey(instance));
+    fireEvent(
+      window,
+      new StorageEvent("storage", {
+        key: composeDraftKey(instance),
+        newValue: null,
+      }),
+    );
+    await waitFor(() => expect(inline).toHaveValue(""));
+
+    fireEvent.change(inline, { target: { value: "跨标签页清理后重新写" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
+      "跨标签页清理后重新写",
+    );
+
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(false);
+    fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
+    expect(window.location.pathname).toBe("/");
+    expect(confirm).toHaveBeenCalledWith(
+      "这段内容还没有发布。离开后仍会保留本地草稿。",
+    );
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
   });
 
   it("loads and saves an existing post without putting edits into the create draft", async () => {
