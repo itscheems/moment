@@ -189,7 +189,10 @@ func downloadExport(ctx context.Context, invocation Invocation, destination io.W
 		return archive.Summary{}, err
 	}
 	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if response.StatusCode >= 200 && response.StatusCode < 300 && response.StatusCode != http.StatusOK {
+		return archive.Summary{}, invalidAPIResponse()
+	}
+	if response.StatusCode != http.StatusOK {
 		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
 		if readErr != nil {
 			return archive.Summary{}, readErr
@@ -221,6 +224,9 @@ func downloadExport(ctx context.Context, invocation Invocation, destination io.W
 	}
 	if response.ContentLength >= 0 && copied != response.ContentLength {
 		return archive.Summary{}, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the archive download ended before its declared length", "retry the export and inspect the server or reverse proxy", ExitUnavailable)
+	}
+	if copied == 0 {
+		return archive.Summary{}, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the archive download was empty", "retry the export and inspect the server or reverse proxy", ExitUnavailable)
 	}
 	return archive.Summary{FormatVersion: archive.FormatVersion, ArchiveBytes: counted.size, ArchiveSHA256: hex.EncodeToString(digest.Sum(nil))}, nil
 }

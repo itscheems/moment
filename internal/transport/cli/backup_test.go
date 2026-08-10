@@ -159,6 +159,33 @@ func TestBackupExportAPIParityHeaderValidationTruncationAndTimeout(t *testing.T)
 		t.Fatalf("missing format header exit=%d stdout=%d stderr=%q", exit, raw.Len(), diagnostics.String())
 	}
 
+	for _, test := range []struct {
+		name   string
+		status int
+		body   []byte
+	}{
+		{name: "no content", status: http.StatusNoContent},
+		{name: "partial content", status: http.StatusPartialContent, body: source[:len(source)/2]},
+		{name: "empty archive", status: http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/zip")
+				writer.Header().Set("X-Archive-Format", archive.FormatHeaderValue)
+				writer.WriteHeader(test.status)
+				if len(test.body) > 0 {
+					_, _ = writer.Write(test.body)
+				}
+			}))
+			defer server.Close()
+			var stdout, stderr bytes.Buffer
+			exit := application.Execute(context.Background(), []string{"--url", server.URL, "backup", "export", "--stdout"}, Streams{Out: &stdout, Err: &stderr})
+			if exit != ExitUnavailable || stdout.Len() != 0 || !strings.Contains(stderr.String(), "DEPENDENCY_INVALID_RESPONSE") {
+				t.Fatalf("raw response exit=%d stdout=%d stderr=%q", exit, stdout.Len(), stderr.String())
+			}
+		})
+	}
+
 	truncated := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/zip")
 		writer.Header().Set("X-Archive-Format", archive.FormatHeaderValue)
