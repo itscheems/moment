@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -67,12 +68,12 @@ func embeddedMigrations() ([]migration, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read embedded migration %q: %w", entry.Name(), err)
 		}
-		digest := sha256.Sum256(contents)
+		canonicalSQL, checksum := canonicalMigration(contents)
 		migrations = append(migrations, migration{
 			version:  version,
 			name:     parts[1],
-			sql:      string(contents),
-			checksum: hex.EncodeToString(digest[:]),
+			sql:      canonicalSQL,
+			checksum: checksum,
 		})
 	}
 
@@ -87,6 +88,13 @@ func embeddedMigrations() ([]migration, error) {
 		}
 	}
 	return migrations, nil
+}
+
+func canonicalMigration(contents []byte) (string, string) {
+	canonical := bytes.ReplaceAll(contents, []byte("\r\n"), []byte("\n"))
+	canonical = bytes.ReplaceAll(canonical, []byte("\r"), []byte("\n"))
+	digest := sha256.Sum256(canonical)
+	return string(canonical), hex.EncodeToString(digest[:])
 }
 
 func applyMigrations(ctx context.Context, db *sql.DB, migrations []migration, now time.Time) error {
