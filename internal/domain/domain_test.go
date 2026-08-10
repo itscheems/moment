@@ -119,6 +119,9 @@ func TestIDValidationAndDeterministicGeneration(t *testing.T) {
 	if first != second || len(first) != 26 {
 		t.Fatalf("expected deterministic canonical ULID, got %q and %q", first, second)
 	}
+	if _, err := NewID(now, nil); !HasCode(err, CodeInternal) {
+		t.Fatalf("expected a missing entropy source to fail, got %v", err)
+	}
 }
 
 func TestDayRangeRespectsDSTAndUTCMapping(t *testing.T) {

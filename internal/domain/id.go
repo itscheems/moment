@@ -23,6 +23,9 @@ func ParseID(value string) (ID, error) {
 // NewID creates an identifier using caller-owned time and entropy. Keeping both
 // inputs explicit makes tests and development fixtures deterministic.
 func NewID(now time.Time, entropy io.Reader) (ID, error) {
+	if entropy == nil {
+		return "", NewError(CodeInternal, "id entropy source is required", nil)
+	}
 	id, err := ulid.New(ulid.Timestamp(now.UTC()), entropy)
 	if err != nil {
 		return "", NewError(CodeInternal, "could not generate id", nil)
