@@ -1,0 +1,324 @@
+package sqlite
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+)
+
+// ArchiveCounts are captured by the first statement in an archive read
+// transaction. That statement establishes the WAL snapshot used by every
+// subsequent archive query.
+type ArchiveCounts struct {
+	Entries  int64
+	Comments int64
+	Media    int64
+}
+
+// ArchiveSite is the complete portable site singleton.
+type ArchiveSite struct {
+	Title           string
+	Bio             string
+	Timezone        string
+	PublicBaseURL   *string
+	AvatarMediaID   *string
+	CommentsEnabled bool
+}
+
+// ArchiveUsage is one ordered, nullable-alt media use.
+type ArchiveUsage struct {
+	MediaID  string
+	Position int
+	AltText  *string
+}
+
+// ArchiveEntry excludes derived content_text and embeds ordered media uses.
+type ArchiveEntry struct {
+	ID            string
+	Kind          string
+	ContentMD     string
+	CreatedAtMS   int64
+	UpdatedAtMS   int64
+	PublishedAtMS int64
+	Media         []ArchiveUsage
+}
+
+// ArchiveComment is one portable comment record.
+type ArchiveComment struct {
+	ID          string
+	EntryID     string
+	ParentID    *string
+	AuthorKind  string
+	AuthorName  string
+	ContentMD   string
+	CreatedAtMS int64
+}
+
+// ArchiveMedia contains portable metadata plus the private source path needed
+// by the exporter. StoragePath is never serialized into the archive.
+type ArchiveMedia struct {
+	ID           string
+	SHA256       string
+	StoragePath  string
+	OriginalName string
+	MIMEType     string
+	ByteSize     int64
+	Width        uint32
+	Height       uint32
+	CreatedAtMS  int64
+}
+
+// ArchiveSnapshot holds one query-only SQLite transaction until every
+// authoritative record and reachable immutable original has been copied.
+type ArchiveSnapshot struct {
+	tx     *sql.Tx
+	counts ArchiveCounts
+	closed bool
+}
+
+// BeginArchiveSnapshot starts and establishes one consistent read snapshot.
+// The caller must close it after media copying, not merely after JSONL output.
+func (db *Database) BeginArchiveSnapshot(ctx context.Context) (*ArchiveSnapshot, error) {
+	if err := db.requireReady(); err != nil {
+		return nil, err
+	}
+	tx, err := db.read.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin archive snapshot: %w", err)
+	}
+	snapshot := &ArchiveSnapshot{tx: tx}
+	// This is deliberately the first read. SQLite pins the WAL view here. The
+	// reachable count composes the one central mediaReferencedSQL definition.
+	err = tx.QueryRowContext(ctx, `
+SELECT
+    (SELECT count(*) FROM entries),
+    (SELECT count(*) FROM comments),
+    (SELECT count(*) FROM media WHERE `+mediaReferencedSQL+`)`).Scan(
+		&snapshot.counts.Entries,
+		&snapshot.counts.Comments,
+		&snapshot.counts.Media,
+	)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, fmt.Errorf("establish archive snapshot: %w", err)
+	}
+	return snapshot, nil
+}
+
+// Counts returns the values captured when the snapshot was established.
+func (snapshot *ArchiveSnapshot) Counts() ArchiveCounts { return snapshot.counts }
+
+// ValidateIntegrity proves the archive's cross-record graph inside the same
+// SQLite snapshot used for serialization. Domain validation alone cannot see
+// missing foreign rows or a reply that targets another reply/entry.
+func (snapshot *ArchiveSnapshot) ValidateIntegrity(ctx context.Context) error {
+	if err := snapshot.requireOpen(); err != nil {
+		return err
+	}
+	rows, err := snapshot.tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	if err != nil {
+		return fmt.Errorf("check archive foreign keys: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if rows.Next() {
+		return errors.New("archive snapshot contains a foreign-key violation")
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate archive foreign keys: %w", err)
+	}
+	var invalidComments int64
+	err = snapshot.tx.QueryRowContext(ctx, `
+SELECT count(*)
+FROM comments AS child
+LEFT JOIN comments AS parent ON parent.id = child.parent_id
+WHERE child.parent_id IS NOT NULL
+  AND (parent.id IS NULL OR parent.parent_id IS NOT NULL OR parent.entry_id <> child.entry_id)`).Scan(&invalidComments)
+	if err != nil {
+		return fmt.Errorf("check archive comment relationships: %w", err)
+	}
+	if invalidComments != 0 {
+		return errors.New("archive snapshot contains an invalid comment relationship")
+	}
+	var siteRows int64
+	if err := snapshot.tx.QueryRowContext(ctx, `SELECT count(*) FROM site_settings WHERE id = 1`).Scan(&siteRows); err != nil {
+		return fmt.Errorf("check archive site singleton: %w", err)
+	}
+	if siteRows != 1 {
+		return errors.New("archive snapshot does not contain exactly one site singleton")
+	}
+	return nil
+}
+
+// Site reads the singleton from the established snapshot.
+func (snapshot *ArchiveSnapshot) Site(ctx context.Context) (ArchiveSite, error) {
+	if err := snapshot.requireOpen(); err != nil {
+		return ArchiveSite{}, err
+	}
+	var value ArchiveSite
+	var publicURL, avatar sql.NullString
+	var comments int
+	err := snapshot.tx.QueryRowContext(ctx, `
+SELECT title, bio, timezone, public_base_url, avatar_media_id, comments_enabled
+FROM site_settings
+WHERE id = 1`).Scan(&value.Title, &value.Bio, &value.Timezone, &publicURL, &avatar, &comments)
+	if err != nil {
+		return ArchiveSite{}, fmt.Errorf("read archive site settings: %w", err)
+	}
+	if publicURL.Valid {
+		value.PublicBaseURL = &publicURL.String
+	}
+	if avatar.Valid {
+		value.AvatarMediaID = &avatar.String
+	}
+	value.CommentsEnabled = comments == 1
+	return value, nil
+}
+
+// Entries streams stable ID order while folding the bounded 0..8 usage join.
+func (snapshot *ArchiveSnapshot) Entries(ctx context.Context, yield func(ArchiveEntry) error) error {
+	if err := snapshot.requireOpen(); err != nil {
+		return err
+	}
+	if yield == nil {
+		return errors.New("archive entry callback is required")
+	}
+	rows, err := snapshot.tx.QueryContext(ctx, `
+SELECT e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms,
+       usage.media_id, usage.position, usage.alt_text
+FROM entries AS e
+LEFT JOIN entry_media AS usage ON usage.entry_id = e.id
+ORDER BY e.id, usage.position`)
+	if err != nil {
+		return fmt.Errorf("query archive entries: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var current *ArchiveEntry
+	for rows.Next() {
+		var entry ArchiveEntry
+		var mediaID, alt sql.NullString
+		var position sql.NullInt64
+		if err := rows.Scan(&entry.ID, &entry.Kind, &entry.ContentMD, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &mediaID, &position, &alt); err != nil {
+			return fmt.Errorf("scan archive entry: %w", err)
+		}
+		if current == nil || current.ID != entry.ID {
+			if current != nil {
+				if err := yield(*current); err != nil {
+					return err
+				}
+			}
+			entry.Media = make([]ArchiveUsage, 0, 9)
+			current = &entry
+		}
+		if mediaID.Valid {
+			if !position.Valid {
+				return errors.New("archive entry usage has no position")
+			}
+			usage := ArchiveUsage{MediaID: mediaID.String, Position: int(position.Int64)}
+			if alt.Valid {
+				usage.AltText = &alt.String
+			}
+			current.Media = append(current.Media, usage)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate archive entries: %w", err)
+	}
+	if current != nil {
+		return yield(*current)
+	}
+	return nil
+}
+
+// Comments streams one canonical flat thread per entry: root groups by root
+// ID, each root first, then its replies by creation time and ID. The explicit
+// root rank preserves parent-before-child even when both share a millisecond
+// and a reply's random ULID suffix sorts before its parent.
+func (snapshot *ArchiveSnapshot) Comments(ctx context.Context, yield func(ArchiveComment) error) error {
+	if err := snapshot.requireOpen(); err != nil {
+		return err
+	}
+	if yield == nil {
+		return errors.New("archive comment callback is required")
+	}
+	rows, err := snapshot.tx.QueryContext(ctx, `
+SELECT id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms
+FROM comments
+ORDER BY entry_id,
+         CASE WHEN parent_id IS NULL THEN id ELSE parent_id END,
+         CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END,
+         created_at_ms,
+         id`)
+	if err != nil {
+		return fmt.Errorf("query archive comments: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var value ArchiveComment
+		var parent sql.NullString
+		if err := rows.Scan(&value.ID, &value.EntryID, &parent, &value.AuthorKind, &value.AuthorName, &value.ContentMD, &value.CreatedAtMS); err != nil {
+			return fmt.Errorf("scan archive comment: %w", err)
+		}
+		if parent.Valid {
+			value.ParentID = &parent.String
+		}
+		if err := yield(value); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate archive comments: %w", err)
+	}
+	return nil
+}
+
+// Media streams exactly the objects selected by the central resolver
+// predicate. It is intentionally safe to call twice in one snapshot: once for
+// media.jsonl and once for immutable blob copying.
+func (snapshot *ArchiveSnapshot) Media(ctx context.Context, yield func(ArchiveMedia) error) error {
+	if err := snapshot.requireOpen(); err != nil {
+		return err
+	}
+	if yield == nil {
+		return errors.New("archive media callback is required")
+	}
+	rows, err := snapshot.tx.QueryContext(ctx, `
+SELECT id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms
+FROM media
+WHERE `+mediaReferencedSQL+`
+ORDER BY sha256, id`)
+	if err != nil {
+		return fmt.Errorf("query archive media: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var value ArchiveMedia
+		if err := rows.Scan(&value.ID, &value.SHA256, &value.StoragePath, &value.OriginalName, &value.MIMEType, &value.ByteSize, &value.Width, &value.Height, &value.CreatedAtMS); err != nil {
+			return fmt.Errorf("scan archive media: %w", err)
+		}
+		if err := yield(value); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate archive media: %w", err)
+	}
+	return nil
+}
+
+// Close ends the read transaction. Rollback is the correct read-only close and
+// avoids treating a cancelled context as a failed write commit.
+func (snapshot *ArchiveSnapshot) Close() error {
+	if snapshot == nil || snapshot.closed {
+		return nil
+	}
+	snapshot.closed = true
+	return snapshot.tx.Rollback()
+}
+
+func (snapshot *ArchiveSnapshot) requireOpen() error {
+	if snapshot == nil || snapshot.tx == nil || snapshot.closed {
+		return errors.New("archive snapshot is closed")
+	}
+	return nil
+}

@@ -257,6 +257,41 @@ func OpenForWriteContext(ctx context.Context, dataDir string) (*Runtime, *Lease,
 	return manager, maintenanceLease, nil
 }
 
+// OpenForSnapshotContext acquires maintenance.lock shared before resolving
+// CURRENT and retains that lease for the caller's complete logical snapshot.
+// Unlike startup, it does not acquire import.lock or clean CURRENT.next; this
+// avoids reversing Import -> Serve order inside a running server while still
+// preventing any generation switch until the lease is released.
+func OpenForSnapshotContext(ctx context.Context, dataDir string) (*Runtime, *Lease, error) {
+	root, err := ResolveDataDir(dataDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := ensureBaseDirectories(root); err != nil {
+		return nil, nil, err
+	}
+	instance, err := readInstance(filepath.Join(root, instanceFile))
+	if err != nil {
+		return nil, nil, err
+	}
+	locks, err := NewLocker(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	maintenance, err := locks.Acquire(ctx, MaintenanceLock, Shared)
+	if err != nil {
+		return nil, nil, fmt.Errorf("acquire snapshot maintenance lease: %w", err)
+	}
+	manager := &Runtime{Root: root, Instance: instance, Locks: locks}
+	generation, err := manager.ResolveCurrent()
+	if err != nil {
+		_ = maintenance.Release()
+		return nil, nil, err
+	}
+	manager.Current = generation
+	return manager, maintenance, nil
+}
+
 func openResolved(root string, instance Instance, locks *Locker) (*Runtime, error) {
 	manager := &Runtime{Root: root, Instance: instance, Locks: locks}
 	generation, err := manager.ResolveCurrent()

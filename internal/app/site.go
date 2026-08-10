@@ -237,7 +237,7 @@ func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 		}
 	}
 	if update.PublicBaseURL != nil && update.PublicBaseURL.Value != nil {
-		normalized, err := normalizePublicBaseURL(*update.PublicBaseURL.Value, service.allowHTTP)
+		normalized, err := NormalizePublicBaseURL(*update.PublicBaseURL.Value, service.allowHTTP)
 		if err != nil {
 			return SiteUpdate{}, err
 		}
@@ -258,7 +258,7 @@ func (service *SiteService) validateStored(ctx context.Context, store SiteStore,
 		return domain.NewError(domain.CodeDataIntegrityFailed, "stored site timezone is invalid", map[string]any{"field": "timezone"})
 	}
 	if settings.PublicBaseURL != nil {
-		normalized, err := normalizePublicBaseURL(*settings.PublicBaseURL, service.allowHTTP)
+		normalized, err := NormalizePublicBaseURL(*settings.PublicBaseURL, service.allowHTTP)
 		if err != nil || normalized != *settings.PublicBaseURL {
 			return domain.NewError(domain.CodeDataIntegrityFailed, "stored public base URL is invalid", map[string]any{"field": "public_base_url"})
 		}
@@ -312,7 +312,9 @@ func validateTimezone(value string) error {
 	return nil
 }
 
-func normalizePublicBaseURL(value string, allowDevelopmentLocalHTTP bool) (string, error) {
+// NormalizePublicBaseURL is the one lossless URL contract shared by settings
+// writes, stored-authority checks, and portable archive validation.
+func NormalizePublicBaseURL(value string, allowDevelopmentLocalHTTP bool) (string, error) {
 	if value == "" || value != strings.TrimSpace(value) {
 		return "", invalidPublicBaseURL()
 	}

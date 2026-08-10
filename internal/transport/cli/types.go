@@ -118,6 +118,10 @@ type Result struct {
 	Data any
 	Text string
 	Meta map[string]any
+	// Binary is the explicit exception to the text/JSON envelope. The kernel
+	// executes it inside the command timeout and writes bytes only to stdout.
+	// Commands exposing it must reject --json and all textual stdout output.
+	Binary func(io.Writer) error
 }
 
 // CommandInput exposes parsed values without giving handlers access to Cobra's
@@ -200,7 +204,10 @@ type LeafSpec struct {
 	// LongRunning reserves the parent context for lifecycle commands such as
 	// serve. Other commands remain bounded by --timeout.
 	LongRunning bool
-	Run         Handler
+	// RawStdout explicitly opts one public leaf into the binary Result variant.
+	// It is intentionally false for every normal envelope command.
+	RawStdout bool
+	Run       Handler
 }
 
 // GroupSpec describes one root-level noun command.

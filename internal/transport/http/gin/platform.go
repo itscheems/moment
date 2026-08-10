@@ -48,6 +48,7 @@ type Config struct {
 	Search         *app.SearchService
 	CommentLimiter CommentRateLimiter
 	Media          *media.Store
+	Archive        ArchiveExporter
 	SecureCookies  bool
 	TrustedProxies []string
 	RequestID      func() string
@@ -141,6 +142,12 @@ func New(config Config) (*gin.Engine, error) {
 	}
 	if config.Search != nil {
 		RegisterSearchRoutes(engine, config.Search)
+	}
+	if config.Archive != nil {
+		if config.OwnerAuth == nil {
+			return nil, errors.New("archive export route requires owner authentication")
+		}
+		RegisterExportRoutes(engine, config.Archive, config.OwnerAuth)
 	}
 
 	if config.Register != nil {

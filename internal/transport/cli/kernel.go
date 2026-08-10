@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -33,8 +34,9 @@ type Application struct {
 }
 
 type executionState struct {
-	started bool
-	result  Result
+	started  bool
+	streamed bool
+	result   Result
 }
 
 // New constructs a featureless CLI kernel.
@@ -195,6 +197,9 @@ func (application *Application) Execute(ctx context.Context, args []string, stre
 	}
 
 	if !state.started {
+		return ExitSuccess
+	}
+	if state.streamed {
 		return ExitSuccess
 	}
 
@@ -396,6 +401,22 @@ func (application *Application) buildLeaf(
 		})
 		if runErr != nil {
 			return runErr
+		}
+		if result.Binary != nil {
+			if !spec.RawStdout {
+				return errors.New("command is not registered for binary stdout")
+			}
+			if options.JSON {
+				return invalidArgument("binary stdout cannot be combined with --json", "remove --json or use the command's file output mode")
+			}
+			if result.Data != nil || result.Text != "" || len(result.Meta) != 0 {
+				return errors.New("binary command result cannot include envelope or text output")
+			}
+			if err := result.Binary(streams.Out); err != nil {
+				return err
+			}
+			state.streamed = true
+			return nil
 		}
 		state.result = result
 		return nil

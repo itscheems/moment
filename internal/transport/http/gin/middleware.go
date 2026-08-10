@@ -56,8 +56,15 @@ func accessLogMiddleware(log LogFunc) gin.HandlerFunc {
 func recoveryMiddleware(log LogFunc) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		defer func() {
-			if recover() == nil {
+			recovered := recover()
+			if recovered == nil {
 				return
+			}
+			// Preserve net/http's documented connection-abort sentinel. Streaming
+			// archive failures after headers must be observable as a truncated
+			// response, never converted into a successful partial ZIP.
+			if recoveredErr, ok := recovered.(error); ok && errors.Is(recoveredErr, http.ErrAbortHandler) {
+				panic(recoveredErr)
 			}
 			route := ctx.FullPath()
 			if route == "" {

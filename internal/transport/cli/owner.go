@@ -292,7 +292,7 @@ func decodeOwnerAPIFailure(status int, body []byte) error {
 	case "MEDIA_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "choose an existing managed media ID or clear the reference"
-	case "DATA_INTEGRITY_FAILED":
+	case "DATA_INTEGRITY_FAILED", "EXPORT_INVALID", "EXPORT_CHECKSUM_MISMATCH":
 		exit = ExitIntegrity
 		suggestion = "run diagnostics before retrying"
 	case "CANCELLED":

@@ -237,6 +237,33 @@ func TestTimeoutCancelsBoundedOperation(t *testing.T) {
 	}
 }
 
+func TestBinaryStdoutIsExplicitAndNeverMixesWithJSONEnvelope(t *testing.T) {
+	application := newTestApplication()
+	registerFixture(application, "unregistered-binary", CapabilityBoth, func(context.Context, Invocation, CommandInput) (Result, error) {
+		return Result{Binary: func(writer io.Writer) error { _, err := io.WriteString(writer, "raw"); return err }}, nil
+	})
+	blocked := execute(application, "", "fixture", "unregistered-binary", "--json")
+	if blocked.exit != ExitInternal || strings.Contains(blocked.stdout, "raw") || decodeOneDocument(t, blocked.stdout)["error"].(map[string]any)["code"] != "INTERNAL" {
+		t.Fatalf("unregistered binary = %#v", blocked)
+	}
+
+	application.MustRegisterLeaf(LeafSpec{
+		Path: []string{"fixture", "binary"}, Short: "Stream fixture bytes", Long: "Stream fixture bytes.",
+		Inputs: "No input.", Output: "Raw bytes.", Errors: "Stable errors.", Example: "moment fixture binary", Capability: CapabilityBoth, RawStdout: true,
+		Run: func(context.Context, Invocation, CommandInput) (Result, error) {
+			return Result{Binary: func(writer io.Writer) error { _, err := io.WriteString(writer, "PK\x03\x04raw"); return err }}, nil
+		},
+	})
+	raw := execute(application, "", "fixture", "binary")
+	if raw.exit != ExitSuccess || raw.stdout != "PK\x03\x04raw" || raw.stderr != "" {
+		t.Fatalf("raw binary = %#v", raw)
+	}
+	jsonOutput := execute(application, "", "fixture", "binary", "--json")
+	if jsonOutput.exit != ExitInvalidInput || strings.Contains(jsonOutput.stdout, "PK\x03\x04") || decodeOneDocument(t, jsonOutput.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("binary JSON = %#v", jsonOutput)
+	}
+}
+
 func TestLongRunningCommandUsesParentCancellationWithoutDeadline(t *testing.T) {
 	application := newTestApplication()
 	deadlineObserved := make(chan bool, 1)

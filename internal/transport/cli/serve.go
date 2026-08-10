@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/moment/moment/internal/app"
+	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/buildinfo"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
@@ -17,7 +19,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func registerServe(application *Application) {
+func registerServe(application *Application, info buildinfo.Info) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path:        []string{"serve"},
 		Short:       "Run the Moment HTTP server",
@@ -33,11 +35,13 @@ func registerServe(application *Application) {
 			flags.String("listen", "127.0.0.1:8080", "HTTP listen address")
 			flags.StringArray("trusted-proxy", nil, "trusted proxy IP or CIDR (repeatable; disabled by default)")
 		},
-		Run: runServe,
+		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+			return runServe(ctx, invocation, input, info)
+		},
 	})
 }
 
-func runServe(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+func runServe(ctx context.Context, invocation Invocation, input CommandInput, info buildinfo.Info) (Result, error) {
 	target, err := invocation.DirectTransport()
 	if err != nil {
 		return Result{}, err
@@ -131,6 +135,10 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 	if err != nil {
 		return Result{}, err
 	}
+	exporter, err := archive.NewExporter(archive.Options{DataDir: runtime.Root, AppVersion: info.Version})
+	if err != nil {
+		return Result{}, err
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:         assets,
 		OwnerAuth:      authManager,
@@ -140,6 +148,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 		Posts:          postService,
 		Comments:       commentService,
 		Search:         searchService,
+		Archive:        exporter,
 		SecureCookies:  !runtime.IsDevelopment(),
 		TrustedProxies: trustedProxies,
 		Log:            invocation.LogEvent,

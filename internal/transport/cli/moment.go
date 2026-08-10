@@ -45,12 +45,13 @@ func NewMoment(info buildinfo.Info) *Application {
 			}, nil
 		},
 	})
-	registerServe(application)
+	registerServe(application, info)
 	registerOwner(application)
 	registerSite(application)
 	registerMedia(application)
 	registerPosts(application)
 	registerComments(application)
 	registerSearch(application)
+	registerBackup(application, info)
 	return application
 }

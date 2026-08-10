@@ -3,7 +3,9 @@ package media
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"hash/crc32"
 	"image"
@@ -12,9 +14,73 @@ import (
 	"image/jpeg"
 	"image/png"
 	"io"
+	"strings"
 
 	"github.com/moment/moment/internal/domain"
 )
+
+// VerifyPortableOriginal validates authoritative metadata and immutable bytes
+// without consulting derived previews or cache state. Export uses this bounded
+// verifier before copying an original into a portable archive.
+func VerifyPortableOriginal(ctx context.Context, input io.Reader, value Media) error {
+	return verifyPortableOriginal(ctx, input, value, true)
+}
+
+// VerifyPortableArchiveOriginal validates one v1 media member using only the
+// portable metadata carried by the archive. StoragePath is intentionally not
+// part of that protocol and is therefore not consulted.
+func VerifyPortableArchiveOriginal(ctx context.Context, input io.Reader, value Media) error {
+	return verifyPortableOriginal(ctx, input, value, false)
+}
+
+func verifyPortableOriginal(ctx context.Context, input io.Reader, value Media, requireStoragePath bool) error {
+	if input == nil {
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original is unavailable", nil)
+	}
+	if _, err := domain.ParseID(value.ID.String()); err != nil {
+		return err
+	}
+	name, err := normalizeOriginalName(value.OriginalName)
+	if err != nil || name != value.OriginalName {
+		return domain.NewError(domain.CodeMediaCorrupt, "media original name is not canonical", map[string]any{"media_id": value.ID.String()})
+	}
+	expectedPath, ok := expectedStoragePath(value.SHA256, value.MIMEType)
+	if !ok || requireStoragePath && value.StoragePath != expectedPath {
+		return domain.NewError(domain.CodeMediaCorrupt, "media storage path is not canonical", map[string]any{"media_id": value.ID.String()})
+	}
+	if value.ByteSize < 1 || value.ByteSize > DefaultMaxBytes || value.Width == 0 || value.Height == 0 ||
+		value.Width > DefaultMaxDimension || value.Height > DefaultMaxDimension || uint64(value.Width)*uint64(value.Height) > DefaultMaxPixels ||
+		value.CreatedAt.IsZero() {
+		return domain.NewError(domain.CodeMediaCorrupt, "media metadata exceeds portable limits", map[string]any{"media_id": value.ID.String()})
+	}
+	contents, err := readBounded(ctx, input, DefaultMaxBytes)
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original cannot be read", map[string]any{"media_id": value.ID.String()})
+	}
+	if int64(len(contents)) != value.ByteSize {
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original size does not match metadata", map[string]any{"media_id": value.ID.String()})
+	}
+	digest := sha256.Sum256(contents)
+	if hex.EncodeToString(digest[:]) != strings.ToLower(value.SHA256) || value.SHA256 != strings.ToLower(value.SHA256) {
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original checksum does not match metadata", map[string]any{"media_id": value.ID.String()})
+	}
+	limits, err := (Limits{}).normalized()
+	if err != nil {
+		return err
+	}
+	inspection, err := inspectImage(contents, limits)
+	if err != nil {
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original image structure is invalid", map[string]any{"media_id": value.ID.String()})
+	}
+	width, height := displayDimensions(inspection)
+	if inspection.format.mimeType() != value.MIMEType || width != value.Width || height != value.Height {
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original type or dimensions do not match metadata", map[string]any{"media_id": value.ID.String()})
+	}
+	return nil
+}
 
 var (
 	pngSignature  = []byte("\x89PNG\r\n\x1a\n")
