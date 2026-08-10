@@ -36,7 +36,7 @@ func TestSearchArchivePostSyncAndRebuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "# 旧城雨\n[label](https://secret.example/path) Straße"})
+	first, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "# 旧城雨\n[label](https://secret.example/path) Straße https://example.com之后 `https://code-only.invalid/path`"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,6 +101,20 @@ func TestSearchArchivePostSyncAndRebuild(t *testing.T) {
 	if err != nil || len(folded.Items) != 1 {
 		t.Fatalf("Unicode case-fold search = %#v, %v", folded, err)
 	}
+	adjacent, err := service.Search(ctx, app.SearchInput{Query: "之后"})
+	if err != nil || len(adjacent.Items) != 1 {
+		t.Fatalf("URL-adjacent CJK search = %#v, %v", adjacent, err)
+	}
+	codeURL, err := service.Search(ctx, app.SearchInput{Query: "code-only.invalid"})
+	if err != nil || len(codeURL.Items) != 1 {
+		t.Fatalf("code URL search = %#v, %v", codeURL, err)
+	}
+	for _, removedURL := range []string{"example.com", "secret.example"} {
+		removed, err := service.Search(ctx, app.SearchInput{Query: removedURL})
+		if err != nil || len(removed.Items) != 0 {
+			t.Fatalf("removed URL %q search = %#v, %v", removedURL, removed, err)
+		}
+	}
 
 	months, err := service.ArchiveMonths(ctx, app.ArchiveMonthsInput{})
 	if err != nil || len(months.Items) != 1 || months.Items[0].Count != 3 {
@@ -163,6 +177,90 @@ func TestSearchArchivePostSyncAndRebuild(t *testing.T) {
 	if _, err := service.Rebuild(cancelled, false); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled rebuild error = %v", err)
 	}
+}
+
+func TestSearchCursorRejectsCreateUpdateAndDeleteBetweenPages(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	database, runtimeState := openTestDatabase(t, Options{})
+	postRepository, err := newPostRepository(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []domain.ID{mustID(t, entryOne), mustID(t, entryTwo), mustID(t, entryThree)}
+	now := time.Date(2026, 8, 10, 10, 0, 0, 0, time.UTC)
+	posts, err := app.NewPostService(postRepository,
+		app.WithPostClock(func() time.Time { return now }),
+		app.WithPostIDGenerator(func(time.Time) (domain.ID, error) {
+			id := ids[0]
+			ids = ids[1:]
+			return id, nil
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "revision searchable first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "revision searchable second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := NewSearchRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	search, err := app.NewSearchService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := cursorPage(t, search)
+	if _, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "revision searchable third"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := search.Search(ctx, app.SearchInput{Query: "revision searchable", Limit: 1, Cursor: page.NextCursor}); !staleCursorError(err) {
+		t.Fatalf("cursor after create error = %v", err)
+	}
+	page = cursorPage(t, search)
+	if _, err := posts.Update(ctx, app.UpdatePostInput{ID: first.Post.Entry.ID, ContentMD: "revision searchable first edited"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := search.Search(ctx, app.SearchInput{Query: "revision searchable", Limit: 1, Cursor: page.NextCursor}); !staleCursorError(err) {
+		t.Fatalf("cursor after update error = %v", err)
+	}
+	page = cursorPage(t, search)
+	if _, err := posts.Delete(ctx, second.Post.Entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := search.Search(ctx, app.SearchInput{Query: "revision searchable", Limit: 1, Cursor: page.NextCursor}); !staleCursorError(err) {
+		t.Fatalf("cursor after delete error = %v", err)
+	}
+	page = cursorPage(t, search)
+	if _, err := database.write.ExecContext(ctx, `DELETE FROM entry_fts WHERE entry_id = ?`, first.Post.Entry.ID.String()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := search.Rebuild(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := search.Search(ctx, app.SearchInput{Query: "revision searchable", Limit: 1, Cursor: page.NextCursor}); !staleCursorError(err) {
+		t.Fatalf("cursor after rebuild error = %v", err)
+	}
+}
+
+func cursorPage(t *testing.T, service *app.SearchService) app.SearchPage {
+	t.Helper()
+	page, err := service.Search(context.Background(), app.SearchInput{Query: "revision searchable", Limit: 1})
+	if err != nil || page.NextCursor == "" {
+		t.Fatalf("cursor page = %#v, %v", page, err)
+	}
+	return page
+}
+
+func staleCursorError(err error) bool {
+	var domainErr *domain.Error
+	return errors.As(err, &domainErr) && domainErr.Code == domain.CodeInvalidArgument && domainErr.Details["reason"] == "stale"
 }
 
 func mustID(t *testing.T, value string) domain.ID {

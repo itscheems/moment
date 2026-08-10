@@ -1,7 +1,6 @@
 package domain
 
 import (
-	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -17,8 +16,6 @@ import (
 // version is persisted with the index so future normalizer changes require an
 // explicit rebuild rather than silently mixing representations.
 const ContentNormalizerVersion = 1
-
-var visibleURL = regexp.MustCompile(`(?i)(?:https?://|mailto:|www\.)[^\s]+`)
 
 // NormalizeContentV1 converts Markdown-shaped input into deterministic search
 // text. It keeps visible link labels and code, drops destinations and invisible
@@ -56,7 +53,11 @@ func NormalizeContentV1(source string) (string, error) {
 			appendLines(&output, typed.Lines(), data)
 			return ast.WalkSkipChildren, nil
 		case *ast.Text:
-			appendVisible(typed.Value(data))
+			value := typed.Value(data)
+			if !hasAncestor(node, ast.KindLink) && !hasAncestor(node, ast.KindCodeSpan) {
+				value = stripPlainURLs(value)
+			}
+			appendVisible(value)
 			if typed.SoftLineBreak() || typed.HardLineBreak() {
 				output.WriteByte(' ')
 			}
@@ -68,8 +69,7 @@ func NormalizeContentV1(source string) (string, error) {
 		return "", NewError(CodeInternal, "could not normalize content", nil)
 	}
 
-	withoutURLs := visibleURL.ReplaceAllString(output.String(), " ")
-	normalized := cases.Fold().String(norm.NFKC.String(withoutURLs))
+	normalized := cases.Fold().String(norm.NFKC.String(output.String()))
 	var clean strings.Builder
 	spacePending := false
 	for _, character := range normalized {
@@ -87,6 +87,59 @@ func NormalizeContentV1(source string) (string, error) {
 		}
 	}
 	return strings.TrimSpace(clean.String()), nil
+}
+
+func hasAncestor(node ast.Node, kind ast.NodeKind) bool {
+	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
+		if parent.Kind() == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func stripPlainURLs(value []byte) []byte {
+	var output strings.Builder
+	for index := 0; index < len(value); {
+		prefix := plainURLPrefix(value[index:])
+		if prefix > 0 && (index == 0 || isURLBoundary(value[index-1])) {
+			end := index + prefix
+			for end < len(value) && value[end] < utf8.RuneSelf && !isURLBoundary(value[end]) {
+				end++
+			}
+			if end > index+prefix {
+				output.WriteByte(' ')
+				index = end
+				continue
+			}
+		}
+		character, size := utf8.DecodeRune(value[index:])
+		output.WriteRune(character)
+		index += size
+	}
+	return []byte(output.String())
+}
+
+func plainURLPrefix(value []byte) int {
+	lower := strings.ToLower(string(value[:min(len(value), len("https://"))]))
+	for _, prefix := range []string{"https://", "http://", "mailto:", "www."} {
+		if strings.HasPrefix(lower, prefix) {
+			return len(prefix)
+		}
+	}
+	return 0
+}
+
+func isURLBoundary(character byte) bool {
+	if character >= utf8.RuneSelf {
+		return true
+	}
+	switch character {
+	case ' ', '\t', '\r', '\n', '<', '>', '"', '\'', '`', '(', ')', '[', ']', '{', '}', ',', ';':
+		return true
+	default:
+		return false
+	}
 }
 
 func appendLines(output *strings.Builder, lines *text.Segments, source []byte) {

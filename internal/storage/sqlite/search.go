@@ -209,6 +209,14 @@ func (store searchStore) SearchNormalizerVersion(ctx context.Context) (int, erro
 	return version, nil
 }
 
+func (store searchStore) SearchRevision(ctx context.Context) (int64, error) {
+	var revision int64
+	if err := store.queries.QueryRowContext(ctx, `SELECT revision FROM search_index_state WHERE id = 1`).Scan(&revision); err != nil {
+		return 0, fmt.Errorf("read search revision: %w", err)
+	}
+	return revision, nil
+}
+
 func (store searchStore) SearchOrphanCount(ctx context.Context) (int, error) {
 	var count int
 	if err := store.queries.QueryRowContext(ctx, `
@@ -288,6 +296,18 @@ func (store searchStore) SetSearchNormalizerVersion(ctx context.Context, version
 		return fmt.Errorf("update search normalizer version changed %d rows: %w", changed, err)
 	}
 	return nil
+}
+
+func (store searchStore) AdvanceSearchRevision(ctx context.Context) (int64, error) {
+	result, err := store.queries.ExecContext(ctx, `UPDATE search_index_state SET revision = revision + 1 WHERE id = 1`)
+	if err != nil {
+		return 0, fmt.Errorf("advance search revision: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return 0, fmt.Errorf("advance search revision changed %d rows: %w", changed, err)
+	}
+	return store.SearchRevision(ctx)
 }
 
 func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {

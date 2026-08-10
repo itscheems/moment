@@ -63,11 +63,13 @@ type SearchStore interface {
 	SearchPublishedMillis(context.Context, SearchRepositoryQuery) ([]int64, error)
 	ArchivePublishedMillis(context.Context, *int64, *int64) ([]int64, error)
 	SearchNormalizerVersion(context.Context) (int, error)
+	SearchRevision(context.Context) (int64, error)
 	SearchOrphanCount(context.Context) (int, error)
 	SearchSources(context.Context, domain.ID, int) ([]SearchSource, error)
 	ClearSearchIndex(context.Context) error
 	UpdateSearchDerived(context.Context, domain.ID, string) error
 	SetSearchNormalizerVersion(context.Context, int) error
+	AdvanceSearchRevision(context.Context) (int64, error)
 }
 
 // SearchTransactions supplies snapshot reads and atomic derived rebuilds.
@@ -136,14 +138,15 @@ type ArchiveMonth struct {
 
 // SearchRebuildResult reports derived-index diagnostics and repair work.
 type SearchRebuildResult struct {
-	DryRun            bool `json:"dry_run"`
-	NormalizerVersion int  `json:"normalizer_version"`
-	StoredVersion     int  `json:"stored_version"`
-	Total             int  `json:"total"`
-	Ready             int  `json:"ready"`
-	Drifted           int  `json:"drifted"`
-	OrphanIndexRows   int  `json:"orphan_index_rows"`
-	Rebuilt           int  `json:"rebuilt"`
+	DryRun            bool  `json:"dry_run"`
+	NormalizerVersion int   `json:"normalizer_version"`
+	StoredVersion     int   `json:"stored_version"`
+	Total             int   `json:"total"`
+	Ready             int   `json:"ready"`
+	Drifted           int   `json:"drifted"`
+	OrphanIndexRows   int   `json:"orphan_index_rows"`
+	Rebuilt           int   `json:"rebuilt"`
+	Revision          int64 `json:"revision"`
 }
 
 // SearchService owns normalized search, calendar aggregates, and rebuilding.
@@ -176,6 +179,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 	var instants []int64
 	var location *time.Location
 	var timezone string
+	var revision int64
 	var fromMS, toMS *int64
 	err = service.transactions.Read(ctx, func(store SearchStore) error {
 		var storeErr error
@@ -186,6 +190,13 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		if version != domain.ContentNormalizerVersion {
 			return searchDataIntegrity("normalizer version is not current")
 		}
+		revision, storeErr = store.SearchRevision(ctx)
+		if storeErr != nil {
+			return storeErr
+		}
+		if revision < 1 {
+			return searchDataIntegrity("revision is invalid")
+		}
 		timezone, storeErr = store.Timezone(ctx)
 		if storeErr != nil {
 			return storeErr
@@ -195,7 +206,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 			return storeErr
 		}
 		signature := searchSignature(normalized, timezone, fromMS, toMS)
-		position, cursorErr := decodeSearchCursor(input.Cursor, signature)
+		position, cursorErr := decodeSearchCursor(input.Cursor, signature, revision)
 		if cursorErr != nil {
 			return cursorErr
 		}
@@ -232,7 +243,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		last := records[len(records)-1]
 		page.NextCursor = encodeSearchCursor(SearchPosition{
 			Rank: last.Rank, PublishedAtMS: domain.TimeToMillis(last.Entry.PublishedAt), ID: last.Entry.ID,
-		}, searchSignature(normalized, timezone, fromMS, toMS))
+		}, searchSignature(normalized, timezone, fromMS, toMS), revision)
 	}
 	return page, nil
 }
@@ -316,6 +327,13 @@ func (service *SearchService) Rebuild(ctx context.Context, dryRun bool) (SearchR
 		if result.StoredVersion > domain.ContentNormalizerVersion {
 			return searchDataIntegrity("normalizer version is newer than this binary")
 		}
+		result.Revision, err = store.SearchRevision(ctx)
+		if err != nil {
+			return err
+		}
+		if result.Revision < 1 {
+			return searchDataIntegrity("revision is invalid")
+		}
 		result.OrphanIndexRows, err = store.SearchOrphanCount(ctx)
 		if err != nil {
 			return err
@@ -334,6 +352,10 @@ func (service *SearchService) Rebuild(ctx context.Context, dryRun bool) (SearchR
 			return err
 		}
 		if err := store.SetSearchNormalizerVersion(ctx, domain.ContentNormalizerVersion); err != nil {
+			return err
+		}
+		result.Revision, err = store.AdvanceSearchRevision(ctx)
+		if err != nil {
 			return err
 		}
 		result.Rebuilt = result.Total

@@ -63,14 +63,26 @@ func runSearchQuery(ctx context.Context, invocation Invocation, input CommandInp
 	if searchInput.Cursor, err = input.String("cursor"); err != nil {
 		return Result{}, err
 	}
+	if input.Changed("cursor") && searchInput.Cursor == "" {
+		return Result{}, invalidArgument("--cursor cannot be empty", "omit --cursor or provide the previous next_cursor value")
+	}
 	if searchInput.Limit, err = input.Int("limit"); err != nil {
 		return Result{}, err
+	}
+	if input.Changed("limit") && searchInput.Limit == 0 {
+		return Result{}, invalidArgument("--limit must be between 1 and 100", "use a positive page size such as --limit 20")
 	}
 	if searchInput.FromDate, err = input.String("from"); err != nil {
 		return Result{}, err
 	}
+	if input.Changed("from") && searchInput.FromDate == "" {
+		return Result{}, invalidArgument("--from cannot be empty", "omit --from or provide an inclusive YYYY-MM-DD date")
+	}
 	if searchInput.ToDate, err = input.String("to"); err != nil {
 		return Result{}, err
+	}
+	if input.Changed("to") && searchInput.ToDate == "" {
+		return Result{}, invalidArgument("--to cannot be empty", "omit --to or provide an exclusive YYYY-MM-DD date")
 	}
 
 	var data searchdto.SearchData
@@ -129,9 +141,12 @@ func runSearchRebuild(ctx context.Context, invocation Invocation, _ CommandInput
 	}
 	runtimeState, maintenance, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return Result{}, searchCLIError(err)
+		return Result{}, ownerRuntimeError(err)
 	}
 	defer func() { _ = maintenance.Release() }()
+	if invocation.Safety().DryRun {
+		return runSearchRebuildDryRun(ctx, runtimeState)
+	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
 		return Result{}, postDatabaseError(err)
@@ -154,6 +169,35 @@ func runSearchRebuild(ctx context.Context, invocation Invocation, _ CommandInput
 		verb = "Search index rebuilt"
 	}
 	return Result{Data: result, Text: fmt.Sprintf("%s: %d total, %d ready, %d drifted, %d orphan rows, %d rebuilt", verb, result.Total, result.Ready, result.Drifted, result.OrphanIndexRows, result.Rebuilt)}, nil
+}
+
+func runSearchRebuildDryRun(ctx context.Context, runtimeState *runtimefs.Runtime) (Result, error) {
+	database, err := sqlitestore.OpenSearchReadOnly(ctx, runtimeState, sqlitestore.Options{})
+	if err != nil {
+		if errors.Is(err, sqlitestore.ErrSearchSchemaUpgradeRequired) {
+			return Result{}, NewCommandError(
+				"SEARCH_SCHEMA_UPGRADE_REQUIRED",
+				"the search schema must be upgraded before a read-only rebuild inspection",
+				"start the updated Moment server once or run 'moment search rebuild --yes', then retry --dry-run",
+				ExitIntegrity,
+			).WithCause(err)
+		}
+		return Result{}, postDatabaseError(err)
+	}
+	defer func() { _ = database.Close() }()
+	repository, err := sqlitestore.NewSearchRepository(database, runtimeState.Locks)
+	if err != nil {
+		return Result{}, err
+	}
+	service, err := app.NewSearchService(repository)
+	if err != nil {
+		return Result{}, err
+	}
+	result, err := service.Rebuild(ctx, true)
+	if err != nil {
+		return Result{}, searchCLIError(err)
+	}
+	return Result{Data: result, Text: fmt.Sprintf("Search index inspected: %d total, %d ready, %d drifted, %d orphan rows, %d rebuilt", result.Total, result.Ready, result.Drifted, result.OrphanIndexRows, result.Rebuilt)}, nil
 }
 
 func openDirectSearch(ctx context.Context, invocation Invocation) (*app.SearchService, *sqlitestore.Database, error) {

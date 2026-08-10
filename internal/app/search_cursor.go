@@ -24,15 +24,17 @@ type SearchPosition struct {
 type searchCursorPayload struct {
 	Version       int    `json:"v"`
 	QueryHash     string `json:"query_hash"`
+	Revision      int64  `json:"revision"`
 	Rank          string `json:"rank"`
 	PublishedAtMS int64  `json:"published_at_ms"`
 	ID            string `json:"id"`
 }
 
-func encodeSearchCursor(position SearchPosition, signature string) string {
+func encodeSearchCursor(position SearchPosition, signature string, revision int64) string {
 	payload, err := json.Marshal(searchCursorPayload{
 		Version:       searchCursorV1,
 		QueryHash:     signature,
+		Revision:      revision,
 		Rank:          strconv.FormatFloat(position.Rank, 'g', -1, 64),
 		PublishedAtMS: position.PublishedAtMS,
 		ID:            position.ID.String(),
@@ -43,7 +45,7 @@ func encodeSearchCursor(position SearchPosition, signature string) string {
 	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
-func decodeSearchCursor(value, signature string) (*SearchPosition, error) {
+func decodeSearchCursor(value, signature string, revision int64) (*SearchPosition, error) {
 	if value == "" {
 		return nil, nil
 	}
@@ -63,6 +65,9 @@ func decodeSearchCursor(value, signature string) (*SearchPosition, error) {
 	if payload.Version != searchCursorV1 || payload.QueryHash != signature {
 		return nil, invalidCursor()
 	}
+	if payload.Revision != revision {
+		return nil, staleSearchCursor()
+	}
 	canonical, err := json.Marshal(payload)
 	if err != nil || !bytes.Equal(canonical, payloadBytes) {
 		return nil, invalidCursor()
@@ -76,6 +81,10 @@ func decodeSearchCursor(value, signature string) (*SearchPosition, error) {
 		return nil, invalidCursor()
 	}
 	return &SearchPosition{Rank: rank, PublishedAtMS: payload.PublishedAtMS, ID: id}, nil
+}
+
+func staleSearchCursor() error {
+	return domain.NewError(domain.CodeInvalidArgument, "cursor is stale because searchable posts changed", map[string]any{"field": "cursor", "reason": "stale"})
 }
 
 func searchSignature(normalizedQuery, timezone string, fromMS, toMS *int64) string {

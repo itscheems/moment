@@ -33,6 +33,9 @@ var requiredCatalogObjects = []expectedCatalogObject{
 	{name: "entries_search_insert", kind: "trigger", table: "entries"},
 	{name: "entries_search_update", kind: "trigger", table: "entries"},
 	{name: "entries_search_delete", kind: "trigger", table: "entries"},
+	{name: "entries_search_revision_insert", kind: "trigger", table: "entries"},
+	{name: "entries_search_revision_update", kind: "trigger", table: "entries"},
+	{name: "entries_search_revision_delete", kind: "trigger", table: "entries"},
 }
 
 type catalogQueryer interface {

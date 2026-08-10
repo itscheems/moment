@@ -31,3 +31,16 @@ func TestNormalizeContentV1IsSharedQuerySafe(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeContentV1KeepsAdjacentCJKAndCodeURLs(t *testing.T) {
+	t.Parallel()
+	input := "https://example.com之后 [https://label.example](https://destination.example) `https://inline.example`\n\n```text\nhttps://fenced.example\n```"
+	actual, err := NormalizeContentV1(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "之后 https://label.example https://inline.example https://fenced.example"
+	if actual != want {
+		t.Fatalf("NormalizeContentV1() = %q, want %q", actual, want)
+	}
+}
