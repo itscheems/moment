@@ -9,7 +9,11 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
-import { composeDraftKey } from "./draft";
+import {
+  COMPOSE_DRAFT_CLEARED_EVENT,
+  COMPOSE_DRAFT_CLEARED_SCHEMA,
+  composeDraftKey,
+} from "./draft";
 
 const instance = "0123456789abcdef0123456789abcdef";
 const sessionKey = "moment.owner.session.v1";
@@ -508,18 +512,21 @@ describe("owner composing flow", () => {
     expect(beforeUnload.defaultPrevented).toBe(true);
   });
 
-  it("restores autosave and leave guards after another tab clears inline", async () => {
+  it("clears inline only when another tab removes the same draft", async () => {
     preauthenticate();
     installApi();
     render(<App />);
     const inline = await screen.findByLabelText("此刻想到什么？");
     fireEvent.change(inline, { target: { value: "会被另一标签页清理" } });
     await new Promise((resolve) => window.setTimeout(resolve, 550));
+    const clearedDraft = window.localStorage.getItem(composeDraftKey(instance));
+    expect(clearedDraft).not.toBeNull();
     window.localStorage.removeItem(composeDraftKey(instance));
     fireEvent(
       window,
       new StorageEvent("storage", {
         key: composeDraftKey(instance),
+        oldValue: clearedDraft,
         newValue: null,
       }),
     );
@@ -529,6 +536,79 @@ describe("owner composing flow", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 550));
     expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
       "跨标签页清理后重新写",
+    );
+
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(false);
+    fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
+    expect(window.location.pathname).toBe("/");
+    expect(confirm).toHaveBeenCalledWith(
+      "这段内容还没有发布。离开后仍会保留本地草稿。",
+    );
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
+  it("preserves and re-saves divergent dirty text when another tab clears a draft", async () => {
+    preauthenticate();
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "A 标签页已经分叉的正文" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+
+    window.localStorage.removeItem(composeDraftKey(instance));
+    fireEvent(
+      window,
+      new StorageEvent("storage", {
+        key: composeDraftKey(instance),
+        oldValue: '{"content_md":"缺少时间"}',
+        newValue: null,
+      }),
+    );
+    expect(inline).toHaveValue("A 标签页已经分叉的正文");
+
+    fireEvent(
+      window,
+      new CustomEvent(COMPOSE_DRAFT_CLEARED_EVENT, {
+        detail: { instanceId: instance },
+      }),
+    );
+    expect(inline).toHaveValue("A 标签页已经分叉的正文");
+
+    fireEvent(
+      window,
+      new CustomEvent(COMPOSE_DRAFT_CLEARED_EVENT, {
+        detail: {
+          schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
+          instance_id: "fedcba9876543210fedcba9876543210",
+          content_md: "A 标签页已经分叉的正文",
+          saved_at: "2026-08-10T12:00:00.000Z",
+        },
+      }),
+    );
+    expect(inline).toHaveValue("A 标签页已经分叉的正文");
+
+    const otherDraft = JSON.stringify({
+      content_md: "B 标签页刚刚发布的正文",
+      saved_at: "2026-08-10T12:01:00.000Z",
+    });
+    window.localStorage.setItem(composeDraftKey(instance), otherDraft);
+    window.localStorage.removeItem(composeDraftKey(instance));
+    fireEvent(
+      window,
+      new StorageEvent("storage", {
+        key: composeDraftKey(instance),
+        oldValue: otherDraft,
+        newValue: null,
+      }),
+    );
+
+    expect(inline).toHaveValue("A 标签页已经分叉的正文");
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
+      "A 标签页已经分叉的正文",
     );
 
     const confirm = vi.mocked(window.confirm);

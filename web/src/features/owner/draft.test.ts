@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  COMPOSE_DRAFT_CLEARED_EVENT,
+  COMPOSE_DRAFT_CLEARED_SCHEMA,
   clearComposeDraft,
   composeDraftKey,
   loadComposeDraft,
+  parseComposeDraftClearedIdentity,
   saveComposeDraft,
 } from "./draft";
 
@@ -54,10 +57,40 @@ describe("instance-scoped compose draft", () => {
 
   it("clears only the selected instance draft", () => {
     const other = "fedcba9876543210fedcba9876543210";
-    saveComposeDraft(instance, "这里");
+    const savedAt = new Date("2026-08-10T01:02:03.000Z");
+    saveComposeDraft(instance, "这里", savedAt);
     saveComposeDraft(other, "那里");
+    const cleared = vi.fn();
+    window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
     clearComposeDraft(instance);
+    window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
     expect(loadComposeDraft(instance)).toBeNull();
     expect(loadComposeDraft(other)?.contentMd).toBe("那里");
+    expect(cleared).toHaveBeenCalledOnce();
+    expect((cleared.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
+      instance_id: instance,
+      content_md: "这里",
+      saved_at: savedAt.toISOString(),
+    });
+  });
+
+  it("strictly rejects malformed clear identities", () => {
+    expect(
+      parseComposeDraftClearedIdentity({
+        schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
+        instance_id: instance,
+        content_md: "这里",
+      }),
+    ).toBeNull();
+    expect(
+      parseComposeDraftClearedIdentity({
+        schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
+        instance_id: instance,
+        content_md: "这里",
+        saved_at: "2026-08-10T01:02:03.000Z",
+        unexpected: true,
+      }),
+    ).toBeNull();
   });
 });

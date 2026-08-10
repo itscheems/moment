@@ -10,9 +10,12 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import {
   COMPOSE_DRAFT_CLEARED_EVENT,
   clearComposeDraft,
+  composeDraftClearedIdentityFromStorage,
   composeDraftKey,
   loadComposeDraft,
+  parseComposeDraftClearedIdentity,
   saveComposeDraft,
+  type ComposeDraftClearedIdentity,
   type ComposeDraft,
 } from "./draft";
 import { useOwner } from "./OwnerProvider";
@@ -73,6 +76,7 @@ export function Composer({
   const [draftUnavailable, setDraftUnavailable] = useState(
     variant !== "edit" && !site.instanceId,
   );
+  const [draftSaveRevision, setDraftSaveRevision] = useState(0);
   const [announcement, setAnnouncement] = useState("");
   const pendingRef = useRef(false);
   const allowLeaveRef = useRef(false);
@@ -101,22 +105,31 @@ export function Composer({
       setDirty(false);
       setError(null);
     };
-    const clearedInThisDocument = (event: Event) => {
-      const detail = (event as CustomEvent<unknown>).detail;
-      if (
-        typeof detail === "object" &&
-        detail !== null &&
-        (detail as { instanceId?: unknown }).instanceId === instanceId
-      ) {
+    const handleClearedDraft = (identity: ComposeDraftClearedIdentity) => {
+      if (identity.instance_id !== instanceId) return;
+      if (!dirty || content === identity.content_md) {
         resetDraftSurface();
+        return;
       }
+      setDraftSaveRevision((revision) => revision + 1);
+    };
+    const clearedInThisDocument = (event: Event) => {
+      const identity = parseComposeDraftClearedIdentity(
+        (event as CustomEvent<unknown>).detail,
+      );
+      if (identity) handleClearedDraft(identity);
     };
     const clearedInAnotherDocument = (event: StorageEvent) => {
-      if (
-        event.key === composeDraftKey(instanceId) &&
-        event.newValue === null
-      ) {
-        resetDraftSurface();
+      if (event.key !== composeDraftKey(instanceId) || event.newValue !== null)
+        return;
+      const identity = composeDraftClearedIdentityFromStorage(
+        instanceId,
+        event.oldValue,
+      );
+      if (identity) {
+        handleClearedDraft(identity);
+      } else if (dirty) {
+        setDraftSaveRevision((revision) => revision + 1);
       }
     };
     window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, clearedInThisDocument);
@@ -128,7 +141,7 @@ export function Composer({
       );
       window.removeEventListener("storage", clearedInAnotherDocument);
     };
-  }, [site.instanceId, variant]);
+  }, [content, dirty, site.instanceId, variant]);
 
   useEffect(() => {
     if (variant === "edit" || !dirty || draft || allowLeaveRef.current) return;
@@ -138,7 +151,7 @@ export function Composer({
       }
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [content, dirty, draft, site.instanceId, variant]);
+  }, [content, dirty, draft, draftSaveRevision, site.instanceId, variant]);
 
   useEffect(() => {
     const confirmLeave = () => {
