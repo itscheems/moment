@@ -8,12 +8,13 @@ import {
 import { useNavigation } from "../../app/navigation";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
+  COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
   clearComposeDraft,
   composeDraftClearedIdentityFromStorage,
   composeDraftKey,
   loadComposeDraft,
-  parseComposeDraftClearedIdentity,
+  parseComposeDraftClearEvent,
   saveComposeDraft,
   type ComposeDraftClearedIdentity,
   type ComposeDraft,
@@ -114,10 +115,15 @@ export function Composer({
       setDraftSaveRevision((revision) => revision + 1);
     };
     const clearedInThisDocument = (event: Event) => {
-      const identity = parseComposeDraftClearedIdentity(
+      const clearance = parseComposeDraftClearEvent(
         (event as CustomEvent<unknown>).detail,
       );
-      if (identity) handleClearedDraft(identity);
+      if (!clearance || clearance.instance_id !== instanceId) return;
+      if (clearance.schema === COMPOSE_DRAFT_CLEAR_ALL_SCHEMA) {
+        resetDraftSurface();
+      } else {
+        handleClearedDraft(clearance);
+      }
     };
     const clearedInAnotherDocument = (event: StorageEvent) => {
       if (event.key !== composeDraftKey(instanceId) || event.newValue !== null)
@@ -203,7 +209,12 @@ export function Composer({
         : await api.create(session.csrfToken, content, idempotencyKey.current);
       allowLeaveRef.current = true;
       setDirty(false);
-      if (!post) clearComposeDraft(site.instanceId);
+      if (!post) {
+        clearComposeDraft(site.instanceId, {
+          reason: "published",
+          contentMd: content,
+        });
+      }
       announceOwnerPost({ kind: post ? "updated" : "created", post: saved });
       setAnnouncement(post ? "已保存" : "已发布");
       if (variant === "inline") {
@@ -240,7 +251,8 @@ export function Composer({
   };
 
   const discardDraft = () => {
-    clearComposeDraft(site.instanceId);
+    if (!draft) return;
+    clearComposeDraft(site.instanceId, { reason: "discarded", draft });
     setDraft(null);
     setAnnouncement("本地草稿已丢弃");
     window.requestAnimationFrame(() => textareaRef.current?.focus());

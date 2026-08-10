@@ -512,6 +512,85 @@ describe("owner composing flow", () => {
     expect(beforeUnload.defaultPrevented).toBe(true);
   });
 
+  it("clears the matching hidden inline surface after publishing when storage is denied", async () => {
+    preauthenticate();
+    const denied = () => {
+      throw new DOMException("denied");
+    };
+    vi.spyOn(window.localStorage, "getItem").mockImplementation(denied);
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(denied);
+    vi.spyOn(window.localStorage, "removeItem").mockImplementation(denied);
+    let creates = 0;
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        creates += 1;
+        return json({
+          data: post("无法落盘但已经发布", "01K2ABCDEF0123456789ABCDF1"),
+          meta: {},
+        });
+      }
+    });
+    render(<App />);
+
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "无法落盘但已经发布" } });
+    fireEvent.keyDown(document.body, { key: "n" });
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/owner/compose"),
+    );
+    fireEvent.change(screen.getAllByLabelText("此刻想到什么？")[1], {
+      target: { value: "无法落盘但已经发布" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(screen.getByLabelText("此刻想到什么？")).toHaveValue("");
+    const publishAgain = screen.getByRole("button", { name: "发布" });
+    expect(publishAgain).toBeDisabled();
+    fireEvent.click(publishAgain);
+    expect(screen.getAllByText("无法落盘但已经发布")).toHaveLength(1);
+    expect(creates).toBe(1);
+  });
+
+  it("keeps a divergent hidden inline surface after publishing when storage is denied", async () => {
+    preauthenticate();
+    const denied = () => {
+      throw new DOMException("denied");
+    };
+    vi.spyOn(window.localStorage, "getItem").mockImplementation(denied);
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(denied);
+    vi.spyOn(window.localStorage, "removeItem").mockImplementation(denied);
+    let creates = 0;
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        creates += 1;
+        return json({
+          data: post("B 标签页发布成功", "01K2ABCDEF0123456789ABCDF2"),
+          meta: {},
+        });
+      }
+    });
+    render(<App />);
+
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "A 标签页仍未发布" } });
+    fireEvent.keyDown(document.body, { key: "n" });
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/owner/compose"),
+    );
+    fireEvent.change(screen.getAllByLabelText("此刻想到什么？")[1], {
+      target: { value: "B 标签页发布成功" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
+      "A 标签页仍未发布",
+    );
+    expect(screen.getAllByText("B 标签页发布成功")).toHaveLength(1);
+    expect(creates).toBe(1);
+  });
+
   it("clears inline only when another tab removes the same draft", async () => {
     preauthenticate();
     installApi();

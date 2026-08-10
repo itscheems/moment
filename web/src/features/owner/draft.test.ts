@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
   COMPOSE_DRAFT_CLEARED_SCHEMA,
   clearComposeDraft,
@@ -14,6 +15,7 @@ const instance = "0123456789abcdef0123456789abcdef";
 
 describe("instance-scoped compose draft", () => {
   beforeEach(() => window.localStorage.clear());
+  afterEach(() => vi.restoreAllMocks());
 
   it("stores only Markdown and a timestamp under the runtime instance ID", () => {
     const savedAt = new Date("2026-08-10T01:02:03.000Z");
@@ -62,7 +64,10 @@ describe("instance-scoped compose draft", () => {
     saveComposeDraft(other, "那里");
     const cleared = vi.fn();
     window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
-    clearComposeDraft(instance);
+    clearComposeDraft(instance, {
+      reason: "discarded",
+      draft: { contentMd: "这里", savedAt: savedAt.toISOString() },
+    });
     window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
     expect(loadComposeDraft(instance)).toBeNull();
     expect(loadComposeDraft(other)?.contentMd).toBe("那里");
@@ -72,6 +77,86 @@ describe("instance-scoped compose draft", () => {
       instance_id: instance,
       content_md: "这里",
       saved_at: savedAt.toISOString(),
+    });
+  });
+
+  it("dispatches a trusted published identity when storage is denied", () => {
+    const denied = () => {
+      throw new DOMException("denied");
+    };
+    const getItem = vi
+      .spyOn(window.localStorage, "getItem")
+      .mockImplementation(denied);
+    const setItem = vi
+      .spyOn(window.localStorage, "setItem")
+      .mockImplementation(denied);
+    const removeItem = vi
+      .spyOn(window.localStorage, "removeItem")
+      .mockImplementation(denied);
+    expect(saveComposeDraft(instance, "无法落盘但发布成功")).toBe(false);
+    const cleared = vi.fn();
+    window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+
+    clearComposeDraft(instance, {
+      reason: "published",
+      contentMd: "无法落盘但发布成功",
+    });
+
+    window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+    expect(cleared).toHaveBeenCalledOnce();
+    const detail = (cleared.mock.calls[0]?.[0] as CustomEvent).detail as Record<
+      string,
+      unknown
+    >;
+    expect(detail).toMatchObject({
+      schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
+      instance_id: instance,
+      content_md: "无法落盘但发布成功",
+    });
+    expect(Date.parse(String(detail.saved_at))).not.toBeNaN();
+    expect(getItem).toHaveBeenCalled();
+    expect(setItem).toHaveBeenCalled();
+    expect(removeItem).toHaveBeenCalledWith(composeDraftKey(instance));
+  });
+
+  it("uses the trusted published identity when the stored draft is absent or invalid", () => {
+    for (const stored of [null, '{"unexpected":true}']) {
+      window.localStorage.clear();
+      if (stored) {
+        window.localStorage.setItem(composeDraftKey(instance), stored);
+      }
+      const cleared = vi.fn();
+      window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+
+      clearComposeDraft(instance, {
+        reason: "published",
+        contentMd: "服务端已经接受的正文",
+      });
+
+      window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+      expect(cleared).toHaveBeenCalledOnce();
+      expect((cleared.mock.calls[0]?.[0] as CustomEvent).detail).toMatchObject({
+        schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
+        instance_id: instance,
+        content_md: "服务端已经接受的正文",
+      });
+      expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    }
+  });
+
+  it("keeps logout as an explicit all-clear operation", () => {
+    saveComposeDraft(instance, "退出时全部清理");
+    const cleared = vi.fn();
+    window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+
+    clearComposeDraft(instance, { reason: "logout" });
+
+    window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    expect((cleared.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
+      schema: COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
+      instance_id: instance,
+      reason: "logout",
     });
   });
 

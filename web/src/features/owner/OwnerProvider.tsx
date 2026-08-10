@@ -392,7 +392,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       const marker = nextMarker(markerRef.current);
       clearSession("guest", marker);
       broadcast({ type: "clear-session", marker });
-      clearComposeDraft(instanceId);
+      clearComposeDraft(instanceId, { reason: "logout" });
     },
     [api, broadcast, clearSession],
   );
