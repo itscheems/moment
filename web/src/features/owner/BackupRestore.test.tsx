@@ -300,10 +300,13 @@ describe("owner backup and restore", () => {
     );
     render(<App />);
     await screen.findByRole("heading", { name: "备份与恢复" });
+    await waitFor(() => expect(resolveInitial).toBeTypeOf("function"));
     expect(screen.getByLabelText(/站点标题/)).toBeDisabled();
     expect(screen.getByRole("button", { name: "选择图片" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "轮换凭据" })).toBeDisabled();
-    resolveInitial(failure("IMPORT_STAGING_INVALID", 409));
+    await act(async () => {
+      resolveInitial(failure("IMPORT_STAGING_INVALID", 409));
+    });
     await waitFor(() =>
       expect(screen.getByLabelText(/站点标题/)).toBeEnabled(),
     );
