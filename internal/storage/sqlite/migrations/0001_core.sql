@@ -145,7 +145,10 @@ CREATE TABLE site_settings (
     title TEXT NOT NULL,
     bio TEXT NOT NULL,
     timezone TEXT NOT NULL CHECK (timezone <> ''),
-    public_base_url TEXT NOT NULL CHECK (public_base_url <> ''),
+    public_base_url TEXT CHECK (
+        public_base_url IS NULL
+        OR (public_base_url <> '' AND public_base_url = trim(public_base_url))
+    ),
     avatar_media_id TEXT REFERENCES media(id) ON DELETE RESTRICT,
     comments_enabled INTEGER NOT NULL CHECK (comments_enabled IN (0, 1))
 ) STRICT;

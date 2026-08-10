@@ -307,6 +307,41 @@ VALUES (999, 'future', 1, ?)`, strings.Repeat("f", 64)); err != nil {
 	})
 }
 
+func TestSchemaCatalogTamperingFailsReadiness(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		statement string
+	}{
+		{name: "authority table", statement: `DROP TABLE entries`},
+		{name: "FTS virtual table", statement: `DROP TABLE entry_fts`},
+		{name: "comment insert trigger", statement: `DROP TRIGGER comments_parent_insert_guard`},
+		{name: "comment update trigger", statement: `DROP TRIGGER comments_parent_update_guard`},
+		{name: "required index", statement: `DROP INDEX entries_timeline_idx`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, runtimeState := openTestDatabase(t, Options{})
+			if _, err := db.write.ExecContext(ctx, testCase.statement); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Ready(ctx); !errors.Is(err, ErrNotReady) || !errors.Is(err, ErrSchemaIncomplete) {
+				t.Fatalf("live tampered schema readiness error = %v", err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatal(err)
+			}
+			restarted, err := runtimefs.Open(runtimeState.Root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = Open(ctx, restarted, Options{})
+			if !errors.Is(err, ErrNotReady) || !errors.Is(err, ErrSchemaIncomplete) {
+				t.Fatalf("tampered schema was reported ready: %v", err)
+			}
+		})
+	}
+}
+
 func TestFailedMigrationBatchRollsBackAndLeavesDatabaseNotReady(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -402,10 +437,28 @@ INSERT INTO media VALUES (?, ?, '../escape.jpg', 'escape.jpg', 'image/jpeg', 1, 
 
 	mustWrite(t, db, `
 INSERT INTO site_settings (id, title, bio, timezone, public_base_url, avatar_media_id, comments_enabled)
-VALUES (1, 'Moment', '', 'Asia/Shanghai', 'https://example.test', ?, 1)`, mediaTwo)
+VALUES (1, 'Moment', '', 'Asia/Shanghai', NULL, ?, 1)`, mediaTwo)
+	var publicBaseURL sql.NullString
+	if err := db.read.QueryRowContext(ctx, `SELECT public_base_url FROM site_settings WHERE id = 1`).Scan(&publicBaseURL); err != nil {
+		t.Fatal(err)
+	}
+	if publicBaseURL.Valid {
+		t.Fatalf("unset public base URL was not preserved as NULL: %+v", publicBaseURL)
+	}
+	mustWrite(t, db, `UPDATE site_settings SET public_base_url = 'https://example.test' WHERE id = 1`)
+	if err := db.read.QueryRowContext(ctx, `SELECT public_base_url FROM site_settings WHERE id = 1`).Scan(&publicBaseURL); err != nil {
+		t.Fatal(err)
+	}
+	if !publicBaseURL.Valid || publicBaseURL.String != "https://example.test" {
+		t.Fatalf("configured public base URL was not preserved: %+v", publicBaseURL)
+	}
+	mustWrite(t, db, `UPDATE site_settings SET public_base_url = NULL WHERE id = 1`)
 	assertWriteRejected(t, db, `
 INSERT INTO site_settings (id, title, bio, timezone, public_base_url, comments_enabled)
 VALUES (2, 'Other', '', 'UTC', 'https://other.test', 1)`)
+	assertWriteRejected(t, db, `UPDATE site_settings SET public_base_url = '' WHERE id = 1`)
+	assertWriteRejected(t, db, `UPDATE site_settings SET public_base_url = '   ' WHERE id = 1`)
+	assertCount(t, db.read, `SELECT count(*) FROM site_settings`, 1)
 	assertWriteRejected(t, db, `UPDATE site_settings SET comments_enabled = 2 WHERE id = 1`)
 	assertWriteRejected(t, db, `DELETE FROM media WHERE id = ?`, mediaTwo)
 

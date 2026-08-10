@@ -31,11 +31,12 @@ const (
 
 // Stable storage lifecycle failures.
 var (
-	ErrNotReady       = errors.New("SQLite schema is not ready")
-	ErrClosed         = errors.New("SQLite database is closed")
-	ErrMigrationDrift = errors.New("SQLite migration checksum drift")
-	ErrSchemaTooNew   = errors.New("SQLite schema is newer than this binary")
-	ErrFTSUnavailable = errors.New("SQLite FTS5 trigram capability is unavailable")
+	ErrNotReady         = errors.New("SQLite schema is not ready")
+	ErrClosed           = errors.New("SQLite database is closed")
+	ErrMigrationDrift   = errors.New("SQLite migration checksum drift")
+	ErrSchemaTooNew     = errors.New("SQLite schema is newer than this binary")
+	ErrSchemaIncomplete = errors.New("SQLite schema catalog is incomplete")
+	ErrFTSUnavailable   = errors.New("SQLite FTS5 trigram capability is unavailable")
 )
 
 // Options bounds connection behavior. Zero values select safe defaults.
@@ -161,6 +162,9 @@ func (db *Database) bootstrap(ctx context.Context) error {
 	if err := applyMigrations(ctx, db.write, db.migrations, time.Now()); err != nil {
 		return db.failReadiness(err)
 	}
+	if err := verifySchemaCatalog(ctx, db.write); err != nil {
+		return db.failReadiness(err)
+	}
 	if err := db.probeCapabilities(ctx); err != nil {
 		return db.failReadiness(err)
 	}
@@ -194,6 +198,9 @@ func (db *Database) Ready(ctx context.Context) error {
 	}
 	if len(applied) != len(db.migrations) {
 		return fmt.Errorf("%w: applied migration count %d, expected %d", ErrNotReady, len(applied), len(db.migrations))
+	}
+	if err := verifySchemaCatalog(ctx, db.read); err != nil {
+		return fmt.Errorf("%w: %w", ErrNotReady, err)
 	}
 	return nil
 }
