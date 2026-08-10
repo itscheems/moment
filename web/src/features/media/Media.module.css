@@ -1,0 +1,455 @@
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.composerMedia {
+  margin-block-start: var(--space-4);
+  border-block: 1px solid var(--border-subtle);
+  padding-block: var(--space-3);
+}
+
+.mediaToolbar,
+.mediaToolbar > div,
+.editorStatus,
+.editorActions,
+.altModes,
+.lightboxActions {
+  display: flex;
+  align-items: center;
+}
+
+.mediaToolbar {
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.mediaToolbar > div {
+  gap: var(--space-2);
+}
+
+.mediaToolbar strong {
+  font-size: var(--text-sm);
+}
+
+.mediaToolbar span,
+.mediaGuidance,
+.editorStatus span,
+.altInput small {
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.mediaToolbar button,
+.editorActions button,
+.lightboxActions button,
+.lightboxClose {
+  min-block-size: var(--target-size);
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-3);
+  color: var(--text-secondary);
+  background: transparent;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.mediaToolbar button {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.mediaToolbar button[aria-disabled="true"],
+.editorActions button:disabled,
+.lightboxActions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mediaToolbar input[type="file"] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.mediaGuidance {
+  margin: var(--space-2) 0 0;
+  line-height: 1.5;
+}
+
+.mediaError {
+  margin: var(--space-2) 0 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.mediaEditorList {
+  list-style: none;
+  display: grid;
+  gap: 0;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.mediaEditorList > li {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: var(--space-4);
+  border-block-start: 1px solid var(--border-subtle);
+  padding-block: var(--space-4);
+}
+
+.editorPreview {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius-action);
+  background: var(--surface-muted);
+}
+
+.editorPreview img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.editorPreviewPending {
+  inline-size: 100%;
+  block-size: 100%;
+  display: grid;
+  place-items: center;
+  padding: var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.editorPreview > span {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  min-inline-size: 1.8rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.35rem;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  font-family: var(--font-utility);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.editorMain {
+  min-inline-size: 0;
+}
+
+.editorStatus {
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.editorStatus strong {
+  font-size: var(--text-sm);
+}
+
+.editorMain progress {
+  inline-size: 100%;
+  block-size: 0.35rem;
+  margin-block-start: var(--space-2);
+  accent-color: var(--accent);
+}
+
+.altFieldset {
+  border: 0;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.altFieldset legend,
+.altInput > span {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.altModes {
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block-start: var(--space-2);
+}
+
+.altModes label {
+  min-block-size: var(--target-size);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.altModes input {
+  accent-color: var(--accent);
+}
+
+.altInput {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+
+.altInput textarea {
+  inline-size: 100%;
+  resize: vertical;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface);
+  line-height: 1.5;
+}
+
+.altInput textarea[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.altInput small {
+  justify-self: end;
+}
+
+.editorActions {
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-block-start: var(--space-2);
+}
+
+.editorActions button:hover:not(:disabled),
+.lightboxActions button:hover:not(:disabled),
+.lightboxClose:hover {
+  color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.imageGrid {
+  --media-gap: 3px;
+  display: grid;
+  gap: var(--media-gap);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  margin-block-start: var(--space-3);
+  background: var(--border-subtle);
+}
+
+.imageTile {
+  position: relative;
+  min-block-size: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: var(--surface-muted);
+  cursor: zoom-in;
+}
+
+.imageTile img,
+.lightboxStage img {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.imageTile:hover img,
+.imageTile:focus-visible img {
+  transform: scale(1.015);
+}
+
+.imageTile img {
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+
+.imageGrid[data-media-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.imageGrid[data-media-count="1"] .imageTile {
+  aspect-ratio: 16 / 10;
+  max-block-size: 34rem;
+}
+
+.imageGrid[data-media-count="2"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.imageGrid[data-media-count="2"] .imageTile,
+.imageGrid[data-media-count="4"] .imageTile {
+  aspect-ratio: 1;
+}
+
+.imageGrid[data-media-count="3"],
+.imageGrid[data-media-count="4"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  aspect-ratio: 16 / 11;
+}
+
+.imageGrid[data-media-count="3"] .imageTile:first-child {
+  grid-row: span 2;
+}
+
+.imageGrid[data-media-count="5"],
+.imageGrid[data-media-count="6"],
+.imageGrid[data-media-count="7"],
+.imageGrid[data-media-count="8"],
+.imageGrid[data-media-count="9"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(5.5rem, 1fr);
+  aspect-ratio: 1;
+}
+
+.imageGrid[data-media-count="5"] .imageTile:first-child,
+.imageGrid[data-media-count="7"] .imageTile:first-child,
+.imageGrid[data-media-count="8"] .imageTile:first-child {
+  grid-column: span 2;
+  grid-row: span 2;
+}
+
+.orderMark {
+  position: absolute;
+  inset-block-end: var(--space-2);
+  inset-inline-end: var(--space-2);
+  min-inline-size: 1.8rem;
+  border-radius: 999px;
+  padding: 0.12rem 0.35rem;
+  color: #fff;
+  background: rgb(10 20 14 / 72%);
+  font-family: var(--font-utility);
+  font-size: 0.65rem;
+  text-align: center;
+}
+
+.mediaFallback,
+.lightboxFallback {
+  inline-size: 100%;
+  block-size: 100%;
+  display: grid;
+  place-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  color: var(--text-tertiary);
+  background: var(--surface-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.mediaFallback > span {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+}
+
+.lightboxBackdrop {
+  position: fixed;
+  z-index: calc(var(--layer-popover) + 1);
+  inset: 0;
+  background: rgb(7 12 9 / 88%);
+}
+
+.lightboxViewport {
+  position: fixed;
+  z-index: calc(var(--layer-popover) + 2);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(var(--space-4), env(safe-area-inset-top))
+    max(var(--space-4), env(safe-area-inset-right))
+    max(var(--space-4), env(safe-area-inset-bottom))
+    max(var(--space-4), env(safe-area-inset-left));
+}
+
+.lightboxPopup {
+  inline-size: min(70rem, 100%);
+  max-block-size: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  padding: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+
+.lightboxDescription {
+  max-inline-size: 48rem;
+  margin: 0 var(--space-12, 3rem) var(--space-3) 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.lightboxClose {
+  position: absolute;
+  inset-block-start: max(var(--space-4), env(safe-area-inset-top));
+  inset-inline-end: max(var(--space-4), env(safe-area-inset-right));
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+}
+
+.lightboxStage {
+  min-block-size: 12rem;
+  max-block-size: min(72dvh, 52rem);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--canvas);
+}
+
+.lightboxStage img {
+  object-fit: contain;
+}
+
+.lightboxActions {
+  justify-content: center;
+  gap: var(--space-2);
+  padding-block-start: var(--space-3);
+}
+
+@media (max-width: 719px) {
+  .mediaEditorList > li {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  .imageGrid[data-media-count="5"],
+  .imageGrid[data-media-count="6"],
+  .imageGrid[data-media-count="7"],
+  .imageGrid[data-media-count="8"],
+  .imageGrid[data-media-count="9"] {
+    grid-auto-rows: minmax(4.25rem, 1fr);
+  }
+
+  .lightboxViewport {
+    padding-inline: 0;
+  }
+
+  .lightboxPopup {
+    border-inline: 0;
+    border-radius: 0;
+  }
+
+  .lightboxActions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .imageTile img {
+    transition: none;
+  }
+}

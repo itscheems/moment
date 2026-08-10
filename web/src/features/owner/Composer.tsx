@@ -6,6 +6,16 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import { MediaComposer } from "../media/MediaComposer";
+import {
+  altValue,
+  applyUpload,
+  fileValidation,
+  itemsFromPost,
+  mediaInput,
+  mediaValidation,
+  type ComposerMediaItem,
+} from "../media/mediaState";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
   COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
@@ -31,6 +41,72 @@ import styles from "./Owner.module.css";
 
 const MAX_CONTENT = 20_000;
 const DRAFT_REMOVAL_REPAIR_DELAY_MS = 50;
+
+function createMediaKey(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return Array.from(crypto.getRandomValues(new Uint8Array(12)), (value) =>
+    value.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+function newMediaItem(file: File): ComposerMediaItem {
+  return {
+    key: `local-${createMediaKey()}`,
+    file,
+    objectUrl: URL.createObjectURL(file),
+    localPreviewUrl: null,
+    mediaId: null,
+    previewUrl: "",
+    originalUrl: "",
+    width: null,
+    height: null,
+    byteSize: null,
+    animatedOriginal: file.type === "image/gif",
+    altMode: "missing",
+    altText: "",
+    state: "queued",
+    progress: 0,
+    error: null,
+  };
+}
+
+function readLocalPreview(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("local media preview is not a data URL"));
+    });
+    reader.addEventListener("error", () =>
+      reject(reader.error ?? new Error("local media preview failed")),
+    );
+    reader.readAsDataURL(file);
+  });
+}
+
+function releaseMedia(items: ComposerMediaItem[]): void {
+  for (const item of items) {
+    if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
+  }
+}
+
+function uploadMessage(error: unknown): string {
+  if (!(error instanceof PublicApiError)) {
+    return "图片没有上传完成。文字和已完成的图片都已保留，可以重试。";
+  }
+  switch (error.code) {
+    case "MEDIA_TYPE_UNSUPPORTED":
+      return "图片格式不受支持，请选择 JPEG、PNG、WebP 或 GIF。";
+    case "MEDIA_TOO_LARGE":
+      return "图片超过大小限制，请移除或压缩后重试。";
+    case "MEDIA_DIMENSIONS_EXCEEDED":
+      return "图片尺寸或 GIF 帧数超过安全限制。";
+    case "MEDIA_CORRUPT":
+      return "图片内容无效或与文件类型不一致，请重新选择。";
+    default:
+      return "图片没有上传完成。文字和已完成的图片都已保留，可以重试。";
+  }
+}
 
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {
@@ -64,10 +140,12 @@ export function Composer({
   site,
   variant,
   post,
+  active = true,
 }: {
   site: SiteIdentity;
   variant: "inline" | "page" | "edit";
   post?: PublicPost;
+  active?: boolean;
 }) {
   const { navigate, setNavigationBlocker } = useNavigation();
   const { api, session, expireIfInvalidSession } = useOwner();
@@ -85,18 +163,63 @@ export function Composer({
   );
   const [activeDraft, setActiveDraft] = useState<ComposeDraft | null>(draft);
   const [announcement, setAnnouncement] = useState("");
+  const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>(() =>
+    itemsFromPost(post?.media ?? []),
+  );
   const pendingRef = useRef(false);
   const allowLeaveRef = useRef(false);
   const dirtyRef = useRef(false);
   const activeDraftRef = useRef(activeDraft);
+  const mediaItemsRef = useRef(mediaItems);
+  const mediaUploadsRef = useRef(new Map<string, AbortController>());
+  const mountedRef = useRef(true);
   const draftRemovalRepairRef = useRef<number | null>(null);
   const navigationBlockerId = useRef(Symbol("composer-navigation-blocker"));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const idempotencyKey = useRef(createIdempotencyKey());
   const count = useMemo(() => Array.from(content).length, [content]);
-  const valid = content.trim().length > 0 && count <= MAX_CONTENT;
+  const mediaError = mediaValidation(mediaItems);
+  const initialMedia = post?.media ?? [];
+  const mediaChanged =
+    mediaItems.length !== initialMedia.length ||
+    mediaItems.some((item, index) => {
+      const initial = initialMedia[index];
+      return (
+        !initial ||
+        item.mediaId !== initial.mediaId ||
+        altValue(item) !== initial.altText
+      );
+    });
+  const valid =
+    content.trim().length > 0 && count <= MAX_CONTENT && mediaError === null;
   const hasUnpublishedChange =
-    dirty && content !== initialContent && !allowLeaveRef.current;
+    dirty &&
+    (content !== initialContent || mediaChanged) &&
+    !allowLeaveRef.current;
+
+  const replaceMedia = (next: ComposerMediaItem[]) => {
+    mediaItemsRef.current = next;
+    setMediaItems(next);
+  };
+
+  const clearMedia = () => {
+    for (const controller of mediaUploadsRef.current.values())
+      controller.abort();
+    mediaUploadsRef.current.clear();
+    const current = mediaItemsRef.current;
+    releaseMedia(current);
+    mediaItemsRef.current = [];
+    setMediaItems([]);
+  };
+
+  const markMediaEdited = (message: string) => {
+    allowLeaveRef.current = false;
+    dirtyRef.current = true;
+    setDirty(true);
+    setError(null);
+    setAnnouncement(message);
+    idempotencyKey.current = createIdempotencyKey();
+  };
 
   useEffect(() => {
     if (!session || !authExpired) return;
@@ -105,6 +228,29 @@ export function Composer({
     setAnnouncement("会话已刷新，可以重试当前操作。");
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }, [authExpired, session]);
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      for (const controller of mediaUploadsRef.current.values())
+        controller.abort();
+      mediaUploadsRef.current.clear();
+      releaseMedia(mediaItemsRef.current);
+      mediaItemsRef.current = [];
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (active || variant !== "inline" || mediaItemsRef.current.length === 0) {
+      return;
+    }
+    clearMedia();
+    if (content === initialContent) {
+      dirtyRef.current = false;
+      setDirty(false);
+    }
+  }, [active, content, initialContent, variant]);
 
   useEffect(() => {
     const instanceId = site.instanceId;
@@ -118,6 +264,7 @@ export function Composer({
       dirtyRef.current = false;
       setDirty(false);
       setError(null);
+      clearMedia();
     };
     const cancelDraftRemovalRepair = () => {
       if (draftRemovalRepairRef.current !== null) {
@@ -239,10 +386,100 @@ export function Composer({
   }, [
     content,
     hasUnpublishedChange,
+    mediaItems,
     setNavigationBlocker,
     site.instanceId,
     variant,
   ]);
+
+  const uploadOne = async (key: string, csrfToken: string) => {
+    const current = mediaItemsRef.current.find((item) => item.key === key);
+    if (!current || current.mediaId || !current.file) return;
+    const controller = new AbortController();
+    mediaUploadsRef.current.get(key)?.abort();
+    mediaUploadsRef.current.set(key, controller);
+    replaceMedia(
+      mediaItemsRef.current.map((item) =>
+        item.key === key
+          ? { ...item, state: "uploading", progress: 0, error: null }
+          : item,
+      ),
+    );
+    try {
+      const uploaded = await api.uploadMedia(
+        csrfToken,
+        current.file,
+        (progress) => {
+          if (
+            !mountedRef.current ||
+            mediaUploadsRef.current.get(key) !== controller
+          ) {
+            return;
+          }
+          replaceMedia(
+            mediaItemsRef.current.map((item) =>
+              item.key === key && item.state === "uploading"
+                ? { ...item, progress }
+                : item,
+            ),
+          );
+        },
+        controller.signal,
+      );
+      if (
+        !mountedRef.current ||
+        mediaUploadsRef.current.get(key) !== controller ||
+        !mediaItemsRef.current.some((item) => item.key === key)
+      ) {
+        return;
+      }
+      replaceMedia(
+        mediaItemsRef.current.map((item) =>
+          item.key === key ? applyUpload(item, uploaded) : item,
+        ),
+      );
+    } catch (nextError) {
+      if (
+        !mountedRef.current ||
+        mediaUploadsRef.current.get(key) !== controller ||
+        !mediaItemsRef.current.some((item) => item.key === key)
+      ) {
+        throw nextError;
+      }
+      const message = uploadMessage(nextError);
+      replaceMedia(
+        mediaItemsRef.current.map((item) =>
+          item.key === key
+            ? { ...item, state: "failed", progress: 0, error: message }
+            : item,
+        ),
+      );
+      throw nextError;
+    } finally {
+      if (mediaUploadsRef.current.get(key) === controller) {
+        mediaUploadsRef.current.delete(key);
+      }
+    }
+  };
+
+  const retryUpload = async (key: string) => {
+    if (!session || pendingRef.current) return;
+    setError(null);
+    setAnnouncement("正在重试图片上传…");
+    try {
+      await uploadOne(key, session.csrfToken);
+      setAnnouncement("图片已就绪，可以继续发布。 ");
+    } catch (nextError) {
+      if (!mountedRef.current) return;
+      if (expireIfInvalidSession(nextError)) {
+        setAuthExpired(true);
+        setError(
+          "当前写入会话已失效。文字、图片和上传结果已保留，刷新身份后可以重试。",
+        );
+      }
+      setAnnouncement("");
+    }
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -266,9 +503,24 @@ export function Composer({
       }
     }
     try {
+      for (const item of [...mediaItemsRef.current]) {
+        if (!item.mediaId) {
+          setAnnouncement(
+            `正在处理第 ${mediaItemsRef.current.findIndex((candidate) => candidate.key === item.key) + 1} 张图片…`,
+          );
+          await uploadOne(item.key, session.csrfToken);
+        }
+      }
+      const usages = mediaInput(mediaItemsRef.current);
+      setAnnouncement(variant === "edit" ? "正在保存…" : "正在发布…");
       const saved = post
-        ? await api.update(session.csrfToken, post.id, content)
-        : await api.create(session.csrfToken, content, idempotencyKey.current);
+        ? await api.update(session.csrfToken, post.id, content, usages)
+        : await api.create(
+            session.csrfToken,
+            content,
+            idempotencyKey.current,
+            usages,
+          );
       allowLeaveRef.current = true;
       dirtyRef.current = false;
       setDirty(false);
@@ -280,6 +532,7 @@ export function Composer({
       }
       announceOwnerPost({ kind: post ? "updated" : "created", post: saved });
       setAnnouncement(post ? "已保存" : "已发布");
+      clearMedia();
       if (variant === "inline") {
         setContent("");
         idempotencyKey.current = createIdempotencyKey();
@@ -293,9 +546,15 @@ export function Composer({
     } catch (nextError) {
       if (expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("当前写入会话已失效。文字已保留，刷新身份后可以重试。");
+        setError(
+          "当前写入会话已失效。文字、图片和上传结果已保留，刷新身份后可以重试。",
+        );
       } else {
-        setError(messageFor(nextError));
+        setError(
+          mediaItemsRef.current.some((item) => item.state === "failed")
+            ? uploadMessage(nextError)
+            : messageFor(nextError),
+        );
       }
       setAnnouncement("");
     } finally {
@@ -323,6 +582,7 @@ export function Composer({
       draft,
     });
     setDraft(null);
+    clearMedia();
     setAnnouncement("本地草稿已丢弃");
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   };
@@ -343,7 +603,7 @@ export function Composer({
             </p>
             <h2>{post ? "编辑文字" : "现在，写下来"}</h2>
           </div>
-          <span>{variant === "inline" ? "N 新建" : "纯文本"}</span>
+          <span>{variant === "inline" ? "N 新建" : "文字优先 · 可附图"}</span>
         </header>
 
         {draft ? (
@@ -396,6 +656,7 @@ export function Composer({
               dirtyRef.current = true;
               setDirty(true);
               setError(null);
+              idempotencyKey.current = createIdempotencyKey();
             }}
             onCompositionEnd={() => undefined}
             onKeyDown={(event) => {
@@ -425,6 +686,76 @@ export function Composer({
               {MAX_CONTENT.toLocaleString("zh-CN")}
             </span>
           </div>
+          <MediaComposer
+            disabled={pending}
+            items={mediaItems}
+            onAdd={(files) => {
+              const next = [...mediaItemsRef.current];
+              for (const file of files) {
+                const invalid = fileValidation(file, next);
+                if (invalid) continue;
+                const item = newMediaItem(file);
+                next.push(item);
+                void readLocalPreview(file)
+                  .then((localPreviewUrl) => {
+                    if (
+                      !mountedRef.current ||
+                      !mediaItemsRef.current.some(
+                        (candidate) =>
+                          candidate.key === item.key && candidate.file === file,
+                      )
+                    ) {
+                      return;
+                    }
+                    replaceMedia(
+                      mediaItemsRef.current.map((candidate) =>
+                        candidate.key === item.key
+                          ? { ...candidate, localPreviewUrl }
+                          : candidate,
+                      ),
+                    );
+                  })
+                  .catch(() => {
+                    if (!mountedRef.current) return;
+                    setAnnouncement(
+                      "有一张本地缩略图暂时无法显示；原文件仍可继续上传。",
+                    );
+                  });
+              }
+              replaceMedia(next);
+              markMediaEdited(`已加入 ${files.length} 张图片。`);
+            }}
+            onChange={(next, message) => {
+              replaceMedia(next);
+              markMediaEdited(message);
+            }}
+            onRemove={(key) => {
+              const current = mediaItemsRef.current;
+              mediaUploadsRef.current.get(key)?.abort();
+              mediaUploadsRef.current.delete(key);
+              const removed = current.find((item) => item.key === key);
+              if (removed?.objectUrl) URL.revokeObjectURL(removed.objectUrl);
+              const next = current.filter((item) => item.key !== key);
+              replaceMedia(next);
+              markMediaEdited("图片已移除，其余图片顺序已更新。");
+              if (next.length === 0 && content === initialContent) {
+                dirtyRef.current = false;
+                setDirty(false);
+              }
+            }}
+            onRetry={(key) => void retryUpload(key)}
+          />
+          {mediaItems.some((item) => item.altMode === "missing") ? (
+            <p className={styles.storageNotice} role="status">
+              {mediaItems.filter((item) => item.altMode === "missing").length}{" "}
+              张图片尚未描述；这不会阻止发布。
+            </p>
+          ) : null}
+          {mediaError ? (
+            <p className={styles.formError} role="alert">
+              {mediaError}
+            </p>
+          ) : null}
           {draftUnavailable && variant !== "edit" ? (
             <p className={styles.storageNotice}>
               本地草稿恢复不可用；仍可正常发布。

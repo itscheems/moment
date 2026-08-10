@@ -157,7 +157,11 @@ function PublicApp() {
       {!siteLoading && hasTimeline ? (
         <div hidden={route.id !== "home"}>
           {owner.state === "owner" || owner.state === "expired" ? (
-            <Composer site={site} variant="inline" />
+            <Composer
+              active={route.id === "home"}
+              site={site}
+              variant="inline"
+            />
           ) : null}
           <TimelinePage
             api={api}

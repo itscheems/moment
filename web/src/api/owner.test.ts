@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { OwnerApi } from "./owner";
 
@@ -16,6 +16,7 @@ const post = {
   created_at: "2026-08-10T01:02:03.000Z",
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
+  media: [],
 };
 
 const comment = {
@@ -30,7 +31,225 @@ const comment = {
   created_at: "2026-08-10T01:03:00Z",
 };
 
+class FakeUploadRequest extends EventTarget {
+  static last: FakeUploadRequest | null = null;
+
+  readonly upload = new EventTarget();
+  readonly headers = new Map<string, string>();
+  method = "";
+  url = "";
+  withCredentials = false;
+  status = 0;
+  responseText = "";
+  responseType: XMLHttpRequestResponseType = "";
+  sent: Document | XMLHttpRequestBodyInit | null = null;
+  contentType = "application/json";
+
+  constructor() {
+    super();
+    FakeUploadRequest.last = this;
+  }
+
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+
+  setRequestHeader(name: string, value: string) {
+    this.headers.set(name, value);
+  }
+
+  getResponseHeader(name: string) {
+    return name.toLowerCase() === "content-type" ? this.contentType : null;
+  }
+
+  send(body: Document | XMLHttpRequestBodyInit | null) {
+    this.sent = body;
+  }
+
+  abort() {
+    this.dispatchEvent(new Event("abort"));
+    this.dispatchEvent(new Event("loadend"));
+  }
+
+  respond(status: number, body: unknown, contentType = "application/json") {
+    this.status = status;
+    this.responseText = JSON.stringify(body);
+    this.contentType = contentType;
+    this.dispatchEvent(new Event("load"));
+    this.dispatchEvent(new Event("loadend"));
+  }
+}
+
+const uploaded = {
+  media: {
+    id: "01K2ABCDEF0123456789ABCDE1",
+    sha256: "a".repeat(64),
+    original_name: "rain.png",
+    mime_type: "image/png",
+    byte_size: 1024,
+    width: 800,
+    height: 600,
+    created_at: "2026-08-10T01:02:03.000Z",
+    unreferenced_since: "2026-08-10T01:02:03.000Z",
+    animated_original: false,
+  },
+  preview: {
+    recipe_version: "preview-v1",
+    sha256: "b".repeat(64),
+    mime_type: "image/png",
+    width: 800,
+    height: 600,
+    animated_original: false,
+  },
+  original_url: "/api/v1/media/01K2ABCDEF0123456789ABCDE1",
+  preview_url: "/api/v1/media/01K2ABCDEF0123456789ABCDE1/preview",
+};
+
+afterEach(() => {
+  FakeUploadRequest.last = null;
+  vi.unstubAllGlobals();
+});
+
 describe("owner API client", () => {
+  it("submits exact ordered usages while preserving nullable and padded alt text", async () => {
+    const media = [
+      {
+        mediaId: "01K2ABCDEF0123456789ABCDE1",
+        position: 8,
+        altText: null,
+      },
+      {
+        mediaId: "01K2ABCDEF0123456789ABCDE1",
+        position: 4,
+        altText: "",
+      },
+      {
+        mediaId: "01K2ABCDEF0123456789ABCDE2",
+        position: 2,
+        altText: "  雨后的街道  ",
+      },
+    ];
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        void input;
+        void init;
+        return json(
+          {
+            data: {
+              ...post,
+              media: media.map((usage, position) => ({
+                media_id: usage.mediaId,
+                position,
+                alt_text: usage.altText,
+              })),
+            },
+            meta: { replayed: false },
+          },
+          201,
+        );
+      },
+    );
+    const api = new OwnerApi(fetcher as typeof fetch);
+    await api.create("csrf", post.content_md, "web-media-order", media);
+
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({
+      content_md: post.content_md,
+      media: [
+        { media_id: media[0].mediaId, position: 0, alt_text: null },
+        { media_id: media[1].mediaId, position: 1, alt_text: "" },
+        {
+          media_id: media[2].mediaId,
+          position: 2,
+          alt_text: "  雨后的街道  ",
+        },
+      ],
+    });
+  });
+
+  it("uploads with progress and accepts only the canonical HTTP 201 JSON contract", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+    const api = new OwnerApi(vi.fn() as typeof fetch);
+    const progress = vi.fn();
+    const promise = api.uploadMedia(
+      "csrf-upload",
+      new File(["image"], "rain.png", { type: "image/png" }),
+      progress,
+    );
+    const request = FakeUploadRequest.last;
+    expect(request?.method).toBe("POST");
+    expect(request?.url).toBe("/api/v1/owner/media");
+    expect(request?.withCredentials).toBe(true);
+    expect(request?.headers.get("X-CSRF-Token")).toBe("csrf-upload");
+    expect(request?.sent).toBeInstanceOf(FormData);
+    request?.upload.dispatchEvent(
+      new ProgressEvent("progress", {
+        lengthComputable: true,
+        loaded: 1,
+        total: 2,
+      }),
+    );
+    request?.respond(201, {
+      data: uploaded,
+      meta: { request_id: "req_upload" },
+    });
+
+    await expect(promise).resolves.toMatchObject({
+      id: uploaded.media.id,
+      previewUrl: uploaded.preview_url,
+      originalUrl: uploaded.original_url,
+    });
+    expect(progress).toHaveBeenCalledWith(50);
+    expect(progress).toHaveBeenLastCalledWith(100);
+  });
+
+  it.each([
+    {
+      name: "wrong success status",
+      status: 200,
+      body: { data: uploaded, meta: { request_id: "req_upload" } },
+      contentType: "application/json",
+    },
+    {
+      name: "non-JSON success",
+      status: 201,
+      body: { data: uploaded, meta: { request_id: "req_upload" } },
+      contentType: "text/plain",
+    },
+    {
+      name: "extra metadata",
+      status: 201,
+      body: {
+        data: uploaded,
+        meta: { request_id: "req_upload", replayed: false },
+      },
+      contentType: "application/json",
+    },
+    {
+      name: "uncontrolled original URL",
+      status: 201,
+      body: {
+        data: { ...uploaded, original_url: "/storage/private/rain.png" },
+        meta: { request_id: "req_upload" },
+      },
+      contentType: "application/json",
+    },
+  ])(
+    "rejects $name for upload success",
+    async ({ status, body, contentType }) => {
+      vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+      const api = new OwnerApi(vi.fn() as typeof fetch);
+      const promise = api.uploadMedia(
+        "csrf-upload",
+        new File(["image"], "rain.png", { type: "image/png" }),
+      );
+      FakeUploadRequest.last?.respond(status, body, contentType);
+      await expect(promise).rejects.toMatchObject({
+        code: "API_RESPONSE_INVALID",
+      });
+    },
+  );
+
   it("exchanges the bearer once and keeps mutations on cookie plus CSRF", async () => {
     const fetcher = vi.fn(
       async (input: RequestInfo | URL, _init?: RequestInit) => {

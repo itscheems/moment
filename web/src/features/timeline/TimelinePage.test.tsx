@@ -30,6 +30,7 @@ function post(id: string, content: string) {
     created_at: "2026-08-10T01:00:00.000Z",
     updated_at: "2026-08-10T01:00:00.000Z",
     published_at: "2026-08-10T01:00:00.000Z",
+    media: [],
   };
 }
 

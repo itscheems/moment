@@ -15,6 +15,13 @@ export interface PublicPost {
   createdAt: string;
   updatedAt: string;
   publishedAt: string;
+  media: PublicMediaUsage[];
+}
+
+export interface PublicMediaUsage {
+  mediaId: string;
+  position: number;
+  altText: string | null;
 }
 
 export interface TimelinePage {
@@ -433,6 +440,44 @@ function parseCommentThread(value: unknown, postId: string): CommentThread {
 
 export function parsePost(value: unknown): PublicPost {
   if (!isRecord(value)) throw invalidResponse("post must be an object");
+  if (
+    !hasExactKeys(value, [
+      "id",
+      "content_md",
+      "content_html",
+      "created_at",
+      "updated_at",
+      "published_at",
+      "media",
+    ]) ||
+    !Array.isArray(value.media) ||
+    value.media.length > 9
+  ) {
+    throw invalidResponse("post contains an unsupported or missing field");
+  }
+  const media = value.media.map((item, index): PublicMediaUsage => {
+    if (
+      !isRecord(item) ||
+      !hasExactKeys(item, ["media_id", "position", "alt_text"]) ||
+      !ULID_PATTERN.test(stringField(item, "media_id")) ||
+      item.position !== index
+    ) {
+      throw invalidResponse("post media usage is not canonical");
+    }
+    const altText = nullableStringField(item, "alt_text");
+    if (
+      altText !== null &&
+      ((altText !== "" && !altText.trim()) ||
+        Array.from(altText).length > 1_000)
+    ) {
+      throw invalidResponse("post media alt_text is not canonical");
+    }
+    return {
+      mediaId: stringField(item, "media_id"),
+      position: index,
+      altText,
+    };
+  });
   return {
     id: stringField(value, "id"),
     contentMd: stringField(value, "content_md"),
@@ -440,6 +485,7 @@ export function parsePost(value: unknown): PublicPost {
     createdAt: instantField(value, "created_at"),
     updatedAt: instantField(value, "updated_at"),
     publishedAt: instantField(value, "published_at"),
+    media,
   };
 }
 

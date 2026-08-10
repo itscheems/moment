@@ -80,6 +80,92 @@ class FakeBroadcastChannel {
   }
 }
 
+class ControlledUploadRequest extends EventTarget {
+  static requests: ControlledUploadRequest[] = [];
+
+  readonly upload = new EventTarget();
+  readonly headers = new Map<string, string>();
+  method = "";
+  url = "";
+  withCredentials = false;
+  status = 0;
+  responseText = "";
+  sent: Document | XMLHttpRequestBodyInit | null = null;
+  aborted = false;
+
+  constructor() {
+    super();
+    ControlledUploadRequest.requests.push(this);
+  }
+
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+
+  setRequestHeader(name: string, value: string) {
+    this.headers.set(name, value);
+  }
+
+  getResponseHeader(name: string) {
+    return name.toLowerCase() === "content-type" ? "application/json" : null;
+  }
+
+  send(body: Document | XMLHttpRequestBodyInit | null) {
+    this.sent = body;
+  }
+
+  abort() {
+    this.aborted = true;
+    this.dispatchEvent(new Event("abort"));
+    this.dispatchEvent(new Event("loadend"));
+  }
+
+  fail() {
+    this.dispatchEvent(new Event("error"));
+    this.dispatchEvent(new Event("loadend"));
+  }
+
+  succeed(body: unknown) {
+    this.status = 201;
+    this.responseText = JSON.stringify(body);
+    this.dispatchEvent(new Event("load"));
+    this.dispatchEvent(new Event("loadend"));
+  }
+
+  static reset() {
+    ControlledUploadRequest.requests = [];
+  }
+}
+
+const uploadEnvelope = {
+  data: {
+    media: {
+      id: "01K2ABCDEF0123456789ABCDE7",
+      sha256: "a".repeat(64),
+      original_name: "rain.png",
+      mime_type: "image/png",
+      byte_size: 5,
+      width: 800,
+      height: 600,
+      created_at: "2026-08-10T01:02:03.000Z",
+      unreferenced_since: "2026-08-10T01:02:03.000Z",
+      animated_original: false,
+    },
+    preview: {
+      recipe_version: "preview-v1",
+      sha256: "b".repeat(64),
+      mime_type: "image/png",
+      width: 800,
+      height: 600,
+      animated_original: false,
+    },
+    original_url: "/api/v1/media/01K2ABCDEF0123456789ABCDE7",
+    preview_url: "/api/v1/media/01K2ABCDEF0123456789ABCDE7/preview",
+  },
+  meta: { request_id: "req_upload" },
+};
+
 function clearanceMessage(clearance: Record<string, unknown>) {
   return {
     schema: "moment.compose-clearance-message.v1",
@@ -107,7 +193,15 @@ const siteEnvelope = {
   meta: { instance_id: instance, request_id: "req_site" },
 };
 
-function post(content = "刚写下的 Moment", id = "01K2ABCDEF0123456789ABCDE0") {
+function post(
+  content = "刚写下的 Moment",
+  id = "01K2ABCDEF0123456789ABCDE0",
+  media: Array<{
+    media_id: string;
+    position: number;
+    alt_text: string | null;
+  }> = [],
+) {
   return {
     id,
     content_md: content,
@@ -115,6 +209,7 @@ function post(content = "刚写下的 Moment", id = "01K2ABCDEF0123456789ABCDE0"
     created_at: "2026-08-10T01:00:00.000Z",
     updated_at: "2026-08-10T01:00:00.000Z",
     published_at: "2026-08-10T01:00:00.000Z",
+    media,
   };
 }
 
@@ -195,6 +290,7 @@ describe("owner composing flow", () => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     FakeBroadcastChannel.reset();
+    ControlledUploadRequest.reset();
     vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
     vi.stubGlobal(
       "matchMedia",
@@ -205,6 +301,12 @@ describe("owner composing flow", () => {
       }),
     );
     vi.stubGlobal("scrollTo", vi.fn());
+    const NativeURL = URL;
+    class ObjectURL extends NativeURL {
+      static createObjectURL = vi.fn(() => "blob:moment-local-preview");
+      static revokeObjectURL = vi.fn();
+    }
+    vi.stubGlobal("URL", ObjectURL);
     vi.stubGlobal(
       "confirm",
       vi.fn(() => true),
@@ -214,6 +316,7 @@ describe("owner composing flow", () => {
   afterEach(() => {
     cleanup();
     FakeBroadcastChannel.reset();
+    ControlledUploadRequest.reset();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -346,6 +449,155 @@ describe("owner composing flow", () => {
       () => expect(screen.getByText("十秒内写下这一刻")).toBeInTheDocument(),
       { timeout: 3_000 },
     );
+  });
+
+  it("reuses an uploaded media ID when post submission fails and retries", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
+    let creates = 0;
+    const fetcher = installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        creates += 1;
+        if (creates === 1) {
+          return json(
+            {
+              error: {
+                code: "INTERNAL",
+                message: "temporary",
+                details: {},
+                request_id: "req_post_failed",
+              },
+            },
+            500,
+          );
+        }
+        return json(
+          {
+            data: post("雨落下来", "01K2ABCDEF0123456789ABCDE0", [
+              {
+                media_id: uploadEnvelope.data.media.id,
+                position: 0,
+                alt_text: null,
+              },
+            ]),
+            meta: { request_id: "req_post_created", replayed: false },
+          },
+          201,
+        );
+      }
+    });
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
+      target: { value: "雨落下来" },
+    });
+    const file = new File(["image"], "rain.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("图片文件"), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+    await waitFor(() =>
+      expect(ControlledUploadRequest.requests).toHaveLength(1),
+    );
+    ControlledUploadRequest.requests[0].succeed(uploadEnvelope);
+    expect(await screen.findByText(/操作没有完成/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(ControlledUploadRequest.requests).toHaveLength(1);
+    const createCalls = fetcher.mock.calls.filter(
+      ([url, init]) =>
+        String(url) === "/api/v1/owner/posts" && init?.method === "POST",
+    );
+    expect(createCalls).toHaveLength(2);
+    for (const [, init] of createCalls) {
+      expect(JSON.parse(String(init?.body)).media).toEqual([
+        {
+          media_id: uploadEnvelope.data.media.id,
+          position: 0,
+          alt_text: null,
+        },
+      ]);
+    }
+  });
+
+  it("renders a CSP-compatible local preview without extending the text draft", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    installApi();
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
+      target: { value: "预览仍不进入草稿" },
+    });
+    const file = new File(["image"], "rain.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("图片文件"), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() =>
+      expect(
+        document.querySelector<HTMLImageElement>(
+          'ol[aria-label="待发布图片，按发布顺序"] img',
+        )?.src,
+      ).toMatch(/^data:image\/png;base64,/),
+    );
+    expect(URL.createObjectURL).toHaveBeenCalledWith(file);
+
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    expect(
+      JSON.parse(window.localStorage.getItem(composeDraftKey(instance))!),
+    ).toEqual({
+      content_md: "预览仍不进入草稿",
+      saved_at: expect.any(String),
+    });
+  });
+
+  it("aborts removed uploads and ignores a late success without reviving the usage", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
+    const fetcher = installApi();
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
+      target: { value: "不会被迟到上传污染" },
+    });
+    fireEvent.change(screen.getByLabelText("图片文件"), {
+      target: {
+        files: [new File(["image"], "rain.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+    await waitFor(() =>
+      expect(ControlledUploadRequest.requests).toHaveLength(1),
+    );
+    ControlledUploadRequest.requests[0].fail();
+    expect(
+      await screen.findByRole("button", { name: /重试上传/ }),
+    ).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: /重试上传/ }));
+    await waitFor(() =>
+      expect(ControlledUploadRequest.requests).toHaveLength(2),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /移除/ }));
+    expect(ControlledUploadRequest.requests[1].aborted).toBe(true);
+    expect(screen.queryByText("第 1 张")).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith(
+      "blob:moment-local-preview",
+    );
+
+    ControlledUploadRequest.requests[1].succeed(uploadEnvelope);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(screen.queryByText("第 1 张")).toBeNull();
+    expect(
+      fetcher.mock.calls.filter(
+        ([url, init]) =>
+          String(url) === "/api/v1/owner/posts" && init?.method === "POST",
+      ),
+    ).toHaveLength(0);
   });
 
   it("preserves input before an auth-expiry response and requires a fresh exchange", async () => {
@@ -1223,7 +1475,9 @@ describe("owner composing flow", () => {
         String(url) === `/api/v1/owner/posts/${item.id}` &&
         init?.method === "PATCH",
     );
-    expect(patchCall?.[1]?.body).toBe(JSON.stringify({ content_md: "编辑后" }));
+    expect(patchCall?.[1]?.body).toBe(
+      JSON.stringify({ content_md: "编辑后", media: [] }),
+    );
     expect(new Headers(patchCall?.[1]?.headers).get("X-CSRF-Token")).toBe(
       "csrf-from-session",
     );

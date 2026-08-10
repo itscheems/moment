@@ -2,6 +2,7 @@ import type { PublicPost, SiteIdentity } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
 import { formatMomentDate } from "./dates";
 import { OwnerPostActions } from "../owner/OwnerPostActions";
+import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
 
 export function SiteAvatar({
@@ -95,6 +96,7 @@ export function PostPresentation({
           className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
           dangerouslySetInnerHTML={{ __html: post.contentHtml }}
         />
+        <ImageGrid media={post.media} />
         {collapsed ? (
           <InternalLink
             className={styles.readMore}

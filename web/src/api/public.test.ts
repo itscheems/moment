@@ -16,6 +16,7 @@ const post = {
   created_at: "2026-08-10T01:02:03.000Z",
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
+  media: [],
 };
 
 const rootComment = {
@@ -43,6 +44,102 @@ const replyComment = {
 };
 
 describe("public API client", () => {
+  it("preserves canonical ordered media and all nullable alt states", async () => {
+    const usages = [
+      {
+        media_id: "01K2ABCDEF0123456789ABCDE1",
+        position: 0,
+        alt_text: null,
+      },
+      {
+        media_id: "01K2ABCDEF0123456789ABCDE1",
+        position: 1,
+        alt_text: "",
+      },
+      {
+        media_id: "01K2ABCDEF0123456789ABCDE2",
+        position: 2,
+        alt_text: "  雨后的街道  ",
+      },
+    ];
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({ data: { ...post, media: usages }, meta: {} }),
+      ) as typeof fetch,
+    );
+    await expect(api.post(post.id)).resolves.toMatchObject({
+      media: [
+        { mediaId: usages[0].media_id, position: 0, altText: null },
+        { mediaId: usages[1].media_id, position: 1, altText: "" },
+        { mediaId: usages[2].media_id, position: 2, altText: "  雨后的街道  " },
+      ],
+    });
+  });
+
+  it.each([
+    {
+      name: "missing media array",
+      value: (() => {
+        const value = { ...post } as Record<string, unknown>;
+        delete value.media;
+        return value;
+      })(),
+    },
+    {
+      name: "position gap",
+      value: {
+        ...post,
+        media: [
+          {
+            media_id: "01K2ABCDEF0123456789ABCDE1",
+            position: 1,
+            alt_text: null,
+          },
+        ],
+      },
+    },
+    {
+      name: "missing alt field",
+      value: {
+        ...post,
+        media: [{ media_id: "01K2ABCDEF0123456789ABCDE1", position: 0 }],
+      },
+    },
+    {
+      name: "blank provided alt",
+      value: {
+        ...post,
+        media: [
+          {
+            media_id: "01K2ABCDEF0123456789ABCDE1",
+            position: 0,
+            alt_text: "   ",
+          },
+        ],
+      },
+    },
+    {
+      name: "overlong code-point alt",
+      value: {
+        ...post,
+        media: [
+          {
+            media_id: "01K2ABCDEF0123456789ABCDE1",
+            position: 0,
+            alt_text: "🙂".repeat(1_001),
+          },
+        ],
+      },
+    },
+  ])("rejects non-canonical post media: $name", async ({ value }) => {
+    const api = new PublicApi(
+      vi.fn(async () => json({ data: value, meta: {} })) as typeof fetch,
+    );
+    await expect(api.post(post.id)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+  });
+
   it("maps site identity and preserves opaque timeline cursors", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -85,6 +182,7 @@ describe("public API client", () => {
           createdAt: post.created_at,
           updatedAt: post.updated_at,
           publishedAt: post.published_at,
+          media: [],
         },
       ],
       nextCursor: "opaque+/=cursor",

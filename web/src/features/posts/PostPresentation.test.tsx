@@ -26,6 +26,7 @@ function makePost(contentMd: string, contentHtml: string): PublicPost {
     createdAt: "2026-08-10T01:00:00.000Z",
     updatedAt: "2026-08-10T01:00:00.000Z",
     publishedAt: "2026-08-10T01:00:00.000Z",
+    media: [],
   };
 }
 
