@@ -17,10 +17,12 @@ interface LocationSnapshot {
 interface NavigationContextValue extends LocationSnapshot {
   navigate: (href: string) => void;
   goBack: (fallback: string) => void;
+  replaceTimelineProgress: (cursor: string) => void;
+  restoreCurrentEntry: () => void;
 }
 
 interface MomentHistoryState {
-  momentFocusPostId?: string;
+  momentFocusKey?: string;
   momentInternal?: boolean;
   momentScrollY?: number;
 }
@@ -40,23 +42,37 @@ function scrollPosition(state: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function historyState(): MomentHistoryState {
+  return typeof window.history.state === "object" &&
+    window.history.state !== null
+    ? window.history.state
+    : {};
+}
+
+function restoreEntry(state: unknown) {
+  window.requestAnimationFrame(() => {
+    window.scrollTo({ top: scrollPosition(state), behavior: "auto" });
+    const focusKey = (state as MomentHistoryState | null)?.momentFocusKey;
+    if (!focusKey) return;
+    Array.from(document.querySelectorAll<HTMLElement>("[data-focus-key]"))
+      .find((element) => element.dataset.focusKey === focusKey)
+      ?.focus({ preventScroll: true });
+  });
+}
+
 export function NavigationProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState(currentLocation);
 
   const navigate = useCallback((href: string) => {
-    const currentState =
-      typeof window.history.state === "object" && window.history.state !== null
-        ? window.history.state
-        : {};
-    const activePost =
+    const activeFocusKey =
       document.activeElement instanceof HTMLElement
-        ? document.activeElement.closest<HTMLElement>("[data-post-id]")?.dataset
-            .postId
+        ? document.activeElement.closest<HTMLElement>("[data-focus-key]")
+            ?.dataset.focusKey
         : undefined;
     window.history.replaceState(
       {
-        ...currentState,
-        momentFocusPostId: activePost,
+        ...historyState(),
+        momentFocusKey: activeFocusKey,
         momentScrollY: window.scrollY,
       },
       "",
@@ -69,6 +85,21 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     );
     setLocation(currentLocation());
     window.scrollTo({ top: 0, behavior: "auto" });
+  }, []);
+
+  const replaceTimelineProgress = useCallback((cursor: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("loaded_through", cursor);
+    window.history.replaceState(
+      { ...historyState(), momentScrollY: window.scrollY },
+      "",
+      `${url.pathname}${url.search}${url.hash}`,
+    );
+    setLocation(currentLocation());
+  }, []);
+
+  const restoreCurrentEntry = useCallback(() => {
+    restoreEntry(window.history.state);
   }, []);
 
   const goBack = useCallback(
@@ -86,28 +117,52 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       setLocation(currentLocation());
-      window.requestAnimationFrame(() => {
-        window.scrollTo({ top: scrollPosition(event.state), behavior: "auto" });
-        const state = event.state as MomentHistoryState | null;
-        if (state?.momentFocusPostId) {
-          const post = Array.from(
-            document.querySelectorAll<HTMLElement>("[data-post-id]"),
-          ).find(
-            (element) => element.dataset.postId === state.momentFocusPostId,
-          );
-          post
-            ?.querySelector<HTMLElement>('a[href^="/m/"]')
-            ?.focus({ preventScroll: true });
-        }
-      });
+      restoreEntry(event.state);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
+  useEffect(() => {
+    const previousScrollRestoration = window.history.scrollRestoration;
+    window.history.scrollRestoration = "manual";
+    let frame = 0;
+    const saveScroll = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        window.history.replaceState(
+          { ...historyState(), momentScrollY: window.scrollY },
+          "",
+          window.location.href,
+        );
+      });
+    };
+    const saveScrollNow = () => {
+      window.history.replaceState(
+        { ...historyState(), momentScrollY: window.scrollY },
+        "",
+        window.location.href,
+      );
+    };
+    window.addEventListener("scroll", saveScroll, { passive: true });
+    window.addEventListener("pagehide", saveScrollNow);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", saveScroll);
+      window.removeEventListener("pagehide", saveScrollNow);
+      window.history.scrollRestoration = previousScrollRestoration;
+    };
+  }, []);
+
   const value = useMemo(
-    () => ({ ...location, navigate, goBack }),
-    [location, navigate, goBack],
+    () => ({
+      ...location,
+      navigate,
+      goBack,
+      replaceTimelineProgress,
+      restoreCurrentEntry,
+    }),
+    [location, navigate, goBack, replaceTimelineProgress, restoreCurrentEntry],
   );
   return (
     <NavigationContext.Provider value={value}>

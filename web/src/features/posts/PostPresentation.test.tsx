@@ -46,6 +46,10 @@ describe("shared post presentation", () => {
       "href",
       "/m/01K2ABCDEF0123456789ABCDE0",
     );
+    expect(screen.getByRole("link", { name: "阅读全文" })).toHaveAttribute(
+      "data-focus-key",
+      "01K2ABCDEF0123456789ABCDE0:read-more",
+    );
     expect(screen.getByText("08.10")).toHaveAccessibleName(
       expect.stringContaining("2026"),
     );

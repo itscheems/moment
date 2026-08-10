@@ -76,7 +76,11 @@ export function PostPresentation({
         <header className={styles.byline}>
           <strong>{title}</strong>
           <span aria-hidden="true">·</span>
-          <InternalLink href={detailHref} title={published.absolute}>
+          <InternalLink
+            data-focus-key={`${post.id}:relative-time`}
+            href={detailHref}
+            title={published.absolute}
+          >
             <time dateTime={post.publishedAt}>{published.relative}</time>
           </InternalLink>
         </header>
@@ -85,11 +89,19 @@ export function PostPresentation({
           dangerouslySetInnerHTML={{ __html: post.contentHtml }}
         />
         {collapsed ? (
-          <InternalLink className={styles.readMore} href={detailHref}>
+          <InternalLink
+            className={styles.readMore}
+            data-focus-key={`${post.id}:read-more`}
+            href={detailHref}
+          >
             阅读全文
           </InternalLink>
         ) : !detail ? (
-          <InternalLink className={styles.openPost} href={detailHref}>
+          <InternalLink
+            className={styles.openPost}
+            data-focus-key={`${post.id}:open-post`}
+            href={detailHref}
+          >
             打开完整 Moment
           </InternalLink>
         ) : null}

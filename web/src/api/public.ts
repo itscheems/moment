@@ -86,8 +86,44 @@ function nullableStringField(
 
 function instantField(record: Record<string, unknown>, field: string): string {
   const value = stringField(record, field);
-  const instant = new Date(value);
-  if (Number.isNaN(instant.valueOf()) || !value.endsWith("Z")) {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/,
+  );
+  if (!match) {
+    throw invalidResponse(`response field ${field} must be a UTC instant`);
+  }
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] =
+    match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > monthDays[month - 1] ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
     throw invalidResponse(`response field ${field} must be a UTC instant`);
   }
   return value;

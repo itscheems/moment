@@ -174,12 +174,17 @@ describe("App shell and public routes", () => {
       await screen.findByRole("heading", { name: "Moment" }),
     ).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/m/${item.id}`);
-    fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
+    const backLink = screen.getByRole("link", { name: "返回时间流" });
+    backLink.focus();
+    fireEvent.click(backLink);
 
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(screen.getByRole("heading", { name: "时间流" })).toBeInTheDocument();
     expect(timelineRequests).toBe(1);
-    await waitFor(() => expect(openLink).toHaveFocus());
+    await new Promise<void>((resolve) =>
+      window.requestAnimationFrame(() => resolve()),
+    );
+    expect(openLink).toHaveFocus();
     expect(fetcher).toHaveBeenCalledWith(
       `/api/v1/posts/${item.id}`,
       expect.any(Object),
@@ -190,6 +195,63 @@ describe("App shell and public routes", () => {
         behavior: "auto",
       }),
     );
+  });
+
+  it("returns to the exact trigger on a previously loaded page", async () => {
+    const first = post("01K2ABCDEF0123456789ABCDE0", "最近的一段");
+    const second = post("01K2ABCDEF0123456789ABCDE1", "第二页的一段");
+    let timelineRequests = 0;
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url.startsWith("/api/v1/posts?")) {
+        timelineRequests += 1;
+        return url.includes("cursor=cursor-one")
+          ? json(timelineEnvelope([second]))
+          : json({
+              data: { items: [first] },
+              meta: { next_cursor: "cursor-one", request_id: "req_posts" },
+            });
+      }
+      if (url === `/api/v1/posts/${second.id}`) {
+        return json({ data: second, meta: { request_id: "req_post" } });
+      }
+      return json({}, 404);
+    });
+    render(<App />);
+    await screen.findByText("最近的一段");
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
+    await screen.findByText("第二页的一段");
+    expect(window.location.search).toContain("loaded_through=cursor-one");
+
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(920);
+    const secondPost = screen
+      .getByText("第二页的一段")
+      .closest<HTMLElement>("[data-post-id]");
+    const trigger = secondPost?.querySelector<HTMLAnchorElement>(
+      '[data-focus-key$=":open-post"]',
+    );
+    expect(trigger).toBeTruthy();
+    trigger?.focus();
+    fireEvent.click(trigger!);
+    expect(
+      await screen.findByRole("heading", { name: "Moment" }),
+    ).toBeInTheDocument();
+
+    const backLink = screen.getByRole("link", { name: "返回时间流" });
+    backLink.focus();
+    fireEvent.click(backLink);
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    await new Promise<void>((resolve) =>
+      window.requestAnimationFrame(() => resolve()),
+    );
+
+    expect(window.location.search).toContain("loaded_through=cursor-one");
+    expect(timelineRequests).toBe(2);
+    expect(trigger).toHaveFocus();
+    expect(window.scrollTo).toHaveBeenCalledWith({
+      top: 920,
+      behavior: "auto",
+    });
   });
 
   it("renders a tailored direct-detail 404", async () => {

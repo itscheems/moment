@@ -90,6 +90,45 @@ describe("public API client", () => {
     });
   });
 
+  it.each([
+    "2026-08-10Z",
+    "2026-02-30T01:02:03Z",
+    "2026-13-01T01:02:03Z",
+    "2026-08-10T24:02:03Z",
+    "2026-08-10T01:60:03Z",
+    "2026-08-10T01:02:60Z",
+    "2026-08-10T01:02:03+00:00",
+  ])("rejects a non-RFC3339 UTC instant: %s", async (publishedAt) => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: { items: [{ ...post, published_at: publishedAt }] },
+          meta: { next_cursor: null },
+        }),
+      ) as typeof fetch,
+    );
+
+    await expect(api.timeline()).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+  });
+
+  it("accepts valid UTC instants, including leap day and nanoseconds", async () => {
+    const publishedAt = "2024-02-29T23:59:59.123456789Z";
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: { items: [{ ...post, published_at: publishedAt }] },
+          meta: { next_cursor: null },
+        }),
+      ) as typeof fetch,
+    );
+
+    await expect(api.timeline()).resolves.toMatchObject({
+      items: [{ publishedAt }],
+    });
+  });
+
   it("surfaces stable public errors without parsing message text", async () => {
     const api = new PublicApi(
       vi.fn(async () =>

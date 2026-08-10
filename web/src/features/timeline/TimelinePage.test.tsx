@@ -52,16 +52,34 @@ function renderTimeline(api: PublicApi, initialSearch = "") {
 
 describe("public timeline", () => {
   beforeEach(() => {
+    window.history.replaceState({}, "", "/");
+    vi.stubGlobal("scrollTo", vi.fn());
+    let nextFrame = 0;
+    const frames = new Map<number, number>();
     vi.stubGlobal(
       "requestAnimationFrame",
       vi.fn((callback: FrameRequestCallback) => {
-        window.setTimeout(() => callback(0), 0);
-        return 1;
+        const id = ++nextFrame;
+        const timer = window.setTimeout(() => {
+          frames.delete(id);
+          callback(0);
+        }, 0);
+        frames.set(id, timer);
+        return id;
+      }),
+    );
+    vi.stubGlobal(
+      "cancelAnimationFrame",
+      vi.fn((id: number) => {
+        const timer = frames.get(id);
+        if (timer !== undefined) window.clearTimeout(timer);
+        frames.delete(id);
       }),
     );
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     cleanup();
     vi.unstubAllGlobals();
   });
@@ -85,7 +103,89 @@ describe("public timeline", () => {
       "/api/v1/posts?limit=20&cursor=cursor-one&from=2026-08-01",
       expect.any(Object),
     );
+    expect(window.location.search).toContain("loaded_through=cursor-one");
     expect(screen.getByText("已经走到这段时间流的起点")).toBeInTheDocument();
+  });
+
+  it("replays the server cursor chain on refresh and restores scroll", async () => {
+    const first = post("01K2ABCDEF0123456789ABCDE0", "最近的一段");
+    const second = post("01K2ABCDEF0123456789ABCDE1", "更早的一段");
+    window.history.replaceState(
+      { momentScrollY: 720 },
+      "",
+      "/?loaded_through=cursor-one",
+    );
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("cursor=cursor-one")
+        ? page([second], null)
+        : page([first], "cursor-one"),
+    );
+
+    renderTimeline(
+      new PublicApi(fetcher as typeof fetch),
+      window.location.search,
+    );
+
+    expect(await screen.findByText("更早的一段")).toBeInTheDocument();
+    expect(screen.getByText("最近的一段")).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/posts?limit=20&cursor=cursor-one",
+      expect.any(Object),
+    );
+    await waitFor(() =>
+      expect(window.scrollTo).toHaveBeenCalledWith({
+        top: 720,
+        behavior: "auto",
+      }),
+    );
+  });
+
+  it("rejects an unreachable, duplicate, or cyclic restoration cursor", async () => {
+    const item = post("01K2ABCDEF0123456789ABCDE0", "不会部分显示");
+    const unreachable = vi.fn(async () => page([item], null));
+    const { unmount } = renderTimeline(
+      new PublicApi(unreachable as typeof fetch),
+      "?loaded_through=missing",
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "这次收到的内容无法显示",
+    );
+    expect(screen.queryByText("不会部分显示")).not.toBeInTheDocument();
+
+    unmount();
+    const duplicateParameter = vi.fn(async () => page([item], null));
+    const duplicateView = renderTimeline(
+      new PublicApi(duplicateParameter as typeof fetch),
+      "?loaded_through=one&loaded_through=two",
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "这次收到的内容无法显示",
+    );
+    expect(duplicateParameter).not.toHaveBeenCalled();
+
+    duplicateView.unmount();
+    let cyclicRequest = 0;
+    const cyclic = vi.fn(async () => {
+      cyclicRequest += 1;
+      return page(
+        [
+          cyclicRequest === 1
+            ? item
+            : post("01K2ABCDEF0123456789ABCDE1", "循环中的下一条"),
+        ],
+        "loop",
+      );
+    });
+    renderTimeline(
+      new PublicApi(cyclic as typeof fetch),
+      "?loaded_through=missing",
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "这次收到的内容无法显示",
+    );
+    expect(cyclic).toHaveBeenCalledTimes(2);
   });
 
   it("retries an initial failure without losing the deliberate error state", async () => {
