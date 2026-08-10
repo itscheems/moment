@@ -11,6 +11,7 @@ require (
 	github.com/spf13/pflag v1.0.9
 	github.com/yuin/goldmark v1.8.5
 	golang.org/x/image v0.44.0
+	golang.org/x/sys v0.47.0
 	modernc.org/sqlite v1.56.0
 )
 
@@ -46,7 +47,6 @@ require (
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
 	modernc.org/libc v1.74.4 // indirect

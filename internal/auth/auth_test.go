@@ -15,6 +15,36 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 )
 
+type stagedRandomReader struct {
+	mu      sync.Mutex
+	call    int
+	entered [2]chan struct{}
+	release [2]chan struct{}
+}
+
+func newStagedRandomReader() *stagedRandomReader {
+	return &stagedRandomReader{
+		entered: [2]chan struct{}{make(chan struct{}), make(chan struct{})},
+		release: [2]chan struct{}{make(chan struct{}), make(chan struct{})},
+	}
+}
+
+func (reader *stagedRandomReader) Read(buffer []byte) (int, error) {
+	reader.mu.Lock()
+	call := reader.call
+	reader.call++
+	reader.mu.Unlock()
+	if call >= len(reader.entered) {
+		return 0, errors.New("unexpected random read")
+	}
+	close(reader.entered[call])
+	<-reader.release[call]
+	for index := range buffer {
+		buffer[index] = byte(call + 1)
+	}
+	return len(buffer), nil
+}
+
 func initializedRuntime(t *testing.T) *runtimefs.Runtime {
 	t.Helper()
 	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
@@ -114,7 +144,11 @@ func TestBearerSessionsExpireAndRotationRevokesAllOldCredentials(t *testing.T) {
 		t.Fatalf("tampered session error = %v", err)
 	}
 
-	rotated, err := manager.Rotate()
+	grant, err := manager.AuthorizeBearer(credential.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := manager.RotateAuthorized(grant)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,9 +212,9 @@ func TestOfflineRotationUsesLockOwnershipNotLockFileExistence(t *testing.T) {
 	}
 }
 
-func TestConcurrentOnlineRotationsRemainDurableAndMonotonic(t *testing.T) {
+func TestConcurrentOnlineRotationsRequireCurrentAuthorityGrant(t *testing.T) {
 	runtimeState := initializedRuntime(t)
-	initializeOwner(t, runtimeState, time.Now())
+	original := initializeOwner(t, runtimeState, time.Now())
 	manager, err := NewManager(runtimeState.Root, Options{})
 	if err != nil {
 		t.Fatal(err)
@@ -189,15 +223,23 @@ func TestConcurrentOnlineRotationsRemainDurableAndMonotonic(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const rotations = 12
-	credentials := make(chan Credential, rotations)
-	errorsFound := make(chan error, rotations)
+	const attempts = 12
+	grants := make([]Grant, attempts)
+	for index := range grants {
+		grants[index], err = manager.AuthorizeBearer(original.Token)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	credentials := make(chan Credential, attempts)
+	errorsFound := make(chan error, attempts)
 	var group sync.WaitGroup
-	for range rotations {
+	for _, grant := range grants {
+		grant := grant
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			credential, err := manager.Rotate()
+			credential, err := manager.RotateAuthorized(grant)
 			if err != nil {
 				errorsFound <- err
 				return
@@ -206,22 +248,31 @@ func TestConcurrentOnlineRotationsRemainDurableAndMonotonic(t *testing.T) {
 		}()
 	}
 	group.Wait()
-	close(errorsFound)
-	for err := range errorsFound {
-		t.Fatal(err)
-	}
 	close(credentials)
-	var last Credential
-	for value := range credentials {
-		if value.SessionEpoch > last.SessionEpoch {
-			last = value
+	close(errorsFound)
+	var successful []Credential
+	for credential := range credentials {
+		successful = append(successful, credential)
+	}
+	if len(successful) != 1 {
+		t.Fatalf("successful rotations = %d, want 1", len(successful))
+	}
+	unauthorized := 0
+	for err := range errorsFound {
+		if !errors.Is(err, ErrUnauthorized) {
+			t.Fatal(err)
 		}
+		unauthorized++
 	}
-	if last.SessionEpoch != 1+rotations {
-		t.Fatalf("last epoch = %d", last.SessionEpoch)
+	if unauthorized != attempts-1 {
+		t.Fatalf("unauthorized rotations = %d, want %d", unauthorized, attempts-1)
 	}
-	if !manager.AuthenticateBearer(last.Token) {
-		t.Fatal("highest-epoch token is not live")
+	rotated := successful[0]
+	if rotated.SessionEpoch != 2 {
+		t.Fatalf("rotated epoch = %d", rotated.SessionEpoch)
+	}
+	if !manager.AuthenticateBearer(rotated.Token) || manager.AuthenticateBearer(original.Token) {
+		t.Fatal("rotation did not publish exactly one new bearer authority")
 	}
 	reloaded, err := NewManager(runtimeState.Root, Options{})
 	if err != nil {
@@ -231,8 +282,110 @@ func TestConcurrentOnlineRotationsRemainDurableAndMonotonic(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := reloaded.Status()
-	if err != nil || status.SessionEpoch != 1+rotations || !reloaded.AuthenticateBearer(last.Token) {
+	if err != nil || status.SessionEpoch != 2 || !reloaded.AuthenticateBearer(rotated.Token) {
 		t.Fatalf("reloaded status = %#v, err = %v", status, err)
+	}
+}
+
+func TestStaleSessionGrantCannotRotateCurrentAuthority(t *testing.T) {
+	runtimeState := initializedRuntime(t)
+	original := initializeOwner(t, runtimeState, time.Now())
+	manager, err := NewManager(runtimeState.Root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(); err != nil {
+		t.Fatal(err)
+	}
+	cookie, _, err := manager.IssueSession(original.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, first, err := manager.AuthorizeSession(cookie)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, stale, err := manager.AuthorizeSession(cookie)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := manager.RotateAuthorized(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.RotateAuthorized(stale); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("stale session grant rotation error = %v", err)
+	}
+	status, err := manager.Status()
+	if err != nil || status.SessionEpoch != 2 || !manager.AuthenticateBearer(rotated.Token) {
+		t.Fatalf("status = %#v, err = %v", status, err)
+	}
+}
+
+func TestSessionIssuanceAndRotationShareOneAuthorityDecision(t *testing.T) {
+	runtimeState := initializedRuntime(t)
+	original := initializeOwner(t, runtimeState, time.Now())
+	random := newStagedRandomReader()
+	manager, err := NewManager(runtimeState.Root, Options{Random: random})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(); err != nil {
+		t.Fatal(err)
+	}
+	grant, err := manager.AuthorizeBearer(original.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type sessionResult struct {
+		cookie  string
+		session Session
+		err     error
+	}
+	issued := make(chan sessionResult, 1)
+	go func() {
+		cookie, session, issueErr := manager.IssueSession(original.Token)
+		issued <- sessionResult{cookie: cookie, session: session, err: issueErr}
+	}()
+	<-random.entered[0]
+
+	type rotationOutcome struct {
+		credential Credential
+		err        error
+	}
+	rotated := make(chan rotationOutcome, 1)
+	go func() {
+		credential, rotateErr := manager.RotateAuthorized(grant)
+		rotated <- rotationOutcome{credential: credential, err: rotateErr}
+	}()
+	select {
+	case <-random.entered[1]:
+		t.Fatal("rotation entered random generation while session issuance held the authority lock")
+	case <-time.After(25 * time.Millisecond):
+	}
+
+	close(random.release[0])
+	select {
+	case <-random.entered[1]:
+	case <-time.After(time.Second):
+		t.Fatal("rotation did not proceed after session issuance completed")
+	}
+	issueResult := <-issued
+	if issueResult.err != nil || issueResult.session.Epoch != 1 {
+		t.Fatalf("issued session = %#v, err = %v", issueResult.session, issueResult.err)
+	}
+	if _, err := manager.ValidateSession(issueResult.cookie); err != nil {
+		t.Fatalf("session was not valid at issuance: %v", err)
+	}
+
+	close(random.release[1])
+	rotateResult := <-rotated
+	if rotateResult.err != nil || rotateResult.credential.SessionEpoch != 2 {
+		t.Fatalf("rotation = %#v, err = %v", rotateResult.credential, rotateResult.err)
+	}
+	if _, err := manager.ValidateSession(issueResult.cookie); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("issued session survived rotation: %v", err)
 	}
 }
 

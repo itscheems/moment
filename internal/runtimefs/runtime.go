@@ -312,7 +312,8 @@ func writeJSONAtomic(root, name string, value any) error {
 	return WritePrivateFileAtomic(root, name, data)
 }
 
-// WritePrivateFileAtomic durably publishes a mode-0600 file in root. The
+// WritePrivateFileAtomic durably publishes a platform-private file in root:
+// mode 0600 on POSIX and a protected principal allowlist DACL on Windows. The
 // basename restriction prevents callers from using the durability primitive as
 // an unchecked path-writing API. Publication uses the platform's atomic
 // replace primitive followed by the matching metadata barrier.
@@ -331,7 +332,7 @@ func WritePrivateFileAtomic(root, name string, data []byte) error {
 			_ = os.Remove(temporaryPath)
 		}
 	}()
-	if err := temporary.Chmod(0o600); err != nil {
+	if err := protectPrivateFile(temporaryPath); err != nil {
 		_ = temporary.Close()
 		return err
 	}

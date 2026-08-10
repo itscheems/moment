@@ -3,12 +3,14 @@ package ginhttp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/runtimefs"
 )
@@ -176,6 +178,12 @@ func TestBearerPrecedenceMalformedInputAndSessionExpiryFailClosed(t *testing.T) 
 	if response := performRequest(fixture.engine, malformed); response.Code != http.StatusUnauthorized {
 		t.Fatalf("malformed bearer fell back to cookie: %d", response.Code)
 	}
+	blank := ownerRequest(http.MethodGet, "/api/v1/owner/status", "")
+	blank.AddCookie(cookie)
+	blank.Header.Set("Authorization", " ")
+	if response := performRequest(fixture.engine, blank); response.Code != http.StatusUnauthorized {
+		t.Fatalf("blank authorization header fell back to cookie: %d", response.Code)
+	}
 
 	duplicate := ownerRequest(http.MethodGet, "/api/v1/owner/status", "")
 	duplicate.Header.Add("Authorization", "Bearer "+fixture.token)
@@ -206,6 +214,66 @@ func TestBearerAuthenticatedWriteDoesNotRequireCSRF(t *testing.T) {
 	response := performRequest(fixture.engine, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestConcurrentlyPreauthorizedOldBearerCanRotateOnlyOnce(t *testing.T) {
+	fixture := newOwnerTestFixture(t, false)
+	engine := fixture.engine.(*gin.Engine)
+	arrived := make(chan struct{}, 2)
+	release := make(chan struct{})
+	engine.POST("/api/v1/owner/test-rotate", RequireOwner(fixture.manager), func(ctx *gin.Context) {
+		arrived <- struct{}{}
+		<-release
+		grant, ok := ownerGrant(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		credential, err := fixture.manager.RotateAuthorized(grant)
+		if errors.Is(err, auth.ErrUnauthorized) {
+			unauthorized(ctx)
+			return
+		}
+		if err != nil {
+			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "owner token rotation failed", nil)
+			return
+		}
+		Success(ctx, http.StatusOK, credential, nil)
+	})
+
+	responses := make(chan *httptest.ResponseRecorder, 2)
+	for range 2 {
+		go func() {
+			request := ownerRequest(http.MethodPost, "/api/v1/owner/test-rotate", "")
+			request.Header.Set("Authorization", "Bearer "+fixture.token)
+			responses <- performRequest(engine, request)
+		}()
+	}
+	for range 2 {
+		select {
+		case <-arrived:
+		case <-time.After(time.Second):
+			t.Fatal("requests did not both reach the handler with old grants")
+		}
+	}
+	close(release)
+
+	statusCounts := map[int]int{}
+	var newToken string
+	for range 2 {
+		response := <-responses
+		statusCounts[response.Code]++
+		if response.Code == http.StatusOK {
+			newToken, _ = decodeDataMap(t, response)["token"].(string)
+		}
+	}
+	if statusCounts[http.StatusOK] != 1 || statusCounts[http.StatusUnauthorized] != 1 {
+		t.Fatalf("response status counts = %#v", statusCounts)
+	}
+	status, err := fixture.manager.Status()
+	if err != nil || status.SessionEpoch != 2 || newToken == "" || !fixture.manager.AuthenticateBearer(newToken) {
+		t.Fatalf("status = %#v, new token live = %t, err = %v", status, fixture.manager.AuthenticateBearer(newToken), err)
 	}
 }
 

@@ -3,6 +3,7 @@ package ginhttp
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -18,6 +19,7 @@ const (
 	// CSRFHeaderName carries the token authenticated inside a browser session.
 	CSRFHeaderName = "X-CSRF-Token"
 	ownerSourceKey = "moment.owner_source"
+	ownerGrantKey  = "moment.owner_grant"
 )
 
 // CookieOptions binds session cookies to the deployment environment. Production
@@ -59,13 +61,23 @@ func RequireOwner(manager *auth.Manager) gin.HandlerFunc {
 			unauthorized(ctx)
 			return
 		}
-		if len(authorizationValues) == 1 && strings.TrimSpace(authorizationValues[0]) != "" {
+		if len(authorizationValues) == 1 {
+			if strings.TrimSpace(authorizationValues[0]) == "" {
+				unauthorized(ctx)
+				return
+			}
 			parts := strings.Fields(authorizationValues[0])
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || !manager.AuthenticateBearer(parts[1]) {
+			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+				unauthorized(ctx)
+				return
+			}
+			grant, err := manager.AuthorizeBearer(parts[1])
+			if err != nil {
 				unauthorized(ctx)
 				return
 			}
 			ctx.Set(ownerSourceKey, "bearer")
+			ctx.Set(ownerGrantKey, grant)
 			ctx.Next()
 			return
 		}
@@ -75,7 +87,7 @@ func RequireOwner(manager *auth.Manager) gin.HandlerFunc {
 			unauthorized(ctx)
 			return
 		}
-		session, err := manager.ValidateSession(cookie.Value)
+		session, grant, err := manager.AuthorizeSession(cookie.Value)
 		if err != nil {
 			unauthorized(ctx)
 			return
@@ -85,6 +97,7 @@ func RequireOwner(manager *auth.Manager) gin.HandlerFunc {
 			return
 		}
 		ctx.Set(ownerSourceKey, "session")
+		ctx.Set(ownerGrantKey, grant)
 		ctx.Next()
 	}
 }
@@ -132,13 +145,31 @@ func ownerStatus(manager *auth.Manager) gin.HandlerFunc {
 
 func rotateToken(manager *auth.Manager) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		credential, err := manager.Rotate()
+		grant, ok := ownerGrant(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		credential, err := manager.RotateAuthorized(grant)
+		if errors.Is(err, auth.ErrUnauthorized) {
+			unauthorized(ctx)
+			return
+		}
 		if err != nil {
 			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "owner token rotation failed", nil)
 			return
 		}
 		Success(ctx, http.StatusOK, credential, nil)
 	}
+}
+
+func ownerGrant(ctx *gin.Context) (auth.Grant, bool) {
+	value, exists := ctx.Get(ownerGrantKey)
+	if !exists {
+		return auth.Grant{}, false
+	}
+	grant, ok := value.(auth.Grant)
+	return grant, ok
 }
 
 func setSessionCookie(ctx *gin.Context, value string, expiresAt time.Time, options CookieOptions) {

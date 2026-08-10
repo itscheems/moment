@@ -16,7 +16,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -83,6 +82,13 @@ type Session struct {
 	ExpiresAt time.Time
 	Epoch     uint64
 	CSRFToken string
+}
+
+// Grant is an opaque proof that a bearer token or browser session was valid
+// against one immutable authority snapshot. Callers cannot manufacture a
+// usable grant; mutations must revalidate it while holding the authority lock.
+type Grant struct {
+	authority *snapshot
 }
 
 type diskSecrets struct {
@@ -241,16 +247,7 @@ func RotateOffline(ctx context.Context, runtimeState *runtimefs.Runtime, options
 	return credential(token, next), nil
 }
 
-// Rotate changes the live server's bearer hash and epoch as one durable
-// authority update. The atomic snapshot is published before the token is
-// returned to the handler, so old credentials are invalid before the response.
-func (manager *Manager) Rotate() (Credential, error) {
-	manager.mutationMu.Lock()
-	defer manager.mutationMu.Unlock()
-	current := manager.current.Load()
-	if current == nil {
-		return Credential{}, ErrNotInitialized
-	}
+func (manager *Manager) rotateCurrent(current *snapshot) (Credential, error) {
 	token, next, err := manager.newSnapshot(current)
 	if err != nil {
 		return Credential{}, err
@@ -264,19 +261,27 @@ func (manager *Manager) Rotate() (Credential, error) {
 
 // AuthenticateBearer verifies the exact bearer value in constant time.
 func (manager *Manager) AuthenticateBearer(token string) bool {
+	_, err := manager.AuthorizeBearer(token)
+	return err == nil
+}
+
+// AuthorizeBearer verifies the exact bearer value and binds the resulting
+// grant to the same immutable authority snapshot used for verification.
+func (manager *Manager) AuthorizeBearer(token string) (Grant, error) {
 	current := manager.current.Load()
-	if current == nil || token == "" {
-		return false
+	if !authenticateBearer(current, token) {
+		return Grant{}, ErrUnauthorized
 	}
-	digest := sha256.Sum256([]byte(token))
-	return subtle.ConstantTimeCompare(digest[:], current.tokenHash[:]) == 1
+	return Grant{authority: current}, nil
 }
 
 // IssueSession exchanges a valid bearer for a signed, expiring, epoch-bound
 // browser session plus a CSRF token embedded in its authenticated payload.
 func (manager *Manager) IssueSession(token string) (string, Session, error) {
+	manager.mutationMu.Lock()
+	defer manager.mutationMu.Unlock()
 	current := manager.current.Load()
-	if current == nil || !manager.AuthenticateBearer(token) {
+	if !authenticateBearer(current, token) {
 		return "", Session{}, ErrUnauthorized
 	}
 	csrf, err := randomToken(manager.random, csrfTokenBytes)
@@ -297,36 +302,59 @@ func (manager *Manager) IssueSession(token string) (string, Session, error) {
 
 // ValidateSession verifies signature, expiry, and the currently active epoch.
 func (manager *Manager) ValidateSession(value string) (Session, error) {
+	session, _, err := manager.AuthorizeSession(value)
+	return session, err
+}
+
+// AuthorizeSession verifies a browser session and binds a grant to the same
+// immutable authority snapshot used for signature and epoch validation.
+func (manager *Manager) AuthorizeSession(value string) (Session, Grant, error) {
 	current := manager.current.Load()
 	if current == nil || value == "" || len(value) > maxSessionBytes {
-		return Session{}, ErrUnauthorized
+		return Session{}, Grant{}, ErrUnauthorized
 	}
 	parts := strings.Split(value, ".")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return Session{}, ErrUnauthorized
+		return Session{}, Grant{}, ErrUnauthorized
 	}
 	providedSignature, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil || !hmac.Equal(providedSignature, sign(current.signingKey[:], parts[0])) {
-		return Session{}, ErrUnauthorized
+		return Session{}, Grant{}, ErrUnauthorized
 	}
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil || len(payloadBytes) > maxSessionBytes {
-		return Session{}, ErrUnauthorized
+		return Session{}, Grant{}, ErrUnauthorized
 	}
 	var payload sessionPayload
 	decoder := json.NewDecoder(strings.NewReader(string(payloadBytes)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&payload); err != nil || payload.Epoch == 0 || payload.CSRFToken == "" {
-		return Session{}, ErrUnauthorized
+		return Session{}, Grant{}, ErrUnauthorized
 	}
 	if decoder.Decode(&struct{}{}) != io.EOF {
-		return Session{}, ErrUnauthorized
+		return Session{}, Grant{}, ErrUnauthorized
 	}
 	expiresAt := time.UnixMilli(payload.ExpiresAtMS).UTC()
 	if payload.Epoch != current.sessionEpoch || !expiresAt.After(manager.now().UTC()) {
-		return Session{}, ErrUnauthorized
+		return Session{}, Grant{}, ErrUnauthorized
 	}
-	return Session{ExpiresAt: expiresAt, Epoch: payload.Epoch, CSRFToken: payload.CSRFToken}, nil
+	return Session{ExpiresAt: expiresAt, Epoch: payload.Epoch, CSRFToken: payload.CSRFToken}, Grant{authority: current}, nil
+}
+
+// RotateAuthorized changes the live authority only if the caller's grant still
+// names the current immutable snapshot. Verification and mutation therefore
+// form one authority decision even when requests were admitted concurrently.
+func (manager *Manager) RotateAuthorized(grant Grant) (Credential, error) {
+	manager.mutationMu.Lock()
+	defer manager.mutationMu.Unlock()
+	current := manager.current.Load()
+	if current == nil {
+		return Credential{}, ErrNotInitialized
+	}
+	if grant.authority == nil || grant.authority != current {
+		return Credential{}, ErrUnauthorized
+	}
+	return manager.rotateCurrent(current)
 }
 
 func (manager *Manager) newSnapshot(previous *snapshot) (string, *snapshot, error) {
@@ -384,8 +412,8 @@ func readSnapshot(root string) (*snapshot, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("%w: secrets.json is not a regular file", ErrInvalidSecrets)
 	}
-	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
-		return nil, fmt.Errorf("%w: mode is %04o", ErrSecretPermissions, info.Mode().Perm())
+	if err := runtimefs.VerifyPrivateFilePermissions(path); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrSecretPermissions, err)
 	}
 	if info.Size() <= 0 || info.Size() > maxSecretsBytes {
 		return nil, fmt.Errorf("%w: unexpected file size", ErrInvalidSecrets)
@@ -479,6 +507,14 @@ func randomToken(source io.Reader, size int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func authenticateBearer(current *snapshot, token string) bool {
+	if current == nil || token == "" {
+		return false
+	}
+	digest := sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare(digest[:], current.tokenHash[:]) == 1
 }
 
 func sign(key []byte, payload string) []byte {
