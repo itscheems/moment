@@ -384,7 +384,7 @@ func (service *SearchService) scanDerived(ctx context.Context, store SearchStore
 			return err
 		}
 		for _, source := range sources {
-			expected, err := domain.NormalizeContentV1(source.ContentMD)
+			expected, err := domain.NormalizeContentV2(source.ContentMD)
 			if err != nil {
 				return storedEntryError(source.ID)
 			}
@@ -413,7 +413,7 @@ func (service *SearchService) writeAllDerived(ctx context.Context, store SearchS
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			contentText, err := domain.NormalizeContentV1(source.ContentMD)
+			contentText, err := domain.NormalizeContentV2(source.ContentMD)
 			if err != nil {
 				return storedEntryError(source.ID)
 			}
@@ -435,7 +435,7 @@ func prepareSearchQuery(raw string) (SearchRepositoryQuery, string, error) {
 	if count := utf8.RuneCountInString(raw); count > MaxSearchQueryCodePoints {
 		return SearchRepositoryQuery{}, "", domain.NewError(domain.CodeInvalidArgument, "q exceeds the code-point limit", map[string]any{"field": "q", "limit": MaxSearchQueryCodePoints})
 	}
-	normalized, err := domain.NormalizeContentV1(raw)
+	normalized, err := domain.NormalizeContentV2(raw)
 	if err != nil || normalized == "" {
 		return SearchRepositoryQuery{}, "", domain.NewError(domain.CodeInvalidArgument, "q must contain searchable text", map[string]any{"field": "q"})
 	}

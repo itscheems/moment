@@ -15,15 +15,15 @@ import (
 // ContentNormalizerVersion identifies the derived search text contract. The
 // version is persisted with the index so future normalizer changes require an
 // explicit rebuild rather than silently mixing representations.
-const ContentNormalizerVersion = 1
+const ContentNormalizerVersion = 2
 
-// NormalizeContentV1 converts Markdown-shaped input into deterministic search
+// NormalizeContentV2 converts Markdown-shaped input into deterministic search
 // text. It keeps visible link labels and code, drops destinations and invisible
 // structures, applies Unicode compatibility normalization and case folding,
 // and collapses every whitespace run to one ASCII space.
 //
 // Both entry ingestion and search queries call this exact function.
-func NormalizeContentV1(source string) (string, error) {
+func NormalizeContentV2(source string) (string, error) {
 	if !utf8.ValidString(source) {
 		return "", NewError(CodeInvalidArgument, "content must be valid UTF-8", map[string]any{"field": "content"})
 	}

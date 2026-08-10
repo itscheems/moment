@@ -66,7 +66,7 @@ ORDER BY id`, string(domain.KindMoment))
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		contentText, err := domain.NormalizeContentV1(source.contentMD)
+		contentText, err := domain.NormalizeContentV2(source.contentMD)
 		if err != nil {
 			return fmt.Errorf("normalize entry %s for search bootstrap: %w", source.id, err)
 		}
@@ -79,8 +79,16 @@ ORDER BY id`, string(domain.KindMoment))
 			return fmt.Errorf("write entry %s search bootstrap changed %d rows: %w", source.id, changed, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE search_index_state SET normalizer_version = ? WHERE id = 1`, domain.ContentNormalizerVersion); err != nil {
+	result, err := tx.ExecContext(ctx, `
+UPDATE search_index_state
+SET normalizer_version = ?, revision = revision + 1
+WHERE id = 1`, domain.ContentNormalizerVersion)
+	if err != nil {
 		return fmt.Errorf("advance search normalizer version: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return fmt.Errorf("advance search normalizer version changed %d rows: %w", changed, err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit search bootstrap: %w", err)

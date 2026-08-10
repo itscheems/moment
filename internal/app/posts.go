@@ -181,7 +181,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
 		return CreatePostResult{}, err
 	}
-	contentText, err := domain.NormalizeContentV1(input.ContentMD)
+	contentText, err := domain.NormalizeContentV2(input.ContentMD)
 	if err != nil {
 		return CreatePostResult{}, err
 	}
@@ -410,7 +410,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
 		return Post{}, err
 	}
-	contentText, err := domain.NormalizeContentV1(input.ContentMD)
+	contentText, err := domain.NormalizeContentV2(input.ContentMD)
 	if err != nil {
 		return Post{}, err
 	}
