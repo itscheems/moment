@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -11,8 +12,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/media"
@@ -184,6 +187,158 @@ func TestMediaHelpAndCancellationContract(t *testing.T) {
 				t.Fatalf("help %s missing %q:\n%s", command, required, output.stdout)
 			}
 		}
+	}
+}
+
+func TestDirectMediaHoldsCurrentUntilCommandRuntimeCloses(t *testing.T) {
+	runtimeState, dataDir := initializeSiteCLIData(t)
+	originalGeneration := runtimeState.Current.ID
+	creation, err := runtimeState.Locks.AcquireSet(context.Background(),
+		runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := runtimeState.CreateGeneration(context.Background(), "replacement-generation", creation)
+	if releaseErr := creation.Release(); err == nil && releaseErr != nil {
+		err = releaseErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	direct, err := openDirectMedia(context.Background(), Invocation{target: directTarget{dataDir: dataDir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !direct.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
+		t.Fatal("direct media runtime did not retain maintenance shared")
+	}
+
+	switchDone := make(chan error, 1)
+	go func() {
+		leases, acquireErr := runtimeState.Locks.AcquireSet(context.Background(),
+			runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive},
+			runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Exclusive},
+			runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Exclusive},
+		)
+		if acquireErr != nil {
+			switchDone <- acquireErr
+			return
+		}
+		switchErr := runtimeState.SwitchCurrent(context.Background(), replacement.ID, leases)
+		switchDone <- errors.Join(switchErr, leases.Release())
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		probeContext, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+		probe, probeErr := runtimeState.Locks.Acquire(probeContext, runtimefs.ImportLock, runtimefs.Exclusive)
+		cancel()
+		if probeErr != nil {
+			if !errors.Is(probeErr, context.DeadlineExceeded) {
+				t.Fatal(probeErr)
+			}
+			break
+		}
+		_ = probe.Release()
+		if time.Now().After(deadline) {
+			t.Fatal("competing CURRENT switch did not reach the maintenance boundary")
+		}
+	}
+
+	imagePath := writeCLIImage(t)
+	file, err := os.Open(imagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, ingestErr := direct.store.Ingest(context.Background(), filepath.Base(imagePath), file)
+	closeFileErr := file.Close()
+	if err := errors.Join(ingestErr, closeFileErr); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-switchDone:
+		t.Fatalf("CURRENT switched before direct command closed: %v", err)
+	default:
+	}
+	if current, err := runtimeState.ResolveCurrent(); err != nil || current.ID != originalGeneration {
+		t.Fatalf("CURRENT changed during direct operation: %v, %v", current, err)
+	}
+	if err := direct.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-switchDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("CURRENT switch did not resume after direct command closed")
+	}
+	current, err := runtimefs.OpenContext(context.Background(), dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Current.ID != replacement.ID {
+		t.Fatalf("CURRENT = %s, want %s", current.Current.ID, replacement.ID)
+	}
+}
+
+func TestWriteNewFileAtomicNeverClobbersCompetingOutput(t *testing.T) {
+	directory := t.TempDir()
+	destination := filepath.Join(directory, "download.bin")
+	const competitors = 16
+	type outcome struct {
+		index int
+		err   error
+	}
+	start := make(chan struct{})
+	results := make(chan outcome, competitors)
+	var group sync.WaitGroup
+	for index := 0; index < competitors; index++ {
+		group.Add(1)
+		go func(index int) {
+			defer group.Done()
+			<-start
+			_, err := writeNewFileAtomic(context.Background(), destination, bytes.Repeat([]byte{byte(index + 1)}, 64))
+			results <- outcome{index: index, err: err}
+		}(index)
+	}
+	close(start)
+	group.Wait()
+	close(results)
+	winner := -1
+	for result := range results {
+		if result.err == nil {
+			if winner != -1 {
+				t.Fatalf("multiple no-clobber writers succeeded: %d and %d", winner, result.index)
+			}
+			winner = result.index
+		}
+	}
+	if winner == -1 {
+		t.Fatal("no no-clobber writer succeeded")
+	}
+	contents, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(contents, bytes.Repeat([]byte{byte(winner + 1)}, 64)) {
+		t.Fatal("published output does not belong to the sole successful writer")
+	}
+	partials, err := filepath.Glob(filepath.Join(directory, ".moment-media-*.partial"))
+	if err != nil || len(partials) != 0 {
+		t.Fatalf("partial downloads remain: %v, %v", partials, err)
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := writeNewFileAtomic(cancelled, destination, []byte("cancelled")); err == nil {
+		t.Fatal("cancelled publication succeeded")
+	}
+	if contents, err := os.ReadFile(destination); err != nil || !bytes.Equal(contents, bytes.Repeat([]byte{byte(winner + 1)}, 64)) {
+		t.Fatalf("cancelled publication changed winner: %d bytes, %v", len(contents), err)
 	}
 }
 

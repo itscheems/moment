@@ -81,3 +81,28 @@ func TestPublishPreparedFileRejectsCrossDirectorySource(t *testing.T) {
 		t.Fatal("cross-directory prepared file was accepted")
 	}
 }
+
+func TestPublishPreparedFileNoReplacePreservesCompetingDestination(t *testing.T) {
+	directory := t.TempDir()
+	source := filepath.Join(directory, ".partial-source")
+	destination := filepath.Join(directory, "ready")
+	if err := os.WriteFile(source, []byte("ours"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("competitor"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := PublishPreparedFileNoReplace(source, destination); err == nil {
+		t.Fatal("no-replace publication overwrote an existing destination")
+	}
+	contents, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "competitor" {
+		t.Fatalf("destination = %q, want competing contents", contents)
+	}
+	if contents, err := os.ReadFile(source); err != nil || string(contents) != "ours" {
+		t.Fatalf("failed publication changed source: %q, %v", contents, err)
+	}
+}

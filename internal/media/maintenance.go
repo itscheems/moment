@@ -24,7 +24,7 @@ const (
 // Get returns authoritative metadata while preventing prune from invalidating
 // the lookup boundary.
 func (store *Store) Get(ctx context.Context, id domain.ID) (Media, error) {
-	lease, err := store.runtime.Locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
 	if err != nil {
 		return Media{}, fmt.Errorf("coordinate media read: %w", err)
 	}
@@ -47,7 +47,7 @@ func (store *Store) getLocked(ctx context.Context, id domain.ID) (Media, error) 
 // are never selected by preview delivery and are available only through this
 // explicit method/route.
 func (store *Store) ReadOriginal(ctx context.Context, id domain.ID) (Asset, error) {
-	lease, err := store.runtime.Locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
 	if err != nil {
 		return Asset{}, fmt.Errorf("coordinate original delivery: %w", err)
 	}
@@ -70,7 +70,7 @@ func (store *Store) ReadPreview(ctx context.Context, id domain.ID) (Asset, error
 	if err != nil {
 		return Asset{}, err
 	}
-	lease, err := store.runtime.Locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
 	if err != nil {
 		return Asset{}, fmt.Errorf("coordinate preview delivery: %w", err)
 	}
@@ -100,7 +100,7 @@ func (store *Store) ReadPreview(ctx context.Context, id domain.ID) (Asset, error
 // List joins metadata, the resolver, and derived cache status without treating
 // a stale preview as authority corruption.
 func (store *Store) List(ctx context.Context) (ListResult, error) {
-	lease, err := store.runtime.Locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
 	if err != nil {
 		return ListResult{}, fmt.Errorf("coordinate media listing: %w", err)
 	}
@@ -143,7 +143,7 @@ func (store *Store) listLocked(ctx context.Context) (ListResult, error) {
 // Verify checks immutable bytes and reference clock consistency. It completes
 // all records so agents receive deterministic diagnostics in one document.
 func (store *Store) Verify(ctx context.Context, selected *domain.ID) (VerifyResult, error) {
-	lease, err := store.runtime.Locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
 	if err != nil {
 		return VerifyResult{}, fmt.Errorf("coordinate media verification: %w", err)
 	}
@@ -188,10 +188,7 @@ func (store *Store) Verify(ctx context.Context, selected *domain.ID) (VerifyResu
 // writes; actual work is deterministic, bounded by Store preview limits, and
 // safely resumable after cancellation.
 func (store *Store) RebuildPreviews(ctx context.Context, dryRun bool) (RebuildResult, error) {
-	mediaLease, err := store.runtime.Locks.AcquireSet(ctx,
-		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Shared},
-		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Shared},
-	)
+	mediaLease, err := store.acquireMaintenanceAndMedia(ctx, runtimefs.Shared)
 	if err != nil {
 		return RebuildResult{}, fmt.Errorf("coordinate preview rebuild: %w", err)
 	}
@@ -245,10 +242,7 @@ func (store *Store) Prune(ctx context.Context, now time.Time, dryRun bool) (Prun
 	if dryRun {
 		mode = runtimefs.Shared
 	}
-	leases, err := store.runtime.Locks.AcquireSet(ctx,
-		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Shared},
-		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: mode},
-	)
+	leases, err := store.acquireMaintenanceAndMedia(ctx, mode)
 	if err != nil {
 		return PruneResult{}, fmt.Errorf("coordinate media prune: %w", err)
 	}

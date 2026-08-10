@@ -108,12 +108,12 @@ func runMediaAdd(ctx context.Context, invocation Invocation, input CommandInput)
 	var meta map[string]any
 	switch invocation.Mode() {
 	case ModeDirect:
-		store, database, err := openDirectMedia(ctx, invocation)
+		direct, err := openDirectMedia(ctx, invocation)
 		if err != nil {
 			return Result{}, mediaCLIError(err)
 		}
-		defer func() { _ = database.Close() }()
-		value, preview, err := store.Ingest(ctx, filepath.Base(path), file)
+		defer func() { _ = direct.Close() }()
+		value, preview, err := direct.store.Ingest(ctx, filepath.Base(path), file)
 		if err != nil {
 			return Result{}, mediaCLIError(err)
 		}
@@ -149,13 +149,13 @@ func runMediaGet(ctx context.Context, invocation Invocation, input CommandInput)
 	var asset media.Asset
 	switch invocation.Mode() {
 	case ModeDirect:
-		store, database, openErr := openDirectMedia(ctx, invocation)
+		direct, openErr := openDirectMedia(ctx, invocation)
 		err = openErr
 		if err != nil {
 			return Result{}, mediaCLIError(err)
 		}
-		defer func() { _ = database.Close() }()
-		asset, err = store.ReadOriginal(ctx, id)
+		defer func() { _ = direct.Close() }()
+		asset, err = direct.store.ReadOriginal(ctx, id)
 	case ModeAPI:
 		asset, err = mediaAPIDownload(ctx, invocation, id)
 	default:
@@ -177,11 +177,11 @@ func runMediaGet(ctx context.Context, invocation Invocation, input CommandInput)
 }
 
 func runMediaVerify(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
-	store, database, err := openDirectMedia(ctx, invocation)
+	direct, err := openDirectMedia(ctx, invocation)
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}
-	defer func() { _ = database.Close() }()
+	defer func() { _ = direct.Close() }()
 	var selected *domain.ID
 	if len(input.Args()) == 1 {
 		id, err := domain.ParseID(input.Args()[0])
@@ -190,7 +190,7 @@ func runMediaVerify(ctx context.Context, invocation Invocation, input CommandInp
 		}
 		selected = &id
 	}
-	result, err := store.Verify(ctx, selected)
+	result, err := direct.store.Verify(ctx, selected)
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}
@@ -209,12 +209,12 @@ func runMediaVerify(ctx context.Context, invocation Invocation, input CommandInp
 }
 
 func runMediaList(ctx context.Context, invocation Invocation, _ CommandInput) (Result, error) {
-	store, database, err := openDirectMedia(ctx, invocation)
+	direct, err := openDirectMedia(ctx, invocation)
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}
-	defer func() { _ = database.Close() }()
-	result, err := store.List(ctx)
+	defer func() { _ = direct.Close() }()
+	result, err := direct.store.List(ctx)
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}
@@ -222,12 +222,12 @@ func runMediaList(ctx context.Context, invocation Invocation, _ CommandInput) (R
 }
 
 func runMediaRebuild(ctx context.Context, invocation Invocation, _ CommandInput) (Result, error) {
-	store, database, err := openDirectMedia(ctx, invocation)
+	direct, err := openDirectMedia(ctx, invocation)
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}
-	defer func() { _ = database.Close() }()
-	result, err := store.RebuildPreviews(ctx, invocation.Safety().DryRun)
+	defer func() { _ = direct.Close() }()
+	result, err := direct.store.RebuildPreviews(ctx, invocation.Safety().DryRun)
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}
@@ -235,40 +235,55 @@ func runMediaRebuild(ctx context.Context, invocation Invocation, _ CommandInput)
 }
 
 func runMediaPrune(ctx context.Context, invocation Invocation, _ CommandInput) (Result, error) {
-	store, database, err := openDirectMedia(ctx, invocation)
+	direct, err := openDirectMedia(ctx, invocation)
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}
-	defer func() { _ = database.Close() }()
-	result, err := store.Prune(ctx, time.Now().UTC(), invocation.Safety().DryRun)
+	defer func() { _ = direct.Close() }()
+	result, err := direct.store.Prune(ctx, time.Now().UTC(), invocation.Safety().DryRun)
 	if err != nil {
 		return Result{}, mediaCLIError(err)
 	}
 	return Result{Data: result, Text: fmt.Sprintf("Media prune: %d eligible, %d deleted, %d bytes reclaimed, %d cleanup warnings", result.Eligible, result.Deleted, result.BytesReclaimed, result.CleanupFailures)}, nil
 }
 
-func openDirectMedia(ctx context.Context, invocation Invocation) (*media.Store, *sqlitestore.Database, error) {
+type directMediaRuntime struct {
+	store       *media.Store
+	database    *sqlitestore.Database
+	maintenance *runtimefs.Lease
+}
+
+func (direct *directMediaRuntime) Close() error {
+	if direct == nil {
+		return nil
+	}
+	return errors.Join(direct.database.Close(), direct.maintenance.Release())
+}
+
+func openDirectMedia(ctx context.Context, invocation Invocation) (*directMediaRuntime, error) {
 	target, err := invocation.DirectTransport()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	runtimeState, err := runtimefs.OpenContext(ctx, target.DataDirectory())
+	runtimeState, maintenance, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, nil, ownerRuntimeError(err)
+		return nil, ownerRuntimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
+		_ = maintenance.Release()
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return nil, nil, err
+			return nil, err
 		}
-		return nil, nil, NewCommandError("DATABASE_NOT_READY", "the current Moment database could not become ready", "inspect the selected data directory and migration history, then retry", ExitIntegrity).WithCause(err)
+		return nil, NewCommandError("DATABASE_NOT_READY", "the current Moment database could not become ready", "inspect the selected data directory and migration history, then retry", ExitIntegrity).WithCause(err)
 	}
-	store, err := media.NewStore(runtimeState, database, media.Options{})
+	store, err := media.NewStoreWithinMaintenance(runtimeState, database, media.Options{}, maintenance)
 	if err != nil {
 		_ = database.Close()
-		return nil, nil, err
+		_ = maintenance.Release()
+		return nil, err
 	}
-	return store, database, nil
+	return &directMediaRuntime{store: store, database: database, maintenance: maintenance}, nil
 }
 
 func mediaAPIUpload(ctx context.Context, invocation Invocation, filename string, source io.Reader, destination *media.UploadResult) (map[string]any, error) {
@@ -412,20 +427,6 @@ func writeNewFileAtomic(ctx context.Context, destination string, contents []byte
 	if info, err := os.Stat(directory); err != nil || !info.IsDir() {
 		return "", fmt.Errorf("output directory is unavailable")
 	}
-	reservation, err := os.OpenFile(absolute, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return "", fmt.Errorf("output path must not already exist: %w", err)
-	}
-	if err := reservation.Close(); err != nil {
-		_ = os.Remove(absolute)
-		return "", err
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.Remove(absolute)
-		}
-	}()
 	partial, err := os.CreateTemp(directory, ".moment-media-*.partial")
 	if err != nil {
 		return "", err
@@ -454,10 +455,9 @@ func writeNewFileAtomic(ctx context.Context, destination string, contents []byte
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if err := runtimefs.PublishPreparedFile(partialPath, absolute); err != nil {
-		return "", err
+	if err := runtimefs.PublishPreparedFileNoReplace(partialPath, absolute); err != nil {
+		return "", fmt.Errorf("output path must not already exist: %w", err)
 	}
-	committed = true
 	return absolute, nil
 }
 

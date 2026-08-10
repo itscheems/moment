@@ -31,6 +31,14 @@ var (
 )
 
 func replaceFile(source, destination string) error {
+	return moveFile(source, destination, movefileReplaceExisting|movefileWriteThrough)
+}
+
+func publishFileNoReplace(source, destination string) error {
+	return moveFile(source, destination, movefileWriteThrough)
+}
+
+func moveFile(source, destination string, flags uint32) error {
 	sourcePointer, err := syscall.UTF16PtrFromString(source)
 	if err != nil {
 		return err
@@ -39,7 +47,7 @@ func replaceFile(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	return callMoveFileExW(sourcePointer, destinationPointer, movefileReplaceExisting|movefileWriteThrough)
+	return callMoveFileExW(sourcePointer, destinationPointer, flags)
 }
 
 func syncDirectory(path string) error {

@@ -27,6 +27,7 @@ type Store struct {
 	db             sqlite.Transactor
 	options        Options
 	references     *sqlite.MediaReferenceRepository
+	maintenance    *runtimefs.Lease
 	workers        chan struct{}
 	memory         *semaphore.Weighted
 	memoryCapacity int64
@@ -42,6 +43,22 @@ type Store struct {
 // NewStore binds media operations to the same Runtime that selected the
 // current SQLite generation. The caller remains responsible for database life.
 func NewStore(runtimeState *runtimefs.Runtime, database sqlite.Transactor, options Options) (*Store, error) {
+	return newStore(runtimeState, database, options, nil)
+}
+
+// NewStoreWithinMaintenance binds a store to a caller-held ordinary-operation
+// maintenance lease. Direct transports use this after resolving CURRENT via
+// OpenForWriteContext so an import cannot switch generations before the
+// command finishes. Store methods validate the lease and acquire only the
+// later-ranked media lock, avoiding nested maintenance acquisition.
+func NewStoreWithinMaintenance(runtimeState *runtimefs.Runtime, database sqlite.Transactor, options Options, maintenance *runtimefs.Lease) (*Store, error) {
+	if !maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
+		return nil, errors.New("shared maintenance lease is required")
+	}
+	return newStore(runtimeState, database, options, maintenance)
+}
+
+func newStore(runtimeState *runtimefs.Runtime, database sqlite.Transactor, options Options, maintenance *runtimefs.Lease) (*Store, error) {
 	if runtimeState == nil || runtimeState.Locks == nil || runtimeState.Current.Root == "" {
 		return nil, errors.New("media runtime is required")
 	}
@@ -62,11 +79,33 @@ func NewStore(runtimeState *runtimefs.Runtime, database sqlite.Transactor, optio
 		db:             database,
 		options:        normalized,
 		references:     references,
+		maintenance:    maintenance,
 		workers:        make(chan struct{}, normalized.Limits.PreviewWorkers),
 		memory:         semaphore.NewWeighted(memoryCapacity),
 		memoryCapacity: memoryCapacity,
 		removeFile:     os.Remove,
 	}, nil
+}
+
+type releasableLease interface {
+	Release() error
+}
+
+func (store *Store) acquireMedia(ctx context.Context, mode runtimefs.LockMode) (releasableLease, error) {
+	if store.maintenance != nil && !store.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
+		return nil, errors.New("media maintenance lease is no longer held")
+	}
+	return store.runtime.Locks.Acquire(ctx, runtimefs.MediaLock, mode)
+}
+
+func (store *Store) acquireMaintenanceAndMedia(ctx context.Context, mode runtimefs.LockMode) (releasableLease, error) {
+	if store.maintenance != nil {
+		return store.acquireMedia(ctx, mode)
+	}
+	return store.runtime.Locks.AcquireSet(ctx,
+		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Shared},
+		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: mode},
+	)
 }
 
 // Ingest validates and fully renders a preview before publishing an immutable
@@ -91,10 +130,7 @@ func (store *Store) Ingest(ctx context.Context, originalName string, input io.Re
 	sha := hex.EncodeToString(digest[:])
 	storagePath := canonicalStoragePath(sha, inspection.format)
 
-	lease, err := store.runtime.Locks.AcquireSet(ctx,
-		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Shared},
-		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Exclusive},
-	)
+	lease, err := store.acquireMaintenanceAndMedia(ctx, runtimefs.Exclusive)
 	if err != nil {
 		return Media{}, Preview{}, fmt.Errorf("coordinate media ingest: %w", err)
 	}
@@ -164,10 +200,7 @@ func (store *Store) EnsurePreview(ctx context.Context, id domain.ID) (Preview, e
 		return Preview{}, err
 	}
 	value, err := store.flight.Do(ctx, id.String(), func() (Preview, error) {
-		lease, err := store.runtime.Locks.AcquireSet(ctx,
-			runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Shared},
-			runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Shared},
-		)
+		lease, err := store.acquireMaintenanceAndMedia(ctx, runtimefs.Shared)
 		if err != nil {
 			return Preview{}, fmt.Errorf("coordinate preview generation: %w", err)
 		}
