@@ -106,7 +106,7 @@ func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	repository, err := NewSiteRepositoryWithinMaintenance(database, maintenance)
+	repository, err := NewSiteRepositoryWithinMaintenance(database, maintenance, runtimeState.Locks)
 	if err != nil {
 		t.Fatal(err)
 	}

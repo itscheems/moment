@@ -8,21 +8,50 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/runtimefs"
 )
 
 // PostRepository adapts SQLite transactions to the post application's ports.
 type PostRepository struct {
 	transactions Transactor
+	locks        *runtimefs.Locker
+	maintenance  *runtimefs.Lease
 }
 
 var _ app.PostTransactions = (*PostRepository)(nil)
 
-// NewPostRepository constructs the SQLite post adapter.
-func NewPostRepository(transactions Transactor) (*PostRepository, error) {
+func newPostRepository(transactions Transactor) (*PostRepository, error) {
 	if transactions == nil {
 		return nil, errors.New("SQLite transactions are required")
 	}
 	return &PostRepository{transactions: transactions}, nil
+}
+
+// NewPostRepository constructs the production SQLite post adapter and
+// coordinates every ordinary write in maintenance-shared -> media-shared order.
+func NewPostRepository(transactions Transactor, locks *runtimefs.Locker) (*PostRepository, error) {
+	if transactions == nil {
+		return nil, errors.New("SQLite transactions are required")
+	}
+	if locks == nil {
+		return nil, errors.New("runtime locks are required")
+	}
+	return &PostRepository{transactions: transactions, locks: locks}, nil
+}
+
+// NewPostRepositoryWithinMaintenance reuses a caller-held ordinary-write
+// maintenance lease and acquires only media.lock shared before the transaction.
+func NewPostRepositoryWithinMaintenance(transactions Transactor, maintenance *runtimefs.Lease, locks *runtimefs.Locker) (*PostRepository, error) {
+	if transactions == nil {
+		return nil, errors.New("SQLite transactions are required")
+	}
+	if !maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
+		return nil, errors.New("shared maintenance lease is required")
+	}
+	if locks == nil {
+		return nil, errors.New("runtime locks are required")
+	}
+	return &PostRepository{transactions: transactions, locks: locks, maintenance: maintenance}, nil
 }
 
 // Read supplies a transaction-bound store backed by the query-only pool.
@@ -31,7 +60,7 @@ func (repository *PostRepository) Read(ctx context.Context, operation func(app.P
 		return errors.New("post read operation is required")
 	}
 	return repository.transactions.ReadTx(ctx, func(queries Queries) error {
-		return operation(postStore{queries: queries})
+		return operation(newPostStore(queries))
 	})
 }
 
@@ -40,13 +69,44 @@ func (repository *PostRepository) Write(ctx context.Context, operation func(app.
 	if operation == nil {
 		return errors.New("post write operation is required")
 	}
+	if repository.locks == nil {
+		return repository.write(ctx, operation)
+	}
+	if repository.maintenance != nil {
+		if !repository.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
+			return errors.New("post maintenance lease is no longer held")
+		}
+		mediaLease, err := repository.locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+		if err != nil {
+			return fmt.Errorf("coordinate post media references: %w", err)
+		}
+		defer func() { _ = mediaLease.Release() }()
+		return repository.write(ctx, operation)
+	}
+	leases, err := repository.locks.AcquireSet(ctx,
+		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Shared},
+		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Shared},
+	)
+	if err != nil {
+		return fmt.Errorf("coordinate post write: %w", err)
+	}
+	defer func() { _ = leases.Release() }()
+	return repository.write(ctx, operation)
+}
+
+func (repository *PostRepository) write(ctx context.Context, operation func(app.PostStore) error) error {
 	return repository.transactions.WriteTx(ctx, func(queries Queries) error {
-		return operation(postStore{queries: queries})
+		return operation(newPostStore(queries))
 	})
 }
 
 type postStore struct {
 	queries Queries
+	mediaReferenceStore
+}
+
+func newPostStore(queries Queries) postStore {
+	return postStore{queries: queries, mediaReferenceStore: newMediaReferenceStore(queries)}
 }
 
 var _ app.PostStore = postStore{}

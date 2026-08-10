@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/storage/sqlite"
@@ -80,6 +81,205 @@ func TestIngestSupportedFormatsUsesSignaturesAndCanonicalAuthority(t *testing.T)
 				t.Fatalf("unreferenced_since_ms = %d, want %d", unreferenced, media.CreatedAt.UnixMilli())
 			}
 		})
+	}
+}
+
+func TestRebuildPreviewsRepairsPartialCacheAndIsDryRunCancelableAndIdempotent(t *testing.T) {
+	store, _, _ := newTestStore(t, Limits{})
+	value, preview, err := store.Ingest(context.Background(), "repair.png", bytes.NewReader(encodeTransparentPNG(t, 32, 16)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preview.Path, []byte("partial-corruption"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dryRun, err := store.RebuildPreviews(context.Background(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dryRun.Total != 1 || dryRun.Stale != 1 || dryRun.Rebuilt != 0 || !dryRun.DryRun {
+		t.Fatalf("dry-run result = %+v", dryRun)
+	}
+	if contents, _ := os.ReadFile(preview.Path); string(contents) != "partial-corruption" {
+		t.Fatal("dry-run changed corrupt preview")
+	}
+
+	rebuilt, err := store.RebuildPreviews(context.Background(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rebuilt.Rebuilt != 1 || rebuilt.Stale != 1 || rebuilt.DryRun {
+		t.Fatalf("rebuild result = %+v", rebuilt)
+	}
+	asset, err := store.ReadPreview(context.Background(), value.ID)
+	if err != nil || len(asset.Contents) == 0 || asset.MIMEType != "image/png" {
+		t.Fatalf("repaired preview = %d bytes %q, %v", len(asset.Contents), asset.MIMEType, err)
+	}
+	idempotent, err := store.RebuildPreviews(context.Background(), false)
+	if err != nil || idempotent.Ready != 1 || idempotent.Rebuilt != 0 {
+		t.Fatalf("idempotent rebuild = %+v, %v", idempotent, err)
+	}
+
+	if err := os.WriteFile(preview.Path, []byte("corrupt-again"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := store.RebuildPreviews(cancelled, false); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled rebuild = %v", err)
+	}
+	if contents, _ := os.ReadFile(preview.Path); string(contents) != "corrupt-again" {
+		t.Fatal("cancelled rebuild mutated cache")
+	}
+}
+
+func TestPruneExactWindowAndFailureOrdering(t *testing.T) {
+	store, _, database := newTestStore(t, Limits{})
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	exact, _, err := store.Ingest(context.Background(), "exact.jpg", bytes.NewReader(encodeJPEG(t, image.NewRGBA(image.Rect(0, 0, 12, 12)))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.options.Entropy = bytes.NewReader(bytes.Repeat([]byte{0x43}, 64))
+	recent, _, err := store.Ingest(context.Background(), "recent.png", bytes.NewReader(encodeTransparentPNG(t, 13, 13)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	setMediaClock(t, database, exact.ID, now.Add(-24*time.Hour))
+	setMediaClock(t, database, recent.ID, now.Add(-24*time.Hour+time.Millisecond))
+
+	plan, err := store.Prune(context.Background(), now, true)
+	if err != nil || plan.Eligible != 1 || plan.Deleted != 0 || len(plan.Items) != 1 || plan.Items[0].MediaID != exact.ID.String() {
+		t.Fatalf("prune plan = %+v, %v", plan, err)
+	}
+	exactPath, _ := store.resolveOriginal(exact)
+	recentPath, _ := store.resolveOriginal(recent)
+	if _, err := os.Stat(exactPath); err != nil {
+		t.Fatal("dry-run removed exact candidate")
+	}
+	result, err := store.Prune(context.Background(), now, false)
+	if err != nil || result.Deleted != 1 || result.BytesReclaimed != exact.ByteSize || result.CleanupFailures != 0 {
+		t.Fatalf("prune result = %+v, %v", result, err)
+	}
+	if _, err := os.Stat(exactPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("pruned original still exists: %v", err)
+	}
+	if _, err := os.Stat(recentPath); err != nil {
+		t.Fatalf("recent original was removed: %v", err)
+	}
+	if _, err := store.Get(context.Background(), exact.ID); !domain.HasCode(err, domain.CodeMediaNotFound) {
+		t.Fatalf("pruned row lookup = %v", err)
+	}
+
+	store2, _, database2 := newTestStore(t, Limits{})
+	value, _, err := store2.Ingest(context.Background(), "failure.png", bytes.NewReader(encodeTransparentPNG(t, 14, 14)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	setMediaClock(t, database2, value.ID, now.Add(-24*time.Hour))
+	original, _ := store2.resolveOriginal(value)
+	injected := errors.New("injected database boundary failure")
+	store2.beforePruneDelete = func() error { return injected }
+	if _, err := store2.Prune(context.Background(), now, false); !errors.Is(err, injected) {
+		t.Fatalf("injected prune error = %v", err)
+	}
+	if _, err := store2.Get(context.Background(), value.ID); err != nil {
+		t.Fatalf("failed DB prune removed row: %v", err)
+	}
+	if _, err := os.Stat(original); err != nil {
+		t.Fatalf("failed DB prune removed original: %v", err)
+	}
+
+	store2.beforePruneDelete = nil
+	store2.removeFile = func(string) error { return errors.New("injected filesystem failure") }
+	failedCleanup, err := store2.Prune(context.Background(), now, false)
+	if err != nil || failedCleanup.Deleted != 1 || failedCleanup.CleanupFailures != 1 || failedCleanup.BytesReclaimed != 0 {
+		t.Fatalf("filesystem failure result = %+v, %v", failedCleanup, err)
+	}
+	if _, err := store2.Get(context.Background(), value.ID); !domain.HasCode(err, domain.CodeMediaNotFound) {
+		t.Fatalf("filesystem failure left authoritative row = %v", err)
+	}
+	if _, err := os.Stat(original); err != nil {
+		t.Fatalf("filesystem failure did not leave recoverable orphan: %v", err)
+	}
+}
+
+func TestPruneSerializesLateAvatarReferenceAndNeverDeletesReachableOriginal(t *testing.T) {
+	store, runtimeState, database := newTestStore(t, Limits{})
+	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+	value, _, err := store.Ingest(context.Background(), "avatar.png", bytes.NewReader(encodeTransparentPNG(t, 20, 20)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	setMediaClock(t, database, value.ID, now.Add(-24*time.Hour))
+	repository, err := sqlite.NewSiteRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	site, err := app.NewSiteService(repository, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	store.beforePruneDelete = func() error {
+		close(entered)
+		<-release
+		return nil
+	}
+	pruned := make(chan error, 1)
+	go func() {
+		_, err := store.Prune(context.Background(), now, false)
+		pruned <- err
+	}()
+	<-entered
+	avatar := value.ID.String()
+	updated := make(chan error, 1)
+	go func() {
+		_, err := site.Update(context.Background(), app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}})
+		updated <- err
+	}()
+	select {
+	case err := <-updated:
+		t.Fatalf("late reference bypassed exclusive media lock: %v", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	if err := <-pruned; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-updated; !domain.HasCode(err, domain.CodeMediaNotFound) {
+		t.Fatalf("late reference after prune = %v", err)
+	}
+
+	store2, runtimeState2, database2 := newTestStore(t, Limits{})
+	reachable, _, err := store2.Ingest(context.Background(), "reachable.png", bytes.NewReader(encodeTransparentPNG(t, 21, 21)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	setMediaClock(t, database2, reachable.ID, now.Add(-48*time.Hour+time.Second))
+	repository2, _ := sqlite.NewSiteRepository(database2, runtimeState2.Locks)
+	site2, _ := app.NewSiteService(repository2, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: func() time.Time { return now }})
+	reachableID := reachable.ID.String()
+	if _, err := site2.Update(context.Background(), app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &reachableID}}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store2.Prune(context.Background(), now, false)
+	if err != nil || result.Eligible != 0 || result.Deleted != 0 {
+		t.Fatalf("reachable prune = %+v, %v", result, err)
+	}
+	if _, err := store2.ReadOriginal(context.Background(), reachable.ID); err != nil {
+		t.Fatalf("reachable original lost: %v", err)
+	}
+}
+
+func setMediaClock(t *testing.T, database *sqlite.Database, id domain.ID, value time.Time) {
+	t.Helper()
+	if err := database.WriteTx(context.Background(), func(queries sqlite.Queries) error {
+		_, err := queries.ExecContext(context.Background(), `UPDATE media SET unreferenced_since_ms = ? WHERE id = ?`, value.UnixMilli(), id.String())
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
 }
 

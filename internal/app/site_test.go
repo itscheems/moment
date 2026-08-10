@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/moment/moment/internal/domain"
 )
@@ -63,6 +64,10 @@ func (store *memorySiteStore) UpdateSiteSettings(_ context.Context, settings Sit
 	}
 	cloned := cloneSiteSettings(settings)
 	store.settings = &cloned
+	return nil
+}
+
+func (store *memorySiteStore) ReconcileMediaReferences(context.Context, []domain.ID, time.Time) error {
 	return nil
 }
 

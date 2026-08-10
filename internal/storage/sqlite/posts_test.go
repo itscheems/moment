@@ -399,7 +399,7 @@ func TestPostConcurrentCreatesAndDeletesPreserveOrdering(t *testing.T) {
 
 func newTestPostService(t *testing.T, db *Database, clock app.PostClock, ids app.PostIDGenerator) *app.PostService {
 	t.Helper()
-	repository, err := NewPostRepository(db)
+	repository, err := newPostRepository(db)
 	if err != nil {
 		t.Fatal(err)
 	}

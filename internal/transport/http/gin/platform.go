@@ -17,6 +17,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/media"
 )
 
 // LogFunc receives only bounded, preselected event fields.
@@ -41,6 +42,7 @@ type Config struct {
 	Readiness      ReadinessFunc
 	OwnerAuth      *auth.Manager
 	SiteSettings   *app.SiteService
+	Media          *media.Store
 	SecureCookies  bool
 	TrustedProxies []string
 	RequestID      func() string
@@ -113,6 +115,12 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("site settings routes require owner authentication")
 		}
 		RegisterSiteRoutes(engine, config.SiteSettings, config.OwnerAuth)
+	}
+	if config.Media != nil {
+		if config.OwnerAuth == nil {
+			return nil, errors.New("media routes require owner authentication")
+		}
+		RegisterMediaRoutes(engine, config.Media, config.OwnerAuth)
 	}
 
 	if config.Register != nil {

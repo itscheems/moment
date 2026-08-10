@@ -195,7 +195,7 @@ func directSiteUpdate(ctx context.Context, invocation Invocation, update app.Sit
 		return app.SiteSettings{}, NewCommandError("DATABASE_NOT_READY", "the current Moment database could not become ready", "inspect the selected data directory and migration history, then retry", ExitIntegrity).WithCause(err)
 	}
 	defer func() { _ = database.Close() }()
-	repository, err := sqlitestore.NewSiteRepositoryWithinMaintenance(database, lease)
+	repository, err := sqlitestore.NewSiteRepositoryWithinMaintenance(database, lease, runtimeState.Locks)
 	if err != nil {
 		return app.SiteSettings{}, err
 	}

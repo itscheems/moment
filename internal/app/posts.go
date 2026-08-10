@@ -19,6 +19,7 @@ const postCreateIdempotencyScope = "posts.create.v1"
 // PostStore is the query and command surface available inside one repository
 // transaction. Implementations must not retain it after the callback returns.
 type PostStore interface {
+	EntryMediaReferenceStore
 	InsertEntry(context.Context, domain.Entry) error
 	EntryByID(context.Context, domain.ID) (domain.Entry, bool, error)
 	ListEntries(context.Context, *TimelinePosition, int) ([]domain.Entry, error)
@@ -404,12 +405,19 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if !found {
 			return postNotFound(id)
 		}
+		mediaIDs, mediaErr := store.EntryMediaIDs(ctx, id)
+		if mediaErr != nil {
+			return mediaErr
+		}
 		changed, deleteErr := store.DeleteEntry(ctx, id)
 		if deleteErr != nil {
 			return deleteErr
 		}
 		if !changed {
 			return postNotFound(id)
+		}
+		if err := store.ReconcileMediaReferences(ctx, mediaIDs, domain.NormalizeTime(service.clock())); err != nil {
+			return err
 		}
 		deleted = entry
 		return nil

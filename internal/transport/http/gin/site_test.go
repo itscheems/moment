@@ -64,6 +64,10 @@ func (store *httpSiteStore) UpdateSiteSettings(_ context.Context, settings app.S
 	return nil
 }
 
+func (store *httpSiteStore) ReconcileMediaReferences(context.Context, []domain.ID, time.Time) error {
+	return nil
+}
+
 func newSiteHTTPFixture(t *testing.T) (ownerTestFixture, *httpSiteTransactions) {
 	t.Helper()
 	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir(), Environment: runtimefs.EnvironmentDevelopment})

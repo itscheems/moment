@@ -8,6 +8,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -102,10 +103,15 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 	if err != nil {
 		return Result{}, err
 	}
+	mediaStore, err := media.NewStore(runtime, database, media.Options{})
+	if err != nil {
+		return Result{}, err
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:         assets,
 		OwnerAuth:      authManager,
 		SiteSettings:   siteService,
+		Media:          mediaStore,
 		SecureCookies:  !runtime.IsDevelopment(),
 		TrustedProxies: trustedProxies,
 		Log:            invocation.LogEvent,

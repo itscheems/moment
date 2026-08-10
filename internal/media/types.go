@@ -140,7 +140,7 @@ type inspected struct {
 type Media struct {
 	ID                domain.ID  `json:"id"`
 	SHA256            string     `json:"sha256"`
-	StoragePath       string     `json:"storage_path"`
+	StoragePath       string     `json:"-"`
 	OriginalName      string     `json:"original_name"`
 	MIMEType          string     `json:"mime_type"`
 	ByteSize          int64      `json:"byte_size"`
@@ -161,6 +161,94 @@ type Preview struct {
 	Width            uint32 `json:"width"`
 	Height           uint32 `json:"height"`
 	AnimatedOriginal bool   `json:"animated_original"`
+}
+
+// UploadResult is the transport-neutral result of managed ingestion.
+type UploadResult struct {
+	Media       Media   `json:"media"`
+	Preview     Preview `json:"preview"`
+	OriginalURL string  `json:"original_url"`
+	PreviewURL  string  `json:"preview_url"`
+}
+
+// NewUploadResult adds the explicit public original and preview routes.
+func NewUploadResult(value Media, preview Preview) UploadResult {
+	id := value.ID.String()
+	return UploadResult{
+		Media:       value,
+		Preview:     preview,
+		OriginalURL: "/api/v1/media/" + id,
+		PreviewURL:  "/api/v1/media/" + id + "/preview",
+	}
+}
+
+// Asset is one bounded immutable response body and its controlled metadata.
+type Asset struct {
+	Media    Media
+	Contents []byte
+	MIMEType string
+	ETag     string
+}
+
+// ListItem joins media metadata with the one authoritative resolver state and
+// current derived-cache status.
+type ListItem struct {
+	Media               Media  `json:"media"`
+	Referenced          bool   `json:"referenced"`
+	ReferenceConsistent bool   `json:"reference_consistent"`
+	PreviewStatus       string `json:"preview_status"`
+}
+
+// ListResult reports stable lifecycle state for all managed media.
+type ListResult struct {
+	RecipeVersion string     `json:"recipe_version"`
+	Items         []ListItem `json:"items"`
+}
+
+// VerifyItem reports one immutable original and reference check.
+type VerifyItem struct {
+	MediaID string `json:"media_id"`
+	Status  string `json:"status"`
+	Code    string `json:"code,omitempty"`
+}
+
+// VerifyResult is a complete checksum and resolver-consistency diagnostic.
+type VerifyResult struct {
+	Total                 int          `json:"total"`
+	Healthy               int          `json:"healthy"`
+	Corrupt               int          `json:"corrupt"`
+	ReferenceInconsistent int          `json:"reference_inconsistent"`
+	Items                 []VerifyItem `json:"items"`
+}
+
+// RebuildResult reports one derived preview inspection or repair pass.
+type RebuildResult struct {
+	RecipeVersion            string `json:"recipe_version"`
+	Total                    int    `json:"total"`
+	Ready                    int    `json:"ready"`
+	Missing                  int    `json:"missing"`
+	Stale                    int    `json:"stale"`
+	Rebuilt                  int    `json:"rebuilt"`
+	EstimatedAdditionalBytes int64  `json:"estimated_additional_bytes"`
+	DryRun                   bool   `json:"dry_run"`
+}
+
+// PruneItem identifies one exact continuously unreferenced candidate.
+type PruneItem struct {
+	MediaID           string    `json:"media_id"`
+	SHA256            string    `json:"sha256"`
+	ByteSize          int64     `json:"byte_size"`
+	UnreferencedSince time.Time `json:"unreferenced_since"`
+}
+
+// PruneResult reports a dry-run plan or completed destructive pass.
+type PruneResult struct {
+	Eligible        int         `json:"eligible"`
+	Deleted         int         `json:"deleted"`
+	CleanupFailures int         `json:"cleanup_failures"`
+	BytesReclaimed  int64       `json:"bytes_reclaimed"`
+	DryRun          bool        `json:"dry_run"`
+	Items           []PruneItem `json:"items"`
 }
 
 // Options supplies deterministic test seams and bounded production resources.

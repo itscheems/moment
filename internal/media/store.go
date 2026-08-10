@@ -26,6 +26,7 @@ type Store struct {
 	runtime        *runtimefs.Runtime
 	db             sqlite.Transactor
 	options        Options
+	references     *sqlite.MediaReferenceRepository
 	workers        chan struct{}
 	memory         *semaphore.Weighted
 	memoryCapacity int64
@@ -34,6 +35,8 @@ type Store struct {
 	generateHook         func()
 	beforeOriginalCommit func() error
 	beforePreviewCommit  func() error
+	beforePruneDelete    func() error
+	removeFile           func(string) error
 }
 
 // NewStore binds media operations to the same Runtime that selected the
@@ -50,13 +53,19 @@ func NewStore(runtimeState *runtimefs.Runtime, database sqlite.Transactor, optio
 		return nil, err
 	}
 	memoryCapacity := previewMemoryWeight(normalized.Limits.MaxPixels)
+	references, err := sqlite.NewMediaReferenceRepository(database)
+	if err != nil {
+		return nil, err
+	}
 	return &Store{
 		runtime:        runtimeState,
 		db:             database,
 		options:        normalized,
+		references:     references,
 		workers:        make(chan struct{}, normalized.Limits.PreviewWorkers),
 		memory:         semaphore.NewWeighted(memoryCapacity),
 		memoryCapacity: memoryCapacity,
+		removeFile:     os.Remove,
 	}, nil
 }
 
@@ -116,7 +125,7 @@ func (store *Store) Ingest(ctx context.Context, originalName string, input io.Re
 		}
 	}()
 
-	now := store.options.Clock().UTC()
+	now := domain.NormalizeTime(store.options.Clock())
 	id, err := domain.NewID(now, store.options.Entropy)
 	if err != nil {
 		return Media{}, Preview{}, err
@@ -155,7 +164,10 @@ func (store *Store) EnsurePreview(ctx context.Context, id domain.ID) (Preview, e
 		return Preview{}, err
 	}
 	value, err := store.flight.Do(ctx, id.String(), func() (Preview, error) {
-		lease, err := store.runtime.Locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+		lease, err := store.runtime.Locks.AcquireSet(ctx,
+			runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Shared},
+			runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Shared},
+		)
 		if err != nil {
 			return Preview{}, fmt.Errorf("coordinate preview generation: %w", err)
 		}
@@ -165,7 +177,7 @@ func (store *Store) EnsurePreview(ctx context.Context, id domain.ID) (Preview, e
 			return Preview{}, err
 		}
 		if !found {
-			return Preview{}, domain.NewError(domain.CodeMediaCorrupt, "media record does not exist", map[string]any{"media_id": id.String()})
+			return Preview{}, mediaNotFound(id)
 		}
 		if preview, ok := store.existingPreview(media.SHA256); ok {
 			preview.AnimatedOriginal = media.MIMEType == formatGIF.mimeType()

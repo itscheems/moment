@@ -49,14 +49,17 @@ type SiteRepository struct {
 // NewSiteRepositoryWithinMaintenance constructs an adapter for a caller that
 // already resolved CURRENT under an active shared maintenance lease. It avoids
 // nested acquisition against the writer-preferring local gate.
-func NewSiteRepositoryWithinMaintenance(transactions Transactor, maintenance *runtimefs.Lease) (*SiteRepository, error) {
+func NewSiteRepositoryWithinMaintenance(transactions Transactor, maintenance *runtimefs.Lease, locks *runtimefs.Locker) (*SiteRepository, error) {
 	if transactions == nil {
 		return nil, errors.New("SQLite transactions are required")
 	}
 	if !maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
 		return nil, errors.New("shared maintenance lease is required")
 	}
-	return &SiteRepository{transactions: transactions, maintenance: maintenance}, nil
+	if locks == nil {
+		return nil, errors.New("runtime locks are required")
+	}
+	return &SiteRepository{transactions: transactions, maintenance: maintenance, locks: locks}, nil
 }
 
 var _ app.SiteTransactions = (*SiteRepository)(nil)
@@ -78,7 +81,7 @@ func (repository *SiteRepository) Read(ctx context.Context, operation func(app.S
 		return errors.New("site read operation is required")
 	}
 	return repository.transactions.ReadTx(ctx, func(queries Queries) error {
-		return operation(siteStore{queries: queries})
+		return operation(newSiteStore(queries))
 	})
 }
 
@@ -90,21 +93,36 @@ func (repository *SiteRepository) Write(ctx context.Context, operation func(app.
 		if !repository.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
 			return errors.New("site settings maintenance lease is no longer held")
 		}
+		media, err := repository.locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+		if err != nil {
+			return fmt.Errorf("coordinate site media references: %w", err)
+		}
+		defer func() { _ = media.Release() }()
 		return repository.transactions.WriteTx(ctx, func(queries Queries) error {
-			return operation(siteStore{queries: queries})
+			return operation(newSiteStore(queries))
 		})
 	}
-	lease, err := repository.locks.Acquire(ctx, runtimefs.MaintenanceLock, runtimefs.Shared)
+	lease, err := repository.locks.AcquireSet(ctx,
+		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Shared},
+		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Shared},
+	)
 	if err != nil {
 		return fmt.Errorf("coordinate site settings write: %w", err)
 	}
 	defer func() { _ = lease.Release() }()
 	return repository.transactions.WriteTx(ctx, func(queries Queries) error {
-		return operation(siteStore{queries: queries})
+		return operation(newSiteStore(queries))
 	})
 }
 
-type siteStore struct{ queries Queries }
+type siteStore struct {
+	queries Queries
+	mediaReferenceStore
+}
+
+func newSiteStore(queries Queries) siteStore {
+	return siteStore{queries: queries, mediaReferenceStore: newMediaReferenceStore(queries)}
+}
 
 var _ app.SiteStore = siteStore{}
 

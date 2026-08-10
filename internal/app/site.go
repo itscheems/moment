@@ -50,6 +50,7 @@ func (update SiteUpdate) Empty() bool {
 
 // SiteStore is the transaction-bound settings persistence surface.
 type SiteStore interface {
+	MediaReferenceReconciler
 	SiteSettings(context.Context) (SiteSettings, error)
 	MediaExists(context.Context, domain.ID) (bool, error)
 	UpdateSiteSettings(context.Context, SiteSettings) error
@@ -66,12 +67,14 @@ type SiteTransactions interface {
 // headers. Development instances may use loopback HTTP public URLs.
 type SiteOptions struct {
 	AllowDevelopmentLocalHTTP bool
+	Clock                     func() time.Time
 }
 
 // SiteService owns validation and atomic site settings changes.
 type SiteService struct {
 	transactions SiteTransactions
 	allowHTTP    bool
+	clock        func() time.Time
 }
 
 // NewSiteService constructs the shared settings authority.
@@ -79,9 +82,13 @@ func NewSiteService(transactions SiteTransactions, options SiteOptions) (*SiteSe
 	if transactions == nil {
 		return nil, errors.New("site transactions are required")
 	}
+	if options.Clock == nil {
+		options.Clock = time.Now
+	}
 	return &SiteService{
 		transactions: transactions,
 		allowHTTP:    options.AllowDevelopmentLocalHTTP,
+		clock:        options.Clock,
 	}, nil
 }
 
@@ -203,6 +210,15 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 		}
 		if err := store.UpdateSiteSettings(ctx, next); err != nil {
 			return err
+		}
+		if update.AvatarMediaID != nil {
+			affected, affectedErr := uniqueMediaIDs(current.AvatarMediaID, next.AvatarMediaID)
+			if affectedErr != nil {
+				return domain.NewError(domain.CodeDataIntegrityFailed, "stored avatar media ID is invalid", nil)
+			}
+			if err := store.ReconcileMediaReferences(ctx, affected, domain.NormalizeTime(service.clock())); err != nil {
+				return err
+			}
 		}
 		result = next
 		return nil
