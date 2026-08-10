@@ -16,7 +16,7 @@ var (
 	ErrGenerationExists   = errors.New("generation already exists")
 	ErrGenerationNotReady = errors.New("generation is not structurally ready")
 	ErrCrossFilesystem    = errors.New("runtime paths are not on one filesystem")
-	ErrInsufficientLocks  = errors.New("generation switch requires exclusive runtime locks")
+	ErrInsufficientLocks  = errors.New("generation mutation requires exclusive runtime locks")
 )
 
 // Generation binds the authoritative database and original media paths to one
@@ -30,8 +30,17 @@ type Generation struct {
 }
 
 // CreateGeneration durably creates an empty, structurally valid generation.
-// Supplying an empty identifier generates one suitable for directory use.
-func (r *Runtime) CreateGeneration(ctx context.Context, id string) (Generation, error) {
+// Supplying an empty identifier generates one suitable for directory use. The
+// import lock prevents startup cleanup from mistaking an active partial for a
+// crash remnant.
+func (r *Runtime) CreateGeneration(ctx context.Context, id string, held *LeaseSet) (Generation, error) {
+	if held == nil || held.root != r.Root || !held.Holds(ImportLock, Exclusive) {
+		return Generation{}, ErrInsufficientLocks
+	}
+	return r.createGeneration(ctx, id)
+}
+
+func (r *Runtime) createGeneration(ctx context.Context, id string) (Generation, error) {
 	if err := ctx.Err(); err != nil {
 		return Generation{}, err
 	}
@@ -233,7 +242,32 @@ func (r *Runtime) cleanupAfterValidCurrent() error {
 	if err := os.Remove(nextPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove stale CURRENT.next: %w", err)
 	}
+	if err := cleanupGenerationPartials(r.Root); err != nil {
+		return err
+	}
 	return syncDirectory(r.Root)
+}
+
+func cleanupGenerationPartials(root string) error {
+	parent := filepath.Join(root, "generations")
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return fmt.Errorf("scan generation staging directories: %w", err)
+	}
+	removed := false
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), ".partial-") {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(parent, entry.Name())); err != nil {
+			return fmt.Errorf("remove abandoned generation staging directory %s: %w", entry.Name(), err)
+		}
+		removed = true
+	}
+	if removed {
+		return syncDirectory(parent)
+	}
+	return nil
 }
 
 // CheckSameFilesystem proves that atomic renames can cross every supplied

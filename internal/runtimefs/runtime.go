@@ -170,9 +170,12 @@ func Initialize(ctx context.Context, config Config) (*Runtime, error) {
 	if currentExists {
 		return openResolved(root, instance, locks)
 	}
+	if err := cleanupGenerationPartials(root); err != nil {
+		return nil, err
+	}
 
 	manager := &Runtime{Root: root, Instance: instance, Locks: locks}
-	generation, err := manager.CreateGeneration(ctx, "")
+	generation, err := manager.createGeneration(ctx, "")
 	if err != nil {
 		return nil, err
 	}

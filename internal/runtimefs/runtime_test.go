@@ -69,10 +69,7 @@ func TestValidCurrentWinsOverStaleNext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := runtime.CreateGeneration(context.Background(), "newer-generation")
-	if err != nil {
-		t.Fatal(err)
-	}
+	other := createGenerationForTest(t, runtime, "newer-generation")
 	nextPath := filepath.Join(runtime.Root, currentFile+".next")
 	if err := os.WriteFile(nextPath, []byte(other.ID), 0o600); err != nil {
 		t.Fatal(err)
@@ -90,20 +87,76 @@ func TestValidCurrentWinsOverStaleNext(t *testing.T) {
 	}
 }
 
+func TestOpenRemovesOnlyAbandonedGenerationStagingDirectories(t *testing.T) {
+	runtime, err := Initialize(context.Background(), Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validExtra := createGenerationForTest(t, runtime, "valid-extra")
+	partial := filepath.Join(runtime.Root, "generations", ".partial-crashed-create")
+	if err := os.MkdirAll(filepath.Join(partial, "media", "original"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(partial, "moment.db"), []byte("incomplete"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	restarted, err := Open(runtime.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(partial); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("abandoned generation staging directory remains: %v", err)
+	}
+	if restarted.Current.ID != runtime.Current.ID {
+		t.Fatalf("cleanup changed current generation: got %s want %s", restarted.Current.ID, runtime.Current.ID)
+	}
+	assertGenerationPaths(t, restarted.Current)
+	assertGenerationPaths(t, validExtra)
+}
+
+func TestInitializeResumeRemovesAbandonedGenerationStagingDirectories(t *testing.T) {
+	root := t.TempDir()
+	runtime, err := Initialize(context.Background(), Config{DataDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(root, currentFile)); err != nil {
+		t.Fatal(err)
+	}
+	partial := filepath.Join(root, "generations", ".partial-interrupted-initialize")
+	if err := os.MkdirAll(partial, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	resumed, err := Initialize(context.Background(), Config{DataDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resumed.Instance.ID != runtime.Instance.ID {
+		t.Fatalf("initialization resume replaced instance identity: %s != %s", resumed.Instance.ID, runtime.Instance.ID)
+	}
+	if _, err := os.Stat(partial); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("interrupted initialization staging directory remains: %v", err)
+	}
+	assertGenerationPaths(t, resumed.Current)
+}
+
 func TestInvalidCurrentFailsWithoutGuessingRecovery(t *testing.T) {
 	runtime, err := Initialize(context.Background(), Config{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	validAlternative, err := runtime.CreateGeneration(context.Background(), "valid-alternative")
-	if err != nil {
-		t.Fatal(err)
-	}
+	validAlternative := createGenerationForTest(t, runtime, "valid-alternative")
 	if err := os.WriteFile(filepath.Join(runtime.Root, currentFile), []byte("missing-generation"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	nextPath := filepath.Join(runtime.Root, currentFile+".next")
 	if err := os.WriteFile(nextPath, []byte(validAlternative.ID), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	partial := filepath.Join(runtime.Root, "generations", ".partial-recovery-evidence")
+	if err := os.MkdirAll(partial, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -118,6 +171,9 @@ func TestInvalidCurrentFailsWithoutGuessingRecovery(t *testing.T) {
 	if string(data) != validAlternative.ID {
 		t.Fatalf("CURRENT.next changed while CURRENT was invalid: %q", data)
 	}
+	if info, statErr := os.Stat(partial); statErr != nil || !info.IsDir() {
+		t.Fatalf("invalid CURRENT must preserve partial recovery evidence: %v", statErr)
+	}
 }
 
 func TestSwitchFailureInjectionNeverSplitsDatabaseAndMedia(t *testing.T) {
@@ -126,10 +182,7 @@ func TestSwitchFailureInjectionNeverSplitsDatabaseAndMedia(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := runtime.Current
-	next, err := runtime.CreateGeneration(context.Background(), "replacement")
-	if err != nil {
-		t.Fatal(err)
-	}
+	next := createGenerationForTest(t, runtime, "replacement")
 	injected := errors.New("injected switch failure")
 
 	err = runtime.switchCurrent(context.Background(), next.ID, switchHooks{
@@ -173,10 +226,10 @@ func TestSwitchCurrentRequiresCoordinatedExclusiveLocks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := runtime.CreateGeneration(context.Background(), "coordinated-replacement")
-	if err != nil {
-		t.Fatal(err)
+	if _, err := runtime.CreateGeneration(context.Background(), "unguarded", nil); !errors.Is(err, ErrInsufficientLocks) {
+		t.Fatalf("unguarded generation creation was accepted: %v", err)
 	}
+	next := createGenerationForTest(t, runtime, "coordinated-replacement")
 	if err := runtime.SwitchCurrent(context.Background(), next.ID, nil); !errors.Is(err, ErrInsufficientLocks) {
 		t.Fatalf("unguarded generation switch was accepted: %v", err)
 	}
@@ -232,4 +285,20 @@ func assertGenerationPaths(t *testing.T, generation Generation) {
 			t.Fatalf("generation path escaped root: %s (%v)", path, err)
 		}
 	}
+}
+
+func createGenerationForTest(t *testing.T, runtime *Runtime, id string) Generation {
+	t.Helper()
+	held, err := runtime.Locks.AcquireSet(context.Background(), LockRequest{Name: ImportLock, Mode: Exclusive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation, err := runtime.CreateGeneration(context.Background(), id, held)
+	if releaseErr := held.Release(); releaseErr != nil {
+		t.Fatalf("release generation creation lock: %v", releaseErr)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return generation
 }
