@@ -110,6 +110,54 @@ func (l *Locker) AcquireSet(ctx context.Context, requests ...LockRequest) (*Leas
 	return set, nil
 }
 
+// ExtendSet appends later-ranked locks to an existing acquisition without
+// releasing the locks it already owns. This is used by import commit to claim
+// a one-time token while holding import.lock, then enter the remaining lock
+// phases without opening a replay window. A failed extension leaves the
+// original set owned and releases only locks acquired by this call.
+func (l *Locker) ExtendSet(ctx context.Context, set *LeaseSet, requests ...LockRequest) error {
+	if l == nil || set == nil || set.root != l.root || set.released.Load() {
+		return fmt.Errorf("%w: acquisition set is unavailable", ErrInvalidLock)
+	}
+	if err := validateLockRequests(requests); err != nil {
+		return err
+	}
+	maximum := -1
+	seen := make(map[LockName]struct{}, len(set.leases))
+	for _, lease := range set.leases {
+		if lease == nil || lease.released.Load() {
+			continue
+		}
+		seen[lease.name] = struct{}{}
+		if rank := lockOrder[lease.name]; rank > maximum {
+			maximum = rank
+		}
+	}
+	for _, request := range requests {
+		if _, duplicate := seen[request.Name]; duplicate {
+			return fmt.Errorf("%w: duplicate %s lock", ErrInvalidLock, request.Name)
+		}
+		if lockOrder[request.Name] <= maximum {
+			return fmt.Errorf("%w: %s does not follow the held locks", ErrLockOrder, request.Name)
+		}
+		maximum = lockOrder[request.Name]
+		seen[request.Name] = struct{}{}
+	}
+	var acquired []*Lease
+	for _, request := range requests {
+		lease, err := l.acquireOne(ctx, request)
+		if err != nil {
+			for index := len(acquired) - 1; index >= 0; index-- {
+				_ = acquired[index].Release()
+			}
+			return err
+		}
+		acquired = append(acquired, lease)
+	}
+	set.leases = append(set.leases, acquired...)
+	return nil
+}
+
 func (l *Locker) acquireOne(ctx context.Context, request LockRequest) (*Lease, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -191,17 +239,50 @@ type LeaseSet struct {
 	released atomic.Bool
 }
 
+// BelongsTo reports whether this live set was acquired from the exact runtime
+// root. It prevents a same-named lock from another instance authorizing data
+// mutation.
+func (s *LeaseSet) BelongsTo(root string) bool {
+	if s == nil || s.released.Load() {
+		return false
+	}
+	absolute, err := filepath.Abs(filepath.Clean(root))
+	return err == nil && absolute == s.root
+}
+
 // Holds reports whether the unreleased set contains the requested ownership.
 func (s *LeaseSet) Holds(name LockName, mode LockMode) bool {
 	if s == nil || s.released.Load() {
 		return false
 	}
 	for _, lease := range s.leases {
-		if lease.name == name && lease.mode == mode {
+		if lease.Holds(name, mode) {
 			return true
 		}
 	}
 	return false
+}
+
+// ReleaseLock relinquishes one member of a set while retaining the remaining
+// ownership. ExtendSet still considers every retained lock, so releasing an
+// earlier member cannot permit a later lock-order inversion.
+func (s *LeaseSet) ReleaseLock(name LockName) error {
+	if s == nil || s.released.Load() {
+		return nil
+	}
+	var target *Lease
+	for _, lease := range s.leases {
+		if lease == nil || lease.released.Load() {
+			continue
+		}
+		if lease.name == name {
+			target = lease
+		}
+	}
+	if target == nil {
+		return fmt.Errorf("%w: set does not hold %s lock", ErrInvalidLock, name)
+	}
+	return target.Release()
 }
 
 // Release relinquishes the whole group in reverse acquisition order.

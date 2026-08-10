@@ -292,13 +292,13 @@ func decodeOwnerAPIFailure(status int, body []byte) error {
 	case "MEDIA_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "choose an existing managed media ID or clear the reference"
-	case "DATA_INTEGRITY_FAILED", "EXPORT_INVALID", "EXPORT_CHECKSUM_MISMATCH", "EXPORT_VERSION_UNSUPPORTED", "IMPORT_STAGING_INVALID":
+	case "DATA_INTEGRITY_FAILED", "EXPORT_INVALID", "EXPORT_CHECKSUM_MISMATCH", "EXPORT_VERSION_UNSUPPORTED":
 		exit = ExitIntegrity
 		suggestion = "run diagnostics before retrying"
 	case "IMPORT_DISK_SPACE_INSUFFICIENT":
 		exit = ExitIO
 		suggestion = "free the reported additional bytes on the server data filesystem, then retry"
-	case "IMPORT_IN_PROGRESS", "IMPORT_STAGING_EXPIRED":
+	case "IMPORT_IN_PROGRESS", "IMPORT_STAGING_INVALID", "IMPORT_STAGING_EXPIRED":
 		exit = ExitConflict
 		suggestion = "finish, discard, or wait for the existing staging inspection before retrying"
 	case "CANCELLED":

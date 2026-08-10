@@ -191,6 +191,42 @@ func Open(dataDir string) (*Runtime, error) {
 	return OpenContext(context.Background(), dataDir)
 }
 
+// OpenForCoordination loads immutable instance identity and lock handles but
+// deliberately does not read CURRENT. Server startup uses it before acquiring
+// Import→Serve so direct import cannot race a pre-lock generation snapshot.
+func OpenForCoordination(dataDir string) (*Runtime, error) {
+	root, err := ResolveDataDir(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureBaseDirectories(root); err != nil {
+		return nil, err
+	}
+	instance, err := readInstance(filepath.Join(root, instanceFile))
+	if err != nil {
+		return nil, err
+	}
+	locks, err := NewLocker(root)
+	if err != nil {
+		return nil, err
+	}
+	return &Runtime{Root: root, Instance: instance, Locks: locks}, nil
+}
+
+// RefreshCurrent resolves the sole authority and removes stale partial/next
+// artifacts while the caller owns import.lock.
+func (r *Runtime) RefreshCurrent(held *LeaseSet) error {
+	if r == nil || held == nil || held.root != r.Root || !held.Holds(ImportLock, Exclusive) {
+		return ErrInsufficientLocks
+	}
+	current, err := r.ResolveCurrent()
+	if err != nil {
+		return err
+	}
+	r.Current = current
+	return r.cleanupAfterValidCurrent()
+}
+
 // OpenContext resolves an initialized runtime. It briefly serializes stale
 // pointer cleanup with import coordination and never guesses another generation
 // when CURRENT is absent or invalid.
@@ -327,6 +363,7 @@ func ensureBaseDirectories(root string) error {
 		filepath.Join(root, "cache", "previews"),
 		filepath.Join(root, "backups"),
 		filepath.Join(root, "staging", "import"),
+		filepath.Join(root, "staging", "import-status"),
 		filepath.Join(root, "tmp"),
 		filepath.Join(root, "locks"),
 	}

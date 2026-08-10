@@ -17,6 +17,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -122,10 +124,17 @@ type Inspection struct {
 // StagingClaim is the one-time, already verified handoff consumed by import
 // commit. Claiming does not switch CURRENT or mutate active authority data.
 type StagingClaim struct {
-	GenerationID string
-	ArchivePath  string
-	Generation   runtimefs.Generation
-	MetadataPath string
+	GenerationID  string
+	ArchivePath   string
+	Generation    runtimefs.Generation
+	MetadataPath  string
+	StageRoot     string
+	ArchiveSHA    string
+	ExpiresAt     time.Time
+	SessionEpoch  uint64
+	Counts        ImportCounts
+	ExpandedBytes int64
+	MediaBytes    int64
 }
 
 type stagingMetadata struct {
@@ -256,7 +265,7 @@ func (inspector *Inspector) Inspect(ctx context.Context, source io.Reader, sessi
 	if now.IsZero() {
 		return Inspection{}, errors.New("import inspection clock returned zero time")
 	}
-	if err := inspector.cleanupAndCheckActive(runtimeState.Root, now); err != nil {
+	if err := inspector.cleanupAndCheckActive(runtimeState.Root, now, sessionEpoch); err != nil {
 		return Inspection{}, err
 	}
 
@@ -369,7 +378,7 @@ func (inspector *Inspector) Resume(ctx context.Context, token string, sessionEpo
 // Claim atomically changes one verified ready token to committing. A second
 // claim or any restart attempt against committing/used/failed state is rejected.
 func (inspector *Inspector) Claim(ctx context.Context, token string, sessionEpoch uint64) (StagingClaim, error) {
-	state, _, stageRoot, lease, err := inspector.loadReady(ctx, token, sessionEpoch)
+	state, document, stageRoot, lease, err := inspector.loadReady(ctx, token, sessionEpoch)
 	if err != nil {
 		return StagingClaim{}, err
 	}
@@ -378,11 +387,75 @@ func (inspector *Inspector) Claim(ctx context.Context, token string, sessionEpoc
 	if err := writeStagingMetadata(stageRoot, state); err != nil {
 		return StagingClaim{}, err
 	}
-	generation := stagingGeneration(stageRoot, state.GenerationID)
+	return inspector.newClaim(ctx, state, document, stageRoot)
+}
+
+// ClaimWithinLocks consumes a ready token while the caller retains one
+// continuous import.lock ownership for the complete commit state machine.
+func (inspector *Inspector) ClaimWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, token string, sessionEpoch uint64, held *runtimefs.LeaseSet) (StagingClaim, error) {
+	if inspector == nil || runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
+		return StagingClaim{}, runtimefs.ErrInsufficientLocks
+	}
+	state, document, stageRoot, err := inspector.loadReadyHeld(ctx, runtimeState, token, sessionEpoch)
+	if err != nil {
+		return StagingClaim{}, err
+	}
+	state.State = stagingCommitting
+	if err := writeStagingMetadata(stageRoot, state); err != nil {
+		return StagingClaim{}, err
+	}
+	return inspector.newClaim(ctx, state, document, stageRoot)
+}
+
+func (inspector *Inspector) newClaim(ctx context.Context, state stagingMetadata, document manifest, stageRoot string) (StagingClaim, error) {
+	portable, err := summarizePortable(ctx, filepath.Join(stageRoot, "archive.zip"), document)
+	if err != nil {
+		return StagingClaim{}, importStagingInvalid("staged portable summary is invalid", err)
+	}
 	return StagingClaim{
 		GenerationID: state.GenerationID, ArchivePath: filepath.Join(stageRoot, "archive.zip"),
-		Generation: generation, MetadataPath: filepath.Join(stageRoot, "staging.json"),
+		Generation: stagingGeneration(stageRoot, state.GenerationID), MetadataPath: filepath.Join(stageRoot, "staging.json"),
+		StageRoot: stageRoot, ArchiveSHA: state.ArchiveSHA, ExpiresAt: time.UnixMilli(state.ExpiresAtMS).UTC(),
+		SessionEpoch:  state.SessionEpoch,
+		Counts:        ImportCounts{Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media},
+		ExpandedBytes: document.Limits.ExpandedBytes, MediaBytes: portable.mediaBytes,
 	}, nil
+}
+
+// FinishClaim persists an unreplayable terminal state while import.lock is
+// still held. Journal status remains available after staging cleanup.
+func (inspector *Inspector) FinishClaim(claim StagingClaim, succeeded bool, held *runtimefs.LeaseSet) error {
+	if inspector == nil || held == nil {
+		return runtimefs.ErrInsufficientLocks
+	}
+	root, err := runtimefs.ResolveDataDir(inspector.dataDir)
+	if err != nil {
+		return err
+	}
+	expectedRoot := filepath.Join(root, "staging", "import", claim.GenerationID)
+	actualRoot, err := filepath.Abs(filepath.Clean(claim.StageRoot))
+	if err != nil || actualRoot != expectedRoot || !held.BelongsTo(root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
+		return runtimefs.ErrInsufficientLocks
+	}
+	state, err := readStagingMetadata(claim.StageRoot)
+	if err != nil {
+		return err
+	}
+	if state.GenerationID != claim.GenerationID {
+		return importStagingInvalid("claimed staging identity changed during commit", nil)
+	}
+	if (succeeded && state.State == stagingUsed) || (!succeeded && state.State == stagingFailed) {
+		return nil
+	}
+	if state.State != stagingCommitting {
+		return importStagingInvalid("claimed staging state changed during commit", nil)
+	}
+	if succeeded {
+		state.State = stagingUsed
+	} else {
+		state.State = stagingFailed
+	}
+	return writeStagingMetadata(claim.StageRoot, state)
 }
 
 func (inspector *Inspector) copyArchive(ctx context.Context, source io.Reader, destination string) (size int64, digestHex string, resultErr error) {
@@ -1056,7 +1129,7 @@ func (inspector *Inspector) createStage(root string, now time.Time) (string, str
 	return "", "", errors.New("could not allocate a unique import staging generation")
 }
 
-func (inspector *Inspector) cleanupAndCheckActive(root string, now time.Time) error {
+func (inspector *Inspector) cleanupAndCheckActive(root string, now time.Time, sessionEpoch uint64) error {
 	parent := filepath.Join(root, "staging", "import")
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -1088,7 +1161,7 @@ func (inspector *Inspector) cleanupAndCheckActive(root string, now time.Time) er
 				return err
 			}
 		case stagingReady:
-			if metadata.ExpiresAtMS <= now.UnixMilli() {
+			if metadata.ExpiresAtMS <= now.UnixMilli() || metadata.SessionEpoch != sessionEpoch {
 				if err := removeStagingDirectory(parent, stageRoot); err != nil {
 					return err
 				}
@@ -1123,16 +1196,21 @@ func (inspector *Inspector) loadReady(ctx context.Context, token string, session
 	if err != nil {
 		return stagingMetadata{}, manifest{}, "", nil, err
 	}
-	succeeded := false
-	defer func() {
-		if !succeeded {
-			resultErr = errors.Join(resultErr, heldLease.Release())
-		}
-	}()
+	state, document, stageRoot, err := inspector.loadReadyHeld(ctx, runtimeState, token, sessionEpoch)
+	if err != nil {
+		return stagingMetadata{}, manifest{}, "", nil, errors.Join(err, heldLease.Release())
+	}
+	return state, document, stageRoot, heldLease, nil
+}
+
+func (inspector *Inspector) loadReadyHeld(ctx context.Context, runtimeState *runtimefs.Runtime, token string, sessionEpoch uint64) (stagingMetadata, manifest, string, error) {
+	if token == "" || len(token) > 256 || sessionEpoch == 0 || runtimeState == nil {
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("staging token or owner epoch is invalid", nil)
+	}
 	parent := filepath.Join(runtimeState.Root, "staging", "import")
 	entries, err := os.ReadDir(parent)
 	if err != nil {
-		return stagingMetadata{}, manifest{}, "", nil, err
+		return stagingMetadata{}, manifest{}, "", err
 	}
 	var stageRoot string
 	var state stagingMetadata
@@ -1140,58 +1218,57 @@ func (inspector *Inspector) loadReady(ctx context.Context, token string, session
 		candidate := filepath.Join(parent, entry.Name())
 		info, infoErr := os.Lstat(candidate)
 		if infoErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !strings.HasPrefix(entry.Name(), "import-") {
-			return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("import staging contains an unsafe entry", infoErr)
+			return stagingMetadata{}, manifest{}, "", importStagingInvalid("import staging contains an unsafe entry", infoErr)
 		}
 		metadata, err := readStagingMetadata(candidate)
 		if err != nil {
-			return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("import staging metadata is corrupt", err)
+			return stagingMetadata{}, manifest{}, "", importStagingInvalid("import staging metadata is corrupt", err)
 		}
 		if metadata.State == stagingReady || metadata.State == stagingCommitting || metadata.State == stagingUsed {
 			if stageRoot != "" {
-				return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("multiple active import staging records exist", nil)
+				return stagingMetadata{}, manifest{}, "", importStagingInvalid("multiple active import staging records exist", nil)
 			}
 			stageRoot, state = candidate, metadata
 		}
 	}
 	if stageRoot == "" {
-		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("no matching ready import staging exists", nil)
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("no matching ready import staging exists", nil)
 	}
 	if state.State != stagingReady {
-		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("import staging token was already claimed or used", nil)
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("import staging token was already claimed or used", nil)
 	}
 	now := inspector.clock().UTC().Truncate(time.Millisecond)
 	if state.ExpiresAtMS <= now.UnixMilli() {
-		return stagingMetadata{}, manifest{}, "", nil, domain.NewError(domain.CodeImportStagingExpired, "import staging token has expired", map[string]any{"expired_at": time.UnixMilli(state.ExpiresAtMS).UTC()})
+		return stagingMetadata{}, manifest{}, "", domain.NewError(domain.CodeImportStagingExpired, "import staging token has expired", map[string]any{"expired_at": time.UnixMilli(state.ExpiresAtMS).UTC()})
 	}
 	if state.InstanceID != runtimeState.Instance.ID || state.SessionEpoch != sessionEpoch || state.GenerationID != filepath.Base(stageRoot) {
-		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("import staging binding does not match this instance and owner epoch", nil)
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("import staging binding does not match this instance and owner epoch", nil)
 	}
 	expectedHash, err := hex.DecodeString(state.TokenHash)
 	actualHash := sha256.Sum256([]byte(token))
 	if err != nil || len(expectedHash) != sha256.Size || subtle.ConstantTimeCompare(expectedHash, actualHash[:]) != 1 {
-		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("import staging token does not match", nil)
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("import staging token does not match", nil)
 	}
 	archivePath := filepath.Join(stageRoot, "archive.zip")
 	actualArchiveHash, err := fileSHA256(ctx, archivePath, inspector.limits.MaxArchiveBytes)
 	if err != nil || actualArchiveHash != state.ArchiveSHA {
-		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("staged archive hash does not match metadata", err)
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("staged archive hash does not match metadata", err)
 	}
 	document, err := inspector.preflight(ctx, archivePath)
 	if err != nil {
-		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("staged archive no longer passes preflight", err)
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("staged archive no longer passes preflight", err)
 	}
 	if err := ValidateFileContext(ctx, archivePath); err != nil {
-		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("staged archive no longer validates", err)
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("staged archive no longer validates", err)
 	}
 	generation := stagingGeneration(stageRoot, state.GenerationID)
-	if err := validateStagingGeneration(ctx, runtimeState, generation, document); err != nil {
-		return stagingMetadata{}, manifest{}, "", nil, importStagingInvalid("staging generation no longer validates", err)
+	if err := validateStagingGeneration(ctx, runtimeState, generation, archivePath, document); err != nil {
+		return stagingMetadata{}, manifest{}, "", importStagingInvalid("staging generation no longer validates", err)
 	}
-	succeeded = true
-	return state, document, stageRoot, heldLease, nil
+	return state, document, stageRoot, nil
 }
 
-func validateStagingGeneration(ctx context.Context, parent *runtimefs.Runtime, generation runtimefs.Generation, document manifest) error {
+func validateStagingGeneration(ctx context.Context, parent *runtimefs.Runtime, generation runtimefs.Generation, archivePath string, document manifest) error {
 	for _, target := range []struct {
 		name string
 		dir  bool
@@ -1207,9 +1284,138 @@ func validateStagingGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		return err
 	}
 	defer func() { _ = database.Close() }()
-	return database.ValidatePortableReady(ctx, sqlitestore.ArchiveCounts{
+	if err := database.ValidatePortableReady(ctx, sqlitestore.ArchiveCounts{
 		Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media,
+	}); err != nil {
+		return err
+	}
+	snapshot, err := database.BeginArchiveSnapshot(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = snapshot.Close() }()
+	if err := snapshot.ValidateIntegrity(ctx); err != nil {
+		return err
+	}
+	if err := validatePortableAuthority(ctx, snapshot, archivePath); err != nil {
+		return err
+	}
+	return snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
+		file, err := openOriginal(generation.Root, value.StoragePath)
+		if err != nil {
+			return err
+		}
+		id, parseErr := domain.ParseID(value.ID)
+		if parseErr != nil {
+			_ = file.Close()
+			return parseErr
+		}
+		verifyErr := media.VerifyPortableOriginal(ctx, file, media.Media{
+			ID: id, SHA256: value.SHA256, StoragePath: value.StoragePath,
+			OriginalName: value.OriginalName, MIMEType: value.MIMEType, ByteSize: value.ByteSize,
+			Width: value.Width, Height: value.Height, CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
+		})
+		return errors.Join(verifyErr, file.Close())
 	})
+}
+
+func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, archivePath string) error {
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+	files := make(map[string]*zip.File, len(reader.File))
+	for _, file := range reader.File {
+		files[file.Name] = file
+	}
+	siteBytes, err := readSmallZIPMember(ctx, files["data/site.json"], maxPortableRecordBytes)
+	if err != nil {
+		return err
+	}
+	var expectedSite siteRecord
+	if _, err := decodePortableJSONObject(siteBytes, &expectedSite, []string{"title", "bio", "timezone", "public_base_url", "avatar_media_id", "comments_enabled"}); err != nil {
+		return err
+	}
+	actualSite, err := snapshot.Site(ctx)
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(expectedSite, siteRecord{
+		Title: actualSite.Title, Bio: actualSite.Bio, Timezone: actualSite.Timezone,
+		PublicBaseURL: actualSite.PublicBaseURL, AvatarMediaID: actualSite.AvatarMediaID, CommentsEnabled: actualSite.CommentsEnabled,
+	}) {
+		return errors.New("staged site settings do not match the portable archive")
+	}
+	expectedEntries := make([]entryRecord, 0)
+	if _, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
+		expectedEntries = append(expectedEntries, value)
+		return nil
+	}); err != nil {
+		return err
+	}
+	sort.Slice(expectedEntries, func(i, j int) bool { return expectedEntries[i].ID < expectedEntries[j].ID })
+	actualEntries := make([]entryRecord, 0, len(expectedEntries))
+	entriesErr := snapshot.Entries(ctx, func(value sqlitestore.ArchiveEntry) error {
+		usages := make([]usageRecord, len(value.Media))
+		for index, usage := range value.Media {
+			usages[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
+		}
+		actualEntries = append(actualEntries, entryRecord{
+			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
+			CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS), PublishedAt: portableTime(value.PublishedAtMS), Media: usages,
+		})
+		return nil
+	})
+	sort.Slice(actualEntries, func(i, j int) bool { return actualEntries[i].ID < actualEntries[j].ID })
+	if entriesErr != nil || !reflect.DeepEqual(expectedEntries, actualEntries) {
+		return errors.Join(errors.New("staged entries do not match the portable archive"), entriesErr)
+	}
+	expectedComments := make([]commentRecord, 0)
+	if _, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, _ map[string]json.RawMessage) error {
+		expectedComments = append(expectedComments, value)
+		return nil
+	}); err != nil {
+		return err
+	}
+	sort.Slice(expectedComments, func(i, j int) bool { return expectedComments[i].ID < expectedComments[j].ID })
+	actualComments := make([]commentRecord, 0, len(expectedComments))
+	commentsErr := snapshot.Comments(ctx, func(value sqlitestore.ArchiveComment) error {
+		actualComments = append(actualComments, commentRecord{
+			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorKind: value.AuthorKind,
+			AuthorName: value.AuthorName, ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS),
+		})
+		return nil
+	})
+	sort.Slice(actualComments, func(i, j int) bool { return actualComments[i].ID < actualComments[j].ID })
+	if commentsErr != nil || !reflect.DeepEqual(expectedComments, actualComments) {
+		return errors.Join(errors.New("staged comments do not match the portable archive"), commentsErr)
+	}
+	expectedMedia := make([]mediaRecord, 0)
+	if _, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+		expectedMedia = append(expectedMedia, value)
+		return nil
+	}); err != nil {
+		return err
+	}
+	sort.Slice(expectedMedia, func(i, j int) bool { return expectedMedia[i].ID < expectedMedia[j].ID })
+	actualMedia := make([]mediaRecord, 0, len(expectedMedia))
+	mediaErr := snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
+		archiveMember, err := mediaArchivePath(value)
+		if err != nil {
+			return err
+		}
+		actualMedia = append(actualMedia, mediaRecord{
+			ID: value.ID, SHA256: value.SHA256, ArchivePath: archiveMember, OriginalName: value.OriginalName,
+			MIMEType: value.MIMEType, ByteSize: value.ByteSize, Width: value.Width, Height: value.Height, CreatedAt: portableTime(value.CreatedAtMS),
+		})
+		return nil
+	})
+	sort.Slice(actualMedia, func(i, j int) bool { return actualMedia[i].ID < actualMedia[j].ID })
+	if mediaErr != nil || !reflect.DeepEqual(expectedMedia, actualMedia) {
+		return errors.Join(errors.New("staged media metadata do not match the portable archive"), mediaErr)
+	}
+	return nil
 }
 
 func writeStagingMetadata(stageRoot string, value stagingMetadata) error {

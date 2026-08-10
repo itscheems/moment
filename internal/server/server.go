@@ -31,6 +31,11 @@ type Timeouts struct {
 type Config struct {
 	Runtime *runtimefs.Runtime
 	Handler http.Handler
+	// PrepareLocked runs while Import→Serve→Maintenance→Media are owned. It
+	// performs crash recovery, resolves CURRENT, and installs the initial live
+	// bundle without racing a direct import. The server then releases every
+	// lock except Serve before opening its listener.
+	PrepareLocked func(context.Context, *runtimefs.LeaseSet) error
 	// AfterLock runs after serve.lock is owned and before the listener opens.
 	// It is used for state that must not race offline instance mutation.
 	AfterLock      func(context.Context) error
@@ -61,18 +66,41 @@ func Run(ctx context.Context, config Config) (runErr error) {
 		config.Log = func(string, string, map[string]any) {}
 	}
 
-	lease, err := config.Runtime.Locks.Acquire(ctx, runtimefs.ServeLock, runtimefs.Exclusive)
-	if err != nil {
-		return fmt.Errorf("acquire serve lock: %w", err)
-	}
-	defer func() {
-		runErr = errors.Join(runErr, lease.Release())
-	}()
-	if config.AfterLock != nil {
-		if err := config.AfterLock(ctx); err != nil {
-			return fmt.Errorf("prepare server after acquiring serve lock: %w", err)
+	var held *runtimefs.LeaseSet
+	var err error
+	if config.PrepareLocked != nil {
+		held, err = config.Runtime.Locks.AcquireSet(ctx,
+			runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive},
+			runtimefs.LockRequest{Name: runtimefs.ServeLock, Mode: runtimefs.Exclusive},
+			runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Exclusive},
+			runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Exclusive},
+		)
+		if err != nil {
+			return fmt.Errorf("acquire startup lock set: %w", err)
+		}
+		if err := config.PrepareLocked(ctx, held); err != nil {
+			_ = held.Release()
+			return fmt.Errorf("prepare server under startup locks: %w", err)
+		}
+		for _, name := range []runtimefs.LockName{runtimefs.MediaLock, runtimefs.MaintenanceLock, runtimefs.ImportLock} {
+			if err := held.ReleaseLock(name); err != nil {
+				_ = held.Release()
+				return fmt.Errorf("release startup %s lock: %w", name, err)
+			}
+		}
+	} else {
+		held, err = config.Runtime.Locks.AcquireSet(ctx, runtimefs.LockRequest{Name: runtimefs.ServeLock, Mode: runtimefs.Exclusive})
+		if err != nil {
+			return fmt.Errorf("acquire serve lock: %w", err)
+		}
+		if config.AfterLock != nil {
+			if err := config.AfterLock(ctx); err != nil {
+				_ = held.Release()
+				return fmt.Errorf("prepare server after acquiring serve lock: %w", err)
+			}
 		}
 	}
+	defer func() { runErr = errors.Join(runErr, held.Release()) }()
 
 	listener := config.Listener
 	if listener == nil {

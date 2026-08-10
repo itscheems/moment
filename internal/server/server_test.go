@@ -153,3 +153,78 @@ func TestAfterLockPreparationIsExclusiveAndFailureReleasesLock(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestServerStartupObservesDirectImportCurrentUnderImportThenServeOrder(t *testing.T) {
+	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	creation, err := runtimeState.Locks.AcquireSet(context.Background(), runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := runtimeState.CreateGeneration(context.Background(), "import-startup-race", creation)
+	if releaseErr := creation.Release(); err != nil || releaseErr != nil {
+		t.Fatal(errors.Join(err, releaseErr))
+	}
+	coordinated, err := runtimefs.OpenForCoordination(runtimeState.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, err := runtimeState.Locks.AcquireSet(context.Background(), runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runResult := make(chan error, 1)
+	go func() {
+		runResult <- Run(ctx, Config{
+			Runtime: coordinated, Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), Address: "127.0.0.1:0",
+			PrepareLocked: func(context.Context, *runtimefs.LeaseSet) error {
+				current, resolveErr := coordinated.ResolveCurrent()
+				if resolveErr != nil {
+					return resolveErr
+				}
+				prepared <- current.ID
+				cancel()
+				return nil
+			},
+		})
+	}()
+	select {
+	case id := <-prepared:
+		t.Fatalf("server prepared before direct import released import.lock: %s", id)
+	case <-time.After(30 * time.Millisecond):
+	}
+	if err := runtimeState.Locks.ExtendSet(context.Background(), direct,
+		runtimefs.LockRequest{Name: runtimefs.ServeLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Exclusive},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := runtimeState.SwitchCurrent(context.Background(), replacement.ID, direct); err != nil {
+		t.Fatal(err)
+	}
+	if err := direct.Release(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-prepared:
+		if id != replacement.ID {
+			t.Fatalf("server opened stale generation %s want %s", id, replacement.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server startup did not resume")
+	}
+	select {
+	case err := <-runResult:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not stop")
+	}
+}

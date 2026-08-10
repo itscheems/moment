@@ -336,6 +336,57 @@ func TestSwitchCurrentRequiresCoordinatedExclusiveLocks(t *testing.T) {
 	}
 }
 
+func TestFinalizeStagedGenerationAtomicallyRefusesRacingDestination(t *testing.T) {
+	runtimeState, err := Initialize(context.Background(), Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "import-20260811T000000000Z-race"
+	stageRoot := filepath.Join(runtimeState.Root, "staging", "import", id)
+	staged := Generation{
+		ID: id, Root: filepath.Join(stageRoot, "generation"),
+		DatabasePath: filepath.Join(stageRoot, "generation", "moment.db"),
+		MediaRoot:    filepath.Join(stageRoot, "generation", "media"),
+		OriginalsDir: filepath.Join(stageRoot, "generation", "media", "original"),
+	}
+	if err := os.MkdirAll(staged.OriginalsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(staged.DatabasePath, []byte("staged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	held, err := runtimeState.Locks.AcquireSet(context.Background(),
+		LockRequest{Name: ImportLock, Mode: Exclusive},
+		LockRequest{Name: MaintenanceLock, Mode: Exclusive},
+		LockRequest{Name: MediaLock, Mode: Exclusive},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Release() }()
+	originalRename := finalizeStagedRename
+	defer func() { finalizeStagedRename = originalRename }()
+	finalizeStagedRename = func(source, destination string) error {
+		if err := os.Mkdir(destination, 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(destination, "winner"), []byte("keep"), 0o600); err != nil {
+			return err
+		}
+		return originalRename(source, destination)
+	}
+	if _, err := runtimeState.FinalizeStagedGeneration(context.Background(), staged, held); !errors.Is(err, ErrGenerationExists) {
+		t.Fatalf("racing destination error=%v", err)
+	}
+	winner, err := os.ReadFile(filepath.Join(runtimeState.Root, "generations", id, "winner"))
+	if err != nil || string(winner) != "keep" {
+		t.Fatalf("racing destination was clobbered: %q %v", winner, err)
+	}
+	if _, err := os.Stat(staged.DatabasePath); err != nil {
+		t.Fatalf("staging source was moved on collision: %v", err)
+	}
+}
+
 func TestCurrentRejectsExtraPointerContent(t *testing.T) {
 	runtime, err := Initialize(context.Background(), Config{DataDir: t.TempDir()})
 	if err != nil {

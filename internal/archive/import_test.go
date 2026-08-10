@@ -142,6 +142,28 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 	}
 }
 
+func TestInspectDiscardsReadyStageFromRevokedOwnerEpoch(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	archivePath := exportFixtureFile(t, fixture)
+	now := time.Date(2026, 8, 11, 1, 20, 0, 0, time.UTC)
+	inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
+	inspector.random = bytes.NewReader(append(bytes.Repeat([]byte{7}, 40), bytes.Repeat([]byte{8}, 40)...))
+	first, err := inspector.InspectFile(context.Background(), archivePath, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := inspector.InspectFile(context.Background(), archivePath, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.GenerationID == second.GenerationID || second.StagingToken == "" {
+		t.Fatalf("revoked stage was reused: first=%#v second=%#v", first, second)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.runtime.Root, "staging", "import", first.GenerationID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("revoked staging directory still exists: %v", err)
+	}
+}
+
 func TestInspectOfflineSnapshotLeavesActiveGenerationByteForByteUntouched(t *testing.T) {
 	source := newExportFixture(t, true)
 	archivePath := exportFixtureFile(t, source)
@@ -572,6 +594,31 @@ func writeArchiveHeaders(t *testing.T, name string, order []string, members map[
 	}
 	if err := errors.Join(writer.Close(), file.Close()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFinishClaimRejectsLeaseFromAnotherInstance(t *testing.T) {
+	first, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspector, err := NewInspector(InspectOptions{DataDir: second.Root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := first.Locks.AcquireSet(context.Background(), runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Release() }()
+	id := "import-20260811T000000000Z-0011223344556677"
+	claim := StagingClaim{GenerationID: id, StageRoot: filepath.Join(second.Root, "staging", "import", id)}
+	if err := inspector.FinishClaim(claim, false, held); !errors.Is(err, runtimefs.ErrInsufficientLocks) {
+		t.Fatalf("cross-instance claim finalization error=%v", err)
 	}
 }
 

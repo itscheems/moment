@@ -80,6 +80,60 @@ func TestAcquireSetEnforcesGlobalOrder(t *testing.T) {
 	}
 }
 
+func TestExtendSetKeepsImportOwnershipAndReleasesInReverseOrder(t *testing.T) {
+	locker, err := NewLocker(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := locker.AcquireSet(context.Background(), LockRequest{Name: ImportLock, Mode: Exclusive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Release() }()
+	if err := locker.ExtendSet(context.Background(), held,
+		LockRequest{Name: ServeLock, Mode: Exclusive},
+		LockRequest{Name: MaintenanceLock, Mode: Exclusive},
+		LockRequest{Name: MediaLock, Mode: Exclusive},
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []LockName{ImportLock, ServeLock, MaintenanceLock, MediaLock} {
+		if !held.Holds(name, Exclusive) {
+			t.Fatalf("extended set does not hold %s", name)
+		}
+	}
+	if err := held.ReleaseLock(ImportLock); err != nil {
+		t.Fatalf("release import while retaining server ownership: %v", err)
+	}
+	for _, name := range []LockName{MediaLock, MaintenanceLock, ServeLock} {
+		if err := held.ReleaseLock(name); err != nil {
+			t.Fatalf("release %s: %v", name, err)
+		}
+	}
+	if held.Holds(ImportLock, Exclusive) {
+		t.Fatal("released import ownership is still reported")
+	}
+}
+
+func TestExtendSetFailureLeavesOriginalLeaseOwned(t *testing.T) {
+	root := t.TempDir()
+	locker, err := NewLocker(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := locker.AcquireSet(context.Background(), LockRequest{Name: ImportLock, Mode: Exclusive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Release() }()
+	if err := locker.ExtendSet(context.Background(), held, LockRequest{Name: ImportLock, Mode: Shared}); !errors.Is(err, ErrInvalidLock) {
+		t.Fatalf("duplicate extension error = %v", err)
+	}
+	if !held.Holds(ImportLock, Exclusive) {
+		t.Fatal("failed extension released the original import lease")
+	}
+}
+
 func TestCrossProcessSharedExclusiveAndCrashRelease(t *testing.T) {
 	root := t.TempDir()
 	locker, err := NewLocker(root)

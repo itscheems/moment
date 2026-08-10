@@ -51,6 +51,7 @@ type Config struct {
 	Media           *media.Store
 	Archive         ArchiveExporter
 	ImportInspector ImportInspector
+	ImportCommitter ImportCommitter
 	SecureCookies   bool
 	TrustedProxies  []string
 	RequestID       func() string
@@ -156,6 +157,12 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("import inspection route requires owner authentication")
 		}
 		RegisterImportInspectRoutes(engine, config.ImportInspector, config.OwnerAuth)
+	}
+	if config.ImportCommitter != nil {
+		if config.OwnerAuth == nil {
+			return nil, errors.New("import commit routes require owner authentication")
+		}
+		RegisterImportCommitRoutes(engine, config.ImportCommitter, config.OwnerAuth)
 	}
 
 	if config.Register != nil {

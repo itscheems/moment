@@ -115,6 +115,30 @@ func (exporter *Exporter) Export(ctx context.Context, destination io.Writer) (su
 		return Summary{}, fmt.Errorf("open archive database: %w", err)
 	}
 	defer func() { exportErr = errors.Join(exportErr, database.Close()) }()
+	return exporter.exportResolved(ctx, destination, runtimeState, database)
+}
+
+// ExportWithinLocks writes a complete v1 backup from an already-open active
+// database while the caller holds maintenance and media exclusion. It avoids
+// re-acquiring a shared maintenance lease during import commit.
+func (exporter *Exporter) ExportWithinLocks(ctx context.Context, destination io.Writer, runtimeState *runtimefs.Runtime, database *sqlitestore.Database, held *runtimefs.LeaseSet) (Summary, error) {
+	if exporter == nil || destination == nil || runtimeState == nil || database == nil || held == nil ||
+		!held.BelongsTo(runtimeState.Root) ||
+		!held.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) || !held.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
+		return Summary{}, runtimefs.ErrInsufficientLocks
+	}
+	current, err := runtimeState.ResolveCurrent()
+	if err != nil {
+		return Summary{}, err
+	}
+	if current.ID != runtimeState.Current.ID || filepath.Clean(database.Path()) != filepath.Clean(current.DatabasePath) {
+		return Summary{}, errors.New("backup database does not match authoritative CURRENT")
+	}
+	runtimeState.Current = current
+	return exporter.exportResolved(ctx, destination, runtimeState, database)
+}
+
+func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Writer, runtimeState *runtimefs.Runtime, database *sqlitestore.Database) (summary Summary, exportErr error) {
 	snapshot, err := database.BeginArchiveSnapshot(ctx)
 	if err != nil {
 		return Summary{}, err

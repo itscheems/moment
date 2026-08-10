@@ -19,6 +19,8 @@ var (
 	ErrInsufficientLocks  = errors.New("generation mutation requires exclusive runtime locks")
 )
 
+var finalizeStagedRename = renameDirectoryNoReplace
+
 // Generation binds the authoritative database and original media paths to one
 // identifier. Callers must not resolve these paths independently.
 type Generation struct {
@@ -141,6 +143,82 @@ func (r *Runtime) SwitchCurrent(ctx context.Context, id string, held *LeaseSet) 
 		return ErrInsufficientLocks
 	}
 	return r.switchCurrent(ctx, id, switchHooks{})
+}
+
+// FinalizeStagedGeneration durably moves one completely validated import
+// generation into generations/<id> without changing CURRENT. Import commit
+// keeps all three mutation locks until readiness or rollback is proven.
+func (r *Runtime) FinalizeStagedGeneration(ctx context.Context, staged Generation, held *LeaseSet) (Generation, error) {
+	if r == nil || held == nil || held.root != r.Root || !held.Holds(ImportLock, Exclusive) ||
+		!held.Holds(MaintenanceLock, Exclusive) || !held.Holds(MediaLock, Exclusive) {
+		return Generation{}, ErrInsufficientLocks
+	}
+	if err := ctx.Err(); err != nil {
+		return Generation{}, err
+	}
+	if err := validateGenerationID(staged.ID); err != nil {
+		return Generation{}, err
+	}
+	expectedRoot := filepath.Join(r.Root, "staging", "import", staged.ID, "generation")
+	actualRoot, err := filepath.Abs(filepath.Clean(staged.Root))
+	if err != nil {
+		return Generation{}, err
+	}
+	expectedRoot, err = filepath.Abs(expectedRoot)
+	if err != nil || actualRoot != expectedRoot {
+		return Generation{}, errors.New("staged generation is outside its bound import directory")
+	}
+	if err := validateGeneration(staged); err != nil {
+		return Generation{}, err
+	}
+	if err := validateGenerationTree(staged.Root); err != nil {
+		return Generation{}, err
+	}
+	parent := filepath.Join(r.Root, "generations")
+	destination := filepath.Join(parent, staged.ID)
+	if _, err := os.Lstat(destination); err == nil {
+		return Generation{}, fmt.Errorf("%w: %s", ErrGenerationExists, staged.ID)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return Generation{}, err
+	}
+	for _, directory := range []string{staged.OriginalsDir, staged.MediaRoot, staged.Root} {
+		if err := syncDirectory(directory); err != nil {
+			return Generation{}, fmt.Errorf("sync staged generation: %w", err)
+		}
+	}
+	if err := finalizeStagedRename(staged.Root, destination); err != nil {
+		if exists, inspectErr := pathExists(destination); inspectErr == nil && exists {
+			return Generation{}, fmt.Errorf("%w: %s", ErrGenerationExists, staged.ID)
+		}
+		return Generation{}, fmt.Errorf("finalize staged generation: %w", err)
+	}
+	if err := syncDirectory(filepath.Dir(staged.Root)); err != nil {
+		return Generation{}, fmt.Errorf("sync import staging after finalize: %w", err)
+	}
+	if err := syncDirectory(parent); err != nil {
+		return Generation{}, fmt.Errorf("sync generations after finalize: %w", err)
+	}
+	result := generationAt(r.Root, staged.ID)
+	if err := validateGeneration(result); err != nil {
+		return Generation{}, err
+	}
+	return result, nil
+}
+
+func validateGenerationTree(root string) error {
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
+			return fmt.Errorf("%w: unsafe staged member %s", ErrGenerationNotReady, filepath.Base(path))
+		}
+		return nil
+	})
 }
 
 type switchHooks struct {

@@ -3,18 +3,14 @@ package cli
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
-	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/buildinfo"
-	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
-	ginhttp "github.com/moment/moment/internal/transport/http/gin"
 	"github.com/moment/moment/internal/webassets"
 	"github.com/spf13/pflag"
 )
@@ -57,7 +53,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 	if err != nil {
 		return Result{}, err
 	}
-	runtime, err := runtimefs.OpenContext(ctx, target.DataDirectory())
+	runtime, err := runtimefs.OpenForCoordination(target.DataDirectory())
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return Result{}, err
@@ -69,16 +65,6 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 			ExitIO,
 		).WithCause(err)
 	}
-	database, err := sqlitestore.Open(ctx, runtime, sqlitestore.Options{})
-	if err != nil {
-		return Result{}, NewCommandError(
-			"DATABASE_NOT_READY",
-			"the current Moment database could not become ready",
-			"inspect the selected data directory and migration history, then retry",
-			ExitIntegrity,
-		).WithCause(err)
-	}
-	defer func() { _ = database.Close() }()
 	assets, err := webassets.Public()
 	if err != nil {
 		return Result{}, NewCommandError(
@@ -97,92 +83,55 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 			ExitIntegrity,
 		).WithCause(err)
 	}
-	siteRepository, err := sqlitestore.NewSiteRepository(database, runtime.Locks)
-	if err != nil {
-		return Result{}, err
-	}
-	siteService, err := app.NewSiteService(siteRepository, app.SiteOptions{
-		AllowDevelopmentLocalHTTP: runtime.IsDevelopment(),
-	})
-	if err != nil {
-		return Result{}, err
-	}
-	mediaStore, err := media.NewStore(runtime, database, media.Options{})
-	if err != nil {
-		return Result{}, err
-	}
-	postRepository, err := sqlitestore.NewPostRepository(database, runtime.Locks)
-	if err != nil {
-		return Result{}, err
-	}
-	postService, err := app.NewPostService(postRepository)
-	if err != nil {
-		return Result{}, err
-	}
-	commentRepository, err := sqlitestore.NewCommentRepository(database, runtime.Locks)
-	if err != nil {
-		return Result{}, err
-	}
-	commentService, err := app.NewCommentService(commentRepository)
-	if err != nil {
-		return Result{}, err
-	}
-	searchRepository, err := sqlitestore.NewSearchRepository(database, runtime.Locks)
-	if err != nil {
-		return Result{}, err
-	}
-	searchService, err := app.NewSearchService(searchRepository)
-	if err != nil {
-		return Result{}, err
-	}
-	shareMetadata, err := app.NewShareMetadataService(siteService, postService)
-	if err != nil {
-		return Result{}, err
-	}
 	exporter, err := archive.NewExporter(archive.Options{DataDir: runtime.Root, AppVersion: info.Version})
 	if err != nil {
 		return Result{}, err
 	}
-	importInspector, err := archive.NewInspector(archive.InspectOptions{DataDir: runtime.Root, ActiveDatabase: database})
+	committer, err := archive.NewCommitter(archive.CommitOptions{DataDir: runtime.Root, AppVersion: info.Version})
 	if err != nil {
 		return Result{}, err
 	}
-	engine, err := ginhttp.New(ginhttp.Config{
-		Assets:          assets,
-		OwnerAuth:       authManager,
-		SiteSettings:    siteService,
-		InstanceID:      runtime.Instance.ID,
-		Media:           mediaStore,
-		Posts:           postService,
-		Comments:        commentService,
-		Search:          searchService,
-		ShareMetadata:   shareMetadata,
-		Archive:         exporter,
-		ImportInspector: importInspector,
-		SecureCookies:   !runtime.IsDevelopment(),
-		TrustedProxies:  trustedProxies,
-		Log:             invocation.LogEvent,
-		Readiness: func(ctx context.Context) error {
-			if err := database.Ready(ctx); err != nil {
+	board := server.NewSwitchboard()
+	host := &liveServerHost{
+		board: board, auth: authManager, assets: assets, trustedProxies: trustedProxies,
+		secureCookies: !runtime.IsDevelopment(), log: invocation.LogEvent, exporter: exporter,
+	}
+	host.committer = &hostedImportCommitter{core: committer, host: host}
+	defer func() { _ = host.CloseActive() }()
+	if err := server.Run(ctx, server.Config{
+		Runtime: runtime, Handler: board,
+		PrepareLocked: func(prepareCtx context.Context, held *runtimefs.LeaseSet) error {
+			if err := runtime.RefreshCurrent(held); err != nil {
 				return err
 			}
-			return siteService.Ready(ctx)
+			if err := committer.RecoverWithinLocks(prepareCtx, runtime, held); err != nil {
+				return err
+			}
+			if err := runtime.RefreshCurrent(held); err != nil {
+				return err
+			}
+			if err := host.Activate(prepareCtx, runtime); err != nil {
+				return err
+			}
+			if err := authManager.Load(); err != nil {
+				_ = host.CloseActive()
+				return err
+			}
+			board.EndMaintenance()
+			return nil
 		},
-	})
-	if err != nil {
-		return Result{}, invalidArgument(
-			fmt.Sprintf("invalid HTTP server configuration: %v", err),
-			"check --trusted-proxy values and positive request limits",
-		)
-	}
-	if err := server.Run(ctx, server.Config{
-		Runtime:   runtime,
-		Handler:   engine,
-		AfterLock: func(context.Context) error { return authManager.Load() },
-		Address:   listenAddress,
-		Log:       invocation.LogEvent,
+		Address: listenAddress, Log: invocation.LogEvent,
 	}); err != nil {
 		switch {
+		case errors.Is(err, sqlitestore.ErrNotReady), errors.Is(err, sqlitestore.ErrMigrationDrift),
+			errors.Is(err, sqlitestore.ErrSchemaTooNew), errors.Is(err, sqlitestore.ErrSchemaIncomplete),
+			errors.Is(err, sqlitestore.ErrFTSUnavailable):
+			return Result{}, NewCommandError(
+				"DATABASE_NOT_READY",
+				"the current Moment database could not become ready",
+				"inspect the selected data directory and migration history, then retry",
+				ExitIntegrity,
+			).WithCause(err)
 		case errors.Is(err, auth.ErrNotInitialized):
 			return Result{}, NewCommandError(
 				"OWNER_NOT_INITIALIZED",

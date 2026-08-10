@@ -1,7 +1,9 @@
 package ginhttp
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"mime"
@@ -18,11 +20,140 @@ type ImportInspector interface {
 	Inspect(context.Context, io.Reader, uint64) (archive.Inspection, error)
 }
 
+// ImportCommitter exposes token consumption and durable status without
+// coupling Gin to live-bundle maintenance implementation.
+type ImportCommitter interface {
+	Commit(context.Context, string, uint64) (archive.CommitResult, error)
+	Status(context.Context) (archive.CommitStatus, error)
+}
+
 // RegisterImportInspectRoutes installs the owner-only raw ZIP upload endpoint.
 func RegisterImportInspectRoutes(engine *gin.Engine, inspector ImportInspector, manager *auth.Manager) {
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
 	owner.POST("/import/inspect", inspectImport(inspector, manager))
+}
+
+// RegisterImportCommitRoutes installs the owner-only destructive commit and
+// polling status endpoints. Status intentionally accepts no token.
+func RegisterImportCommitRoutes(engine *gin.Engine, committer ImportCommitter, manager *auth.Manager) {
+	owner := engine.Group("/api/v1/owner")
+	owner.Use(RequireOwner(manager))
+	owner.POST("/import/commit", commitImport(committer, manager))
+	owner.GET("/import/status", importStatus(committer))
+}
+
+func commitImport(committer ImportCommitter, manager *auth.Manager) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if ctx.Request.URL.RawQuery != "" {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import commit does not accept query parameters", map[string]any{"field": "query"})
+			return
+		}
+		mediaType, _, err := mime.ParseMediaType(ctx.GetHeader("Content-Type"))
+		if err != nil || mediaType != "application/json" {
+			Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "import commit requires application/json", map[string]any{"field": "content_type"})
+			return
+		}
+		body, ok := readBody(ctx)
+		if !ok {
+			return
+		}
+		token, err := decodeCommitRequest(body)
+		if err != nil {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import commit requires exactly one non-empty staging_token", map[string]any{"field": "staging_token"})
+			return
+		}
+		grant, ok := ownerGrant(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		epoch, err := manager.SessionEpochAuthorized(grant)
+		if err != nil {
+			unauthorized(ctx)
+			return
+		}
+		result, err := committer.Commit(ctx.Request.Context(), token, epoch)
+		if err != nil {
+			writeImportCommitError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, result, nil)
+	}
+}
+
+func importStatus(committer ImportCommitter) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if ctx.Request.URL.RawQuery != "" {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import status does not accept query parameters", map[string]any{"field": "query"})
+			return
+		}
+		status, err := committer.Status(ctx.Request.Context())
+		if err != nil {
+			writeImportCommitError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, status, nil)
+	}
+}
+
+func decodeCommitRequest(body []byte) (string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return "", errors.New("request must be one object")
+	}
+	if !decoder.More() {
+		return "", errors.New("staging_token is required")
+	}
+	name, err := decoder.Token()
+	if err != nil || name != "staging_token" {
+		return "", errors.New("unexpected request field")
+	}
+	var stagingToken string
+	if err := decoder.Decode(&stagingToken); err != nil || stagingToken == "" || len(stagingToken) > 256 {
+		return "", errors.New("staging_token is invalid")
+	}
+	if decoder.More() {
+		return "", errors.New("request has duplicate or unknown fields")
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return "", errors.New("request object is incomplete")
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		return "", errors.New("request contains multiple documents")
+	}
+	return stagingToken, nil
+}
+
+func writeImportCommitError(ctx *gin.Context, err error) {
+	if ctx.Request.Context().Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		Failure(ctx, http.StatusRequestTimeout, "CANCELLED", "import commit was cancelled", nil)
+		return
+	}
+	var domainErr *domain.Error
+	if !errors.As(err, &domainErr) {
+		Failure(ctx, http.StatusInternalServerError, "INTERNAL", "import commit could not complete", nil)
+		return
+	}
+	status := http.StatusUnprocessableEntity
+	switch domainErr.Code {
+	case domain.CodeInvalidArgument:
+		status = http.StatusBadRequest
+	case domain.CodeUnauthorized:
+		status = http.StatusUnauthorized
+	case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeInstanceInUse:
+		status = http.StatusConflict
+	case domain.CodeImportStagingExpired:
+		status = http.StatusGone
+	case domain.CodeImportDiskSpaceInsufficient:
+		status = http.StatusInsufficientStorage
+	case domain.CodeMaintenanceMode:
+		status = http.StatusServiceUnavailable
+	case domain.CodeDataIntegrityFailed:
+		status = http.StatusInternalServerError
+	}
+	Failure(ctx, status, string(domainErr.Code), domainErr.Message, domainErr.Details)
 }
 
 func inspectImport(inspector ImportInspector, manager *auth.Manager) gin.HandlerFunc {

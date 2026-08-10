@@ -72,6 +72,113 @@ func registerBackup(application *Application, info buildinfo.Info) {
 		Capability: CapabilityBoth,
 		Run:        runBackupInspect,
 	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:   []string{"backup", "import"},
+		Short:  "Commit one inspected staging generation",
+		Long:   "Consume one expiring staging token, enter exclusive maintenance, create and verify a pre-import backup, atomically switch CURRENT, prove readiness, and automatically roll back on failure.",
+		Inputs: "Provide exactly one --staging-token from backup inspect. Direct mode requires the server to be stopped; API mode performs online maintenance. --timeout bounds waits and pre-switch work; recovery continues safely after a post-switch cancellation.",
+		Output: "The normal human/JSON contract reports the durable operation phase, true active/previous/new generations, verified backup name, rollback outcome, and timestamps. The token is never echoed.",
+		Errors: "Replay, expiry, owner rotation, disk pressure, instance use, integrity, maintenance, and rollback failures use stable codes and exits. Resolve an ambiguous API result with 'moment backup status', never by replaying the token.",
+		Safety: "This command replaces active authority. --yes is required in non-interactive and JSON operation; --no-input never confirms implicitly.",
+		Example: "moment backup import --staging-token <token> --data-dir ./moment-data --yes --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup import --staging-token <token> --yes --json",
+		Capability: CapabilityBoth,
+		Policy: SafetyPolicy{
+			Destructive: true, Confirmation: "Replace the active Moment dataset using this inspected staging token?",
+		},
+		Flags: func(flags *pflag.FlagSet) {
+			registerSingleStringFlag(flags, "staging-token", "one-time token returned by backup inspect")
+		},
+		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+			return runBackupImport(ctx, invocation, input, info.Version)
+		},
+	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:   []string{"backup", "status"},
+		Short:  "Inspect the latest durable import operation",
+		Long:   "Inspect the latest durable import operation by reading the authoritative journal after completion, restart, rollback, or an ambiguous network result without replaying a staging token.",
+		Inputs: "No staging token or confirmation. Direct mode reads the selected local instance; API mode authenticates with MOMENT_TOKEN or --token-file.",
+		Output: "Direct and API modes return the same safe phase, active/previous/new generations, verified backup identity, rollback outcome, stable error code, and timestamps.",
+		Errors: "Missing or unsafe journal state, authentication, transport, and integrity failures use stable codes and exits. A needs_attention phase remains visible and never implies readiness.",
+		Safety: "Read-only. The command never claims a token, enters maintenance, changes CURRENT, or exposes token, archive hash, or local paths.",
+		Example: "moment backup status --data-dir ./moment-data --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup status --json",
+		Capability: CapabilityBoth,
+		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+			return runBackupStatus(ctx, invocation, input, info.Version)
+		},
+	})
+}
+
+func runBackupStatus(ctx context.Context, invocation Invocation, _ CommandInput, appVersion string) (Result, error) {
+	var status archive.CommitStatus
+	var meta map[string]any
+	var err error
+	switch invocation.Mode() {
+	case ModeDirect:
+		target, targetErr := invocation.DirectTransport()
+		if targetErr != nil {
+			return Result{}, targetErr
+		}
+		committer, createErr := archive.NewCommitter(archive.CommitOptions{DataDir: target.DataDirectory(), AppVersion: appVersion})
+		if createErr != nil {
+			return Result{}, backupImportCLIError(createErr)
+		}
+		status, err = committer.Status(ctx)
+	case ModeAPI:
+		status, meta, err = importStatusAPI(ctx, invocation)
+	default:
+		return Result{}, errors.New("unsupported backup status transport")
+	}
+	if err != nil {
+		return Result{}, backupImportCLIError(err)
+	}
+	text := fmt.Sprintf("Import status: %s\nActive generation: %s\nPrevious generation: %s\nNew generation: %s",
+		status.Phase, status.ActiveGeneration, status.PreviousGeneration, status.NewGeneration)
+	return Result{Data: status, Text: text, Meta: meta}, nil
+}
+
+func runBackupImport(ctx context.Context, invocation Invocation, input CommandInput, appVersion string) (Result, error) {
+	token, err := input.String("staging-token")
+	if err != nil {
+		return Result{}, err
+	}
+	if !input.Changed("staging-token") || token == "" || len(token) > 256 || strings.TrimSpace(token) != token {
+		return Result{}, invalidArgument("--staging-token must be provided exactly once", "use the unexpired token returned by backup inspect")
+	}
+	var result archive.CommitResult
+	var meta map[string]any
+	switch invocation.Mode() {
+	case ModeDirect:
+		target, targetErr := invocation.DirectTransport()
+		if targetErr != nil {
+			return Result{}, targetErr
+		}
+		runtimeState, openErr := runtimefs.OpenContext(ctx, target.DataDirectory())
+		if openErr != nil {
+			return Result{}, backupImportCLIError(openErr)
+		}
+		status, statusErr := auth.ReadStatus(runtimeState.Root)
+		if statusErr != nil || !status.Initialized || status.SessionEpoch == 0 {
+			return Result{}, ownerAuthError(errors.Join(statusErr, auth.ErrNotInitialized))
+		}
+		committer, createErr := archive.NewCommitter(archive.CommitOptions{DataDir: runtimeState.Root, AppVersion: appVersion})
+		if createErr != nil {
+			return Result{}, createErr
+		}
+		result, err = committer.Commit(ctx, token, status.SessionEpoch, nil)
+	case ModeAPI:
+		result, meta, err = commitImportAPI(ctx, invocation, token)
+	default:
+		return Result{}, errors.New("unsupported backup import transport")
+	}
+	if err != nil {
+		return Result{}, backupImportCLIError(err)
+	}
+	status := result.Status
+	text := fmt.Sprintf("Import committed\nPhase: %s\nActive generation: %s\nPrevious generation: %s\nVerified backup: %s",
+		status.Phase, status.ActiveGeneration, status.PreviousGeneration, status.BackupName)
+	return Result{Data: result, Text: text, Meta: meta}, nil
 }
 
 func runBackupInspect(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -178,6 +285,313 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 	return inspection, meta, nil
 }
 
+func commitImportAPI(ctx context.Context, invocation Invocation, stagingToken string) (archive.CommitResult, map[string]any, error) {
+	target, err := invocation.APITransport()
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	ownerToken, err := readAPIToken(target)
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/commit")
+	if err != nil {
+		return archive.CommitResult{}, nil, invalidArgument("the import commit endpoint URL is invalid", "check --url and retry")
+	}
+	body, err := json.Marshal(map[string]string{"staging_token": stagingToken})
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+ownerToken)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	if len(responseBody) > maxAPIResponse {
+		return archive.CommitResult{}, nil, invalidAPIResponse()
+	}
+	if response.StatusCode != http.StatusOK {
+		return archive.CommitResult{}, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+	}
+	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if parseErr != nil || mediaType != "application/json" {
+		return archive.CommitResult{}, nil, invalidAPIResponse()
+	}
+	result, meta, err := decodeImportCommitAPI(responseBody)
+	if err != nil {
+		return archive.CommitResult{}, nil, invalidAPIResponse()
+	}
+	return result, meta, nil
+}
+
+func importStatusAPI(ctx context.Context, invocation Invocation) (archive.CommitStatus, map[string]any, error) {
+	target, err := invocation.APITransport()
+	if err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	ownerToken, err := readAPIToken(target)
+	if err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/status")
+	if err != nil {
+		return archive.CommitStatus{}, nil, invalidArgument("the import status endpoint URL is invalid", "check --url and retry")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+ownerToken)
+	request.Header.Set("Accept", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
+	if err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	if len(responseBody) > maxAPIResponse {
+		return archive.CommitStatus{}, nil, invalidAPIResponse()
+	}
+	if response.StatusCode != http.StatusOK {
+		return archive.CommitStatus{}, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+	}
+	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if parseErr != nil || mediaType != "application/json" {
+		return archive.CommitStatus{}, nil, invalidAPIResponse()
+	}
+	status, meta, err := decodeImportStatusAPI(responseBody)
+	if err != nil {
+		return archive.CommitStatus{}, nil, invalidAPIResponse()
+	}
+	return status, meta, nil
+}
+
+func decodeImportCommitAPI(body []byte) (archive.CommitResult, map[string]any, error) {
+	if !utf8.Valid(body) {
+		return archive.CommitResult{}, nil, errors.New("import commit response is not valid UTF-8")
+	}
+	envelope, err := decodeExactJSONObject(body, "data", "meta")
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	data, err := decodeExactJSONObject(envelope["data"], "status")
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	statusRaw, err := decodeExactJSONObject(data["status"],
+		"operation_id", "phase", "active_generation", "previous_generation", "new_generation",
+		"backup_name", "backup_verified", "rollback_attempted", "rollback_succeeded",
+		"started_at", "updated_at", "completed_at",
+	)
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	var result archive.CommitResult
+	decoder := json.NewDecoder(bytes.NewReader(envelope["data"]))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&result); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return archive.CommitResult{}, nil, errors.New("import commit data cannot be decoded exactly")
+	}
+	requestID, err := decodeImportRequestID(metadata["request_id"])
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	status := result.Status
+	if status.Phase != archive.CommitSucceeded || !validImportGenerationID(status.OperationID) ||
+		status.OperationID != status.NewGeneration || status.ActiveGeneration != status.NewGeneration ||
+		!validRuntimeGenerationID(status.PreviousGeneration) || status.PreviousGeneration == status.NewGeneration ||
+		!status.BackupVerified || status.BackupName == "" || filepath.Base(status.BackupName) != status.BackupName ||
+		status.RollbackAttempted || status.RollbackSucceeded || status.ErrorCode != "" || status.CompletedAt == nil ||
+		status.StartedAt.IsZero() || status.UpdatedAt.Before(status.StartedAt) || !status.CompletedAt.Equal(status.UpdatedAt) {
+		return archive.CommitResult{}, nil, errors.New("import commit status is not a successful canonical terminal state")
+	}
+	for _, field := range []string{"started_at", "updated_at", "completed_at"} {
+		var encoded string
+		if err := json.Unmarshal(statusRaw[field], &encoded); err != nil || !strings.HasSuffix(encoded, "Z") {
+			return archive.CommitResult{}, nil, errors.New("import commit timestamp is not canonical UTC")
+		}
+		parsed, err := time.Parse(time.RFC3339Nano, encoded)
+		if err != nil || parsed.Format(time.RFC3339Nano) != encoded {
+			return archive.CommitResult{}, nil, errors.New("import commit timestamp is not canonical UTC")
+		}
+	}
+	return result, map[string]any{"request_id": requestID}, nil
+}
+
+func decodeImportStatusAPI(body []byte) (archive.CommitStatus, map[string]any, error) {
+	if !utf8.Valid(body) {
+		return archive.CommitStatus{}, nil, errors.New("import status response is not valid UTF-8")
+	}
+	envelope, err := decodeExactJSONObject(body, "data", "meta")
+	if err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	statusRaw, err := decodeJSONObjectWithOptional(envelope["data"],
+		[]string{
+			"operation_id", "phase", "active_generation", "previous_generation", "new_generation",
+			"backup_verified", "rollback_attempted", "rollback_succeeded", "started_at", "updated_at",
+		},
+		[]string{"backup_name", "error_code", "completed_at"},
+	)
+	if err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
+	if err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	var status archive.CommitStatus
+	decoder := json.NewDecoder(bytes.NewReader(envelope["data"]))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&status); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return archive.CommitStatus{}, nil, errors.New("import status data cannot be decoded exactly")
+	}
+	requestID, err := decodeImportRequestID(metadata["request_id"])
+	if err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	if err := validateImportStatusAPI(status, statusRaw); err != nil {
+		return archive.CommitStatus{}, nil, err
+	}
+	return status, map[string]any{"request_id": requestID}, nil
+}
+
+func validateImportStatusAPI(status archive.CommitStatus, raw map[string]json.RawMessage) error {
+	if !validImportGenerationID(status.OperationID) || status.OperationID != status.NewGeneration ||
+		!validRuntimeGenerationID(status.PreviousGeneration) || !validRuntimeGenerationID(status.ActiveGeneration) ||
+		status.PreviousGeneration == status.NewGeneration ||
+		(status.ActiveGeneration != status.PreviousGeneration && status.ActiveGeneration != status.NewGeneration) {
+		return errors.New("import status generation binding is invalid")
+	}
+	validPhase := false
+	for _, phase := range []archive.CommitPhase{
+		archive.CommitClaimed, archive.CommitBackingUp, archive.CommitFinalizing, archive.CommitSwitching,
+		archive.CommitVerifying, archive.CommitRollingBack, archive.CommitSucceeded, archive.CommitFailed,
+		archive.CommitRolledBack, archive.CommitNeedsAttention,
+	} {
+		if status.Phase == phase {
+			validPhase = true
+			break
+		}
+	}
+	if !validPhase || status.StartedAt.IsZero() || status.UpdatedAt.Before(status.StartedAt) {
+		return errors.New("import status phase or time ordering is invalid")
+	}
+	for field, expected := range map[string]time.Time{"started_at": status.StartedAt, "updated_at": status.UpdatedAt} {
+		parsed, err := decodeCanonicalUTCTime(raw[field])
+		if err != nil || !expected.Equal(parsed) {
+			return errors.New("import status timestamp is not canonical UTC")
+		}
+	}
+	completedRaw, hasCompleted := raw["completed_at"]
+	if hasCompleted != (status.CompletedAt != nil) {
+		return errors.New("import status completion presence is invalid")
+	}
+	if hasCompleted {
+		completed, err := decodeCanonicalUTCTime(completedRaw)
+		if err != nil || !status.CompletedAt.Equal(completed) || completed.Before(status.UpdatedAt) {
+			return errors.New("import status completion timestamp is invalid")
+		}
+	}
+	_, hasBackupName := raw["backup_name"]
+	if hasBackupName != (status.BackupName != "") || (status.BackupName == "") != !status.BackupVerified ||
+		(status.BackupName != "" && (filepath.Base(status.BackupName) != status.BackupName || !strings.HasSuffix(status.BackupName, ".zip"))) {
+		return errors.New("import status backup identity is invalid")
+	}
+	_, hasErrorCode := raw["error_code"]
+	if hasErrorCode != (status.ErrorCode != "") || !validImportErrorCode(status.ErrorCode) {
+		return errors.New("import status error code is invalid")
+	}
+	if status.RollbackSucceeded && !status.RollbackAttempted {
+		return errors.New("import status rollback outcome is invalid")
+	}
+	switch status.Phase {
+	case archive.CommitClaimed, archive.CommitBackingUp:
+		if status.BackupVerified || status.RollbackAttempted || status.CompletedAt != nil || status.ErrorCode != "" || status.ActiveGeneration != status.PreviousGeneration {
+			return errors.New("early import status has impossible fields")
+		}
+	case archive.CommitFinalizing:
+		if !status.BackupVerified || status.RollbackAttempted || status.CompletedAt != nil || status.ErrorCode != "" || status.ActiveGeneration != status.PreviousGeneration {
+			return errors.New("finalizing import status has impossible fields")
+		}
+	case archive.CommitSwitching, archive.CommitVerifying:
+		if !status.BackupVerified || status.RollbackAttempted || status.CompletedAt != nil || status.ErrorCode != "" ||
+			(status.Phase == archive.CommitVerifying && status.ActiveGeneration != status.NewGeneration) {
+			return errors.New("switching import status has impossible fields")
+		}
+	case archive.CommitRollingBack:
+		if !status.BackupVerified || !status.RollbackAttempted || status.RollbackSucceeded || status.CompletedAt != nil || status.ErrorCode != "" {
+			return errors.New("rolling-back import status has impossible fields")
+		}
+	case archive.CommitSucceeded:
+		if !status.BackupVerified || status.RollbackAttempted || status.ErrorCode != "" || status.CompletedAt == nil ||
+			status.ActiveGeneration != status.NewGeneration || !status.CompletedAt.Equal(status.UpdatedAt) {
+			return errors.New("successful import status has impossible fields")
+		}
+	case archive.CommitFailed:
+		if status.RollbackAttempted || status.ErrorCode == "" || status.CompletedAt == nil || status.ActiveGeneration != status.PreviousGeneration || !status.CompletedAt.Equal(status.UpdatedAt) {
+			return errors.New("failed import status has impossible fields")
+		}
+	case archive.CommitRolledBack:
+		if !status.BackupVerified || !status.RollbackAttempted || !status.RollbackSucceeded || status.ErrorCode == "" ||
+			status.CompletedAt == nil || status.ActiveGeneration != status.PreviousGeneration || !status.CompletedAt.Equal(status.UpdatedAt) {
+			return errors.New("rolled-back import status has impossible fields")
+		}
+	case archive.CommitNeedsAttention:
+		if status.ErrorCode == "" || status.RollbackSucceeded {
+			return errors.New("needs-attention import status has impossible fields")
+		}
+	}
+	return nil
+}
+
+func validImportErrorCode(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func validRuntimeGenerationID(value string) bool {
+	if value == "" || len(value) > 128 || strings.TrimSpace(value) != value || value == "." || value == ".." {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || character == '-' || character == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64, observedAt time.Time) (archive.Inspection, map[string]any, error) {
 	if !utf8.Valid(body) {
 		return archive.Inspection{}, nil, errors.New("import inspection response is not valid UTF-8")
@@ -234,10 +648,20 @@ func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64, observed
 }
 
 func decodeExactJSONObject(raw []byte, expectedKeys ...string) (map[string]json.RawMessage, error) {
-	expected := make(map[string]struct{}, len(expectedKeys))
-	for _, key := range expectedKeys {
+	return decodeJSONObjectWithOptional(raw, expectedKeys, nil)
+}
+
+func decodeJSONObjectWithOptional(raw []byte, requiredKeys, optionalKeys []string) (map[string]json.RawMessage, error) {
+	allowedKeys := make([]string, 0, len(requiredKeys)+len(optionalKeys))
+	allowedKeys = append(allowedKeys, requiredKeys...)
+	allowedKeys = append(allowedKeys, optionalKeys...)
+	expected := make(map[string]struct{}, len(allowedKeys))
+	for _, key := range allowedKeys {
 		if key == "" {
 			return nil, errors.New("empty expected JSON key")
+		}
+		if _, duplicate := expected[key]; duplicate {
+			return nil, errors.New("duplicate expected JSON key")
 		}
 		expected[key] = struct{}{}
 	}
@@ -246,7 +670,7 @@ func decodeExactJSONObject(raw []byte, expectedKeys ...string) (map[string]json.
 	if err != nil || token != json.Delim('{') {
 		return nil, errors.New("JSON value is not an object")
 	}
-	fields := make(map[string]json.RawMessage, len(expectedKeys))
+	fields := make(map[string]json.RawMessage, len(allowedKeys))
 	for decoder.More() {
 		keyToken, err := decoder.Token()
 		key, ok := keyToken.(string)
@@ -265,8 +689,13 @@ func decodeExactJSONObject(raw []byte, expectedKeys ...string) (map[string]json.
 		}
 		fields[key] = value
 	}
-	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || len(fields) != len(expected) {
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
 		return nil, errors.New("JSON object is incomplete")
+	}
+	for _, key := range requiredKeys {
+		if _, found := fields[key]; !found {
+			return nil, errors.New("JSON object is incomplete")
+		}
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return nil, errors.New("JSON object contains trailing data")
@@ -446,6 +875,42 @@ func backupInspectCLIError(err error) error {
 	}
 	if errors.Is(err, runtimefs.ErrIncompleteLayout) || errors.Is(err, runtimefs.ErrInvalidInstance) || errors.Is(err, runtimefs.ErrInvalidCurrent) {
 		return NewCommandError("INSTANCE_NOT_READY", "the Moment data directory is not a complete readable instance", "initialize or repair the selected data directory before retrying import inspection", ExitIO).WithCause(err)
+	}
+	return err
+}
+
+func backupImportCLIError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var commandErr *CommandError
+	if errors.As(err, &commandErr) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	var domainErr *domain.Error
+	if errors.As(err, &domainErr) {
+		exit := ExitIntegrity
+		suggestion := "check authenticated import status and run doctor before retrying; never replay an already claimed token"
+		switch domainErr.Code {
+		case domain.CodeInvalidArgument:
+			exit = ExitInvalidInput
+		case domain.CodeUnauthorized:
+			exit = ExitUnauthorized
+			suggestion = "authenticate again and inspect a new archive under the current owner epoch"
+		case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeImportStagingExpired, domain.CodeInstanceInUse:
+			exit = ExitConflict
+		case domain.CodeImportDiskSpaceInsufficient:
+			exit = ExitIO
+			suggestion = "free the reported additional bytes on the Moment data filesystem, inspect again if needed, then retry"
+		case domain.CodeMaintenanceMode:
+			exit = ExitUnavailable
+		case domain.CodeDataIntegrityFailed:
+			exit = ExitIntegrity
+		}
+		return NewCommandError(string(domainErr.Code), domainErr.Message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+	}
+	if errors.Is(err, runtimefs.ErrIncompleteLayout) || errors.Is(err, runtimefs.ErrInvalidInstance) || errors.Is(err, runtimefs.ErrInvalidCurrent) {
+		return NewCommandError("INSTANCE_NOT_READY", "the Moment data directory is not a complete ready instance", "repair the selected instance and run doctor before retrying import", ExitIO).WithCause(err)
 	}
 	return err
 }

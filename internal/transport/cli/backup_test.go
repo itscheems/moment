@@ -345,6 +345,177 @@ func TestBackupInspectDirectJSONHelpAndActiveState(t *testing.T) {
 	}
 }
 
+func TestBackupImportDirectSafetySuccessReplayAndHelp(t *testing.T) {
+	runtimeState, dataDir := initializeSiteCLIData(t)
+	application := momentTestApplication()
+	archivePath := filepath.Join(t.TempDir(), "source.zip")
+	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", archivePath, "--json"); output.exit != ExitSuccess {
+		t.Fatalf("source export=%#v", output)
+	}
+	if _, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	inspected := execute(application, "", "backup", "inspect", archivePath, "--data-dir", dataDir, "--json")
+	token := commandData(t, inspected)["staging_token"].(string)
+	withoutYes := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--json")
+	if withoutYes.exit != ExitInvalidInput || decodeOneDocument(t, withoutYes.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("missing confirmation=%#v", withoutYes)
+	}
+	noInput := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--no-input")
+	if noInput.exit != ExitInvalidInput {
+		t.Fatalf("no-input confirmation=%#v", noInput)
+	}
+	committed := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--yes", "--json")
+	if committed.exit != ExitSuccess || committed.stderr != "" || strings.Contains(committed.stdout, token) {
+		t.Fatalf("direct import=%#v", committed)
+	}
+	data := commandData(t, committed)
+	status := data["status"].(map[string]any)
+	if status["phase"] != string(archive.CommitSucceeded) || status["active_generation"] != status["new_generation"] || status["backup_verified"] != true {
+		t.Fatalf("direct commit status=%#v", status)
+	}
+	queried := execute(application, "", "backup", "status", "--data-dir", dataDir, "--json")
+	if queried.exit != ExitSuccess || queried.stderr != "" || commandData(t, queried)["phase"] != string(archive.CommitSucceeded) {
+		t.Fatalf("direct durable status=%#v", queried)
+	}
+	replayed := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--yes", "--json")
+	if replayed.exit != ExitConflict || decodeOneDocument(t, replayed.stdout)["error"].(map[string]any)["code"] != string(domain.CodeImportStagingInvalid) {
+		t.Fatalf("replay=%#v", replayed)
+	}
+	help := execute(application, "", "backup", "import", "--help")
+	for _, expected := range []string{"--staging-token", "--yes", "Direct mode requires the server to be stopped", "automatically roll back"} {
+		if help.exit != ExitSuccess || !strings.Contains(help.stdout, expected) {
+			t.Fatalf("help missing %q: %#v", expected, help)
+		}
+	}
+	statusHelp := execute(application, "", "backup", "status", "--help")
+	for _, expected := range []string{"latest durable import operation", "No staging token", "Read-only", "moment backup status"} {
+		if statusHelp.exit != ExitSuccess || !strings.Contains(statusHelp.stdout, expected) {
+			t.Fatalf("status help missing %q: %#v", expected, statusHelp)
+		}
+	}
+}
+
+func TestBackupImportAPIStrictSuccessAndMalformedResponse(t *testing.T) {
+	application := momentTestApplication()
+	t.Setenv("MOMENT_TOKEN", "owner-test-token")
+	now := time.Date(2026, 8, 11, 7, 0, 0, 0, time.UTC)
+	operationID := "import-20260811T070000000Z-0011223344556677"
+	valid := map[string]any{
+		"data": map[string]any{"status": map[string]any{
+			"operation_id": operationID, "phase": "succeeded", "active_generation": operationID,
+			"previous_generation": "gen-old", "new_generation": operationID,
+			"backup_name": "pre-import-20260811T070000000Z-gen-old.zip", "backup_verified": true,
+			"rollback_attempted": false, "rollback_succeeded": false,
+			"started_at": now.Format(time.RFC3339Nano), "updated_at": now.Format(time.RFC3339Nano), "completed_at": now.Format(time.RFC3339Nano),
+		}},
+		"meta": map[string]any{"request_id": "req_import_commit"},
+	}
+	validBody, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/owner/import/commit" || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("request=%s %s %#v", request.Method, request.URL.Path, request.Header)
+		}
+		var body map[string]string
+		decoder := json.NewDecoder(request.Body)
+		if err := decoder.Decode(&body); err != nil || len(body) != 1 || body["staging_token"] != "stage-token" {
+			t.Errorf("request body=%#v err=%v", body, err)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(validBody)
+	}))
+	defer server.Close()
+	output := execute(application, "", "--url", server.URL, "backup", "import", "--staging-token", "stage-token", "--yes", "--json")
+	if output.exit != ExitSuccess || output.stderr != "" {
+		t.Fatalf("API import=%#v", output)
+	}
+	data := commandData(t, output)
+	if data["status"].(map[string]any)["active_generation"] != operationID || decodeOneDocument(t, output.stdout)["meta"].(map[string]any)["request_id"] != "req_import_commit" {
+		t.Fatalf("API output=%s", output.stdout)
+	}
+
+	malformedBodies := []string{
+		`{"data":{"status":{}},"meta":{"request_id":"req_x"}}`,
+		string(validBody[:len(validBody)-1]),
+		strings.Replace(string(validBody), `"backup_verified":true`, `"backup_verified":false`, 1),
+		strings.Replace(string(validBody), `"phase":"succeeded"`, `"phase":"verifying"`, 1),
+		strings.Replace(string(validBody), `"completed_at":"`+now.Format(time.RFC3339Nano)+`"`, `"completed_at":"2000-01-01T00:00:00Z"`, 1),
+	}
+	for _, malformed := range malformedBodies {
+		fake := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(writer, malformed)
+		}))
+		failed := execute(application, "", "--url", fake.URL, "backup", "import", "--staging-token", "stage-token", "--yes", "--json")
+		fake.Close()
+		if failed.exit != ExitUnavailable || decodeOneDocument(t, failed.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" || failed.stderr != "" {
+			t.Fatalf("malformed response accepted: %#v body=%s", failed, malformed)
+		}
+	}
+}
+
+func TestBackupStatusAPIStrictParityAndMalformedResponse(t *testing.T) {
+	application := momentTestApplication()
+	t.Setenv("MOMENT_TOKEN", "owner-test-token")
+	now := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
+	operationID := "import-20260811T090000000Z-0011223344556677"
+	valid := map[string]any{
+		"data": map[string]any{
+			"operation_id": operationID, "phase": "succeeded", "active_generation": operationID,
+			"previous_generation": "gen-old", "new_generation": operationID,
+			"backup_name": "pre-import-20260811T090000000Z-gen-old.zip", "backup_verified": true,
+			"rollback_attempted": false, "rollback_succeeded": false,
+			"started_at": now.Format(time.RFC3339Nano), "updated_at": now.Format(time.RFC3339Nano), "completed_at": now.Format(time.RFC3339Nano),
+		},
+		"meta": map[string]any{"request_id": "req_import_status"},
+	}
+	validBody, err := json.Marshal(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/api/v1/owner/import/status" ||
+			request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Body != http.NoBody {
+			t.Errorf("status request=%s %s %#v", request.Method, request.URL.Path, request.Header)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(validBody)
+	}))
+	output := execute(application, "", "--url", server.URL, "backup", "status", "--json")
+	server.Close()
+	if output.exit != ExitSuccess || output.stderr != "" || commandData(t, output)["active_generation"] != operationID ||
+		decodeOneDocument(t, output.stdout)["meta"].(map[string]any)["request_id"] != "req_import_status" {
+		t.Fatalf("API status=%#v", output)
+	}
+
+	validText := string(validBody)
+	malformedBodies := []string{
+		`{}`,
+		strings.Replace(validText, `"meta":`, `"extra":1,"meta":`, 1),
+		strings.Replace(validText, `"operation_id":`, `"extra":1,"operation_id":`, 1),
+		strings.Replace(validText, `"phase":"succeeded"`, `"phase":"unknown"`, 1),
+		strings.Replace(validText, `,"completed_at":"`+now.Format(time.RFC3339Nano)+`"`, ``, 1),
+		strings.Replace(validText, `"active_generation":"`+operationID+`"`, `"active_generation":"gen-old"`, 1),
+		strings.Replace(validText, `"backup_verified":true`, `"backup_verified":false`, 1),
+		strings.Replace(validText, `"operation_id":"`+operationID+`"`, `"operation_id":"`+operationID+`","operation_id":"`+operationID+`"`, 1),
+	}
+	for _, malformed := range malformedBodies {
+		fake := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(writer, malformed)
+		}))
+		failed := execute(application, "", "--url", fake.URL, "backup", "status", "--json")
+		fake.Close()
+		if failed.exit != ExitUnavailable || failed.stderr != "" ||
+			decodeOneDocument(t, failed.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+			t.Fatalf("malformed status accepted: %#v body=%s", failed, malformed)
+		}
+	}
+}
+
 func TestBackupInspectAPIUploadParityErrorsAndTimeout(t *testing.T) {
 	application := momentTestApplication()
 	archivePath := filepath.Join(t.TempDir(), "source.zip")
