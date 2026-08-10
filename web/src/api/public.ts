@@ -5,6 +5,7 @@ export interface SiteIdentity {
   publicBaseUrl: string | null;
   avatarMediaId: string | null;
   commentsEnabled: boolean;
+  instanceId: string | null;
 }
 
 export interface PublicPost {
@@ -129,7 +130,7 @@ function instantField(record: Record<string, unknown>, field: string): string {
   return value;
 }
 
-function parsePost(value: unknown): PublicPost {
+export function parsePost(value: unknown): PublicPost {
   if (!isRecord(value)) throw invalidResponse("post must be an object");
   return {
     id: stringField(value, "id"),
@@ -141,7 +142,7 @@ function parsePost(value: unknown): PublicPost {
   };
 }
 
-async function decodeResponse(
+export async function decodeResponse(
   response: Response,
 ): Promise<{ data: unknown; meta: Record<string, unknown> }> {
   let payload: unknown;
@@ -187,7 +188,7 @@ export class PublicApi {
       headers: { Accept: "application/json" },
       signal,
     });
-    const { data } = await decodeResponse(response);
+    const { data, meta } = await decodeResponse(response);
     if (!isRecord(data)) throw invalidResponse("site data must be an object");
     const commentsEnabled = data.comments_enabled;
     if (typeof commentsEnabled !== "boolean") {
@@ -201,6 +202,13 @@ export class PublicApi {
     } catch {
       throw invalidResponse("response field timezone must be an IANA timezone");
     }
+    const instanceId = meta.instance_id;
+    if (
+      instanceId !== undefined &&
+      (typeof instanceId !== "string" || !/^[0-9a-f]{32}$/.test(instanceId))
+    ) {
+      throw invalidResponse("meta instance_id must be a runtime instance ID");
+    }
     return {
       title: stringField(data, "title"),
       bio: stringField(data, "bio"),
@@ -208,6 +216,7 @@ export class PublicApi {
       publicBaseUrl: nullableStringField(data, "public_base_url"),
       avatarMediaId: nullableStringField(data, "avatar_media_id"),
       commentsEnabled,
+      instanceId: instanceId ?? null,
     };
   }
 

@@ -16,21 +16,25 @@ import (
 
 // RegisterSiteRoutes installs the public settings read and owner-only partial
 // mutation over one application service.
-func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, manager *auth.Manager) {
-	engine.GET("/api/v1/site", getSiteSettings(service))
+func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, manager *auth.Manager, instanceID string) {
+	engine.GET("/api/v1/site", getSiteSettings(service, instanceID))
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
 	owner.PATCH("/site", updateSiteSettings(service))
 }
 
-func getSiteSettings(service *app.SiteService) gin.HandlerFunc {
+func getSiteSettings(service *app.SiteService, instanceID string) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		settings, err := service.Get(ctx.Request.Context())
 		if err != nil {
 			writeSiteError(ctx, err)
 			return
 		}
-		Success(ctx, http.StatusOK, settings, nil)
+		meta := map[string]any{}
+		if instanceID != "" {
+			meta["instance_id"] = instanceID
+		}
+		Success(ctx, http.StatusOK, settings, meta)
 	}
 }
 

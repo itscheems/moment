@@ -7,6 +7,7 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { PostPresentation } from "../posts/PostPresentation";
+import { useNavigation } from "../../app/navigation";
 import { PublicError, TimelineLoading } from "./PublicStates";
 
 function detailErrorKind(error: unknown): "detail" | "missing" | "malformed" {
@@ -22,11 +23,14 @@ export function DetailPage({
   api,
   id,
   site,
+  owner = false,
 }: {
   api: PublicApi;
   id: string;
   site: SiteIdentity;
+  owner?: boolean;
 }) {
+  const { navigate } = useNavigation();
   const [post, setPost] = useState<PublicPost | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
@@ -56,5 +60,13 @@ export function DetailPage({
   if (error) {
     return <PublicError kind={detailErrorKind(error)} onRetry={load} />;
   }
-  return post ? <PostPresentation detail post={post} site={site} /> : null;
+  return post ? (
+    <PostPresentation
+      detail
+      onDeleted={() => navigate("/")}
+      owner={owner}
+      post={post}
+      site={site}
+    />
+  ) : null;
 }

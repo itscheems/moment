@@ -6,6 +6,10 @@ import { ShellState } from "../components/ShellState";
 import { DetailPage } from "../features/timeline/DetailPage";
 import { TimelineLoading } from "../features/timeline/PublicStates";
 import { TimelinePage } from "../features/timeline/TimelinePage";
+import { Composer } from "../features/owner/Composer";
+import { EditPage } from "../features/owner/EditPage";
+import { OwnerLogin } from "../features/owner/OwnerLogin";
+import { OwnerProvider, useOwner } from "../features/owner/OwnerProvider";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { NavigationProvider, useNavigation } from "./navigation";
 import { resolveRoute } from "./routes";
@@ -18,6 +22,7 @@ const fallbackSite: SiteIdentity = {
   publicBaseUrl: null,
   avatarMediaId: null,
   commentsEnabled: true,
+  instanceId: null,
 };
 
 function detailId(pathname: string): string {
@@ -29,11 +34,30 @@ function detailId(pathname: string): string {
   }
 }
 
+function editId(pathname: string): string {
+  const raw = pathname.match(/^\/owner\/m\/([^/]+)\/edit\/?$/)?.[1] ?? "";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function editableTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.matches("input, textarea, select") ||
+      target.isContentEditable ||
+      Boolean(target.closest('[contenteditable="true"]')))
+  );
+}
+
 function PublicApp() {
   const location = useNavigation();
   const route = resolveRoute(location.pathname);
   const state = new URLSearchParams(location.search).get("state");
   const api = useMemo(() => new PublicApi(), []);
+  const owner = useOwner();
   const [site, setSite] = useState(fallbackSite);
   const [siteLoading, setSiteLoading] = useState(true);
   const [siteError, setSiteError] = useState(false);
@@ -71,8 +95,50 @@ function PublicApp() {
       route.id === "home" ? siteTitle : `${route.title} · ${siteTitle}`;
   }, [route.id, route.title, site.title]);
 
+  useEffect(() => {
+    let composing = false;
+    const startComposition = () => {
+      composing = true;
+    };
+    const endComposition = () => {
+      composing = false;
+    };
+    const newMoment = (event: KeyboardEvent) => {
+      if (
+        owner.state !== "owner" ||
+        event.defaultPrevented ||
+        event.key.toLowerCase() !== "n" ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.isComposing ||
+        composing ||
+        editableTarget(event.target) ||
+        document.querySelector('[role="dialog"]')
+      ) {
+        return;
+      }
+      event.preventDefault();
+      location.navigate("/owner/compose");
+    };
+    document.addEventListener("compositionstart", startComposition);
+    document.addEventListener("compositionend", endComposition);
+    window.addEventListener("keydown", newMoment);
+    return () => {
+      document.removeEventListener("compositionstart", startComposition);
+      document.removeEventListener("compositionend", endComposition);
+      window.removeEventListener("keydown", newMoment);
+    };
+  }, [location, owner.state]);
+
   const hasTimeline = route.id === "home" || homeVisited;
-  const placeholderRoute = route.id !== "home" && route.id !== "detail";
+  const placeholderRoute =
+    route.id !== "home" &&
+    route.id !== "detail" &&
+    route.id !== "owner-login" &&
+    route.id !== "owner-compose" &&
+    route.id !== "owner-edit";
 
   return (
     <AppShell memoryYears={memoryYears} route={route} site={site} state={state}>
@@ -90,16 +156,42 @@ function PublicApp() {
       {siteLoading ? <TimelineLoading /> : null}
       {!siteLoading && hasTimeline ? (
         <div hidden={route.id !== "home"}>
+          {owner.state === "owner" ? (
+            <Composer site={site} variant="inline" />
+          ) : null}
           <TimelinePage
             api={api}
             initialSearch={initialHomeSearch.current}
             onYearsChange={setMemoryYears}
             site={site}
+            owner={owner.state === "owner"}
           />
         </div>
       ) : null}
       {!siteLoading && route.id === "detail" ? (
-        <DetailPage api={api} id={detailId(location.pathname)} site={site} />
+        <DetailPage
+          api={api}
+          id={detailId(location.pathname)}
+          owner={owner.state === "owner"}
+          site={site}
+        />
+      ) : null}
+      {!siteLoading && route.id === "owner-login" ? (
+        <OwnerLogin site={site} />
+      ) : null}
+      {!siteLoading && route.id === "owner-compose" ? (
+        owner.state === "owner" ? (
+          <Composer site={site} variant="page" />
+        ) : (
+          <OwnerLogin embedded site={site} />
+        )
+      ) : null}
+      {!siteLoading && route.id === "owner-edit" ? (
+        owner.state === "owner" ? (
+          <EditPage api={api} id={editId(location.pathname)} site={site} />
+        ) : (
+          <OwnerLogin embedded site={site} />
+        )
       ) : null}
       {!siteLoading && placeholderRoute ? (
         <ShellState route={route} state={state} />
@@ -112,7 +204,9 @@ export function App() {
   return (
     <ThemeProvider>
       <NavigationProvider>
-        <PublicApp />
+        <OwnerProvider>
+          <PublicApp />
+        </OwnerProvider>
       </NavigationProvider>
     </ThemeProvider>
   );

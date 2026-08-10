@@ -24,7 +24,7 @@ const primaryNav: NavItem[] = [
 
 const ownerNav: NavItem = {
   label: "所有者",
-  href: "/owner/settings",
+  href: "/owner/login",
   icon: "owner",
   active: ["owner-login", "owner-settings", "owner-edit"],
 };

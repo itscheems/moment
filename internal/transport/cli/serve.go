@@ -135,6 +135,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 		Assets:         assets,
 		OwnerAuth:      authManager,
 		SiteSettings:   siteService,
+		InstanceID:     runtime.Instance.ID,
 		Media:          mediaStore,
 		Posts:          postService,
 		Comments:       commentService,

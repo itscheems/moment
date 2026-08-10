@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -19,6 +20,7 @@ interface NavigationContextValue extends LocationSnapshot {
   goBack: (fallback: string) => void;
   replaceTimelineProgress: (cursor: string) => void;
   restoreCurrentEntry: () => void;
+  setNavigationBlocker: (blocker: (() => boolean) | null) => void;
 }
 
 interface MomentHistoryState {
@@ -62,30 +64,44 @@ function restoreEntry(state: unknown) {
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState(currentLocation);
+  const navigationBlocker = useRef<(() => boolean) | null>(null);
 
-  const navigate = useCallback((href: string) => {
-    const activeFocusKey =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement.closest<HTMLElement>("[data-focus-key]")
-            ?.dataset.focusKey
-        : undefined;
-    window.history.replaceState(
-      {
-        ...historyState(),
-        momentFocusKey: activeFocusKey,
-        momentScrollY: window.scrollY,
-      },
-      "",
-      window.location.href,
-    );
-    window.history.pushState(
-      { momentInternal: true, momentScrollY: 0 },
-      "",
-      href,
-    );
-    setLocation(currentLocation());
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }, []);
+  const canLeave = useCallback(() => navigationBlocker.current?.() ?? true, []);
+
+  const setNavigationBlocker = useCallback(
+    (blocker: (() => boolean) | null) => {
+      navigationBlocker.current = blocker;
+    },
+    [],
+  );
+
+  const navigate = useCallback(
+    (href: string) => {
+      if (!canLeave()) return;
+      const activeFocusKey =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement.closest<HTMLElement>("[data-focus-key]")
+              ?.dataset.focusKey
+          : undefined;
+      window.history.replaceState(
+        {
+          ...historyState(),
+          momentFocusKey: activeFocusKey,
+          momentScrollY: window.scrollY,
+        },
+        "",
+        window.location.href,
+      );
+      window.history.pushState(
+        { momentInternal: true, momentScrollY: 0 },
+        "",
+        href,
+      );
+      setLocation(currentLocation());
+      window.scrollTo({ top: 0, behavior: "auto" });
+    },
+    [canLeave],
+  );
 
   const replaceTimelineProgress = useCallback((cursor: string) => {
     const url = new URL(window.location.href);
@@ -105,23 +121,28 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   const goBack = useCallback(
     (fallback: string) => {
       const state = window.history.state as MomentHistoryState | null;
+      if (!canLeave()) return;
       if (state?.momentInternal) {
         window.history.back();
         return;
       }
       navigate(fallback);
     },
-    [navigate],
+    [canLeave, navigate],
   );
 
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
+      if (!canLeave()) {
+        window.history.go(1);
+        return;
+      }
       setLocation(currentLocation());
       restoreEntry(event.state);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [canLeave]);
 
   useEffect(() => {
     const previousScrollRestoration = window.history.scrollRestoration;
@@ -161,8 +182,16 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       goBack,
       replaceTimelineProgress,
       restoreCurrentEntry,
+      setNavigationBlocker,
     }),
-    [location, navigate, goBack, replaceTimelineProgress, restoreCurrentEntry],
+    [
+      location,
+      navigate,
+      goBack,
+      replaceTimelineProgress,
+      restoreCurrentEntry,
+      setNavigationBlocker,
+    ],
   );
   return (
     <NavigationContext.Provider value={value}>

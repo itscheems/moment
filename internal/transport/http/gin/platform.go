@@ -42,6 +42,7 @@ type Config struct {
 	Readiness      ReadinessFunc
 	OwnerAuth      *auth.Manager
 	SiteSettings   *app.SiteService
+	InstanceID     string
 	Posts          *app.PostService
 	Comments       *app.CommentService
 	Search         *app.SearchService
@@ -118,7 +119,7 @@ func New(config Config) (*gin.Engine, error) {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("site settings routes require owner authentication")
 		}
-		RegisterSiteRoutes(engine, config.SiteSettings, config.OwnerAuth)
+		RegisterSiteRoutes(engine, config.SiteSettings, config.OwnerAuth, config.InstanceID)
 	}
 	if config.Media != nil {
 		if config.OwnerAuth == nil {

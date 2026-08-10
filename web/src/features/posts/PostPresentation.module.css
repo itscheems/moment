@@ -6,6 +6,22 @@
   background: var(--surface);
 }
 
+.fresh {
+  animation: settle-new-tick 420ms var(--ease-out) both;
+}
+
+@keyframes settle-new-tick {
+  from {
+    opacity: 0;
+    transform: translateY(-0.75rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .timeColumn {
   position: relative;
   z-index: 2;
@@ -215,6 +231,12 @@
 
 .detail .postMain {
   padding-block-end: var(--space-8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fresh {
+    animation: none;
+  }
 }
 
 .detail .markdown {

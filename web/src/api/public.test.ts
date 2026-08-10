@@ -32,7 +32,10 @@ describe("public API client", () => {
             avatar_media_id: null,
             comments_enabled: true,
           },
-          meta: { request_id: "req_site" },
+          meta: {
+            instance_id: "0123456789abcdef0123456789abcdef",
+            request_id: "req_site",
+          },
         });
       }
       return json({
@@ -45,6 +48,7 @@ describe("public API client", () => {
     await expect(api.site()).resolves.toMatchObject({
       title: "乔乔的 Moment",
       timezone: "Asia/Shanghai",
+      instanceId: "0123456789abcdef0123456789abcdef",
     });
     await expect(
       api.timeline({ cursor: "opaque+/=cursor", from: "2026-08-01" }),
@@ -65,6 +69,46 @@ describe("public API client", () => {
       expect.stringContaining("cursor=opaque%2B%2F%3Dcursor"),
       expect.objectContaining({ headers: { Accept: "application/json" } }),
     );
+  });
+
+  it("gracefully disables instance-scoped features when site meta omits the runtime ID", async () => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            title: "Moment",
+            bio: "",
+            timezone: "UTC",
+            public_base_url: null,
+            avatar_media_id: null,
+            comments_enabled: true,
+          },
+          meta: { request_id: "req_site" },
+        }),
+      ) as typeof fetch,
+    );
+    await expect(api.site()).resolves.toMatchObject({ instanceId: null });
+  });
+
+  it("rejects a forged or malformed runtime instance ID", async () => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            title: "Moment",
+            bio: "",
+            timezone: "UTC",
+            public_base_url: null,
+            avatar_media_id: null,
+            comments_enabled: true,
+          },
+          meta: { instance_id: "from-host-header" },
+        }),
+      ) as typeof fetch,
+    );
+    await expect(api.site()).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
   });
 
   it("rejects malformed success envelopes and duplicate items", async () => {

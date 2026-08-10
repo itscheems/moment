@@ -10,6 +10,8 @@ import {
 import { useNavigation } from "../../app/navigation";
 import { PostPresentation } from "../posts/PostPresentation";
 import { PublicEmpty, PublicError, TimelineLoading } from "./PublicStates";
+import { listenForOwnerPosts } from "../owner/postEvents";
+import type { OwnerPostEvent } from "../owner/postEvents";
 import styles from "./TimelinePage.module.css";
 
 const MAX_REPLAY_PAGES = 1_000;
@@ -78,11 +80,13 @@ export function TimelinePage({
   site,
   initialSearch,
   onYearsChange,
+  owner = false,
 }: {
   api: PublicApi;
   site: SiteIdentity;
   initialSearch: string;
   onYearsChange?: (years: number[]) => void;
+  owner?: boolean;
 }) {
   const { replaceTimelineProgress, restoreCurrentEntry } = useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
@@ -91,11 +95,32 @@ export function TimelinePage({
   const [moreError, setMoreError] = useState<unknown>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [freshId, setFreshId] = useState<string | null>(null);
   const initialSearchRef = useRef(initialSearch);
   const activeInitial = useRef<AbortController | null>(null);
   const activeMore = useRef<AbortController | null>(null);
   const loadingMoreRef = useRef(false);
   const initialEntryRestored = useRef(false);
+  const ownerEvents = useRef(new Map<string, OwnerPostEvent>());
+
+  const reconcileOwnerEvents = useCallback((items: PublicPost[]) => {
+    let reconciled = items;
+    for (const event of ownerEvents.current.values()) {
+      if (event.kind === "created") {
+        reconciled = [
+          event.post,
+          ...reconciled.filter((post) => post.id !== event.post.id),
+        ];
+      } else if (event.kind === "updated") {
+        reconciled = reconciled.map((post) =>
+          post.id === event.post.id ? event.post : post,
+        );
+      } else {
+        reconciled = reconciled.filter((post) => post.id !== event.post.id);
+      }
+    }
+    return reconciled;
+  }, []);
 
   const loadInitial = useCallback(async () => {
     activeInitial.current?.abort();
@@ -146,6 +171,7 @@ export function TimelinePage({
         combined = appendPage(combined, page.items);
       }
 
+      combined = reconcileOwnerEvents(combined);
       setPosts(combined);
       setNextCursor(page.nextCursor);
       onYearsChange?.(yearsFor(combined, site.timezone));
@@ -154,7 +180,7 @@ export function TimelinePage({
     } finally {
       if (!controller.signal.aborted) setLoadingInitial(false);
     }
-  }, [api, onYearsChange, site.timezone]);
+  }, [api, onYearsChange, reconcileOwnerEvents, site.timezone]);
 
   useEffect(() => {
     void loadInitial();
@@ -163,6 +189,33 @@ export function TimelinePage({
       activeMore.current?.abort();
     };
   }, [loadInitial]);
+
+  useEffect(
+    () =>
+      listenForOwnerPosts((event) => {
+        ownerEvents.current.set(event.post.id, event);
+        setPosts((current) => {
+          let next: PublicPost[];
+          if (event.kind === "created") {
+            next = [
+              event.post,
+              ...current.filter((post) => post.id !== event.post.id),
+            ];
+            setFreshId(event.post.id);
+            window.setTimeout(() => setFreshId(null), 700);
+          } else if (event.kind === "updated") {
+            next = current.map((post) =>
+              post.id === event.post.id ? event.post : post,
+            );
+          } else {
+            next = current.filter((post) => post.id !== event.post.id);
+          }
+          onYearsChange?.(yearsFor(next, site.timezone));
+          return next;
+        });
+      }),
+    [onYearsChange, site.timezone],
+  );
 
   useEffect(() => {
     if (loadingInitial || initialError || initialEntryRestored.current) {
@@ -219,7 +272,13 @@ export function TimelinePage({
         已加载 {posts.length} 条 Moment
       </p>
       {posts.map((post) => (
-        <PostPresentation key={post.id} post={post} site={site} />
+        <PostPresentation
+          fresh={post.id === freshId}
+          key={post.id}
+          owner={owner}
+          post={post}
+          site={site}
+        />
       ))}
       {moreError ? (
         <div className={styles.moreError} role="alert">

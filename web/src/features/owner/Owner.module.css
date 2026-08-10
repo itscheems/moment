@@ -1,0 +1,459 @@
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton,
+.loginGate button,
+.routeState button,
+.draftRecovery button,
+.postActions button,
+.dialogTrigger {
+  min-block-size: var(--target-size);
+  border: 0;
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-4);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.primaryButton {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+.primaryButton:hover {
+  background: var(--accent-hover);
+}
+
+.secondaryButton {
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.secondaryButton:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.dangerButton {
+  color: #fff;
+  background: var(--danger);
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.dangerButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.loginGate {
+  max-inline-size: 33rem;
+  margin-inline: auto;
+  padding: clamp(2.5rem, 9vw, 6rem) var(--space-6);
+}
+
+.loginGate h2 {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.65rem, 5vw, 2.15rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.loginGate > p:not(.eyebrow) {
+  margin: var(--space-4) 0 var(--space-6);
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.loginForm {
+  display: grid;
+  gap: var(--space-3);
+  border-block-start: 1px solid var(--border-subtle);
+  padding-block-start: var(--space-5);
+}
+
+.loginForm label {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.loginForm input {
+  min-block-size: 3rem;
+  inline-size: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-4);
+  color: var(--text-primary);
+  background: var(--surface);
+  font-family: var(--font-utility);
+}
+
+.loginForm input:focus {
+  border-color: var(--accent);
+}
+
+.loginForm p,
+.inlineNotice,
+.formError {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.inlineNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-block: 1px solid var(--border-subtle);
+  padding-block: var(--space-3);
+}
+
+.inlineNotice button {
+  color: var(--danger);
+  background: transparent;
+}
+
+.composer {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4.25rem minmax(0, 1fr);
+  border-block-end: 1px solid var(--border-subtle);
+  background: var(--surface);
+}
+
+.inlineComposer {
+  border-block-start: 0;
+}
+
+.pageComposer {
+  min-block-size: 32rem;
+}
+
+.newTick {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  padding-block-start: var(--space-5);
+}
+
+.newTick::before {
+  content: "NOW";
+  min-inline-size: 2.75rem;
+  block-size: 1.55rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--surface);
+  font-family: var(--font-utility);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.newTick span {
+  position: absolute;
+  inset-block-start: 3.65rem;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.composerMain {
+  min-inline-size: 0;
+  padding: var(--space-5) var(--space-6) var(--space-6) var(--space-4);
+}
+
+.composerHeader {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.composerHeader h2 {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+.composerHeader > span {
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.composerForm {
+  display: grid;
+  margin-block-start: var(--space-4);
+}
+
+.composerForm > label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.composerForm textarea {
+  inline-size: 100%;
+  resize: vertical;
+  border: 0;
+  border-block: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: var(--space-4) 0;
+  color: var(--text-primary);
+  background: transparent;
+  font-size: 1.05rem;
+  line-height: 1.62;
+}
+
+.composerForm textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.composerForm textarea:focus-visible {
+  outline-offset: 0.25rem;
+}
+
+.composerMeta,
+.composerFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.composerMeta {
+  margin-block-start: var(--space-3);
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.composerMeta p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.countInvalid {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.storageNotice {
+  margin: var(--space-3) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.formError {
+  margin: var(--space-3) 0 0;
+}
+
+.formError a {
+  color: currentColor;
+  font-weight: 700;
+}
+
+.composerFooter {
+  min-block-size: 3.5rem;
+  margin-block-start: var(--space-3);
+}
+
+.composerFooter p {
+  margin: 0;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.draftRecovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-block: 1px solid var(--accent);
+  margin-block-start: var(--space-4);
+  padding-block: var(--space-3);
+}
+
+.draftRecovery strong,
+.draftRecovery span {
+  display: block;
+}
+
+.draftRecovery strong {
+  font-size: var(--text-sm);
+}
+
+.draftRecovery span {
+  margin-block-start: 0.2rem;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.draftRecovery > div:last-child {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.draftRecovery button {
+  color: var(--accent);
+  background: transparent;
+}
+
+.postActions {
+  min-block-size: var(--target-size);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-3);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.postActions a,
+.postActions button {
+  min-block-size: var(--target-size);
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-3);
+  color: var(--text-secondary);
+  background: transparent;
+  text-decoration: none;
+}
+
+.postActions a:hover,
+.postActions button:hover {
+  color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.postActions span {
+  flex-basis: 100%;
+  color: var(--danger);
+}
+
+.routeState {
+  margin: 0;
+  padding: var(--space-8) var(--space-6) var(--space-8) 4.25rem;
+  color: var(--text-secondary);
+}
+
+.routeState button {
+  border: 1px solid var(--border-strong);
+  color: var(--accent);
+  background: transparent;
+}
+
+.dialogBackdrop {
+  position: fixed;
+  z-index: var(--layer-popover);
+  inset: 0;
+  background: rgb(10 18 13 / 52%);
+}
+
+.dialogViewport {
+  position: fixed;
+  z-index: calc(var(--layer-popover) + 1);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.dialogPopup {
+  inline-size: min(100%, 27rem);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  padding: var(--space-6);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+
+.dialogTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+}
+
+.dialogDescription {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-block-start: var(--space-6);
+}
+
+@media (max-width: 719px) {
+  .loginGate {
+    padding: var(--space-8) var(--space-5);
+  }
+
+  .composer {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+  }
+
+  .composerMain {
+    padding-inline: 0 var(--space-4);
+  }
+
+  .composerHeader > span,
+  .composerMeta p span:first-child {
+    display: none;
+  }
+
+  .composerForm textarea {
+    min-block-size: 10rem;
+  }
+
+  .draftRecovery {
+    align-items: start;
+    flex-direction: column;
+  }
+
+  .routeState {
+    padding-inline: 4.5rem var(--space-4);
+  }
+
+  .dialogActions {
+    flex-direction: column-reverse;
+  }
+
+  .dialogActions button {
+    inline-size: 100%;
+  }
+}

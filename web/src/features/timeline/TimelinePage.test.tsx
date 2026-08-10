@@ -19,6 +19,7 @@ const site: SiteIdentity = {
   publicBaseUrl: null,
   avatarMediaId: null,
   commentsEnabled: true,
+  instanceId: null,
 };
 
 function post(id: string, content: string) {

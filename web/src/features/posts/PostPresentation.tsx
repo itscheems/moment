@@ -1,6 +1,7 @@
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
 import { formatMomentDate } from "./dates";
+import { OwnerPostActions } from "../owner/OwnerPostActions";
 import styles from "./PostPresentation.module.css";
 
 export function SiteAvatar({
@@ -43,11 +44,17 @@ export function PostPresentation({
   site,
   detail = false,
   now,
+  owner = false,
+  fresh = false,
+  onDeleted,
 }: {
   post: PublicPost;
   site: SiteIdentity;
   detail?: boolean;
   now?: Date;
+  owner?: boolean;
+  fresh?: boolean;
+  onDeleted?: (post: PublicPost) => void;
 }) {
   const title = site.title.trim() || "Moment";
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
@@ -57,7 +64,7 @@ export function PostPresentation({
   return (
     <article
       aria-label={`${title}发布的 Moment，${published.absolute}`}
-      className={`${styles.post} ${detail ? styles.detail : ""}`}
+      className={`${styles.post} ${detail ? styles.detail : ""} ${fresh ? styles.fresh : ""}`}
       data-post-id={post.id}
       tabIndex={-1}
     >
@@ -111,6 +118,7 @@ export function PostPresentation({
             <time dateTime={post.publishedAt}>{published.absolute}</time>
           </p>
         ) : null}
+        {owner ? <OwnerPostActions onDeleted={onDeleted} post={post} /> : null}
       </div>
     </article>
   );
