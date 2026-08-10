@@ -270,31 +270,54 @@ describe("public timeline", () => {
 
   it.each([
     {
-      name: "self-loop",
+      failure: "self-loop",
       items: [post("01K2ABCDEF0123456789ABCDE1", "不应追加")],
       nextCursor: "cursor-one",
     },
-    { name: "empty drift", items: [], nextCursor: "cursor-two" },
+    {
+      failure: "empty drift",
+      items: [],
+      nextCursor: "cursor-two",
+    },
+    { failure: "stale", items: [], nextCursor: null },
   ])(
-    "rejects a continued timeline cursor $name",
-    async ({ items, nextCursor }) => {
+    "recovers a continued timeline cursor $failure from the first page",
+    async ({ failure, items, nextCursor }) => {
       const first = post("01K2ABCDEF0123456789ABCDE0", "最近的一段");
-      const fetcher = vi.fn(async (input: RequestInfo | URL) =>
-        String(input).includes("cursor=cursor-one")
-          ? page(items, nextCursor)
-          : page([first], "cursor-one"),
-      );
+      const recovered = post("01K2ABCDEF0123456789ABCDE2", "恢复后的下一页");
+      let continuedRequests = 0;
+      const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+        if (!String(input).includes("cursor=cursor-one")) {
+          return page([first], "cursor-one");
+        }
+        continuedRequests += 1;
+        if (continuedRequests > 1) return page([recovered], null);
+        return failure === "stale" ? staleCursor() : page(items, nextCursor);
+      });
       renderTimeline(new PublicApi(fetcher as typeof fetch));
       await screen.findByText("最近的一段");
       fireEvent.click(
         screen.getByRole("button", { name: "加载更早的 Moment" }),
       );
 
-      expect(
-        await screen.findByRole("button", { name: "从第一页重新加载" }),
-      ).toBeInTheDocument();
+      const reset = await screen.findByRole("button", {
+        name: "从第一页重新加载",
+      });
       expect(screen.queryByText("不应追加")).not.toBeInTheDocument();
       expect(window.location.search).not.toContain("loaded_through");
+
+      fireEvent.click(reset);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "加载更早的 Moment" }),
+        ).toBeInTheDocument(),
+      );
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole("button", { name: "加载更早的 Moment" }),
+      );
+      expect(await screen.findByText("恢复后的下一页")).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     },
   );
 

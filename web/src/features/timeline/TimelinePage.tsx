@@ -167,6 +167,7 @@ export function TimelinePage({
     activeInitial.current = controller;
     setLoadingInitial(true);
     setInitialError(null);
+    setMoreError(null);
     try {
       const { loadedThrough, request } = requestFromSearch(
         initialSearchRef.current,
@@ -315,6 +316,7 @@ export function TimelinePage({
     const search = withoutLoadedProgress(initialSearchRef.current);
     initialSearchRef.current = search;
     visitedCursors.current = new Set();
+    setMoreError(null);
     navigate(`${pathname}${search}`);
     void loadInitial();
   };
