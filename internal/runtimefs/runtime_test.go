@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -83,7 +84,7 @@ func TestWritePrivateFileAtomicReplacesDurablyWithPrivateMode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode = %04o", info.Mode().Perm())
 	}
 	for _, name := range []string{"", ".", "..", "../secrets.json", "nested/secrets.json"} {
