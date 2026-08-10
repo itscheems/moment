@@ -44,6 +44,7 @@ type Config struct {
 	SiteSettings   *app.SiteService
 	Posts          *app.PostService
 	Comments       *app.CommentService
+	Search         *app.SearchService
 	CommentLimiter CommentRateLimiter
 	Media          *media.Store
 	SecureCookies  bool
@@ -136,6 +137,9 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("comment routes require owner authentication")
 		}
 		RegisterCommentRoutes(engine, config.Comments, config.OwnerAuth, config.CommentLimiter)
+	}
+	if config.Search != nil {
+		RegisterSearchRoutes(engine, config.Search)
 	}
 
 	if config.Register != nil {

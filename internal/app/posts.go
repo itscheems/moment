@@ -20,10 +20,10 @@ const postCreateIdempotencyScope = "posts.create.v1"
 // transaction. Implementations must not retain it after the callback returns.
 type PostStore interface {
 	EntryMediaReferenceStore
-	InsertEntry(context.Context, domain.Entry) error
+	InsertEntry(context.Context, domain.Entry, string) error
 	EntryByID(context.Context, domain.ID) (domain.Entry, bool, error)
 	ListEntries(context.Context, TimelineQuery, int) ([]domain.Entry, error)
-	UpdateEntry(context.Context, domain.Entry) (bool, error)
+	UpdateEntry(context.Context, domain.Entry, string) (bool, error)
 	DeleteEntry(context.Context, domain.ID) (bool, error)
 	IdempotencyRecord(context.Context, string, string) (IdempotencyRecord, bool, error)
 	InsertIdempotencyRecord(context.Context, IdempotencyRecord) error
@@ -181,10 +181,14 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
 		return CreatePostResult{}, err
 	}
+	contentText, err := domain.NormalizeContentV1(input.ContentMD)
+	if err != nil {
+		return CreatePostResult{}, err
+	}
 
 	result := CreatePostResult{}
 
-	err := service.transactions.Write(ctx, func(store PostStore) error {
+	err = service.transactions.Write(ctx, func(store PostStore) error {
 		if input.IdempotencyKey != "" {
 			record, found, storeErr := store.IdempotencyRecord(ctx, postCreateIdempotencyScope, input.IdempotencyKey)
 			if storeErr != nil {
@@ -210,7 +214,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		if createErr != nil {
 			return createErr
 		}
-		if insertErr := store.InsertEntry(ctx, entry); insertErr != nil {
+		if insertErr := store.InsertEntry(ctx, entry, contentText); insertErr != nil {
 			return insertErr
 		}
 		if input.IdempotencyKey != "" {
@@ -406,9 +410,13 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
 		return Post{}, err
 	}
+	contentText, err := domain.NormalizeContentV1(input.ContentMD)
+	if err != nil {
+		return Post{}, err
+	}
 
 	var updated domain.Entry
-	err := service.transactions.Write(ctx, func(store PostStore) error {
+	err = service.transactions.Write(ctx, func(store PostStore) error {
 		entry, found, storeErr := store.EntryByID(ctx, input.ID)
 		if storeErr != nil {
 			return storeErr
@@ -423,7 +431,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if updateErr := entry.UpdateContent(input.ContentMD, now); updateErr != nil {
 			return updateErr
 		}
-		changed, updateErr := store.UpdateEntry(ctx, entry)
+		changed, updateErr := store.UpdateEntry(ctx, entry, contentText)
 		if updateErr != nil {
 			return updateErr
 		}

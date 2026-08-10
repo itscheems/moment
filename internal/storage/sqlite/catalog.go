@@ -20,6 +20,7 @@ var requiredCatalogObjects = []expectedCatalogObject{
 	{name: "comments", kind: "table", table: "comments"},
 	{name: "site_settings", kind: "table", table: "site_settings"},
 	{name: "idempotency_keys", kind: "table", table: "idempotency_keys"},
+	{name: "search_index_state", kind: "table", table: "search_index_state"},
 	{name: "entries_timeline_idx", kind: "index", table: "entries"},
 	{name: "entry_media_media_idx", kind: "index", table: "entry_media"},
 	{name: "comments_entry_idx", kind: "index", table: "comments"},
@@ -29,6 +30,9 @@ var requiredCatalogObjects = []expectedCatalogObject{
 	{name: "comments_parent_update_guard", kind: "trigger", table: "comments"},
 	{name: "media_storage_path_insert_guard", kind: "trigger", table: "media"},
 	{name: "media_storage_path_update_guard", kind: "trigger", table: "media"},
+	{name: "entries_search_insert", kind: "trigger", table: "entries"},
+	{name: "entries_search_update", kind: "trigger", table: "entries"},
+	{name: "entries_search_delete", kind: "trigger", table: "entries"},
 }
 
 type catalogQueryer interface {

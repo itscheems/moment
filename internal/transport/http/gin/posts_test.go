@@ -25,6 +25,7 @@ type postHTTPFixture struct {
 	ownerTestFixture
 	database *sqlitestore.Database
 	posts    *app.PostService
+	search   *app.SearchService
 	site     *app.SiteService
 	now      *time.Time
 }
@@ -80,11 +81,20 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 	if _, err := site.Update(context.Background(), app.SiteUpdate{Timezone: &timezone}); err != nil {
 		t.Fatal(err)
 	}
+	searchRepository, err := sqlitestore.NewSearchRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	search, err := app.NewSearchService(searchRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
 	engine, err := New(Config{
 		Assets:       testAssets(),
 		OwnerAuth:    manager,
 		SiteSettings: site,
 		Posts:        posts,
+		Search:       search,
 		RequestID:    func() string { return "req_posts" },
 		Limits:       BodyLimits{JSON: jsonLimit},
 		Readiness: func(ctx context.Context) error {
@@ -101,6 +111,7 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 		ownerTestFixture: ownerTestFixture{manager: manager, token: credential.Token, engine: engine, now: &now},
 		database:         database,
 		posts:            posts,
+		search:           search,
 		site:             site,
 		now:              &now,
 	}

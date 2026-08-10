@@ -26,6 +26,7 @@ type postCLIFixture struct {
 	runtime  *runtimefs.Runtime
 	database *sqlitestore.Database
 	posts    *app.PostService
+	search   *app.SearchService
 	site     *app.SiteService
 	dataDir  string
 	token    string
@@ -74,9 +75,17 @@ func newPostCLIFixture(t *testing.T) postCLIFixture {
 	if _, err := site.Update(context.Background(), app.SiteUpdate{Timezone: &timezone}); err != nil {
 		t.Fatal(err)
 	}
+	searchRepository, err := sqlitestore.NewSearchRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	search, err := app.NewSearchService(searchRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:    fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
-		OwnerAuth: manager, SiteSettings: site, Posts: posts,
+		OwnerAuth: manager, SiteSettings: site, Posts: posts, Search: search,
 		Readiness: func(ctx context.Context) error { return database.Ready(ctx) },
 	})
 	if err != nil {
@@ -87,7 +96,7 @@ func newPostCLIFixture(t *testing.T) postCLIFixture {
 		server.Close()
 		_ = database.Close()
 	})
-	return postCLIFixture{runtime: runtimeState, database: database, posts: posts, site: site, dataDir: dataDir, token: credential.Token, server: server}
+	return postCLIFixture{runtime: runtimeState, database: database, posts: posts, search: search, site: site, dataDir: dataDir, token: credential.Token, server: server}
 }
 
 func TestPostDirectAgentContractIdempotencyAndDeleteSafety(t *testing.T) {

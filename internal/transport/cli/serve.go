@@ -123,6 +123,14 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 	if err != nil {
 		return Result{}, err
 	}
+	searchRepository, err := sqlitestore.NewSearchRepository(database, runtime.Locks)
+	if err != nil {
+		return Result{}, err
+	}
+	searchService, err := app.NewSearchService(searchRepository)
+	if err != nil {
+		return Result{}, err
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:         assets,
 		OwnerAuth:      authManager,
@@ -130,6 +138,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 		Media:          mediaStore,
 		Posts:          postService,
 		Comments:       commentService,
+		Search:         searchService,
 		SecureCookies:  !runtime.IsDevelopment(),
 		TrustedProxies: trustedProxies,
 		Log:            invocation.LogEvent,

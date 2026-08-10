@@ -167,6 +167,9 @@ func (db *Database) bootstrap(ctx context.Context) error {
 	if err := initializeSiteSettings(ctx, db.write, app.HostTimezone()); err != nil {
 		return db.failReadiness(err)
 	}
+	if err := bootstrapSearchDerived(ctx, db.write); err != nil {
+		return db.failReadiness(err)
+	}
 	if err := verifySchemaCatalog(ctx, db.write); err != nil {
 		return db.failReadiness(err)
 	}

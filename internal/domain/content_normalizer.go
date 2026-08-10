@@ -1,0 +1,98 @@
+package domain
+
+import (
+	"regexp"
+	"strings"
+	"unicode"
+	"unicode/utf8"
+
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
+)
+
+// ContentNormalizerVersion identifies the derived search text contract. The
+// version is persisted with the index so future normalizer changes require an
+// explicit rebuild rather than silently mixing representations.
+const ContentNormalizerVersion = 1
+
+var visibleURL = regexp.MustCompile(`(?i)(?:https?://|mailto:|www\.)[^\s]+`)
+
+// NormalizeContentV1 converts Markdown-shaped input into deterministic search
+// text. It keeps visible link labels and code, drops destinations and invisible
+// structures, applies Unicode compatibility normalization and case folding,
+// and collapses every whitespace run to one ASCII space.
+//
+// Both entry ingestion and search queries call this exact function.
+func NormalizeContentV1(source string) (string, error) {
+	if !utf8.ValidString(source) {
+		return "", NewError(CodeInvalidArgument, "content must be valid UTF-8", map[string]any{"field": "content"})
+	}
+	data := []byte(source)
+	document := markdownEngine.Parser().Parse(text.NewReader(data))
+	var output strings.Builder
+	appendVisible := func(value []byte) {
+		value = util.UnescapePunctuations(value)
+		value = util.ResolveNumericReferences(value)
+		value = util.ResolveEntityNames(value)
+		output.Write(value)
+	}
+	if err := ast.Walk(document, func(node ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			if node.Type() == ast.TypeBlock {
+				output.WriteByte(' ')
+			}
+			return ast.WalkContinue, nil
+		}
+		switch typed := node.(type) {
+		case *ast.AutoLink, *ast.Image, *ast.RawHTML, *ast.HTMLBlock:
+			return ast.WalkSkipChildren, nil
+		case *ast.CodeBlock:
+			appendLines(&output, typed.Lines(), data)
+			return ast.WalkSkipChildren, nil
+		case *ast.FencedCodeBlock:
+			appendLines(&output, typed.Lines(), data)
+			return ast.WalkSkipChildren, nil
+		case *ast.Text:
+			appendVisible(typed.Value(data))
+			if typed.SoftLineBreak() || typed.HardLineBreak() {
+				output.WriteByte(' ')
+			}
+		case *ast.String:
+			appendVisible(typed.Value)
+		}
+		return ast.WalkContinue, nil
+	}); err != nil {
+		return "", NewError(CodeInternal, "could not normalize content", nil)
+	}
+
+	withoutURLs := visibleURL.ReplaceAllString(output.String(), " ")
+	normalized := cases.Fold().String(norm.NFKC.String(withoutURLs))
+	var clean strings.Builder
+	spacePending := false
+	for _, character := range normalized {
+		switch {
+		case unicode.IsSpace(character):
+			spacePending = clean.Len() > 0
+		case unicode.Is(unicode.Cf, character), unicode.IsControl(character):
+			// Formatting controls and zero-width structures are not visible text.
+		default:
+			if spacePending {
+				clean.WriteByte(' ')
+				spacePending = false
+			}
+			clean.WriteRune(character)
+		}
+	}
+	return strings.TrimSpace(clean.String()), nil
+}
+
+func appendLines(output *strings.Builder, lines *text.Segments, source []byte) {
+	for index := 0; index < lines.Len(); index++ {
+		segment := lines.At(index)
+		output.Write(segment.Value(source))
+		output.WriteByte(' ')
+	}
+}

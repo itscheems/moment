@@ -111,11 +111,11 @@ func newPostStore(queries Queries) postStore {
 
 var _ app.PostStore = postStore{}
 
-func (store postStore) InsertEntry(ctx context.Context, entry domain.Entry) error {
+func (store postStore) InsertEntry(ctx context.Context, entry domain.Entry, contentText string) error {
 	_, err := store.queries.ExecContext(ctx, `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
-VALUES (?, ?, ?, ?, ?, ?)`,
-		entry.ID.String(), string(entry.Kind), entry.ContentMD,
+INSERT INTO entries (id, kind, content_md, content_text, created_at_ms, updated_at_ms, published_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		entry.ID.String(), string(entry.Kind), entry.ContentMD, contentText,
 		domain.TimeToMillis(entry.CreatedAt), domain.TimeToMillis(entry.UpdatedAt), domain.TimeToMillis(entry.PublishedAt),
 	)
 	if err != nil {
@@ -178,11 +178,11 @@ WHERE kind = ?`
 	return entries, nil
 }
 
-func (store postStore) UpdateEntry(ctx context.Context, entry domain.Entry) (bool, error) {
+func (store postStore) UpdateEntry(ctx context.Context, entry domain.Entry, contentText string) (bool, error) {
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE entries
-SET content_md = ?, updated_at_ms = ?
-WHERE id = ? AND kind = ?`, entry.ContentMD, domain.TimeToMillis(entry.UpdatedAt), entry.ID.String(), string(domain.KindMoment))
+SET content_md = ?, content_text = ?, updated_at_ms = ?
+WHERE id = ? AND kind = ?`, entry.ContentMD, contentText, domain.TimeToMillis(entry.UpdatedAt), entry.ID.String(), string(domain.KindMoment))
 	if err != nil {
 		return false, fmt.Errorf("update entry: %w", err)
 	}
