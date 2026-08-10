@@ -11,7 +11,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../../app/App";
 import {
   COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+  COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
+  COMPOSE_DRAFT_CLEARANCE_CHANNEL,
+  composeDraftClearAllKey,
   composeDraftClearanceKey,
   composeDraftKey,
   loadComposeDraft,
@@ -19,6 +22,71 @@ import {
 
 const instance = "0123456789abcdef0123456789abcdef";
 const sessionKey = "moment.owner.session.v1";
+
+class FakeBroadcastChannel {
+  static channels = new Map<string, Set<FakeBroadcastChannel>>();
+  static posted: unknown[] = [];
+
+  readonly name: string;
+  private readonly listeners = new Set<
+    (event: MessageEvent<unknown>) => void
+  >();
+
+  constructor(name: string) {
+    this.name = name;
+    const peers = FakeBroadcastChannel.channels.get(name) ?? new Set();
+    peers.add(this);
+    FakeBroadcastChannel.channels.set(name, peers);
+  }
+
+  addEventListener(
+    type: string,
+    listener: (event: MessageEvent<unknown>) => void,
+  ) {
+    if (type === "message") this.listeners.add(listener);
+  }
+
+  removeEventListener(
+    type: string,
+    listener: (event: MessageEvent<unknown>) => void,
+  ) {
+    if (type === "message") this.listeners.delete(listener);
+  }
+
+  postMessage(data: unknown) {
+    FakeBroadcastChannel.posted.push(data);
+    for (const peer of FakeBroadcastChannel.channels.get(this.name) ?? []) {
+      if (peer === this) continue;
+      queueMicrotask(() => peer.receive(data));
+    }
+  }
+
+  close() {
+    FakeBroadcastChannel.channels.get(this.name)?.delete(this);
+    this.listeners.clear();
+  }
+
+  private receive(data: unknown) {
+    const event = new MessageEvent("message", { data });
+    for (const listener of this.listeners) listener(event);
+  }
+
+  static reset() {
+    for (const peers of FakeBroadcastChannel.channels.values()) {
+      for (const peer of peers) peer.close();
+    }
+    FakeBroadcastChannel.channels.clear();
+    FakeBroadcastChannel.posted = [];
+  }
+}
+
+function clearanceMessage(clearance: Record<string, unknown>) {
+  return {
+    schema: "moment.compose-clearance-message.v1",
+    sender_id: "f".repeat(32),
+    clearance,
+  };
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -126,6 +194,8 @@ describe("owner composing flow", () => {
     window.history.replaceState({}, "", "/");
     window.localStorage.clear();
     window.sessionStorage.clear();
+    FakeBroadcastChannel.reset();
+    vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
     vi.stubGlobal(
       "matchMedia",
       vi.fn().mockReturnValue({
@@ -143,6 +213,7 @@ describe("owner composing flow", () => {
 
   afterEach(() => {
     cleanup();
+    FakeBroadcastChannel.reset();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -707,14 +778,288 @@ describe("owner composing flow", () => {
     );
 
     expect(inline).toHaveValue("清理竞态里的新正文");
-    expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
-      "清理竞态里的新正文",
+    await waitFor(
+      () =>
+        expect(
+          window.localStorage.getItem(composeDraftKey(instance)),
+        ).toContain("清理竞态里的新正文"),
+      { timeout: 500 },
     );
     const confirm = vi.mocked(window.confirm);
     confirm.mockReturnValue(false);
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     expect(window.location.pathname).toBe("/");
     expect(confirm).toHaveBeenCalledOnce();
+  });
+
+  it("does not resurrect an equal draft when marker writes fail but clearance is broadcast", async () => {
+    preauthenticate();
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "另一标签页已经发布" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    const stored = loadComposeDraft(instance);
+    expect(stored).not.toBeNull();
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    );
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(
+      (key, value) => {
+        if (key === composeDraftClearanceKey(instance)) {
+          throw new DOMException("quota exceeded");
+        }
+        originalSetItem(key, value);
+      },
+    );
+    const clearance = {
+      schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+      instance_id: instance,
+      draft_fingerprint: stored?.fingerprint,
+      draft_saved_at: stored?.savedAt,
+      reason: "published",
+      cleared_at: new Date(
+        Math.max(Date.now(), Date.parse(stored?.savedAt ?? "")) + 1,
+      ).toISOString(),
+    };
+    expect(() =>
+      window.localStorage.setItem(
+        composeDraftClearanceKey(instance),
+        JSON.stringify(clearance),
+      ),
+    ).toThrow();
+    const peer = new FakeBroadcastChannel(COMPOSE_DRAFT_CLEARANCE_CHANNEL);
+    const removed = window.localStorage.getItem(composeDraftKey(instance));
+
+    peer.postMessage(clearanceMessage(clearance));
+    window.localStorage.removeItem(composeDraftKey(instance));
+    fireEvent(
+      window,
+      new StorageEvent("storage", {
+        key: composeDraftKey(instance),
+        oldValue: removed,
+        newValue: null,
+      }),
+    );
+
+    await waitFor(() => expect(inline).toHaveValue(""));
+    await new Promise((resolve) => window.setTimeout(resolve, 75));
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    peer.close();
+  });
+
+  it("preserves a divergent draft when marker writes fail but clearance is broadcast", async () => {
+    preauthenticate();
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "本标签页分叉的正文" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    const stored = loadComposeDraft(instance);
+    expect(stored).not.toBeNull();
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    );
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(
+      (key, value) => {
+        if (key === composeDraftClearanceKey(instance)) {
+          throw new DOMException("quota exceeded");
+        }
+        originalSetItem(key, value);
+      },
+    );
+    const clearance = {
+      schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+      instance_id: instance,
+      draft_fingerprint: "2".repeat(64),
+      draft_saved_at: stored?.savedAt,
+      reason: "published",
+      cleared_at: new Date(
+        Math.max(Date.now(), Date.parse(stored?.savedAt ?? "")) + 1,
+      ).toISOString(),
+    };
+    expect(() =>
+      window.localStorage.setItem(
+        composeDraftClearanceKey(instance),
+        JSON.stringify(clearance),
+      ),
+    ).toThrow();
+    const peer = new FakeBroadcastChannel(COMPOSE_DRAFT_CLEARANCE_CHANNEL);
+    peer.postMessage(clearanceMessage(clearance));
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    const removed = window.localStorage.getItem(composeDraftKey(instance));
+    window.localStorage.removeItem(composeDraftKey(instance));
+    fireEvent(
+      window,
+      new StorageEvent("storage", {
+        key: composeDraftKey(instance),
+        oldValue: removed,
+        newValue: null,
+      }),
+    );
+
+    expect(inline).toHaveValue("本标签页分叉的正文");
+    await waitFor(
+      () =>
+        expect(
+          window.localStorage.getItem(composeDraftKey(instance)),
+        ).toContain("本标签页分叉的正文"),
+      { timeout: 500 },
+    );
+    peer.close();
+  });
+
+  it("honors a broadcast logout when its persistent marker is denied", async () => {
+    preauthenticate();
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "退出必须清理" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    const stored = loadComposeDraft(instance);
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    );
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(
+      (key, value) => {
+        if (key === composeDraftClearAllKey(instance)) {
+          throw new DOMException("quota exceeded");
+        }
+        originalSetItem(key, value);
+      },
+    );
+    const peer = new FakeBroadcastChannel(COMPOSE_DRAFT_CLEARANCE_CHANNEL);
+    const removed = window.localStorage.getItem(composeDraftKey(instance));
+    const clearance = {
+      schema: COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
+      instance_id: instance,
+      reason: "logout",
+      cleared_at: new Date(
+        Math.max(Date.now(), Date.parse(stored?.savedAt ?? "")) + 1,
+      ).toISOString(),
+    };
+    expect(() =>
+      window.localStorage.setItem(
+        composeDraftClearAllKey(instance),
+        JSON.stringify(clearance),
+      ),
+    ).toThrow();
+    peer.postMessage(clearanceMessage(clearance));
+    window.localStorage.removeItem(composeDraftKey(instance));
+    fireEvent(
+      window,
+      new StorageEvent("storage", {
+        key: composeDraftKey(instance),
+        oldValue: removed,
+        newValue: null,
+      }),
+    );
+
+    await waitFor(() => expect(inline).toHaveValue(""));
+    await new Promise((resolve) => window.setTimeout(resolve, 75));
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    peer.close();
+  });
+
+  it("strictly validates and closes the dedicated clearance channel", async () => {
+    preauthenticate();
+    installApi();
+    const view = render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "不能被伪造消息清理" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    const stored = loadComposeDraft(instance);
+    const peer = new FakeBroadcastChannel(COMPOSE_DRAFT_CLEARANCE_CHANNEL);
+    expect(
+      FakeBroadcastChannel.channels.get(COMPOSE_DRAFT_CLEARANCE_CHANNEL)?.size,
+    ).toBe(2);
+
+    peer.postMessage({
+      ...clearanceMessage({
+        schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+        instance_id: instance,
+        draft_fingerprint: stored?.fingerprint,
+        draft_saved_at: stored?.savedAt,
+        reason: "published",
+        cleared_at: new Date().toISOString(),
+      }),
+      extra: true,
+    });
+    peer.postMessage(
+      clearanceMessage({
+        schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+        instance_id: "fedcba9876543210fedcba9876543210",
+        draft_fingerprint: stored?.fingerprint,
+        draft_saved_at: stored?.savedAt,
+        reason: "published",
+        cleared_at: new Date().toISOString(),
+      }),
+    );
+    peer.postMessage(
+      clearanceMessage({
+        schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+        instance_id: instance,
+        draft_fingerprint: stored?.fingerprint,
+        draft_saved_at: stored?.savedAt,
+        reason: "published",
+        cleared_at: new Date(Date.now() + 120_000).toISOString(),
+      }),
+    );
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(inline).toHaveValue("不能被伪造消息清理");
+
+    peer.postMessage(
+      clearanceMessage({
+        schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+        instance_id: instance,
+        draft_fingerprint: stored?.fingerprint,
+        draft_saved_at: stored?.savedAt,
+        reason: "published",
+        cleared_at: new Date(
+          Math.max(Date.now(), Date.parse(stored?.savedAt ?? "")) + 1,
+        ).toISOString(),
+      }),
+    );
+    await waitFor(() => expect(inline).toHaveValue(""));
+
+    view.unmount();
+    expect(
+      FakeBroadcastChannel.channels.get(COMPOSE_DRAFT_CLEARANCE_CHANNEL)?.size,
+    ).toBe(1);
+    peer.close();
+    expect(
+      FakeBroadcastChannel.channels.get(COMPOSE_DRAFT_CLEARANCE_CHANNEL)
+        ?.size ?? 0,
+    ).toBe(0);
+  });
+
+  it("safely re-saves a divergent draft when BroadcastChannel is unavailable", async () => {
+    vi.stubGlobal("BroadcastChannel", undefined);
+    preauthenticate();
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "无频道也不能丢" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    const removed = window.localStorage.getItem(composeDraftKey(instance));
+    window.localStorage.removeItem(composeDraftKey(instance));
+    fireEvent(
+      window,
+      new StorageEvent("storage", {
+        key: composeDraftKey(instance),
+        oldValue: removed,
+        newValue: null,
+      }),
+    );
+
+    await waitFor(
+      () =>
+        expect(
+          window.localStorage.getItem(composeDraftKey(instance)),
+        ).toContain("无频道也不能丢"),
+      { timeout: 500 },
+    );
+    expect(inline).toHaveValue("无频道也不能丢");
   });
 
   it("clears inline only when another tab marks the same draft identity", async () => {

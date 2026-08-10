@@ -18,7 +18,9 @@ import {
   loadComposeDraft,
   parseComposeDraftClearEvent,
   parseComposeDraftClearEventValue,
+  removeComposeDraftForClearance,
   saveComposeDraft,
+  subscribeComposeDraftClearance,
   type ComposeDraft,
   type ComposeDraftClearEvent,
 } from "./draft";
@@ -28,6 +30,7 @@ import { announceOwnerPost } from "./postEvents";
 import styles from "./Owner.module.css";
 
 const MAX_CONTENT = 20_000;
+const DRAFT_REMOVAL_REPAIR_DELAY_MS = 50;
 
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {
@@ -86,6 +89,7 @@ export function Composer({
   const allowLeaveRef = useRef(false);
   const dirtyRef = useRef(false);
   const activeDraftRef = useRef(activeDraft);
+  const draftRemovalRepairRef = useRef<number | null>(null);
   const navigationBlockerId = useRef(Symbol("composer-navigation-blocker"));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const idempotencyKey = useRef(createIdempotencyKey());
@@ -115,18 +119,26 @@ export function Composer({
       setDirty(false);
       setError(null);
     };
+    const cancelDraftRemovalRepair = () => {
+      if (draftRemovalRepairRef.current !== null) {
+        window.clearTimeout(draftRemovalRepairRef.current);
+        draftRemovalRepairRef.current = null;
+      }
+    };
     const handleClearance = (clearance: ComposeDraftClearEvent) => {
       if (clearance.instance_id !== instanceId) return;
-      if (clearance.schema === COMPOSE_DRAFT_CLEAR_ALL_SCHEMA) {
+      const active = activeDraftRef.current;
+      const matches =
+        clearance.schema === COMPOSE_DRAFT_CLEAR_ALL_SCHEMA
+          ? true
+          : active?.fingerprint === clearance.draft_fingerprint &&
+            Date.parse(active.savedAt) <= Date.parse(clearance.cleared_at);
+      cancelDraftRemovalRepair();
+      if (matches) {
+        removeComposeDraftForClearance(instanceId, clearance);
         resetDraftSurface();
-      } else if (
-        activeDraftRef.current?.fingerprint === clearance.draft_fingerprint &&
-        Date.parse(activeDraftRef.current.savedAt) <=
-          Date.parse(clearance.cleared_at)
-      ) {
-        resetDraftSurface();
-      } else if (activeDraftRef.current) {
-        saveComposeDraft(instanceId, activeDraftRef.current);
+      } else if (active) {
+        saveComposeDraft(instanceId, active);
       }
     };
     const clearedInThisDocument = (event: Event) => {
@@ -141,7 +153,13 @@ export function Composer({
         event.newValue === null
       ) {
         if (dirtyRef.current && activeDraftRef.current) {
-          saveComposeDraft(instanceId, activeDraftRef.current);
+          cancelDraftRemovalRepair();
+          draftRemovalRepairRef.current = window.setTimeout(() => {
+            draftRemovalRepairRef.current = null;
+            if (dirtyRef.current && activeDraftRef.current) {
+              saveComposeDraft(instanceId, activeDraftRef.current);
+            }
+          }, DRAFT_REMOVAL_REPAIR_DELAY_MS);
         }
         return;
       }
@@ -153,6 +171,8 @@ export function Composer({
           : composeDraftClearanceKey(instanceId);
       if (event.key === expectedKey) handleClearance(clearance);
     };
+    const unsubscribeClearance =
+      subscribeComposeDraftClearance(handleClearance);
     window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, clearedInThisDocument);
     window.addEventListener("storage", clearedInAnotherDocument);
     return () => {
@@ -161,6 +181,8 @@ export function Composer({
         clearedInThisDocument,
       );
       window.removeEventListener("storage", clearedInAnotherDocument);
+      unsubscribeClearance();
+      cancelDraftRemovalRepair();
     };
   }, [site.instanceId, variant]);
 

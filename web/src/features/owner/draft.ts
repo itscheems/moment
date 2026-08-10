@@ -4,15 +4,19 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 const DRAFT_PREFIX = "moment.compose.draft.v1:";
 const CLEARANCE_PREFIX = "moment.compose.clearance.v1:";
 const CLEAR_ALL_PREFIX = "moment.compose.clear-all.v1:";
+const CLEARANCE_CHANNEL = "moment.compose.clearance.sync.v1";
+const CLEARANCE_CHANNEL_SCHEMA = "moment.compose-clearance-message.v1";
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
 const INSTANCE_PATTERN = /^[0-9a-f]{32}$/;
 const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
+const CHANNEL_SENDER_PATTERN = /^[0-9a-f]{32}$/;
 let lastDraftTime = 0;
 
 export const COMPOSE_DRAFT_CLEARED_EVENT = "moment:compose-draft-cleared";
 export const COMPOSE_DRAFT_CLEARANCE_SCHEMA = "moment.compose-clearance.v1";
 export const COMPOSE_DRAFT_CLEAR_ALL_SCHEMA =
   "moment.compose-draft-clear-all.v1";
+export const COMPOSE_DRAFT_CLEARANCE_CHANNEL = CLEARANCE_CHANNEL;
 
 export interface ComposeDraftIdentity {
   fingerprint: string;
@@ -49,6 +53,20 @@ export type ComposeDraftClearRequest =
     }
   | { reason: "logout" };
 
+interface ComposeDraftClearanceMessage {
+  schema: typeof CLEARANCE_CHANNEL_SCHEMA;
+  sender_id: string;
+  clearance: ComposeDraftClearEvent;
+}
+
+function newChannelSenderID(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) =>
+    value.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+const channelSenderID = newChannelSenderID();
+
 function draftKey(instanceId: string): string {
   return `${DRAFT_PREFIX}${instanceId}`;
 }
@@ -84,6 +102,10 @@ function isTimestamp(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function isCurrentOrPastTimestamp(value: unknown): value is string {
+  return isTimestamp(value) && Date.parse(value) <= Date.now() + 60_000;
 }
 
 function parseJSON(value: string | null): unknown {
@@ -166,7 +188,7 @@ export function parseComposeDraftClearance(
     !FINGERPRINT_PATTERN.test(clearance.draft_fingerprint) ||
     !isTimestamp(clearance.draft_saved_at) ||
     (clearance.reason !== "published" && clearance.reason !== "discarded") ||
-    !isTimestamp(clearance.cleared_at) ||
+    !isCurrentOrPastTimestamp(clearance.cleared_at) ||
     Date.parse(clearance.draft_saved_at) > Date.parse(clearance.cleared_at)
   ) {
     return null;
@@ -198,7 +220,7 @@ export function parseComposeDraftClearEvent(
     typeof clearAll.instance_id !== "string" ||
     !INSTANCE_PATTERN.test(clearAll.instance_id) ||
     clearAll.reason !== "logout" ||
-    !isTimestamp(clearAll.cleared_at)
+    !isCurrentOrPastTimestamp(clearAll.cleared_at)
   ) {
     return null;
   }
@@ -209,6 +231,85 @@ export function parseComposeDraftClearEventValue(
   value: string | null,
 ): ComposeDraftClearEvent | null {
   return parseComposeDraftClearEvent(parseJSON(value));
+}
+
+function parseComposeDraftClearanceMessage(
+  value: unknown,
+): ComposeDraftClearanceMessage | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    !hasExactKeys(value as Record<string, unknown>, [
+      "schema",
+      "sender_id",
+      "clearance",
+    ])
+  ) {
+    return null;
+  }
+  const message = value as Record<string, unknown>;
+  const clearance = parseComposeDraftClearEvent(message.clearance);
+  if (
+    message.schema !== CLEARANCE_CHANNEL_SCHEMA ||
+    typeof message.sender_id !== "string" ||
+    !CHANNEL_SENDER_PATTERN.test(message.sender_id) ||
+    !clearance
+  ) {
+    return null;
+  }
+  return {
+    schema: CLEARANCE_CHANNEL_SCHEMA,
+    sender_id: message.sender_id,
+    clearance,
+  };
+}
+
+function clearanceMessage(
+  clearance: ComposeDraftClearEvent,
+): ComposeDraftClearanceMessage {
+  return {
+    schema: CLEARANCE_CHANNEL_SCHEMA,
+    sender_id: channelSenderID,
+    clearance,
+  };
+}
+
+function broadcastComposeDraftClearance(
+  clearance: ComposeDraftClearEvent,
+): void {
+  if (typeof BroadcastChannel === "undefined") return;
+  let channel: BroadcastChannel | null = null;
+  try {
+    channel = new BroadcastChannel(CLEARANCE_CHANNEL);
+    channel.postMessage(clearanceMessage(clearance));
+  } catch {
+    // Storage events and delayed draft repair remain as safe fallbacks.
+  } finally {
+    channel?.close();
+  }
+}
+
+export function subscribeComposeDraftClearance(
+  listener: (clearance: ComposeDraftClearEvent) => void,
+): () => void {
+  if (typeof BroadcastChannel === "undefined") return () => undefined;
+  let channel: BroadcastChannel;
+  try {
+    channel = new BroadcastChannel(CLEARANCE_CHANNEL);
+  } catch {
+    return () => undefined;
+  }
+  const receive = (event: MessageEvent<unknown>) => {
+    const message = parseComposeDraftClearanceMessage(event.data);
+    if (!message || message.sender_id === channelSenderID) return;
+    listener(message.clearance);
+  };
+  channel.addEventListener("message", receive);
+  return () => {
+    channel.removeEventListener("message", receive);
+    channel.close();
+  };
 }
 
 function clearedBy(
@@ -284,6 +385,27 @@ function removeStoredDraftIfMatching(
   } catch {
     return false;
   }
+}
+
+export function removeComposeDraftForClearance(
+  instanceId: string | null,
+  value: unknown,
+): boolean {
+  if (!instanceId || !INSTANCE_PATTERN.test(instanceId)) return false;
+  const clearance = parseComposeDraftClearEvent(value);
+  if (!clearance || clearance.instance_id !== instanceId) return false;
+  const target = storage();
+  if (target && clearance.schema === COMPOSE_DRAFT_CLEAR_ALL_SCHEMA) {
+    try {
+      target.removeItem(draftKey(instanceId));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return target
+    ? removeStoredDraftIfMatching(target, instanceId, clearance)
+    : false;
 }
 
 export function loadComposeDraft(
@@ -382,21 +504,31 @@ export function clearComposeDraft(
       reason: "logout",
       cleared_at: clearedAt,
     };
+    broadcastComposeDraftClearance(detail);
+    dispatchComposeDraftClear(detail);
     try {
       const target = window.localStorage;
+      let markerWritten = false;
       try {
         target.setItem(clearAllKey(instanceId), JSON.stringify(detail));
+        markerWritten = true;
       } catch {
         // Same-document logout still clears every mounted draft surface.
       }
-      dispatchComposeDraftClear(detail);
       try {
         target.removeItem(draftKey(instanceId));
       } catch {
         // The marker can still suppress a draft that cannot be removed.
       }
+      if (!markerWritten) {
+        try {
+          target.setItem(clearAllKey(instanceId), JSON.stringify(detail));
+        } catch {
+          // The clearance channel already propagated the logout identity.
+        }
+      }
     } catch {
-      dispatchComposeDraftClear(detail);
+      // The clearance channel and same-document event remain available.
     }
     return;
   } else {
@@ -417,14 +549,18 @@ export function clearComposeDraft(
       reason: request.reason,
       cleared_at: clearedAt,
     };
+    broadcastComposeDraftClearance(detail);
+    dispatchComposeDraftClear(detail);
     let target: Storage | null = null;
     try {
       target = window.localStorage;
     } catch {
       // Same-document identity clearing remains available without persistence.
     }
+    let markerWritten = false;
     try {
       target?.setItem(clearanceKey(instanceId), JSON.stringify(detail));
+      markerWritten = target !== null;
     } catch {
       // A failed marker write must not retain already published local text.
     }
@@ -433,8 +569,14 @@ export function clearComposeDraft(
     } catch {
       // Same-document identity clearing remains available without persistence.
     }
+    if (target && !markerWritten) {
+      try {
+        target.setItem(clearanceKey(instanceId), JSON.stringify(detail));
+      } catch {
+        // The clearance channel already propagated the draft identity.
+      }
+    }
   }
-  dispatchComposeDraftClear(detail);
 }
 
 function dispatchComposeDraftClear(detail: ComposeDraftClearEvent): void {

@@ -29,7 +29,10 @@ function draft(contentMd: string, savedAt: string): ComposeDraft {
 
 describe("instance-scoped compose draft", () => {
   beforeEach(() => window.localStorage.clear());
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it("keeps the frozen v1 value exactly to Markdown and saved_at", () => {
     const value = draft("一段草稿", "2026-08-10T01:02:03.000Z");
@@ -246,14 +249,14 @@ describe("instance-scoped compose draft", () => {
     const originalSetItem = window.localStorage.setItem.bind(
       window.localStorage,
     );
-    vi.spyOn(window.localStorage, "setItem").mockImplementation(
-      (key, value) => {
+    const setItem = vi
+      .spyOn(window.localStorage, "setItem")
+      .mockImplementation((key, value) => {
         if (key === composeDraftClearanceKey(instance)) {
           throw new DOMException("quota exceeded");
         }
         originalSetItem(key, value);
-      },
-    );
+      });
 
     clearComposeDraft(instance, { reason: "published", draft: published });
 
@@ -261,6 +264,11 @@ describe("instance-scoped compose draft", () => {
     expect(
       window.localStorage.getItem(composeDraftClearanceKey(instance)),
     ).toBeNull();
+    expect(
+      setItem.mock.calls.filter(
+        ([key]) => key === composeDraftClearanceKey(instance),
+      ),
+    ).toHaveLength(2);
   });
 
   it("keeps logout as the only unconditional all-clear", () => {
@@ -288,10 +296,24 @@ describe("instance-scoped compose draft", () => {
     );
   });
 
-  it("announces logout after its marker and before removing the draft", () => {
+  it("broadcasts and announces logout before marker and draft cleanup", () => {
     const value = draft("退出顺序", "2026-08-10T01:02:03.000Z");
     saveComposeDraft(instance, value);
     const operations: string[] = [];
+    const messages: unknown[] = [];
+    class RecordingBroadcastChannel {
+      constructor(readonly name: string) {}
+      addEventListener() {}
+      removeEventListener() {}
+      postMessage(message: unknown) {
+        operations.push("broadcast");
+        messages.push(message);
+      }
+      close() {
+        operations.push("channel-close");
+      }
+    }
+    vi.stubGlobal("BroadcastChannel", RecordingBroadcastChannel);
     const originalSetItem = window.localStorage.setItem.bind(
       window.localStorage,
     );
@@ -312,7 +334,23 @@ describe("instance-scoped compose draft", () => {
     clearComposeDraft(instance, { reason: "logout" });
 
     window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, onClear);
-    expect(operations).toEqual(["marker", "event", "remove"]);
+    expect(operations).toEqual([
+      "broadcast",
+      "channel-close",
+      "event",
+      "marker",
+      "remove",
+    ]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      schema: "moment.compose-clearance-message.v1",
+      sender_id: expect.stringMatching(/^[0-9a-f]{32}$/),
+      clearance: {
+        schema: COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
+        instance_id: instance,
+        reason: "logout",
+      },
+    });
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
   });
 
