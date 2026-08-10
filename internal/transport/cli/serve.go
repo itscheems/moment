@@ -143,7 +143,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 	if err != nil {
 		return Result{}, err
 	}
-	importInspector, err := archive.NewInspector(archive.InspectOptions{DataDir: runtime.Root})
+	importInspector, err := archive.NewInspector(archive.InspectOptions{DataDir: runtime.Root, ActiveDatabase: database})
 	if err != nil {
 		return Result{}, err
 	}

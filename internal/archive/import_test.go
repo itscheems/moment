@@ -4,12 +4,16 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +31,7 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC)
-	inspector := testInspector(t, fixture.runtime.Root, &now, math.MaxUint64)
+	inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
 	result, err := inspector.InspectFile(context.Background(), archivePath, 7)
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +102,7 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 		t.Fatal(err)
 	}
 
-	restarted := testInspector(t, fixture.runtime.Root, &now, math.MaxUint64)
+	restarted := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
 	resumed, err := restarted.Resume(context.Background(), result.StagingToken, 7)
 	if err != nil {
 		t.Fatal(err)
@@ -138,11 +142,147 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 	}
 }
 
+func TestInspectOfflineSnapshotLeavesActiveGenerationByteForByteUntouched(t *testing.T) {
+	source := newExportFixture(t, true)
+	archivePath := exportFixtureFile(t, source)
+	target, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir(), Environment: runtimefs.EnvironmentDevelopment})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetDatabase, err := sqlitestore.Open(context.Background(), target, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := targetDatabase.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"-journal", "-shm", "-wal"} {
+		if _, err := os.Lstat(target.Current.DatabasePath + suffix); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("offline target has sidecar %s before inspect: %v", suffix, err)
+		}
+	}
+	before := fingerprintGeneration(t, target.Current.Root)
+	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
+	if _, err := testInspector(t, target.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 1); err != nil {
+		t.Fatal(err)
+	}
+	after := fingerprintGeneration(t, target.Current.Root)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("active generation changed during offline inspect:\nbefore=%#v\nafter=%#v", before, after)
+	}
+	for _, suffix := range []string{"-journal", "-shm", "-wal"} {
+		if _, err := os.Lstat(target.Current.DatabasePath + suffix); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("offline inspect created sidecar %s: %v", suffix, err)
+		}
+	}
+}
+
+func TestInspectOfflineSnapshotIncludesUncleanWALWithoutTouchingActive(t *testing.T) {
+	if os.Getenv("MOMENT_IMPORT_WAL_HELPER") == "1" {
+		runUncleanImportWALWriter()
+		return
+	}
+	source := newExportFixture(t, true)
+	archivePath := exportFixtureFile(t, source)
+	target, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir(), Environment: runtimefs.EnvironmentDevelopment})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetDatabase, err := sqlitestore.Open(context.Background(), target, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := targetDatabase.Close(); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(os.Args[0], "-test.run=^TestInspectOfflineSnapshotIncludesUncleanWALWithoutTouchingActive$")
+	command.Env = append(os.Environ(), "MOMENT_IMPORT_WAL_HELPER=1", "MOMENT_IMPORT_WAL_DATA_DIR="+target.Root)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("unclean WAL writer failed: %v\n%s", err, output)
+	}
+	walInfo, err := os.Stat(target.Current.DatabasePath + "-wal")
+	if err != nil || walInfo.Size() == 0 {
+		t.Fatalf("unclean writer did not leave a non-empty WAL: %v", err)
+	}
+	before := fingerprintGeneration(t, target.Current.Root)
+	now := time.Date(2026, 8, 11, 1, 31, 0, 0, time.UTC)
+	result, err := testInspector(t, target.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Replacement.Counts.Entries != 1 {
+		t.Fatalf("replacement entries = %d, want committed WAL entry", result.Replacement.Counts.Entries)
+	}
+	after := fingerprintGeneration(t, target.Current.Root)
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("active generation changed while reading unclean WAL:\nbefore=%#v\nafter=%#v", before, after)
+	}
+}
+
+func runUncleanImportWALWriter() {
+	ctx := context.Background()
+	runtimeState, err := runtimefs.Open(os.Getenv("MOMENT_IMPORT_WAL_DATA_DIR"))
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	err = database.WriteTx(ctx, func(queries sqlitestore.Queries) error {
+		_, err := queries.ExecContext(ctx, `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'committed only in WAL', 1, 1, 1)`)
+		return err
+	})
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+type generationFingerprint struct {
+	Mode      os.FileMode
+	Size      int64
+	Modified  int64
+	Digest    [sha256.Size]byte
+	IsRegular bool
+}
+
+func fingerprintGeneration(t *testing.T, root string) map[string]generationFingerprint {
+	t.Helper()
+	result := make(map[string]generationFingerprint)
+	err := filepath.Walk(root, func(name string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, name)
+		if err != nil {
+			return err
+		}
+		fingerprint := generationFingerprint{Mode: info.Mode(), Size: info.Size(), Modified: info.ModTime().UnixNano(), IsRegular: info.Mode().IsRegular()}
+		if fingerprint.IsRegular {
+			contents, err := os.ReadFile(name)
+			if err != nil {
+				return err
+			}
+			fingerprint.Digest = sha256.Sum256(contents)
+		}
+		result[filepath.ToSlash(relative)] = fingerprint
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
+}
+
 func TestInspectRejectsMismatchedExpiredAndCorruptRestartState(t *testing.T) {
 	t.Run("owner epoch mismatch", func(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
-		inspector := testInspector(t, fixture.runtime.Root, &now, math.MaxUint64)
+		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
 		result, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 3)
 		if err != nil {
 			t.Fatal(err)
@@ -155,7 +295,7 @@ func TestInspectRejectsMismatchedExpiredAndCorruptRestartState(t *testing.T) {
 	t.Run("expired", func(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
-		inspector := testInspector(t, fixture.runtime.Root, &now, math.MaxUint64)
+		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
 		result, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 3)
 		if err != nil {
 			t.Fatal(err)
@@ -169,7 +309,7 @@ func TestInspectRejectsMismatchedExpiredAndCorruptRestartState(t *testing.T) {
 	t.Run("corrupt metadata", func(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
-		inspector := testInspector(t, fixture.runtime.Root, &now, math.MaxUint64)
+		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
 		result, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 3)
 		if err != nil {
 			t.Fatal(err)
@@ -249,7 +389,7 @@ func TestInspectRejectsHostileArchivesBeforeReadyToken(t *testing.T) {
 			name := filepath.Join(t.TempDir(), "hostile.zip")
 			writeArchive(t, name, members, order)
 			now := time.Date(2026, 8, 11, 3, 0, 0, 0, time.UTC)
-			inspector := testInspector(t, fixture.runtime.Root, &now, math.MaxUint64)
+			inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
 			if _, err := inspector.InspectFile(context.Background(), name, 1); !domain.HasCode(err, test.code) {
 				t.Fatalf("error = %v, want %s", err, test.code)
 			}
@@ -265,7 +405,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		name := filepath.Join(t.TempDir(), "duplicate.zip")
 		writeArchiveHeaders(t, name, append(order, "README.txt"), members, nil)
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		if _, err := testInspector(t, fixture.runtime.Root, &now, math.MaxUint64).InspectFile(context.Background(), name, 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+		if _, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), name, 1); !domain.HasCode(err, domain.CodeExportInvalid) {
 			t.Fatalf("duplicate error = %v", err)
 		}
 	})
@@ -276,7 +416,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		name := filepath.Join(t.TempDir(), "symlink.zip")
 		writeArchiveHeaders(t, name, order, members, map[string]os.FileMode{"README.txt": os.ModeSymlink | 0o777})
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		if _, err := testInspector(t, fixture.runtime.Root, &now, math.MaxUint64).InspectFile(context.Background(), name, 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+		if _, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), name, 1); !domain.HasCode(err, domain.CodeExportInvalid) {
 			t.Fatalf("symlink error = %v", err)
 		}
 	})
@@ -288,7 +428,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		name := filepath.Join(t.TempDir(), "ratio.zip")
 		writeArchive(t, name, members, order)
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		inspector, err := NewInspector(InspectOptions{DataDir: fixture.runtime.Root, Clock: func() time.Time { return now }, Random: bytes.NewReader(bytes.Repeat([]byte{9}, 128)), AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil }, Limits: InspectLimits{MaxCompression: 2}})
+		inspector, err := NewInspector(InspectOptions{DataDir: fixture.runtime.Root, ActiveDatabase: fixture.database, Clock: func() time.Time { return now }, Random: bytes.NewReader(bytes.Repeat([]byte{9}, 128)), AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil }, Limits: InspectLimits{MaxCompression: 2}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -306,7 +446,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		name := filepath.Join(t.TempDir(), "quota.zip")
 		writeArchive(t, name, members, order)
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		inspector, err := NewInspector(InspectOptions{DataDir: fixture.runtime.Root, Clock: func() time.Time { return now }, Random: bytes.NewReader(bytes.Repeat([]byte{8}, 128)), AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil }, Limits: InspectLimits{MaxEntries: 1}})
+		inspector, err := NewInspector(InspectOptions{DataDir: fixture.runtime.Root, ActiveDatabase: fixture.database, Clock: func() time.Time { return now }, Random: bytes.NewReader(bytes.Repeat([]byte{8}, 128)), AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil }, Limits: InspectLimits{MaxEntries: 1}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -318,7 +458,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 	t.Run("compressed size quota", func(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		inspector, err := NewInspector(InspectOptions{DataDir: fixture.runtime.Root, Clock: func() time.Time { return now }, Random: bytes.NewReader(bytes.Repeat([]byte{8}, 128)), AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil }, Limits: InspectLimits{MaxArchiveBytes: 1}})
+		inspector, err := NewInspector(InspectOptions{DataDir: fixture.runtime.Root, ActiveDatabase: fixture.database, Clock: func() time.Time { return now }, Random: bytes.NewReader(bytes.Repeat([]byte{8}, 128)), AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil }, Limits: InspectLimits{MaxArchiveBytes: 1}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -330,7 +470,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 	t.Run("expanded size quota", func(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		inspector, err := NewInspector(InspectOptions{DataDir: fixture.runtime.Root, Clock: func() time.Time { return now }, Random: bytes.NewReader(bytes.Repeat([]byte{8}, 128)), AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil }, Limits: InspectLimits{MaxExpandedBytes: 1}})
+		inspector, err := NewInspector(InspectOptions{DataDir: fixture.runtime.Root, ActiveDatabase: fixture.database, Clock: func() time.Time { return now }, Random: bytes.NewReader(bytes.Repeat([]byte{8}, 128)), AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil }, Limits: InspectLimits{MaxExpandedBytes: 1}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -342,7 +482,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 	t.Run("disk", func(t *testing.T) {
 		fixture := newExportFixture(t, true)
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		inspector := testInspector(t, fixture.runtime.Root, &now, 0)
+		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, 0)
 		_, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 1)
 		if !domain.HasCode(err, domain.CodeImportDiskSpaceInsufficient) {
 			t.Fatalf("disk error = %v", err)
@@ -355,7 +495,7 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 		ctx, cancel := context.WithCancel(context.Background())
 		reader := &cancelAfterReader{reader: bytes.NewReader(exportFixtureBytes(t, fixture)), cancel: cancel}
 		now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-		_, err := testInspector(t, fixture.runtime.Root, &now, math.MaxUint64).Inspect(ctx, reader, 1)
+		_, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).Inspect(ctx, reader, 1)
 		if !errors.Is(err, context.Canceled) {
 			t.Fatalf("cancel error = %v", err)
 		}
@@ -363,10 +503,10 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 	})
 }
 
-func testInspector(t *testing.T, dataDir string, now *time.Time, available uint64) *Inspector {
+func testInspector(t *testing.T, dataDir string, database *sqlitestore.Database, now *time.Time, available uint64) *Inspector {
 	t.Helper()
 	inspector, err := NewInspector(InspectOptions{
-		DataDir: dataDir, Clock: func() time.Time { return *now },
+		DataDir: dataDir, ActiveDatabase: database, Clock: func() time.Time { return *now },
 		Random:         bytes.NewReader(bytes.Repeat([]byte{7}, 256)),
 		AvailableBytes: func(string) (uint64, error) { return available, nil },
 	})

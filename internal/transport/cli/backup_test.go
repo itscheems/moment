@@ -4,7 +4,10 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -345,11 +348,18 @@ func TestBackupInspectDirectJSONHelpAndActiveState(t *testing.T) {
 func TestBackupInspectAPIUploadParityErrorsAndTimeout(t *testing.T) {
 	application := momentTestApplication()
 	archivePath := filepath.Join(t.TempDir(), "source.zip")
-	if err := os.WriteFile(archivePath, []byte("PK\x03\x04payload"), 0o600); err != nil {
+	archiveBody := []byte("PK\x03\x04payload")
+	if err := os.WriteFile(archivePath, archiveBody, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("MOMENT_TOKEN", "owner-test-token")
 	expires := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
+	validEnvelope := validImportInspectionAPIEnvelope(int64(len(archiveBody)))
+	wantToken := validEnvelope["data"].(map[string]any)["staging_token"].(string)
+	validBody, err := json.Marshal(validEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/owner/import/inspect" || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/zip" {
 			t.Errorf("request = %s %s %#v", request.Method, request.URL.Path, request.Header)
@@ -360,7 +370,7 @@ func TestBackupInspectAPIUploadParityErrorsAndTimeout(t *testing.T) {
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		writer.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(writer, `{"data":{"format_version":1,"archive_sha256":"abc","generation_id":"import-1","counts":{"entries":1,"comments":2,"media":3},"time_range":{},"media_bytes":4,"missing_alt":0,"disk":{"archive_bytes":10,"expanded_bytes":20,"staging_bytes":20,"pre_import_backup_bytes":1,"rollback_reserve_bytes":1,"safety_margin_bytes":2,"required_additional_bytes":24,"estimated_peak_footprint_bytes":35,"available_bytes":100,"space_ok":true},"replacement":{"counts":{"entries":0,"comments":0,"media":0},"media_bytes":0,"data_bytes":1},"warnings":[],"expires_at":"2026-08-11T02:00:00Z","staging_token":"stage-token"},"meta":{"request_id":"req_import"}}`)
+		_, _ = writer.Write(validBody)
 	}))
 	defer server.Close()
 	output := execute(application, "", "--url", server.URL, "backup", "inspect", archivePath, "--json")
@@ -368,7 +378,7 @@ func TestBackupInspectAPIUploadParityErrorsAndTimeout(t *testing.T) {
 		t.Fatalf("API inspect = %#v", output)
 	}
 	data := commandData(t, output)
-	if data["staging_token"] != "stage-token" || data["expires_at"] != expires.Format(time.RFC3339) {
+	if data["staging_token"] != wantToken || data["expires_at"] != expires.Format(time.RFC3339) {
 		t.Fatalf("API data = %#v", data)
 	}
 
@@ -402,6 +412,131 @@ func TestBackupInspectAPIUploadParityErrorsAndTimeout(t *testing.T) {
 	invalid := execute(application, "", "--url", server.URL, "backup", "inspect", symlink, "--json")
 	if invalid.exit != ExitInvalidInput || decodeOneDocument(t, invalid.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("symlink input = %#v", invalid)
+	}
+}
+
+func TestBackupInspectAPIRejectsMalformedSuccessEnvelopes(t *testing.T) {
+	application := momentTestApplication()
+	archiveBody := []byte("PK\x03\x04payload")
+	archivePath := filepath.Join(t.TempDir(), "source.zip")
+	if err := os.WriteFile(archivePath, archiveBody, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MOMENT_TOKEN", "owner-test-token")
+	tests := []struct {
+		name        string
+		status      int
+		contentType string
+		mutate      func(map[string]any)
+		raw         func(map[string]any) []byte
+	}{
+		{name: "wrong success status", status: http.StatusOK},
+		{name: "wrong content type", contentType: "text/plain"},
+		{name: "missing top field", mutate: func(value map[string]any) { delete(value, "meta") }},
+		{name: "empty metadata", mutate: func(value map[string]any) { value["meta"] = map[string]any{} }},
+		{name: "unknown envelope field", mutate: func(value map[string]any) { value["extra"] = true }},
+		{name: "unknown inspection field", mutate: func(value map[string]any) { value["data"].(map[string]any)["extra"] = true }},
+		{name: "unknown metadata field", mutate: func(value map[string]any) { value["meta"].(map[string]any)["extra"] = true }},
+		{name: "missing required inspection field", mutate: func(value map[string]any) { delete(value["data"].(map[string]any), "disk") }},
+		{name: "null warnings", mutate: func(value map[string]any) { value["data"].(map[string]any)["warnings"] = nil }},
+		{name: "invalid archive hash", mutate: func(value map[string]any) { value["data"].(map[string]any)["archive_sha256"] = strings.Repeat("A", 64) }},
+		{name: "invalid generation ID", mutate: func(value map[string]any) { value["data"].(map[string]any)["generation_id"] = "import-1" }},
+		{name: "negative count", mutate: func(value map[string]any) { value["data"].(map[string]any)["counts"].(map[string]any)["entries"] = -1 }},
+		{name: "incomplete time range", mutate: func(value map[string]any) {
+			delete(value["data"].(map[string]any)["time_range"].(map[string]any), "to")
+		}},
+		{name: "non UTC expiry", mutate: func(value map[string]any) { value["data"].(map[string]any)["expires_at"] = "2026-08-11T10:00:00+08:00" }},
+		{name: "invalid staging token", mutate: func(value map[string]any) { value["data"].(map[string]any)["staging_token"] = "stage-token" }},
+		{name: "inconsistent disk formula", mutate: func(value map[string]any) {
+			value["data"].(map[string]any)["disk"].(map[string]any)["required_additional_bytes"] = 1
+		}},
+		{name: "empty request ID", mutate: func(value map[string]any) { value["meta"].(map[string]any)["request_id"] = "" }},
+		{name: "duplicate top field", raw: func(value map[string]any) []byte {
+			data, _ := json.Marshal(value["data"])
+			meta, _ := json.Marshal(value["meta"])
+			return []byte(fmt.Sprintf(`{"data":%s,"data":%s,"meta":%s}`, data, data, meta))
+		}},
+		{name: "duplicate nested field", raw: func(value map[string]any) []byte {
+			data := value["data"].(map[string]any)
+			counts := data["counts"].(map[string]any)
+			data["counts"] = json.RawMessage(fmt.Sprintf(`{"entries":%v,"entries":%v,"comments":%v,"media":%v}`, counts["entries"], counts["entries"], counts["comments"], counts["media"]))
+			body, _ := json.Marshal(value)
+			return body
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := validImportInspectionAPIEnvelope(int64(len(archiveBody)))
+			if test.mutate != nil {
+				test.mutate(value)
+			}
+			var body []byte
+			if test.raw != nil {
+				body = test.raw(value)
+			} else {
+				var err error
+				body, err = json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			status := test.status
+			if status == 0 {
+				status = http.StatusCreated
+			}
+			contentType := test.contentType
+			if contentType == "" {
+				contentType = "application/json"
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", contentType)
+				writer.WriteHeader(status)
+				_, _ = writer.Write(body)
+			}))
+			output := execute(application, "", "--url", server.URL, "backup", "inspect", archivePath, "--json")
+			server.Close()
+			if output.exit != ExitUnavailable || output.stderr != "" {
+				t.Fatalf("malformed API response = %#v", output)
+			}
+			document := decodeOneDocument(t, output.stdout)
+			if document["ok"] != false || document["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+				t.Fatalf("error document = %#v", document)
+			}
+		})
+	}
+}
+
+func validImportInspectionAPIEnvelope(archiveBytes int64) map[string]any {
+	const safetyMargin = int64(2 << 30)
+	const replacementBytes = int64(1)
+	const expandedBytes = int64(20)
+	const mediaBytes = int64(4)
+	stagingBytes := mediaBytes + 2*(expandedBytes-mediaBytes)
+	requiredBytes := stagingBytes + 2*replacementBytes + safetyMargin
+	token := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{1}, 32))
+	return map[string]any{
+		"data": map[string]any{
+			"format_version": archive.FormatVersion, "archive_sha256": strings.Repeat("a", 64),
+			"generation_id": "import-20260811T020000000Z-0102030405060708",
+			"counts":        map[string]any{"entries": int64(1), "comments": int64(2), "media": int64(3)},
+			"time_range": map[string]any{
+				"from": "2026-08-10T01:02:03Z", "to": "2026-08-11T01:02:03.123Z",
+			},
+			"media_bytes": mediaBytes, "missing_alt": int64(0),
+			"disk": map[string]any{
+				"archive_bytes": archiveBytes, "expanded_bytes": expandedBytes, "staging_bytes": stagingBytes,
+				"pre_import_backup_bytes": replacementBytes, "rollback_reserve_bytes": replacementBytes,
+				"safety_margin_bytes": safetyMargin, "required_additional_bytes": requiredBytes,
+				"estimated_peak_footprint_bytes": archiveBytes + replacementBytes + requiredBytes,
+				"available_bytes":                requiredBytes + 100, "space_ok": true,
+			},
+			"replacement": map[string]any{
+				"counts":      map[string]any{"entries": int64(0), "comments": int64(0), "media": int64(0)},
+				"media_bytes": int64(0), "data_bytes": replacementBytes,
+			},
+			"warnings": []string{}, "expires_at": "2026-08-11T02:00:00Z", "staging_token": token,
+		},
+		"meta": map[string]any{"request_id": "req_import"},
 	}
 }
 

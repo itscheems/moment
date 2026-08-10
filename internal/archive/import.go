@@ -64,6 +64,7 @@ type InspectOptions struct {
 	Clock          func() time.Time
 	Random         io.Reader
 	AvailableBytes func(string) (uint64, error)
+	ActiveDatabase *sqlitestore.Database
 }
 
 // ImportCounts are portable record counts safe for Web and CLI preview.
@@ -146,6 +147,7 @@ type Inspector struct {
 	clock          func() time.Time
 	random         io.Reader
 	availableBytes func(string) (uint64, error)
+	activeDatabase *sqlitestore.Database
 }
 
 // NewInspector constructs an import inspection use case.
@@ -195,6 +197,7 @@ func NewInspector(options InspectOptions) (*Inspector, error) {
 	return &Inspector{
 		dataDir: options.DataDir, limits: limits, tokenTTL: options.TokenTTL,
 		clock: options.Clock, random: options.Random, availableBytes: options.AvailableBytes,
+		activeDatabase: options.ActiveDatabase,
 	}, nil
 }
 
@@ -300,7 +303,7 @@ func (inspector *Inspector) Inspect(ctx context.Context, source io.Reader, sessi
 	if err != nil {
 		return Inspection{}, importInvalid("portable archive summary is invalid", err)
 	}
-	replacement, err := currentReplacementImpact(ctx, runtimeState)
+	replacement, err := inspector.currentReplacementImpact(ctx, runtimeState, stageRoot)
 	if err != nil {
 		return Inspection{}, importInvalid("current replacement impact could not be inspected", err)
 	}
@@ -569,17 +572,36 @@ func summarizePortable(ctx context.Context, archivePath string, document manifes
 	return result, err
 }
 
-func currentReplacementImpact(ctx context.Context, runtimeState *runtimefs.Runtime) (ReplacementImpact, error) {
-	database, err := sqlitestore.OpenSearchReadOnly(ctx, runtimeState, sqlitestore.Options{})
+type archiveSnapshotSource interface {
+	BeginArchiveSnapshot(context.Context) (*sqlitestore.ArchiveSnapshot, error)
+}
+
+func (inspector *Inspector) currentReplacementImpact(ctx context.Context, runtimeState *runtimefs.Runtime, scratchRoot string) (result ReplacementImpact, resultErr error) {
+	maintenance, err := runtimeState.Locks.Acquire(ctx, runtimefs.MaintenanceLock, runtimefs.Exclusive)
+	if err != nil {
+		return ReplacementImpact{}, fmt.Errorf("freeze replacement impact snapshot: %w", err)
+	}
+	defer func() { resultErr = errors.Join(resultErr, maintenance.Release()) }()
+
+	var source archiveSnapshotSource
+	if inspector.activeDatabase != nil {
+		if filepath.Clean(inspector.activeDatabase.Path()) != filepath.Clean(runtimeState.Current.DatabasePath) {
+			return ReplacementImpact{}, errors.New("active database does not match the selected runtime generation")
+		}
+		source = inspector.activeDatabase
+	} else {
+		copied, cleanup, err := openActiveDatabaseSnapshot(ctx, runtimeState, scratchRoot)
+		if err != nil {
+			return ReplacementImpact{}, err
+		}
+		defer func() { resultErr = errors.Join(resultErr, cleanup()) }()
+		source = copied
+	}
+	snapshot, err := source.BeginArchiveSnapshot(ctx)
 	if err != nil {
 		return ReplacementImpact{}, err
 	}
-	defer func() { _ = database.Close() }()
-	snapshot, err := database.BeginArchiveSnapshot(ctx)
-	if err != nil {
-		return ReplacementImpact{}, err
-	}
-	defer func() { _ = snapshot.Close() }()
+	defer func() { resultErr = errors.Join(resultErr, snapshot.Close()) }()
 	impact, err := snapshot.Impact(ctx)
 	if err != nil {
 		return ReplacementImpact{}, err
@@ -592,6 +614,93 @@ func currentReplacementImpact(ctx context.Context, runtimeState *runtimefs.Runti
 		Counts:     ImportCounts{Entries: impact.Entries, Comments: impact.Comments, Media: impact.Media},
 		MediaBytes: impact.MediaBytes, DataBytes: dataBytes,
 	}, nil
+}
+
+// openActiveDatabaseSnapshot materializes SQLite's durable authority into an
+// isolated writable directory. A copied WAL (or rollback journal) is recovered
+// there, while SQLite is never allowed to create sidecars beside the active DB.
+// The caller holds import and maintenance exclusion for the complete copy.
+func openActiveDatabaseSnapshot(ctx context.Context, runtimeState *runtimefs.Runtime, scratchRoot string) (*sqlitestore.Database, func() error, error) {
+	if runtimeState == nil || runtimeState.Current.DatabasePath == "" || scratchRoot == "" {
+		return nil, nil, errors.New("active database snapshot paths are required")
+	}
+	snapshotRoot, err := os.MkdirTemp(scratchRoot, ".active-sqlite-")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create active database snapshot: %w", err)
+	}
+	cleanupRoot := func() error { return os.RemoveAll(snapshotRoot) }
+	fail := func(err error) (*sqlitestore.Database, func() error, error) {
+		return nil, nil, errors.Join(err, cleanupRoot())
+	}
+	destination := filepath.Join(snapshotRoot, "moment.db")
+	if copied, err := copyStableSQLiteFile(ctx, runtimeState.Current.DatabasePath, destination, false); err != nil || !copied {
+		return fail(errors.Join(errors.New("copy active SQLite database"), err))
+	}
+	// The WAL and rollback journal carry durable committed transactions. SHM is
+	// coordination state and is deliberately regenerated inside snapshotRoot.
+	for _, suffix := range []string{"-wal", "-journal"} {
+		if _, err := copyStableSQLiteFile(ctx, runtimeState.Current.DatabasePath+suffix, destination+suffix, true); err != nil {
+			return fail(fmt.Errorf("copy active SQLite%s: %w", suffix, err))
+		}
+	}
+	snapshotRuntime := &runtimefs.Runtime{
+		Root: runtimeState.Root, Instance: runtimeState.Instance, Locks: runtimeState.Locks,
+		Current: runtimefs.Generation{ID: "active-snapshot", Root: snapshotRoot, DatabasePath: destination},
+	}
+	database, err := sqlitestore.Open(ctx, snapshotRuntime, sqlitestore.Options{ReadPoolSize: 1})
+	if err != nil {
+		return fail(fmt.Errorf("recover active SQLite snapshot: %w", err))
+	}
+	cleanup := func() error { return errors.Join(database.Close(), cleanupRoot()) }
+	return database, cleanup, nil
+}
+
+func copyStableSQLiteFile(ctx context.Context, source, destination string, optional bool) (copied bool, resultErr error) {
+	before, err := os.Lstat(source)
+	if optional && errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
+		return false, errors.New("SQLite authority file is not a regular file")
+	}
+	input, err := os.Open(source)
+	if err != nil {
+		return false, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, input.Close()) }()
+	opened, err := input.Stat()
+	if err != nil || !os.SameFile(before, opened) {
+		return false, errors.Join(errors.New("SQLite authority file changed while opening"), err)
+	}
+	output, err := os.OpenFile(destination, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return false, err
+	}
+	published := false
+	defer func() {
+		if !published {
+			_ = os.Remove(destination)
+		}
+	}()
+	copyLimit := before.Size()
+	if copyLimit < math.MaxInt64 {
+		copyLimit++
+	}
+	copiedBytes, copyErr := io.CopyBuffer(output, io.LimitReader(contextReader{ctx: ctx, reader: input}, copyLimit), make([]byte, copyBufferSize))
+	syncErr := output.Sync()
+	closeErr := output.Close()
+	if copyErr != nil || syncErr != nil || closeErr != nil || copiedBytes != before.Size() {
+		return false, errors.Join(copyErr, syncErr, closeErr, errors.New("SQLite authority copy did not match source size"))
+	}
+	after, err := os.Lstat(source)
+	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) || before.Size() != after.Size() || before.Mode() != after.Mode() || !before.ModTime().Equal(after.ModTime()) {
+		return false, errors.Join(errors.New("SQLite authority file changed while copying"), err)
+	}
+	published = true
+	return true, nil
 }
 
 func regularTreeBytes(ctx context.Context, root string) (int64, error) {

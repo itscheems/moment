@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
@@ -164,15 +166,247 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 	if parseErr != nil || mediaType != "application/json" {
 		return archive.Inspection{}, nil, invalidAPIResponse()
 	}
-	var envelope struct {
-		Data archive.Inspection `json:"data"`
-		Meta map[string]any     `json:"meta"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	if err := decoder.Decode(&envelope); err != nil || decoder.Decode(&struct{}{}) != io.EOF || envelope.Data.StagingToken == "" {
+	inspection, meta, err := decodeImportInspectionAPI(body, after.Size())
+	if err != nil {
 		return archive.Inspection{}, nil, invalidAPIResponse()
 	}
-	return envelope.Data, envelope.Meta, nil
+	return inspection, meta, nil
+}
+
+func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64) (archive.Inspection, map[string]any, error) {
+	if !utf8.Valid(body) {
+		return archive.Inspection{}, nil, errors.New("import inspection response is not valid UTF-8")
+	}
+	envelope, err := decodeExactJSONObject(body, "data", "meta")
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	data, err := decodeExactJSONObject(envelope["data"],
+		"format_version", "archive_sha256", "generation_id", "counts", "time_range", "media_bytes", "missing_alt",
+		"disk", "replacement", "warnings", "expires_at", "staging_token",
+	)
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	if _, err := decodeExactJSONObject(data["counts"], "entries", "comments", "media"); err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	timeRange, err := decodeImportTimeRangeObject(data["time_range"])
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	if _, err := decodeExactJSONObject(data["disk"],
+		"archive_bytes", "expanded_bytes", "staging_bytes", "pre_import_backup_bytes", "rollback_reserve_bytes",
+		"safety_margin_bytes", "required_additional_bytes", "estimated_peak_footprint_bytes", "available_bytes", "space_ok",
+	); err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	replacement, err := decodeExactJSONObject(data["replacement"], "counts", "media_bytes", "data_bytes")
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	if _, err := decodeExactJSONObject(replacement["counts"], "entries", "comments", "media"); err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	var inspection archive.Inspection
+	decoder := json.NewDecoder(bytes.NewReader(envelope["data"]))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&inspection); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return archive.Inspection{}, nil, errors.New("import inspection data cannot be decoded exactly")
+	}
+	requestID, err := decodeImportRequestID(metadata["request_id"])
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	if err := validateImportInspectionAPI(inspection, data, timeRange, expectedArchiveBytes); err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	return inspection, map[string]any{"request_id": requestID}, nil
+}
+
+func decodeExactJSONObject(raw []byte, expectedKeys ...string) (map[string]json.RawMessage, error) {
+	expected := make(map[string]struct{}, len(expectedKeys))
+	for _, key := range expectedKeys {
+		if key == "" {
+			return nil, errors.New("empty expected JSON key")
+		}
+		expected[key] = struct{}{}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, errors.New("JSON value is not an object")
+	}
+	fields := make(map[string]json.RawMessage, len(expectedKeys))
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		key, ok := keyToken.(string)
+		if err != nil || !ok {
+			return nil, errors.New("JSON object key is invalid")
+		}
+		if _, allowed := expected[key]; !allowed {
+			return nil, errors.New("JSON object contains an unknown key")
+		}
+		if _, duplicate := fields[key]; duplicate {
+			return nil, errors.New("JSON object contains a duplicate key")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return nil, errors.New("JSON object value is invalid")
+		}
+		fields[key] = value
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || len(fields) != len(expected) {
+		return nil, errors.New("JSON object is incomplete")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, errors.New("JSON object contains trailing data")
+	}
+	return fields, nil
+}
+
+func decodeImportTimeRangeObject(raw []byte) (map[string]json.RawMessage, error) {
+	if empty, err := decodeExactJSONObject(raw); err == nil {
+		return empty, nil
+	}
+	return decodeExactJSONObject(raw, "from", "to")
+}
+
+func decodeImportRequestID(raw json.RawMessage) (string, error) {
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil || len(value) < 5 || len(value) > 128 || !strings.HasPrefix(value, "req_") {
+		return "", errors.New("import inspection request ID is invalid")
+	}
+	for _, character := range value[4:] {
+		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '_' && character != '-' {
+			return "", errors.New("import inspection request ID is invalid")
+		}
+	}
+	return value, nil
+}
+
+func validateImportInspectionAPI(value archive.Inspection, raw map[string]json.RawMessage, timeRange map[string]json.RawMessage, expectedArchiveBytes int64) error {
+	if value.FormatVersion != archive.FormatVersion || !validLowerHex(value.ArchiveSHA256, sha256.Size) || !validImportGenerationID(value.GenerationID) {
+		return errors.New("import inspection identity is invalid")
+	}
+	if !validImportCounts(value.Counts, true) || !validImportCounts(value.Replacement.Counts, false) || value.MediaBytes < 0 || value.MissingAlt < 0 || value.Replacement.MediaBytes < 0 || value.Replacement.DataBytes < 0 || value.Replacement.MediaBytes > value.Replacement.DataBytes {
+		return errors.New("import inspection counts are invalid")
+	}
+	if value.Counts.Entries == 0 {
+		if value.Counts.Comments != 0 || value.MissingAlt != 0 || len(timeRange) != 0 || value.TimeRange.From != nil || value.TimeRange.To != nil {
+			return errors.New("empty import inspection has a time range")
+		}
+	} else {
+		if len(timeRange) != 2 || value.TimeRange.From == nil || value.TimeRange.To == nil {
+			return errors.New("non-empty import inspection has no complete time range")
+		}
+		from, err := decodeCanonicalUTCTime(timeRange["from"])
+		if err != nil {
+			return err
+		}
+		to, err := decodeCanonicalUTCTime(timeRange["to"])
+		if err != nil || from.After(to) || !value.TimeRange.From.Equal(from) || !value.TimeRange.To.Equal(to) {
+			return errors.New("import inspection time range is invalid")
+		}
+	}
+	expiresAt, err := decodeCanonicalUTCTime(raw["expires_at"])
+	if err != nil || !value.ExpiresAt.Equal(expiresAt) {
+		return errors.New("import inspection expiry is invalid")
+	}
+	token, err := base64.RawURLEncoding.Strict().DecodeString(value.StagingToken)
+	if err != nil || len(token) != sha256.Size || base64.RawURLEncoding.EncodeToString(token) != value.StagingToken {
+		return errors.New("import inspection staging token is invalid")
+	}
+	if value.Warnings == nil || len(value.Warnings) > 1 {
+		return errors.New("import inspection warnings are invalid")
+	}
+	if value.MissingAlt == 0 {
+		if len(value.Warnings) != 0 {
+			return errors.New("import inspection warnings do not match missing alt count")
+		}
+	} else if len(value.Warnings) != 1 || value.Warnings[0] != fmt.Sprintf("%d media usages have no image description", value.MissingAlt) {
+		return errors.New("import inspection warnings do not match missing alt count")
+	}
+	return validateImportDiskEstimate(value, expectedArchiveBytes)
+}
+
+func validLowerHex(value string, decodedBytes int) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == decodedBytes && hex.EncodeToString(decoded) == value
+}
+
+func validImportGenerationID(value string) bool {
+	const prefix = "import-"
+	const timestampLength = len("20060102T150405000Z")
+	if len(value) != len(prefix)+timestampLength+1+16 || !strings.HasPrefix(value, prefix) || value[len(prefix)+timestampLength] != '-' {
+		return false
+	}
+	timestamp := value[len(prefix) : len(prefix)+timestampLength]
+	parsed, err := time.Parse("20060102T150405000Z", timestamp)
+	return err == nil && parsed.Location() == time.UTC && parsed.Format("20060102T150405000Z") == timestamp && validLowerHex(value[len(prefix)+timestampLength+1:], 8)
+}
+
+func validImportCounts(value archive.ImportCounts, enforcePortableLimits bool) bool {
+	if value.Entries < 0 || value.Comments < 0 || value.Media < 0 {
+		return false
+	}
+	return !enforcePortableLimits || value.Entries <= 100_000 && value.Comments <= 500_000 && value.Media <= 100_000
+}
+
+func decodeCanonicalUTCTime(raw json.RawMessage) (time.Time, error) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil || !strings.HasSuffix(text, "Z") {
+		return time.Time{}, errors.New("timestamp is not a canonical UTC string")
+	}
+	value, err := time.Parse(time.RFC3339Nano, text)
+	if err != nil || value.IsZero() || value.Location() != time.UTC || value.Format(time.RFC3339Nano) != text {
+		return time.Time{}, errors.New("timestamp is not canonical UTC")
+	}
+	return value, nil
+}
+
+func validateImportDiskEstimate(value archive.Inspection, expectedArchiveBytes int64) error {
+	disk := value.Disk
+	if expectedArchiveBytes <= 0 || disk.ArchiveBytes != expectedArchiveBytes || disk.ExpandedBytes <= 0 || value.MediaBytes > disk.ExpandedBytes || !disk.SpaceOK {
+		return errors.New("import inspection disk estimate has invalid base values")
+	}
+	jsonBytes := disk.ExpandedBytes - value.MediaBytes
+	staging, err := checkedImportResponseAdd(value.MediaBytes, jsonBytes, jsonBytes)
+	if err != nil || disk.StagingBytes != staging || disk.PreImportBackupBytes != value.Replacement.DataBytes || disk.RollbackReserveBytes != value.Replacement.DataBytes {
+		return errors.New("import inspection staging estimate is invalid")
+	}
+	base, err := checkedImportResponseAdd(staging, value.Replacement.DataBytes, value.Replacement.DataBytes)
+	if err != nil {
+		return err
+	}
+	margin := base / 10
+	if margin < int64(2<<30) {
+		margin = int64(2 << 30)
+	}
+	required, err := checkedImportResponseAdd(base, margin)
+	if err != nil || disk.SafetyMarginBytes != margin || disk.RequiredAdditionalBytes != required || disk.AvailableBytes < required {
+		return errors.New("import inspection required disk estimate is invalid")
+	}
+	peak, err := checkedImportResponseAdd(disk.ArchiveBytes, value.Replacement.DataBytes, required)
+	if err != nil || disk.EstimatedPeakFootprintBytes != peak {
+		return errors.New("import inspection peak disk estimate is invalid")
+	}
+	return nil
+}
+
+func checkedImportResponseAdd(values ...int64) (int64, error) {
+	var total int64
+	for _, value := range values {
+		if value < 0 || value > int64(^uint64(0)>>1)-total {
+			return 0, errors.New("import inspection byte count overflows")
+		}
+		total += value
+	}
+	return total, nil
 }
 
 func backupInspectCLIError(err error) error {
