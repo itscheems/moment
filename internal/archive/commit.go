@@ -3,6 +3,7 @@ package archive
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -113,6 +114,15 @@ type Committer struct {
 	statusWriter   func(string, CommitStatus) error
 }
 
+// InputBinding pins an offline archive preview to one local regular
+// file identity and byte digest. Commit reopens and compares this identity only
+// after Import→Serve is held, then reads from that verified descriptor.
+type InputBinding struct {
+	FileInfo os.FileInfo
+	Size     int64
+	SHA256   string
+}
+
 // NewCommitter constructs the import commit use case.
 func NewCommitter(options CommitOptions) (*Committer, error) {
 	if options.Clock == nil {
@@ -185,8 +195,8 @@ func (committer *Committer) acquireOfflineInspection(ctx context.Context) (*runt
 // CommitFileOffline performs path inspection and token consumption under one
 // continuous Import→Serve ownership, so no server can start between archive
 // materialization and CURRENT replacement.
-func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath string, sessionEpoch uint64) (result CommitResult, resultErr error) {
-	if committer == nil || sessionEpoch == 0 {
+func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath string, binding InputBinding, sessionEpoch uint64) (result CommitResult, resultErr error) {
+	if committer == nil || sessionEpoch == 0 || binding.FileInfo == nil || binding.Size < 0 || !validExpectedArchiveSHA(binding.SHA256) {
 		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires an archive and owner epoch", nil)
 	}
 	runtimeState, held, err := committer.acquireOfflineInspection(ctx)
@@ -199,9 +209,16 @@ func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath s
 		return CommitResult{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, file.Close()) }()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(binding.FileInfo, opened) || binding.Size != opened.Size() {
+		return CommitResult{}, errors.Join(domain.NewError(domain.CodeExportChecksumMismatch, "archive identity changed after the confirmed import preview", nil), err)
+	}
 	inspection, err := committer.inspector.inspectWithinLocks(ctx, file, sessionEpoch, runtimeState, held, true)
 	if err != nil {
 		return CommitResult{}, err
+	}
+	if err := verifyExpectedArchiveSHA(inspection.ArchiveSHA256, binding.SHA256); err != nil {
+		return CommitResult{}, errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
 	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, nil)
 	if err != nil {
@@ -213,8 +230,8 @@ func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath s
 // CommitArchive is the live-server single-request archive restore path. The
 // server already owns serve.lock, while this method keeps import.lock from the
 // first uploaded byte through the terminal commit state.
-func (committer *Committer) CommitArchive(ctx context.Context, source io.Reader, sessionEpoch uint64, host CommitHost) (result CommitResult, resultErr error) {
-	if committer == nil || source == nil || host == nil || sessionEpoch == 0 {
+func (committer *Committer) CommitArchive(ctx context.Context, source io.Reader, expectedArchiveSHA string, sessionEpoch uint64, host CommitHost) (result CommitResult, resultErr error) {
+	if committer == nil || source == nil || host == nil || sessionEpoch == 0 || !validExpectedArchiveSHA(expectedArchiveSHA) {
 		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "online import requires an archive, host, and owner epoch", nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
@@ -235,11 +252,28 @@ func (committer *Committer) CommitArchive(ctx context.Context, source io.Reader,
 	if err != nil {
 		return CommitResult{}, err
 	}
+	if err := verifyExpectedArchiveSHA(inspection.ArchiveSHA256, expectedArchiveSHA); err != nil {
+		return CommitResult{}, errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
+	}
 	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, host)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
 	return result, err
+}
+
+func validExpectedArchiveSHA(value string) bool {
+	return len(value) == 64 && isLowerHex(value)
+}
+
+func verifyExpectedArchiveSHA(actual, expected string) error {
+	if !validExpectedArchiveSHA(expected) || !validExpectedArchiveSHA(actual) {
+		return domain.NewError(domain.CodeInvalidArgument, "a canonical expected archive SHA-256 is required", nil)
+	}
+	if subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) != 1 {
+		return domain.NewError(domain.CodeExportChecksumMismatch, "archive bytes changed after the confirmed import preview", nil)
+	}
+	return nil
 }
 
 // Commit claims and consumes exactly one staged token. API callers supply a

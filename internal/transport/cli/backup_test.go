@@ -4,7 +4,9 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +19,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -475,10 +479,110 @@ func TestBackupImportArchiveDryRunHasNoDurableSideEffectsAndPathCommits(t *testi
 			t.Fatalf("unconfirmed path import changed %s", root)
 		}
 	}
+	declined := execute(application, "n\n", "backup", "import", archivePath, "--data-dir", dataDir)
+	if declined.exit != ExitConflict || declined.stdout != "" || !strings.Contains(declined.stderr, "Import preview\nArchive SHA-256:") ||
+		!strings.Contains(declined.stderr, "Incoming:") || !strings.Contains(declined.stderr, "Replacing:") ||
+		!strings.Contains(declined.stderr, "Disk:") || !strings.Contains(declined.stderr, "Warnings:") ||
+		!strings.Contains(declined.stderr, "Replace the active Moment dataset with this exact archive? [y/N]") {
+		t.Fatalf("scoped declined import=%#v", declined)
+	}
+	for _, root := range tracked {
+		if got := directoryNames(t, root); !reflect.DeepEqual(got, before[root]) {
+			t.Fatalf("declined scoped import changed %s", root)
+		}
+	}
 	committed := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--yes", "--json")
 	if committed.exit != ExitSuccess || commandData(t, committed)["status"].(map[string]any)["phase"] != string(archive.CommitSucceeded) {
 		t.Fatalf("path import=%#v", committed)
 	}
+}
+
+func TestBackupImportRejectsArchiveFileSwapAfterScopedPrompt(t *testing.T) {
+	runtimeState, dataDir := initializeSiteCLIData(t)
+	application := momentTestApplication()
+	archivePath := filepath.Join(t.TempDir(), "source.zip")
+	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", archivePath, "--json"); output.exit != ExitSuccess {
+		t.Fatalf("source export=%#v", output)
+	}
+	if _, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	currentBefore, err := os.ReadFile(filepath.Join(dataDir, "CURRENT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement := filepath.Join(filepath.Dir(archivePath), "replacement.zip")
+	body, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(replacement, body, 0o600); err != nil {
+		t.Fatalf("prepare replacement: %v", err)
+	}
+	inputReader, inputWriter := io.Pipe()
+	diagnostics := newPromptSignalWriter("Replace the active Moment dataset with this exact archive? [y/N]")
+	var stdout bytes.Buffer
+	exit := make(chan ExitCode, 1)
+	go func() {
+		exit <- application.Execute(context.Background(), []string{"backup", "import", archivePath, "--data-dir", dataDir}, Streams{
+			In: inputReader, Out: &stdout, Err: diagnostics,
+		})
+	}()
+	select {
+	case <-diagnostics.signal:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("scope prompt did not arrive: %s", diagnostics.String())
+	}
+	if err := os.Rename(replacement, archivePath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(inputWriter, "y\n"); err != nil {
+		t.Fatal(err)
+	}
+	_ = inputWriter.Close()
+	select {
+	case code := <-exit:
+		if code != ExitIntegrity {
+			t.Fatalf("file-swap exit=%d stdout=%q stderr=%q", code, stdout.String(), diagnostics.String())
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("file-swap import did not finish")
+	}
+	currentAfter, err := os.ReadFile(filepath.Join(dataDir, "CURRENT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(currentBefore, currentAfter) {
+		t.Fatal("file-swap import changed CURRENT")
+	}
+}
+
+type promptSignalWriter struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+	marker string
+	once   sync.Once
+	signal chan struct{}
+}
+
+func newPromptSignalWriter(marker string) *promptSignalWriter {
+	return &promptSignalWriter{marker: marker, signal: make(chan struct{})}
+}
+
+func (writer *promptSignalWriter) Write(data []byte) (int, error) {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	written, err := writer.buffer.Write(data)
+	if strings.Contains(writer.buffer.String(), writer.marker) {
+		writer.once.Do(func() { close(writer.signal) })
+	}
+	return written, err
+}
+
+func (writer *promptSignalWriter) String() string {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return writer.buffer.String()
 }
 
 func directoryNames(t *testing.T, root string) []string {
@@ -564,6 +668,9 @@ func TestBackupImportAPIArchivePlanAndSingleRequestRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	planEnvelope := validImportPlanAPIEnvelope(int64(len(archiveBody)))
+	archiveDigest := sha256.Sum256(archiveBody)
+	archiveSHA := hex.EncodeToString(archiveDigest[:])
+	planEnvelope["data"].(map[string]any)["archive_sha256"] = archiveSHA
 	planBody, _ := json.Marshal(planEnvelope)
 	now := time.Date(2026, 8, 11, 7, 30, 0, 0, time.UTC)
 	operationID := "import-20260811T073000000Z-0011223344556677"
@@ -577,7 +684,9 @@ func TestBackupImportAPIArchivePlanAndSingleRequestRestore(t *testing.T) {
 		}},
 		"meta": map[string]any{"request_id": "req_restore"},
 	})
+	var calls atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		calls.Add(1)
 		body, err := io.ReadAll(request.Body)
 		if err != nil || !bytes.Equal(body, archiveBody) || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/zip" {
 			t.Errorf("upload path=%s body=%q headers=%#v err=%v", request.URL.Path, body, request.Header, err)
@@ -587,19 +696,48 @@ func TestBackupImportAPIArchivePlanAndSingleRequestRestore(t *testing.T) {
 		case "/api/v1/owner/import/plan":
 			_, _ = writer.Write(planBody)
 		case "/api/v1/owner/import/restore":
+			if request.Header.Get("X-Moment-Archive-SHA256") != archiveSHA {
+				t.Errorf("restore expected sha header=%q", request.Header.Get("X-Moment-Archive-SHA256"))
+			}
 			_, _ = writer.Write(commitBody)
 		default:
 			writer.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	defer server.Close()
+	blocked := execute(application, "", "--url", server.URL, "backup", "import", archivePath, "--no-input", "--json")
+	if blocked.exit != ExitInvalidInput || calls.Load() != 0 || blocked.stderr != "" {
+		t.Fatalf("no-input import reached plan service: output=%#v calls=%d", blocked, calls.Load())
+	}
 	plan := execute(application, "", "--url", server.URL, "backup", "import", archivePath, "--dry-run", "--json")
 	if plan.exit != ExitSuccess || plan.stderr != "" || commandData(t, plan)["dry_run"] != true || strings.Contains(plan.stdout, "staging_token") {
 		t.Fatalf("API plan=%#v", plan)
 	}
+	declined := execute(application, "n\n", "--url", server.URL, "backup", "import", archivePath)
+	if declined.exit != ExitConflict || declined.stdout != "" || calls.Load() != 2 ||
+		!strings.Contains(declined.stderr, "Archive SHA-256: "+archiveSHA) || !strings.Contains(declined.stderr, "Replace the active Moment dataset with this exact archive? [y/N]") {
+		t.Fatalf("API declined scoped import=%#v calls=%d", declined, calls.Load())
+	}
 	restored := execute(application, "", "--url", server.URL, "backup", "import", archivePath, "--yes", "--json")
-	if restored.exit != ExitSuccess || restored.stderr != "" || commandData(t, restored)["status"].(map[string]any)["active_generation"] != operationID {
+	if restored.exit != ExitSuccess || restored.stderr != "" || commandData(t, restored)["status"].(map[string]any)["active_generation"] != operationID || calls.Load() != 4 {
 		t.Fatalf("API restore=%#v", restored)
+	}
+	mismatch := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Path == "/api/v1/owner/import/plan" {
+			_, _ = writer.Write(planBody)
+			return
+		}
+		if request.URL.Path != "/api/v1/owner/import/restore" || request.Header.Get("X-Moment-Archive-SHA256") != archiveSHA {
+			t.Errorf("mismatch restore request=%s sha=%q", request.URL.Path, request.Header.Get("X-Moment-Archive-SHA256"))
+		}
+		writer.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(writer, `{"error":{"code":"EXPORT_CHECKSUM_MISMATCH","message":"archive bytes changed after preview","details":{},"request_id":"req_mismatch"}}`)
+	}))
+	mismatched := execute(application, "", "--url", mismatch.URL, "backup", "import", archivePath, "--yes", "--json")
+	mismatch.Close()
+	if mismatched.exit != ExitIntegrity || decodeOneDocument(t, mismatched.stdout)["error"].(map[string]any)["code"] != string(domain.CodeExportChecksumMismatch) {
+		t.Fatalf("API restore hash mismatch=%#v", mismatched)
 	}
 	malformedEnvelope := validImportPlanAPIEnvelope(int64(len(archiveBody)))
 	malformedEnvelope["data"].(map[string]any)["staging_token"] = "must-not-be-accepted"

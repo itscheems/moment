@@ -142,6 +142,63 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 	}
 }
 
+func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) {
+	source := newExportFixture(t, true)
+	validPath := exportFixtureFile(t, source)
+	validBytes, err := os.ReadFile(validPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	members, order := readArchive(t, validBytes)
+	lines := nonemptyLines(members["data/entries.jsonl"])
+	var entries []byte
+	for _, line := range lines {
+		var value map[string]any
+		if err := json.Unmarshal(line, &value); err != nil {
+			t.Fatal(err)
+		}
+		value["media"] = []any{}
+		entries = append(entries, mustMarshalTest(t, value)...)
+		entries = append(entries, '\n')
+	}
+	members["data/entries.jsonl"] = entries
+	var site map[string]any
+	if err := json.Unmarshal(members["data/site.json"], &site); err != nil {
+		t.Fatal(err)
+	}
+	site["avatar_media_id"] = nil
+	members["data/site.json"] = append(mustMarshalTest(t, site), '\n')
+	rebuildManifestExpanded(t, members)
+	rebuildChecksums(members)
+	orphanPath := filepath.Join(t.TempDir(), "unreachable-media.zip")
+	writeArchive(t, orphanPath, members, order)
+	if err := ValidateFile(orphanPath); err != nil {
+		t.Fatalf("structurally valid orphan fixture error=%v", err)
+	}
+
+	for _, mode := range []string{"inspect", "plan"} {
+		t.Run(mode, func(t *testing.T) {
+			target := newExportFixture(t, false)
+			now := time.Date(2026, 8, 11, 1, 10, 0, 0, time.UTC)
+			inspector := testInspector(t, target.runtime.Root, target.database, &now, math.MaxUint64)
+			var inspectErr error
+			if mode == "inspect" {
+				_, inspectErr = inspector.InspectFile(context.Background(), orphanPath, 1)
+			} else {
+				file, err := os.Open(orphanPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = file.Close() }()
+				_, inspectErr = inspector.Plan(context.Background(), file, 1)
+			}
+			if !domain.HasCode(inspectErr, domain.CodeExportInvalid) {
+				t.Fatalf("%s orphan authority error=%v", mode, inspectErr)
+			}
+		})
+	}
+}
+
 func TestInspectDiscardsReadyStageFromRevokedOwnerEpoch(t *testing.T) {
 	fixture := newExportFixture(t, false)
 	archivePath := exportFixtureFile(t, fixture)

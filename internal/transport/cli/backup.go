@@ -77,16 +77,17 @@ func registerBackup(application *Application, info buildinfo.Info) {
 		ArgsUsage: "[archive.zip]",
 		Short:     "Plan or commit one portable archive replacement",
 		Long:      "Validate one archive and replace the active generation in one coordinated operation, or consume an advanced staging token from backup inspect. Commit creates and verifies a pre-import backup, atomically switches CURRENT, proves readiness, and can automatically roll back on failure.",
-		Inputs:    "Provide exactly one positional archive path or --staging-token. Direct mode requires the server to be stopped and holds Import→Serve continuously before reading the archive; API archive mode uploads and commits in one authenticated request. --dry-run requires a path and returns only a fully validated replacement plan.",
-		Output:    "Dry-run reports the token-free replacement/disk plan after removing all temporary staging. Commit reports the durable operation phase, true active/previous/new generations, verified backup name, rollback outcome, and timestamps. Tokens are never echoed.",
+		Inputs:    "Provide exactly one positional archive path or --staging-token. Archive mode first computes a zero-persistence plan; interactive confirmation names that archive hash and replacement scope before a separately bound restore. Direct mode requires the server to be stopped and holds Import→Serve continuously before its second validation and commit. --dry-run returns only the plan.",
+		Output:    "Dry-run reports the token-free replacement/disk plan after removing all temporary staging. Interactive archive import presents the same hash, counts, replacement, disk, and warnings before confirmation; --yes still computes and binds that plan before returning durable commit status. Tokens are never echoed.",
 		Errors:    "Replay, expiry, owner rotation, disk pressure, instance use, integrity, maintenance, and rollback failures use stable codes and exits. Resolve an ambiguous API result with 'moment backup status', never by replaying the token.",
-		Safety:    "This command replaces active authority. --dry-run leaves no staging token, journal, backup, CURRENT, or maintenance change. Actual import confirmation happens before archive staging; --no-input never confirms implicitly.",
+		Safety:    "This command replaces active authority. --dry-run leaves no staging token, journal, backup, CURRENT, or maintenance change. Actual archive import binds confirmation to a zero-persistence plan, then revalidates the same file identity, size, and SHA-256 before commit. --no-input never confirms implicitly.",
 		Example: "moment backup import ./moment-export.zip --data-dir ./moment-data --dry-run --json\n" +
 			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup import ./moment-export.zip --yes --json",
 		Args:       cobra.MaximumNArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
-			Destructive: true, SupportsDryRun: true, Confirmation: "Replace the active Moment dataset using this archive or inspected staging token?",
+			Destructive: true, SupportsDryRun: true, DeferredConfirmation: true,
+			Confirmation: "Replace the active Moment dataset using this archive or inspected staging token?",
 		},
 		Flags: func(flags *pflag.FlagSet) {
 			registerSingleStringFlag(flags, "staging-token", "one-time token returned by backup inspect")
@@ -170,6 +171,30 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 			plan.Counts.Entries, plan.Counts.Comments, plan.Counts.Media, plan.Disk.RequiredAdditionalBytes, plan.Disk.AvailableBytes)
 		return Result{Data: plan, Text: text, Meta: meta}, nil
 	}
+	var confirmedPlan archive.ImportPlan
+	var confirmedIdentity importArchiveIdentity
+	if hasArchive {
+		initial, identityErr := inspectImportArchivePath(archivePath)
+		if identityErr != nil {
+			return Result{}, backupImportCLIError(identityErr)
+		}
+		confirmedPlan, _, identityErr = runBackupImportPlan(ctx, invocation, archivePath, appVersion)
+		if identityErr != nil {
+			return Result{}, backupImportCLIError(identityErr)
+		}
+		confirmedIdentity, identityErr = bindImportArchiveIdentity(ctx, archivePath, initial, confirmedPlan)
+		if identityErr != nil {
+			return Result{}, backupImportCLIError(identityErr)
+		}
+		if confirmErr := invocation.ConfirmScope(importScopeConfirmation(confirmedPlan)); confirmErr != nil {
+			return Result{}, confirmErr
+		}
+		if identityErr := verifyImportArchiveIdentity(archivePath, confirmedIdentity); identityErr != nil {
+			return Result{}, backupImportCLIError(identityErr)
+		}
+	} else if confirmErr := invocation.ConfirmScope("Replace the active Moment dataset using this inspected staging token?"); confirmErr != nil {
+		return Result{}, confirmErr
+	}
 	var result archive.CommitResult
 	var meta map[string]any
 	switch invocation.Mode() {
@@ -191,13 +216,15 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 			return Result{}, createErr
 		}
 		if hasArchive {
-			result, err = committer.CommitFileOffline(ctx, archivePath, status.SessionEpoch)
+			result, err = committer.CommitFileOffline(ctx, archivePath, archive.InputBinding{
+				FileInfo: confirmedIdentity.info, Size: confirmedIdentity.size, SHA256: confirmedPlan.ArchiveSHA256,
+			}, status.SessionEpoch)
 		} else {
 			result, err = committer.Commit(ctx, token, status.SessionEpoch, nil)
 		}
 	case ModeAPI:
 		if hasArchive {
-			result, meta, err = restoreImportAPI(ctx, invocation, archivePath)
+			result, meta, err = restoreImportAPI(ctx, invocation, archivePath, confirmedPlan.ArchiveSHA256, confirmedIdentity)
 		} else {
 			result, meta, err = commitImportAPI(ctx, invocation, token)
 		}
@@ -211,6 +238,78 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 	text := fmt.Sprintf("Import committed\nPhase: %s\nActive generation: %s\nPrevious generation: %s\nVerified backup: %s",
 		status.Phase, status.ActiveGeneration, status.PreviousGeneration, status.BackupName)
 	return Result{Data: result, Text: text, Meta: meta}, nil
+}
+
+type importArchiveIdentity struct {
+	info   os.FileInfo
+	size   int64
+	sha256 string
+}
+
+func inspectImportArchivePath(archivePath string) (os.FileInfo, error) {
+	if strings.TrimSpace(archivePath) == "" || strings.ContainsRune(archivePath, 0) {
+		return nil, invalidArgument("archive path is required", "provide one complete Moment export ZIP")
+	}
+	info, err := os.Lstat(archivePath)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, domain.NewError(domain.CodeExportInvalid, "archive input must be a regular non-symlink file", nil)
+	}
+	return info, nil
+}
+
+func bindImportArchiveIdentity(ctx context.Context, archivePath string, initial os.FileInfo, plan archive.ImportPlan) (importArchiveIdentity, error) {
+	file, err := os.Open(archivePath)
+	if err != nil {
+		return importArchiveIdentity{}, err
+	}
+	defer func() { _ = file.Close() }()
+	opened, err := file.Stat()
+	if err != nil || initial == nil || !opened.Mode().IsRegular() || !os.SameFile(initial, opened) {
+		return importArchiveIdentity{}, errors.Join(domain.NewError(domain.CodeExportInvalid, "archive file identity changed after import planning", nil), err)
+	}
+	digest := sha256.New()
+	copied, err := io.CopyBuffer(digest, &backupContextReader{ctx: ctx, reader: file}, make([]byte, 128<<10))
+	if err != nil {
+		return importArchiveIdentity{}, err
+	}
+	finished, err := file.Stat()
+	actualSHA := hex.EncodeToString(digest.Sum(nil))
+	if err != nil || !os.SameFile(opened, finished) || copied != opened.Size() || finished.Size() != opened.Size() {
+		return importArchiveIdentity{}, errors.Join(domain.NewError(domain.CodeExportInvalid, "archive file changed while binding the import preview", nil), err)
+	}
+	if plan.ArchiveSHA256 != actualSHA || plan.Disk.ArchiveBytes != copied {
+		return importArchiveIdentity{}, domain.NewError(domain.CodeExportChecksumMismatch, "archive bytes do not match the import preview", nil)
+	}
+	return importArchiveIdentity{info: finished, size: copied, sha256: actualSHA}, nil
+}
+
+func verifyImportArchiveIdentity(archivePath string, identity importArchiveIdentity) error {
+	info, err := os.Lstat(archivePath)
+	if err != nil {
+		return err
+	}
+	if identity.info == nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 ||
+		!os.SameFile(identity.info, info) || info.Size() != identity.size || !validLowerHex(identity.sha256, sha256.Size) {
+		return domain.NewError(domain.CodeExportChecksumMismatch, "archive identity changed after the confirmed import preview", nil)
+	}
+	return nil
+}
+
+func importScopeConfirmation(plan archive.ImportPlan) string {
+	warnings := "none"
+	if len(plan.Warnings) != 0 {
+		warnings = strings.Join(plan.Warnings, "; ")
+	}
+	return fmt.Sprintf(
+		"Import preview\nArchive SHA-256: %s\nIncoming: %d entries, %d comments, %d media (%d bytes)\nReplacing: %d entries, %d comments, %d media (%d bytes)\nDisk: %d additional bytes required, %d available\nWarnings: %s\nReplace the active Moment dataset with this exact archive?",
+		plan.ArchiveSHA256,
+		plan.Counts.Entries, plan.Counts.Comments, plan.Counts.Media, plan.MediaBytes,
+		plan.Replacement.Counts.Entries, plan.Replacement.Counts.Comments, plan.Replacement.Counts.Media, plan.Replacement.DataBytes,
+		plan.Disk.RequiredAdditionalBytes, plan.Disk.AvailableBytes, warnings,
+	)
 }
 
 func runBackupImportPlan(ctx context.Context, invocation Invocation, archivePath, appVersion string) (archive.ImportPlan, map[string]any, error) {
@@ -346,7 +445,7 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 }
 
 func uploadImportPlan(ctx context.Context, invocation Invocation, archivePath string) (archive.ImportPlan, map[string]any, error) {
-	body, archiveBytes, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/plan", http.StatusOK)
+	body, archiveBytes, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/plan", http.StatusOK, "", importArchiveIdentity{})
 	if err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
@@ -357,8 +456,8 @@ func uploadImportPlan(ctx context.Context, invocation Invocation, archivePath st
 	return plan, meta, nil
 }
 
-func restoreImportAPI(ctx context.Context, invocation Invocation, archivePath string) (archive.CommitResult, map[string]any, error) {
-	body, _, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/restore", http.StatusOK)
+func restoreImportAPI(ctx context.Context, invocation Invocation, archivePath, expectedArchiveSHA string, identity importArchiveIdentity) (archive.CommitResult, map[string]any, error) {
+	body, _, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/restore", http.StatusOK, expectedArchiveSHA, identity)
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
@@ -369,7 +468,7 @@ func restoreImportAPI(ctx context.Context, invocation Invocation, archivePath st
 	return result, meta, nil
 }
 
-func uploadImportArchive(ctx context.Context, invocation Invocation, archivePath, endpointPath string, successStatus int) ([]byte, int64, error) {
+func uploadImportArchive(ctx context.Context, invocation Invocation, archivePath, endpointPath string, successStatus int, expectedArchiveSHA string, identity importArchiveIdentity) ([]byte, int64, error) {
 	before, err := os.Lstat(archivePath)
 	if err != nil {
 		return nil, 0, err
@@ -385,6 +484,11 @@ func uploadImportArchive(ctx context.Context, invocation Invocation, archivePath
 	after, err := file.Stat()
 	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
 		return nil, 0, errors.Join(invalidArgument("archive input changed while opening", "retry with a stable regular non-symlink ZIP"), err)
+	}
+	if expectedArchiveSHA != "" {
+		if expectedArchiveSHA != identity.sha256 || identity.info == nil || !os.SameFile(identity.info, after) || identity.size != after.Size() {
+			return nil, 0, domain.NewError(domain.CodeExportChecksumMismatch, "archive identity changed after the confirmed import preview", nil)
+		}
 	}
 	target, err := invocation.APITransport()
 	if err != nil {
@@ -406,6 +510,9 @@ func uploadImportArchive(ctx context.Context, invocation Invocation, archivePath
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Content-Type", "application/zip")
 	request.Header.Set("Accept", "application/json")
+	if expectedArchiveSHA != "" {
+		request.Header.Set("X-Moment-Archive-SHA256", expectedArchiveSHA)
+	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, 0, err

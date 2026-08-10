@@ -74,6 +74,38 @@ func TestCommitCreatesVerifiedBackupSwitchesAndRejectsReplay(t *testing.T) {
 	}
 }
 
+func TestCommitArchiveRejectsExpectedHashMismatchBeforeClaimOrMaintenance(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	archivePath := exportFixtureFile(t, fixture)
+	oldID := fixture.runtime.Current.ID
+	now := time.Date(2026, 8, 11, 3, 10, 0, 0, time.UTC)
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	maintenanceCalls := 0
+	host := &rejectNewGenerationHost{database: fixture.database, epoch: 9, begin: func() error {
+		maintenanceCalls++
+		return nil
+	}}
+	file, err := os.Open(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	if _, err := committer.CommitArchive(context.Background(), file, strings.Repeat("0", 64), 9, host); !domain.HasCode(err, domain.CodeExportChecksumMismatch) {
+		t.Fatalf("expected archive hash mismatch error=%v", err)
+	}
+	if maintenanceCalls != 0 {
+		t.Fatalf("hash mismatch entered maintenance %d times", maintenanceCalls)
+	}
+	runtimeState, err := runtimefs.Open(fixture.runtime.Root)
+	if err != nil || runtimeState.Current.ID != oldID {
+		t.Fatalf("hash mismatch CURRENT=%#v err=%v", runtimeState.Current, err)
+	}
+	backups, err := os.ReadDir(filepath.Join(fixture.runtime.Root, "backups"))
+	if err != nil || len(backups) != 0 {
+		t.Fatalf("hash mismatch backups=%#v err=%v", backups, err)
+	}
+}
+
 func TestGenerationRetentionKeepsBeforeAndSweepsAtTwentyFourHours(t *testing.T) {
 	fixture := newExportFixture(t, false)
 	archivePath := exportFixtureFile(t, fixture)

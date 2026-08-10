@@ -110,6 +110,9 @@ func (application *Application) RegisterLeaf(spec LeafSpec) error {
 	if spec.Policy.SupportsDryRun && !spec.Policy.Destructive {
 		return fmt.Errorf("leaf %q cannot expose dry-run without a destructive policy", strings.Join(spec.Path, " "))
 	}
+	if spec.Policy.DeferredConfirmation && !spec.Policy.Destructive {
+		return fmt.Errorf("leaf %q cannot defer confirmation without a destructive policy", strings.Join(spec.Path, " "))
+	}
 	if spec.Policy.Destructive && strings.TrimSpace(spec.Safety) == "" {
 		return fmt.Errorf("destructive leaf %q requires safety help", strings.Join(spec.Path, " "))
 	}
@@ -387,6 +390,18 @@ func (application *Application) buildLeaf(
 			target:  target,
 			safety:  safety,
 			logger:  outputLogger,
+			confirm: func(prompt string) error {
+				if !spec.Policy.DeferredConfirmation {
+					return errors.New("scope confirmation is not enabled for this command")
+				}
+				if safety.Yes || safety.DryRun {
+					return nil
+				}
+				if commandErr := promptForConfirmation(streams, *options, prompt); commandErr != nil {
+					return commandErr
+				}
+				return nil
+			},
 		}
 		operationContext := command.Context()
 		cancel := func() {}

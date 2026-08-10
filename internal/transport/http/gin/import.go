@@ -3,11 +3,14 @@ package ginhttp
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"mime"
 	"net/http"
+	"strings"
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/archive"
@@ -32,7 +35,7 @@ type ImportCommitter interface {
 }
 
 type archiveImportCommitter interface {
-	CommitArchive(context.Context, io.Reader, uint64) (archive.CommitResult, error)
+	CommitArchive(context.Context, io.Reader, string, uint64) (archive.CommitResult, error)
 }
 
 // RegisterImportInspectRoutes installs the owner-only raw ZIP upload endpoint.
@@ -57,19 +60,19 @@ func RegisterImportCommitRoutes(engine *gin.Engine, committer ImportCommitter, m
 	owner.GET("/import/status", importStatus(committer))
 }
 
+func restoreImport(restorer archiveImportCommitter, manager *auth.Manager) gin.HandlerFunc {
+	return importArchiveUpload(manager, "restore", true, func(ctx context.Context, source io.Reader, expectedArchiveSHA string, epoch uint64) (any, error) {
+		return restorer.CommitArchive(ctx, source, expectedArchiveSHA, epoch)
+	}, http.StatusOK)
+}
+
 func planImport(planner importPlanner, manager *auth.Manager) gin.HandlerFunc {
-	return importArchiveUpload(manager, "plan", func(ctx context.Context, source io.Reader, epoch uint64) (any, error) {
+	return importArchiveUpload(manager, "plan", false, func(ctx context.Context, source io.Reader, _ string, epoch uint64) (any, error) {
 		return planner.Plan(ctx, source, epoch)
 	}, http.StatusOK)
 }
 
-func restoreImport(restorer archiveImportCommitter, manager *auth.Manager) gin.HandlerFunc {
-	return importArchiveUpload(manager, "restore", func(ctx context.Context, source io.Reader, epoch uint64) (any, error) {
-		return restorer.CommitArchive(ctx, source, epoch)
-	}, http.StatusOK)
-}
-
-func importArchiveUpload(manager *auth.Manager, operation string, run func(context.Context, io.Reader, uint64) (any, error), successStatus int) gin.HandlerFunc {
+func importArchiveUpload(manager *auth.Manager, operation string, requireExpectedSHA bool, run func(context.Context, io.Reader, string, uint64) (any, error), successStatus int) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if ctx.Request.URL.RawQuery != "" {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import "+operation+" does not accept query parameters", map[string]any{"field": "query"})
@@ -79,6 +82,15 @@ func importArchiveUpload(manager *auth.Manager, operation string, run func(conte
 		if err != nil || mediaType != "application/zip" {
 			Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "import "+operation+" requires application/zip", map[string]any{"field": "content_type"})
 			return
+		}
+		expectedArchiveSHA := ""
+		if requireExpectedSHA {
+			values := ctx.Request.Header.Values("X-Moment-Archive-SHA256")
+			if len(values) != 1 || !canonicalArchiveSHA(values[0]) {
+				Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import restore requires one canonical expected archive SHA-256", map[string]any{"field": "x_moment_archive_sha256"})
+				return
+			}
+			expectedArchiveSHA = values[0]
 		}
 		grant, ok := ownerGrant(ctx)
 		if !ok {
@@ -90,7 +102,7 @@ func importArchiveUpload(manager *auth.Manager, operation string, run func(conte
 			unauthorized(ctx)
 			return
 		}
-		result, err := run(ctx.Request.Context(), ctx.Request.Body, epoch)
+		result, err := run(ctx.Request.Context(), ctx.Request.Body, expectedArchiveSHA, epoch)
 		if err == nil {
 			Success(ctx, successStatus, result, nil)
 			return
@@ -103,6 +115,14 @@ func importArchiveUpload(manager *auth.Manager, operation string, run func(conte
 		}
 		writeImportUploadError(ctx, operation, err)
 	}
+}
+
+func canonicalArchiveSHA(value string) bool {
+	if len(value) != sha256.Size*2 || value != strings.ToLower(value) {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
 }
 
 func writeImportUploadError(ctx *gin.Context, operation string, err error) {

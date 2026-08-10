@@ -39,11 +39,11 @@ type fakeImportCommitter struct {
 
 type fakeArchiveImportCommitter struct {
 	fakeImportCommitter
-	restore func(context.Context, io.Reader, uint64) (archive.CommitResult, error)
+	restore func(context.Context, io.Reader, string, uint64) (archive.CommitResult, error)
 }
 
-func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.CommitResult, error) {
-	return fake.restore(ctx, input, epoch)
+func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
+	return fake.restore(ctx, input, expectedArchiveSHA, epoch)
 }
 
 func (fake fakeImportCommitter) Commit(ctx context.Context, token string, epoch uint64) (archive.CommitResult, error) {
@@ -214,6 +214,7 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 			return archive.ImportPlan{DryRun: true, FormatVersion: archive.FormatVersion, ArchiveSHA256: strings.Repeat("a", 64), Warnings: []string{}, Disk: archive.DiskEstimate{SpaceOK: true}}, nil
 		},
 	}
+	restoreCalls := 0
 	committer := fakeArchiveImportCommitter{
 		fakeImportCommitter: fakeImportCommitter{
 			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
@@ -223,10 +224,11 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 				return archive.CommitStatus{}, errors.New("status must not run")
 			},
 		},
-		restore: func(_ context.Context, input io.Reader, epoch uint64) (archive.CommitResult, error) {
+		restore: func(_ context.Context, input io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
+			restoreCalls++
 			body, err := io.ReadAll(input)
-			if err != nil || string(body) != "zip-restore" || epoch != 1 {
-				t.Fatalf("restore body=%q epoch=%d err=%v", body, epoch, err)
+			if err != nil || string(body) != "zip-restore" || expectedArchiveSHA != strings.Repeat("a", 64) || epoch != 1 {
+				t.Fatalf("restore body=%q sha=%q epoch=%d err=%v", body, expectedArchiveSHA, epoch, err)
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{
 				OperationID: id, Phase: archive.CommitSucceeded, ActiveGeneration: id, PreviousGeneration: "gen-old", NewGeneration: id,
@@ -246,9 +248,28 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 	}
 	restoreRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/restore", fixture.token, strings.NewReader("zip-restore"))
 	restoreRequest.Header.Set("Content-Type", "application/zip")
+	restoreRequest.Header.Set("X-Moment-Archive-SHA256", strings.Repeat("a", 64))
 	restoreResponse := performRequest(engine, restoreRequest)
 	if restoreResponse.Code != http.StatusOK || !strings.Contains(restoreResponse.Body.String(), `"phase":"succeeded"`) {
 		t.Fatalf("restore response=%d %s", restoreResponse.Code, restoreResponse.Body.String())
+	}
+	for _, configure := range []func(*http.Request){
+		func(*http.Request) {},
+		func(request *http.Request) { request.Header.Set("X-Moment-Archive-SHA256", strings.Repeat("A", 64)) },
+		func(request *http.Request) {
+			request.Header.Add("X-Moment-Archive-SHA256", strings.Repeat("a", 64))
+			request.Header.Add("X-Moment-Archive-SHA256", strings.Repeat("a", 64))
+		},
+	} {
+		request := headerRequest(http.MethodPost, "/api/v1/owner/import/restore", fixture.token, strings.NewReader("zip"))
+		request.Header.Set("Content-Type", "application/zip")
+		configure(request)
+		if response := performRequest(engine, request); response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid expected archive hash status=%d body=%s", response.Code, response.Body.String())
+		}
+	}
+	if restoreCalls != 1 {
+		t.Fatalf("invalid expected archive hash invoked restore: %d", restoreCalls)
 	}
 	for _, path := range []string{"/api/v1/owner/import/plan?x=1", "/api/v1/owner/import/restore?x=1"} {
 		request := headerRequest(http.MethodPost, path, fixture.token, strings.NewReader("zip"))

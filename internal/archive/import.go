@@ -471,6 +471,26 @@ func (inspector *Inspector) inspectWithinLocks(ctx context.Context, source io.Re
 	if err := rebuildPortableGeneration(ctx, runtimeState, generation, archivePath, document); err != nil {
 		return Inspection{}, importInvalid("portable archive could not rebuild the current schema", err)
 	}
+	// Ready staging and dry-run plans must pass the exact same full authority
+	// validation as commit revalidation. This rejects syntactically valid but
+	// unreachable media before a token or green plan can be returned.
+	if err := validateStagingGeneration(ctx, runtimeState, generation, archivePath, document); err != nil {
+		return Inspection{}, importInvalid("portable archive does not form a complete replacement authority", err)
+	}
+	warnings := make([]string, 0, 1)
+	if portable.missingAlt > 0 {
+		warnings = append(warnings, fmt.Sprintf("%d media usages have no image description", portable.missingAlt))
+	}
+	inspection := Inspection{
+		FormatVersion: FormatVersion, ArchiveSHA256: archiveSHA, GenerationID: generationID,
+		Counts: portable.counts, TimeRange: portable.timeRange, MediaBytes: portable.mediaBytes,
+		MissingAlt: portable.missingAlt, Disk: disk, Replacement: replacement, Warnings: warnings,
+	}
+	if !cleanupExisting {
+		// Plan never even creates a usable token. Its failed-state private stage
+		// is removed by planWithinLocks before the command can return.
+		return inspection, nil
+	}
 
 	tokenBytes := make([]byte, 32)
 	if _, err := io.ReadFull(inspector.random, tokenBytes); err != nil {
@@ -484,16 +504,9 @@ func (inspector *Inspector) inspectWithinLocks(ctx context.Context, source io.Re
 		return Inspection{}, err
 	}
 	ready = true
-	warnings := make([]string, 0, 1)
-	if portable.missingAlt > 0 {
-		warnings = append(warnings, fmt.Sprintf("%d media usages have no image description", portable.missingAlt))
-	}
-	return Inspection{
-		FormatVersion: FormatVersion, ArchiveSHA256: archiveSHA, GenerationID: generationID,
-		Counts: portable.counts, TimeRange: portable.timeRange, MediaBytes: portable.mediaBytes,
-		MissingAlt: portable.missingAlt, Disk: disk, Replacement: replacement,
-		Warnings: warnings, ExpiresAt: time.UnixMilli(metadata.ExpiresAtMS).UTC(), StagingToken: token,
-	}, nil
+	inspection.ExpiresAt = time.UnixMilli(metadata.ExpiresAtMS).UTC()
+	inspection.StagingToken = token
+	return inspection, nil
 }
 
 // Resume validates an unexpired ready token and every persisted binding after

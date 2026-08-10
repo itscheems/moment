@@ -567,6 +567,50 @@ func TestHumanConfirmationUsesStderrAndDeclinesByDefault(t *testing.T) {
 	}
 }
 
+func TestDeferredConfirmationPresentsHandlerScopeThroughKernel(t *testing.T) {
+	application := newTestApplication()
+	var planned, mutated atomic.Int64
+	application.MustRegisterLeaf(LeafSpec{
+		Path:       []string{"fixture", "replace"},
+		Short:      "Replace fixture data",
+		Long:       "Replace fixture data after a scoped preview.",
+		Inputs:     "No positional input.",
+		Output:     "Replacement status.",
+		Errors:     "Confirmation failures.",
+		Safety:     "The exact replacement scope is shown before confirmation.",
+		Example:    "moment fixture replace --yes --json",
+		Capability: CapabilityDirectOnly,
+		Policy:     SafetyPolicy{Destructive: true, DeferredConfirmation: true},
+		Run: func(_ context.Context, invocation Invocation, _ CommandInput) (Result, error) {
+			planned.Add(1)
+			if err := invocation.ConfirmScope("Replacement preview\nRows: 3\nReplace these rows?"); err != nil {
+				return Result{}, err
+			}
+			mutated.Add(1)
+			return Result{Text: "replaced"}, nil
+		},
+	})
+
+	blocked := execute(application, "", "fixture", "replace", "--no-input", "--json")
+	if blocked.exit != ExitInvalidInput || planned.Load() != 0 || mutated.Load() != 0 || blocked.stderr != "" {
+		t.Fatalf("early blocked=%#v planned=%d mutated=%d", blocked, planned.Load(), mutated.Load())
+	}
+	declined := execute(application, "n\n", "fixture", "replace")
+	if declined.exit != ExitConflict || planned.Load() != 1 || mutated.Load() != 0 || declined.stdout != "" ||
+		!strings.HasPrefix(declined.stderr, "Replacement preview\nRows: 3\nReplace these rows? [y/N] ") {
+		t.Fatalf("declined=%#v planned=%d mutated=%d", declined, planned.Load(), mutated.Load())
+	}
+	confirmed := execute(application, "y\n", "fixture", "replace")
+	if confirmed.exit != ExitSuccess || planned.Load() != 2 || mutated.Load() != 1 || confirmed.stdout != "replaced\n" ||
+		!strings.HasPrefix(confirmed.stderr, "Replacement preview\nRows: 3\nReplace these rows? [y/N] ") {
+		t.Fatalf("confirmed=%#v planned=%d mutated=%d", confirmed, planned.Load(), mutated.Load())
+	}
+	automatic := execute(application, "", "fixture", "replace", "--yes", "--json")
+	if automatic.exit != ExitSuccess || planned.Load() != 3 || mutated.Load() != 2 || automatic.stderr != "" {
+		t.Fatalf("automatic=%#v planned=%d mutated=%d", automatic, planned.Load(), mutated.Load())
+	}
+}
+
 func TestJSONOutputHasNoANSIWhenNoColorIsSet(t *testing.T) {
 	t.Setenv("NO_COLOR", "1")
 	application := newTestApplication()

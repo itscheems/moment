@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -101,9 +102,10 @@ type Options struct {
 
 // SafetyPolicy adds confirmation flags only to commands that need them.
 type SafetyPolicy struct {
-	Destructive    bool
-	SupportsDryRun bool
-	Confirmation   string
+	Destructive          bool
+	SupportsDryRun       bool
+	DeferredConfirmation bool
+	Confirmation         string
 }
 
 // SafetyState is the parsed safety intent available to a handler. It is not an
@@ -223,6 +225,7 @@ type Invocation struct {
 	target  Transport
 	safety  SafetyState
 	logger  logger
+	confirm func(string) error
 }
 
 // Options returns a copy of the parsed common command options.
@@ -236,6 +239,16 @@ func (invocation Invocation) Transport() Transport { return invocation.target }
 
 // Safety returns confirmation and dry-run intent without bypassing service guards.
 func (invocation Invocation) Safety() SafetyState { return invocation.safety }
+
+// ConfirmScope performs one kernel-owned destructive confirmation after a
+// handler has computed the exact operation scope. Handlers provide only the
+// human prompt; they never read stdin or write stderr directly.
+func (invocation Invocation) ConfirmScope(prompt string) error {
+	if invocation.confirm == nil {
+		return errors.New("scope confirmation is not available for this command")
+	}
+	return invocation.confirm(prompt)
+}
 
 // Log writes a level-filtered diagnostic to stderr.
 func (invocation Invocation) Log(level, message string) {

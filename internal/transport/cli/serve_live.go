@@ -40,8 +40,8 @@ func (committer *hostedImportCommitter) Commit(ctx context.Context, token string
 	return committer.core.Commit(ctx, token, epoch, committer.host)
 }
 
-func (committer *hostedImportCommitter) CommitArchive(ctx context.Context, source io.Reader, epoch uint64) (archive.CommitResult, error) {
-	return committer.core.CommitArchive(ctx, source, epoch, committer.host)
+func (committer *hostedImportCommitter) CommitArchive(ctx context.Context, source io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
+	return committer.core.CommitArchive(ctx, source, expectedArchiveSHA, epoch, committer.host)
 }
 
 func (committer *hostedImportCommitter) Status(ctx context.Context) (archive.CommitStatus, error) {

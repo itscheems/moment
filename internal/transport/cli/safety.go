@@ -16,6 +16,19 @@ func enforceSafety(
 	if !policy.Destructive || state.DryRun || state.Yes {
 		return nil
 	}
+	if policy.DeferredConfirmation {
+		if options.NoInput || options.JSON {
+			return invalidArgument(
+				"confirmation is required but interactive input is disabled",
+				"rerun with --yes after reviewing the scope, or use --dry-run when supported",
+			)
+		}
+		return nil
+	}
+	return promptForConfirmation(streams, options, policy.Confirmation)
+}
+
+func promptForConfirmation(streams Streams, options Options, prompt string) *CommandError {
 
 	if options.NoInput || options.JSON {
 		return invalidArgument(
@@ -24,7 +37,6 @@ func enforceSafety(
 		)
 	}
 
-	prompt := policy.Confirmation
 	if prompt == "" {
 		prompt = "Continue with this destructive operation?"
 	}
