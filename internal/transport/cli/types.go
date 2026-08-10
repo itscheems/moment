@@ -94,6 +94,7 @@ type Options struct {
 	TokenFile string
 	JSON      bool
 	LogLevel  string
+	LogFormat string
 	Timeout   time.Duration
 	NoInput   bool
 }
@@ -228,6 +229,11 @@ func (invocation Invocation) Safety() SafetyState { return invocation.safety }
 // Log writes a level-filtered diagnostic to stderr.
 func (invocation Invocation) Log(level, message string) {
 	invocation.logger.log(level, message)
+}
+
+// LogEvent writes a structured, redacted event to stderr.
+func (invocation Invocation) LogEvent(level, event string, fields map[string]any) {
+	invocation.logger.event(level, event, fields)
 }
 
 // DirectTransport returns the direct target or an error when API mode is active.

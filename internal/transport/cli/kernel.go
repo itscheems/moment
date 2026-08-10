@@ -235,9 +235,10 @@ func (application *Application) buildRoot(streams Streams) (*cobra.Command, *Opt
 	application.mu.RUnlock()
 
 	options := &Options{
-		DataDir:  defaultDataDir,
-		LogLevel: "info",
-		Timeout:  30 * time.Second,
+		DataDir:   defaultDataDir,
+		LogLevel:  "info",
+		LogFormat: "text",
+		Timeout:   30 * time.Second,
 	}
 	state := &executionState{}
 	root := &cobra.Command{
@@ -265,6 +266,7 @@ func (application *Application) buildRoot(streams Streams) (*cobra.Command, *Opt
 	flags.StringVar(&options.TokenFile, "token-file", "", "file containing the owner API token")
 	flags.BoolVar(&options.JSON, "json", false, "write one machine-readable JSON document to stdout")
 	flags.StringVar(&options.LogLevel, "log-level", "info", "stderr log level: error, warn, info, or debug")
+	flags.StringVar(&options.LogFormat, "log-format", "text", "stderr log format: text or json")
 	flags.DurationVar(&options.Timeout, "timeout", 30*time.Second, "maximum command duration")
 	flags.BoolVar(&options.NoInput, "no-input", false, "fail instead of prompting for input")
 
@@ -352,7 +354,7 @@ func (application *Application) buildLeaf(
 			)
 		}
 
-		outputLogger, err := newLogger(options.LogLevel, streams.Err)
+		outputLogger, err := newLogger(options.LogLevel, options.LogFormat, streams.Err)
 		if err != nil {
 			return err
 		}

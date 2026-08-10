@@ -45,5 +45,6 @@ func NewMoment(info buildinfo.Info) *Application {
 			}, nil
 		},
 	})
+	registerServe(application)
 	return application
 }
