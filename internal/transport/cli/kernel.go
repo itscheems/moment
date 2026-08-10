@@ -345,6 +345,12 @@ func (application *Application) buildLeaf(
 		if options.Timeout <= 0 {
 			return invalidArgument("--timeout must be greater than zero", "use a positive duration such as --timeout 30s")
 		}
+		if spec.LongRunning && root.PersistentFlags().Changed("timeout") {
+			return invalidArgument(
+				"--timeout cannot be used with a long-running lifecycle command",
+				"remove --timeout and cancel the command with the parent process signal",
+			)
+		}
 
 		outputLogger, err := newLogger(options.LogLevel, streams.Err)
 		if err != nil {
@@ -375,7 +381,11 @@ func (application *Application) buildLeaf(
 			safety:  safety,
 			logger:  outputLogger,
 		}
-		operationContext, cancel := context.WithTimeout(command.Context(), options.Timeout)
+		operationContext := command.Context()
+		cancel := func() {}
+		if !spec.LongRunning {
+			operationContext, cancel = context.WithTimeout(operationContext, options.Timeout)
+		}
 		defer cancel()
 		result, runErr := spec.Run(operationContext, invocation, CommandInput{
 			args:  args,
@@ -405,6 +415,12 @@ func resolveTransport(root *cobra.Command, options Options) (Transport, error) {
 	parsedURL, err := url.Parse(options.URL)
 	if err != nil || parsedURL.Host == "" || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
 		return nil, invalidArgument("--url must be an absolute HTTP or HTTPS URL", "use a URL such as http://127.0.0.1:8080")
+	}
+	if parsedURL.User != nil || parsedURL.RawQuery != "" || parsedURL.ForceQuery || parsedURL.Fragment != "" {
+		return nil, invalidArgument(
+			"--url cannot contain credentials, a query, or a fragment",
+			"use an origin or reverse-proxy base path and provide credentials through MOMENT_TOKEN or --token-file",
+		)
 	}
 	return apiTarget{baseURL: parsedURL, tokenFile: options.TokenFile}, nil
 }

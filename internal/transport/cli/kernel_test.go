@@ -237,6 +237,95 @@ func TestTimeoutCancelsBoundedOperation(t *testing.T) {
 	}
 }
 
+func TestLongRunningCommandUsesParentCancellationWithoutDeadline(t *testing.T) {
+	application := newTestApplication()
+	deadlineObserved := make(chan bool, 1)
+	started := make(chan struct{})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:        []string{"fixture", "serve"},
+		Short:       "Serve a fixture",
+		Long:        "Serve a fixture until the parent cancels it.",
+		Inputs:      "No positional input.",
+		Output:      "Lifecycle status.",
+		Errors:      "Cancellation returns CANCELLED.",
+		Example:     "moment fixture serve --json",
+		Capability:  CapabilityDirectOnly,
+		LongRunning: true,
+		Run: func(ctx context.Context, _ Invocation, _ CommandInput) (Result, error) {
+			_, hasDeadline := ctx.Deadline()
+			deadlineObserved <- hasDeadline
+			close(started)
+			<-ctx.Done()
+			return Result{}, ctx.Err()
+		},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	result := make(chan commandOutput, 1)
+	go func() {
+		exitCode := application.Execute(ctx, []string{"fixture", "serve", "--json"}, Streams{
+			In:  strings.NewReader(""),
+			Out: &stdout,
+			Err: &stderr,
+		})
+		result <- commandOutput{exit: exitCode, stdout: stdout.String(), stderr: stderr.String()}
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("long-running handler did not start")
+	}
+	if hasDeadline := <-deadlineObserved; hasDeadline {
+		t.Fatal("long-running handler unexpectedly received a deadline")
+	}
+	cancel()
+
+	var output commandOutput
+	select {
+	case output = <-result:
+	case <-time.After(2 * time.Second):
+		t.Fatal("long-running handler did not stop after parent cancellation")
+	}
+	if output.exit != ExitTimeout {
+		t.Fatalf("exit = %d, stdout = %q, stderr = %q", output.exit, output.stdout, output.stderr)
+	}
+	if decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "CANCELLED" {
+		t.Fatalf("stdout = %q", output.stdout)
+	}
+}
+
+func TestLongRunningCommandRejectsExplicitTimeout(t *testing.T) {
+	application := newTestApplication()
+	called := false
+	application.MustRegisterLeaf(LeafSpec{
+		Path:        []string{"fixture", "serve"},
+		Short:       "Serve a fixture",
+		Long:        "Serve a fixture until the parent cancels it.",
+		Inputs:      "No positional input.",
+		Output:      "Lifecycle status.",
+		Errors:      "Explicit timeout is invalid.",
+		Example:     "moment fixture serve --json",
+		Capability:  CapabilityDirectOnly,
+		LongRunning: true,
+		Run: func(_ context.Context, _ Invocation, _ CommandInput) (Result, error) {
+			called = true
+			return Result{}, nil
+		},
+	})
+
+	output := execute(application, "", "fixture", "serve", "--timeout", "5s", "--json")
+	if output.exit != ExitInvalidInput || called {
+		t.Fatalf("exit = %d, called = %t, stdout = %q", output.exit, called, output.stdout)
+	}
+	if decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("stdout = %q", output.stdout)
+	}
+}
+
 func TestModeSelectionAndUnsupportedCapabilities(t *testing.T) {
 	application := newTestApplication()
 	called := false
@@ -281,6 +370,15 @@ func TestDirectAndAPITargetsExposeOnlyConnectionConfiguration(t *testing.T) {
 		}
 	})
 
+	defaultDirect := execute(application, "", "fixture", "target", "--json")
+	if defaultDirect.exit != ExitSuccess {
+		t.Fatalf("default direct exit = %d, stdout = %q", defaultDirect.exit, defaultDirect.stdout)
+	}
+	defaultData := decodeOneDocument(t, defaultDirect.stdout)["data"].(map[string]any)
+	if defaultData["data_dir"] != "" || defaultData["mode"] != string(ModeDirect) {
+		t.Fatalf("default direct data = %#v", defaultData)
+	}
+
 	direct := execute(application, "", "--data-dir", "/tmp/moment-fixture", "fixture", "target", "--json")
 	if direct.exit != ExitSuccess {
 		t.Fatalf("direct exit = %d, stdout = %q", direct.exit, direct.stdout)
@@ -310,6 +408,10 @@ func TestConflictingOrInvalidTransportFlagsFailBeforeHandler(t *testing.T) {
 	for _, args := range [][]string{
 		{"--url", "http://127.0.0.1:8080", "--data-dir", "/tmp/moment", "fixture", "target", "--json"},
 		{"--url", "file:///tmp/socket", "fixture", "target", "--json"},
+		{"--url", "https://owner:secret@moment.test/base", "fixture", "target", "--json"},
+		{"--url", "https://moment.test/base?token=secret", "fixture", "target", "--json"},
+		{"--url", "https://moment.test/base?", "fixture", "target", "--json"},
+		{"--url", "https://moment.test/base#fragment", "fixture", "target", "--json"},
 		{"--token-file", "/tmp/token", "fixture", "target", "--json"},
 	} {
 		output := execute(application, "", args...)

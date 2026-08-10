@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const defaultDataDir = "./moment-data"
+const defaultDataDir = ""
 
 // Streams separates input, machine output, and diagnostics for deterministic
 // execution and tests.
@@ -192,7 +192,10 @@ type LeafSpec struct {
 	Flags      func(*pflag.FlagSet)
 	Capability Capability
 	Policy     SafetyPolicy
-	Run        Handler
+	// LongRunning reserves the parent context for lifecycle commands such as
+	// serve. Other commands remain bounded by --timeout.
+	LongRunning bool
+	Run         Handler
 }
 
 // GroupSpec describes one root-level noun command.

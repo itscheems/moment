@@ -7,7 +7,7 @@ Flags:
   -h, --help   help for post
 
 Global Flags:
-      --data-dir string     local Moment data directory (direct mode) (default "./moment-data")
+      --data-dir string     local Moment data directory (direct mode)
       --json                write one machine-readable JSON document to stdout
       --log-level string    stderr log level: error, warn, info, or debug (default "info")
       --no-input            fail instead of prompting for input

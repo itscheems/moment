@@ -17,7 +17,7 @@ Available Commands:
   version     Show build identity
 
 Flags:
-      --data-dir string     local Moment data directory (direct mode) (default "./moment-data")
+      --data-dir string     local Moment data directory (direct mode)
   -h, --help                help for moment
       --json                write one machine-readable JSON document to stdout
       --log-level string    stderr log level: error, warn, info, or debug (default "info")
