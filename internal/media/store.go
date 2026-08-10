@@ -28,6 +28,10 @@ type Store struct {
 	options        Options
 	references     *sqlite.MediaReferenceRepository
 	maintenance    *runtimefs.Lease
+	development    *runtimefs.LeaseSet
+	storageRoot    string
+	rootAuthority  *os.Root
+	generationRoot *os.Root
 	workers        chan struct{}
 	memory         *semaphore.Weighted
 	memoryCapacity int64
@@ -58,6 +62,23 @@ func NewStoreWithinMaintenance(runtimeState *runtimefs.Runtime, database sqlite.
 	return newStore(runtimeState, database, options, maintenance)
 }
 
+// NewDevelopmentStore is the purpose-built fixture boundary used only while
+// one caller continuously owns Import, Serve, Maintenance, and Media
+// exclusively for the exact marked development root.
+func NewDevelopmentStore(runtimeState *runtimefs.Runtime, database sqlite.Transactor, options Options, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet) (*Store, error) {
+	if authority == nil || authority.Validate(runtimeState, held) != nil {
+		return nil, runtimefs.ErrInsufficientLocks
+	}
+	store, err := newStore(runtimeState, database, options, nil)
+	if err != nil {
+		return nil, err
+	}
+	store.development = held
+	store.rootAuthority = authority.RootAuthority()
+	store.generationRoot = authority.GenerationRoot()
+	return store, nil
+}
+
 func newStore(runtimeState *runtimefs.Runtime, database sqlite.Transactor, options Options, maintenance *runtimefs.Lease) (*Store, error) {
 	if runtimeState == nil || runtimeState.Locks == nil || runtimeState.Current.Root == "" {
 		return nil, errors.New("media runtime is required")
@@ -84,6 +105,7 @@ func newStore(runtimeState *runtimefs.Runtime, database sqlite.Transactor, optio
 		memory:         semaphore.NewWeighted(memoryCapacity),
 		memoryCapacity: memoryCapacity,
 		removeFile:     os.Remove,
+		storageRoot:    runtimeState.Root,
 	}, nil
 }
 
@@ -92,6 +114,14 @@ type releasableLease interface {
 }
 
 func (store *Store) acquireMedia(ctx context.Context, mode runtimefs.LockMode) (releasableLease, error) {
+	if store.development != nil {
+		if !store.development.BelongsTo(store.runtime.Root) ||
+			!store.development.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) ||
+			!store.development.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
+			return nil, runtimefs.ErrInsufficientLocks
+		}
+		return noOpLease{}, nil
+	}
 	if store.maintenance != nil && !store.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
 		return nil, errors.New("media maintenance lease is no longer held")
 	}
@@ -99,6 +129,9 @@ func (store *Store) acquireMedia(ctx context.Context, mode runtimefs.LockMode) (
 }
 
 func (store *Store) acquireMaintenanceAndMedia(ctx context.Context, mode runtimefs.LockMode) (releasableLease, error) {
+	if store.development != nil {
+		return store.acquireMedia(ctx, mode)
+	}
 	if store.maintenance != nil {
 		return store.acquireMedia(ctx, mode)
 	}
@@ -107,6 +140,10 @@ func (store *Store) acquireMaintenanceAndMedia(ctx context.Context, mode runtime
 		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: mode},
 	)
 }
+
+type noOpLease struct{}
+
+func (noOpLease) Release() error { return nil }
 
 // Ingest validates and fully renders a preview before publishing an immutable
 // original and its row. Filename extensions and claimed MIME are never used.
@@ -156,7 +193,7 @@ func (store *Store) Ingest(ctx context.Context, originalName string, input io.Re
 	}
 	cleanupOriginal := createdOriginal
 	defer func() {
-		if cleanupOriginal {
+		if cleanupOriginal && store.generationRoot == nil {
 			_ = os.Remove(filepath.Join(store.runtime.Current.Root, filepath.FromSlash(storagePath)))
 		}
 	}()
@@ -326,6 +363,9 @@ func (store *Store) readOriginal(ctx context.Context, media Media) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
+	if store.generationRoot != nil {
+		return store.readRootedOriginal(ctx, media)
+	}
 	info, err := os.Lstat(path)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() != media.ByteSize {
 		return nil, domain.NewError(domain.CodeMediaCorrupt, "immutable original is missing or invalid", map[string]any{"media_id": media.ID.String()})
@@ -349,6 +389,28 @@ func (store *Store) readOriginal(ctx context.Context, media Media) ([]byte, erro
 	return contents, nil
 }
 
+func (store *Store) readRootedOriginal(ctx context.Context, media Media) ([]byte, error) {
+	relative := filepath.FromSlash(media.StoragePath)
+	info, err := store.generationRoot.Lstat(relative)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() != media.ByteSize {
+		return nil, domain.NewError(domain.CodeMediaCorrupt, "immutable original is missing or invalid", map[string]any{"media_id": media.ID.String()})
+	}
+	file, err := store.generationRoot.Open(relative)
+	if err != nil {
+		return nil, domain.NewError(domain.CodeMediaCorrupt, "immutable original cannot be opened", map[string]any{"media_id": media.ID.String()})
+	}
+	defer func() { _ = file.Close() }()
+	contents, err := readBounded(ctx, file, store.options.Limits.MaxBytes)
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(contents)
+	if hex.EncodeToString(digest[:]) != media.SHA256 {
+		return nil, domain.NewError(domain.CodeMediaCorrupt, "immutable original checksum does not match", map[string]any{"media_id": media.ID.String()})
+	}
+	return contents, nil
+}
+
 func (store *Store) verifyOriginal(ctx context.Context, media Media, expected []byte) error {
 	contents, err := store.readOriginal(ctx, media)
 	if err != nil {
@@ -361,6 +423,9 @@ func (store *Store) verifyOriginal(ctx context.Context, media Media, expected []
 }
 
 func (store *Store) publishOriginal(ctx context.Context, storagePath string, contents []byte) (bool, error) {
+	if store.generationRoot != nil {
+		return store.publishRootedOriginal(ctx, storagePath, contents)
+	}
 	final := filepath.Join(store.runtime.Current.Root, filepath.FromSlash(storagePath))
 	directory := filepath.Dir(final)
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -417,6 +482,72 @@ func (store *Store) publishOriginal(ctx context.Context, storagePath string, con
 		return false, fmt.Errorf("publish immutable original: %w", err)
 	}
 	removePartial = false
+	return true, nil
+}
+
+func (store *Store) publishRootedOriginal(ctx context.Context, storagePath string, contents []byte) (bool, error) {
+	relative := filepath.FromSlash(storagePath)
+	directory := filepath.Dir(relative)
+	if err := store.generationRoot.MkdirAll(directory, 0o700); err != nil {
+		return false, err
+	}
+	if info, err := store.generationRoot.Lstat(relative); err == nil {
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return false, errors.New("rooted original destination is unsafe")
+		}
+		existing, err := store.generationRoot.ReadFile(relative)
+		if err != nil || !bytes.Equal(existing, contents) {
+			return false, domain.NewError(domain.CodeMediaCorrupt, "existing immutable original does not match its content hash", nil)
+		}
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, err
+	}
+	temporary := relative + ".partial"
+	file, err := store.generationRoot.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return false, err
+	}
+	published := false
+	defer func() {
+		_ = file.Close()
+		if !published {
+			_ = store.generationRoot.Remove(temporary)
+		}
+	}()
+	if _, err := file.Write(contents); err != nil {
+		_ = file.Close()
+		return false, err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return false, err
+	}
+	if err := file.Close(); err != nil {
+		return false, err
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := store.generationRoot.Rename(temporary, relative); err != nil {
+		return false, err
+	}
+	published = true
+	directoryRoot, err := store.generationRoot.OpenRoot(directory)
+	if err != nil {
+		return false, err
+	}
+	directoryFile, err := directoryRoot.Open(".")
+	if err != nil {
+		_ = directoryRoot.Close()
+		return false, err
+	}
+	syncErr := directoryFile.Sync()
+	closeErr := directoryFile.Close()
+	rootCloseErr := directoryRoot.Close()
+	if syncErr != nil || closeErr != nil || rootCloseErr != nil {
+		return false, errors.Join(syncErr, closeErr, rootCloseErr)
+	}
 	return true, nil
 }
 

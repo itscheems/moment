@@ -115,7 +115,7 @@ func (exporter *Exporter) Export(ctx context.Context, destination io.Writer) (su
 		return Summary{}, fmt.Errorf("open archive database: %w", err)
 	}
 	defer func() { exportErr = errors.Join(exportErr, database.Close()) }()
-	return exporter.exportResolved(ctx, destination, runtimeState, database)
+	return exporter.exportResolved(ctx, destination, runtimeState, database, nil)
 }
 
 // ExportWithinLocks writes a complete v1 backup from an already-open active
@@ -131,14 +131,45 @@ func (exporter *Exporter) ExportWithinLocks(ctx context.Context, destination io.
 	if err != nil {
 		return Summary{}, err
 	}
-	if current.ID != runtimeState.Current.ID || filepath.Clean(database.Path()) != filepath.Clean(current.DatabasePath) {
+	databaseInfo, databaseErr := os.Stat(database.Path())
+	currentInfo, currentStatErr := os.Stat(current.DatabasePath)
+	if current.ID != runtimeState.Current.ID || databaseErr != nil || currentStatErr != nil || !os.SameFile(databaseInfo, currentInfo) {
 		return Summary{}, errors.New("backup database does not match authoritative CURRENT")
 	}
 	runtimeState.Current = current
-	return exporter.exportResolved(ctx, destination, runtimeState, database)
+	return exporter.exportResolved(ctx, destination, runtimeState, database, nil)
 }
 
-func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Writer, runtimeState *runtimefs.Runtime, database *sqlitestore.Database) (summary Summary, exportErr error) {
+// ExportDevelopmentWithinLocks exports a pinned development database whose
+// descriptor path may not compare textually or via path stat to CURRENT (for
+// example Darwin /dev/fd). The complete destructive lock set and marked
+// development runtime are mandatory.
+func (exporter *Exporter) ExportDevelopmentWithinLocks(ctx context.Context, destination io.Writer, runtimeState *runtimefs.Runtime, database *sqlitestore.Database, held *runtimefs.LeaseSet, authority *runtimefs.DevelopmentAuthority) (Summary, error) {
+	if exporter == nil || destination == nil || database == nil || authority == nil || authority.Validate(runtimeState, held) != nil {
+		return Summary{}, runtimefs.ErrInsufficientLocks
+	}
+	if runtimeState.Current.ID == "" {
+		return Summary{}, errors.New("development export runtime has no current generation")
+	}
+	return exporter.exportResolved(ctx, destination, runtimeState, database, authority)
+}
+
+// ExportDevelopmentDiagnosticWithinLocks exports one already-published
+// development generation through a descriptor-bound read-only database. It is
+// used by the isolated archive roundtrip verifier after the formal importer
+// has closed its writable bundle.
+func (exporter *Exporter) ExportDevelopmentDiagnosticWithinLocks(ctx context.Context, destination io.Writer, runtimeState *runtimefs.Runtime, database *sqlitestore.DiagnosticDatabase, held *runtimefs.LeaseSet, authority *runtimefs.DevelopmentAuthority) (Summary, error) {
+	if exporter == nil || destination == nil || database == nil || authority == nil || authority.Validate(runtimeState, held) != nil {
+		return Summary{}, runtimefs.ErrInsufficientLocks
+	}
+	return exporter.exportResolved(ctx, destination, runtimeState, database, authority)
+}
+
+type archiveSnapshotDatabase interface {
+	BeginArchiveSnapshot(context.Context) (*sqlitestore.ArchiveSnapshot, error)
+}
+
+func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Writer, runtimeState *runtimefs.Runtime, database archiveSnapshotDatabase, authority *runtimefs.DevelopmentAuthority) (summary Summary, exportErr error) {
 	snapshot, err := database.BeginArchiveSnapshot(ctx)
 	if err != nil {
 		return Summary{}, err
@@ -264,7 +295,12 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 		if err != nil {
 			return err
 		}
-		source, err := openOriginal(runtimeState.Current.Root, value.StoragePath)
+		var source *os.File
+		if authority != nil {
+			source, err = openOriginalWithinRoot(authority.GenerationRoot(), value.StoragePath)
+		} else {
+			source, err = openOriginal(runtimeState.Current.Root, value.StoragePath)
+		}
 		if err != nil {
 			return archiveInvalid("a reachable original is missing or unsafe", err)
 		}
@@ -337,6 +373,28 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 		ArchiveBytes:  counted.size,
 		ArchiveSHA256: hex.EncodeToString(archiveDigest.Sum(nil)),
 	}, nil
+}
+
+func openOriginalWithinRoot(generationRoot *os.Root, storagePath string) (*os.File, error) {
+	if generationRoot == nil || storagePath == "" || path.IsAbs(storagePath) || strings.Contains(storagePath, "\\") ||
+		path.Clean(storagePath) != storagePath || strings.HasPrefix(storagePath, "../") {
+		return nil, errors.New("media storage path is unsafe")
+	}
+	name := filepath.Clean(filepath.FromSlash(storagePath))
+	before, err := generationRoot.Lstat(name)
+	if err != nil || !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.Join(errors.New("media original is not a regular non-symlink file"), err)
+	}
+	file, err := generationRoot.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	after, err := file.Stat()
+	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
+		_ = file.Close()
+		return nil, errors.Join(errors.New("media original changed while opening"), err)
+	}
+	return file, nil
 }
 
 // ExportFile writes beside the destination, flushes and validates the ZIP

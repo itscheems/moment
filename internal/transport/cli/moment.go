@@ -54,5 +54,6 @@ func NewMoment(info buildinfo.Info) *Application {
 	registerComments(application)
 	registerSearch(application)
 	registerBackup(application, info)
+	registerDev(application)
 	return application
 }

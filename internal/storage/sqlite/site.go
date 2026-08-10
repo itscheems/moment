@@ -44,6 +44,21 @@ type SiteRepository struct {
 	transactions Transactor
 	locks        *runtimefs.Locker
 	maintenance  *runtimefs.Lease
+	development  *runtimefs.LeaseSet
+	root         string
+}
+
+// NewDevelopmentSiteRepository is the explicit fixture boundary for one
+// fully locked development generation build.
+func NewDevelopmentSiteRepository(transactions Transactor, root string, held *runtimefs.LeaseSet) (*SiteRepository, error) {
+	if transactions == nil || held == nil || !held.BelongsTo(root) ||
+		!held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.ServeLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
+		return nil, runtimefs.ErrInsufficientLocks
+	}
+	return &SiteRepository{transactions: transactions, development: held, root: root}, nil
 }
 
 // NewSiteRepositoryWithinMaintenance constructs an adapter for a caller that
@@ -88,6 +103,16 @@ func (repository *SiteRepository) Read(ctx context.Context, operation func(app.S
 func (repository *SiteRepository) Write(ctx context.Context, operation func(app.SiteStore) error) error {
 	if operation == nil {
 		return errors.New("site write operation is required")
+	}
+	if repository.development != nil {
+		if !repository.development.BelongsTo(repository.root) ||
+			!repository.development.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) ||
+			!repository.development.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
+			return runtimefs.ErrInsufficientLocks
+		}
+		return repository.transactions.WriteTx(ctx, func(queries Queries) error {
+			return operation(newSiteStore(queries))
+		})
 	}
 	if repository.maintenance != nil {
 		if !repository.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {

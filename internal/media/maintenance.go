@@ -361,11 +361,11 @@ func (store *Store) previewStatus(sha string) string {
 	if _, ok := store.existingPreview(sha); ok {
 		return "ready"
 	}
-	current := filepath.Join(store.runtime.Root, "cache", "previews", RecipeVersion, sha[:2])
+	current := filepath.Join(store.storageRoot, "cache", "previews", RecipeVersion, sha[:2])
 	if matches, _ := filepath.Glob(filepath.Join(current, sha+".*")); len(matches) > 0 {
 		return "stale"
 	}
-	root := filepath.Join(store.runtime.Root, "cache", "previews")
+	root := filepath.Join(store.storageRoot, "cache", "previews")
 	entries, _ := os.ReadDir(root)
 	for _, entry := range entries {
 		if !entry.IsDir() || entry.Name() == RecipeVersion || strings.Contains(entry.Name(), string(filepath.Separator)) {
@@ -380,7 +380,7 @@ func (store *Store) previewStatus(sha string) string {
 }
 
 func (store *Store) removePreviewArtifacts(sha string) {
-	root := filepath.Join(store.runtime.Root, "cache", "previews")
+	root := filepath.Join(store.storageRoot, "cache", "previews")
 	versions, _ := os.ReadDir(root)
 	for _, version := range versions {
 		if !version.IsDir() {

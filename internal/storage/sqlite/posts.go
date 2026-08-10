@@ -16,6 +16,21 @@ type PostRepository struct {
 	transactions Transactor
 	locks        *runtimefs.Locker
 	maintenance  *runtimefs.Lease
+	development  *runtimefs.LeaseSet
+	root         string
+}
+
+// NewDevelopmentPostRepository is the explicit fixture boundary for a caller
+// that continuously owns the complete destructive development lock set.
+func NewDevelopmentPostRepository(transactions Transactor, root string, held *runtimefs.LeaseSet) (*PostRepository, error) {
+	if transactions == nil || held == nil || !held.BelongsTo(root) ||
+		!held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.ServeLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
+		return nil, runtimefs.ErrInsufficientLocks
+	}
+	return &PostRepository{transactions: transactions, development: held, root: root}, nil
 }
 
 var _ app.PostTransactions = (*PostRepository)(nil)
@@ -68,6 +83,14 @@ func (repository *PostRepository) Read(ctx context.Context, operation func(app.P
 func (repository *PostRepository) Write(ctx context.Context, operation func(app.PostStore) error) error {
 	if operation == nil {
 		return errors.New("post write operation is required")
+	}
+	if repository.development != nil {
+		if !repository.development.BelongsTo(repository.root) ||
+			!repository.development.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) ||
+			!repository.development.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
+			return runtimefs.ErrInsufficientLocks
+		}
+		return repository.write(ctx, operation)
 	}
 	if repository.locks == nil {
 		return repository.write(ctx, operation)

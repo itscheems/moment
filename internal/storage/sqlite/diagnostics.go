@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/moment/moment/internal/runtimefs"
 )
 
 const diagnosticRowLimit = 100
@@ -86,6 +88,25 @@ func OpenDiagnostic(ctx context.Context, databasePath string, busyTimeout time.D
 	if err := pool.PingContext(ctx); err != nil {
 		_ = pool.Close()
 		return nil, fmt.Errorf("open SQLite read-only database: %w", err)
+	}
+	return &DiagnosticDatabase{pool: pool, closeFn: pool.Close}, nil
+}
+
+// OpenDevelopmentDiagnosticPinned opens a complete, closed development
+// database through the descriptor path proven by DevelopmentAuthority. The
+// immutable hint prevents SQLite from deriving WAL/journal sidecar names from
+// /proc/self/fd or /dev/fd while keeping the view strictly read-only.
+func OpenDevelopmentDiagnosticPinned(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, authority *runtimefs.DevelopmentAuthority) (*DiagnosticDatabase, error) {
+	if authority == nil || authority.Validate(runtimeState, held) != nil {
+		return nil, runtimefs.ErrInsufficientLocks
+	}
+	pool, err := openPool(sqlitePinnedImmutableDSN(authority.DatabasePath(), defaultBusyTimeout), 1)
+	if err != nil {
+		return nil, fmt.Errorf("open pinned SQLite diagnostic pool: %w", err)
+	}
+	if err := pool.PingContext(ctx); err != nil {
+		_ = pool.Close()
+		return nil, fmt.Errorf("open pinned SQLite read-only database: %w", err)
 	}
 	return &DiagnosticDatabase{pool: pool, closeFn: pool.Close}, nil
 }

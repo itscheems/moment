@@ -4,6 +4,7 @@ package runtimefs
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"golang.org/x/sys/windows"
@@ -25,4 +26,10 @@ func AvailableBytes(path string) (uint64, error) {
 		return 0, fmt.Errorf("inspect available filesystem bytes: %w", err)
 	}
 	return available, nil
+}
+
+// AvailableBytesRoot uses the pinned root's name. Development callers retain
+// a separate no-share-delete handle for the complete operation on Windows.
+func AvailableBytesRoot(root *os.Root) (uint64, error) {
+	return AvailableBytes(root.Name())
 }

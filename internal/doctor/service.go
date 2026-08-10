@@ -40,6 +40,19 @@ type Options struct {
 	// ActiveDatabase is supplied only by the running HTTP server. Summary mode
 	// borrows its established read pool instead of reopening active SQLite.
 	ActiveDatabase *sqlitestore.Database
+	// LockedSnapshot is supplied only by an in-process development generation
+	// publisher that already owns the complete lock set. Doctor borrows both
+	// locks and database without releasing them or probing its own serve lock.
+	LockedSnapshot *LockedSnapshot
+}
+
+// LockedSnapshot binds doctor to one already-open CURRENT generation.
+type LockedSnapshot struct {
+	Runtime            *runtimefs.Runtime
+	Database           *sqlitestore.Database
+	DiagnosticDatabase *sqlitestore.DiagnosticDatabase
+	Held               *runtimefs.LeaseSet
+	Authority          *runtimefs.DevelopmentAuthority
 }
 
 // Service runs the fixed read-only diagnostic registry.
@@ -47,6 +60,19 @@ type Service struct{ options Options }
 
 // New validates bounds and constructs a diagnostic service.
 func New(options Options) (*Service, error) {
+	if options.LockedSnapshot != nil {
+		locked := options.LockedSnapshot
+		if locked.Runtime == nil || (locked.Database == nil) == (locked.DiagnosticDatabase == nil) || locked.Held == nil || locked.Authority == nil ||
+			!locked.Held.BelongsTo(locked.Runtime.Root) ||
+			!locked.Held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
+			!locked.Held.Holds(runtimefs.ServeLock, runtimefs.Exclusive) ||
+			!locked.Held.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) ||
+			!locked.Held.Holds(runtimefs.MediaLock, runtimefs.Exclusive) || locked.Authority.Validate(locked.Runtime, locked.Held) != nil {
+			return nil, runtimefs.ErrInsufficientLocks
+		}
+		options.ActiveDatabase = locked.Database
+		options.DataDir = locked.Runtime.Root
+	}
 	if options.Clock == nil {
 		options.Clock = time.Now
 	}
@@ -80,6 +106,9 @@ func New(options Options) (*Service, error) {
 func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 	if mode != ModeSummary && mode != ModeDeep {
 		return Report{}, errors.New("unsupported doctor mode")
+	}
+	if service.options.LockedSnapshot != nil {
+		return service.runLockedDevelopment(ctx, mode)
 	}
 	builder := newReport(mode, service.options.Progress)
 	if mode == ModeSummary {
@@ -127,7 +156,17 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 	instance, instanceErr := runtimefs.ReadInstance(root)
 	locker, lockerErr := runtimefs.OpenExistingLocker(root)
 	var held *runtimefs.LeaseSet
-	if lockerErr == nil {
+	borrowedLocks := service.options.LockedSnapshot != nil
+	if borrowedLocks {
+		locked := service.options.LockedSnapshot
+		if instanceErr != nil || instance != locked.Runtime.Instance || locked.Runtime.Current.ID == "" {
+			lockerErr = errors.New("locked diagnostic snapshot does not match the marked instance")
+		} else {
+			locker = locked.Runtime.Locks
+			held = locked.Held
+			lockerErr = nil
+		}
+	} else if lockerErr == nil {
 		lockCtx, cancelLock := context.WithTimeout(ctx, service.options.SnapshotWait)
 		maintenanceMode := runtimefs.Exclusive
 		if service.options.ActiveDatabase != nil && mode == ModeSummary {
@@ -151,8 +190,14 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 		}
 		builder.set(failed(CheckInstanceLocks, "the read-only diagnostic snapshot could not be acquired", "finish the active import or repair persistent lock files, then retry", map[string]any{"snapshot_acquired": false, "permissions_valid": class != failureIO}, class))
 	} else {
-		defer func() { _ = held.Release() }()
-		serveState, probeErr := probeServeLock(ctx, locker)
+		if !borrowedLocks {
+			defer func() { _ = held.Release() }()
+		}
+		serveState := "owned_by_development_operation"
+		var probeErr error
+		if !borrowedLocks {
+			serveState, probeErr = probeServeLock(ctx, locker)
+		}
 		if probeErr != nil && ctx.Err() != nil {
 			builder.set(failed(CheckInstanceLocks, "serve lock inspection was cancelled", "retry with a longer --timeout", map[string]any{"snapshot_acquired": true}, failureCancelled))
 			return builder.finish(true), ctx.Err()
@@ -236,7 +281,13 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 	var cleanupDatabase func() error
 	var dbErr error
 	if service.options.ActiveDatabase != nil {
-		if filepath.Clean(service.options.ActiveDatabase.Path()) != filepath.Clean(current.DatabasePath) {
+		activeMatches := service.options.LockedSnapshot != nil
+		if !activeMatches {
+			activeInfo, activeErr := os.Stat(service.options.ActiveDatabase.Path())
+			currentInfo, currentStatErr := os.Stat(current.DatabasePath)
+			activeMatches = activeErr == nil && currentStatErr == nil && os.SameFile(activeInfo, currentInfo)
+		}
+		if !activeMatches {
 			dbErr = errors.New("active diagnostic database does not match CURRENT")
 		} else {
 			database, dbErr = sqlitestore.NewDiagnosticView(service.options.ActiveDatabase)

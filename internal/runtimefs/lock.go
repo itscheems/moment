@@ -61,6 +61,7 @@ type LockRequest struct {
 // All waits honor context cancellation and deadlines.
 type Locker struct {
 	root             string
+	authority        *os.Root
 	gates            map[LockName]*localGate
 	existingOnly     bool
 	missing          map[LockName]bool
@@ -83,6 +84,37 @@ func NewLocker(dataDir string) (*Locker, error) {
 		return nil, err
 	}
 	return newLocker(root, false), nil
+}
+
+// NewRootedLocker binds lock-file opens to an already pinned root handle. The
+// caller owns the handle lifetime and must keep it open through every lease.
+func NewRootedLocker(dataDir string, authority *os.Root) (*Locker, error) {
+	root, err := ResolveDataDir(dataDir)
+	if err != nil || authority == nil {
+		return nil, errors.Join(errors.New("pinned runtime root is required"), err)
+	}
+	authorityInfo, err := authority.Stat(".")
+	if err != nil {
+		return nil, err
+	}
+	rootInfo, err := os.Lstat(root)
+	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(authorityInfo, rootInfo) {
+		return nil, errors.Join(errors.New("pinned runtime root does not match data directory"), err)
+	}
+	for _, name := range lockSequence {
+		file, openErr := authority.OpenFile(filepath.Join("locks", string(name)+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
+		if openErr != nil {
+			return nil, openErr
+		}
+		protectErr := file.Chmod(0o600)
+		closeErr := file.Close()
+		if protectErr != nil || closeErr != nil {
+			return nil, errors.Join(protectErr, closeErr)
+		}
+	}
+	locker := newLocker(root, false)
+	locker.authority = authority
+	return locker, nil
 }
 
 // OpenExistingLocker binds only already initialized persistent lock files.
@@ -270,7 +302,12 @@ func (l *Locker) acquireOne(ctx context.Context, request LockRequest) (*Lease, e
 	path := filepath.Join(l.root, "locks", string(request.Name)+".lock")
 	var file *os.File
 	var state platformLockState
-	if l.existingOnly {
+	if l.authority != nil {
+		file, err = l.authority.OpenFile(filepath.Join("locks", string(request.Name)+".lock"), os.O_RDWR, 0)
+		if err == nil {
+			file, state, err = waitForFileLock(ctx, file, request.Mode)
+		}
+	} else if l.existingOnly {
 		file, state, err = acquireExistingFileLock(ctx, path, request.Mode)
 	} else {
 		file, state, err = acquireFileLock(ctx, path, request.Mode)

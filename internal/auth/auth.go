@@ -228,6 +228,141 @@ func InitializeOffline(ctx context.Context, runtimeState *runtimefs.Runtime, opt
 	return credential(token, loaded), nil
 }
 
+// InitializeDevelopmentWithinLocks creates the first cryptographically random
+// owner credential for a marked development instance while the complete
+// destructive lock set is continuously held. Existing credentials are never
+// rotated; callers must inspect status first and return the token exactly once.
+func InitializeDevelopmentWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet) (Credential, error) {
+	if err := ctx.Err(); err != nil {
+		return Credential{}, err
+	}
+	if authority == nil || authority.Validate(runtimeState, held) != nil {
+		return Credential{}, runtimefs.ErrInsufficientLocks
+	}
+	root := authority.RootAuthority()
+	if status, err := ReadStatusWithinRoot(root); err != nil {
+		return Credential{}, err
+	} else if status.Initialized {
+		return Credential{}, ErrAlreadyInitialized
+	}
+	manager, err := NewManager(runtimeState.Root, Options{})
+	if err != nil {
+		return Credential{}, err
+	}
+	token, loaded, err := manager.newSnapshot(nil)
+	if err != nil {
+		return Credential{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Credential{}, err
+	}
+	if err := writeSnapshotWithinRoot(root, loaded); err != nil {
+		rollbackErr := rollbackDevelopmentSnapshot(root)
+		return Credential{}, errors.Join(err, rollbackErr)
+	}
+	status, statusErr := ReadStatusWithinRoot(root)
+	if statusErr != nil || !status.Initialized || status.SessionEpoch != loaded.sessionEpoch {
+		rollbackErr := rollbackDevelopmentSnapshot(root)
+		return Credential{}, errors.Join(errors.New("development owner credential was not durably readable"), statusErr, rollbackErr)
+	}
+	return credential(token, loaded), nil
+}
+
+// ReadStatusWithinRoot reads development owner state through a pinned root.
+func ReadStatusWithinRoot(authority *os.Root) (Status, error) {
+	if authority == nil {
+		return Status{}, errors.New("pinned owner authority root is required")
+	}
+	file, err := authority.Open(secretsFilename)
+	if errors.Is(err, os.ErrNotExist) {
+		return Status{Initialized: false}, nil
+	}
+	if err != nil {
+		return Status{}, err
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxSecretsBytes {
+		return Status{}, errors.Join(ErrInvalidSecrets, err)
+	}
+	var stored diskSecrets
+	decoder := json.NewDecoder(io.LimitReader(file, maxSecretsBytes+1))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&stored); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return Status{}, ErrInvalidSecrets
+	}
+	loaded, err := decodeSnapshot(stored)
+	if err != nil {
+		return Status{}, err
+	}
+	return loaded.status(), nil
+}
+
+func writeSnapshotWithinRoot(authority *os.Root, value *snapshot) error {
+	stored := diskSecrets{
+		Version: secretsVersion, TokenHash: base64.RawURLEncoding.EncodeToString(value.tokenHash[:]),
+		SessionSigningKey: base64.RawURLEncoding.EncodeToString(value.signingKey[:]), SessionEpoch: value.sessionEpoch,
+		InitializedAtMS: value.initializedAtMS, RotatedAtMS: cloneInt64(value.rotatedAtMS),
+	}
+	encoded, err := json.MarshalIndent(stored, "", "  ")
+	if err != nil {
+		return err
+	}
+	encoded = append(encoded, '\n')
+	var suffix [8]byte
+	if _, err := io.ReadFull(rand.Reader, suffix[:]); err != nil {
+		return err
+	}
+	temporary := fmt.Sprintf(".%s.%x.next", secretsFilename, suffix)
+	file, err := authority.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	published := false
+	defer func() {
+		_ = file.Close()
+		if !published {
+			_ = authority.Remove(temporary)
+		}
+	}()
+	if _, err := file.Write(encoded); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := authority.Rename(temporary, secretsFilename); err != nil {
+		return err
+	}
+	published = true
+	directory, err := authority.Open(".")
+	if err != nil {
+		return err
+	}
+	syncErr := directory.Sync()
+	closeErr := directory.Close()
+	return errors.Join(syncErr, closeErr)
+}
+
+func rollbackDevelopmentSnapshot(authority *os.Root) error {
+	removeErr := authority.Remove(secretsFilename)
+	if errors.Is(removeErr, os.ErrNotExist) {
+		removeErr = nil
+	}
+	directory, err := authority.Open(".")
+	if err != nil {
+		return errors.Join(removeErr, err)
+	}
+	syncErr := directory.Sync()
+	closeErr := directory.Close()
+	return errors.Join(removeErr, syncErr, closeErr)
+}
+
 // RotateOffline changes the bearer hash and epoch while excluding a running
 // server. The signing key remains stable; the epoch revokes every old cookie.
 func RotateOffline(ctx context.Context, runtimeState *runtimefs.Runtime, options Options) (Credential, error) {

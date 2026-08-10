@@ -19,6 +19,21 @@ type CommentRepository struct {
 	transactions Transactor
 	locks        *runtimefs.Locker
 	maintenance  *runtimefs.Lease
+	development  *runtimefs.LeaseSet
+	root         string
+}
+
+// NewDevelopmentCommentRepository is the explicit fixture boundary for one
+// fully locked development generation build.
+func NewDevelopmentCommentRepository(transactions Transactor, root string, held *runtimefs.LeaseSet) (*CommentRepository, error) {
+	if transactions == nil || held == nil || !held.BelongsTo(root) ||
+		!held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.ServeLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
+		return nil, runtimefs.ErrInsufficientLocks
+	}
+	return &CommentRepository{transactions: transactions, development: held, root: root}, nil
 }
 
 var _ app.CommentTransactions = (*CommentRepository)(nil)
@@ -56,6 +71,13 @@ func (repository *CommentRepository) Read(ctx context.Context, operation func(ap
 func (repository *CommentRepository) Write(ctx context.Context, operation func(app.CommentStore) error) error {
 	if operation == nil {
 		return errors.New("comment write operation is required")
+	}
+	if repository.development != nil {
+		if !repository.development.BelongsTo(repository.root) ||
+			!repository.development.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) {
+			return runtimefs.ErrInsufficientLocks
+		}
+		return repository.write(ctx, operation)
 	}
 	if repository.maintenance != nil {
 		if !repository.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {

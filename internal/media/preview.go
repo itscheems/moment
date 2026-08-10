@@ -14,6 +14,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
@@ -92,7 +93,7 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 		return Preview{}, err
 	}
 	path := store.previewPath(sha, extension)
-	if err := writeCacheAtomic(ctx, path, encoded.Bytes(), store.beforePreviewCommit); err != nil {
+	if err := store.writeCacheAtomic(ctx, path, encoded.Bytes(), store.beforePreviewCommit); err != nil {
 		return Preview{}, previewFailure(err)
 	}
 	bounds := oriented.Bounds()
@@ -136,6 +137,23 @@ func (store *Store) existingPreview(sha string) (Preview, bool) {
 		mimeType  string
 	}{{"png", "image/png"}, {"jpg", "image/jpeg"}} {
 		path := store.previewPath(sha, candidate.extension)
+		if store.rootAuthority != nil {
+			relative := filepath.Join("cache", "previews", RecipeVersion, sha[:2], sha+"."+candidate.extension)
+			info, err := store.rootAuthority.Lstat(relative)
+			if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 {
+				continue
+			}
+			file, err := store.rootAuthority.Open(relative)
+			if err != nil {
+				continue
+			}
+			config, decodedFormat, decodeErr := image.DecodeConfig(file)
+			closeErr := file.Close()
+			if decodeErr == nil && closeErr == nil && decodedFormat == candidate.extension && config.Width > 0 && config.Height > 0 && config.Width <= int(store.options.Limits.PreviewMaxEdge) && config.Height <= int(store.options.Limits.PreviewMaxEdge) {
+				return Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: candidate.mimeType, Width: uint32(config.Width), Height: uint32(config.Height)}, true
+			}
+			continue
+		}
 		info, err := os.Lstat(path)
 		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 {
 			continue
@@ -161,8 +179,58 @@ func (store *Store) existingPreview(sha string) (Preview, bool) {
 	return Preview{}, false
 }
 
+func (store *Store) writeCacheAtomic(ctx context.Context, final string, contents []byte, beforeCommit func() error) error {
+	if store.rootAuthority == nil {
+		return writeCacheAtomic(ctx, final, contents, beforeCommit)
+	}
+	relative, err := filepath.Rel(store.storageRoot, final)
+	if err != nil || filepath.IsAbs(relative) || strings.HasPrefix(relative, "..") {
+		return errors.New("rooted preview path escaped authority")
+	}
+	directory := filepath.Dir(relative)
+	if err := store.rootAuthority.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	temporary := relative + ".partial"
+	file, err := store.rootAuthority.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	published := false
+	defer func() {
+		_ = file.Close()
+		if !published {
+			_ = store.rootAuthority.Remove(temporary)
+		}
+	}()
+	if _, err := file.Write(contents); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if beforeCommit != nil {
+		if err := beforeCommit(); err != nil {
+			return err
+		}
+	}
+	if err := store.rootAuthority.Rename(temporary, relative); err != nil {
+		return err
+	}
+	published = true
+	return nil
+}
+
 func (store *Store) previewPath(sha, extension string) string {
-	return filepath.Join(store.runtime.Root, "cache", "previews", RecipeVersion, sha[:2], sha+"."+extension)
+	return filepath.Join(store.storageRoot, "cache", "previews", RecipeVersion, sha[:2], sha+"."+extension)
 }
 
 func resize(ctx context.Context, source image.Image, maxEdge uint32) (image.Image, error) {

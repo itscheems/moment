@@ -55,6 +55,7 @@ type Database struct {
 	write        *sql.DB
 	busyTimeout  time.Duration
 	readPoolSize int
+	journalMode  string
 	migrations   []migration
 
 	stateMu        sync.RWMutex
@@ -82,6 +83,66 @@ func Open(ctx context.Context, runtimeState *runtimefs.Runtime, options Options)
 		return nil, err
 	}
 	return db, nil
+}
+
+// OpenDevelopmentPinned opens a pre-pinned database descriptor path with an
+// in-memory rollback journal, avoiding WAL sidecars that would require another
+// pathname resolution. The caller keeps the original file/directory handle
+// alive for the complete database lifetime.
+func OpenDevelopmentPinned(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, authority *runtimefs.DevelopmentAuthority, options Options) (*Database, error) {
+	if authority == nil || authority.Validate(runtimeState, held) != nil {
+		return nil, runtimefs.ErrInsufficientLocks
+	}
+	descriptorPath := authority.DatabasePath()
+	busyTimeout := options.BusyTimeout
+	if busyTimeout == 0 {
+		busyTimeout = defaultBusyTimeout
+	}
+	readPoolSize := options.ReadPoolSize
+	if readPoolSize == 0 {
+		readPoolSize = defaultReadPoolSize
+	}
+	if busyTimeout < time.Millisecond || busyTimeout > maxBusyTimeout || readPoolSize < 1 || readPoolSize > maxReadPoolSize {
+		return nil, errors.New("pinned development database options are outside bounds")
+	}
+	migrations, err := embeddedMigrations()
+	if err != nil {
+		return nil, err
+	}
+	writePool, err := openPool(pinnedSQLiteDSN(descriptorPath, busyTimeout, false), writePoolSize)
+	if err != nil {
+		return nil, err
+	}
+	readPool, err := openPool(pinnedSQLiteDSN(descriptorPath, busyTimeout, true), readPoolSize)
+	if err != nil {
+		_ = writePool.Close()
+		return nil, err
+	}
+	database := &Database{
+		path: descriptorPath, read: readPool, write: writePool, busyTimeout: busyTimeout,
+		readPoolSize: readPoolSize, journalMode: "memory", migrations: migrations, readinessCause: ErrNotReady,
+	}
+	if err := database.bootstrap(ctx); err != nil {
+		_ = database.Close()
+		return nil, err
+	}
+	return database, nil
+}
+
+func pinnedSQLiteDSN(databasePath string, busyTimeout time.Duration, readOnly bool) string {
+	values := url.Values{}
+	values.Set("_busy_timeout", strconv.FormatInt(busyTimeout.Milliseconds(), 10))
+	values.Set("_dqs", "0")
+	values.Set("_foreign_keys", "on")
+	values.Set("_journal_mode", "memory")
+	values.Set("_synchronous", "full")
+	if readOnly {
+		values.Set("_query_only", "on")
+	} else {
+		values.Set("_txlock", "immediate")
+	}
+	databasePath = normalizedFileURLPath(databasePath, runtime.GOOS)
+	return (&url.URL{Scheme: "file", Path: databasePath, RawQuery: values.Encode()}).String()
 }
 
 func connect(databasePath string, options Options) (*Database, error) {
@@ -125,6 +186,7 @@ func connect(databasePath string, options Options) (*Database, error) {
 		readPoolSize:   readPoolSize,
 		migrations:     migrations,
 		readinessCause: ErrNotReady,
+		journalMode:    "wal",
 	}, nil
 }
 
@@ -139,10 +201,7 @@ func openPool(dsn string, size int) (*sql.DB, error) {
 }
 
 func sqliteDSN(databasePath string, busyTimeout time.Duration, readOnly bool) string {
-	urlPath := filepath.ToSlash(databasePath)
-	if runtime.GOOS == "windows" && !strings.HasPrefix(urlPath, "/") {
-		urlPath = "/" + urlPath
-	}
+	urlPath := normalizedFileURLPath(databasePath, runtime.GOOS)
 	values := url.Values{}
 	values.Set("_busy_timeout", strconv.FormatInt(busyTimeout.Milliseconds(), 10))
 	values.Set("_dqs", "0")
@@ -156,9 +215,24 @@ func sqliteDSN(databasePath string, busyTimeout time.Duration, readOnly bool) st
 	return (&url.URL{Scheme: "file", Path: urlPath, RawQuery: values.Encode()}).String()
 }
 
+func normalizedFileURLPath(databasePath, operatingSystem string) string {
+	urlPath := filepath.ToSlash(databasePath)
+	if operatingSystem == "windows" {
+		urlPath = strings.ReplaceAll(urlPath, `\`, "/")
+	}
+	if operatingSystem == "windows" && !strings.HasPrefix(urlPath, "/") {
+		urlPath = "/" + urlPath
+	}
+	return urlPath
+}
+
 func (db *Database) bootstrap(ctx context.Context) error {
 	db.setReadiness(false, ErrNotReady)
-	if err := verifyPoolConnections(ctx, db.write, writePoolSize, db.busyTimeout, false); err != nil {
+	expectedJournal := db.journalMode
+	if expectedJournal == "" {
+		expectedJournal = "wal"
+	}
+	if err := verifyPoolConnections(ctx, db.write, writePoolSize, db.busyTimeout, false, expectedJournal); err != nil {
 		return db.failReadiness(fmt.Errorf("verify SQLite write connections: %w", err))
 	}
 	if err := applyMigrations(ctx, db.write, db.migrations, time.Now()); err != nil {
@@ -176,7 +250,7 @@ func (db *Database) bootstrap(ctx context.Context) error {
 	if err := db.probeCapabilities(ctx); err != nil {
 		return db.failReadiness(err)
 	}
-	if err := verifyPoolConnections(ctx, db.read, db.readPoolSize, db.busyTimeout, true); err != nil {
+	if err := verifyPoolConnections(ctx, db.read, db.readPoolSize, db.busyTimeout, true, expectedJournal); err != nil {
 		return db.failReadiness(fmt.Errorf("verify SQLite read connections: %w", err))
 	}
 	db.setReadiness(true, nil)
@@ -283,7 +357,7 @@ type pragmaState struct {
 	queryOnly   int
 }
 
-func verifyPoolConnections(ctx context.Context, pool *sql.DB, count int, busyTimeout time.Duration, readOnly bool) error {
+func verifyPoolConnections(ctx context.Context, pool *sql.DB, count int, busyTimeout time.Duration, readOnly bool, expectedJournal string) error {
 	connections := make([]*sql.Conn, 0, count)
 	defer func() {
 		for _, connection := range connections {
@@ -306,7 +380,7 @@ func verifyPoolConnections(ctx context.Context, pool *sql.DB, count int, busyTim
 		if readOnly {
 			expectedQueryOnly = 1
 		}
-		if state.foreignKeys != 1 || !strings.EqualFold(state.journalMode, "wal") ||
+		if state.foreignKeys != 1 || !strings.EqualFold(state.journalMode, expectedJournal) ||
 			state.busyTimeout != busyTimeout.Milliseconds() || state.queryOnly != expectedQueryOnly {
 			return fmt.Errorf("connection %d has invalid pragmas: %+v", index, state)
 		}

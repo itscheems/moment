@@ -87,6 +87,18 @@ func sqliteStrictReadOnlyDSN(databasePath string, busyTimeout time.Duration) str
 	return (&url.URL{Scheme: "file", Path: urlPath, RawQuery: values.Encode()}).String()
 }
 
+func sqlitePinnedImmutableDSN(databasePath string, busyTimeout time.Duration) string {
+	urlPath := normalizedFileURLPath(databasePath, runtime.GOOS)
+	values := url.Values{}
+	values.Set("mode", "ro")
+	values.Set("immutable", "1")
+	values.Set("_busy_timeout", strconv.FormatInt(busyTimeout.Milliseconds(), 10))
+	values.Set("_dqs", "0")
+	values.Set("_foreign_keys", "on")
+	values.Set("_query_only", "on")
+	return (&url.URL{Scheme: "file", Path: urlPath, RawQuery: values.Encode()}).String()
+}
+
 // ReadTx runs one consistent read-only SQLite transaction.
 func (database *SearchReadOnlyDatabase) ReadTx(ctx context.Context, operation func(Queries) error) error {
 	if database == nil || database.pool == nil {
