@@ -6,11 +6,12 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PublicApi, type SiteIdentity } from "../../api/public";
-import { OwnerProvider } from "../owner/OwnerProvider";
+import { PublicApi, PublicApiError, type SiteIdentity } from "../../api/public";
+import { OwnerProvider, useOwner } from "../owner/OwnerProvider";
 import { CommentThread } from "./CommentThread";
 
 const postId = "01K2ABCDEF0123456789ABCDE0";
@@ -122,9 +123,29 @@ function installApi(
   return fetcher;
 }
 
-function renderThread(currentSite = site) {
+function ExpireOwnerControl() {
+  const owner = useOwner();
+  return (
+    <button
+      onClick={() =>
+        owner.expireIfInvalidSession(
+          new PublicApiError("expired", {
+            code: "UNAUTHORIZED",
+            status: 401,
+          }),
+        )
+      }
+      type="button"
+    >
+      使会话过期
+    </button>
+  );
+}
+
+function renderThread(currentSite = site, withExpireControl = false) {
   return render(
     <OwnerProvider>
+      {withExpireControl ? <ExpireOwnerControl /> : null}
       <CommentThread api={new PublicApi()} postId={postId} site={currentSite} />
     </OwnerProvider>,
   );
@@ -171,10 +192,14 @@ describe("public comment thread", () => {
 
     const existingReply = await screen.findByText("已有一级回复");
     expect(existingReply.closest("li")).toHaveAttribute("data-depth", "1");
-    expect(screen.getAllByRole("button", { name: "回复" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "回复" })).toHaveLength(2);
 
-    fireEvent.click(screen.getByRole("button", { name: "回复" }));
+    const replyArticle = screen.getByRole("article", {
+      name: "乔乔的 Moment的一级回复",
+    });
+    fireEvent.click(within(replyArticle).getByRole("button", { name: "回复" }));
     const replyForm = screen.getByRole("form", { name: "回复 访客" });
+    expect(screen.getAllByRole("form", { name: "回复 访客" })).toHaveLength(1);
     expect(replyForm.closest("li")?.previousElementSibling).toHaveAttribute(
       "data-comment-id",
       rootId,
@@ -204,6 +229,15 @@ describe("public comment thread", () => {
       parent_id: rootId,
       website: "",
     });
+    expect(
+      Array.from(
+        document.querySelectorAll<HTMLElement>("[data-comment-id]"),
+      ).map((item) => [item.dataset.commentId, item.dataset.depth]),
+    ).toEqual([
+      [rootId, "0"],
+      [replyId, "1"],
+      [createdId, "1"],
+    ]);
   });
 
   it("sends a script-filled honeypot and never reconciles its rejected comment", async () => {
@@ -421,6 +455,100 @@ describe("public comment thread", () => {
     expect(keys[1]).toBe(keys[0]);
   });
 
+  it.each([
+    {
+      name: "top-level comment",
+      formName: "发表顶级回应",
+      fieldName: "回应内容",
+      submitName: "发表回应",
+      content: "过期前写好的顶级回应",
+      parentId: null,
+      openReply: false,
+    },
+    {
+      name: "reply",
+      formName: "回复 访客",
+      fieldName: "回复内容",
+      submitName: "发表回复",
+      content: "过期前写好的一级回复",
+      parentId: rootId,
+      openReply: true,
+    },
+  ])(
+    "reauthenticates a pre-expired $name without losing or duplicating its draft",
+    async ({
+      formName,
+      fieldName,
+      submitName,
+      content,
+      parentId,
+      openReply,
+    }) => {
+      preauthenticate();
+      const createTokens: Array<string | null> = [];
+      const createBodies: Array<Record<string, unknown>> = [];
+      installApi((url, init) => {
+        if (url === "/api/v1/owner/status") {
+          return success({ initialized: true, session_epoch: 1 });
+        }
+        if (url.endsWith("/comments") && init?.method !== "POST") {
+          return success({ items: [root] });
+        }
+        if (url === "/api/v1/owner/session" && init?.method === "POST") {
+          return success({
+            csrf_token: "csrf-new",
+            expires_at: "2999-08-11T01:00:00Z",
+          });
+        }
+        if (url.includes("/owner/posts/") && init?.method === "POST") {
+          createTokens.push(new Headers(init.headers).get("X-CSRF-Token"));
+          createBodies.push(JSON.parse(String(init.body)));
+          return success(
+            comment(createdId, content, { owner: true, parentId }),
+            { replayed: false },
+            201,
+          );
+        }
+      });
+      renderThread(site, true);
+
+      await screen.findByText("顶级回应");
+      if (openReply) {
+        fireEvent.click(screen.getByRole("button", { name: "回复" }));
+      }
+      const form = screen.getByRole("form", { name: formName });
+      const field = within(form).getByRole("textbox", { name: fieldName });
+      fireEvent.change(field, { target: { value: content } });
+      fireEvent.click(screen.getByRole("button", { name: "使会话过期" }));
+
+      expect(field).toHaveValue(content);
+      const surface = form.parentElement!;
+      expect(within(surface).getByRole("alert")).toHaveTextContent(
+        "文字已保留",
+      );
+      const credential = within(surface).getByLabelText("所有者凭据");
+      fireEvent.change(credential, { target: { value: "new-owner-token" } });
+      fireEvent.click(
+        within(surface).getByRole("button", { name: "刷新身份" }),
+      );
+      await waitFor(() =>
+        expect(
+          within(form).getByRole("button", { name: submitName }),
+        ).toBeEnabled(),
+      );
+      expect(field).toHaveValue(content);
+      expect(field).toHaveFocus();
+      fireEvent.click(within(form).getByRole("button", { name: submitName }));
+
+      await waitFor(() => expect(createTokens).toHaveLength(1));
+      expect(await screen.findByText(content)).toBeInTheDocument();
+      expect(createTokens).toEqual(["csrf-new"]);
+      expect(createBodies).toEqual([
+        { content_md: content, parent_id: parentId },
+      ]);
+    },
+  );
+
   it("cascades a confirmed root deletion and restores focus to the thread heading", async () => {
     preauthenticate();
     installApi((url, init) => {
@@ -492,20 +620,77 @@ describe("public comment thread", () => {
     await screen.findByText("顶级回应");
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
     fireEvent.click(await screen.findByRole("button", { name: "删除回应" }));
-    expect(await screen.findByRole("dialog")).toHaveTextContent(
-      "刷新身份后可在这里重新删除",
-    );
-    fireEvent.change(screen.getByLabelText("所有者凭据"), {
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
+    fireEvent.change(within(dialog).getByLabelText("所有者凭据"), {
       target: { value: "new-owner-token" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "刷新身份" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "删除回应" })).toBeEnabled(),
+      expect(
+        within(dialog).getByRole("button", { name: "删除回应" }),
+      ).toBeEnabled(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "删除回应" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除回应" }));
     await waitFor(() =>
       expect(screen.queryByText("顶级回应")).not.toBeInTheDocument(),
     );
     expect(deleteTokens).toEqual(["csrf-old", "csrf-new"]);
+  });
+
+  it("reauthenticates inside a pre-expired delete dialog and deletes once with restored focus", async () => {
+    preauthenticate();
+    const deleteTokens: Array<string | null> = [];
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/status") {
+        return success({ initialized: true, session_epoch: 1 });
+      }
+      if (url.endsWith("/comments") && init?.method !== "DELETE") {
+        return success({ items: [root] });
+      }
+      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+        return success({
+          csrf_token: "csrf-new",
+          expires_at: "2999-08-11T01:00:00Z",
+        });
+      }
+      if (url.endsWith(`/owner/comments/${rootId}`)) {
+        deleteTokens.push(new Headers(init?.headers).get("X-CSRF-Token"));
+        return success(root, {
+          deleted: true,
+          dry_run: false,
+          replies_affected: 0,
+        });
+      }
+    });
+    renderThread(site, true);
+
+    await screen.findByText("顶级回应");
+    fireEvent.click(screen.getByRole("button", { name: "使会话过期" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
+    expect(
+      within(dialog).getByRole("button", { name: "删除回应" }),
+    ).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText("所有者凭据"), {
+      target: { value: "new-owner-token" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "删除回应" }),
+      ).toBeEnabled(),
+    );
+    expect(dialog).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除回应" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("顶级回应")).not.toBeInTheDocument(),
+    );
+    expect(deleteTokens).toEqual(["csrf-new"]);
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "公开回应" })).toHaveFocus(),
+    );
   });
 });

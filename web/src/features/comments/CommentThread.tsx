@@ -119,7 +119,13 @@ function messageFor(error: unknown, replying: boolean): string {
   }
 }
 
-function Reauthenticate({ onReady }: { onReady: () => void }) {
+function Reauthenticate({
+  inputId,
+  onReady,
+}: {
+  inputId: string;
+  onReady: () => void;
+}) {
   const { login } = useOwner();
   const [token, setToken] = useState("");
   const [pending, setPending] = useState(false);
@@ -150,11 +156,11 @@ function Reauthenticate({ onReady }: { onReady: () => void }) {
         <strong>重新确认所有者身份</strong>
         <span>回应文字不会离开当前页面。</span>
       </div>
-      <label htmlFor="comment-owner-token">所有者凭据</label>
+      <label htmlFor={inputId}>所有者凭据</label>
       <input
         autoCapitalize="none"
         autoComplete="off"
-        id="comment-owner-token"
+        id={inputId}
         onChange={(event) => setToken(event.target.value)}
         required
         spellCheck={false}
@@ -221,6 +227,14 @@ function CommentForm({
   const validContent = content.trim().length > 0 && contentCount <= MAX_COMMENT;
   const rateLimited = remaining > 0;
   const formId = parentId ? `reply-${parentId}` : "top-level-comment";
+  const displayReauth =
+    mode === "owner" &&
+    (authExpired || (owner.state === "expired" && !owner.session));
+  const displayedError =
+    error ??
+    (displayReauth
+      ? "当前写入会话已失效。文字已保留，刷新身份后可以重试。"
+      : null);
 
   useEffect(() => {
     if (!retryUntil) {
@@ -411,10 +425,12 @@ function CommentForm({
             {contentCount}/{MAX_COMMENT}
           </span>
         </div>
-        {error ? (
+        {displayedError ? (
           <div className={styles.formError} id={`${formId}-error`} role="alert">
-            <span>{error}</span>
-            {parentId && error.includes("改为顶级回应") && onPromote ? (
+            <span>{displayedError}</span>
+            {parentId &&
+            displayedError.includes("改为顶级回应") &&
+            onPromote ? (
               <button onClick={onPromote} type="button">
                 改为顶级回应
               </button>
@@ -466,11 +482,13 @@ function CommentForm({
           </button>
         </footer>
       </form>
-      {authExpired ? (
+      {displayReauth ? (
         <Reauthenticate
+          inputId={`${formId}-owner-token`}
           onReady={() => {
             setAuthExpired(false);
             setError(null);
+            window.requestAnimationFrame(() => textareaRef.current?.focus());
           }}
         />
       ) : null}
@@ -491,7 +509,8 @@ function DeleteCommentDialog({
   focusTarget: RefObject<HTMLElement | null>;
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
 }) {
-  const { api, session, expireIfInvalidSession } = useOwner();
+  const owner = useOwner();
+  const { api, session, expireIfInvalidSession } = owner;
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -500,6 +519,10 @@ function DeleteCommentDialog({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const deletedRef = useRef(false);
   const root = comment.parentId === null;
+  const displayReauth = authExpired || (owner.state === "expired" && !session);
+  const displayedError =
+    error ??
+    (displayReauth ? "所有者会话已过期。刷新身份后可在这里重新删除。" : null);
 
   useEffect(() => {
     if (!authExpired || !session) return;
@@ -570,13 +593,14 @@ function DeleteCommentDialog({
                 ? `这条回应和它下面的 ${replyCount} 条一级回复都会永久删除。`
                 : "这条回应会从公开对话中永久删除。"}
             </Dialog.Description>
-            {error ? (
+            {displayedError ? (
               <p className={styles.dialogError} role="alert">
-                {error}
+                {displayedError}
               </p>
             ) : null}
-            {authExpired ? (
+            {displayReauth ? (
               <Reauthenticate
+                inputId={`delete-${comment.id}-owner-token`}
                 onReady={() => {
                   setAuthExpired(false);
                   setError(null);
@@ -616,6 +640,7 @@ function CommentItem({
   comment,
   site,
   owner,
+  replyRoot,
   replyCount,
   focusTarget,
   onReply,
@@ -624,6 +649,7 @@ function CommentItem({
   comment: PublicComment;
   site: SiteIdentity;
   owner: boolean;
+  replyRoot: PublicComment | null;
   replyCount: number;
   focusTarget: RefObject<HTMLElement | null>;
   onReply: (comment: PublicComment) => void;
@@ -658,10 +684,10 @@ function CommentItem({
           dangerouslySetInnerHTML={{ __html: comment.contentHtml }}
         />
         <footer className={styles.commentActions}>
-          {root ? (
+          {replyRoot ? (
             <button
               className={styles.commentAction}
-              onClick={() => onReply(comment)}
+              onClick={() => onReply(replyRoot)}
               type="button"
             >
               回复
@@ -770,6 +796,16 @@ export function CommentThread({
     return counts;
   }, [items]);
 
+  const rootsById = useMemo(
+    () =>
+      new Map<string, PublicComment>(
+        (items ?? [])
+          .filter((comment) => comment.parentId === null)
+          .map((comment) => [comment.id, comment]),
+      ),
+    [items],
+  );
+
   return (
     <section aria-labelledby="comments-heading" className={styles.thread}>
       <header className={styles.threadHeader}>
@@ -869,6 +905,11 @@ export function CommentThread({
                       );
                     }}
                     owner={owner.state === "owner" || owner.state === "expired"}
+                    replyRoot={
+                      comment.parentId === null
+                        ? comment
+                        : (rootsById.get(comment.parentId) ?? null)
+                    }
                     replyCount={replyCounts.get(comment.id) ?? 0}
                     site={site}
                   />
