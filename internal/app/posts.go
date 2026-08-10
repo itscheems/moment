@@ -155,11 +155,20 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err := contextError(ctx); err != nil {
 		return CreatePostResult{}, err
 	}
+	requestHash := hashCreatePost(input.ContentMD)
+	if input.IdempotencyKey != "" {
+		replayed, found, err := service.loadCreateReplay(ctx, input, requestHash)
+		if err != nil {
+			return CreatePostResult{}, err
+		}
+		if found {
+			return replayed, nil
+		}
+	}
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
 		return CreatePostResult{}, err
 	}
 
-	requestHash := hashCreatePost(input.ContentMD)
 	result := CreatePostResult{}
 
 	err := service.transactions.Write(ctx, func(store PostStore) error {
@@ -169,17 +178,11 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 				return storeErr
 			}
 			if found {
-				if record.RequestHash != requestHash {
-					return domain.NewError(domain.CodeIdempotencyKeyReused, "idempotency key was already used with different content", map[string]any{"field": "idempotency_key"})
+				entry, replayErr := reconstructCreateReplay(input, requestHash, record)
+				if replayErr != nil {
+					return replayErr
 				}
-				existing, exists, loadErr := store.EntryByID(ctx, record.ResponseResourceID)
-				if loadErr != nil {
-					return loadErr
-				}
-				if !exists {
-					return postNotFound(record.ResponseResourceID)
-				}
-				result.Post.Entry = existing
+				result.Post.Entry = entry
 				result.Replayed = true
 				return nil
 			}
@@ -219,6 +222,52 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		return CreatePostResult{}, storedEntryError(result.Post.Entry.ID)
 	}
 	return result, nil
+}
+
+func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePostInput, requestHash string) (CreatePostResult, bool, error) {
+	var record IdempotencyRecord
+	var found bool
+	err := service.transactions.Read(ctx, func(store PostStore) error {
+		var storeErr error
+		record, found, storeErr = store.IdempotencyRecord(ctx, postCreateIdempotencyScope, input.IdempotencyKey)
+		return storeErr
+	})
+	if err != nil {
+		return CreatePostResult{}, false, normalizePostRepositoryError(err)
+	}
+	if !found {
+		return CreatePostResult{}, false, nil
+	}
+	entry, err := reconstructCreateReplay(input, requestHash, record)
+	if err != nil {
+		return CreatePostResult{}, false, err
+	}
+	post, err := renderPost(entry)
+	if err != nil {
+		return CreatePostResult{}, false, idempotencySnapshotError()
+	}
+	return CreatePostResult{Post: post, Replayed: true}, true, nil
+}
+
+func reconstructCreateReplay(input CreatePostInput, requestHash string, record IdempotencyRecord) (domain.Entry, error) {
+	if record.Scope != postCreateIdempotencyScope || record.Key != input.IdempotencyKey || !validRequestHash(record.RequestHash) {
+		return domain.Entry{}, idempotencySnapshotError()
+	}
+	if record.RequestHash != requestHash {
+		return domain.Entry{}, domain.NewError(domain.CodeIdempotencyKeyReused, "idempotency key was already used with different content", map[string]any{"field": "idempotency_key"})
+	}
+	if _, err := domain.ParseID(record.ResponseResourceID.String()); err != nil ||
+		domain.TimeToMillis(record.CreatedAt) <= 0 || record.CreatedAt != domain.NormalizeTime(record.CreatedAt) {
+		return domain.Entry{}, idempotencySnapshotError()
+	}
+	entry, err := domain.NewEntry(record.ResponseResourceID, input.ContentMD, record.CreatedAt)
+	if err != nil {
+		return domain.Entry{}, idempotencySnapshotError()
+	}
+	if err := entry.Validate(); err != nil {
+		return domain.Entry{}, idempotencySnapshotError()
+	}
+	return entry, nil
 }
 
 // Get returns one post or a stable not-found error.
@@ -381,6 +430,14 @@ func hashCreatePost(content string) string {
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
+func validRequestHash(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && hex.EncodeToString(decoded) == value
+}
+
 func renderPost(entry domain.Entry) (Post, error) {
 	html, err := domain.RenderMarkdown(entry.ContentMD)
 	if err != nil {
@@ -400,6 +457,10 @@ func postNotFound(id domain.ID) error {
 
 func storedEntryError(id domain.ID) error {
 	return domain.NewError(domain.CodeDataIntegrityFailed, "stored post violates the content contract", map[string]any{"post_id": id.String()})
+}
+
+func idempotencySnapshotError() error {
+	return domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the post contract", nil)
 }
 
 func contextError(ctx context.Context) error {

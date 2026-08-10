@@ -153,7 +153,77 @@ func TestPostCreateIdempotencyIsAtomicAndConcurrent(t *testing.T) {
 	if _, err := service.Create(ctx, app.CreatePostInput{ContentMD: "different payload", IdempotencyKey: "retry-1"}); !domain.HasCode(err, domain.CodeIdempotencyKeyReused) {
 		t.Fatalf("idempotency conflict error = %v", err)
 	}
+	if _, err := service.Create(ctx, app.CreatePostInput{ContentMD: " \n\t", IdempotencyKey: "retry-1"}); !domain.HasCode(err, domain.CodeIdempotencyKeyReused) {
+		t.Fatalf("invalid conflicting payload error = %v", err)
+	}
 	assertCount(t, db.read, `SELECT count(*) FROM entries`, 1)
+}
+
+func TestPostCreateReplayReturnsImmutableResultAfterUpdateAndDelete(t *testing.T) {
+	t.Parallel()
+	db, _ := openTestDatabase(t, Options{})
+	createdAt := time.UnixMilli(1_700_000_000_000)
+	clock := newSequenceClock(createdAt, createdAt.Add(time.Hour))
+	service := newTestPostService(t, db, clock.Now, sequenceIDs(entryOne))
+	ctx := context.Background()
+	input := app.CreatePostInput{ContentMD: "original **post**", IdempotencyKey: "immutable-replay"}
+
+	created, err := service.Create(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Update(ctx, app.UpdatePostInput{ID: created.Post.Entry.ID, ContentMD: "edited"}); err != nil {
+		t.Fatal(err)
+	}
+	replayedAfterUpdate, err := service.Create(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayedAfterUpdate.Replayed || replayedAfterUpdate.Post != created.Post {
+		t.Fatalf("replay after update = %+v, want original %+v", replayedAfterUpdate, created)
+	}
+
+	if _, err := service.Delete(ctx, created.Post.Entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	replayedAfterDelete, err := service.Create(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !replayedAfterDelete.Replayed || replayedAfterDelete.Post != created.Post {
+		t.Fatalf("replay after delete = %+v, want original %+v", replayedAfterDelete, created)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM entries`, 0)
+	assertCount(t, db.read, `SELECT count(*) FROM idempotency_keys`, 1)
+}
+
+func TestPostCreateReplayRejectsCorruptSnapshot(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name      string
+		statement string
+	}{
+		{name: "resource ID", statement: `UPDATE idempotency_keys SET response_resource_id = 'not-an-id'`},
+		{name: "created time", statement: `UPDATE idempotency_keys SET created_at_ms = 0`},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			db, _ := openTestDatabase(t, Options{})
+			service := newTestPostService(t, db, func() time.Time { return time.UnixMilli(1_700_000_000_000) }, sequenceIDs(entryOne))
+			ctx := context.Background()
+			input := app.CreatePostInput{ContentMD: "original", IdempotencyKey: "corrupt-replay"}
+			if _, err := service.Create(ctx, input); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.write.ExecContext(ctx, testCase.statement); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.Create(ctx, input); !domain.HasCode(err, domain.CodeDataIntegrityFailed) {
+				t.Fatalf("corrupt replay error = %v", err)
+			}
+			assertCount(t, db.read, `SELECT count(*) FROM entries`, 1)
+		})
+	}
 }
 
 func TestPostCreateRollsBackWhenRetryRecordFails(t *testing.T) {
