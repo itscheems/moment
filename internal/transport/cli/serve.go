@@ -107,11 +107,20 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 	if err != nil {
 		return Result{}, err
 	}
+	postRepository, err := sqlitestore.NewPostRepository(database, runtime.Locks)
+	if err != nil {
+		return Result{}, err
+	}
+	postService, err := app.NewPostService(postRepository)
+	if err != nil {
+		return Result{}, err
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:         assets,
 		OwnerAuth:      authManager,
 		SiteSettings:   siteService,
 		Media:          mediaStore,
+		Posts:          postService,
 		SecureCookies:  !runtime.IsDevelopment(),
 		TrustedProxies: trustedProxies,
 		Log:            invocation.LogEvent,

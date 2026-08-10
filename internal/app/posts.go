@@ -22,7 +22,7 @@ type PostStore interface {
 	EntryMediaReferenceStore
 	InsertEntry(context.Context, domain.Entry) error
 	EntryByID(context.Context, domain.ID) (domain.Entry, bool, error)
-	ListEntries(context.Context, *TimelinePosition, int) ([]domain.Entry, error)
+	ListEntries(context.Context, TimelineQuery, int) ([]domain.Entry, error)
 	UpdateEntry(context.Context, domain.Entry) (bool, error)
 	DeleteEntry(context.Context, domain.ID) (bool, error)
 	IdempotencyRecord(context.Context, string, string) (IdempotencyRecord, bool, error)
@@ -75,8 +75,20 @@ type UpdatePostInput struct {
 // ListPostsInput requests one reverse-chronological timeline page. A zero
 // limit selects DefaultPostPageSize.
 type ListPostsInput struct {
-	Cursor string
-	Limit  int
+	Cursor   string
+	Limit    int
+	FromDate string
+	ToDate   string
+	Timezone string
+}
+
+// TimelineQuery is the repository-facing keyset and UTC half-open date range.
+// Adapters pass calendar strings to PostService and never calculate day
+// boundaries themselves.
+type TimelineQuery struct {
+	Position *TimelinePosition
+	FromMS   *int64
+	ToMS     *int64
 }
 
 // PostPage is one stable keyset page.
@@ -300,11 +312,15 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	if err := contextError(ctx); err != nil {
 		return PostPage{}, err
 	}
-	position, err := decodeTimelineCursor(input.Cursor)
+	limit, err := normalizePostLimit(input.Limit)
 	if err != nil {
 		return PostPage{}, err
 	}
-	limit, err := normalizePostLimit(input.Limit)
+	fromMS, toMS, err := postDateRange(input.FromDate, input.ToDate, input.Timezone)
+	if err != nil {
+		return PostPage{}, err
+	}
+	position, err := decodeTimelineCursor(input.Cursor, fromMS, toMS)
 	if err != nil {
 		return PostPage{}, err
 	}
@@ -312,7 +328,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	var entries []domain.Entry
 	err = service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
-		entries, storeErr = store.ListEntries(ctx, position, limit+1)
+		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, FromMS: fromMS, ToMS: toMS}, limit+1)
 		return storeErr
 	})
 	if err != nil {
@@ -336,9 +352,45 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		page.NextCursor = encodeTimelineCursor(TimelinePosition{
 			PublishedAtMS: domain.TimeToMillis(last.PublishedAt),
 			ID:            last.ID,
-		})
+		}, fromMS, toMS)
 	}
 	return page, nil
+}
+
+func postDateRange(fromDate, toDate, timezone string) (*int64, *int64, error) {
+	if fromDate == "" && toDate == "" {
+		return nil, nil, nil
+	}
+	if err := validateTimezone(timezone); err != nil {
+		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored site timezone is invalid", map[string]any{"field": "timezone"})
+	}
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored site timezone is unavailable", map[string]any{"field": "timezone"})
+	}
+	parse := func(field, value string) (*int64, error) {
+		if value == "" {
+			return nil, nil
+		}
+		instant, parseErr := time.ParseInLocation("2006-01-02", value, location)
+		if parseErr != nil || instant.Format("2006-01-02") != value {
+			return nil, domain.NewError(domain.CodeInvalidArgument, field+" must use YYYY-MM-DD", map[string]any{"field": field})
+		}
+		milliseconds := domain.TimeToMillis(instant)
+		return &milliseconds, nil
+	}
+	fromMS, err := parse("from", fromDate)
+	if err != nil {
+		return nil, nil, err
+	}
+	toMS, err := parse("to", toDate)
+	if err != nil {
+		return nil, nil, err
+	}
+	if fromMS != nil && toMS != nil && *fromMS >= *toMS {
+		return nil, nil, domain.NewError(domain.CodeInvalidArgument, "from must be earlier than to", map[string]any{"fields": []string{"from", "to"}})
+	}
+	return fromMS, toMS, nil
 }
 
 // Update replaces content while preserving creation and publication instants.

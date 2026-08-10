@@ -2,6 +2,14 @@ Create, inspect, update, and delete Moment posts.
 
 Usage:
   moment post [flags]
+  moment post [command]
+
+Available Commands:
+  create      Publish a Moment post
+  delete      Delete a Moment post
+  get         Get one Moment post
+  list        List the public Moment timeline
+  update      Update a Moment post
 
 Flags:
   -h, --help   help for post
@@ -15,3 +23,5 @@ Global Flags:
       --timeout duration    maximum command duration (default 30s)
       --token-file string   file containing the owner API token
       --url string          Moment HTTP API base URL (API mode)
+
+Use "moment post [command] --help" for more information about a command.

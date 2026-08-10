@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -106,6 +107,56 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 	_ = readyResponse.Body.Close()
 	if readyResponse.StatusCode != http.StatusOK {
 		t.Fatalf("readiness status = %d, want %d; stderr=%s", readyResponse.StatusCode, http.StatusOK, stderr.String())
+	}
+
+	directCreate := exec.Command(binary, "post", "create", "--data-dir", dataDir, "--content", "binary parity", "--idempotency-key", "binary-post-001", "--json")
+	directCreateOutput, err := directCreate.Output()
+	if err != nil {
+		t.Fatalf("direct post create: %v output=%s", err, directCreateOutput)
+	}
+	var directPost struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(directCreateOutput, &directPost); err != nil {
+		t.Fatalf("decode direct post create: %v output=%s", err, directCreateOutput)
+	}
+	postID, _ := directPost.Data["id"].(string)
+	if postID == "" || directPost.Data["kind"] != nil {
+		t.Fatalf("direct post DTO = %#v", directPost.Data)
+	}
+	apiGetPost := exec.Command(binary, "--url", "http://"+address, "post", "get", postID, "--json")
+	apiGetOutput, err := apiGetPost.Output()
+	if err != nil {
+		t.Fatalf("API post get: %v output=%s", err, apiGetOutput)
+	}
+	var apiPost struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(apiGetOutput, &apiPost); err != nil || !reflect.DeepEqual(directPost.Data, apiPost.Data) {
+		t.Fatalf("direct/API get parity: decode=%v direct=%#v API=%#v", err, directPost.Data, apiPost.Data)
+	}
+	apiUpdatePost := exec.Command(binary, "--url", "http://"+address, "post", "update", postID, "--content", "binary API update", "--json")
+	apiUpdatePost.Env = append(os.Environ(), "MOMENT_TOKEN="+originalToken)
+	apiUpdateOutput, err := apiUpdatePost.Output()
+	if err != nil {
+		t.Fatalf("API post update: %v output=%s", err, apiUpdateOutput)
+	}
+	var updatedPost struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(apiUpdateOutput, &updatedPost); err != nil || updatedPost.Data["content_md"] != "binary API update" {
+		t.Fatalf("decode API post update: %v output=%s", err, apiUpdateOutput)
+	}
+	directGetPost := exec.Command(binary, "post", "get", postID, "--data-dir", dataDir, "--json")
+	directGetOutput, err := directGetPost.Output()
+	if err != nil {
+		t.Fatalf("direct post get: %v output=%s", err, directGetOutput)
+	}
+	var directUpdated struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(directGetOutput, &directUpdated); err != nil || !reflect.DeepEqual(updatedPost.Data, directUpdated.Data) {
+		t.Fatalf("API/direct update parity: decode=%v API=%#v direct=%#v", err, updatedPost.Data, directUpdated.Data)
 	}
 
 	directRotate := exec.Command(binary, "owner", "rotate-token", "--data-dir", dataDir, "--json")

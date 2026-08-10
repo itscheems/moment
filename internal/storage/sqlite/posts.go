@@ -138,27 +138,27 @@ WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment)))
 	return entry, true, nil
 }
 
-func (store postStore) ListEntries(ctx context.Context, position *app.TimelinePosition, limit int) ([]domain.Entry, error) {
-	var (
-		rows *sql.Rows
-		err  error
-	)
-	if position == nil {
-		rows, err = store.queries.QueryContext(ctx, `
+func (store postStore) ListEntries(ctx context.Context, query app.TimelineQuery, limit int) ([]domain.Entry, error) {
+	statement := `
 SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms
 FROM entries
-WHERE kind = ?
-ORDER BY published_at_ms DESC, id DESC
-LIMIT ?`, string(domain.KindMoment), limit)
-	} else {
-		rows, err = store.queries.QueryContext(ctx, `
-SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms
-FROM entries
-WHERE kind = ?
-  AND (published_at_ms < ? OR (published_at_ms = ? AND id < ?))
-ORDER BY published_at_ms DESC, id DESC
-LIMIT ?`, string(domain.KindMoment), position.PublishedAtMS, position.PublishedAtMS, position.ID.String(), limit)
+WHERE kind = ?`
+	arguments := []any{string(domain.KindMoment)}
+	if query.FromMS != nil {
+		statement += "\n  AND published_at_ms >= ?"
+		arguments = append(arguments, *query.FromMS)
 	}
+	if query.ToMS != nil {
+		statement += "\n  AND published_at_ms < ?"
+		arguments = append(arguments, *query.ToMS)
+	}
+	if query.Position != nil {
+		statement += "\n  AND (published_at_ms < ? OR (published_at_ms = ? AND id < ?))"
+		arguments = append(arguments, query.Position.PublishedAtMS, query.Position.PublishedAtMS, query.Position.ID.String())
+	}
+	statement += "\nORDER BY published_at_ms DESC, id DESC\nLIMIT ?"
+	arguments = append(arguments, limit)
+	rows, err := store.queries.QueryContext(ctx, statement, arguments...)
 	if err != nil {
 		return nil, fmt.Errorf("query timeline entries: %w", err)
 	}

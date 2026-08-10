@@ -42,6 +42,7 @@ type Config struct {
 	Readiness      ReadinessFunc
 	OwnerAuth      *auth.Manager
 	SiteSettings   *app.SiteService
+	Posts          *app.PostService
 	Media          *media.Store
 	SecureCookies  bool
 	TrustedProxies []string
@@ -121,6 +122,12 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("media routes require owner authentication")
 		}
 		RegisterMediaRoutes(engine, config.Media, config.OwnerAuth)
+	}
+	if config.Posts != nil {
+		if config.OwnerAuth == nil || config.SiteSettings == nil {
+			return nil, errors.New("post routes require owner authentication and site settings")
+		}
+		RegisterPostRoutes(engine, config.Posts, config.SiteSettings, config.OwnerAuth)
 	}
 
 	if config.Register != nil {

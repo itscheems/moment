@@ -280,6 +280,12 @@ func decodeOwnerAPIFailure(status int, body []byte) error {
 		exit = ExitConflict
 	case "INVALID_ARGUMENT":
 		exit = ExitInvalidInput
+	case "POST_NOT_FOUND":
+		exit = ExitNotFound
+		suggestion = "run 'moment post list --json' to inspect available posts"
+	case "CONTENT_EMPTY", "CONTENT_TOO_LARGE", "EXTERNAL_IMAGE_NOT_ALLOWED", "IDEMPOTENCY_KEY_REUSED":
+		exit = ExitConflict
+		suggestion = "correct the post content or use a new idempotency key, then retry"
 	case "MEDIA_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "choose an existing managed media ID or clear the reference"

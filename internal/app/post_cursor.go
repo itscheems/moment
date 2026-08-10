@@ -15,7 +15,7 @@ const (
 	DefaultPostPageSize = 20
 	// MaxPostPageSize bounds repository work for one timeline request.
 	MaxPostPageSize  = 100
-	timelineCursorV1 = 1
+	timelineCursorV2 = 2
 	maxCursorBytes   = 512
 )
 
@@ -29,13 +29,17 @@ type timelineCursorPayload struct {
 	Version       int    `json:"v"`
 	PublishedAtMS int64  `json:"published_at_ms"`
 	ID            string `json:"id"`
+	FromMS        *int64 `json:"from_ms"`
+	ToMS          *int64 `json:"to_ms"`
 }
 
-func encodeTimelineCursor(position TimelinePosition) string {
+func encodeTimelineCursor(position TimelinePosition, fromMS, toMS *int64) string {
 	payload, err := json.Marshal(timelineCursorPayload{
-		Version:       timelineCursorV1,
+		Version:       timelineCursorV2,
 		PublishedAtMS: position.PublishedAtMS,
 		ID:            position.ID.String(),
+		FromMS:        fromMS,
+		ToMS:          toMS,
 	})
 	if err != nil {
 		panic("fixed timeline cursor payload cannot fail to encode")
@@ -43,7 +47,7 @@ func encodeTimelineCursor(position TimelinePosition) string {
 	return base64.RawURLEncoding.EncodeToString(payload)
 }
 
-func decodeTimelineCursor(value string) (*TimelinePosition, error) {
+func decodeTimelineCursor(value string, fromMS, toMS *int64) (*TimelinePosition, error) {
 	if value == "" {
 		return nil, nil
 	}
@@ -63,7 +67,7 @@ func decodeTimelineCursor(value string) (*TimelinePosition, error) {
 	if err := requireJSONEOF(decoder); err != nil {
 		return nil, invalidCursor()
 	}
-	if payload.Version != timelineCursorV1 {
+	if payload.Version != timelineCursorV2 || !equalOptionalMillis(payload.FromMS, fromMS) || !equalOptionalMillis(payload.ToMS, toMS) {
 		return nil, invalidCursor()
 	}
 	canonical, err := json.Marshal(payload)
@@ -75,6 +79,13 @@ func decodeTimelineCursor(value string) (*TimelinePosition, error) {
 		return nil, invalidCursor()
 	}
 	return &TimelinePosition{PublishedAtMS: payload.PublishedAtMS, ID: id}, nil
+}
+
+func equalOptionalMillis(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func requireJSONEOF(decoder *json.Decoder) error {

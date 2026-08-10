@@ -12,8 +12,10 @@ const cursorTestID = domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAV")
 func TestTimelineCursorRoundTripAndStrictValidation(t *testing.T) {
 	t.Parallel()
 	position := TimelinePosition{PublishedAtMS: 1_723_270_150_123, ID: cursorTestID}
-	encoded := encodeTimelineCursor(position)
-	decoded, err := decodeTimelineCursor(encoded)
+	fromMS := int64(1_723_000_000_000)
+	toMS := int64(1_724_000_000_000)
+	encoded := encodeTimelineCursor(position, &fromMS, &toMS)
+	decoded, err := decodeTimelineCursor(encoded, &fromMS, &toMS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,23 +24,26 @@ func TestTimelineCursorRoundTripAndStrictValidation(t *testing.T) {
 	}
 
 	invalidPayloads := []string{
-		`{"v":2,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV"}`,
-		`{"v":1,"published_at_ms":1,"id":"not-an-id"}`,
-		`{"v":1,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","extra":true}`,
-		`{"v":1,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV"} {}`,
-		`{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","published_at_ms":1,"v":1}`,
-		`{"v":2,"v":1,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV"}`,
+		`{"v":1,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null}`,
+		`{"v":2,"published_at_ms":1,"id":"not-an-id","from_ms":null,"to_ms":null}`,
+		`{"v":2,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null,"extra":true}`,
+		`{"v":2,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null} {}`,
+		`{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","published_at_ms":1,"v":2,"from_ms":null,"to_ms":null}`,
+		`{"v":2,"v":1,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null}`,
 	}
 	for _, payload := range invalidPayloads {
 		cursor := base64.RawURLEncoding.EncodeToString([]byte(payload))
-		if _, err := decodeTimelineCursor(cursor); !domain.HasCode(err, domain.CodeInvalidArgument) {
+		if _, err := decodeTimelineCursor(cursor, &fromMS, &toMS); !domain.HasCode(err, domain.CodeInvalidArgument) {
 			t.Errorf("payload %q returned %v", payload, err)
 		}
 	}
 	for _, cursor := range []string{"%%%", encoded + "=", string(make([]byte, maxCursorBytes+1))} {
-		if _, err := decodeTimelineCursor(cursor); !domain.HasCode(err, domain.CodeInvalidArgument) {
+		if _, err := decodeTimelineCursor(cursor, &fromMS, &toMS); !domain.HasCode(err, domain.CodeInvalidArgument) {
 			t.Errorf("cursor %q returned %v", cursor, err)
 		}
+	}
+	if _, err := decodeTimelineCursor(encoded, nil, &toMS); !domain.HasCode(err, domain.CodeInvalidArgument) {
+		t.Fatalf("cursor reused with different filters returned %v", err)
 	}
 }
 
