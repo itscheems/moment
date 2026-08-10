@@ -353,8 +353,8 @@ func TestBackupInspectAPIUploadParityErrorsAndTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("MOMENT_TOKEN", "owner-test-token")
-	expires := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
-	validEnvelope := validImportInspectionAPIEnvelope(int64(len(archiveBody)))
+	expires := time.Now().UTC().Truncate(time.Millisecond).Add(importInspectionTokenTTL)
+	validEnvelope := validImportInspectionAPIEnvelope(int64(len(archiveBody)), expires)
 	wantToken := validEnvelope["data"].(map[string]any)["staging_token"].(string)
 	validBody, err := json.Marshal(validEnvelope)
 	if err != nil {
@@ -378,7 +378,7 @@ func TestBackupInspectAPIUploadParityErrorsAndTimeout(t *testing.T) {
 		t.Fatalf("API inspect = %#v", output)
 	}
 	data := commandData(t, output)
-	if data["staging_token"] != wantToken || data["expires_at"] != expires.Format(time.RFC3339) {
+	if data["staging_token"] != wantToken || data["expires_at"] != expires.Format(time.RFC3339Nano) {
 		t.Fatalf("API data = %#v", data)
 	}
 
@@ -446,6 +446,10 @@ func TestBackupInspectAPIRejectsMalformedSuccessEnvelopes(t *testing.T) {
 			delete(value["data"].(map[string]any)["time_range"].(map[string]any), "to")
 		}},
 		{name: "non UTC expiry", mutate: func(value map[string]any) { value["data"].(map[string]any)["expires_at"] = "2026-08-11T10:00:00+08:00" }},
+		{name: "expired token", mutate: func(value map[string]any) { value["data"].(map[string]any)["expires_at"] = "2000-01-01T00:00:00Z" }},
+		{name: "far future token", mutate: func(value map[string]any) {
+			value["data"].(map[string]any)["expires_at"] = time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339Nano)
+		}},
 		{name: "invalid staging token", mutate: func(value map[string]any) { value["data"].(map[string]any)["staging_token"] = "stage-token" }},
 		{name: "inconsistent disk formula", mutate: func(value map[string]any) {
 			value["data"].(map[string]any)["disk"].(map[string]any)["required_additional_bytes"] = 1
@@ -466,7 +470,7 @@ func TestBackupInspectAPIRejectsMalformedSuccessEnvelopes(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			value := validImportInspectionAPIEnvelope(int64(len(archiveBody)))
+			value := validImportInspectionAPIEnvelope(int64(len(archiveBody)), time.Now().UTC().Add(importInspectionTokenTTL))
 			if test.mutate != nil {
 				test.mutate(value)
 			}
@@ -506,7 +510,36 @@ func TestBackupInspectAPIRejectsMalformedSuccessEnvelopes(t *testing.T) {
 	}
 }
 
-func validImportInspectionAPIEnvelope(archiveBytes int64) map[string]any {
+func TestDecodeImportInspectionAPIExpiryBounds(t *testing.T) {
+	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		expiresAt time.Time
+		wantError bool
+	}{
+		{name: "past", expiresAt: now.Add(-time.Nanosecond), wantError: true},
+		{name: "exact now", expiresAt: now, wantError: true},
+		{name: "strictly future", expiresAt: now.Add(time.Nanosecond)},
+		{name: "default TTL", expiresAt: now.Add(importInspectionTokenTTL)},
+		{name: "clock skew upper bound", expiresAt: now.Add(importInspectionTokenTTL + importInspectionClockSkew)},
+		{name: "beyond upper bound", expiresAt: now.Add(importInspectionTokenTTL + importInspectionClockSkew + time.Nanosecond), wantError: true},
+		{name: "far future", expiresAt: now.Add(24 * time.Hour), wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := json.Marshal(validImportInspectionAPIEnvelope(11, test.expiresAt))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = decodeImportInspectionAPI(body, 11, now)
+			if (err != nil) != test.wantError {
+				t.Fatalf("expiry %s error = %v, wantError=%t", test.expiresAt.Format(time.RFC3339Nano), err, test.wantError)
+			}
+		})
+	}
+}
+
+func validImportInspectionAPIEnvelope(archiveBytes int64, expiresAt time.Time) map[string]any {
 	const safetyMargin = int64(2 << 30)
 	const replacementBytes = int64(1)
 	const expandedBytes = int64(20)
@@ -534,7 +567,7 @@ func validImportInspectionAPIEnvelope(archiveBytes int64) map[string]any {
 				"counts":      map[string]any{"entries": int64(0), "comments": int64(0), "media": int64(0)},
 				"media_bytes": int64(0), "data_bytes": replacementBytes,
 			},
-			"warnings": []string{}, "expires_at": "2026-08-11T02:00:00Z", "staging_token": token,
+			"warnings": []string{}, "expires_at": expiresAt.UTC().Format(time.RFC3339Nano), "staging_token": token,
 		},
 		"meta": map[string]any{"request_id": "req_import"},
 	}

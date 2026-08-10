@@ -30,6 +30,11 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	importInspectionTokenTTL  = 30 * time.Minute
+	importInspectionClockSkew = time.Minute
+)
+
 func registerBackup(application *Application, info buildinfo.Info) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path:   []string{"backup", "export"},
@@ -166,14 +171,14 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 	if parseErr != nil || mediaType != "application/json" {
 		return archive.Inspection{}, nil, invalidAPIResponse()
 	}
-	inspection, meta, err := decodeImportInspectionAPI(body, after.Size())
+	inspection, meta, err := decodeImportInspectionAPI(body, after.Size(), time.Now().UTC())
 	if err != nil {
 		return archive.Inspection{}, nil, invalidAPIResponse()
 	}
 	return inspection, meta, nil
 }
 
-func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64) (archive.Inspection, map[string]any, error) {
+func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64, observedAt time.Time) (archive.Inspection, map[string]any, error) {
 	if !utf8.Valid(body) {
 		return archive.Inspection{}, nil, errors.New("import inspection response is not valid UTF-8")
 	}
@@ -222,7 +227,7 @@ func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64) (archive
 	if err != nil {
 		return archive.Inspection{}, nil, err
 	}
-	if err := validateImportInspectionAPI(inspection, data, timeRange, expectedArchiveBytes); err != nil {
+	if err := validateImportInspectionAPI(inspection, data, timeRange, expectedArchiveBytes, observedAt); err != nil {
 		return archive.Inspection{}, nil, err
 	}
 	return inspection, map[string]any{"request_id": requestID}, nil
@@ -289,7 +294,7 @@ func decodeImportRequestID(raw json.RawMessage) (string, error) {
 	return value, nil
 }
 
-func validateImportInspectionAPI(value archive.Inspection, raw map[string]json.RawMessage, timeRange map[string]json.RawMessage, expectedArchiveBytes int64) error {
+func validateImportInspectionAPI(value archive.Inspection, raw map[string]json.RawMessage, timeRange map[string]json.RawMessage, expectedArchiveBytes int64, observedAt time.Time) error {
 	if value.FormatVersion != archive.FormatVersion || !validLowerHex(value.ArchiveSHA256, sha256.Size) || !validImportGenerationID(value.GenerationID) {
 		return errors.New("import inspection identity is invalid")
 	}
@@ -314,8 +319,12 @@ func validateImportInspectionAPI(value archive.Inspection, raw map[string]json.R
 		}
 	}
 	expiresAt, err := decodeCanonicalUTCTime(raw["expires_at"])
-	if err != nil || !value.ExpiresAt.Equal(expiresAt) {
+	if err != nil || observedAt.IsZero() || !value.ExpiresAt.Equal(expiresAt) {
 		return errors.New("import inspection expiry is invalid")
+	}
+	latestExpiry := observedAt.UTC().Add(importInspectionTokenTTL + importInspectionClockSkew)
+	if !expiresAt.After(observedAt.UTC()) || expiresAt.After(latestExpiry) {
+		return errors.New("import inspection expiry is outside the usable token window")
 	}
 	token, err := base64.RawURLEncoding.Strict().DecodeString(value.StagingToken)
 	if err != nil || len(token) != sha256.Size || base64.RawURLEncoding.EncodeToString(token) != value.StagingToken {
