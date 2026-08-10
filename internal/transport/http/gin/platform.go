@@ -52,6 +52,7 @@ type Config struct {
 	Archive         ArchiveExporter
 	ImportInspector ImportInspector
 	ImportCommitter ImportCommitter
+	Doctor          DoctorReporter
 	SecureCookies   bool
 	TrustedProxies  []string
 	RequestID       func() string
@@ -163,6 +164,12 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("import commit routes require owner authentication")
 		}
 		RegisterImportCommitRoutes(engine, config.ImportCommitter, config.OwnerAuth)
+	}
+	if config.Doctor != nil {
+		if config.OwnerAuth == nil {
+			return nil, errors.New("doctor route requires owner authentication")
+		}
+		RegisterDoctorRoutes(engine, config.Doctor, config.OwnerAuth)
 	}
 
 	if config.Register != nil {

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -77,6 +78,83 @@ func TestAcquireSetEnforcesGlobalOrder(t *testing.T) {
 	}
 	if err := set.Release(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPersistentLockMatrixAndReadOnlyOpen(t *testing.T) {
+	root := t.TempDir()
+	if _, err := NewLocker(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []LockName{ImportLock, ServeLock, MaintenanceLock, MediaLock} {
+		path := filepath.Join(root, "locks", string(name)+".lock")
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			t.Fatalf("persistent %s lock = %#v, %v", name, info, err)
+		}
+	}
+
+	existing, err := OpenExistingLocker(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := existing.Acquire(context.Background(), ServeLock, Exclusive)
+	if err != nil {
+		t.Fatalf("persistent unlocked filename was treated as live: %v", err)
+	}
+	if err := lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+
+	partial := t.TempDir()
+	before, err := os.ReadDir(partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenExistingLocker(partial); err == nil {
+		t.Fatal("partial layout unexpectedly opened")
+	}
+	after, err := os.ReadDir(partial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != 0 || len(after) != 0 {
+		t.Fatalf("read-only locker open mutated partial layout: before=%v after=%v", before, after)
+	}
+}
+
+func TestReadOnlyLockerSupportsLegacyImportOnlyLayoutWithoutCreatingFiles(t *testing.T) {
+	root := t.TempDir()
+	if _, err := NewLocker(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []LockName{ServeLock, MaintenanceLock, MediaLock} {
+		if err := os.Remove(filepath.Join(root, "locks", string(name)+".lock")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	locker, err := OpenExistingLocker(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := locker.AcquireSet(context.Background(),
+		LockRequest{Name: ImportLock, Mode: Shared},
+		LockRequest{Name: MaintenanceLock, Mode: Exclusive},
+		LockRequest{Name: MediaLock, Mode: Shared},
+	)
+	if err != nil || !set.Holds(ImportLock, Shared) {
+		t.Fatalf("legacy snapshot = %#v, %v", set, err)
+	}
+	if err := set.Release(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []LockName{ServeLock, MaintenanceLock, MediaLock} {
+		if locker.HasPersistentLock(name) {
+			t.Fatalf("missing %s lock reported initialized", name)
+		}
+		if _, err := os.Lstat(filepath.Join(root, "locks", string(name)+".lock")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("read-only locker created %s: %v", name, err)
+		}
 	}
 }
 

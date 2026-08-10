@@ -58,6 +58,16 @@ type Instance struct {
 	InitializedAt time.Time   `json:"initialized_at"`
 }
 
+// ReadInstance reads and validates only the non-secret instance metadata. It
+// never creates runtime directories or resolves/cleans CURRENT.
+func ReadInstance(dataDir string) (Instance, error) {
+	root, err := ResolveDataDir(dataDir)
+	if err != nil {
+		return Instance{}, err
+	}
+	return readInstance(filepath.Join(root, instanceFile))
+}
+
 // Runtime is a resolved, structurally ready Moment data directory.
 type Runtime struct {
 	Root     string

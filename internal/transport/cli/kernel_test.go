@@ -645,6 +645,68 @@ func TestUnencodableResultBecomesOneInternalErrorDocument(t *testing.T) {
 	}
 }
 
+func TestReportBearingFailurePreservesDataAndOneDocument(t *testing.T) {
+	application := newTestApplication()
+	registerFixture(application, "diagnose", CapabilityBoth, func(_ context.Context, _ Invocation, _ CommandInput) (Result, error) {
+		return Result{
+			Data: map[string]any{"completed_checks": 7},
+			Text: "diagnostic report",
+			Failure: NewCommandError(
+				"DATA_INTEGRITY_FAILED", "diagnostic authority failed", "inspect the report", ExitIntegrity,
+			),
+		}, nil
+	})
+
+	machine := execute(application, "", "fixture", "diagnose", "--json")
+	if machine.exit != ExitIntegrity || machine.stderr != "" {
+		t.Fatalf("machine = %#v", machine)
+	}
+	document := decodeOneDocument(t, machine.stdout)
+	if document["ok"] != false || document["data"].(map[string]any)["completed_checks"] != float64(7) ||
+		document["error"].(map[string]any)["code"] != "DATA_INTEGRITY_FAILED" {
+		t.Fatalf("document = %#v", document)
+	}
+
+	human := execute(application, "", "fixture", "diagnose")
+	if human.exit != ExitIntegrity || human.stdout != "diagnostic report\n" || !strings.Contains(human.stderr, "DATA_INTEGRITY_FAILED") {
+		t.Fatalf("human = %#v", human)
+	}
+}
+
+func TestMalformedReportBearingFailureIsSanitized(t *testing.T) {
+	application := newTestApplication()
+	registerFixture(application, "diagnose", CapabilityBoth, func(_ context.Context, _ Invocation, _ CommandInput) (Result, error) {
+		return Result{Data: map[string]bool{"preserved": true}, Failure: NewCommandError("bad code", "", "", ExitSuccess)}, nil
+	})
+	output := execute(application, "", "fixture", "diagnose", "--json")
+	if output.exit != ExitInternal || output.stderr != "" {
+		t.Fatalf("output = %#v", output)
+	}
+	document := decodeOneDocument(t, output.stdout)
+	if document["ok"] != false || document["data"].(map[string]any)["preserved"] != true ||
+		document["error"].(map[string]any)["code"] != "INTERNAL" || strings.Contains(output.stdout, "bad code") {
+		t.Fatalf("document = %#v", document)
+	}
+}
+
+func TestUnencodableReportBearingFailureBecomesOneInternalDocument(t *testing.T) {
+	application := newTestApplication()
+	registerFixture(application, "diagnose", CapabilityBoth, func(_ context.Context, _ Invocation, _ CommandInput) (Result, error) {
+		return Result{
+			Data:    map[string]any{"invalid": make(chan int)},
+			Failure: NewCommandError("DATA_INTEGRITY_FAILED", "diagnostic failed", "inspect it", ExitIntegrity),
+		}, nil
+	})
+	output := execute(application, "", "fixture", "diagnose", "--json")
+	if output.exit != ExitInternal || output.stderr != "" {
+		t.Fatalf("output = %#v", output)
+	}
+	document := decodeOneDocument(t, output.stdout)
+	if document["ok"] != false || document["error"].(map[string]any)["code"] != "INTERNAL" {
+		t.Fatalf("document = %#v", document)
+	}
+}
+
 func TestUnencodableErrorDetailsBecomeOneInternalErrorDocument(t *testing.T) {
 	application := newTestApplication()
 	registerFixture(application, "invalid-error", CapabilityBoth, func(_ context.Context, _ Invocation, _ CommandInput) (Result, error) {

@@ -15,6 +15,7 @@ import (
 var (
 	ErrInvalidLock = errors.New("invalid runtime lock")
 	ErrLockOrder   = errors.New("runtime locks must be acquired in the fixed order")
+	ErrLockAbsent  = errors.New("persistent runtime lock is not initialized")
 )
 
 // LockName identifies one persistent advisory lock file.
@@ -57,8 +58,10 @@ type LockRequest struct {
 // Locker coordinates both goroutines and other processes for one data root.
 // All waits honor context cancellation and deadlines.
 type Locker struct {
-	root  string
-	gates map[LockName]*localGate
+	root         string
+	gates        map[LockName]*localGate
+	existingOnly bool
+	missing      map[LockName]bool
 }
 
 var localGates sync.Map
@@ -73,17 +76,80 @@ func NewLocker(dataDir string) (*Locker, error) {
 	if err := os.MkdirAll(lockDirectory, 0o700); err != nil {
 		return nil, fmt.Errorf("create lock directory: %w", err)
 	}
+	if err := ensureLockFiles(lockDirectory); err != nil {
+		return nil, err
+	}
+	return newLocker(root, false), nil
+}
+
+// OpenExistingLocker binds only already initialized persistent lock files.
+// It is intended for strictly read-only diagnostics: it never creates a
+// directory or file and never changes permissions.
+func OpenExistingLocker(dataDir string) (*Locker, error) {
+	root, err := ResolveDataDir(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	lockDirectory := filepath.Join(root, "locks")
+	info, err := os.Lstat(lockDirectory)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, errors.Join(errors.New("runtime lock directory is missing or unsafe"), err)
+	}
+	missing := make(map[LockName]bool)
+	for name := range lockOrder {
+		path := filepath.Join(lockDirectory, string(name)+".lock")
+		entry, inspectErr := os.Lstat(path)
+		if errors.Is(inspectErr, os.ErrNotExist) && name != ImportLock {
+			missing[name] = true
+			continue
+		}
+		if inspectErr != nil {
+			return nil, errors.Join(fmt.Errorf("runtime %s lock file is missing or unsafe", name), inspectErr)
+		}
+		if !entry.Mode().IsRegular() || entry.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("runtime %s lock file is missing or unsafe", name)
+		}
+	}
+	locker := newLocker(root, true)
+	locker.missing = missing
+	return locker, nil
+}
+
+func ensureLockFiles(lockDirectory string) error {
+	for name := range lockOrder {
+		path := filepath.Join(lockDirectory, string(name)+".lock")
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+		if err != nil {
+			return fmt.Errorf("initialize %s lock file: %w", name, err)
+		}
+		protectErr := file.Chmod(0o600)
+		closeErr := file.Close()
+		if protectErr != nil {
+			return errors.Join(fmt.Errorf("protect %s lock file: %w", name, protectErr), closeErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close %s lock file: %w", name, closeErr)
+		}
+	}
+	return nil
+}
+
+func newLocker(root string, existingOnly bool) *Locker {
+	lockDirectory := filepath.Join(root, "locks")
 	gates := make(map[LockName]*localGate, len(lockOrder))
 	for name := range lockOrder {
 		key := filepath.Join(lockDirectory, string(name)+".lock")
 		gate, _ := localGates.LoadOrStore(key, newLocalGate())
 		gates[name] = gate.(*localGate)
 	}
-	return &Locker{root: root, gates: gates}, nil
+	return &Locker{root: root, gates: gates, existingOnly: existingOnly}
 }
 
 // Acquire obtains a single runtime lock.
 func (l *Locker) Acquire(ctx context.Context, name LockName, mode LockMode) (*Lease, error) {
+	if l != nil && l.missing[name] {
+		return nil, fmt.Errorf("%w: %s", ErrLockAbsent, name)
+	}
 	leases, err := l.AcquireSet(ctx, LockRequest{Name: name, Mode: mode})
 	if err != nil {
 		return nil, err
@@ -100,6 +166,9 @@ func (l *Locker) AcquireSet(ctx context.Context, requests ...LockRequest) (*Leas
 	}
 	set := &LeaseSet{root: l.root}
 	for _, request := range requests {
+		if l.missing[request.Name] {
+			continue
+		}
 		lease, err := l.acquireOne(ctx, request)
 		if err != nil {
 			_ = set.Release()
@@ -108,6 +177,16 @@ func (l *Locker) AcquireSet(ctx context.Context, requests ...LockRequest) (*Leas
 		set.leases = append(set.leases, lease)
 	}
 	return set, nil
+}
+
+// HasPersistentLock reports whether one initialized lock file existed when a
+// read-only locker snapshot was opened. It never probes ownership by filename.
+func (l *Locker) HasPersistentLock(name LockName) bool {
+	if l == nil {
+		return false
+	}
+	_, valid := lockOrder[name]
+	return valid && !l.missing[name]
 }
 
 // ExtendSet appends later-ranked locks to an existing acquisition without
@@ -167,7 +246,14 @@ func (l *Locker) acquireOne(ctx context.Context, request LockRequest) (*Lease, e
 	if err != nil {
 		return nil, err
 	}
-	file, state, err := acquireFileLock(ctx, filepath.Join(l.root, "locks", string(request.Name)+".lock"), request.Mode)
+	path := filepath.Join(l.root, "locks", string(request.Name)+".lock")
+	var file *os.File
+	var state platformLockState
+	if l.existingOnly {
+		file, state, err = acquireExistingFileLock(ctx, path, request.Mode)
+	} else {
+		file, state, err = acquireFileLock(ctx, path, request.Mode)
+	}
 	if err != nil {
 		localRelease()
 		return nil, fmt.Errorf("acquire %s lock: %w", request.Name, err)
@@ -312,6 +398,18 @@ func acquireFileLock(ctx context.Context, path string, mode LockMode) (*os.File,
 		_ = file.Close()
 		return nil, platformLockState{}, err
 	}
+	return waitForFileLock(ctx, file, mode)
+}
+
+func acquireExistingFileLock(ctx context.Context, path string, mode LockMode) (*os.File, platformLockState, error) {
+	file, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return nil, platformLockState{}, err
+	}
+	return waitForFileLock(ctx, file, mode)
+}
+
+func waitForFileLock(ctx context.Context, file *os.File, mode LockMode) (*os.File, platformLockState, error) {
 	state := platformLockState{}
 	for {
 		if err := ctx.Err(); err != nil {

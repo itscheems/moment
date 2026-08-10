@@ -120,6 +120,10 @@ type Result struct {
 	Data any
 	Text string
 	Meta map[string]any
+	// Failure is a report-bearing command outcome. It lets diagnostic commands
+	// preserve completed structured data while returning ok=false and a stable
+	// non-zero exit code. Ordinary command failures continue to return errors.
+	Failure *CommandError
 	// Binary is the explicit exception to the text/JSON envelope. The kernel
 	// executes it inside the command timeout and writes bytes only to stdout.
 	// Commands exposing it must reject --json and all textual stdout output.

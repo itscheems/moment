@@ -897,6 +897,73 @@ func openActiveDatabaseSnapshot(ctx context.Context, runtimeState *runtimefs.Run
 	return database, cleanup, nil
 }
 
+// ErrDiagnosticSnapshotBound reports a snapshot larger than its declared cap.
+var ErrDiagnosticSnapshotBound = errors.New("diagnostic SQLite snapshot exceeds its byte bound")
+
+// OpenDiagnosticSnapshot copies the durable SQLite database and WAL/journal
+// into a private system temporary directory and opens only that copy in strict
+// query-only mode. The caller must hold import shared and maintenance
+// exclusive across this call so the stable-file checks describe one authority
+// snapshot. SHM is coordination state and is regenerated only beside the copy.
+func OpenDiagnosticSnapshot(ctx context.Context, runtimeState *runtimefs.Runtime, maxBytes int64) (*sqlitestore.DiagnosticDatabase, func() error, error) {
+	if runtimeState == nil || runtimeState.Current.DatabasePath == "" || maxBytes < 1 {
+		return nil, nil, errors.New("diagnostic database snapshot path is required")
+	}
+	tempBase, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve private diagnostic temporary directory: %w", err)
+	}
+	authorityRoot, err := filepath.EvalSymlinks(runtimeState.Root)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve diagnostic authority root: %w", err)
+	}
+	relativeTemp, err := filepath.Rel(authorityRoot, tempBase)
+	if err != nil || relativeTemp == "." || (!filepath.IsAbs(relativeTemp) && relativeTemp != ".." && !strings.HasPrefix(relativeTemp, ".."+string(filepath.Separator))) {
+		return nil, nil, errors.Join(errors.New("private diagnostic temporary directory must be outside Moment authority"), err)
+	}
+	snapshotRoot, err := os.MkdirTemp(tempBase, "moment-doctor-sqlite-")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create private diagnostic snapshot: %w", err)
+	}
+	cleanupRoot := func() error { return os.RemoveAll(snapshotRoot) }
+	fail := func(err error) (*sqlitestore.DiagnosticDatabase, func() error, error) {
+		return nil, nil, errors.Join(err, cleanupRoot())
+	}
+	destination := filepath.Join(snapshotRoot, "moment.db")
+	remaining := maxBytes
+	copyBounded := func(source, target string, optional bool) (bool, error) {
+		info, statErr := os.Lstat(source)
+		if optional && errors.Is(statErr, os.ErrNotExist) {
+			return false, nil
+		}
+		if statErr != nil {
+			return false, statErr
+		}
+		if info.Size() < 0 || info.Size() > remaining {
+			return false, ErrDiagnosticSnapshotBound
+		}
+		copied, copyErr := copyStableSQLiteFile(ctx, source, target, optional)
+		if copyErr == nil && copied {
+			remaining -= info.Size()
+		}
+		return copied, copyErr
+	}
+	if copied, err := copyBounded(runtimeState.Current.DatabasePath, destination, false); err != nil || !copied {
+		return fail(errors.Join(errors.New("copy diagnostic SQLite database"), err))
+	}
+	for _, suffix := range []string{"-wal", "-journal"} {
+		if _, err := copyBounded(runtimeState.Current.DatabasePath+suffix, destination+suffix, true); err != nil {
+			return fail(fmt.Errorf("copy diagnostic SQLite%s: %w", suffix, err))
+		}
+	}
+	database, err := sqlitestore.OpenDiagnostic(ctx, destination, 0)
+	if err != nil {
+		return fail(fmt.Errorf("open copied diagnostic SQLite database: %w", err))
+	}
+	cleanup := func() error { return errors.Join(database.Close(), cleanupRoot()) }
+	return database, cleanup, nil
+}
+
 func copyStableSQLiteFile(ctx context.Context, source, destination string, optional bool) (copied bool, resultErr error) {
 	before, err := os.Lstat(source)
 	if optional && errors.Is(err, os.ErrNotExist) {

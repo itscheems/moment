@@ -214,6 +214,22 @@ func (application *Application) Execute(ctx context.Context, args []string, stre
 		for key, value := range state.result.Meta {
 			meta[key] = value
 		}
+		if state.result.Failure != nil {
+			if !validCommandError(state.result.Failure) {
+				state.result.Failure = internalError(errors.New("invalid report-bearing command failure"))
+			}
+			if err := writeJSONDocument(streams.Out, envelope{
+				OK: false, Data: state.result.Data, Meta: meta, Error: state.result.Failure,
+			}); err != nil {
+				exitCode, writeErr := writeMachineError(streams.Out, internalError(err))
+				if writeErr != nil {
+					_, _ = fmt.Fprintf(streams.Err, "INTERNAL: write JSON diagnostic failure: %v\n", writeErr)
+					return ExitInternal
+				}
+				return exitCode
+			}
+			return state.result.Failure.ExitCode
+		}
 		if err := writeJSONDocument(streams.Out, envelope{OK: true, Data: state.result.Data, Meta: meta}); err != nil {
 			fallback := NewCommandError(
 				"INTERNAL",
@@ -232,6 +248,15 @@ func (application *Application) Execute(ctx context.Context, args []string, stre
 	if err := writeHumanResult(streams.Out, state.result); err != nil {
 		_, _ = fmt.Fprintf(streams.Err, "INTERNAL: write command output: %v\n", err)
 		return ExitInternal
+	}
+	if state.result.Failure != nil {
+		if !validCommandError(state.result.Failure) {
+			state.result.Failure = internalError(errors.New("invalid report-bearing command failure"))
+		}
+		if err := writeHumanError(streams.Err, state.result.Failure); err != nil {
+			return ExitInternal
+		}
+		return state.result.Failure.ExitCode
 	}
 	return ExitSuccess
 }
@@ -424,7 +449,7 @@ func (application *Application) buildLeaf(
 			if options.JSON {
 				return invalidArgument("binary stdout cannot be combined with --json", "remove --json or use the command's file output mode")
 			}
-			if result.Data != nil || result.Text != "" || len(result.Meta) != 0 {
+			if result.Data != nil || result.Text != "" || len(result.Meta) != 0 || result.Failure != nil {
 				return errors.New("binary command result cannot include envelope or text output")
 			}
 			if err := result.Binary(streams.Out); err != nil {

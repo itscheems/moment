@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -172,35 +174,46 @@ func ownerStatusResult(status auth.Status) Result {
 }
 
 func ownerAPIRequest(ctx context.Context, invocation Invocation, method, endpoint string, destination any) (map[string]any, error) {
-	target, err := invocation.APITransport()
+	data, meta, _, err := ownerAPIRawRequest(ctx, invocation, method, endpoint, false)
 	if err != nil {
 		return nil, err
+	}
+	if err := json.Unmarshal(data, destination); err != nil {
+		return nil, invalidAPIResponse()
+	}
+	return meta, nil
+}
+
+func ownerAPIRawRequest(ctx context.Context, invocation Invocation, method, endpoint string, strictJSON bool) (json.RawMessage, map[string]any, int, error) {
+	target, err := invocation.APITransport()
+	if err != nil {
+		return nil, nil, 0, err
 	}
 	token, err := readAPIToken(target)
 	if err != nil {
-		return nil, err
+		return nil, nil, 0, err
 	}
 	endpointURL, err := url.JoinPath(target.BaseURL().String(), endpoint)
 	if err != nil {
-		return nil, invalidArgument("the API endpoint URL is invalid", "check --url and retry")
+		return nil, nil, 0, invalidArgument("the API endpoint URL is invalid", "check --url and retry")
 	}
 	request, err := http.NewRequestWithContext(ctx, method, endpointURL, http.NoBody)
 	if err != nil {
-		return nil, err
+		return nil, nil, 0, err
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, nil, 0, err
 	}
 	defer func() { _ = response.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
 	if err != nil {
-		return nil, err
+		return nil, nil, response.StatusCode, err
 	}
 	if len(body) > maxAPIResponse {
-		return nil, NewCommandError(
+		return nil, nil, response.StatusCode, NewCommandError(
 			"DEPENDENCY_INVALID_RESPONSE",
 			"the Moment API response exceeded the allowed size",
 			"check the server and reverse proxy configuration",
@@ -208,21 +221,34 @@ func ownerAPIRequest(ctx context.Context, invocation Invocation, method, endpoin
 		)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, body)
+		return nil, nil, response.StatusCode, decodeOwnerAPIFailure(response.StatusCode, body)
 	}
-	var envelope json.RawMessage
+	if strictJSON {
+		mediaType, _, contentTypeErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+		if contentTypeErr != nil || mediaType != "application/json" {
+			return nil, nil, response.StatusCode, invalidAPIResponse()
+		}
+	}
 	var raw struct {
 		Data json.RawMessage `json:"data"`
 		Meta map[string]any  `json:"meta"`
 	}
-	if err := json.Unmarshal(body, &raw); err != nil || len(raw.Data) == 0 {
-		return nil, invalidAPIResponse()
+	if strictJSON {
+		decoder := json.NewDecoder(strings.NewReader(string(body)))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&raw); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+			return nil, nil, response.StatusCode, invalidAPIResponse()
+		}
+	} else if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, nil, response.StatusCode, invalidAPIResponse()
 	}
-	envelope = raw.Data
-	if err := json.Unmarshal(envelope, destination); err != nil {
-		return nil, invalidAPIResponse()
+	if len(raw.Data) == 0 || string(bytes.TrimSpace(raw.Data)) == "null" {
+		return nil, nil, response.StatusCode, invalidAPIResponse()
 	}
-	return raw.Meta, nil
+	if strictJSON && raw.Meta == nil {
+		return nil, nil, response.StatusCode, invalidAPIResponse()
+	}
+	return raw.Data, raw.Meta, response.StatusCode, nil
 }
 
 func readAPIToken(target APITransport) (string, error) {

@@ -151,6 +151,19 @@ type SearchRebuildResult struct {
 	Revision          int64 `json:"revision"`
 }
 
+// SearchDiagnostic is the bounded, read-only search authority view used by
+// doctor. It never returns source Markdown or normalized content.
+type SearchDiagnostic struct {
+	Total           int   `json:"total"`
+	Ready           int   `json:"ready"`
+	Drifted         int   `json:"drifted"`
+	OrphanIndexRows int   `json:"orphan_index_rows"`
+	StoredVersion   int   `json:"stored_version"`
+	ExpectedVersion int   `json:"expected_version"`
+	Revision        int64 `json:"revision"`
+	Bounded         bool  `json:"bounded"`
+}
+
 // SearchService owns normalized search, calendar aggregates, and rebuilding.
 type SearchService struct{ transactions SearchTransactions }
 
@@ -377,6 +390,67 @@ func (service *SearchService) Rebuild(ctx context.Context, dryRun bool) (SearchR
 	}
 	if err != nil {
 		return SearchRebuildResult{}, normalizeSearchRepositoryError(err)
+	}
+	return result, nil
+}
+
+// DiagnoseDerived scans at most maxEntries authoritative rows through the
+// same normalizer and repository contract as rebuild, but cannot write.
+func (service *SearchService) DiagnoseDerived(ctx context.Context, maxEntries int) (SearchDiagnostic, error) {
+	if maxEntries < 1 {
+		return SearchDiagnostic{}, domain.NewError(domain.CodeInvalidArgument, "search diagnostic limit must be positive", nil)
+	}
+	result := SearchDiagnostic{ExpectedVersion: domain.ContentNormalizerVersion}
+	err := service.transactions.Read(ctx, func(store SearchStore) error {
+		var err error
+		result.StoredVersion, err = store.SearchNormalizerVersion(ctx)
+		if err != nil {
+			return err
+		}
+		result.Revision, err = store.SearchRevision(ctx)
+		if err != nil {
+			return err
+		}
+		result.OrphanIndexRows, err = store.SearchOrphanCount(ctx)
+		if err != nil {
+			return err
+		}
+		var after domain.ID
+		for result.Total < maxEntries {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			remaining := maxEntries - result.Total
+			limit := min(searchRebuildBatchSize, remaining+1)
+			sources, err := store.SearchSources(ctx, after, limit)
+			if err != nil {
+				return err
+			}
+			for _, source := range sources {
+				if result.Total == maxEntries {
+					result.Bounded = true
+					return nil
+				}
+				expected, err := domain.NormalizeContentV2(source.ContentMD)
+				if err != nil {
+					return storedEntryError(source.ID)
+				}
+				result.Total++
+				if source.ContentText == expected && source.FTSCopies == 1 && source.FTSStoredTextCopies == 1 && result.StoredVersion == domain.ContentNormalizerVersion {
+					result.Ready++
+				} else {
+					result.Drifted++
+				}
+				after = source.ID
+			}
+			if len(sources) < limit {
+				return nil
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return SearchDiagnostic{}, normalizeSearchRepositoryError(err)
 	}
 	return result, nil
 }
