@@ -52,13 +52,13 @@ func registerDev(application *Application) {
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"dev", "scenario"}, ArgsUsage: "<name>", Short: "Build one named acceptance scenario",
-		Long:       "Atomically build one frozen scenario by name. Catalog names, recipe versions, exact counts, healthy doctor postconditions, and the corruption finding ID are shared by help and JSON output.",
+		Long:       "Atomically build one frozen scenario by name. Catalog names, recipe versions, exact counts, healthy doctor postconditions, and the corruption finding ID are shared by help and JSON output. Scale scenarios are long-running and stop on parent cancellation.",
 		Inputs:     "One scenario name and explicit --data-dir. Names: " + strings.Join(devtools.ScenarioNames(), ", ") + ".",
 		Output:     "The selected scenario plan, exact counts, doctor handoff, and archive roundtrip result when applicable.",
-		Errors:     "Unknown names exit 2 and list the canonical catalog. Active service exits 4; I/O 6; integrity 7; cancellation 9.",
+		Errors:     "Unknown names exit 2 and list the canonical catalog. Active service exits 4; I/O 6; integrity 7; parent cancellation 9. Explicit --timeout is not accepted for this long-running command.",
 		Safety:     "A strictly empty directory may bootstrap development; any existing unmarked content or production marker is refused.",
 		Example:    "mkdir ./moment-dev && moment dev scenario archive-roundtrip --data-dir ./moment-dev --seed 42 --yes --no-input --json",
-		Capability: CapabilityDirectOnly, Policy: policy, Args: cobra.ExactArgs(1), Flags: commonFlags,
+		Capability: CapabilityDirectOnly, Policy: policy, Args: cobra.ExactArgs(1), Flags: commonFlags, LongRunning: true,
 		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
 			seed, err := input.Int64("seed")
 			if err != nil {
