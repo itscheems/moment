@@ -48,6 +48,9 @@ describe("App shell", () => {
       "href",
       "/owner/compose",
     );
+    expect(
+      screen.queryByRole("complementary", { name: "记忆导航" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders loading and error examples without replacing the route shell", () => {

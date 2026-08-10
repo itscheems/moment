@@ -95,9 +95,11 @@ function LeftRail({ route }: { route: AppRoute }) {
   );
 }
 
-function MemoryRail() {
-  const year = new Date().getFullYear();
-  const years = [year, year - 1, year - 2];
+function MemoryRail({ years }: { years: readonly number[] }) {
+  if (years.length === 0) {
+    return null;
+  }
+
   return (
     <aside aria-label="记忆导航" className={styles.rightRail}>
       <section className={styles.siteNote}>
@@ -156,9 +158,11 @@ function MobileNavigation({ route }: { route: AppRoute }) {
 export function AppShell({
   route,
   state,
+  memoryYears = [],
 }: {
   route: AppRoute;
   state: string | null;
+  memoryYears?: readonly number[];
 }) {
   return (
     <div className={styles.viewport}>
@@ -185,7 +189,7 @@ export function AppShell({
           </header>
           <ShellState route={route} state={state} />
         </main>
-        <MemoryRail />
+        <MemoryRail years={memoryYears} />
       </div>
       <MobileNavigation route={route} />
     </div>
