@@ -1472,6 +1472,37 @@ describe("owner composing flow", () => {
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
   });
 
+  it("keeps leave guards active after removing the last existing media usage", async () => {
+    preauthenticate();
+    const item = post("只编辑图片", "01K2ABCDEF0123456789ABCDF3", [
+      {
+        media_id: "01K2ABCDEF0123456789ABCDE7",
+        position: 0,
+        alt_text: "雨落下来",
+      },
+    ]);
+    window.history.replaceState({}, "", `/owner/m/${item.id}/edit`);
+    installApi((url) => {
+      if (url === `/api/v1/posts/${item.id}`) {
+        return json({ data: item, meta: {} });
+      }
+    });
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(false);
+    render(<App />);
+
+    await screen.findByLabelText("Moment 正文");
+    fireEvent.click(screen.getByRole("button", { name: /移除/ }));
+    expect(screen.queryByText("第 1 张")).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
+    expect(window.location.pathname).toBe(`/owner/m/${item.id}/edit`);
+    expect(confirm).toHaveBeenCalledOnce();
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
   it("confirms only once when a direct edit falls back to the timeline", async () => {
     preauthenticate();
     const item = post("直接进入的编辑", "01K2ABCDEF0123456789ABCDF4");

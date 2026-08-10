@@ -734,7 +734,17 @@ export function Composer({
               const next = current.filter((item) => item.key !== key);
               replaceMedia(next);
               markMediaEdited("图片已移除，其余图片顺序已更新。");
-              if (next.length === 0 && content === initialContent) {
+              const restoredInitialMedia =
+                next.length === initialMedia.length &&
+                next.every((item, index) => {
+                  const initial = initialMedia[index];
+                  return (
+                    initial !== undefined &&
+                    item.mediaId === initial.mediaId &&
+                    altValue(item) === initial.altText
+                  );
+                });
+              if (restoredInitialMedia && content === initialContent) {
                 dirtyRef.current = false;
                 setDirty(false);
               }
