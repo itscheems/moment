@@ -11,13 +11,15 @@ import {
   COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
   clearComposeDraft,
-  composeDraftClearedIdentityFromStorage,
-  composeDraftKey,
+  composeDraftClearAllKey,
+  composeDraftClearanceKey,
+  createComposeDraft,
   loadComposeDraft,
   parseComposeDraftClearEvent,
+  parseComposeDraftClearEventValue,
   saveComposeDraft,
-  type ComposeDraftClearedIdentity,
   type ComposeDraft,
+  type ComposeDraftClearEvent,
 } from "./draft";
 import { useOwner } from "./OwnerProvider";
 import { OwnerLogin } from "./OwnerLogin";
@@ -77,10 +79,12 @@ export function Composer({
   const [draftUnavailable, setDraftUnavailable] = useState(
     variant !== "edit" && !site.instanceId,
   );
-  const [draftSaveRevision, setDraftSaveRevision] = useState(0);
+  const [activeDraft, setActiveDraft] = useState<ComposeDraft | null>(draft);
   const [announcement, setAnnouncement] = useState("");
   const pendingRef = useRef(false);
   const allowLeaveRef = useRef(false);
+  const activeDraftRef = useRef(activeDraft);
+  const navigationBlockerId = useRef(Symbol("composer-navigation-blocker"));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const idempotencyKey = useRef(createIdempotencyKey());
   const count = useMemo(() => Array.from(content).length, [content]);
@@ -101,42 +105,41 @@ export function Composer({
     if (variant === "edit" || !instanceId) return;
     const resetDraftSurface = () => {
       allowLeaveRef.current = true;
+      activeDraftRef.current = null;
+      setActiveDraft(null);
       setDraft(null);
       setContent("");
       setDirty(false);
       setError(null);
     };
-    const handleClearedDraft = (identity: ComposeDraftClearedIdentity) => {
-      if (identity.instance_id !== instanceId) return;
-      if (!dirty || content === identity.content_md) {
+    const handleClearance = (clearance: ComposeDraftClearEvent) => {
+      if (clearance.instance_id !== instanceId) return;
+      if (clearance.schema === COMPOSE_DRAFT_CLEAR_ALL_SCHEMA) {
         resetDraftSurface();
-        return;
+      } else if (
+        activeDraftRef.current?.fingerprint === clearance.draft_fingerprint &&
+        Date.parse(activeDraftRef.current.savedAt) <=
+          Date.parse(clearance.cleared_at)
+      ) {
+        resetDraftSurface();
+      } else if (activeDraftRef.current) {
+        saveComposeDraft(instanceId, activeDraftRef.current);
       }
-      setDraftSaveRevision((revision) => revision + 1);
     };
     const clearedInThisDocument = (event: Event) => {
       const clearance = parseComposeDraftClearEvent(
         (event as CustomEvent<unknown>).detail,
       );
-      if (!clearance || clearance.instance_id !== instanceId) return;
-      if (clearance.schema === COMPOSE_DRAFT_CLEAR_ALL_SCHEMA) {
-        resetDraftSurface();
-      } else {
-        handleClearedDraft(clearance);
-      }
+      if (clearance) handleClearance(clearance);
     };
     const clearedInAnotherDocument = (event: StorageEvent) => {
-      if (event.key !== composeDraftKey(instanceId) || event.newValue !== null)
-        return;
-      const identity = composeDraftClearedIdentityFromStorage(
-        instanceId,
-        event.oldValue,
-      );
-      if (identity) {
-        handleClearedDraft(identity);
-      } else if (dirty) {
-        setDraftSaveRevision((revision) => revision + 1);
-      }
+      const clearance = parseComposeDraftClearEventValue(event.newValue);
+      if (!clearance || clearance.instance_id !== instanceId) return;
+      const expectedKey =
+        clearance.schema === COMPOSE_DRAFT_CLEAR_ALL_SCHEMA
+          ? composeDraftClearAllKey(instanceId)
+          : composeDraftClearanceKey(instanceId);
+      if (event.key === expectedKey) handleClearance(clearance);
     };
     window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, clearedInThisDocument);
     window.addEventListener("storage", clearedInAnotherDocument);
@@ -147,17 +150,25 @@ export function Composer({
       );
       window.removeEventListener("storage", clearedInAnotherDocument);
     };
-  }, [content, dirty, site.instanceId, variant]);
+  }, [site.instanceId, variant]);
 
   useEffect(() => {
-    if (variant === "edit" || !dirty || draft || allowLeaveRef.current) return;
+    if (
+      variant === "edit" ||
+      !dirty ||
+      draft ||
+      !activeDraft ||
+      allowLeaveRef.current
+    ) {
+      return;
+    }
     const timer = window.setTimeout(() => {
-      if (!saveComposeDraft(site.instanceId, content)) {
+      if (!saveComposeDraft(site.instanceId, activeDraft)) {
         setDraftUnavailable(true);
       }
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [content, dirty, draft, draftSaveRevision, site.instanceId, variant]);
+  }, [activeDraft, dirty, draft, site.instanceId, variant]);
 
   useEffect(() => {
     const confirmLeave = () => {
@@ -168,21 +179,28 @@ export function Composer({
           : "这段内容还没有发布。离开后仍会保留本地草稿。",
       );
       if (confirmed && variant !== "edit") {
-        saveComposeDraft(site.instanceId, content);
+        const currentDraft = activeDraftRef.current;
+        if (currentDraft) saveComposeDraft(site.instanceId, currentDraft);
       }
       return confirmed;
     };
-    setNavigationBlocker(hasUnpublishedChange ? confirmLeave : null);
+    setNavigationBlocker(
+      navigationBlockerId.current,
+      hasUnpublishedChange ? confirmLeave : null,
+    );
     const beforeUnload = (event: BeforeUnloadEvent) => {
       if (!hasUnpublishedChange || allowLeaveRef.current) return;
-      if (variant !== "edit") saveComposeDraft(site.instanceId, content);
+      if (variant !== "edit") {
+        const currentDraft = activeDraftRef.current;
+        if (currentDraft) saveComposeDraft(site.instanceId, currentDraft);
+      }
       event.preventDefault();
       event.returnValue = "";
     };
     window.addEventListener("beforeunload", beforeUnload);
     return () => {
       window.removeEventListener("beforeunload", beforeUnload);
-      setNavigationBlocker(null);
+      setNavigationBlocker(navigationBlockerId.current, null);
     };
   }, [
     content,
@@ -200,8 +218,18 @@ export function Composer({
     setError(null);
     setAuthExpired(false);
     setAnnouncement(variant === "edit" ? "正在保存…" : "正在发布…");
-    if (!post && !saveComposeDraft(site.instanceId, content)) {
-      setDraftUnavailable(true);
+    let submittedDraft: ComposeDraft | null = null;
+    if (!post) {
+      const active = activeDraftRef.current;
+      submittedDraft =
+        active && active.contentMd === content
+          ? active
+          : createComposeDraft(content, active?.savedAt);
+      activeDraftRef.current = submittedDraft;
+      setActiveDraft(submittedDraft);
+      if (!saveComposeDraft(site.instanceId, submittedDraft)) {
+        setDraftUnavailable(true);
+      }
     }
     try {
       const saved = post
@@ -209,10 +237,10 @@ export function Composer({
         : await api.create(session.csrfToken, content, idempotencyKey.current);
       allowLeaveRef.current = true;
       setDirty(false);
-      if (!post) {
+      if (!post && submittedDraft) {
         clearComposeDraft(site.instanceId, {
           reason: "published",
-          contentMd: content,
+          draft: submittedDraft,
         });
       }
       announceOwnerPost({ kind: post ? "updated" : "created", post: saved });
@@ -243,6 +271,8 @@ export function Composer({
 
   const recoverDraft = () => {
     if (!draft) return;
+    activeDraftRef.current = draft;
+    setActiveDraft(draft);
     setContent(draft.contentMd);
     setDraft(null);
     setDirty(true);
@@ -252,7 +282,10 @@ export function Composer({
 
   const discardDraft = () => {
     if (!draft) return;
-    clearComposeDraft(site.instanceId, { reason: "discarded", draft });
+    clearComposeDraft(site.instanceId, {
+      reason: "discarded",
+      draft,
+    });
     setDraft(null);
     setAnnouncement("本地草稿已丢弃");
     window.requestAnimationFrame(() => textareaRef.current?.focus());
@@ -314,6 +347,14 @@ export function Composer({
             id={`${variant}-composer-content`}
             onChange={(event) => {
               allowLeaveRef.current = false;
+              if (variant !== "edit") {
+                const nextDraft = createComposeDraft(
+                  event.target.value,
+                  activeDraftRef.current?.savedAt,
+                );
+                activeDraftRef.current = nextDraft;
+                setActiveDraft(nextDraft);
+              }
               if (draft) setDraft(null);
               setContent(event.target.value);
               setDirty(true);

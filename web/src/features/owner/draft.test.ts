@@ -1,179 +1,255 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  COMPOSE_DRAFT_CLEARANCE_SCHEMA,
   COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
-  COMPOSE_DRAFT_CLEARED_SCHEMA,
   clearComposeDraft,
+  composeDraftClearAllKey,
+  composeDraftClearanceKey,
   composeDraftKey,
+  fingerprintComposeDraft,
   loadComposeDraft,
-  parseComposeDraftClearedIdentity,
+  parseComposeDraftClearance,
   saveComposeDraft,
+  type ComposeDraft,
 } from "./draft";
 
 const instance = "0123456789abcdef0123456789abcdef";
+const other = "fedcba9876543210fedcba9876543210";
+
+function draft(contentMd: string, savedAt: string): ComposeDraft {
+  return {
+    contentMd,
+    fingerprint: fingerprintComposeDraft(contentMd),
+    savedAt,
+  };
+}
 
 describe("instance-scoped compose draft", () => {
   beforeEach(() => window.localStorage.clear());
   afterEach(() => vi.restoreAllMocks());
 
-  it("stores only Markdown and a timestamp under the runtime instance ID", () => {
-    const savedAt = new Date("2026-08-10T01:02:03.000Z");
-    expect(saveComposeDraft(instance, "一段草稿", savedAt)).toBe(true);
+  it("keeps the frozen v1 value exactly to Markdown and saved_at", () => {
+    const value = draft("一段草稿", "2026-08-10T01:02:03.000Z");
+    expect(saveComposeDraft(instance, value)).toBe(true);
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBe(
       JSON.stringify({
         content_md: "一段草稿",
-        saved_at: savedAt.toISOString(),
+        saved_at: "2026-08-10T01:02:03.000Z",
       }),
     );
-    expect(loadComposeDraft(instance, savedAt.getTime())).toEqual({
-      contentMd: "一段草稿",
-      savedAt: savedAt.toISOString(),
-    });
+    expect(loadComposeDraft(instance, Date.parse(value.savedAt))).toEqual(
+      value,
+    );
   });
 
-  it("does not guess an instance and removes expired or malformed drafts", () => {
-    expect(saveComposeDraft(null, "不能落盘")).toBe(false);
-    expect(window.localStorage.length).toBe(0);
-
-    const old = new Date("2026-01-01T00:00:00.000Z");
-    saveComposeDraft(instance, "过期", old);
+  it("reads old exact v1 values and ignores expired or malformed values", () => {
+    window.localStorage.setItem(
+      composeDraftKey(instance),
+      JSON.stringify({
+        content_md: "旧版草稿",
+        saved_at: "2026-08-10T01:02:03.000Z",
+      }),
+    );
     expect(
-      loadComposeDraft(instance, old.getTime() + 31 * 24 * 60 * 60 * 1_000),
+      loadComposeDraft(instance, Date.parse("2026-08-10T01:02:03.000Z")),
+    ).toMatchObject({ contentMd: "旧版草稿" });
+    expect(window.localStorage.length).toBe(1);
+
+    const old = draft("过期", "2026-01-01T00:00:00.000Z");
+    saveComposeDraft(instance, old);
+    expect(
+      loadComposeDraft(
+        instance,
+        Date.parse(old.savedAt) + 31 * 24 * 60 * 60 * 1_000,
+      ),
     ).toBeNull();
-    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
 
     window.localStorage.setItem(composeDraftKey(instance), '{"token":"no"}');
     expect(loadComposeDraft(instance)).toBeNull();
   });
 
   it("fails open when localStorage is denied", () => {
-    const setter = vi
-      .spyOn(window.localStorage, "setItem")
-      .mockImplementation(() => {
-        throw new DOMException("denied");
-      });
-    expect(saveComposeDraft(instance, "仍可发布")).toBe(false);
-    setter.mockRestore();
-  });
-
-  it("clears only the selected instance draft", () => {
-    const other = "fedcba9876543210fedcba9876543210";
-    const savedAt = new Date("2026-08-10T01:02:03.000Z");
-    saveComposeDraft(instance, "这里", savedAt);
-    saveComposeDraft(other, "那里");
-    const cleared = vi.fn();
-    window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
-    clearComposeDraft(instance, {
-      reason: "discarded",
-      draft: { contentMd: "这里", savedAt: savedAt.toISOString() },
-    });
-    window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
-    expect(loadComposeDraft(instance)).toBeNull();
-    expect(loadComposeDraft(other)?.contentMd).toBe("那里");
-    expect(cleared).toHaveBeenCalledOnce();
-    expect((cleared.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
-      schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
-      instance_id: instance,
-      content_md: "这里",
-      saved_at: savedAt.toISOString(),
-    });
-  });
-
-  it("dispatches a trusted published identity when storage is denied", () => {
-    const denied = () => {
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
       throw new DOMException("denied");
-    };
-    const getItem = vi
-      .spyOn(window.localStorage, "getItem")
-      .mockImplementation(denied);
-    const setItem = vi
-      .spyOn(window.localStorage, "setItem")
-      .mockImplementation(denied);
-    const removeItem = vi
-      .spyOn(window.localStorage, "removeItem")
-      .mockImplementation(denied);
-    expect(saveComposeDraft(instance, "无法落盘但发布成功")).toBe(false);
+    });
+    expect(
+      saveComposeDraft(instance, draft("仍可发布", "2026-08-10T01:02:03.000Z")),
+    ).toBe(false);
+  });
+
+  it("physically removes published content and leaves only a bounded marker", () => {
+    const published = draft("已经发布", "2026-08-10T01:02:03.000Z");
+    const clearedAt = new Date("2026-08-10T01:03:00.000Z");
+    saveComposeDraft(instance, published);
+    saveComposeDraft(other, draft("另一个实例", "2026-08-10T01:02:03.000Z"));
     const cleared = vi.fn();
     window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
 
-    clearComposeDraft(instance, {
-      reason: "published",
-      contentMd: "无法落盘但发布成功",
-    });
-
-    window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
-    expect(cleared).toHaveBeenCalledOnce();
-    const detail = (cleared.mock.calls[0]?.[0] as CustomEvent).detail as Record<
-      string,
-      unknown
-    >;
-    expect(detail).toMatchObject({
-      schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
-      instance_id: instance,
-      content_md: "无法落盘但发布成功",
-    });
-    expect(Date.parse(String(detail.saved_at))).not.toBeNaN();
-    expect(getItem).toHaveBeenCalled();
-    expect(setItem).toHaveBeenCalled();
-    expect(removeItem).toHaveBeenCalledWith(composeDraftKey(instance));
-  });
-
-  it("uses the trusted published identity when the stored draft is absent or invalid", () => {
-    for (const stored of [null, '{"unexpected":true}']) {
-      window.localStorage.clear();
-      if (stored) {
-        window.localStorage.setItem(composeDraftKey(instance), stored);
-      }
-      const cleared = vi.fn();
-      window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
-
-      clearComposeDraft(instance, {
-        reason: "published",
-        contentMd: "服务端已经接受的正文",
-      });
-
-      window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
-      expect(cleared).toHaveBeenCalledOnce();
-      expect((cleared.mock.calls[0]?.[0] as CustomEvent).detail).toMatchObject({
-        schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
-        instance_id: instance,
-        content_md: "服务端已经接受的正文",
-      });
-      expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
-    }
-  });
-
-  it("keeps logout as an explicit all-clear operation", () => {
-    saveComposeDraft(instance, "退出时全部清理");
-    const cleared = vi.fn();
-    window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
-
-    clearComposeDraft(instance, { reason: "logout" });
+    clearComposeDraft(
+      instance,
+      { reason: "published", draft: published },
+      clearedAt,
+    );
 
     window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
-    expect((cleared.mock.calls[0]?.[0] as CustomEvent).detail).toEqual({
-      schema: COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
+    expect(loadComposeDraft(instance, clearedAt.getTime())).toBeNull();
+    expect(loadComposeDraft(other, clearedAt.getTime())?.contentMd).toBe(
+      "另一个实例",
+    );
+    const detail = {
+      schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
       instance_id: instance,
-      reason: "logout",
+      draft_fingerprint: published.fingerprint,
+      draft_saved_at: published.savedAt,
+      reason: "published",
+      cleared_at: clearedAt.toISOString(),
+    };
+    expect((cleared.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(detail);
+    const marker = window.localStorage.getItem(
+      composeDraftClearanceKey(instance),
+    );
+    expect(marker).toBe(JSON.stringify(detail));
+    expect(marker).not.toContain("已经发布");
+  });
+
+  it("removes an older projection of the same published text", () => {
+    const olderProjection = draft("同一份正文", "2026-08-10T01:02:03.000Z");
+    const submitted = draft("同一份正文", "2026-08-10T01:02:04.000Z");
+    saveComposeDraft(instance, olderProjection);
+
+    clearComposeDraft(
+      instance,
+      { reason: "published", draft: submitted },
+      new Date("2026-08-10T01:03:00.000Z"),
+    );
+
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    expect(
+      loadComposeDraft(instance, Date.parse("2026-08-10T01:03:00.000Z")),
+    ).toBeNull();
+  });
+
+  it("does not let a stale discard remove a newer persisted draft", () => {
+    const stale = draft("准备丢弃", "2026-08-10T01:02:03.000Z");
+    const newer = draft("更新后的版本", "2026-08-10T01:02:04.000Z");
+    saveComposeDraft(instance, stale);
+    saveComposeDraft(instance, newer);
+
+    clearComposeDraft(instance, { reason: "discarded", draft: stale });
+
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBe(
+      JSON.stringify({
+        content_md: newer.contentMd,
+        saved_at: newer.savedAt,
+      }),
+    );
+    expect(loadComposeDraft(instance, Date.parse(newer.savedAt))).toEqual(
+      newer,
+    );
+  });
+
+  it("keeps one clearance key and restores the same text saved later", () => {
+    const first = draft("同一句话", "2026-08-10T01:02:03.000Z");
+    const second = draft("同一句话", "2026-08-10T01:04:00.000Z");
+    const third = draft("第三版", "2026-08-10T01:05:00.000Z");
+    saveComposeDraft(instance, first);
+    clearComposeDraft(
+      instance,
+      { reason: "published", draft: first },
+      new Date("2026-08-10T01:03:00.000Z"),
+    );
+    expect(loadComposeDraft(instance, Date.parse(first.savedAt))).toBeNull();
+
+    saveComposeDraft(instance, second);
+    expect(loadComposeDraft(instance, Date.parse(second.savedAt))).toEqual(
+      second,
+    );
+    clearComposeDraft(
+      instance,
+      { reason: "discarded", draft: second },
+      new Date("2026-08-10T01:04:01.000Z"),
+    );
+    expect(loadComposeDraft(instance, Date.parse(second.savedAt))).toBeNull();
+    expect(
+      Array.from({ length: window.localStorage.length }, (_, index) =>
+        window.localStorage.key(index),
+      ).filter((key) => key?.startsWith("moment.compose.clearance.v1:")),
+    ).toEqual([composeDraftClearanceKey(instance)]);
+
+    saveComposeDraft(instance, third);
+    expect(loadComposeDraft(instance, Date.parse(third.savedAt))).toEqual(
+      third,
+    );
+  });
+
+  it("dispatches a strong clearance when marker persistence is denied", () => {
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("denied");
+    });
+    const published = draft("无法落盘", "2026-08-10T01:02:03.000Z");
+    const cleared = vi.fn();
+    window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+
+    clearComposeDraft(instance, { reason: "published", draft: published });
+
+    window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+    expect(cleared).toHaveBeenCalledOnce();
+    expect((cleared.mock.calls[0]?.[0] as CustomEvent).detail).toMatchObject({
+      schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+      instance_id: instance,
+      draft_fingerprint: published.fingerprint,
+      draft_saved_at: published.savedAt,
+      reason: "published",
     });
   });
 
-  it("strictly rejects malformed clear identities", () => {
+  it("keeps logout as the only unconditional all-clear", () => {
+    const clearedAt = new Date("2026-08-10T01:03:00.000Z");
+    saveComposeDraft(
+      instance,
+      draft("退出时全部清理", "2026-08-10T01:02:03.000Z"),
+    );
+    const cleared = vi.fn();
+    window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+
+    clearComposeDraft(instance, { reason: "logout" }, clearedAt);
+
+    window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, cleared);
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    const detail = {
+      schema: COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
+      instance_id: instance,
+      reason: "logout",
+      cleared_at: clearedAt.toISOString(),
+    };
+    expect((cleared.mock.calls[0]?.[0] as CustomEvent).detail).toEqual(detail);
+    expect(window.localStorage.getItem(composeDraftClearAllKey(instance))).toBe(
+      JSON.stringify(detail),
+    );
+  });
+
+  it("strictly rejects malformed fingerprint clearances", () => {
+    const published = draft("这里", "2026-08-10T01:02:03.000Z");
     expect(
-      parseComposeDraftClearedIdentity({
-        schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
+      parseComposeDraftClearance({
+        schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
         instance_id: instance,
-        content_md: "这里",
+        draft_fingerprint: published.fingerprint,
+        draft_saved_at: published.savedAt,
+        reason: "published",
       }),
     ).toBeNull();
     expect(
-      parseComposeDraftClearedIdentity({
-        schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
+      parseComposeDraftClearance({
+        schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
         instance_id: instance,
-        content_md: "这里",
-        saved_at: "2026-08-10T01:02:03.000Z",
+        draft_fingerprint: published.fingerprint,
+        draft_saved_at: published.savedAt,
+        reason: "published",
+        cleared_at: "2026-08-10T01:03:00.000Z",
         unexpected: true,
       }),
     ).toBeNull();

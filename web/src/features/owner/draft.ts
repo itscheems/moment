@@ -1,38 +1,64 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
+
 const DRAFT_PREFIX = "moment.compose.draft.v1:";
+const CLEARANCE_PREFIX = "moment.compose.clearance.v1:";
+const CLEAR_ALL_PREFIX = "moment.compose.clear-all.v1:";
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
+const INSTANCE_PATTERN = /^[0-9a-f]{32}$/;
+const FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/;
+let lastDraftTime = 0;
+
 export const COMPOSE_DRAFT_CLEARED_EVENT = "moment:compose-draft-cleared";
-export const COMPOSE_DRAFT_CLEARED_SCHEMA = "moment.compose-draft-cleared.v1";
+export const COMPOSE_DRAFT_CLEARANCE_SCHEMA = "moment.compose-clearance.v1";
 export const COMPOSE_DRAFT_CLEAR_ALL_SCHEMA =
   "moment.compose-draft-clear-all.v1";
 
-export interface ComposeDraft {
-  contentMd: string;
+export interface ComposeDraftIdentity {
+  fingerprint: string;
   savedAt: string;
 }
 
-export interface ComposeDraftClearedIdentity {
-  schema: typeof COMPOSE_DRAFT_CLEARED_SCHEMA;
+export interface ComposeDraft extends ComposeDraftIdentity {
+  contentMd: string;
+}
+
+export interface ComposeDraftClearance {
+  schema: typeof COMPOSE_DRAFT_CLEARANCE_SCHEMA;
   instance_id: string;
-  content_md: string;
-  saved_at: string;
+  draft_fingerprint: string;
+  draft_saved_at: string;
+  reason: "published" | "discarded";
+  cleared_at: string;
 }
 
 export interface ComposeDraftClearAll {
   schema: typeof COMPOSE_DRAFT_CLEAR_ALL_SCHEMA;
   instance_id: string;
   reason: "logout";
+  cleared_at: string;
 }
 
 export type ComposeDraftClearEvent =
-  ComposeDraftClearedIdentity | ComposeDraftClearAll;
+  ComposeDraftClearance | ComposeDraftClearAll;
 
 export type ComposeDraftClearRequest =
-  | { reason: "published"; contentMd: string }
-  | { reason: "discarded"; draft: ComposeDraft }
+  | {
+      reason: "published" | "discarded";
+      draft: ComposeDraftIdentity;
+    }
   | { reason: "logout" };
 
-function key(instanceId: string): string {
+function draftKey(instanceId: string): string {
   return `${DRAFT_PREFIX}${instanceId}`;
+}
+
+function clearanceKey(instanceId: string): string {
+  return `${CLEARANCE_PREFIX}${instanceId}`;
+}
+
+function clearAllKey(instanceId: string): string {
+  return `${CLEAR_ALL_PREFIX}${instanceId}`;
 }
 
 function storage(): Storage | null {
@@ -58,74 +84,69 @@ function hasExactKeys(
   );
 }
 
-function parseStoredDraft(value: string | null): ComposeDraft | null {
+function isTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
+function parseJSON(value: string | null): unknown {
   if (!value) return null;
   try {
-    const parsed: unknown = JSON.parse(value);
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      Array.isArray(parsed) ||
-      !hasExactKeys(parsed as Record<string, unknown>, [
-        "content_md",
-        "saved_at",
-      ]) ||
-      typeof (parsed as Record<string, unknown>).content_md !== "string" ||
-      typeof (parsed as Record<string, unknown>).saved_at !== "string" ||
-      !Number.isFinite(
-        Date.parse((parsed as Record<string, unknown>).saved_at as string),
-      )
-    ) {
-      return null;
-    }
-    return {
-      contentMd: (parsed as Record<string, unknown>).content_md as string,
-      savedAt: (parsed as Record<string, unknown>).saved_at as string,
-    };
+    return JSON.parse(value) as unknown;
   } catch {
     return null;
   }
 }
 
-export function composeDraftClearedIdentityFromStorage(
-  instanceId: string,
-  value: string | null,
-): ComposeDraftClearedIdentity | null {
-  if (!/^[0-9a-f]{32}$/.test(instanceId)) return null;
-  const draft = parseStoredDraft(value);
-  if (!draft) return null;
+export function fingerprintComposeDraft(contentMd: string): string {
+  return bytesToHex(sha256(new TextEncoder().encode(contentMd)));
+}
+
+function observeDraftTime(savedAt: string): void {
+  lastDraftTime = Math.max(lastDraftTime, Date.parse(savedAt));
+}
+
+export function createComposeDraft(
+  contentMd: string,
+  previousSavedAt?: string | null,
+  now = new Date(),
+): ComposeDraft {
+  const previous = previousSavedAt ? Date.parse(previousSavedAt) : 0;
+  const nextTime = Math.max(now.getTime(), lastDraftTime + 1, previous + 1);
+  lastDraftTime = nextTime;
   return {
-    schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
-    instance_id: instanceId,
-    content_md: draft.contentMd,
-    saved_at: draft.savedAt,
+    contentMd,
+    fingerprint: fingerprintComposeDraft(contentMd),
+    savedAt: new Date(nextTime).toISOString(),
   };
 }
 
-function composeDraftClearedIdentity(
-  instanceId: string,
-  contentMd: string,
-  savedAt: string,
-): ComposeDraftClearedIdentity | null {
+function parseStoredDraft(value: string | null): ComposeDraft | null {
+  const parsed = parseJSON(value);
   if (
-    !/^[0-9a-f]{32}$/.test(instanceId) ||
-    typeof contentMd !== "string" ||
-    typeof savedAt !== "string" ||
-    !Number.isFinite(Date.parse(savedAt))
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    !hasExactKeys(parsed as Record<string, unknown>, ["content_md", "saved_at"])
   ) {
     return null;
   }
+  const draft = parsed as Record<string, unknown>;
+  if (typeof draft.content_md !== "string" || !isTimestamp(draft.saved_at)) {
+    return null;
+  }
+  observeDraftTime(draft.saved_at);
   return {
-    schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
-    instance_id: instanceId,
-    content_md: contentMd,
-    saved_at: savedAt,
+    contentMd: draft.content_md,
+    fingerprint: fingerprintComposeDraft(draft.content_md),
+    savedAt: draft.saved_at,
   };
 }
 
-export function parseComposeDraftClearedIdentity(
+export function parseComposeDraftClearance(
   value: unknown,
-): ComposeDraftClearedIdentity | null {
+): ComposeDraftClearance | null {
   if (
     typeof value !== "object" ||
     value === null ||
@@ -133,31 +154,36 @@ export function parseComposeDraftClearedIdentity(
     !hasExactKeys(value as Record<string, unknown>, [
       "schema",
       "instance_id",
-      "content_md",
-      "saved_at",
+      "draft_fingerprint",
+      "draft_saved_at",
+      "reason",
+      "cleared_at",
     ])
   ) {
     return null;
   }
-  const identity = value as Record<string, unknown>;
+  const clearance = value as Record<string, unknown>;
   if (
-    identity.schema !== COMPOSE_DRAFT_CLEARED_SCHEMA ||
-    typeof identity.instance_id !== "string" ||
-    !/^[0-9a-f]{32}$/.test(identity.instance_id) ||
-    typeof identity.content_md !== "string" ||
-    typeof identity.saved_at !== "string" ||
-    !Number.isFinite(Date.parse(identity.saved_at))
+    clearance.schema !== COMPOSE_DRAFT_CLEARANCE_SCHEMA ||
+    typeof clearance.instance_id !== "string" ||
+    !INSTANCE_PATTERN.test(clearance.instance_id) ||
+    typeof clearance.draft_fingerprint !== "string" ||
+    !FINGERPRINT_PATTERN.test(clearance.draft_fingerprint) ||
+    !isTimestamp(clearance.draft_saved_at) ||
+    (clearance.reason !== "published" && clearance.reason !== "discarded") ||
+    !isTimestamp(clearance.cleared_at) ||
+    Date.parse(clearance.draft_saved_at) > Date.parse(clearance.cleared_at)
   ) {
     return null;
   }
-  return identity as unknown as ComposeDraftClearedIdentity;
+  return clearance as unknown as ComposeDraftClearance;
 }
 
 export function parseComposeDraftClearEvent(
   value: unknown,
 ): ComposeDraftClearEvent | null {
-  const identity = parseComposeDraftClearedIdentity(value);
-  if (identity) return identity;
+  const clearance = parseComposeDraftClearance(value);
+  if (clearance) return clearance;
   if (
     typeof value !== "object" ||
     value === null ||
@@ -166,6 +192,7 @@ export function parseComposeDraftClearEvent(
       "schema",
       "instance_id",
       "reason",
+      "cleared_at",
     ])
   ) {
     return null;
@@ -174,31 +201,120 @@ export function parseComposeDraftClearEvent(
   if (
     clearAll.schema !== COMPOSE_DRAFT_CLEAR_ALL_SCHEMA ||
     typeof clearAll.instance_id !== "string" ||
-    !/^[0-9a-f]{32}$/.test(clearAll.instance_id) ||
-    clearAll.reason !== "logout"
+    !INSTANCE_PATTERN.test(clearAll.instance_id) ||
+    clearAll.reason !== "logout" ||
+    !isTimestamp(clearAll.cleared_at)
   ) {
     return null;
   }
   return clearAll as unknown as ComposeDraftClearAll;
 }
 
+export function parseComposeDraftClearEventValue(
+  value: string | null,
+): ComposeDraftClearEvent | null {
+  return parseComposeDraftClearEvent(parseJSON(value));
+}
+
+function clearedBy(
+  draft: ComposeDraft,
+  clearance: ComposeDraftClearance,
+): boolean {
+  return (
+    draft.fingerprint === clearance.draft_fingerprint &&
+    Date.parse(draft.savedAt) <= Date.parse(clearance.cleared_at)
+  );
+}
+
+function matchingClearance(
+  target: Storage,
+  instanceId: string,
+  draft: ComposeDraft,
+): ComposeDraftClearance | null {
+  try {
+    const event = parseComposeDraftClearEventValue(
+      target.getItem(clearanceKey(instanceId)),
+    );
+    if (
+      event?.schema === COMPOSE_DRAFT_CLEARANCE_SCHEMA &&
+      event.instance_id === instanceId &&
+      clearedBy(draft, event)
+    ) {
+      return event;
+    }
+  } catch {
+    // A denied marker read leaves the in-memory draft usable.
+  }
+  return null;
+}
+
+function isClearedByLogout(
+  target: Storage,
+  instanceId: string,
+  draft: ComposeDraft,
+): ComposeDraftClearAll | null {
+  try {
+    const event = parseComposeDraftClearEventValue(
+      target.getItem(clearAllKey(instanceId)),
+    );
+    if (
+      event?.schema === COMPOSE_DRAFT_CLEAR_ALL_SCHEMA &&
+      event.instance_id === instanceId &&
+      Date.parse(draft.savedAt) <= Date.parse(event.cleared_at)
+    ) {
+      return event;
+    }
+  } catch {
+    // A denied marker read leaves the in-memory draft usable.
+  }
+  return null;
+}
+
+function removeStoredDraftIfMatching(
+  target: Storage,
+  instanceId: string,
+  event: ComposeDraftClearEvent,
+): boolean {
+  try {
+    const current = parseStoredDraft(target.getItem(draftKey(instanceId)));
+    const matches =
+      event.schema === COMPOSE_DRAFT_CLEAR_ALL_SCHEMA
+        ? Date.parse(current?.savedAt ?? "") <= Date.parse(event.cleared_at)
+        : current
+          ? clearedBy(current, event)
+          : false;
+    if (!current || !matches) return false;
+    target.removeItem(draftKey(instanceId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function loadComposeDraft(
   instanceId: string | null,
   now = Date.now(),
 ): ComposeDraft | null {
-  if (!instanceId) return null;
+  if (!instanceId || !INSTANCE_PATTERN.test(instanceId)) return null;
   const target = storage();
   if (!target) return null;
-  const value = target.getItem(key(instanceId));
-  if (!value) return null;
-  const draft = parseStoredDraft(value);
-  if (!draft) {
-    target.removeItem(key(instanceId));
+  let draft: ComposeDraft | null;
+  try {
+    draft = parseStoredDraft(target.getItem(draftKey(instanceId)));
+  } catch {
     return null;
   }
+  if (!draft) return null;
   const savedTime = Date.parse(draft.savedAt);
-  if (savedTime > now + 60_000 || now - savedTime > MAX_AGE_MS) {
-    target.removeItem(key(instanceId));
+  if (savedTime > now + 60_000 || now - savedTime > MAX_AGE_MS) return null;
+  const clearance = matchingClearance(target, instanceId, draft);
+  if (clearance) {
+    removeStoredDraftIfMatching(target, instanceId, clearance);
+    return null;
+  }
+  const logout = isClearedByLogout(target, instanceId, draft);
+  if (logout) {
+    removeStoredDraftIfMatching(target, instanceId, logout);
     return null;
   }
   return draft;
@@ -206,16 +322,26 @@ export function loadComposeDraft(
 
 export function saveComposeDraft(
   instanceId: string | null,
-  contentMd: string,
-  now = new Date(),
+  draft: ComposeDraft,
 ): boolean {
-  if (!instanceId) return false;
+  if (
+    !instanceId ||
+    !INSTANCE_PATTERN.test(instanceId) ||
+    !isTimestamp(draft.savedAt) ||
+    !FINGERPRINT_PATTERN.test(draft.fingerprint) ||
+    fingerprintComposeDraft(draft.contentMd) !== draft.fingerprint
+  ) {
+    return false;
+  }
   const target = storage();
   if (!target) return false;
   try {
     target.setItem(
-      key(instanceId),
-      JSON.stringify({ content_md: contentMd, saved_at: now.toISOString() }),
+      draftKey(instanceId),
+      JSON.stringify({
+        content_md: draft.contentMd,
+        saved_at: draft.savedAt,
+      }),
     );
     return true;
   } catch {
@@ -226,50 +352,65 @@ export function saveComposeDraft(
 export function clearComposeDraft(
   instanceId: string | null,
   request: ComposeDraftClearRequest,
+  now = new Date(),
 ): void {
-  if (!instanceId || !/^[0-9a-f]{32}$/.test(instanceId)) return;
-  let storedIdentity: ComposeDraftClearedIdentity | null = null;
-  try {
-    const target = window.localStorage;
-    try {
-      storedIdentity = composeDraftClearedIdentityFromStorage(
-        instanceId,
-        target.getItem(key(instanceId)),
-      );
-    } catch {
-      // Removal is still worth attempting when reads are denied independently.
-    }
-    try {
-      target.removeItem(key(instanceId));
-    } catch {
-      // Same-document clearing must not depend on persistent storage access.
-    }
-  } catch {
-    // Access to the localStorage object itself can be denied.
+  if (
+    !instanceId ||
+    !INSTANCE_PATTERN.test(instanceId) ||
+    !Number.isFinite(now.getTime())
+  ) {
+    return;
   }
-
-  let detail: ComposeDraftClearEvent | null;
+  let detail: ComposeDraftClearEvent;
   if (request.reason === "logout") {
+    const clearedAt = now.toISOString();
     detail = {
       schema: COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
       instance_id: instanceId,
       reason: "logout",
+      cleared_at: clearedAt,
     };
-  } else if (request.reason === "published") {
-    detail = composeDraftClearedIdentity(
-      instanceId,
-      request.contentMd,
-      new Date().toISOString(),
-    );
+    try {
+      const target = window.localStorage;
+      try {
+        target.removeItem(draftKey(instanceId));
+      } catch {
+        // The marker can still suppress a draft that cannot be removed.
+      }
+      try {
+        target.setItem(clearAllKey(instanceId), JSON.stringify(detail));
+      } catch {
+        // Same-document logout still clears every mounted draft surface.
+      }
+    } catch {
+      // Same-document logout still clears every mounted draft surface.
+    }
   } else {
-    detail = composeDraftClearedIdentity(
-      instanceId,
-      request.draft.contentMd,
-      request.draft.savedAt,
-    );
+    if (
+      !FINGERPRINT_PATTERN.test(request.draft.fingerprint) ||
+      !isTimestamp(request.draft.savedAt)
+    ) {
+      return;
+    }
+    const clearedAt = new Date(
+      Math.max(now.getTime(), Date.parse(request.draft.savedAt)),
+    ).toISOString();
+    detail = {
+      schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+      instance_id: instanceId,
+      draft_fingerprint: request.draft.fingerprint,
+      draft_saved_at: request.draft.savedAt,
+      reason: request.reason,
+      cleared_at: clearedAt,
+    };
+    try {
+      const target = window.localStorage;
+      target.setItem(clearanceKey(instanceId), JSON.stringify(detail));
+      removeStoredDraftIfMatching(target, instanceId, detail);
+    } catch {
+      // Same-document identity clearing remains available without persistence.
+    }
   }
-  detail ??= storedIdentity;
-  if (!detail) return;
   window.dispatchEvent(
     new CustomEvent(COMPOSE_DRAFT_CLEARED_EVENT, {
       detail,
@@ -278,5 +419,13 @@ export function clearComposeDraft(
 }
 
 export function composeDraftKey(instanceId: string): string {
-  return key(instanceId);
+  return draftKey(instanceId);
+}
+
+export function composeDraftClearanceKey(instanceId: string): string {
+  return clearanceKey(instanceId);
+}
+
+export function composeDraftClearAllKey(instanceId: string): string {
+  return clearAllKey(instanceId);
 }

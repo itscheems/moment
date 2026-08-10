@@ -10,9 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
 import {
+  COMPOSE_DRAFT_CLEARANCE_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
-  COMPOSE_DRAFT_CLEARED_SCHEMA,
+  composeDraftClearanceKey,
   composeDraftKey,
+  loadComposeDraft,
 } from "./draft";
 
 const instance = "0123456789abcdef0123456789abcdef";
@@ -207,9 +209,7 @@ describe("owner composing flow", () => {
     expect(await screen.findByText("发现一段未发布草稿")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "丢弃" }));
     fireEvent.click(await screen.findByRole("button", { name: "丢弃草稿" }));
-    await waitFor(() =>
-      expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull(),
-    );
+    await waitFor(() => expect(loadComposeDraft(instance)).toBeNull());
   });
 
   it("protects new text when typing directly over a recovery choice", async () => {
@@ -270,7 +270,7 @@ describe("owner composing flow", () => {
     resolveCreate(json({ data: post("十秒内写下这一刻"), meta: {} }, 201));
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(window.confirm).not.toHaveBeenCalled();
-    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    expect(loadComposeDraft(instance)).toBeNull();
     await waitFor(
       () => expect(screen.getByText("十秒内写下这一刻")).toBeInTheDocument(),
       { timeout: 3_000 },
@@ -490,7 +490,7 @@ describe("owner composing flow", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(screen.queryByText("发现一段未发布草稿")).toBeNull();
     expect(screen.getByLabelText("此刻想到什么？")).toHaveValue("");
-    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    expect(loadComposeDraft(instance)).toBeNull();
     expect(screen.getAllByText("跨 surface 的恢复草稿")).toHaveLength(1);
 
     const inline = screen.getByLabelText("此刻想到什么？");
@@ -512,7 +512,7 @@ describe("owner composing flow", () => {
     expect(beforeUnload.defaultPrevented).toBe(true);
   });
 
-  it("clears the matching hidden inline surface after publishing when storage is denied", async () => {
+  it("clears equal text across surfaces when storage is denied", async () => {
     preauthenticate();
     const denied = () => {
       throw new DOMException("denied");
@@ -545,9 +545,7 @@ describe("owner composing flow", () => {
 
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(screen.getByLabelText("此刻想到什么？")).toHaveValue("");
-    const publishAgain = screen.getByRole("button", { name: "发布" });
-    expect(publishAgain).toBeDisabled();
-    fireEvent.click(publishAgain);
+    expect(screen.getByRole("button", { name: "发布" })).toBeDisabled();
     expect(screen.getAllByText("无法落盘但已经发布")).toHaveLength(1);
     expect(creates).toBe(1);
   });
@@ -591,22 +589,131 @@ describe("owner composing flow", () => {
     expect(creates).toBe(1);
   });
 
-  it("clears inline only when another tab removes the same draft", async () => {
+  it("repairs a newer inline draft after an older publish cleanup interleaves", async () => {
+    preauthenticate();
+    let resolveCreate!: (response: Response) => void;
+    const createResponse = new Promise<Response>((resolve) => {
+      resolveCreate = resolve;
+    });
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        return createResponse;
+      }
+    });
+    render(<App />);
+
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "共同起点" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    fireEvent.keyDown(document.body, { key: "n" });
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/owner/compose"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "恢复" }));
+    const page = screen.getAllByLabelText("此刻想到什么？")[1];
+    fireEvent.change(page, { target: { value: "B 正在发布的版本" } });
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+    const submittedDraft = loadComposeDraft(instance);
+    expect(submittedDraft).toMatchObject({ contentMd: "B 正在发布的版本" });
+
+    fireEvent.change(inline, { target: { value: "A 在等待期间写的新版本" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    const activeDraft = loadComposeDraft(instance);
+    expect(activeDraft).toMatchObject({
+      contentMd: "A 在等待期间写的新版本",
+    });
+    expect(activeDraft?.savedAt).not.toBe(submittedDraft?.savedAt);
+
+    window.localStorage.setItem(
+      composeDraftKey(instance),
+      JSON.stringify({
+        content_md: submittedDraft?.contentMd,
+        saved_at: submittedDraft?.savedAt,
+      }),
+    );
+    const originalGetItem = window.localStorage.getItem.bind(
+      window.localStorage,
+    );
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    );
+    let injectedNewerProjection = false;
+    const getItem = vi
+      .spyOn(window.localStorage, "getItem")
+      .mockImplementation((key) => {
+        const value = originalGetItem(key);
+        if (
+          !injectedNewerProjection &&
+          key === composeDraftKey(instance) &&
+          activeDraft
+        ) {
+          injectedNewerProjection = true;
+          originalSetItem(
+            key,
+            JSON.stringify({
+              content_md: activeDraft.contentMd,
+              saved_at: activeDraft.savedAt,
+            }),
+          );
+        }
+        return value;
+      });
+
+    resolveCreate(
+      json({
+        data: post("B 正在发布的版本", "01K2ABCDEF0123456789ABCDF3"),
+        meta: {},
+      }),
+    );
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    getItem.mockRestore();
+    expect(injectedNewerProjection).toBe(true);
+    expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
+      "A 在等待期间写的新版本",
+    );
+    expect(loadComposeDraft(instance)).toMatchObject({
+      contentMd: "A 在等待期间写的新版本",
+      fingerprint: activeDraft?.fingerprint,
+      savedAt: activeDraft?.savedAt,
+    });
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(false);
+    fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
+    expect(window.location.pathname).toBe("/");
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+    expect(beforeUnload.defaultPrevented).toBe(true);
+  });
+
+  it("clears inline only when another tab marks the same draft identity", async () => {
     preauthenticate();
     installApi();
     render(<App />);
     const inline = await screen.findByLabelText("此刻想到什么？");
     fireEvent.change(inline, { target: { value: "会被另一标签页清理" } });
     await new Promise((resolve) => window.setTimeout(resolve, 550));
-    const clearedDraft = window.localStorage.getItem(composeDraftKey(instance));
-    expect(clearedDraft).not.toBeNull();
-    window.localStorage.removeItem(composeDraftKey(instance));
+    const storedDraft = loadComposeDraft(instance);
+    expect(storedDraft?.fingerprint).toMatch(/^[0-9a-f]{64}$/);
+    const clearedAt = new Date(
+      Math.max(Date.now(), Date.parse(storedDraft?.savedAt ?? "")) + 1,
+    ).toISOString();
+    const clearance = JSON.stringify({
+      schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+      instance_id: instance,
+      draft_fingerprint: storedDraft?.fingerprint,
+      draft_saved_at: storedDraft?.savedAt,
+      reason: "published",
+      cleared_at: clearedAt,
+    });
+    const clearanceKey = composeDraftClearanceKey(instance);
+    window.localStorage.setItem(clearanceKey, clearance);
     fireEvent(
       window,
       new StorageEvent("storage", {
-        key: composeDraftKey(instance),
-        oldValue: clearedDraft,
-        newValue: null,
+        key: clearanceKey,
+        oldValue: null,
+        newValue: clearance,
       }),
     );
     await waitFor(() => expect(inline).toHaveValue(""));
@@ -629,7 +736,7 @@ describe("owner composing flow", () => {
     expect(beforeUnload.defaultPrevented).toBe(true);
   });
 
-  it("preserves and re-saves divergent dirty text when another tab clears a draft", async () => {
+  it("preserves a divergent draft identity when another tab publishes", async () => {
     preauthenticate();
     installApi();
     render(<App />);
@@ -637,13 +744,14 @@ describe("owner composing flow", () => {
     fireEvent.change(inline, { target: { value: "A 标签页已经分叉的正文" } });
     await new Promise((resolve) => window.setTimeout(resolve, 550));
 
-    window.localStorage.removeItem(composeDraftKey(instance));
+    const storedDraft = loadComposeDraft(instance);
+    expect(storedDraft?.fingerprint).toMatch(/^[0-9a-f]{64}$/);
     fireEvent(
       window,
       new StorageEvent("storage", {
-        key: composeDraftKey(instance),
-        oldValue: '{"content_md":"缺少时间"}',
-        newValue: null,
+        key: composeDraftClearanceKey(instance),
+        oldValue: null,
+        newValue: '{"schema":"invalid"}',
       }),
     );
     expect(inline).toHaveValue("A 标签页已经分叉的正文");
@@ -660,32 +768,42 @@ describe("owner composing flow", () => {
       window,
       new CustomEvent(COMPOSE_DRAFT_CLEARED_EVENT, {
         detail: {
-          schema: COMPOSE_DRAFT_CLEARED_SCHEMA,
+          schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
           instance_id: "fedcba9876543210fedcba9876543210",
-          content_md: "A 标签页已经分叉的正文",
-          saved_at: "2026-08-10T12:00:00.000Z",
+          draft_fingerprint: storedDraft?.fingerprint,
+          draft_saved_at: storedDraft?.savedAt,
+          reason: "published",
+          cleared_at: new Date(
+            Math.max(Date.now(), Date.parse(storedDraft?.savedAt ?? "")) + 1,
+          ).toISOString(),
         },
       }),
     );
     expect(inline).toHaveValue("A 标签页已经分叉的正文");
 
-    const otherDraft = JSON.stringify({
-      content_md: "B 标签页刚刚发布的正文",
-      saved_at: "2026-08-10T12:01:00.000Z",
+    const otherFingerprint = "2".repeat(64);
+    const otherClearance = JSON.stringify({
+      schema: COMPOSE_DRAFT_CLEARANCE_SCHEMA,
+      instance_id: instance,
+      draft_fingerprint: otherFingerprint,
+      draft_saved_at: storedDraft?.savedAt,
+      reason: "published",
+      cleared_at: new Date(
+        Math.max(Date.now(), Date.parse(storedDraft?.savedAt ?? "")) + 1,
+      ).toISOString(),
     });
-    window.localStorage.setItem(composeDraftKey(instance), otherDraft);
-    window.localStorage.removeItem(composeDraftKey(instance));
+    const otherClearanceKey = composeDraftClearanceKey(instance);
+    window.localStorage.setItem(otherClearanceKey, otherClearance);
     fireEvent(
       window,
       new StorageEvent("storage", {
-        key: composeDraftKey(instance),
-        oldValue: otherDraft,
-        newValue: null,
+        key: otherClearanceKey,
+        oldValue: null,
+        newValue: otherClearance,
       }),
     );
 
     expect(inline).toHaveValue("A 标签页已经分叉的正文");
-    await new Promise((resolve) => window.setTimeout(resolve, 550));
     expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
       "A 标签页已经分叉的正文",
     );

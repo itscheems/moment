@@ -20,7 +20,10 @@ interface NavigationContextValue extends LocationSnapshot {
   goBack: (fallback: string) => void;
   replaceTimelineProgress: (cursor: string) => void;
   restoreCurrentEntry: () => void;
-  setNavigationBlocker: (blocker: (() => boolean) | null) => void;
+  setNavigationBlocker: (
+    owner: symbol,
+    blocker: (() => boolean) | null,
+  ) => void;
 }
 
 interface MomentHistoryState {
@@ -64,13 +67,20 @@ function restoreEntry(state: unknown) {
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState(currentLocation);
-  const navigationBlocker = useRef<(() => boolean) | null>(null);
+  const navigationBlockers = useRef(new Map<symbol, () => boolean>());
 
-  const canLeave = useCallback(() => navigationBlocker.current?.() ?? true, []);
+  const canLeave = useCallback(() => {
+    const blockers = Array.from(navigationBlockers.current.values()).reverse();
+    return blockers.every((blocker) => blocker());
+  }, []);
 
   const setNavigationBlocker = useCallback(
-    (blocker: (() => boolean) | null) => {
-      navigationBlocker.current = blocker;
+    (owner: symbol, blocker: (() => boolean) | null) => {
+      if (blocker) {
+        navigationBlockers.current.set(owner, blocker);
+      } else {
+        navigationBlockers.current.delete(owner);
+      }
     },
     [],
   );
