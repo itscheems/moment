@@ -8,6 +8,7 @@ import (
 
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
+	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	ginhttp "github.com/moment/moment/internal/transport/http/gin"
 	"github.com/moment/moment/internal/webassets"
 	"github.com/spf13/pflag"
@@ -61,6 +62,16 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 			ExitIO,
 		).WithCause(err)
 	}
+	database, err := sqlitestore.Open(ctx, runtime, sqlitestore.Options{})
+	if err != nil {
+		return Result{}, NewCommandError(
+			"DATABASE_NOT_READY",
+			"the current Moment database could not become ready",
+			"inspect the selected data directory and migration history, then retry",
+			ExitIntegrity,
+		).WithCause(err)
+	}
+	defer func() { _ = database.Close() }()
 	assets, err := webassets.Public()
 	if err != nil {
 		return Result{}, NewCommandError(
@@ -72,6 +83,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:         assets,
+		Readiness:      database.Ready,
 		TrustedProxies: trustedProxies,
 		Log:            invocation.LogEvent,
 	})

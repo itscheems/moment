@@ -76,6 +76,14 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	readyResponse, err := client.Get("http://" + address + "/readyz")
+	if err != nil {
+		t.Fatalf("readiness request failed: %v", err)
+	}
+	_ = readyResponse.Body.Close()
+	if readyResponse.StatusCode != http.StatusOK {
+		t.Fatalf("readiness status = %d, want %d; stderr=%s", readyResponse.StatusCode, http.StatusOK, stderr.String())
+	}
 	if err := command.Process.Signal(os.Interrupt); err != nil {
 		t.Fatal(err)
 	}
