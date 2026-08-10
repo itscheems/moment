@@ -7,6 +7,8 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,6 +18,7 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	ginhttp "github.com/moment/moment/internal/transport/http/gin"
@@ -55,6 +58,10 @@ func newPostCLIFixture(t *testing.T) postCLIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mediaStore, err := media.NewStore(runtimeState, database, media.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	postRepository, err := sqlitestore.NewPostRepository(database, runtimeState.Locks)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +92,7 @@ func newPostCLIFixture(t *testing.T) postCLIFixture {
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:    fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
-		OwnerAuth: manager, SiteSettings: site, Posts: posts, Search: search,
+		OwnerAuth: manager, SiteSettings: site, Posts: posts, Search: search, Media: mediaStore,
 		Readiness: func(ctx context.Context) error { return database.Ready(ctx) },
 	})
 	if err != nil {
@@ -208,6 +215,194 @@ func TestPostDirectAPIParityAndPublicReadsDoNotRequireToken(t *testing.T) {
 	}
 }
 
+func TestPostMediaCLISingleManifestAndTransportParity(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	application := momentTestApplication()
+	imagePath := writeCLIImage(t)
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+
+	createdOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir,
+		"--content", "single image", "--media", imagePath, "--json")
+	if createdOutput.exit != ExitSuccess || createdOutput.stderr != "" {
+		t.Fatalf("single create = %#v", createdOutput)
+	}
+	created := commandData(t, createdOutput)
+	mediaItems := assertCLIPostMedia(t, created, []any{nil})
+	mediaID := mediaItems[0]["media_id"].(string)
+	id := created["id"].(string)
+
+	manifest := writePostManifest(t, `[
+  {"path":`+jsonString(imagePath)+`,"alt_text":"same bytes, provided"},
+  {"media_id":"`+mediaID+`","alt_text":""},
+  {"media_id":"`+mediaID+`","alt_text":null}
+]`)
+	directUpdate := execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir,
+		"--media-manifest", manifest, "--json")
+	if directUpdate.exit != ExitSuccess || commandData(t, directUpdate)["content_md"] != "single image" {
+		t.Fatalf("direct manifest update = %#v", directUpdate)
+	}
+	assertCLIPostMedia(t, commandData(t, directUpdate), []any{"same bytes, provided", "", nil})
+	apiGet := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "get", id, "--json"))
+	if !reflect.DeepEqual(commandData(t, directUpdate), apiGet) {
+		t.Fatalf("direct update/API get drift: direct=%#v api=%#v", commandData(t, directUpdate), apiGet)
+	}
+
+	apiDecorative := execute(application, "", "--url", fixture.server.URL, "post", "update", id,
+		"--media", imagePath, "--media-decorative", "--json")
+	if apiDecorative.exit != ExitSuccess {
+		t.Fatalf("API decorative update = %#v", apiDecorative)
+	}
+	assertCLIPostMedia(t, commandData(t, apiDecorative), []any{""})
+	directGet := commandData(t, execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--json"))
+	if !reflect.DeepEqual(commandData(t, apiDecorative), directGet) {
+		t.Fatalf("API update/direct get drift: api=%#v direct=%#v", commandData(t, apiDecorative), directGet)
+	}
+
+	cleared := execute(application, "[]", "post", "update", id, "--data-dir", fixture.dataDir,
+		"--media-manifest", "-", "--json")
+	if cleared.exit != ExitSuccess {
+		t.Fatalf("stdin clear = %#v", cleared)
+	}
+	if values := assertCLIPostMedia(t, commandData(t, cleared), nil); len(values) != 0 {
+		t.Fatalf("cleared media = %#v", values)
+	}
+	apiAfterClear := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "get", id, "--json"))
+	if !reflect.DeepEqual(commandData(t, cleared), apiAfterClear) {
+		t.Fatalf("stdin clear parity drift: direct=%#v api=%#v", commandData(t, cleared), apiAfterClear)
+	}
+}
+
+func TestPostMediaCLIAPIPathReplayAndFailureLeavesOnlyGCCandidate(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	application := momentTestApplication()
+	imagePath := writeCLIImage(t)
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+
+	args := []string{"--url", fixture.server.URL, "post", "create", "--content", "API upload replay", "--media", imagePath, "--idempotency-key", "api-media-replay", "--json"}
+	createdOutput := execute(application, "", args...)
+	created := commandData(t, createdOutput)
+	if createdOutput.exit != ExitSuccess {
+		t.Fatalf("API media create = %#v", createdOutput)
+	}
+	replayOutput := execute(application, "", args...)
+	if replayOutput.exit != ExitSuccess || !reflect.DeepEqual(created, commandData(t, replayOutput)) || decodeOneDocument(t, replayOutput.stdout)["meta"].(map[string]any)["replayed"] != true {
+		t.Fatalf("API media replay = %#v", replayOutput)
+	}
+	if postCLITableCount(t, fixture.database, "media") != 1 || postCLITableCount(t, fixture.database, "entry_media") != 1 {
+		t.Fatal("content-addressed replay duplicated media or usages")
+	}
+	id := created["id"].(string)
+	if output := execute(application, "[]", "--url", fixture.server.URL, "post", "update", id, "--media-manifest", "-", "--json"); output.exit != ExitSuccess {
+		t.Fatalf("API clear before delete = %#v", output)
+	}
+	if output := execute(application, "", "--url", fixture.server.URL, "post", "delete", id, "--yes", "--json"); output.exit != ExitSuccess {
+		t.Fatalf("API delete = %#v", output)
+	}
+	replayAfterDelete := execute(application, "", args...)
+	if replayAfterDelete.exit != ExitSuccess || !reflect.DeepEqual(created, commandData(t, replayAfterDelete)) {
+		t.Fatalf("API replay after delete = %#v", replayAfterDelete)
+	}
+
+	secondFixture := newPostCLIFixture(t)
+	t.Setenv("MOMENT_TOKEN", secondFixture.token)
+	postFailed := execute(application, "", "--url", secondFixture.server.URL, "post", "create",
+		"--content", "   ", "--media", imagePath, "--json")
+	if postFailed.exit != ExitConflict || postCLITableCount(t, secondFixture.database, "entries") != 0 ||
+		postCLITableCount(t, secondFixture.database, "entry_media") != 0 || postCLITableCount(t, secondFixture.database, "media") != 1 {
+		t.Fatalf("post failure after upload = %#v", postFailed)
+	}
+	var postFailureClock *int64
+	if err := secondFixture.database.ReadTx(context.Background(), func(queries sqlitestore.Queries) error {
+		return queries.QueryRowContext(context.Background(), `SELECT unreferenced_since_ms FROM media`).Scan(&postFailureClock)
+	}); err != nil || postFailureClock == nil {
+		t.Fatalf("post failure upload was not a GC candidate: %v, %v", postFailureClock, err)
+	}
+
+	badImage := filepath.Join(t.TempDir(), "not-image.txt")
+	if err := os.WriteFile(badImage, []byte("not an image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest := writePostManifest(t, `[
+  {"path":`+jsonString(imagePath)+`,"alt_text":null},
+  {"path":`+jsonString(badImage)+`,"alt_text":"invalid second upload"}
+]`)
+	failed := execute(application, "", "--url", secondFixture.server.URL, "post", "create",
+		"--content", "must not partially attach", "--media-manifest", manifest, "--json")
+	if failed.exit == ExitSuccess {
+		t.Fatalf("failed upload unexpectedly succeeded: %#v", failed)
+	}
+	if postCLITableCount(t, secondFixture.database, "entries") != 0 || postCLITableCount(t, secondFixture.database, "entry_media") != 0 || postCLITableCount(t, secondFixture.database, "media") != 1 {
+		t.Fatal("upload failure left a partial post/usage or lost the successful GC candidate")
+	}
+	var unreferenced *int64
+	if err := secondFixture.database.ReadTx(context.Background(), func(queries sqlitestore.Queries) error {
+		return queries.QueryRowContext(context.Background(), `SELECT unreferenced_since_ms FROM media`).Scan(&unreferenced)
+	}); err != nil || unreferenced == nil {
+		t.Fatalf("successful pre-post upload was not an unreferenced GC candidate: %v, %v", unreferenced, err)
+	}
+}
+
+func TestPostMediaCLIStrictManifestFlagsAndPathSafety(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	application := momentTestApplication()
+	imagePath := writeCLIImage(t)
+	mediaID := commandData(t, execute(application, "", "media", "add", imagePath, "--data-dir", fixture.dataDir, "--json"))["media"].(map[string]any)["id"].(string)
+	overLimit := make([]string, 0, 10)
+	for range 10 {
+		overLimit = append(overLimit, `{"media_id":"`+mediaID+`","alt_text":null}`)
+	}
+	tests := []struct {
+		name  string
+		stdin string
+		args  []string
+	}{
+		{name: "empty convenience alt", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media-alt", "", "--json"}},
+		{name: "both alt modes", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media-alt", "x", "--media-decorative", "--json"}},
+		{name: "repeated convenience path", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media", imagePath, "--json"}},
+		{name: "manifest and convenience", stdin: "[]", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media-manifest", "-", "--json"}},
+		{name: "repeated manifest", stdin: "[]", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--media-manifest", "-", "--json"}},
+		{name: "manifest null", stdin: "null", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "manifest trailing", stdin: "[] {}", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "missing alt", stdin: `[{"media_id":"` + mediaID + `"}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "both source fields", stdin: `[{"path":` + jsonString(imagePath) + `,"media_id":"` + mediaID + `","alt_text":null}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "unknown field", stdin: `[{"media_id":"` + mediaID + `","alt_text":null,"decorative":true}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "duplicate field", stdin: `[{"media_id":"` + mediaID + `","media_id":"` + mediaID + `","alt_text":null}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "blank provided alt", stdin: `[{"media_id":"` + mediaID + `","alt_text":"   "}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "over limit", stdin: `[` + strings.Join(overLimit, ",") + `]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output := execute(application, test.stdin, test.args...)
+			if output.exit != ExitInvalidInput || output.stderr != "" || decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
+				t.Fatalf("output = %#v", output)
+			}
+		})
+	}
+
+	manifestDirectory := t.TempDir()
+	if output := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", manifestDirectory, "--json"); output.exit != ExitInvalidInput {
+		t.Fatalf("manifest directory = %#v", output)
+	}
+	manifestTarget := writePostManifest(t, "[]")
+	manifestLink := filepath.Join(t.TempDir(), "linked-manifest.json")
+	if err := os.Symlink(manifestTarget, manifestLink); err != nil {
+		t.Fatal(err)
+	}
+	if output := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", manifestLink, "--json"); output.exit != ExitInvalidInput {
+		t.Fatalf("manifest symlink = %#v", output)
+	}
+	mediaLink := filepath.Join(t.TempDir(), "linked.png")
+	if err := os.Symlink(imagePath, mediaLink); err != nil {
+		t.Fatal(err)
+	}
+	if output := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", mediaLink, "--json"); output.exit != ExitInvalidInput {
+		t.Fatalf("media symlink = %#v", output)
+	}
+	if postCLITableCount(t, fixture.database, "entries") != 0 || postCLITableCount(t, fixture.database, "entry_media") != 0 {
+		t.Fatal("invalid flags or manifests mutated posts")
+	}
+}
+
 func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()
@@ -278,6 +473,9 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 				t.Fatalf("%s help missing %q:\n%s", verb, required, output.stdout)
 			}
 		}
+		if (verb == "create" || verb == "update") && (!strings.Contains(output.stdout, "--media-manifest") || !strings.Contains(output.stdout, "--media-decorative")) {
+			t.Fatalf("%s help omitted ordered media inputs:\n%s", verb, output.stdout)
+		}
 	}
 }
 
@@ -290,6 +488,9 @@ func TestDirectPostWriteHoldsAuthoritativeMaintenanceLease(t *testing.T) {
 	}
 	if !direct.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
 		t.Fatal("direct post write did not retain maintenance shared")
+	}
+	if direct.media == nil {
+		t.Fatal("direct post write did not bind media ingestion to the retained maintenance lease")
 	}
 	blockedContext, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
@@ -309,7 +510,7 @@ func TestDirectPostWriteHoldsAuthoritativeMaintenanceLease(t *testing.T) {
 }
 
 func TestPostAPIRejectsNonCanonicalSuccessEnvelopes(t *testing.T) {
-	validData := `{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","content_md":"valid","content_html":"<p>valid</p>\n","created_at":"2026-08-10T12:00:00Z","updated_at":"2026-08-10T12:00:00Z","published_at":"2026-08-10T12:00:00Z"}`
+	validData := `{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","content_md":"valid","content_html":"<p>valid</p>\n","created_at":"2026-08-10T12:00:00Z","updated_at":"2026-08-10T12:00:00Z","published_at":"2026-08-10T12:00:00Z","media":[]}`
 	responses := map[string]string{
 		"null data":            `{"data":null,"meta":{"request_id":"req_fake"}}`,
 		"zero post":            `{"data":{"id":"","content_md":"","content_html":"","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z","published_at":"0001-01-01T00:00:00Z"},"meta":{}}`,
@@ -322,6 +523,8 @@ func TestPostAPIRejectsNonCanonicalSuccessEnvelopes(t *testing.T) {
 		"trailing document":    `{"data":` + validData + `,"meta":{}} {}`,
 		"null envelope meta":   `{"data":` + validData + `,"meta":null}`,
 		"scalar envelope meta": `{"data":` + validData + `,"meta":true}`,
+		"null post media":      `{"data":` + strings.Replace(validData, `"media":[]`, `"media":null`, 1) + `,"meta":{}}`,
+		"usage missing alt":    `{"data":` + strings.Replace(validData, `"media":[]`, `"media":[{"media_id":"01ARZ3NDEKTSV4RRFFQ69G5FAW","position":0}]`, 1) + `,"meta":{}}`,
 	}
 	for name, body := range responses {
 		t.Run(name, func(t *testing.T) {
@@ -363,6 +566,7 @@ func TestPostAPIRequiresMutationMetadataAndStatusPairing(t *testing.T) {
 		CreatedAt:   instant,
 		UpdatedAt:   instant,
 		PublishedAt: instant,
+		Media:       []postdto.MediaUsage{},
 	}
 	tests := []struct {
 		name   string
@@ -395,4 +599,55 @@ func TestPostAPIRequiresMutationMetadataAndStatusPairing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func writePostManifest(t *testing.T, contents string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "post-media.json")
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func jsonString(value string) string {
+	encoded, _ := json.Marshal(value)
+	return string(encoded)
+}
+
+func assertCLIPostMedia(t *testing.T, post map[string]any, expectedAlts []any) []map[string]any {
+	t.Helper()
+	raw, present := post["media"]
+	items, ok := raw.([]any)
+	if !present || !ok || items == nil || len(items) != len(expectedAlts) {
+		t.Fatalf("post media = %#v", raw)
+	}
+	result := make([]map[string]any, 0, len(items))
+	for index, rawItem := range items {
+		item, ok := rawItem.(map[string]any)
+		if !ok || len(item) != 3 || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) {
+			t.Fatalf("media[%d] = %#v", index, rawItem)
+		}
+		if _, err := domain.ParseID(item["media_id"].(string)); err != nil {
+			t.Fatalf("media[%d] ID = %v", index, err)
+		}
+		for _, field := range []string{"media_id", "position", "alt_text"} {
+			if _, present := item[field]; !present {
+				t.Fatalf("media[%d] omitted %s", index, field)
+			}
+		}
+		result = append(result, item)
+	}
+	return result
+}
+
+func postCLITableCount(t *testing.T, database *sqlitestore.Database, table string) int {
+	t.Helper()
+	var count int
+	if err := database.ReadTx(context.Background(), func(queries sqlitestore.Queries) error {
+		return queries.QueryRowContext(context.Background(), `SELECT count(*) FROM `+table).Scan(&count)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return count
 }

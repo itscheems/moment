@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
@@ -20,6 +23,11 @@ var postHTTPIDs = []domain.ID{
 	"01ARZ3NDEKTSV4RRFFQ69G5FAX",
 	"01ARZ3NDEKTSV4RRFFQ69G5FAY",
 }
+
+const (
+	postHTTPMediaOne = "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
+	postHTTPMediaTwo = "01ARZ3NDEKTSV4RRFFQ69G5FB0"
+)
 
 type postHTTPFixture struct {
 	ownerTestFixture
@@ -52,6 +60,10 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
+	mediaStore, err := media.NewStore(runtimeState, database, media.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	postRepository, err := sqlitestore.NewPostRepository(database, runtimeState.Locks)
 	if err != nil {
 		t.Fatal(err)
@@ -94,6 +106,7 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 		OwnerAuth:    manager,
 		SiteSettings: site,
 		Posts:        posts,
+		Media:        mediaStore,
 		Search:       search,
 		RequestID:    func() string { return "req_posts" },
 		Limits:       BodyLimits{JSON: jsonLimit},
@@ -135,6 +148,9 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	id := createdData["id"].(string)
 	if createdData["content_md"] != "first **post**" || createdData["content_html"] == "" || createdData["kind"] != nil {
 		t.Fatalf("created DTO = %#v", createdData)
+	}
+	if media, ok := createdData["media"].([]any); !ok || media == nil || len(media) != 0 {
+		t.Fatalf("text-only post media = %#v", createdData["media"])
 	}
 	duplicatePatch := ownerRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"content_md":"one","content_md":"two"}`)
 	duplicatePatch.Header.Set("Authorization", "Bearer "+fixture.token)
@@ -191,6 +207,155 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	if missing.Code != http.StatusNotFound || decodeError(t, missing.Body).Error.Code != "POST_NOT_FOUND" {
 		t.Fatalf("missing = %d %s", missing.Code, missing.Body.String())
 	}
+}
+
+func TestPostHTTPMediaCanonicalPatchAndImmutableReplay(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	insertPostHTTPMedia(t, fixture.database, postHTTPMediaOne, "a")
+	insertPostHTTPMedia(t, fixture.database, postHTTPMediaTwo, "b")
+	body := `{"content_md":"media post","media":[` +
+		`{"media_id":"` + postHTTPMediaOne + `","position":0,"alt_text":null},` +
+		`{"media_id":"` + postHTTPMediaOne + `","position":1,"alt_text":""},` +
+		`{"media_id":"` + postHTTPMediaTwo + `","position":2,"alt_text":"street at night"}]}`
+	request := ownerRequest(http.MethodPost, "/api/v1/owner/posts", body)
+	request.Header.Set("Authorization", "Bearer "+fixture.token)
+	request.Header.Set("Idempotency-Key", "http-media-replay")
+	createdResponse := performRequest(fixture.engine, request)
+	if createdResponse.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	created := decodeDataMap(t, createdResponse)
+	id := created["id"].(string)
+	assertCanonicalHTTPMedia(t, created["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
+
+	get := decodeDataMap(t, performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts/"+id, "")))
+	assertCanonicalHTTPMedia(t, get["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
+	listResponse := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts", ""))
+	var list struct {
+		Data struct {
+			Items []map[string]any `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listResponse.Body.Bytes(), &list); err != nil || len(list.Data.Items) != 1 {
+		t.Fatalf("list = %s, %v", listResponse.Body.String(), err)
+	}
+	assertCanonicalHTTPMedia(t, list.Data.Items[0]["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
+
+	contentOnly := ownerRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"content_md":"edited content"}`)
+	contentOnly.Header.Set("Authorization", "Bearer "+fixture.token)
+	contentUpdated := performRequest(fixture.engine, contentOnly)
+	if contentUpdated.Code != http.StatusOK {
+		t.Fatalf("content patch = %d %s", contentUpdated.Code, contentUpdated.Body.String())
+	}
+	assertCanonicalHTTPMedia(t, decodeDataMap(t, contentUpdated)["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
+	nullMedia := ownerRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"media":null}`)
+	nullMedia.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, nullMedia); response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
+		t.Fatalf("null media patch = %d %s", response.Code, response.Body.String())
+	}
+	preservedAfterNull := decodeDataMap(t, performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts/"+id, "")))
+	assertCanonicalHTTPMedia(t, preservedAfterNull["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
+
+	mediaOnly := ownerRequest(http.MethodPatch, "/api/v1/owner/posts/"+id,
+		`{"media":[{"media_id":"`+postHTTPMediaTwo+`","position":0,"alt_text":"replacement"}]}`)
+	mediaOnly.Header.Set("Authorization", "Bearer "+fixture.token)
+	replaced := performRequest(fixture.engine, mediaOnly)
+	replacedData := decodeDataMap(t, replaced)
+	if replaced.Code != http.StatusOK || replacedData["content_md"] != "edited content" {
+		t.Fatalf("media patch = %d %s", replaced.Code, replaced.Body.String())
+	}
+	assertCanonicalHTTPMedia(t, replacedData["media"], []any{"replacement"}, []string{postHTTPMediaTwo})
+
+	clearRequest := ownerRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"media":[]}`)
+	clearRequest.Header.Set("Authorization", "Bearer "+fixture.token)
+	cleared := performRequest(fixture.engine, clearRequest)
+	if cleared.Code != http.StatusOK {
+		t.Fatalf("clear = %d %s", cleared.Code, cleared.Body.String())
+	}
+	if media := decodeDataMap(t, cleared)["media"].([]any); media == nil || len(media) != 0 {
+		t.Fatalf("cleared media = %#v", media)
+	}
+
+	replay := ownerRequest(http.MethodPost, "/api/v1/owner/posts", body)
+	replay.Header.Set("Authorization", "Bearer "+fixture.token)
+	replay.Header.Set("Idempotency-Key", "http-media-replay")
+	replayed := performRequest(fixture.engine, replay)
+	if replayed.Code != http.StatusOK {
+		t.Fatalf("replay = %d %s", replayed.Code, replayed.Body.String())
+	}
+	assertCanonicalHTTPMedia(t, decodeDataMap(t, replayed)["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
+
+	deleteRequest := ownerRequest(http.MethodDelete, "/api/v1/owner/posts/"+id, "")
+	deleteRequest.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, deleteRequest); response.Code != http.StatusOK {
+		t.Fatalf("delete = %d %s", response.Code, response.Body.String())
+	}
+	replayAfterDelete := ownerRequest(http.MethodPost, "/api/v1/owner/posts", body)
+	replayAfterDelete.Header.Set("Authorization", "Bearer "+fixture.token)
+	replayAfterDelete.Header.Set("Idempotency-Key", "http-media-replay")
+	response := performRequest(fixture.engine, replayAfterDelete)
+	if response.Code != http.StatusOK {
+		t.Fatalf("replay after delete = %d %s", response.Code, response.Body.String())
+	}
+	assertCanonicalHTTPMedia(t, decodeDataMap(t, response)["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
+}
+
+func TestPostHTTPMediaStrictValidationAndRollback(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	insertPostHTTPMedia(t, fixture.database, postHTTPMediaOne, "c")
+	tenth := make([]string, 0, 10)
+	for index := range 10 {
+		tenth = append(tenth, `{"media_id":"`+postHTTPMediaOne+`","position":`+string(rune('0'+index))+`,"alt_text":null}`)
+	}
+	invalidBodies := []string{
+		`{"content_md":"x","media":null}`,
+		`{"content_md":"x","media":{}}`,
+		`{"content_md":"x","media":[{"media_id":"` + postHTTPMediaOne + `","position":0}]}`,
+		`{"content_md":"x","media":[{"media_id":"` + postHTTPMediaOne + `","position":0,"alt_text":null,"extra":true}]}`,
+		`{"content_md":"x","media":[{"media_id":"` + postHTTPMediaOne + `","position":0,"alt_text":null,"alt_text":"x"}]}`,
+		`{"content_md":"x","media":[{"media_id":"` + postHTTPMediaOne + `","position":1,"alt_text":null}]}`,
+		`{"content_md":"x","media":[{"media_id":"` + postHTTPMediaOne + `","position":9,"alt_text":null}]}`,
+		`{"content_md":"x","media":[{"media_id":"` + postHTTPMediaOne + `","position":0,"alt_text":"   "}]}`,
+		`{"content_md":"x","media":[{"media_id":"` + postHTTPMediaOne + `","position":0,"alt_text":"` + strings.Repeat("界", 1001) + `"}]}`,
+		`{"content_md":"x","media":[` + strings.Join(tenth, ",") + `]}`,
+	}
+	for _, body := range invalidBodies {
+		request := ownerRequest(http.MethodPost, "/api/v1/owner/posts", body)
+		request.Header.Set("Authorization", "Bearer "+fixture.token)
+		response := performRequest(fixture.engine, request)
+		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
+			t.Fatalf("invalid body = %d %s for %s", response.Code, response.Body.String(), body)
+		}
+	}
+	assertHTTPTableCount(t, fixture.database, "entries", 0)
+	assertHTTPTableCount(t, fixture.database, "entry_media", 0)
+
+	missing := ownerRequest(http.MethodPost, "/api/v1/owner/posts",
+		`{"content_md":"missing","media":[{"media_id":"`+postHTTPMediaTwo+`","position":0,"alt_text":null}]}`)
+	missing.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, missing); response.Code != http.StatusNotFound || decodeError(t, response.Body).Error.Code != "MEDIA_NOT_FOUND" {
+		t.Fatalf("missing = %d %s", response.Code, response.Body.String())
+	}
+
+	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
+		_, err := queries.ExecContext(context.Background(), `
+CREATE TRIGGER reject_http_post_media
+BEFORE INSERT ON entry_media
+BEGIN
+    SELECT RAISE(ABORT, 'injected HTTP usage failure');
+END`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rollback := ownerRequest(http.MethodPost, "/api/v1/owner/posts",
+		`{"content_md":"rollback","media":[{"media_id":"`+postHTTPMediaOne+`","position":0,"alt_text":null}]}`)
+	rollback.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, rollback); response.Code != http.StatusInternalServerError || decodeError(t, response.Body).Error.Code != "INTERNAL" {
+		t.Fatalf("rollback = %d %s", response.Code, response.Body.String())
+	}
+	assertHTTPTableCount(t, fixture.database, "entries", 0)
+	assertHTTPTableCount(t, fixture.database, "entry_media", 0)
 }
 
 func TestPostHTTPDateCursorStrictBindingAndQueryValidation(t *testing.T) {
@@ -331,5 +496,53 @@ func TestPostRoutesRequireAuthAndSiteAuthority(t *testing.T) {
 	}
 	if _, err := New(Config{Assets: testAssets(), Posts: fixture.posts, OwnerAuth: fixture.manager}); err == nil {
 		t.Fatal("post routes without site settings were accepted")
+	}
+}
+
+func insertPostHTTPMedia(t *testing.T, database *sqlitestore.Database, id, fill string) {
+	t.Helper()
+	sha := strings.Repeat(fill, 64)
+	path := "media/original/" + fill + fill + "/" + sha + ".jpg"
+	if err := database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
+		_, err := queries.ExecContext(context.Background(), `
+INSERT INTO media (
+    id, sha256, storage_path, original_name, mime_type, byte_size,
+    width, height, created_at_ms, unreferenced_since_ms
+) VALUES (?, ?, ?, 'fixture.jpg', 'image/jpeg', 10, 8, 8, 1, 1)`, id, sha, path)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertCanonicalHTTPMedia(t *testing.T, raw any, expectedAlts []any, expectedIDs []string) {
+	t.Helper()
+	items, ok := raw.([]any)
+	if !ok || items == nil || len(items) != len(expectedIDs) || len(expectedAlts) != len(expectedIDs) {
+		t.Fatalf("media = %#v", raw)
+	}
+	for index, rawItem := range items {
+		item, ok := rawItem.(map[string]any)
+		if !ok || len(item) != 3 || item["media_id"] != expectedIDs[index] || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) {
+			t.Fatalf("media[%d] = %#v", index, rawItem)
+		}
+		for _, field := range []string{"media_id", "position", "alt_text"} {
+			if _, present := item[field]; !present {
+				t.Fatalf("media[%d] omitted %s: %#v", index, field, item)
+			}
+		}
+	}
+}
+
+func assertHTTPTableCount(t *testing.T, database *sqlitestore.Database, table string, expected int) {
+	t.Helper()
+	var count int
+	if err := database.ReadTx(context.Background(), func(queries sqlitestore.Queries) error {
+		return queries.QueryRowContext(context.Background(), `SELECT count(*) FROM `+table).Scan(&count)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if count != expected {
+		t.Fatalf("%s count = %d, want %d", table, count, expected)
 	}
 }

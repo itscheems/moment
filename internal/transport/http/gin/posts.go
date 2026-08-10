@@ -72,7 +72,7 @@ func getPost(posts *app.PostService) gin.HandlerFunc {
 
 func createPost(posts *app.PostService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		content, err := decodePostContent(ctx)
+		input, err := decodePostWrite(ctx, false)
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -82,7 +82,7 @@ func createPost(posts *app.PostService) gin.HandlerFunc {
 			writePostError(ctx, err)
 			return
 		}
-		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: content, IdempotencyKey: idempotencyKey})
+		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Media: input.Media, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -102,12 +102,17 @@ func updatePost(posts *app.PostService) gin.HandlerFunc {
 			writePostError(ctx, err)
 			return
 		}
-		content, err := decodePostContent(ctx)
+		decoded, err := decodePostWrite(ctx, true)
 		if err != nil {
 			writePostError(ctx, err)
 			return
 		}
-		post, err := posts.Update(ctx.Request.Context(), app.UpdatePostInput{ID: id, ContentMD: content})
+		update := app.UpdatePostInput{ID: id, ContentMD: decoded.ContentMD, PreserveContent: !decoded.ContentPresent}
+		if decoded.MediaPresent {
+			media := domain.CloneEntryMediaUsages(decoded.Media)
+			update.Media = &media
+		}
+		post, err := posts.Update(ctx.Request.Context(), update)
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -173,45 +178,104 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 	return input, nil
 }
 
-func decodePostContent(ctx *gin.Context) (string, error) {
+type decodedPostWrite struct {
+	ContentMD      string
+	ContentPresent bool
+	Media          []domain.EntryMediaUsage
+	MediaPresent   bool
+}
+
+func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 	mediaType, _, err := mime.ParseMediaType(ctx.GetHeader("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "post writes require application/json", map[string]any{"field": "content_type"})
-		return "", errResponseWritten
+		return decodedPostWrite{}, errResponseWritten
 	}
 	body, ok := readBody(ctx)
 	if !ok {
-		return "", errResponseWritten
+		return decodedPostWrite{}, errResponseWritten
 	}
 	if !utf8.Valid(body) {
-		return "", invalidPostArgument("request body must be valid UTF-8 JSON", "body")
+		return decodedPostWrite{}, invalidPostArgument("request body must be valid UTF-8 JSON", "body")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	token, err := decoder.Token()
 	if err != nil || token != json.Delim('{') {
-		return "", invalidPostArgument("request must be one JSON object", "body")
+		return decodedPostWrite{}, invalidPostArgument("request must be one JSON object", "body")
 	}
-	seen := false
-	content := ""
+	seen := map[string]bool{}
+	result := decodedPostWrite{Media: []domain.EntryMediaUsage{}}
 	for decoder.More() {
 		keyToken, err := decoder.Token()
-		key, ok := keyToken.(string)
-		if err != nil || !ok || key != "content_md" || seen {
-			return "", invalidPostArgument("request must contain content_md exactly once", "content_md")
+		key, valid := keyToken.(string)
+		if err != nil || !valid || seen[key] {
+			return decodedPostWrite{}, invalidPostArgument("post fields must be supplied exactly once", "body")
 		}
+		seen[key] = true
 		var raw json.RawMessage
-		if err := decoder.Decode(&raw); err != nil || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &content) != nil {
-			return "", invalidPostArgument("content_md must be a string", "content_md")
+		if err := decoder.Decode(&raw); err != nil {
+			return decodedPostWrite{}, invalidPostArgument("post field is malformed", key)
 		}
-		seen = true
+		switch key {
+		case "content_md":
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &result.ContentMD) != nil {
+				return decodedPostWrite{}, invalidPostArgument("content_md must be a string", "content_md")
+			}
+			result.ContentPresent = true
+		case "media":
+			media, err := decodePostMedia(raw)
+			if err != nil {
+				return decodedPostWrite{}, err
+			}
+			result.Media = media
+			result.MediaPresent = true
+		default:
+			return decodedPostWrite{}, invalidPostArgument("request contains an unsupported field", key)
+		}
 	}
-	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || !seen {
-		return "", invalidPostArgument("request must contain content_md", "content_md")
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') {
+		return decodedPostWrite{}, invalidPostArgument("request must be one JSON object", "body")
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return "", invalidPostArgument("request must contain exactly one JSON document", "body")
+		return decodedPostWrite{}, invalidPostArgument("request must contain exactly one JSON document", "body")
 	}
-	return content, nil
+	if (!patch && !result.ContentPresent) || (patch && !result.ContentPresent && !result.MediaPresent) {
+		return decodedPostWrite{}, invalidPostArgument("request must contain content_md or media", "body")
+	}
+	return result, nil
+}
+
+func decodePostMedia(raw json.RawMessage) ([]domain.EntryMediaUsage, error) {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, invalidPostArgument("media must be an array, not null", "media")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('[') {
+		return nil, invalidPostArgument("media must be an array", "media")
+	}
+	usages := make([]domain.EntryMediaUsage, 0, domain.MaxEntryMediaUsages)
+	for decoder.More() {
+		var wire postdto.MediaUsage
+		if err := decoder.Decode(&wire); err != nil {
+			return nil, invalidPostArgument("each media usage requires exactly media_id, position, and alt_text", "media")
+		}
+		id, err := domain.ParseID(wire.MediaID)
+		if err != nil {
+			return nil, invalidPostArgument("media_id must be a canonical ULID", "media")
+		}
+		usages = append(usages, domain.EntryMediaUsage{MediaID: id, Position: wire.Position, AltText: wire.AltText})
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim(']') {
+		return nil, invalidPostArgument("media must be one JSON array", "media")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, invalidPostArgument("media must contain exactly one JSON array", "media")
+	}
+	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
+		return nil, err
+	}
+	return usages, nil
 }
 
 var errResponseWritten = errors.New("HTTP response already written")
@@ -249,8 +313,10 @@ func writePostError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeContentEmpty, domain.CodeContentTooLarge, domain.CodeExternalImageNotAllowed:
 		Failure(ctx, http.StatusUnprocessableEntity, string(domainErr.Code), domainErr.Message, domainErr.Details)
-	case domain.CodePostNotFound:
+	case domain.CodePostNotFound, domain.CodeMediaNotFound:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodeMediaTooLarge:
+		Failure(ctx, http.StatusUnprocessableEntity, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeIdempotencyKeyReused:
 		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeDataIntegrityFailed:

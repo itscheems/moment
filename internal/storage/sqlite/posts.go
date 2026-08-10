@@ -178,6 +178,79 @@ WHERE kind = ?`
 	return entries, nil
 }
 
+func (store postStore) EntryMediaUsages(ctx context.Context, entryID domain.ID) ([]domain.EntryMediaUsage, error) {
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT media_id, position, alt_text
+FROM entry_media
+WHERE entry_id = ?
+ORDER BY position`, entryID.String())
+	if err != nil {
+		return nil, fmt.Errorf("query entry media usages: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	usages := make([]domain.EntryMediaUsage, 0, domain.MaxEntryMediaUsages)
+	for rows.Next() {
+		var rawID string
+		var position int
+		var alt sql.NullString
+		if err := rows.Scan(&rawID, &position, &alt); err != nil {
+			return nil, fmt.Errorf("scan entry media usage: %w", err)
+		}
+		id, err := domain.ParseID(rawID)
+		if err != nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry media ID is invalid", map[string]any{"post_id": entryID.String()})
+		}
+		usage := domain.EntryMediaUsage{MediaID: id, Position: position}
+		if alt.Valid {
+			value := alt.String
+			usage.AltText = &value
+		}
+		usages = append(usages, usage)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate entry media usages: %w", err)
+	}
+	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
+		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry media usages violate the ordered contract", map[string]any{"post_id": entryID.String()})
+	}
+	return usages, nil
+}
+
+func (store postStore) ReplaceEntryMediaUsages(ctx context.Context, entryID domain.ID, usages []domain.EntryMediaUsage) error {
+	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
+		return err
+	}
+	var totalBytes int64
+	for _, usage := range usages {
+		var byteSize int64
+		if err := store.queries.QueryRowContext(ctx, `SELECT byte_size FROM media WHERE id = ?`, usage.MediaID.String()).Scan(&byteSize); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", usage.MediaID), map[string]any{"media_id": usage.MediaID.String()})
+			}
+			return fmt.Errorf("validate entry media usage: %w", err)
+		}
+		totalBytes += byteSize
+		if totalBytes > domain.MaxEntryMediaBytes {
+			return domain.NewError(domain.CodeMediaTooLarge, "post media exceed the 50 MiB aggregate budget", map[string]any{"field": "media", "max_bytes": domain.MaxEntryMediaBytes})
+		}
+	}
+	if _, err := store.queries.ExecContext(ctx, `DELETE FROM entry_media WHERE entry_id = ?`, entryID.String()); err != nil {
+		return fmt.Errorf("clear entry media usages: %w", err)
+	}
+	for _, usage := range usages {
+		var alt any
+		if usage.AltText != nil {
+			alt = *usage.AltText
+		}
+		if _, err := store.queries.ExecContext(ctx, `
+INSERT INTO entry_media (entry_id, media_id, position, alt_text)
+VALUES (?, ?, ?, ?)`, entryID.String(), usage.MediaID.String(), usage.Position, alt); err != nil {
+			return fmt.Errorf("insert entry media usage: %w", err)
+		}
+	}
+	return nil
+}
+
 func (store postStore) UpdateEntry(ctx context.Context, entry domain.Entry, contentText string) (bool, error) {
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE entries

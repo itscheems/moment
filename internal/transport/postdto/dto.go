@@ -4,7 +4,10 @@
 package postdto
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"time"
 
 	"github.com/moment/moment/internal/app"
@@ -13,12 +16,72 @@ import (
 
 // Post is the stable plain-text post representation used by HTTP and CLI.
 type Post struct {
-	ID          string    `json:"id"`
-	ContentMD   string    `json:"content_md"`
-	ContentHTML string    `json:"content_html"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	PublishedAt time.Time `json:"published_at"`
+	ID          string       `json:"id"`
+	ContentMD   string       `json:"content_md"`
+	ContentHTML string       `json:"content_html"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+	PublishedAt time.Time    `json:"published_at"`
+	Media       []MediaUsage `json:"media"`
+}
+
+// MediaUsage is the exact public ordered usage shape. AltText is always
+// emitted, including JSON null for the missing state.
+type MediaUsage struct {
+	MediaID  string  `json:"media_id"`
+	Position int     `json:"position"`
+	AltText  *string `json:"alt_text"`
+}
+
+// UnmarshalJSON rejects missing, duplicate, and unknown fields so API-mode
+// clients never accept a superficially canonical usage.
+func (usage *MediaUsage) UnmarshalJSON(data []byte) error {
+	*usage = MediaUsage{}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return errors.New("media usage must be an object")
+	}
+	seen := map[string]bool{}
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		key, ok := keyToken.(string)
+		if err != nil || !ok || seen[key] {
+			return errors.New("media usage fields must appear exactly once")
+		}
+		seen[key] = true
+		switch key {
+		case "media_id":
+			if err := decoder.Decode(&usage.MediaID); err != nil {
+				return errors.New("media_id must be a string")
+			}
+		case "position":
+			if err := decoder.Decode(&usage.Position); err != nil {
+				return errors.New("position must be an integer")
+			}
+		case "alt_text":
+			var raw json.RawMessage
+			if err := decoder.Decode(&raw); err != nil {
+				return errors.New("alt_text must be null or a string")
+			}
+			if !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				var alt string
+				if err := json.Unmarshal(raw, &alt); err != nil {
+					return errors.New("alt_text must be null or a string")
+				}
+				usage.AltText = &alt
+			}
+		default:
+			return errors.New("media usage contains an unknown field")
+		}
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || !seen["media_id"] || !seen["position"] || !seen["alt_text"] {
+		return errors.New("media usage requires media_id, position, and alt_text")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("media usage contains trailing data")
+	}
+	return nil
 }
 
 // Page is one stable reverse-chronological timeline page.
@@ -29,6 +92,15 @@ type Page struct {
 // FromPost strips internal Entry fields while preserving the canonical
 // application result.
 func FromPost(post app.Post) Post {
+	media := make([]MediaUsage, 0, len(post.Media))
+	for _, usage := range post.Media {
+		mapped := MediaUsage{MediaID: usage.MediaID.String(), Position: usage.Position}
+		if usage.AltText != nil {
+			alt := *usage.AltText
+			mapped.AltText = &alt
+		}
+		media = append(media, mapped)
+	}
 	return Post{
 		ID:          post.Entry.ID.String(),
 		ContentMD:   post.Entry.ContentMD,
@@ -36,6 +108,7 @@ func FromPost(post app.Post) Post {
 		CreatedAt:   post.Entry.CreatedAt.UTC(),
 		UpdatedAt:   post.Entry.UpdatedAt.UTC(),
 		PublishedAt: post.Entry.PublishedAt.UTC(),
+		Media:       media,
 	}
 }
 
@@ -76,6 +149,20 @@ func ValidatePost(post Post) error {
 	}
 	if html != post.ContentHTML {
 		return errors.New("post content_html does not match content_md")
+	}
+	if post.Media == nil {
+		return errors.New("post media must be an array")
+	}
+	usages := make([]domain.EntryMediaUsage, 0, len(post.Media))
+	for _, usage := range post.Media {
+		id, err := domain.ParseID(usage.MediaID)
+		if err != nil {
+			return err
+		}
+		usages = append(usages, domain.EntryMediaUsage{MediaID: id, Position: usage.Position, AltText: usage.AltText})
+	}
+	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
+		return err
 	}
 	return nil
 }

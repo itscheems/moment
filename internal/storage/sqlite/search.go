@@ -83,6 +83,10 @@ type searchStore struct{ queries Queries }
 
 var _ app.SearchStore = searchStore{}
 
+func (store searchStore) EntryMediaUsages(ctx context.Context, entryID domain.ID) ([]domain.EntryMediaUsage, error) {
+	return newPostStore(store.queries).EntryMediaUsages(ctx, entryID)
+}
+
 func (store searchStore) Timezone(ctx context.Context) (string, error) {
 	var timezone string
 	if err := store.queries.QueryRowContext(ctx, `SELECT timezone FROM site_settings WHERE id = 1`).Scan(&timezone); err != nil {

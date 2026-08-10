@@ -125,12 +125,16 @@ type Result struct {
 type CommandInput struct {
 	args  []string
 	flags *pflag.FlagSet
+	in    io.Reader
 }
 
 // Args returns a defensive copy of positional command arguments.
 func (input CommandInput) Args() []string {
 	return append([]string(nil), input.args...)
 }
+
+// In returns the invocation stdin used by manifest "-" inputs.
+func (input CommandInput) In() io.Reader { return input.in }
 
 // Changed reports whether a flag was explicitly supplied.
 func (input CommandInput) Changed(name string) bool {

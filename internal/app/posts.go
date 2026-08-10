@@ -23,6 +23,8 @@ type PostStore interface {
 	InsertEntry(context.Context, domain.Entry, string) error
 	EntryByID(context.Context, domain.ID) (domain.Entry, bool, error)
 	ListEntries(context.Context, TimelineQuery, int) ([]domain.Entry, error)
+	EntryMediaUsages(context.Context, domain.ID) ([]domain.EntryMediaUsage, error)
+	ReplaceEntryMediaUsages(context.Context, domain.ID, []domain.EntryMediaUsage) error
 	UpdateEntry(context.Context, domain.Entry, string) (bool, error)
 	DeleteEntry(context.Context, domain.ID) (bool, error)
 	IdempotencyRecord(context.Context, string, string) (IdempotencyRecord, bool, error)
@@ -50,12 +52,14 @@ type IdempotencyRecord struct {
 type Post struct {
 	Entry       domain.Entry
 	ContentHTML string
+	Media       []domain.EntryMediaUsage
 }
 
 // CreatePostInput contains only application semantics. Authentication,
 // headers, flags, and transport DTOs belong to adapters.
 type CreatePostInput struct {
 	ContentMD      string
+	Media          []domain.EntryMediaUsage
 	IdempotencyKey string
 }
 
@@ -68,8 +72,12 @@ type CreatePostResult struct {
 
 // UpdatePostInput replaces the authoritative Markdown of one Entry.
 type UpdatePostInput struct {
-	ID        domain.ID
-	ContentMD string
+	ID              domain.ID
+	ContentMD       string
+	PreserveContent bool
+	// Media nil preserves existing usages. A non-nil empty slice clears them;
+	// every other non-nil value is the complete ordered replacement.
+	Media *[]domain.EntryMediaUsage
 }
 
 // ListPostsInput requests one reverse-chronological timeline page. A zero
@@ -168,7 +176,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err := contextError(ctx); err != nil {
 		return CreatePostResult{}, err
 	}
-	requestHash := hashCreatePost(input.ContentMD)
+	requestHash := hashCreatePost(input.ContentMD, input.Media)
 	if input.IdempotencyKey != "" {
 		replayed, found, err := service.loadCreateReplay(ctx, input, requestHash)
 		if err != nil {
@@ -179,6 +187,9 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		}
 	}
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
+		return CreatePostResult{}, err
+	}
+	if err := domain.ValidateEntryMediaUsages(input.Media); err != nil {
 		return CreatePostResult{}, err
 	}
 	contentText, err := domain.NormalizeContentV2(input.ContentMD)
@@ -195,11 +206,11 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 				return storeErr
 			}
 			if found {
-				entry, replayErr := reconstructCreateReplay(input, requestHash, record)
+				post, replayErr := reconstructCreateReplay(input, requestHash, record)
 				if replayErr != nil {
 					return replayErr
 				}
-				result.Post.Entry = entry
+				result.Post = post
 				result.Replayed = true
 				return nil
 			}
@@ -217,6 +228,12 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		if insertErr := store.InsertEntry(ctx, entry, contentText); insertErr != nil {
 			return insertErr
 		}
+		if err := store.ReplaceEntryMediaUsages(ctx, entry.ID, input.Media); err != nil {
+			return err
+		}
+		if err := store.ReconcileMediaReferences(ctx, mediaUsageIDs(input.Media), now); err != nil {
+			return err
+		}
 		if input.IdempotencyKey != "" {
 			if insertErr := store.InsertIdempotencyRecord(ctx, IdempotencyRecord{
 				Scope:              postCreateIdempotencyScope,
@@ -229,6 +246,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 			}
 		}
 		result.Post.Entry = entry
+		result.Post.Media = domain.CloneEntryMediaUsages(input.Media)
 		return nil
 	})
 	if err != nil {
@@ -255,36 +273,39 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 	if !found {
 		return CreatePostResult{}, false, nil
 	}
-	entry, err := reconstructCreateReplay(input, requestHash, record)
+	post, err := reconstructCreateReplay(input, requestHash, record)
 	if err != nil {
 		return CreatePostResult{}, false, err
 	}
-	post, err := renderPost(entry)
+	post, err = renderPost(post.Entry, post.Media)
 	if err != nil {
 		return CreatePostResult{}, false, idempotencySnapshotError()
 	}
 	return CreatePostResult{Post: post, Replayed: true}, true, nil
 }
 
-func reconstructCreateReplay(input CreatePostInput, requestHash string, record IdempotencyRecord) (domain.Entry, error) {
+func reconstructCreateReplay(input CreatePostInput, requestHash string, record IdempotencyRecord) (Post, error) {
 	if record.Scope != postCreateIdempotencyScope || record.Key != input.IdempotencyKey || !validRequestHash(record.RequestHash) {
-		return domain.Entry{}, idempotencySnapshotError()
+		return Post{}, idempotencySnapshotError()
 	}
 	if record.RequestHash != requestHash {
-		return domain.Entry{}, domain.NewError(domain.CodeIdempotencyKeyReused, "idempotency key was already used with different content", map[string]any{"field": "idempotency_key"})
+		return Post{}, domain.NewError(domain.CodeIdempotencyKeyReused, "idempotency key was already used with a different post payload", map[string]any{"field": "idempotency_key"})
 	}
 	if _, err := domain.ParseID(record.ResponseResourceID.String()); err != nil ||
 		domain.TimeToMillis(record.CreatedAt) <= 0 || record.CreatedAt != domain.NormalizeTime(record.CreatedAt) {
-		return domain.Entry{}, idempotencySnapshotError()
+		return Post{}, idempotencySnapshotError()
 	}
 	entry, err := domain.NewEntry(record.ResponseResourceID, input.ContentMD, record.CreatedAt)
 	if err != nil {
-		return domain.Entry{}, idempotencySnapshotError()
+		return Post{}, idempotencySnapshotError()
 	}
 	if err := entry.Validate(); err != nil {
-		return domain.Entry{}, idempotencySnapshotError()
+		return Post{}, idempotencySnapshotError()
 	}
-	return entry, nil
+	if err := domain.ValidateEntryMediaUsages(input.Media); err != nil {
+		return Post{}, idempotencySnapshotError()
+	}
+	return Post{Entry: entry, Media: domain.CloneEntryMediaUsages(input.Media)}, nil
 }
 
 // Get returns one post or a stable not-found error.
@@ -296,10 +317,15 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 		return Post{}, err
 	}
 	var entry domain.Entry
+	var media []domain.EntryMediaUsage
 	var found bool
 	err := service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
 		entry, found, storeErr = store.EntryByID(ctx, id)
+		if storeErr != nil || !found {
+			return storeErr
+		}
+		media, storeErr = store.EntryMediaUsages(ctx, id)
 		return storeErr
 	})
 	if err != nil {
@@ -308,7 +334,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 	if !found {
 		return Post{}, postNotFound(id)
 	}
-	return renderPost(entry)
+	return renderPost(entry, media)
 }
 
 // List returns one deterministic reverse-chronological keyset page.
@@ -330,10 +356,20 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	}
 
 	var entries []domain.Entry
+	mediaByEntry := make(map[domain.ID][]domain.EntryMediaUsage)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
 		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, FromMS: fromMS, ToMS: toMS}, limit+1)
-		return storeErr
+		if storeErr != nil {
+			return storeErr
+		}
+		for _, entry := range entries {
+			mediaByEntry[entry.ID], storeErr = store.EntryMediaUsages(ctx, entry.ID)
+			if storeErr != nil {
+				return storeErr
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return PostPage{}, normalizePostRepositoryError(err)
@@ -345,7 +381,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	}
 	page := PostPage{Items: make([]Post, 0, len(entries))}
 	for _, entry := range entries {
-		post, renderErr := renderPost(entry)
+		post, renderErr := renderPost(entry, mediaByEntry[entry.ID])
 		if renderErr != nil {
 			return PostPage{}, renderErr
 		}
@@ -407,16 +443,29 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if err := validatePostID(input.ID); err != nil {
 		return Post{}, err
 	}
-	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
-		return Post{}, err
+	if input.PreserveContent && input.Media == nil {
+		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md or media", map[string]any{"field": "body"})
 	}
-	contentText, err := domain.NormalizeContentV2(input.ContentMD)
-	if err != nil {
-		return Post{}, err
+	if input.Media != nil {
+		if err := domain.ValidateEntryMediaUsages(*input.Media); err != nil {
+			return Post{}, err
+		}
+	}
+	contentText := ""
+	if !input.PreserveContent {
+		if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
+			return Post{}, err
+		}
+		var err error
+		contentText, err = domain.NormalizeContentV2(input.ContentMD)
+		if err != nil {
+			return Post{}, err
+		}
 	}
 
 	var updated domain.Entry
-	err = service.transactions.Write(ctx, func(store PostStore) error {
+	var updatedMedia []domain.EntryMediaUsage
+	err := service.transactions.Write(ctx, func(store PostStore) error {
 		entry, found, storeErr := store.EntryByID(ctx, input.ID)
 		if storeErr != nil {
 			return storeErr
@@ -424,11 +473,23 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if !found {
 			return postNotFound(input.ID)
 		}
+		currentMedia, mediaErr := store.EntryMediaUsages(ctx, input.ID)
+		if mediaErr != nil {
+			return mediaErr
+		}
+		content := input.ContentMD
+		if input.PreserveContent {
+			content = entry.ContentMD
+			contentText, mediaErr = domain.NormalizeContentV2(content)
+			if mediaErr != nil {
+				return mediaErr
+			}
+		}
 		now := domain.NormalizeTime(service.clock())
 		if !now.After(entry.UpdatedAt) {
 			now = entry.UpdatedAt.Add(time.Millisecond)
 		}
-		if updateErr := entry.UpdateContent(input.ContentMD, now); updateErr != nil {
+		if updateErr := entry.UpdateContent(content, now); updateErr != nil {
 			return updateErr
 		}
 		changed, updateErr := store.UpdateEntry(ctx, entry, contentText)
@@ -438,13 +499,24 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if !changed {
 			return postNotFound(input.ID)
 		}
+		updatedMedia = currentMedia
+		if input.Media != nil {
+			if mediaErr := store.ReplaceEntryMediaUsages(ctx, input.ID, *input.Media); mediaErr != nil {
+				return mediaErr
+			}
+			affected := append(mediaUsageIDs(currentMedia), mediaUsageIDs(*input.Media)...)
+			if mediaErr := store.ReconcileMediaReferences(ctx, affected, now); mediaErr != nil {
+				return mediaErr
+			}
+			updatedMedia = domain.CloneEntryMediaUsages(*input.Media)
+		}
 		updated = entry
 		return nil
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
-	return renderPost(updated)
+	return renderPost(updated, updatedMedia)
 }
 
 // Delete removes one Entry in a write transaction. Database foreign keys own
@@ -456,7 +528,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 	if err := validatePostID(id); err != nil {
 		return Post{}, err
 	}
-	var deleted domain.Entry
+	var deleted Post
 	err := service.transactions.Write(ctx, func(store PostStore) error {
 		entry, found, storeErr := store.EntryByID(ctx, id)
 		if storeErr != nil {
@@ -465,7 +537,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if !found {
 			return postNotFound(id)
 		}
-		mediaIDs, mediaErr := store.EntryMediaIDs(ctx, id)
+		mediaUsages, mediaErr := store.EntryMediaUsages(ctx, id)
 		if mediaErr != nil {
 			return mediaErr
 		}
@@ -476,26 +548,51 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if !changed {
 			return postNotFound(id)
 		}
-		if err := store.ReconcileMediaReferences(ctx, mediaIDs, domain.NormalizeTime(service.clock())); err != nil {
+		if err := store.ReconcileMediaReferences(ctx, mediaUsageIDs(mediaUsages), domain.NormalizeTime(service.clock())); err != nil {
 			return err
 		}
-		deleted = entry
+		deleted = Post{Entry: entry, Media: domain.CloneEntryMediaUsages(mediaUsages)}
 		return nil
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
-	return renderPost(deleted)
+	return renderPost(deleted.Entry, deleted.Media)
 }
 
-func hashCreatePost(content string) string {
+func hashCreatePost(content string, media []domain.EntryMediaUsage) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("moment-post-create-v1\x00"))
-	var length [8]byte
-	binary.BigEndian.PutUint64(length[:], uint64(len(content)))
-	_, _ = digest.Write(length[:])
+	writeHashLength(digest, len(content))
 	_, _ = digest.Write([]byte(content))
+	// Keep the historical text-only hash stable while binding every ordered
+	// usage into media-bearing retries.
+	if len(media) > 0 {
+		_, _ = digest.Write([]byte("\x00media-v1\x00"))
+		writeHashLength(digest, len(media))
+		for _, usage := range media {
+			writeHashLength(digest, usage.Position)
+			writeHashLength(digest, len(usage.MediaID.String()))
+			_, _ = digest.Write([]byte(usage.MediaID.String()))
+			switch {
+			case usage.AltText == nil:
+				_, _ = digest.Write([]byte{0})
+			case *usage.AltText == "":
+				_, _ = digest.Write([]byte{1})
+			default:
+				_, _ = digest.Write([]byte{2})
+				writeHashLength(digest, len(*usage.AltText))
+				_, _ = digest.Write([]byte(*usage.AltText))
+			}
+		}
+	}
 	return hex.EncodeToString(digest.Sum(nil))
+}
+
+func writeHashLength(writer interface{ Write([]byte) (int, error) }, value int) {
+	var length [8]byte
+	binary.BigEndian.PutUint64(length[:], uint64(value))
+	_, _ = writer.Write(length[:])
 }
 
 func validRequestHash(value string) bool {
@@ -506,12 +603,23 @@ func validRequestHash(value string) bool {
 	return err == nil && hex.EncodeToString(decoded) == value
 }
 
-func renderPost(entry domain.Entry) (Post, error) {
+func renderPost(entry domain.Entry, media []domain.EntryMediaUsage) (Post, error) {
 	html, err := domain.RenderMarkdown(entry.ContentMD)
 	if err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	return Post{Entry: entry, ContentHTML: html}, nil
+	if err := domain.ValidateEntryMediaUsages(media); err != nil {
+		return Post{}, storedEntryError(entry.ID)
+	}
+	return Post{Entry: entry, ContentHTML: html, Media: domain.CloneEntryMediaUsages(media)}, nil
+}
+
+func mediaUsageIDs(usages []domain.EntryMediaUsage) []domain.ID {
+	ids := make([]domain.ID, 0, len(usages))
+	for _, usage := range usages {
+		ids = append(ids, usage.MediaID)
+	}
+	return ids
 }
 
 func validatePostID(id domain.ID) error {

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"errors"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -179,7 +180,7 @@ func TestPostCreateReplayReturnsImmutableResultAfterUpdateAndDelete(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !replayedAfterUpdate.Replayed || replayedAfterUpdate.Post != created.Post {
+	if !replayedAfterUpdate.Replayed || !reflect.DeepEqual(replayedAfterUpdate.Post, created.Post) {
 		t.Fatalf("replay after update = %+v, want original %+v", replayedAfterUpdate, created)
 	}
 
@@ -190,7 +191,7 @@ func TestPostCreateReplayReturnsImmutableResultAfterUpdateAndDelete(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !replayedAfterDelete.Replayed || replayedAfterDelete.Post != created.Post {
+	if !replayedAfterDelete.Replayed || !reflect.DeepEqual(replayedAfterDelete.Post, created.Post) {
 		t.Fatalf("replay after delete = %+v, want original %+v", replayedAfterDelete, created)
 	}
 	assertCount(t, db.read, `SELECT count(*) FROM entries`, 0)

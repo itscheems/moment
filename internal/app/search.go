@@ -42,6 +42,7 @@ type SearchRepositoryQuery struct {
 // values used only inside the application boundary.
 type SearchRecord struct {
 	Entry       domain.Entry
+	Media       []domain.EntryMediaUsage
 	ContentText string
 	Rank        float64
 }
@@ -60,6 +61,7 @@ type SearchSource struct {
 type SearchStore interface {
 	Timezone(context.Context) (string, error)
 	SearchEntries(context.Context, SearchRepositoryQuery, int) ([]SearchRecord, error)
+	EntryMediaUsages(context.Context, domain.ID) ([]domain.EntryMediaUsage, error)
 	SearchPublishedMillis(context.Context, SearchRepositoryQuery) ([]int64, error)
 	ArchivePublishedMillis(context.Context, *int64, *int64) ([]int64, error)
 	SearchNormalizerVersion(context.Context) (int, error)
@@ -215,6 +217,12 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		if storeErr != nil {
 			return storeErr
 		}
+		for index := range records {
+			records[index].Media, storeErr = store.EntryMediaUsages(ctx, records[index].Entry.ID)
+			if storeErr != nil {
+				return storeErr
+			}
+		}
 		countQuery := prepared
 		countQuery.Position = nil
 		instants, storeErr = store.SearchPublishedMillis(ctx, countQuery)
@@ -233,7 +241,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		YearCounts: aggregateYears(instants, location),
 	}
 	for _, record := range records {
-		post, renderErr := renderPost(record.Entry)
+		post, renderErr := renderPost(record.Entry, record.Media)
 		if renderErr != nil {
 			return SearchPage{}, renderErr
 		}

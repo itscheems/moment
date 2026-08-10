@@ -87,10 +87,15 @@ VALUES (?, 'moment', 'with media', ?, ?, ?)`, entryOne, created.UnixMilli(), cre
 		t.Fatal(err)
 	}
 	id, _ := domain.ParseID(entryOne)
-	if _, err := service.Delete(ctx, id); err != nil {
+	deleted, err := service.Delete(ctx, id)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if len(deleted.Media) != 2 || deleted.Media[0].MediaID.String() != mediaOne || deleted.Media[1].MediaID.String() != mediaTwo {
+		t.Fatalf("deleted post media snapshot = %#v", deleted.Media)
+	}
 	assertCount(t, database.read, `SELECT count(*) FROM entry_media WHERE entry_id = ?`, 0, entryOne)
+	assertCount(t, database.read, `SELECT count(*) FROM media WHERE id IN (?, ?)`, 2, mediaOne, mediaTwo)
 	assertMediaClock(t, database, mediaOne, nil)
 	assertMediaClock(t, database, mediaTwo, &removed)
 }

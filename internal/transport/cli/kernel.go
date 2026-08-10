@@ -392,6 +392,7 @@ func (application *Application) buildLeaf(
 		result, runErr := spec.Run(operationContext, invocation, CommandInput{
 			args:  args,
 			flags: command.Flags(),
+			in:    streams.In,
 		})
 		if runErr != nil {
 			return runErr

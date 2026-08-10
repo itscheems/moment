@@ -10,12 +10,15 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	"github.com/moment/moment/internal/transport/postdto"
@@ -24,6 +27,8 @@ import (
 )
 
 const maxPostAPIResponse = 64 << 20
+
+const maxPostMediaManifestBytes = 1 << 20
 
 func registerPosts(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
@@ -57,33 +62,37 @@ func registerPosts(application *Application) {
 		Run:        runPostGet,
 	})
 	application.MustRegisterLeaf(LeafSpec{
-		Path:       []string{"post", "create"},
-		Short:      "Publish a Moment post",
-		Long:       "Publish one Markdown post through the shared application service in direct mode or the authenticated owner HTTP API.",
-		Inputs:     "Provide --content. Optional --idempotency-key makes retries return the original create result; API mode reads MOMENT_TOKEN or --token-file.",
-		Output:     "The canonical created post and replay metadata.",
-		Errors:     "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
-		Example:    "moment post create --data-dir ./moment-data --content 'hello **moment**' --idempotency-key demo-001 --json",
+		Path:   []string{"post", "create"},
+		Short:  "Publish a Moment post",
+		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated owner HTTP API.",
+		Inputs: "Provide --content. Use one --media path with optional --media-alt or --media-decorative, or an ordered --media-manifest path|-; the forms are mutually exclusive.",
+		Output: "The canonical created post and replay metadata.",
+		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
+		Example: "moment post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
+			"moment post create --data-dir ./moment-data --content 'several images' --media-manifest ./post-media.json --idempotency-key demo-002 --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
+			registerPostMediaFlags(flags)
 		},
 		Run: runPostCreate,
 	})
 	application.MustRegisterLeaf(LeafSpec{
-		Path:       []string{"post", "update"},
-		ArgsUsage:  "<post-id>",
-		Short:      "Update a Moment post",
-		Long:       "Replace one post's authoritative Markdown while preserving its creation and publication position.",
-		Inputs:     "Provide one post ULID and an explicit --content value. API mode reads MOMENT_TOKEN or --token-file.",
-		Output:     "The complete updated canonical post DTO.",
-		Errors:     "Invalid content, missing posts, and authentication failures use stable codes and exit statuses.",
-		Example:    "moment post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'updated' --json",
+		Path:      []string{"post", "update"},
+		ArgsUsage: "<post-id>",
+		Short:     "Update a Moment post",
+		Long:      "Replace one post's authoritative Markdown while preserving its creation and publication position.",
+		Inputs:    "Provide one post ULID and at least one of --content or a media input. Omitted media preserves usages; an empty manifest clears them.",
+		Output:    "The complete updated canonical post DTO.",
+		Errors:    "Invalid content, missing posts, and authentication failures use stable codes and exit statuses.",
+		Example: "moment post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'updated' --json\n" +
+			"printf '[]' | moment post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --media-manifest - --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "replacement UTF-8 Markdown content")
+			registerPostMediaFlags(flags)
 		},
 		Run: runPostUpdate,
 	})
@@ -194,6 +203,10 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		post postdto.Post
 		meta map[string]any
 	)
+	mediaInput, err := postMediaInputFromFlags(ctx, input)
+	if err != nil {
+		return Result{}, err
+	}
 	switch invocation.Mode() {
 	case ModeDirect:
 		direct, err := openDirectPostWrite(ctx, invocation)
@@ -201,14 +214,30 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 			return Result{}, postCLIError(err)
 		}
 		defer func() { _ = direct.Close() }()
-		created, err := direct.service.Create(ctx, app.CreatePostInput{ContentMD: content, IdempotencyKey: idempotencyKey})
+		usages, err := resolvePostMediaInput(mediaInput, func(path string) (domain.ID, error) {
+			return ingestDirectPostMedia(ctx, direct.media, path)
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		created, err := direct.service.Create(ctx, app.CreatePostInput{ContentMD: content, Media: usages, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
 		post = postdto.FromPost(created.Post)
 		meta = map[string]any{"replayed": created.Replayed}
 	case ModeAPI:
-		payload := map[string]string{"content_md": content}
+		usages, err := resolvePostMediaInput(mediaInput, func(path string) (domain.ID, error) {
+			return ingestAPIPostMedia(ctx, invocation, path)
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		payload := postWritePayload{ContentMD: &content}
+		if mediaInput.Present {
+			wire := postMediaDTOs(usages)
+			payload.Media = &wire
+		}
 		var status int
 		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/posts", nil, payload, idempotencyKey, true, &post)
 		if err != nil {
@@ -230,9 +259,17 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 	if err != nil {
 		return Result{}, postCLIError(err)
 	}
-	content, err := requiredContentFlag(input)
+	content, err := input.String("content")
 	if err != nil {
 		return Result{}, err
+	}
+	contentPresent := input.Changed("content")
+	mediaInput, err := postMediaInputFromFlags(ctx, input)
+	if err != nil {
+		return Result{}, err
+	}
+	if !contentPresent && !mediaInput.Present {
+		return Result{}, invalidArgument("post update requires --content or a media input", "provide --content, --media, or --media-manifest")
 	}
 	var (
 		post postdto.Post
@@ -245,14 +282,38 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 			return Result{}, postCLIError(err)
 		}
 		defer func() { _ = direct.Close() }()
-		updated, err := direct.service.Update(ctx, app.UpdatePostInput{ID: id, ContentMD: content})
+		usages, err := resolvePostMediaInput(mediaInput, func(path string) (domain.ID, error) {
+			return ingestDirectPostMedia(ctx, direct.media, path)
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		update := app.UpdatePostInput{ID: id, ContentMD: content, PreserveContent: !contentPresent}
+		if mediaInput.Present {
+			update.Media = &usages
+		}
+		updated, err := direct.service.Update(ctx, update)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
 		post = postdto.FromPost(updated)
 	case ModeAPI:
+		usages, err := resolvePostMediaInput(mediaInput, func(path string) (domain.ID, error) {
+			return ingestAPIPostMedia(ctx, invocation, path)
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		payload := postWritePayload{}
+		if contentPresent {
+			payload.ContentMD = &content
+		}
+		if mediaInput.Present {
+			wire := postMediaDTOs(usages)
+			payload.Media = &wire
+		}
 		var status int
-		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/posts/"+id.String(), nil, map[string]string{"content_md": content}, "", true, &post)
+		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/posts/"+id.String(), nil, payload, "", true, &post)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -312,6 +373,346 @@ func runPostDelete(ctx context.Context, invocation Invocation, input CommandInpu
 		return Result{}, errors.New("unsupported post delete transport")
 	}
 	return postResult("Post deleted", post, meta), nil
+}
+
+type postWritePayload struct {
+	ContentMD *string               `json:"content_md,omitempty"`
+	Media     *[]postdto.MediaUsage `json:"media,omitempty"`
+}
+
+type postMediaInput struct {
+	Present bool
+	Items   []postMediaSource
+}
+
+type postMediaSource struct {
+	Path    string
+	MediaID domain.ID
+	AltText *string
+}
+
+func registerPostMediaFlags(flags *pflag.FlagSet) {
+	flags.Var(&onceStringFlag{name: "--media"}, "media", "one local image path (mutually exclusive with --media-manifest)")
+	flags.Var(&onceStringFlag{name: "--media-alt"}, "media-alt", "non-empty provided alt text for --media")
+	flags.Bool("media-decorative", false, "encode --media with explicit decorative alt text")
+	flags.Var(&onceStringFlag{name: "--media-manifest"}, "media-manifest", "ordered JSON manifest path or - for stdin")
+}
+
+type onceStringFlag struct {
+	name  string
+	value string
+	set   bool
+}
+
+func (flag *onceStringFlag) Set(value string) error {
+	if flag.set {
+		return fmt.Errorf("%s may be supplied only once", flag.name)
+	}
+	flag.value = value
+	flag.set = true
+	return nil
+}
+
+func (flag *onceStringFlag) String() string { return flag.value }
+
+func (*onceStringFlag) Type() string { return "string" }
+
+func postMediaInputFromFlags(ctx context.Context, input CommandInput) (postMediaInput, error) {
+	mediaPath, err := input.String("media")
+	if err != nil {
+		return postMediaInput{}, err
+	}
+	alt, err := input.String("media-alt")
+	if err != nil {
+		return postMediaInput{}, err
+	}
+	decorative, err := input.Bool("media-decorative")
+	if err != nil {
+		return postMediaInput{}, err
+	}
+	manifestPath, err := input.String("media-manifest")
+	if err != nil {
+		return postMediaInput{}, err
+	}
+	mediaChanged := input.Changed("media")
+	altChanged := input.Changed("media-alt")
+	decorativeChanged := input.Changed("media-decorative")
+	manifestChanged := input.Changed("media-manifest")
+	if manifestChanged && (mediaChanged || altChanged || decorativeChanged) {
+		return postMediaInput{}, invalidArgument("--media-manifest is mutually exclusive with single-image media flags", "use either --media-manifest or --media with one alt mode")
+	}
+	if altChanged && decorativeChanged {
+		return postMediaInput{}, invalidArgument("--media-alt and --media-decorative are mutually exclusive", "choose provided alt text or the decorative flag")
+	}
+	if (altChanged || decorativeChanged) && !mediaChanged {
+		return postMediaInput{}, invalidArgument("--media-alt and --media-decorative require --media", "provide one --media path or remove the alt flag")
+	}
+	if manifestChanged {
+		if strings.TrimSpace(manifestPath) == "" {
+			return postMediaInput{}, invalidArgument("--media-manifest cannot be empty", "provide a JSON file path or - for stdin")
+		}
+		items, err := readPostMediaManifest(ctx, input.In(), manifestPath)
+		if err != nil {
+			return postMediaInput{}, err
+		}
+		return postMediaInput{Present: true, Items: items}, nil
+	}
+	if !mediaChanged {
+		return postMediaInput{}, nil
+	}
+	if strings.TrimSpace(mediaPath) == "" || strings.ContainsRune(mediaPath, 0) {
+		return postMediaInput{}, invalidArgument("--media requires a non-empty local path", "provide one regular image file path")
+	}
+	item := postMediaSource{Path: mediaPath}
+	switch {
+	case decorative:
+		value := ""
+		item.AltText = &value
+	case altChanged:
+		if strings.TrimSpace(alt) == "" {
+			return postMediaInput{}, invalidArgument("--media-alt must contain visible text", "use --media-decorative for an explicit empty alt or omit --media-alt for missing alt")
+		}
+		item.AltText = &alt
+	}
+	return postMediaInput{Present: true, Items: []postMediaSource{item}}, nil
+}
+
+func readPostMediaManifest(ctx context.Context, stdin io.Reader, path string) ([]postMediaSource, error) {
+	var reader io.Reader
+	var file *os.File
+	if path == "-" {
+		if stdin == nil {
+			return nil, invalidArgument("stdin is unavailable for --media-manifest -", "pipe one ordered JSON array to stdin")
+		}
+		reader = stdin
+	} else {
+		clean := filepath.Clean(path)
+		info, err := os.Lstat(clean)
+		if err != nil {
+			return nil, mediaCLIError(err)
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return nil, invalidArgument("--media-manifest must name a regular non-symlink file", "provide a bounded JSON manifest file or use - for stdin")
+		}
+		if info.Size() > maxPostMediaManifestBytes {
+			return nil, invalidArgument("--media-manifest exceeds the 1 MiB input limit", "reduce the manifest to at most 9 items")
+		}
+		file, err = os.Open(clean)
+		if err != nil {
+			return nil, mediaCLIError(err)
+		}
+		openedInfo, err := file.Stat()
+		if err != nil {
+			_ = file.Close()
+			return nil, mediaCLIError(err)
+		}
+		if !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
+			_ = file.Close()
+			return nil, invalidArgument("--media-manifest changed while it was being opened", "retry with a stable regular non-symlink file or use - for stdin")
+		}
+		defer func() { _ = file.Close() }()
+		reader = file
+	}
+	data, err := io.ReadAll(io.LimitReader(cliContextReader{ctx: ctx, source: reader}, maxPostMediaManifestBytes+1))
+	if err != nil {
+		return nil, mediaCLIError(err)
+	}
+	if len(data) > maxPostMediaManifestBytes {
+		return nil, invalidArgument("--media-manifest exceeds the 1 MiB input limit", "reduce the manifest to at most 9 items")
+	}
+	return decodePostMediaManifest(data)
+}
+
+func decodePostMediaManifest(data []byte) ([]postMediaSource, error) {
+	if !utf8.Valid(data) {
+		return nil, invalidArgument("media manifest must be valid UTF-8 JSON", "encode one ordered JSON array as UTF-8")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('[') {
+		return nil, invalidArgument("media manifest must be one JSON array", "provide an ordered array with path or media_id in each item")
+	}
+	items := make([]postMediaSource, 0, domain.MaxEntryMediaUsages)
+	for decoder.More() {
+		if len(items) == domain.MaxEntryMediaUsages {
+			return nil, invalidArgument("media manifest may contain at most 9 items", "remove items until positions fit 0 through 8")
+		}
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return nil, invalidArgument("media manifest item is malformed", "use one object per ordered media usage")
+		}
+		item, err := decodePostMediaManifestItem(raw)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim(']') {
+		return nil, invalidArgument("media manifest must be one complete JSON array", "fix the manifest syntax and retry")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, invalidArgument("media manifest must contain exactly one JSON document", "remove trailing JSON or text")
+	}
+	probe := make([]domain.EntryMediaUsage, len(items))
+	placeholder := domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAV")
+	for index, item := range items {
+		id := item.MediaID
+		if id == "" {
+			id = placeholder
+		}
+		probe[index] = domain.EntryMediaUsage{MediaID: id, Position: index, AltText: item.AltText}
+	}
+	if err := domain.ValidateEntryMediaUsages(probe); err != nil {
+		return nil, postCLIError(err)
+	}
+	return items, nil
+}
+
+func decodePostMediaManifestItem(data []byte) (postMediaSource, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return postMediaSource{}, invalidArgument("media manifest items must be JSON objects", "use path or media_id plus explicit nullable alt_text")
+	}
+	seen := map[string]bool{}
+	item := postMediaSource{}
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		key, ok := keyToken.(string)
+		if err != nil || !ok || seen[key] {
+			return postMediaSource{}, invalidArgument("media manifest item fields must appear exactly once", "remove duplicate fields")
+		}
+		seen[key] = true
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			return postMediaSource{}, invalidArgument("media manifest item field is malformed", "fix the JSON value and retry")
+		}
+		switch key {
+		case "path":
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &item.Path) != nil || strings.TrimSpace(item.Path) == "" || strings.ContainsRune(item.Path, 0) {
+				return postMediaSource{}, invalidArgument("manifest path must be a non-empty string", "provide one regular local image path")
+			}
+		case "media_id":
+			var value string
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &value) != nil {
+				return postMediaSource{}, invalidArgument("manifest media_id must be a string", "provide a canonical managed media ULID")
+			}
+			id, err := domain.ParseID(value)
+			if err != nil {
+				return postMediaSource{}, postCLIError(err)
+			}
+			item.MediaID = id
+		case "alt_text":
+			if !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				var value string
+				if json.Unmarshal(raw, &value) != nil {
+					return postMediaSource{}, invalidArgument("manifest alt_text must be null or a string", "use null for missing, an empty string for decorative, or visible text")
+				}
+				item.AltText = &value
+			}
+		default:
+			return postMediaSource{}, invalidArgument("media manifest item contains an unknown field", "use only path, media_id, and alt_text")
+		}
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || !seen["alt_text"] || (seen["path"] == seen["media_id"]) {
+		return postMediaSource{}, invalidArgument("each media manifest item requires exactly one of path or media_id and explicit alt_text", "fix the manifest item and retry")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return postMediaSource{}, invalidArgument("media manifest item contains trailing data", "use one JSON object per item")
+	}
+	return item, nil
+}
+
+func resolvePostMediaInput(input postMediaInput, upload func(string) (domain.ID, error)) ([]domain.EntryMediaUsage, error) {
+	if !input.Present {
+		return nil, nil
+	}
+	usages := make([]domain.EntryMediaUsage, 0, len(input.Items))
+	for index, item := range input.Items {
+		id := item.MediaID
+		if item.Path != "" {
+			var err error
+			id, err = upload(item.Path)
+			if err != nil {
+				return nil, err
+			}
+		}
+		usages = append(usages, domain.EntryMediaUsage{MediaID: id, Position: index, AltText: item.AltText})
+	}
+	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
+		return nil, postCLIError(err)
+	}
+	return usages, nil
+}
+
+func ingestDirectPostMedia(ctx context.Context, store *media.Store, path string) (domain.ID, error) {
+	file, name, err := openPostMediaFile(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = file.Close() }()
+	value, _, err := store.Ingest(ctx, name, file)
+	if err != nil {
+		return "", mediaCLIError(err)
+	}
+	return value.ID, nil
+}
+
+func ingestAPIPostMedia(ctx context.Context, invocation Invocation, path string) (domain.ID, error) {
+	file, name, err := openPostMediaFile(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = file.Close() }()
+	var result media.UploadResult
+	if _, err := mediaAPIUpload(ctx, invocation, name, file, &result); err != nil {
+		return "", mediaCLIError(err)
+	}
+	if _, err := domain.ParseID(result.Media.ID.String()); err != nil {
+		return "", invalidAPIResponse()
+	}
+	return result.Media.ID, nil
+}
+
+func openPostMediaFile(path string) (*os.File, string, error) {
+	clean := filepath.Clean(path)
+	info, err := os.Lstat(clean)
+	if err != nil {
+		return nil, "", mediaCLIError(err)
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, "", invalidArgument("post media paths must name regular non-symlink files", "provide a regular JPEG, PNG, WebP, or GIF file")
+	}
+	if info.Size() > media.DefaultMaxBytes {
+		return nil, "", mediaCLIError(domain.NewError(domain.CodeMediaTooLarge, "image exceeds the configured byte budget", map[string]any{"max_bytes": media.DefaultMaxBytes}))
+	}
+	file, err := os.Open(clean)
+	if err != nil {
+		return nil, "", mediaCLIError(err)
+	}
+	openedInfo, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, "", mediaCLIError(err)
+	}
+	if !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
+		_ = file.Close()
+		return nil, "", invalidArgument("post media path changed while it was being opened", "retry with a stable regular non-symlink image file")
+	}
+	return file, filepath.Base(clean), nil
+}
+
+func postMediaDTOs(usages []domain.EntryMediaUsage) []postdto.MediaUsage {
+	result := make([]postdto.MediaUsage, 0, len(usages))
+	for _, usage := range usages {
+		mapped := postdto.MediaUsage{MediaID: usage.MediaID.String(), Position: usage.Position}
+		if usage.AltText != nil {
+			alt := *usage.AltText
+			mapped.AltText = &alt
+		}
+		result = append(result, mapped)
+	}
+	return result
 }
 
 func postListFlags(input CommandInput) (app.ListPostsInput, error) {
@@ -423,6 +824,7 @@ func openDirectPostRead(ctx context.Context, invocation Invocation) (*app.PostSe
 
 type directPostRuntime struct {
 	service     *app.PostService
+	media       *media.Store
 	database    *sqlitestore.Database
 	maintenance *runtimefs.Lease
 }
@@ -457,7 +859,13 @@ func openDirectPostWrite(ctx context.Context, invocation Invocation) (*directPos
 		_ = maintenance.Release()
 		return nil, err
 	}
-	return &directPostRuntime{service: service, database: database, maintenance: maintenance}, nil
+	mediaStore, err := media.NewStoreWithinMaintenance(runtimeState, database, media.Options{}, maintenance)
+	if err != nil {
+		_ = database.Close()
+		_ = maintenance.Release()
+		return nil, err
+	}
+	return &directPostRuntime{service: service, media: mediaStore, database: database, maintenance: maintenance}, nil
 }
 
 func postAPIRequest(
@@ -660,10 +1068,14 @@ func postCLIError(err error) error {
 	case domain.CodeInvalidArgument:
 		exit = ExitInvalidInput
 		suggestion = "correct the named post input and retry"
-	case domain.CodePostNotFound:
+	case domain.CodePostNotFound, domain.CodeMediaNotFound:
 		exit = ExitNotFound
-		suggestion = "run 'moment post list --json' to inspect available posts"
-	case domain.CodeContentEmpty, domain.CodeContentTooLarge, domain.CodeExternalImageNotAllowed, domain.CodeIdempotencyKeyReused:
+		if domainErr.Code == domain.CodeMediaNotFound {
+			suggestion = "run 'moment media list --json' in direct mode to inspect managed media"
+		} else {
+			suggestion = "run 'moment post list --json' to inspect available posts"
+		}
+	case domain.CodeContentEmpty, domain.CodeContentTooLarge, domain.CodeExternalImageNotAllowed, domain.CodeIdempotencyKeyReused, domain.CodeMediaTooLarge:
 		exit = ExitConflict
 		suggestion = "correct the post content or use a new idempotency key, then retry"
 	case domain.CodeDataIntegrityFailed:
