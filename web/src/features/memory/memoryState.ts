@@ -1,6 +1,10 @@
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const YEAR_PATTERN = /^\d{4}$/;
+const SEARCH_LOCATION_ERROR =
+  "链接里的搜索词、日期或分页位置无效。请调整条件后重新搜索。";
+const ARCHIVE_LOCATION_ERROR =
+  "链接里的年份、月份、日期或分页位置无效。请从归档首页重新选择。";
 
 export interface SearchLocationState {
   query: string | null;
@@ -54,7 +58,28 @@ function unsupported(params: URLSearchParams, allowed: Set<string>): boolean {
   return Array.from(params.keys()).some((key) => !allowed.has(key));
 }
 
+export function hasValidRawQueryEncoding(search: string): boolean {
+  const raw = search.startsWith("?") ? search.slice(1) : search;
+  try {
+    for (const component of raw.split(/[&=]/)) {
+      decodeURIComponent(component.replace(/\+/g, "%20"));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function parseSearchLocation(search: string): SearchLocationState {
+  if (!hasValidRawQueryEncoding(search)) {
+    return {
+      query: null,
+      from: null,
+      to: null,
+      loadedThrough: null,
+      error: SEARCH_LOCATION_ERROR,
+    };
+  }
   const params = new URLSearchParams(search);
   const q = single(params, "q");
   const from = single(params, "from");
@@ -76,13 +101,21 @@ export function parseSearchLocation(search: string): SearchLocationState {
     from: from.value,
     to: to.value,
     loadedThrough: loaded.value,
-    error: invalid
-      ? "链接里的搜索词、日期或分页位置无效。请调整条件后重新搜索。"
-      : null,
+    error: invalid ? SEARCH_LOCATION_ERROR : null,
   };
 }
 
 export function parseArchiveLocation(search: string): ArchiveLocationState {
+  if (!hasValidRawQueryEncoding(search)) {
+    return {
+      year: null,
+      month: null,
+      from: null,
+      to: null,
+      loadedThrough: null,
+      error: ARCHIVE_LOCATION_ERROR,
+    };
+  }
   const params = new URLSearchParams(search);
   const yearValue = single(params, "year");
   const month = single(params, "month");
@@ -132,9 +165,7 @@ export function parseArchiveLocation(search: string): ArchiveLocationState {
     from: from.value,
     to: to.value,
     loadedThrough: loaded.value,
-    error: invalid
-      ? "链接里的年份、月份、日期或分页位置无效。请从归档首页重新选择。"
-      : null,
+    error: invalid ? ARCHIVE_LOCATION_ERROR : null,
   };
 }
 

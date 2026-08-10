@@ -136,7 +136,10 @@ describe("search and archive memory layer", () => {
               { year: 2024, count: 1 },
             ],
           },
-          meta: { next_cursor: continued ? null : "cursor-one" },
+          meta: {
+            next_cursor: continued ? null : "cursor-one",
+            request_id: "req_search",
+          },
         });
       }
       if (url === `/api/v1/posts/${second.id}`) {
@@ -237,7 +240,7 @@ describe("search and archive memory layer", () => {
         }
         return json({
           data: { items: [], year_counts: [] },
-          meta: { next_cursor: null },
+          meta: { next_cursor: null, request_id: "req_search" },
         });
       }
       return json({}, 404);
@@ -258,6 +261,177 @@ describe("search and archive memory layer", () => {
     expect(window.location.search).toBe("?q=a");
   });
 
+  it("clears a stale continued search cursor while preserving deliberate filters", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/search?q=%E9%9B%A8&from=2026-01-01&to=2027-01-01",
+    );
+    let firstPageRequests = 0;
+    install((url) => {
+      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+      if (url.includes("cursor=stale")) {
+        return json(
+          {
+            error: {
+              code: "INVALID_ARGUMENT",
+              message: "cursor is stale",
+              details: { field: "cursor" },
+              request_id: "req_stale",
+            },
+          },
+          400,
+        );
+      }
+      firstPageRequests += 1;
+      return json({
+        data: {
+          items: [{ ...first, snippet: "雨" }],
+          year_counts: [{ year: 2026, count: 1 }],
+        },
+        meta: { next_cursor: "stale", request_id: "req_search" },
+      });
+    });
+    render(<App />);
+
+    await screen.findByText("旧城雨落在街口");
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
+    const reset = await screen.findByRole("button", {
+      name: "从第一页重新加载",
+    });
+    fireEvent.click(reset);
+
+    await waitFor(() => expect(firstPageRequests).toBe(2));
+    expect(window.location.search).toContain("q=%E9%9B%A8");
+    expect(window.location.search).toContain("from=2026-01-01");
+    expect(window.location.search).toContain("to=2027-01-01");
+    expect(window.location.search).not.toContain("loaded_through");
+    expect(screen.getByRole("searchbox")).toHaveValue("雨");
+  });
+
+  it("recovers an unreachable saved search position from the first page", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/search?q=%E9%9B%A8&from=2026-01-01&to=2027-01-01&loaded_through=missing",
+    );
+    install((url) => {
+      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+      return json({
+        data: {
+          items: [{ ...first, snippet: "雨" }],
+          year_counts: [{ year: 2026, count: 1 }],
+        },
+        meta: { next_cursor: null, request_id: "req_search" },
+      });
+    });
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "这次没有找回结果" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "从第一页重新加载" }));
+    await waitFor(() =>
+      expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument(),
+    );
+    expect(window.location.search).not.toContain("loaded_through");
+    expect(window.location.search).toContain("from=2026-01-01");
+    expect(window.location.search).toContain("to=2027-01-01");
+  });
+
+  it.each([
+    {
+      name: "self-loop",
+      items: [{ ...second, snippet: "雨" }],
+      nextCursor: "cursor-one",
+    },
+    { name: "empty drift", items: [], nextCursor: "cursor-two" },
+  ])(
+    "rejects a continued search cursor $name",
+    async ({ items, nextCursor }) => {
+      window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
+      install((url) => {
+        if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+        const continued = url.includes("cursor=cursor-one");
+        return json({
+          data: {
+            items: continued ? items : [{ ...first, snippet: "雨" }],
+            year_counts: [{ year: 2026, count: 2 }],
+          },
+          meta: {
+            next_cursor: continued ? nextCursor : "cursor-one",
+            request_id: "req_search",
+          },
+        });
+      });
+      render(<App />);
+      await screen.findByText("旧城雨落在街口");
+      fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
+
+      expect(
+        await screen.findByRole("button", { name: "从第一页重新加载" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("旧城雨后的第二页")).not.toBeInTheDocument();
+      expect(window.location.search).not.toContain("loaded_through");
+    },
+  );
+
+  it("tracks continued search cursors and rejects a later cycle", async () => {
+    window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
+    const third = post("01K2ABCDEF0123456789ABCDE2", "不应追加的循环页");
+    install((url) => {
+      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+      const cursor = new URL(url, "http://moment.invalid").searchParams.get(
+        "cursor",
+      );
+      const item = cursor === "cursor-one" ? second : cursor ? third : first;
+      return json({
+        data: {
+          items: [{ ...item, snippet: "雨" }],
+          year_counts: [{ year: 2026, count: 3 }],
+        },
+        meta: {
+          next_cursor:
+            cursor === "cursor-one"
+              ? "cursor-two"
+              : cursor === "cursor-two"
+                ? "cursor-one"
+                : "cursor-one",
+          request_id: "req_search",
+        },
+      });
+    });
+    render(<App />);
+    await screen.findByText("旧城雨落在街口");
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
+    await screen.findByText("旧城雨后的第二页");
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
+
+    expect(
+      await screen.findByRole("button", { name: "从第一页重新加载" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("不应追加的循环页")).not.toBeInTheDocument();
+    expect(window.location.search).toContain("loaded_through=cursor-one");
+  });
+
+  it("fails closed without rewriting malformed URL bytes", async () => {
+    install(() => json({}, 404));
+    window.history.replaceState({}, "", "/search?q=%E0%A4%A");
+    const view = render(<App />);
+    expect(
+      await screen.findByRole("heading", { name: "这些搜索条件无法还原" }),
+    ).toBeInTheDocument();
+    expect(window.location.search).toBe("?q=%E0%A4%A");
+
+    view.unmount();
+    window.history.replaceState({}, "", "/archive?month=%ED%A0%80");
+    render(<App />);
+    expect(
+      await screen.findByRole("heading", { name: "这些归档条件无法还原" }),
+    ).toBeInTheDocument();
+    expect(window.location.search).toBe("?month=%ED%A0%80");
+  });
+
   it("navigates year, month, and day counts and preserves the day URL across history", async () => {
     window.history.replaceState({}, "", "/archive");
     install((url) => {
@@ -269,13 +443,13 @@ describe("search and archive memory layer", () => {
               { year: 2025, month: 12, count: 1 },
             ],
           },
-          meta: {},
+          meta: { request_id: "req_archive" },
         });
       }
       if (url === "/api/v1/archive/month?month=2026-08") {
         return json({
           data: { month: "2026-08", days: [{ day: 10, count: 2 }] },
-          meta: {},
+          meta: { request_id: "req_archive" },
         });
       }
       if (url.startsWith("/api/v1/posts?")) {

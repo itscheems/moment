@@ -40,6 +40,19 @@ describe("memory-layer URL state", () => {
     }
   });
 
+  it("rejects malformed percent escapes and invalid UTF-8 before decoding", () => {
+    for (const search of ["?q=%", "?q=%GG", "?q=%E0%A4%A"]) {
+      const result = parseSearchLocation(search);
+      expect(result.error, search).not.toBeNull();
+      expect(result.query, search).toBeNull();
+    }
+    for (const search of ["?year=2026%", "?month=%ED%A0%80"]) {
+      const result = parseArchiveLocation(search);
+      expect(result.error, search).not.toBeNull();
+      expect(result.month, search).toBeNull();
+    }
+  });
+
   it("recognizes only an exact annual search range", () => {
     expect(activeSearchYear("2026-01-01", "2027-01-01")).toBe(2026);
     expect(activeSearchYear("2026-01-02", "2027-01-01")).toBeNull();

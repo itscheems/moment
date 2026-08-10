@@ -247,7 +247,7 @@ describe("public API client", () => {
               { year: 2026, count: 1 },
             ],
           },
-          meta: { next_cursor: null },
+          meta: { next_cursor: null, request_id: "req_search" },
         }),
       ) as typeof fetch,
     );
@@ -264,7 +264,7 @@ describe("public API client", () => {
               { year: 2026, month: 8, count: 1 },
             ],
           },
-          meta: {},
+          meta: { request_id: "req_archive" },
         }),
       ) as typeof fetch,
     );
@@ -284,7 +284,7 @@ describe("public API client", () => {
               { year: 2025, month: 12, count: 2 },
             ],
           },
-          meta: {},
+          meta: { request_id: "req_archive" },
         });
       }
       return json({
@@ -295,7 +295,7 @@ describe("public API client", () => {
             { day: 31, count: 3 },
           ],
         },
-        meta: {},
+        meta: { request_id: "req_archive" },
       });
     });
     const api = new PublicApi(fetcher as typeof fetch);
@@ -311,6 +311,82 @@ describe("public API client", () => {
         { day: 2, count: 1 },
         { day: 31, count: 3 },
       ],
+    });
+  });
+
+  it("requires canonical HTTP, JSON, envelope, and metadata for discovery reads", async () => {
+    const endpoints: Array<{
+      call: (api: PublicApi) => Promise<unknown>;
+      data: unknown;
+      meta: Record<string, unknown>;
+    }> = [
+      {
+        call: (api) => api.search({ query: "雨" }),
+        data: { items: [], year_counts: [] },
+        meta: { request_id: "req_search", next_cursor: null },
+      },
+      {
+        call: (api) => api.archiveMonths(),
+        data: { items: [] },
+        meta: { request_id: "req_archive" },
+      },
+      {
+        call: (api) => api.archiveMonth("2026-08"),
+        data: { month: "2026-08", days: [] },
+        meta: { request_id: "req_archive" },
+      },
+    ];
+
+    for (const endpoint of endpoints) {
+      const envelope = { data: endpoint.data, meta: endpoint.meta };
+      const missingRequestId = Object.fromEntries(
+        Object.entries(endpoint.meta).filter(([key]) => key !== "request_id"),
+      );
+      const responses = [
+        json(envelope, 201),
+        new Response(JSON.stringify(envelope), {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        }),
+        json({ ...envelope, extra: true }),
+        json({
+          ...envelope,
+          meta: { ...endpoint.meta, request_id: "" },
+        }),
+        json({ ...envelope, meta: missingRequestId }),
+        json({ ...envelope, meta: { ...endpoint.meta, extra: true } }),
+      ];
+      for (const response of responses) {
+        const api = new PublicApi(vi.fn(async () => response) as typeof fetch);
+        await expect(endpoint.call(api)).rejects.toMatchObject({
+          code: "API_RESPONSE_INVALID",
+        });
+      }
+    }
+  });
+
+  it("preserves a canonical INVALID_ARGUMENT discovery error", async () => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json(
+          {
+            error: {
+              code: "INVALID_ARGUMENT",
+              message: "cursor is stale",
+              details: { field: "cursor" },
+              request_id: "req_stale",
+            },
+          },
+          400,
+        ),
+      ) as typeof fetch,
+    );
+    await expect(
+      api.search({ query: "雨", cursor: "stale" }),
+    ).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      status: 400,
+      requestId: "req_stale",
     });
   });
 

@@ -38,9 +38,11 @@ export function PublicEmpty() {
 export function PublicError({
   kind = "timeline",
   onRetry,
+  onResetProgress,
 }: {
   kind?: "timeline" | "detail" | "missing" | "malformed";
   onRetry: () => void;
+  onResetProgress?: () => void;
 }) {
   const content = {
     timeline: {
@@ -72,9 +74,20 @@ export function PublicError({
         <p className={styles.eyebrow}>没有加载完成</p>
         <h2>{content.title}</h2>
         <p>{content.detail}</p>
-        <button className={styles.action} onClick={onRetry} type="button">
-          重试
-        </button>
+        <div className={styles.actions}>
+          <button className={styles.action} onClick={onRetry} type="button">
+            重试
+          </button>
+          {onResetProgress ? (
+            <button
+              className={styles.secondaryAction}
+              onClick={onResetProgress}
+              type="button"
+            >
+              从第一页重新加载
+            </button>
+          ) : null}
+        </div>
       </div>
     </section>
   );

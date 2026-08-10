@@ -56,6 +56,43 @@ function appendPage(current: PublicPost[], incoming: PublicPost[]) {
   return [...current, ...incoming];
 }
 
+type TimelinePageResult = Awaited<ReturnType<PublicApi["timeline"]>>;
+
+function validateCursorPage(
+  page: TimelinePageResult,
+  requestedCursor: string | null,
+  visited: ReadonlySet<string>,
+): void {
+  if (page.items.length === 0 && page.nextCursor !== null) {
+    throw invalidTimelineProgress("empty timeline page advances the cursor");
+  }
+  if (page.nextCursor !== null && visited.has(page.nextCursor)) {
+    throw invalidTimelineProgress(
+      page.nextCursor === requestedCursor
+        ? "timeline cursor points to itself"
+        : "timeline cursor cycle detected",
+    );
+  }
+}
+
+function withoutLoadedProgress(search: string): string {
+  const query = new URLSearchParams(search);
+  query.delete("loaded_through");
+  const value = query.toString();
+  return value ? `?${value}` : "";
+}
+
+function hasLoadedProgress(search: string): boolean {
+  return new URLSearchParams(search).has("loaded_through");
+}
+
+function recoverableCursorError(error: unknown): boolean {
+  return (
+    error instanceof PublicApiError &&
+    (error.code === "INVALID_ARGUMENT" || error.code === "API_RESPONSE_INVALID")
+  );
+}
+
 function errorKind(error: unknown): "timeline" | "malformed" {
   return error instanceof PublicApiError &&
     error.code === "API_RESPONSE_INVALID"
@@ -88,7 +125,8 @@ export function TimelinePage({
   onYearsChange?: (years: number[]) => void;
   owner?: boolean;
 }) {
-  const { replaceTimelineProgress, restoreCurrentEntry } = useNavigation();
+  const { navigate, pathname, replaceTimelineProgress, restoreCurrentEntry } =
+    useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [initialError, setInitialError] = useState<unknown>(null);
@@ -102,6 +140,7 @@ export function TimelinePage({
   const loadingMoreRef = useRef(false);
   const initialEntryRestored = useRef(false);
   const ownerEvents = useRef(new Map<string, OwnerPostEvent>());
+  const visitedCursors = useRef(new Set<string>());
 
   const reconcileOwnerEvents = useCallback((items: PublicPost[]) => {
     let reconciled = items;
@@ -142,6 +181,7 @@ export function TimelinePage({
       let requestedCursor = initialCursor;
       const visited = new Set<string>();
       if (requestedCursor) visited.add(requestedCursor);
+      validateCursorPage(page, requestedCursor, visited);
 
       for (
         let replayed = 0;
@@ -168,10 +208,12 @@ export function TimelinePage({
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
+        validateCursorPage(page, requestedCursor, visited);
         combined = appendPage(combined, page.items);
       }
 
       combined = reconcileOwnerEvents(combined);
+      visitedCursors.current = visited;
       setPosts(combined);
       setNextCursor(page.nextCursor);
     } catch (error) {
@@ -236,13 +278,21 @@ export function TimelinePage({
     setMoreError(null);
     const requestedCursor = nextCursor;
     try {
+      if (visitedCursors.current.has(requestedCursor)) {
+        throw invalidTimelineProgress("timeline cursor cycle detected");
+      }
       const page = await api.timeline({
         ...requestFromSearch(initialSearchRef.current).request,
         cursor: requestedCursor,
         signal: controller.signal,
       });
+      if (controller.signal.aborted) return;
+      const visited = new Set(visitedCursors.current);
+      visited.add(requestedCursor);
+      validateCursorPage(page, requestedCursor, visited);
       const firstNew = page.items[0]?.id;
       const combined = appendPage(posts, page.items);
+      visitedCursors.current = visited;
       setPosts(combined);
       setNextCursor(page.nextCursor);
       replaceTimelineProgress(requestedCursor);
@@ -261,9 +311,28 @@ export function TimelinePage({
     }
   };
 
+  const resetFromFirstPage = () => {
+    const search = withoutLoadedProgress(initialSearchRef.current);
+    initialSearchRef.current = search;
+    visitedCursors.current = new Set();
+    navigate(`${pathname}${search}`);
+    void loadInitial();
+  };
+
   if (loadingInitial) return <TimelineLoading />;
   if (initialError) {
-    return <PublicError kind={errorKind(initialError)} onRetry={loadInitial} />;
+    return (
+      <PublicError
+        kind={errorKind(initialError)}
+        onResetProgress={
+          hasLoadedProgress(initialSearchRef.current) &&
+          recoverableCursorError(initialError)
+            ? resetFromFirstPage
+            : undefined
+        }
+        onRetry={loadInitial}
+      />
+    );
   }
   if (posts.length === 0) return <PublicEmpty />;
 
@@ -288,9 +357,15 @@ export function TimelinePage({
               ? "下一页数据不完整，没有追加到时间流。"
               : "下一页没有加载完成。"}
           </span>
-          <button onClick={loadMore} type="button">
-            重试加载
-          </button>
+          {recoverableCursorError(moreError) ? (
+            <button onClick={resetFromFirstPage} type="button">
+              从第一页重新加载
+            </button>
+          ) : (
+            <button onClick={loadMore} type="button">
+              重试加载
+            </button>
+          )}
         </div>
       ) : null}
       {nextCursor && !moreError ? (

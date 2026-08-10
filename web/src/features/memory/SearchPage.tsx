@@ -53,6 +53,23 @@ function appendHits(current: SearchHit[], incoming: SearchHit[]): SearchHit[] {
   return [...current, ...incoming];
 }
 
+function validateCursorPage(
+  page: { items: SearchHit[]; nextCursor: string | null },
+  requestedCursor: string | null,
+  visited: ReadonlySet<string>,
+): void {
+  if (page.items.length === 0 && page.nextCursor !== null) {
+    throw malformed("empty search page advances the cursor");
+  }
+  if (page.nextCursor !== null && visited.has(page.nextCursor)) {
+    throw malformed(
+      page.nextCursor === requestedCursor
+        ? "search cursor points to itself"
+        : "search cursor cycle detected",
+    );
+  }
+}
+
 function highlightedSnippet(snippet: string, query: string): ReactNode {
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   if (!escaped) return snippet;
@@ -126,6 +143,7 @@ export function SearchPage({
   const activeMore = useRef<AbortController | null>(null);
   const loadingMoreRef = useRef(false);
   const entryRestored = useRef(false);
+  const visitedCursors = useRef(new Set<string>());
 
   const load = useCallback(async () => {
     if (!state.query || state.error) return;
@@ -148,6 +166,7 @@ export function SearchPage({
       const aggregate = page.yearCounts;
       let requestedCursor: string | null = null;
       const visited = new Set<string>();
+      validateCursorPage(page, requestedCursor, visited);
       for (
         let replayed = 0;
         state.loadedThrough !== null && requestedCursor !== state.loadedThrough;
@@ -173,8 +192,10 @@ export function SearchPage({
         if (!sameYearCounts(aggregate, page.yearCounts)) {
           throw malformed("search aggregate changed between cursor pages");
         }
+        validateCursorPage(page, requestedCursor, visited);
         combined = appendHits(combined, page.items);
       }
+      visitedCursors.current = visited;
       setHits(combined);
       setYearCounts(aggregate);
       setNextCursor(page.nextCursor);
@@ -235,6 +256,9 @@ export function SearchPage({
     setMoreError(null);
     const requestedCursor = nextCursor;
     try {
+      if (visitedCursors.current.has(requestedCursor)) {
+        throw malformed("search cursor cycle detected");
+      }
       const page = await api.search({
         query: state.query,
         from: state.from,
@@ -246,8 +270,13 @@ export function SearchPage({
       if (!sameYearCounts(yearCounts, page.yearCounts)) {
         throw malformed("search aggregate changed between cursor pages");
       }
+      const visited = new Set(visitedCursors.current);
+      visited.add(requestedCursor);
+      validateCursorPage(page, requestedCursor, visited);
       const firstNew = page.items[0]?.post.id;
-      setHits((current) => appendHits(current, page.items));
+      const combined = appendHits(hits, page.items);
+      visitedCursors.current = visited;
+      setHits(combined);
       setNextCursor(page.nextCursor);
       location.replaceTimelineProgress(requestedCursor);
       if (firstNew) {
@@ -270,6 +299,15 @@ export function SearchPage({
   const clearProgressHref = state.query
     ? searchHref({ query: state.query, from: state.from, to: state.to })
     : "/search";
+  const resetFromFirstPage = () => {
+    stateRef.current = { ...state, loadedThrough: null, error: null };
+    visitedCursors.current = new Set();
+    location.navigate(clearProgressHref);
+  };
+  const continuedPageInvalid =
+    moreError instanceof PublicApiError &&
+    (moreError.code === "INVALID_ARGUMENT" ||
+      moreError.code === "API_RESPONSE_INVALID");
 
   return (
     <div className={styles.memoryPage}>
@@ -348,19 +386,24 @@ export function SearchPage({
                 重试搜索
               </button>
               {state.loadedThrough ? (
-                <InternalLink href={clearProgressHref}>
-                  从第一页重新搜索
-                </InternalLink>
+                <button onClick={resetFromFirstPage} type="button">
+                  从第一页重新加载
+                </button>
               ) : null}
             </div>
           }
           detail={
-            error instanceof PublicApiError && error.code === "INVALID_ARGUMENT"
-              ? "搜索词或日期范围不被服务器接受；条件仍保留在上方，可以直接修改。"
+            error instanceof PublicApiError &&
+            error.code === "INVALID_ARGUMENT" &&
+            state.loadedThrough
+              ? "保存的分页位置已经失效；搜索词和日期仍保留，可以从第一页重新加载。"
               : error instanceof PublicApiError &&
-                  error.code === "API_RESPONSE_INVALID"
-                ? "服务器返回的数据不完整，没有显示可能错序的结果。"
-                : "检查网络后重试；搜索词和日期仍保留在当前链接中。"
+                  error.code === "INVALID_ARGUMENT"
+                ? "搜索词或日期范围不被服务器接受；条件仍保留在上方，可以直接修改。"
+                : error instanceof PublicApiError &&
+                    error.code === "API_RESPONSE_INVALID"
+                  ? "服务器返回的数据不完整，没有显示可能错序的结果。"
+                  : "检查网络后重试；搜索词和日期仍保留在当前链接中。"
           }
           marker="没有完成"
           title="这次没有找回结果"
@@ -470,9 +513,15 @@ export function SearchPage({
               {moreError ? (
                 <div className={styles.moreError} role="alert">
                   <span>更早的结果没有加载完成，已显示的内容保持不变。</span>
-                  <button onClick={() => void loadMore()} type="button">
-                    重试加载
-                  </button>
+                  {continuedPageInvalid ? (
+                    <button onClick={resetFromFirstPage} type="button">
+                      从第一页重新加载
+                    </button>
+                  ) : (
+                    <button onClick={() => void loadMore()} type="button">
+                      重试加载
+                    </button>
+                  )}
                 </div>
               ) : null}
               {nextCursor && !moreError ? (

@@ -57,10 +57,17 @@
   line-height: 1.75;
 }
 
-.action {
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-block-start: var(--space-6);
+}
+
+.action,
+.secondaryAction {
   min-block-size: var(--target-size);
   inline-size: fit-content;
-  margin-block-start: var(--space-6);
   border: 1px solid var(--accent);
   border-radius: var(--radius-action);
   padding-inline: var(--space-5);
@@ -72,6 +79,15 @@
 
 .action:hover {
   background: var(--accent-hover);
+}
+
+.secondaryAction {
+  color: var(--accent);
+  background: transparent;
+}
+
+.secondaryAction:hover {
+  background: var(--surface-hover);
 }
 
 .loading {

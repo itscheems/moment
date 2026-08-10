@@ -739,23 +739,39 @@ export async function decodeResponse(
       ?.trim()
       .toLowerCase();
     if (mediaType !== "application/json") {
-      throw invalidResponse(
-        "comment success response must use application/json",
-      );
+      throw invalidResponse("success response must use application/json");
     }
   }
   if (
     options.strictSuccessEnvelope &&
     !hasExactKeys(payload, ["data", "meta"])
   ) {
-    throw invalidResponse(
-      "comment success response must contain only data and meta",
-    );
+    throw invalidResponse("success response must contain only data and meta");
   }
   if (!("data" in payload) || !isRecord(payload.meta)) {
     throw invalidResponse("success response must contain data and meta");
   }
   return { data: payload.data, meta: payload.meta };
+}
+
+async function decodeDiscoveryResponse(
+  response: Response,
+  metaKeys: string[],
+): Promise<{ data: unknown; meta: Record<string, unknown> }> {
+  const result = await decodeResponse(response, {
+    strictSuccessEnvelope: true,
+    requireJsonSuccess: true,
+  });
+  if (response.status !== 200) {
+    throw invalidResponse("discovery success response must return HTTP 200");
+  }
+  if (
+    !hasExactKeys(result.meta, ["request_id", ...metaKeys]) ||
+    !stringField(result.meta, "request_id")
+  ) {
+    throw invalidResponse("discovery success response metadata is invalid");
+  }
+  return result;
 }
 
 export async function decodeCommentResponse(
@@ -872,7 +888,9 @@ export class PublicApi {
       headers: { Accept: "application/json" },
       signal: request.signal,
     });
-    const { data, meta } = await decodeResponse(response);
+    const { data, meta } = await decodeDiscoveryResponse(response, [
+      "next_cursor",
+    ]);
     if (
       !isRecord(data) ||
       !hasExactKeys(data, ["items", "year_counts"]) ||
@@ -909,7 +927,7 @@ export class PublicApi {
       headers: { Accept: "application/json" },
       signal: request.signal,
     });
-    const { data } = await decodeResponse(response);
+    const { data } = await decodeDiscoveryResponse(response, []);
     return parseArchiveMonths(data);
   }
 
@@ -922,7 +940,7 @@ export class PublicApi {
       headers: { Accept: "application/json" },
       signal,
     });
-    const { data } = await decodeResponse(response);
+    const { data } = await decodeDiscoveryResponse(response, []);
     return parseArchiveMonth(data, month);
   }
 

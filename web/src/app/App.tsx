@@ -12,6 +12,7 @@ import { OwnerLogin } from "../features/owner/OwnerLogin";
 import { OwnerProvider, useOwner } from "../features/owner/OwnerProvider";
 import { SettingsPage } from "../features/owner/SettingsPage";
 import { ArchivePage } from "../features/memory/ArchivePage";
+import { hasValidRawQueryEncoding } from "../features/memory/memoryState";
 import { SearchPage } from "../features/memory/SearchPage";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { NavigationProvider, useNavigation } from "./navigation";
@@ -56,6 +57,7 @@ function editableTarget(target: EventTarget | null): boolean {
 }
 
 function routeSearchKey(search: string): string {
+  if (!hasValidRawQueryEncoding(search)) return search;
   const params = new URLSearchParams(search);
   return JSON.stringify(
     Array.from(params.entries()).filter(([name]) => name !== "loaded_through"),
@@ -65,7 +67,12 @@ function routeSearchKey(search: string): string {
 function PublicApp() {
   const location = useNavigation();
   const route = resolveRoute(location.pathname);
-  const state = new URLSearchParams(location.search).get("state");
+  const state =
+    route.id === "search" ||
+    route.id === "archive" ||
+    !hasValidRawQueryEncoding(location.search)
+      ? null
+      : new URLSearchParams(location.search).get("state");
   const api = useMemo(() => new PublicApi(), []);
   const owner = useOwner();
   const [site, setSite] = useState(fallbackSite);

@@ -44,6 +44,20 @@ function page(items: unknown[], nextCursor: string | null): Response {
   );
 }
 
+function staleCursor(): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        code: "INVALID_ARGUMENT",
+        message: "cursor is stale",
+        details: { field: "cursor" },
+        request_id: "req_stale",
+      },
+    }),
+    { status: 400, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function renderTimeline(api: PublicApi, initialSearch = "") {
   return render(
     <NavigationProvider>
@@ -220,6 +234,94 @@ describe("public timeline", () => {
       "下一页数据不完整",
     );
     expect(screen.getAllByText("只出现一次")).toHaveLength(1);
+  });
+
+  it("clears stale archive progress without losing the selected day", async () => {
+    const first = post("01K2ABCDEF0123456789ABCDE0", "当天第一条");
+    window.history.replaceState(
+      {},
+      "",
+      "/archive?year=2026&month=2026-08&from=2026-08-10&to=2026-08-11&loaded_through=stale",
+    );
+    let firstPageRequests = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("cursor=stale")) return staleCursor();
+      firstPageRequests += 1;
+      return page([first], "stale");
+    });
+    renderTimeline(
+      new PublicApi(fetcher as typeof fetch),
+      window.location.search,
+    );
+
+    const reset = await screen.findByRole("button", {
+      name: "从第一页重新加载",
+    });
+    fireEvent.click(reset);
+    expect(await screen.findByText("当天第一条")).toBeInTheDocument();
+    expect(firstPageRequests).toBe(2);
+    expect(window.location.pathname).toBe("/archive");
+    expect(window.location.search).toContain("year=2026");
+    expect(window.location.search).toContain("month=2026-08");
+    expect(window.location.search).toContain("from=2026-08-10");
+    expect(window.location.search).toContain("to=2026-08-11");
+    expect(window.location.search).not.toContain("loaded_through");
+  });
+
+  it.each([
+    {
+      name: "self-loop",
+      items: [post("01K2ABCDEF0123456789ABCDE1", "不应追加")],
+      nextCursor: "cursor-one",
+    },
+    { name: "empty drift", items: [], nextCursor: "cursor-two" },
+  ])(
+    "rejects a continued timeline cursor $name",
+    async ({ items, nextCursor }) => {
+      const first = post("01K2ABCDEF0123456789ABCDE0", "最近的一段");
+      const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+        String(input).includes("cursor=cursor-one")
+          ? page(items, nextCursor)
+          : page([first], "cursor-one"),
+      );
+      renderTimeline(new PublicApi(fetcher as typeof fetch));
+      await screen.findByText("最近的一段");
+      fireEvent.click(
+        screen.getByRole("button", { name: "加载更早的 Moment" }),
+      );
+
+      expect(
+        await screen.findByRole("button", { name: "从第一页重新加载" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("不应追加")).not.toBeInTheDocument();
+      expect(window.location.search).not.toContain("loaded_through");
+    },
+  );
+
+  it("tracks continued timeline cursors and rejects a later cycle", async () => {
+    const first = post("01K2ABCDEF0123456789ABCDE0", "最近的一段");
+    const second = post("01K2ABCDEF0123456789ABCDE1", "第二页");
+    const third = post("01K2ABCDEF0123456789ABCDE2", "不应追加的循环页");
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const cursor = new URL(
+        String(input),
+        "http://moment.invalid",
+      ).searchParams.get("cursor");
+      if (cursor === "cursor-one") return page([second], "cursor-two");
+      if (cursor === "cursor-two") return page([third], "cursor-one");
+      return page([first], "cursor-one");
+    });
+    renderTimeline(new PublicApi(fetcher as typeof fetch));
+    await screen.findByText("最近的一段");
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
+    await screen.findByText("第二页");
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
+
+    expect(
+      await screen.findByRole("button", { name: "从第一页重新加载" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("不应追加的循环页")).not.toBeInTheDocument();
+    expect(window.location.search).toContain("loaded_through=cursor-one");
   });
 
   it("renders a useful empty state", async () => {
