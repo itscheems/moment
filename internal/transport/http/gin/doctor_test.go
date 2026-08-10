@@ -3,6 +3,7 @@ package ginhttp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -131,6 +132,26 @@ type panicDoctorReporter struct{}
 
 func (panicDoctorReporter) Run(context.Context, doctor.Mode) (doctor.Report, error) {
 	panic("CANARY_WRAPPED_SECRET_PANIC")
+}
+
+type cancelledDoctorReporter struct{}
+
+func (cancelledDoctorReporter) Run(context.Context, doctor.Mode) (doctor.Report, error) {
+	return doctor.Report{}, errors.Join(errors.New("wrapped diagnostic cancellation"), context.DeadlineExceeded)
+}
+
+func TestDoctorHTTPWrappedCancellationIsTimeout(t *testing.T) {
+	fixture := newOwnerTestFixture(t, false)
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Doctor: cancelledDoctorReporter{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ownerRequest(http.MethodGet, "/api/v1/owner/doctor", "")
+	request.Header.Set("Authorization", "Bearer "+fixture.token)
+	response := performRequest(engine, request)
+	if response.Code != http.StatusRequestTimeout || decodeError(t, response.Body).Error.Code != "TIMEOUT" {
+		t.Fatalf("wrapped cancellation response=%d %s", response.Code, response.Body.String())
+	}
 }
 
 func TestDoctorHTTPPanicIsRedactedAndConfigRequiresAuth(t *testing.T) {

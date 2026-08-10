@@ -6,8 +6,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -18,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
 	mediastore "github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
@@ -95,6 +98,53 @@ func TestRegistryJSONV1AndHealthyReadOnlyModes(t *testing.T) {
 	}
 }
 
+func TestSummaryReportIsTransportIndependent(t *testing.T) {
+	fixture := newDoctorFixture(t)
+	runtimeState, err := runtimefs.Open(fixture.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := sqlitestore.Open(context.Background(), runtimeState, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	serve, err := runtimeState.Locks.Acquire(context.Background(), runtimefs.ServeLock, runtimefs.Exclusive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = serve.Release() }()
+	direct, err := New(Options{DataDir: fixture.root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	api, err := New(Options{DataDir: fixture.root, ActiveDatabase: database})
+	if err != nil {
+		t.Fatal(err)
+	}
+	directReport, err := direct.Run(context.Background(), ModeSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiReport, err := api.Run(context.Background(), ModeSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	normalizeVolatileSummaryEvidence(&directReport)
+	normalizeVolatileSummaryEvidence(&apiReport)
+	if !reflect.DeepEqual(directReport, apiReport) {
+		t.Fatalf("summary transport drift\ndirect=%#v\napi=%#v", directReport, apiReport)
+	}
+}
+
+func normalizeVolatileSummaryEvidence(report *Report) {
+	for index := range report.Checks {
+		if report.Checks[index].ID == CheckDiskSpace {
+			report.Checks[index].Evidence["available_bytes"] = uint64(0)
+		}
+	}
+}
+
 func TestDeepDoctorReadsUncleanWALWithoutMutatingGeneration(t *testing.T) {
 	if os.Getenv(doctorWALHelper) == "1" {
 		runDoctorWALHelper()
@@ -111,7 +161,8 @@ func TestDeepDoctorReadsUncleanWALWithoutMutatingGeneration(t *testing.T) {
 		t.Fatalf("helper did not leave durable WAL: %#v %v", walInfo, err)
 	}
 	before := generationSnapshot(t, fixture.current.Root)
-	tempBefore, _ := filepath.Glob(filepath.Join(os.TempDir(), "moment-doctor-sqlite-*"))
+	diagnosticTemp := t.TempDir()
+	t.Setenv("TMPDIR", diagnosticTemp)
 	service, err := New(Options{DataDir: fixture.root})
 	if err != nil {
 		t.Fatal(err)
@@ -131,10 +182,7 @@ func TestDeepDoctorReadsUncleanWALWithoutMutatingGeneration(t *testing.T) {
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("active generation changed while reading WAL\nbefore=%#v\nafter=%#v", before, after)
 	}
-	tempAfter, _ := filepath.Glob(filepath.Join(os.TempDir(), "moment-doctor-sqlite-*"))
-	if !reflect.DeepEqual(tempBefore, tempAfter) {
-		t.Fatalf("private diagnostic snapshot was not cleaned: before=%v after=%v", tempBefore, tempAfter)
-	}
+	assertDirectoryEmpty(t, diagnosticTemp)
 }
 
 func TestDeepDoctorSupportsInitializedNeverServedLegacyLocks(t *testing.T) {
@@ -226,7 +274,8 @@ func TestDoctorDistinguishesLiveStaleAndContendedLocks(t *testing.T) {
 
 func TestDoctorDatabaseSnapshotBoundFailsClosedAndCleansTemp(t *testing.T) {
 	fixture := newDoctorFixture(t)
-	tempBefore, _ := filepath.Glob(filepath.Join(os.TempDir(), "moment-doctor-sqlite-*"))
+	diagnosticTemp := t.TempDir()
+	t.Setenv("TMPDIR", diagnosticTemp)
 	service, err := New(Options{DataDir: fixture.root, MaxDatabaseBytes: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -239,10 +288,52 @@ func TestDoctorDatabaseSnapshotBoundFailsClosedAndCleansTemp(t *testing.T) {
 	if report.Failure() != FailureUnavailable || check.Status != StatusFail || check.Evidence["bounded"] != true {
 		t.Fatalf("bounded report = %#v", report)
 	}
-	tempAfter, _ := filepath.Glob(filepath.Join(os.TempDir(), "moment-doctor-sqlite-*"))
-	if !reflect.DeepEqual(tempBefore, tempAfter) {
-		t.Fatalf("bounded copy leaked temp: before=%v after=%v", tempBefore, tempAfter)
+	assertDirectoryEmpty(t, diagnosticTemp)
+}
+
+func TestDeepDoctorTreatsRealEarlyImportFailuresAsTerminalWarnings(t *testing.T) {
+	tests := []struct {
+		name   string
+		source io.Reader
+	}{
+		{name: "copy failure leaves empty hashes", source: doctorFailReader{}},
+		{name: "preflight failure leaves archive hash only", source: strings.NewReader("not a portable zip")},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newDoctorFixture(t)
+			inspector, err := archive.NewInspector(archive.InspectOptions{DataDir: fixture.root})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := inspector.Inspect(context.Background(), test.source, 1); err == nil {
+				t.Fatal("early import inspection unexpectedly succeeded")
+			}
+
+			service, err := New(Options{DataDir: fixture.root})
+			if err != nil {
+				t.Fatal(err)
+			}
+			report, err := service.Run(context.Background(), ModeDeep)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := ValidateReport(report, ModeDeep); err != nil {
+				t.Fatal(err)
+			}
+			staging := findCheck(t, report, CheckStaleImportStaging)
+			if report.Status != OverallWarning || report.Failure() != FailureNone || staging.Status != StatusWarning ||
+				staging.Evidence["failed"] != 1 || staging.Evidence["invalid"] != 0 {
+				t.Fatalf("failed staging report = %#v", report)
+			}
+		})
+	}
+}
+
+type doctorFailReader struct{}
+
+func (doctorFailReader) Read([]byte) (int, error) {
+	return 0, errors.New("injected import copy failure")
 }
 
 func TestDoctorRejectsTemporaryDirectoryInsideAuthorityWithoutMutation(t *testing.T) {
@@ -318,6 +409,30 @@ func TestDeterministicCorruptionChecks(t *testing.T) {
 			corrupt: func(t *testing.T, fixture doctorFixture) {
 				if err := os.Remove(filepath.Join(fixture.root, "CURRENT")); err != nil {
 					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "oversized CURRENT", checkID: CheckCurrentGeneration, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				writeFixtureFile(t, filepath.Join(fixture.root, "CURRENT"), []byte(strings.Repeat("x", 1<<20)), 0o600)
+			},
+		},
+		{
+			name: "oversized instance metadata", checkID: CheckCurrentGeneration, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				writeFixtureFile(t, filepath.Join(fixture.root, "instance.json"), []byte(strings.Repeat("x", 1<<20)), 0o600)
+			},
+		},
+		{
+			name: "CURRENT symlink to secret", checkID: CheckCurrentGeneration, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				path := filepath.Join(fixture.root, "CURRENT")
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(filepath.Join(fixture.root, "secrets.json"), path); err != nil {
+					t.Skipf("symlinks unavailable: %v", err)
 				}
 			},
 		},
@@ -426,7 +541,116 @@ INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES ('01ARZ3
 					t.Skip("POSIX permission bits are not authoritative on Windows")
 				}
 				t.Cleanup(func() { _ = os.Chmod(fixture.current.DatabasePath, 0o600) })
-				if err := os.Chmod(fixture.current.DatabasePath, 0o200); err != nil {
+				if err := os.Chmod(fixture.current.DatabasePath, 0o400); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "broad instance metadata permissions", checkID: CheckCurrentGeneration, status: StatusFail, overall: OverallUnhealthy, failure: FailureIO,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				if runtime.GOOS == "windows" {
+					t.Skip("POSIX permission bits are not authoritative on Windows")
+				}
+				path := filepath.Join(fixture.root, "instance.json")
+				t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+				if err := os.Chmod(path, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "broad CURRENT permissions", checkID: CheckCurrentGeneration, status: StatusFail, overall: OverallUnhealthy, failure: FailureIO,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				if runtime.GOOS == "windows" {
+					t.Skip("POSIX permission bits are not authoritative on Windows")
+				}
+				path := filepath.Join(fixture.root, "CURRENT")
+				t.Cleanup(func() { _ = os.Chmod(path, 0o600) })
+				if err := os.Chmod(path, 0o666); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "generation lacks owner write", checkID: CheckCurrentGeneration, status: StatusFail, overall: OverallUnhealthy, failure: FailureIO,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				if runtime.GOOS == "windows" {
+					t.Skip("POSIX permission bits are not authoritative on Windows")
+				}
+				t.Cleanup(func() { _ = os.Chmod(fixture.current.Root, 0o700) })
+				if err := os.Chmod(fixture.current.Root, 0o500); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "generations parent broad permissions", checkID: CheckCurrentGeneration, status: StatusFail, overall: OverallUnhealthy, failure: FailureIO,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				if runtime.GOOS == "windows" {
+					t.Skip("POSIX permission bits are not authoritative on Windows")
+				}
+				path := filepath.Join(fixture.root, "generations")
+				t.Cleanup(func() { _ = os.Chmod(path, 0o700) })
+				if err := os.Chmod(path, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "data directory traverse permissions", checkID: CheckDataDir, status: StatusFail, overall: OverallUnhealthy, failure: FailureIO,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				if runtime.GOOS == "windows" {
+					t.Skip("POSIX permission bits are not authoritative on Windows")
+				}
+				t.Cleanup(func() { _ = os.Chmod(fixture.root, 0o700) })
+				if err := os.Chmod(fixture.root, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "broad lock permissions", checkID: CheckInstanceLocks, status: StatusFail, overall: OverallUnhealthy, failure: FailureIO,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				if runtime.GOOS == "windows" {
+					t.Skip("POSIX permission bits are not authoritative on Windows")
+				}
+				lockRoot := filepath.Join(fixture.root, "locks")
+				lockFile := filepath.Join(lockRoot, "import.lock")
+				t.Cleanup(func() {
+					_ = os.Chmod(lockRoot, 0o700)
+					_ = os.Chmod(lockFile, 0o600)
+				})
+				if err := os.Chmod(lockRoot, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(lockFile, 0o666); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "unreadable original permissions", checkID: CheckMediaChecksum, status: StatusFail, overall: OverallUnhealthy, failure: FailureIO,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				if runtime.GOOS == "windows" {
+					t.Skip("POSIX permission bits are not authoritative on Windows")
+				}
+				original := seedReferencedMedia(t, fixture)
+				t.Cleanup(func() { _ = os.Chmod(original, 0o600) })
+				if err := os.Chmod(original, 0); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "untraversable original shard", checkID: CheckMediaChecksum, status: StatusFail, overall: OverallUnhealthy, failure: FailureIO,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				if runtime.GOOS == "windows" {
+					t.Skip("POSIX permission bits are not authoritative on Windows")
+				}
+				shard := filepath.Dir(seedReferencedMedia(t, fixture))
+				t.Cleanup(func() { _ = os.Chmod(shard, 0o700) })
+				if err := os.Chmod(shard, 0o600); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -463,6 +687,12 @@ INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES ('01ARZ3
 			check := findCheck(t, report, test.checkID)
 			if check.Status != test.status || report.Status != test.overall || report.Failure() != test.failure {
 				t.Fatalf("check=%#v overall=%s failure=%s", check, report.Status, report.Failure())
+			}
+			if test.checkID == CheckStaleImportStaging && findCheck(t, report, CheckImportRecoveryState).Status != StatusPass {
+				t.Fatalf("staging-only corruption contaminated recovery: %#v", report)
+			}
+			if test.checkID == CheckImportRecoveryState && findCheck(t, report, CheckStaleImportStaging).Status != StatusPass {
+				t.Fatalf("recovery-only corruption contaminated staging: %#v", report)
 			}
 			encoded := fmt.Sprintf("%#v", report)
 			for _, secret := range []string{"CANARY_PRIVATE_POST_BODY", "CANARY_SECRET_NAME", fixture.root} {
@@ -529,6 +759,44 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'preview fixture', 1, 1, 1, 'pre
 	}
 	if strings.Contains(fmt.Sprintf("%#v", report), "CANARY_") {
 		t.Fatalf("preview report leaked content: %#v", report)
+	}
+}
+
+func TestDeepDoctorTreatsBoundedTerminalRecoveryHistoryAsWarning(t *testing.T) {
+	fixture := newDoctorFixture(t)
+	statusRoot := filepath.Join(fixture.root, "staging", "import-status")
+	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
+	latestID := ""
+	for index := 0; index < defaultMaxStagingItems+1; index++ {
+		id := "import-20260811T120000000Z-" + fmt.Sprintf("%016x", index+1)
+		completed := now.Add(time.Duration(index) * time.Second)
+		status := archive.CommitStatus{
+			OperationID: id, Phase: archive.CommitFailed, ActiveGeneration: fixture.current.ID,
+			PreviousGeneration: fixture.current.ID, NewGeneration: id, ErrorCode: "DIAGNOSTIC_FIXTURE",
+			StartedAt: completed, UpdatedAt: completed, CompletedAt: &completed,
+		}
+		data, err := json.Marshal(struct {
+			Version int `json:"version"`
+			archive.CommitStatus
+		}{Version: 1, CommitStatus: status})
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFixtureFile(t, filepath.Join(statusRoot, id+".json"), append(data, '\n'), 0o600)
+		latestID = id
+	}
+	writeFixtureFile(t, filepath.Join(statusRoot, "LATEST"), []byte(latestID+"\n"), 0o600)
+	service, err := New(Options{DataDir: fixture.root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := service.Run(context.Background(), ModeDeep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := findCheck(t, report, CheckImportRecoveryState)
+	if check.Status != StatusWarning || report.Status != OverallWarning || report.Failure() != FailureNone || check.Evidence["bounded"] != true {
+		t.Fatalf("recovery=%#v report=%#v", check, report)
 	}
 }
 
@@ -629,10 +897,63 @@ func seedMediaReferenceMismatch(t *testing.T, fixture doctorFixture) {
 	}
 }
 
+func seedReferencedMedia(t *testing.T, fixture doctorFixture) string {
+	t.Helper()
+	runtimeState, err := runtimefs.Open(fixture.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := sqlitestore.Open(context.Background(), runtimeState, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pngBytes, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")
+	if err != nil {
+		_ = database.Close()
+		t.Fatal(err)
+	}
+	store, err := mediastore.NewStore(runtimeState, database, mediastore.Options{})
+	if err != nil {
+		_ = database.Close()
+		t.Fatal(err)
+	}
+	value, _, err := store.Ingest(context.Background(), "CANARY_PERMISSION_NAME.png", bytes.NewReader(pngBytes))
+	if err == nil {
+		err = database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
+			if _, writeErr := queries.ExecContext(context.Background(), `INSERT INTO entries
+(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', 'moment', 'permission fixture', 1, 1, 1, 'permission fixture')`); writeErr != nil {
+				return writeErr
+			}
+			if _, writeErr := queries.ExecContext(context.Background(), `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', ?, 0, NULL)`, value.ID.String()); writeErr != nil {
+				return writeErr
+			}
+			_, writeErr := queries.ExecContext(context.Background(), `UPDATE media SET unreferenced_since_ms = NULL WHERE id = ?`, value.ID.String())
+			return writeErr
+		})
+	}
+	closeErr := database.Close()
+	if err != nil || closeErr != nil {
+		t.Fatal(errors.Join(err, closeErr))
+	}
+	return filepath.Join(fixture.current.Root, filepath.FromSlash(value.StoragePath))
+}
+
 func writeFixtureFile(t *testing.T, path string, contents []byte, mode fs.FileMode) {
 	t.Helper()
 	if err := os.WriteFile(path, contents, mode); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func assertDirectoryEmpty(t *testing.T, path string) {
+	t.Helper()
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("private diagnostic temporary directory was not cleaned: %v", entries)
 	}
 }
 

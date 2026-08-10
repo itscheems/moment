@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -155,6 +157,42 @@ func TestReadOnlyLockerSupportsLegacyImportOnlyLayoutWithoutCreatingFiles(t *tes
 		if _, err := os.Lstat(filepath.Join(root, "locks", string(name)+".lock")); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("read-only locker created %s: %v", name, err)
 		}
+	}
+}
+
+func TestReadOnlyLockerReportsBroadPermissionsWithoutChangingThem(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission bits are not authoritative on Windows")
+	}
+	root := t.TempDir()
+	if _, err := NewLocker(root); err != nil {
+		t.Fatal(err)
+	}
+	lockRoot := filepath.Join(root, "locks")
+	importLock := filepath.Join(lockRoot, "import.lock")
+	if err := os.Chmod(lockRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(importLock, 0o666); err != nil {
+		t.Fatal(err)
+	}
+	locker, err := OpenExistingLocker(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if issues := locker.PermissionIssues(); !slices.Equal(issues, []string{"locks_directory", "import"}) {
+		t.Fatalf("permission issues = %v", issues)
+	}
+	directoryInfo, err := os.Stat(lockRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fileInfo, err := os.Stat(importLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if directoryInfo.Mode().Perm() != 0o755 || fileInfo.Mode().Perm() != 0o666 {
+		t.Fatalf("read-only permission inspection mutated modes: dir=%o file=%o", directoryInfo.Mode().Perm(), fileInfo.Mode().Perm())
 	}
 }
 

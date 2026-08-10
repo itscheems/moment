@@ -114,7 +114,7 @@ func (r *Runtime) createGeneration(ctx context.Context, id string) (Generation, 
 // ResolveCurrent reads the sole authoritative pointer and validates that the
 // database and media paths belong to the same complete generation.
 func (r *Runtime) ResolveCurrent() (Generation, error) {
-	data, err := os.ReadFile(filepath.Join(r.Root, currentFile))
+	data, err := readBoundedAuthorityFile(filepath.Join(r.Root, currentFile), maxCurrentPointerBytes)
 	if err != nil {
 		return Generation{}, fmt.Errorf("%w: read CURRENT: %w", ErrInvalidCurrent, err)
 	}

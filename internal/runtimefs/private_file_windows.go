@@ -5,6 +5,7 @@ package runtimefs
 import (
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"unsafe"
 
@@ -112,6 +113,37 @@ func VerifyPrivateFilePermissions(path string) error {
 	}
 	if len(allowed) != 0 {
 		return errors.New("private file DACL is missing an allowed principal")
+	}
+	return nil
+}
+
+// VerifyWritablePrivateFilePermissions validates that an authoritative
+// runtime file is a regular non-symlink file and is not marked read-only.
+// Database and lock files inherit the selected data root's Windows DACL.
+func VerifyWritablePrivateFilePermissions(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("writable private file is not a regular file")
+	}
+	if info.Mode().Perm()&0o200 == 0 {
+		return errors.New("writable private file is read-only")
+	}
+	return nil
+}
+
+// VerifyPrivateDirectoryPermissions validates the structural portion of the
+// runtime directory policy on Windows. Private files have the stronger
+// protected-DACL contract verified above.
+func VerifyPrivateDirectoryPermissions(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("private directory is not a directory")
 	}
 	return nil
 }

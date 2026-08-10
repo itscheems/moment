@@ -80,6 +80,7 @@ func runDoctor(ctx context.Context, invocation Invocation, input CommandInput) (
 		if err == nil {
 			decoder := json.NewDecoder(bytes.NewReader(data))
 			decoder.DisallowUnknownFields()
+			decoder.UseNumber()
 			if decodeErr := decoder.Decode(&report); decodeErr != nil || decoder.Decode(&struct{}{}) != io.EOF {
 				err = invalidAPIResponse()
 			}

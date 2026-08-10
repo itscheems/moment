@@ -20,6 +20,9 @@ func TestWindowsPrivateFileDACLProtectsAndDiagnoses(t *testing.T) {
 	if err := VerifyPrivateFilePermissions(path); err != nil {
 		t.Fatalf("protected file verification failed: %v", err)
 	}
+	if permissions, err := InspectPathPermissions(path); err != nil || !permissions.Read || !permissions.Write {
+		t.Fatalf("protected file effective access = %#v, %v", permissions, err)
+	}
 
 	everyone, err := windows.CreateWellKnownSid(windows.WinWorldSid)
 	if err != nil {
@@ -54,5 +57,8 @@ func TestWindowsPrivateFileDACLProtectsAndDiagnoses(t *testing.T) {
 	}
 	if err := VerifyPrivateFilePermissions(path); err == nil {
 		t.Fatal("Everyone-readable inherited DACL was accepted")
+	}
+	if permissions, err := InspectPathPermissions(path); err != nil || !permissions.Read || permissions.Write {
+		t.Fatalf("read-only DACL effective access = %#v, %v", permissions, err)
 	}
 }

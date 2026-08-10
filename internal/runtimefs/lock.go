@@ -39,6 +39,8 @@ var lockOrder = map[LockName]int{
 	MediaLock:       3,
 }
 
+var lockSequence = []LockName{ImportLock, ServeLock, MaintenanceLock, MediaLock}
+
 // LockMode selects shared-reader or exclusive-writer ownership.
 type LockMode uint8
 
@@ -58,10 +60,11 @@ type LockRequest struct {
 // Locker coordinates both goroutines and other processes for one data root.
 // All waits honor context cancellation and deadlines.
 type Locker struct {
-	root         string
-	gates        map[LockName]*localGate
-	existingOnly bool
-	missing      map[LockName]bool
+	root             string
+	gates            map[LockName]*localGate
+	existingOnly     bool
+	missing          map[LockName]bool
+	permissionIssues []string
 }
 
 var localGates sync.Map
@@ -95,8 +98,12 @@ func OpenExistingLocker(dataDir string) (*Locker, error) {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return nil, errors.Join(errors.New("runtime lock directory is missing or unsafe"), err)
 	}
+	permissionIssues := make([]string, 0, len(lockOrder)+1)
+	if VerifyPrivateDirectoryPermissions(lockDirectory) != nil {
+		permissionIssues = append(permissionIssues, "locks_directory")
+	}
 	missing := make(map[LockName]bool)
-	for name := range lockOrder {
+	for _, name := range lockSequence {
 		path := filepath.Join(lockDirectory, string(name)+".lock")
 		entry, inspectErr := os.Lstat(path)
 		if errors.Is(inspectErr, os.ErrNotExist) && name != ImportLock {
@@ -109,14 +116,18 @@ func OpenExistingLocker(dataDir string) (*Locker, error) {
 		if !entry.Mode().IsRegular() || entry.Mode()&os.ModeSymlink != 0 {
 			return nil, fmt.Errorf("runtime %s lock file is missing or unsafe", name)
 		}
+		if VerifyWritablePrivateFilePermissions(path) != nil {
+			permissionIssues = append(permissionIssues, string(name))
+		}
 	}
 	locker := newLocker(root, true)
 	locker.missing = missing
+	locker.permissionIssues = permissionIssues
 	return locker, nil
 }
 
 func ensureLockFiles(lockDirectory string) error {
-	for name := range lockOrder {
+	for _, name := range lockSequence {
 		path := filepath.Join(lockDirectory, string(name)+".lock")
 		file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 		if err != nil {
@@ -187,6 +198,16 @@ func (l *Locker) HasPersistentLock(name LockName) bool {
 	}
 	_, valid := lockOrder[name]
 	return valid && !l.missing[name]
+}
+
+// PermissionIssues returns controlled lock labels whose existing permissions
+// are broader or less usable than the private runtime policy. It never changes
+// modes or DACLs.
+func (l *Locker) PermissionIssues() []string {
+	if l == nil {
+		return nil
+	}
+	return append([]string(nil), l.permissionIssues...)
 }
 
 // ExtendSet appends later-ranked locks to an existing acquisition without

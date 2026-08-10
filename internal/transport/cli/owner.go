@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/runtimefs"
@@ -224,8 +225,13 @@ func ownerAPIRawRequest(ctx context.Context, invocation Invocation, method, endp
 		return nil, nil, response.StatusCode, decodeOwnerAPIFailure(response.StatusCode, body)
 	}
 	if strictJSON {
-		mediaType, _, contentTypeErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
-		if contentTypeErr != nil || mediaType != "application/json" {
+		mediaType, parameters, contentTypeErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+		charset, hasCharset := parameters["charset"]
+		if contentTypeErr != nil || mediaType != "application/json" || len(parameters) > 1 ||
+			(len(parameters) == 1 && (!hasCharset || !strings.EqualFold(charset, "utf-8"))) {
+			return nil, nil, response.StatusCode, invalidAPIResponse()
+		}
+		if err := validateUniqueJSONObjects(body); err != nil {
 			return nil, nil, response.StatusCode, invalidAPIResponse()
 		}
 	}
@@ -249,6 +255,79 @@ func ownerAPIRawRequest(ctx context.Context, invocation Invocation, method, endp
 		return nil, nil, response.StatusCode, invalidAPIResponse()
 	}
 	return raw.Data, raw.Meta, response.StatusCode, nil
+}
+
+func validateUniqueJSONObjects(document []byte) error {
+	if !utf8.Valid(document) {
+		return errors.New("JSON document is not valid UTF-8")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(document))
+	decoder.UseNumber()
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return errors.New("JSON document is not an object")
+	}
+	if err := consumeUniqueJSONObject(decoder); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return errors.New("JSON document contains trailing data")
+		}
+		return err
+	}
+	return nil
+}
+
+func consumeUniqueJSONObject(decoder *json.Decoder) error {
+	seen := make(map[string]struct{})
+	for decoder.More() {
+		token, err := decoder.Token()
+		key, ok := token.(string)
+		if err != nil || !ok {
+			return errors.New("JSON object key is invalid")
+		}
+		if _, duplicate := seen[key]; duplicate {
+			return errors.New("JSON object key is duplicated")
+		}
+		seen[key] = struct{}{}
+		if err := consumeUniqueJSONValue(decoder); err != nil {
+			return err
+		}
+	}
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('}') {
+		return errors.New("JSON object is incomplete")
+	}
+	return nil
+}
+
+func consumeUniqueJSONValue(decoder *json.Decoder) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	delimiter, ok := token.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch delimiter {
+	case '{':
+		return consumeUniqueJSONObject(decoder)
+	case '[':
+		for decoder.More() {
+			if err := consumeUniqueJSONValue(decoder); err != nil {
+				return err
+			}
+		}
+		closing, err := decoder.Token()
+		if err != nil || closing != json.Delim(']') {
+			return errors.New("JSON array is incomplete")
+		}
+		return nil
+	default:
+		return errors.New("JSON value has an unexpected delimiter")
+	}
 }
 
 func readAPIToken(target APITransport) (string, error) {
@@ -327,7 +406,7 @@ func decodeOwnerAPIFailure(status int, body []byte) error {
 	case "IMPORT_IN_PROGRESS", "IMPORT_STAGING_INVALID", "IMPORT_STAGING_EXPIRED":
 		exit = ExitConflict
 		suggestion = "finish, discard, or wait for the existing staging inspection before retrying"
-	case "CANCELLED":
+	case "CANCELLED", "TIMEOUT":
 		exit = ExitTimeout
 		suggestion = "retry when the caller can keep the operation context active"
 	case "INTERNAL":

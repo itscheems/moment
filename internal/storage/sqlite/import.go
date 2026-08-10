@@ -249,14 +249,38 @@ func (db *Database) ValidatePortableReady(ctx context.Context, expected ArchiveC
 	if err := db.Ready(ctx); err != nil {
 		return err
 	}
+	return validatePortableReady(ctx, db.read, expected, db.ProbeCapabilities)
+}
+
+// ValidatePortableReady runs the same complete post-rebuild checks against a
+// private query-only diagnostic copy. It never migrates or rebuilds derived
+// state beside the staged authority.
+func (database *DiagnosticDatabase) ValidatePortableReady(ctx context.Context, expected ArchiveCounts) error {
+	if database == nil || database.pool == nil {
+		return ErrClosed
+	}
+	schema, err := database.Schema(ctx)
+	if err != nil || !schema.Exact {
+		return errors.Join(errors.New("staged diagnostic schema is not exact"), err)
+	}
+	return validatePortableReady(ctx, database.pool, expected, func(ctx context.Context) error {
+		capability, err := database.FTSCapability(ctx)
+		if err != nil || !capability.FTS5 || !capability.Trigram {
+			return errors.Join(ErrFTSUnavailable, err)
+		}
+		return nil
+	})
+}
+
+func validatePortableReady(ctx context.Context, pool *sql.DB, expected ArchiveCounts, probe func(context.Context) error) error {
 	var integrity string
-	if err := db.read.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&integrity); err != nil {
+	if err := pool.QueryRowContext(ctx, `PRAGMA integrity_check`).Scan(&integrity); err != nil {
 		return fmt.Errorf("check staged SQLite integrity: %w", err)
 	}
 	if integrity != "ok" {
 		return errors.New("staged SQLite integrity check failed")
 	}
-	rows, err := db.read.QueryContext(ctx, `PRAGMA foreign_key_check`)
+	rows, err := pool.QueryContext(ctx, `PRAGMA foreign_key_check`)
 	if err != nil {
 		return fmt.Errorf("check staged foreign keys: %w", err)
 	}
@@ -268,7 +292,7 @@ func (db *Database) ValidatePortableReady(ctx context.Context, expected ArchiveC
 		return fmt.Errorf("iterate staged foreign keys: %w", err)
 	}
 	var entries, comments, mediaCount, mediaGC, ftsRows, missingFTS, extraFTS, mismatchedFTS, duplicateFTS int64
-	if err := db.read.QueryRowContext(ctx, `
+	if err := pool.QueryRowContext(ctx, `
 SELECT
   (SELECT count(*) FROM entries),
   (SELECT count(*) FROM comments),
@@ -284,7 +308,7 @@ SELECT
 		return fmt.Errorf("check staged portable counts: %w", err)
 	}
 	var normalizerVersion int
-	if err := db.read.QueryRowContext(ctx, `SELECT normalizer_version FROM search_index_state WHERE id = 1`).Scan(&normalizerVersion); err != nil {
+	if err := pool.QueryRowContext(ctx, `SELECT normalizer_version FROM search_index_state WHERE id = 1`).Scan(&normalizerVersion); err != nil {
 		return fmt.Errorf("check staged normalizer version: %w", err)
 	}
 	if entries != expected.Entries || comments != expected.Comments || mediaCount != expected.Media || mediaGC != 0 ||
@@ -292,7 +316,7 @@ SELECT
 		normalizerVersion != domain.ContentNormalizerVersion {
 		return errors.New("staged portable counts, FTS content, or normalizer version are inconsistent")
 	}
-	rows, err = db.read.QueryContext(ctx, `SELECT id, content_md, content_text FROM entries ORDER BY id`)
+	rows, err = pool.QueryContext(ctx, `SELECT id, content_md, content_text FROM entries ORDER BY id`)
 	if err != nil {
 		return fmt.Errorf("query staged normalized content: %w", err)
 	}
@@ -311,5 +335,5 @@ SELECT
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return fmt.Errorf("iterate staged normalized content: %w", err)
 	}
-	return db.ProbeCapabilities(ctx)
+	return probe(ctx)
 }

@@ -399,7 +399,7 @@ func newInstance(environment Environment) (Instance, error) {
 }
 
 func readInstance(path string) (Instance, error) {
-	data, err := os.ReadFile(path)
+	data, err := readBoundedAuthorityFile(path, maxInstanceMetadataBytes)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Instance{}, fmt.Errorf("%w: instance.json is missing", ErrIncompleteLayout)
@@ -407,7 +407,7 @@ func readInstance(path string) (Instance, error) {
 		return Instance{}, fmt.Errorf("read instance metadata: %w", err)
 	}
 	var instance Instance
-	if err := json.Unmarshal(data, &instance); err != nil {
+	if err := decodeStrictInstance(data, &instance); err != nil {
 		return Instance{}, fmt.Errorf("%w: decode instance.json: %w", ErrInvalidInstance, err)
 	}
 	if instance.LayoutVersion != LayoutVersion || len(instance.ID) != 32 || instance.InitializedAt.IsZero() {

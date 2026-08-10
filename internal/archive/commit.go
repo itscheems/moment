@@ -966,6 +966,14 @@ func (committer *Committer) latestStatusWithRoot(root string) (CommitStatus, str
 	if err != nil {
 		return CommitStatus{}, "", err
 	}
+	return latestStatusFromEntries(root, statusRoot, entries)
+}
+
+// latestStatusFromEntries is the single read-only authority selector shared
+// by recovery and bounded diagnostics. Callers own directory enumeration so
+// diagnostics can enforce their stricter entry ceiling without copying the
+// LATEST, active-operation, temporary-file, or staging-binding rules.
+func latestStatusFromEntries(root, statusRoot string, entries []os.DirEntry) (CommitStatus, string, error) {
 	type locatedStatus struct {
 		status        CommitStatus
 		root          string

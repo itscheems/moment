@@ -5,14 +5,20 @@ import (
 	"errors"
 	"image"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/runtimefs"
 )
 
 const diagnosticPreviewVersionLimit = 32
+
+// ErrDiagnosticIO distinguishes filesystem accessibility from authoritative
+// media integrity without exposing a local path or underlying error text.
+var ErrDiagnosticIO = errors.New("media diagnostic I/O failure")
 
 // OriginalDiagnostic distinguishes path/availability failures from an
 // expensive byte-level verification.
@@ -34,17 +40,30 @@ func DiagnoseOriginal(ctx context.Context, generationRoot string, value Media, d
 	if err != nil || relative == "." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		return OriginalDiagnostic{}, errors.New("media storage path escapes the generation")
 	}
+	if err := diagnosePathTraversal(generationRoot, filepath.Dir(path)); err != nil {
+		if errors.Is(err, ErrDiagnosticIO) {
+			return OriginalDiagnostic{Present: true}, err
+		}
+		return OriginalDiagnostic{}, err
+	}
 	info, err := os.Lstat(path)
+	if errors.Is(err, fs.ErrPermission) {
+		return OriginalDiagnostic{}, errors.Join(ErrDiagnosticIO, err)
+	}
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() != value.ByteSize {
 		return OriginalDiagnostic{}, errors.Join(errors.New("immutable original is missing or unsafe"), err)
 	}
 	result := OriginalDiagnostic{Present: true}
+	permissions, permissionErr := runtimefs.InspectPathPermissions(path)
+	if permissionErr != nil || !permissions.Read {
+		return result, ErrDiagnosticIO
+	}
 	if !deep {
 		return result, nil
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return result, err
+		return result, errors.Join(ErrDiagnosticIO, err)
 	}
 	verifyErr := VerifyPortableOriginal(ctx, file, value)
 	closeErr := file.Close()
@@ -53,6 +72,31 @@ func DiagnoseOriginal(ctx context.Context, generationRoot string, value Media, d
 	}
 	result.Verified = true
 	return result, nil
+}
+
+func diagnosePathTraversal(root, directory string) error {
+	relative, err := filepath.Rel(root, directory)
+	if err != nil || filepath.IsAbs(relative) || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return errors.New("media directory escapes the generation")
+	}
+	current := root
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
+		if component != "." && component != "" {
+			current = filepath.Join(current, component)
+		}
+		info, inspectErr := os.Lstat(current)
+		if errors.Is(inspectErr, fs.ErrPermission) {
+			return errors.Join(ErrDiagnosticIO, inspectErr)
+		}
+		if inspectErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.Join(errors.New("media directory is missing or unsafe"), inspectErr)
+		}
+		permissions, permissionErr := runtimefs.InspectPathPermissions(current)
+		if permissionErr != nil || !permissions.Read || !permissions.Traverse {
+			return ErrDiagnosticIO
+		}
+	}
+	return nil
 }
 
 // DiagnosePreview returns ready, stale, or missing for the current recipe. It

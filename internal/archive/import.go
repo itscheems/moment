@@ -1539,6 +1539,15 @@ func validateStagingGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		return err
 	}
 	defer func() { _ = database.Close() }()
+	return validateStagingAuthority(ctx, generation, archivePath, document, database)
+}
+
+type stagingAuthorityDatabase interface {
+	ValidatePortableReady(context.Context, sqlitestore.ArchiveCounts) error
+	BeginArchiveSnapshot(context.Context) (*sqlitestore.ArchiveSnapshot, error)
+}
+
+func validateStagingAuthority(ctx context.Context, generation runtimefs.Generation, archivePath string, document manifest, database stagingAuthorityDatabase) error {
 	if err := database.ValidatePortableReady(ctx, sqlitestore.ArchiveCounts{
 		Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media,
 	}); err != nil {

@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/runtimefs"
 )
 
 // StagingDiagnostic is a redacted, bounded view of persistent import state.
@@ -36,16 +39,19 @@ type RecoveryDiagnostic struct {
 	Bounded         bool        `json:"bounded"`
 }
 
+const recoveryDiagnosticHardLimit = 4096
+
 // DiagnosePersistentState reads only existing staging metadata and import
 // journals. Parsing and phase validation reuse the archive package's authority
 // contract rather than duplicating it in the doctor.
-func DiagnosePersistentState(ctx context.Context, root, instanceID, currentGeneration string, now time.Time, limit int) (StagingDiagnostic, RecoveryDiagnostic, error) {
+func DiagnosePersistentState(ctx context.Context, root, instanceID, currentGeneration string, now time.Time, limit int) (StagingDiagnostic, RecoveryDiagnostic, error, error) {
 	if limit < 1 {
-		return StagingDiagnostic{}, RecoveryDiagnostic{}, errors.New("archive diagnostic limit must be positive")
+		err := errors.New("archive diagnostic limit must be positive")
+		return StagingDiagnostic{}, RecoveryDiagnostic{}, err, err
 	}
 	staging, stagingErr := diagnoseStaging(ctx, root, instanceID, now.UTC(), limit)
 	recovery, recoveryErr := diagnoseRecovery(ctx, root, currentGeneration, limit)
-	return staging, recovery, errors.Join(stagingErr, recoveryErr)
+	return staging, recovery, stagingErr, recoveryErr
 }
 
 func diagnoseStaging(ctx context.Context, root, instanceID string, now time.Time, limit int) (StagingDiagnostic, error) {
@@ -78,8 +84,8 @@ func diagnoseStaging(ctx context.Context, root, instanceID string, now time.Time
 			result.Invalid++
 			continue
 		}
-		if metadata.InstanceID != instanceID || metadata.GenerationID != entry.Name() || metadata.SessionEpoch == 0 || metadata.ExpiresAtMS <= 0 ||
-			!diagnosticHex(metadata.TokenHash) || !diagnosticHex(metadata.ArchiveSHA) {
+		hashesValid := metadata.State == stagingFailed || diagnosticHex(metadata.TokenHash) && diagnosticHex(metadata.ArchiveSHA)
+		if metadata.InstanceID != instanceID || metadata.GenerationID != entry.Name() || metadata.SessionEpoch == 0 || metadata.ExpiresAtMS <= 0 || !hashesValid {
 			result.Invalid++
 			continue
 		}
@@ -90,12 +96,20 @@ func diagnoseStaging(ctx context.Context, root, instanceID string, now time.Time
 			} else {
 				result.Ready++
 			}
-			if !stagingPayloadComplete(stageRoot) {
+			complete, payloadErr := stagingPayloadComplete(ctx, root, stageRoot, metadata)
+			if payloadErr != nil && ctx.Err() != nil {
+				return result, ctx.Err()
+			}
+			if !complete {
 				result.Incomplete++
 			}
 		case stagingCommitting:
 			result.Committing++
-			if !stagingPayloadComplete(stageRoot) {
+			complete, payloadErr := stagingPayloadComplete(ctx, root, stageRoot, metadata)
+			if payloadErr != nil && ctx.Err() != nil {
+				return result, ctx.Err()
+			}
+			if !complete {
 				result.Incomplete++
 			}
 		case stagingUsed:
@@ -118,7 +132,7 @@ func diagnosticHex(value string) bool {
 	}) == -1
 }
 
-func stagingPayloadComplete(stageRoot string) bool {
+func stagingPayloadComplete(ctx context.Context, runtimeRoot, stageRoot string, metadata stagingMetadata) (bool, error) {
 	paths := []struct {
 		name      string
 		directory bool
@@ -131,10 +145,66 @@ func stagingPayloadComplete(stageRoot string) bool {
 	for _, expected := range paths {
 		info, err := os.Lstat(filepath.Join(stageRoot, expected.name))
 		if err != nil || info.Mode()&os.ModeSymlink != 0 || expected.directory != info.IsDir() || !expected.directory && !info.Mode().IsRegular() {
-			return false
+			return false, nil
 		}
 	}
-	return true
+	archivePath := filepath.Join(stageRoot, "archive.zip")
+	actualHash, err := fileSHA256(ctx, archivePath, defaultMaxArchiveBytes)
+	if err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		return false, nil
+	}
+	if actualHash != metadata.ArchiveSHA {
+		return false, nil
+	}
+	if err := ValidateFileContext(ctx, archivePath); err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		return false, nil
+	}
+	inspector, err := NewInspector(InspectOptions{})
+	if err != nil {
+		return false, err
+	}
+	document, err := inspector.preflight(ctx, archivePath)
+	if err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		return false, nil
+	}
+	generation := stagingGeneration(stageRoot, metadata.GenerationID)
+	if err := validatePortableGenerationTree(ctx, generation, archivePath); err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		return false, nil
+	}
+	database, cleanup, err := OpenDiagnosticSnapshot(ctx, &runtimefs.Runtime{
+		Root: runtimeRoot,
+		Instance: runtimefs.Instance{
+			ID: metadata.InstanceID,
+		},
+		Current: generation,
+	}, defaultMaxExpandedBytes)
+	if err != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		return false, nil
+	}
+	validationErr := validateStagingAuthority(ctx, generation, archivePath, document, database)
+	cleanupErr := cleanup()
+	if validationErr != nil || cleanupErr != nil {
+		if ctx.Err() != nil {
+			return false, ctx.Err()
+		}
+		return false, nil
+	}
+	return true, nil
 }
 
 func diagnoseRecovery(ctx context.Context, root, currentGeneration string, limit int) (RecoveryDiagnostic, error) {
@@ -143,48 +213,50 @@ func diagnoseRecovery(ctx context.Context, root, currentGeneration string, limit
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return RecoveryDiagnostic{}, errors.Join(errors.New("import status directory is missing or unsafe"), err)
 	}
-	entries, bounded, err := readDiagnosticDirectory(parent, limit)
+	entries, hardBounded, err := readDiagnosticDirectory(parent, recoveryDiagnosticHardLimit)
 	if err != nil {
 		return RecoveryDiagnostic{}, err
 	}
-	if bounded {
-		return RecoveryDiagnostic{Journals: limit, Bounded: true}, nil
+	if hardBounded {
+		return RecoveryDiagnostic{Journals: recoveryDiagnosticHardLimit, Bounded: true}, errors.New("import recovery history exceeded its hard diagnostic bound")
 	}
-	result := RecoveryDiagnostic{}
-	var latest CommitStatus
+	result := RecoveryDiagnostic{Bounded: len(entries) > limit}
+	hasLatest := false
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return result, err
 		}
 		name := entry.Name()
-		if name == commitLatestFile || isCommitStatusTemporary(name) || isCommitLatestTemporary(name) {
+		if name == commitLatestFile {
+			hasLatest = true
+			continue
+		}
+		if isCommitStatusTemporary(name) || isCommitLatestTemporary(name) {
 			continue
 		}
 		result.Journals++
-		path := filepath.Join(parent, name)
-		if filepath.Ext(name) != ".json" {
-			result.Invalid++
-			continue
+	}
+	if result.Journals > limit {
+		result.Journals = limit
+	}
+	latest, _, authorityErr := latestStatusFromEntries(root, parent, entries)
+	if authorityErr != nil {
+		if result.Journals == 0 && !hasLatest && domain.HasCode(authorityErr, domain.CodeImportStagingInvalid) {
+			return result, nil
 		}
-		status, readErr := readCommitStatus(path)
-		if readErr != nil || strings.TrimSuffix(name, ".json") != status.OperationID {
-			result.Invalid++
-			continue
-		}
-		if latest.UpdatedAt.IsZero() || status.UpdatedAt.After(latest.UpdatedAt) {
-			latest = status
-		}
-		if !terminalCommitPhase(status.Phase) {
-			result.Active++
-		}
-		if status.Phase == CommitNeedsAttention {
-			result.NeedsAttention++
-		}
-		if !commitPhaseMatchesCurrent(status, currentGeneration) {
-			result.CurrentMismatch++
-		}
+		result.Invalid = 1
+		return result, authorityErr
 	}
 	result.LatestPhase = latest.Phase
+	if !terminalCommitPhase(latest.Phase) {
+		result.Active = 1
+	}
+	if latest.Phase == CommitNeedsAttention {
+		result.NeedsAttention = 1
+	}
+	if !commitPhaseMatchesCurrent(latest, currentGeneration) {
+		result.CurrentMismatch = 1
+	}
 	return result, nil
 }
 

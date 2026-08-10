@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -85,7 +86,7 @@ func TestDoctorCLIAPIDeepUnsupportedAndStrictReport(t *testing.T) {
 		if request.URL.Path != "/api/v1/owner/doctor" || request.Header.Get("Authorization") != "Bearer CANARY_OWNER_TOKEN" {
 			t.Errorf("request = %s auth=%q", request.URL.Path, request.Header.Get("Authorization"))
 		}
-		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Content-Type", "application/json; charset=UTF-8")
 		_ = json.NewEncoder(writer).Encode(map[string]any{"data": report, "meta": map[string]any{"request_id": "req_doctor"}})
 	}))
 	defer validServer.Close()
@@ -93,6 +94,28 @@ func TestDoctorCLIAPIDeepUnsupportedAndStrictReport(t *testing.T) {
 	valid := execute(application, "", "doctor", "--url", validServer.URL, "--json")
 	if valid.exit != ExitSuccess || decodeOneDocument(t, valid.stdout)["ok"] != true {
 		t.Fatalf("valid = %#v", valid)
+	}
+	largeReport := report
+	largeReport.Checks = append([]doctor.Check(nil), report.Checks...)
+	const largeAvailable = uint64(9_223_372_036_854_775_931)
+	for index := range largeReport.Checks {
+		if largeReport.Checks[index].ID == doctor.CheckDiskSpace {
+			evidence := make(map[string]any, len(largeReport.Checks[index].Evidence))
+			for key, value := range largeReport.Checks[index].Evidence {
+				evidence[key] = value
+			}
+			evidence["available_bytes"] = largeAvailable
+			largeReport.Checks[index].Evidence = evidence
+		}
+	}
+	largeServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(map[string]any{"data": largeReport, "meta": map[string]any{"request_id": "req_large"}})
+	}))
+	large := execute(application, "", "doctor", "--url", largeServer.URL, "--json")
+	largeServer.Close()
+	if large.exit != ExitSuccess || !strings.Contains(large.stdout, `"available_bytes":9223372036854775931`) {
+		t.Fatalf("large integer response = %#v", large)
 	}
 	unsupported := execute(application, "", "doctor", "--deep", "--url", validServer.URL, "--json")
 	if unsupported.exit != ExitInvalidInput || decodeOneDocument(t, unsupported.stdout)["error"].(map[string]any)["code"] != "MODE_UNSUPPORTED" {
@@ -119,12 +142,25 @@ func TestDoctorCLIAPIDeepUnsupportedAndStrictReport(t *testing.T) {
 		{name: "empty request id", contentType: "application/json", body: `{"data":` + string(validReportJSON) + `,"meta":{"request_id":"  "}}`, status: 200},
 		{name: "wrong request id", contentType: "application/json", body: `{"data":` + string(validReportJSON) + `,"meta":{"request_id":123}}`, status: 200},
 		{name: "extra meta", contentType: "application/json", body: `{"data":` + string(validReportJSON) + `,"meta":{"request_id":"req_doctor","extra":true}}`, status: 200},
+		{name: "duplicate outer data", contentType: "application/json", body: `{"data":` + string(validReportJSON) + `,"data":` + string(validReportJSON) + `,"meta":{"request_id":"req_doctor"}}`, status: 200},
+		{name: "duplicate outer meta", contentType: "application/json", body: `{"data":` + string(validReportJSON) + `,"meta":{"request_id":"req_doctor"},"meta":{"request_id":"req_doctor"}}`, status: 200},
+		{name: "duplicate meta request id", contentType: "application/json", body: `{"data":` + string(validReportJSON) + `,"meta":{"request_id":"req_first","request_id":"req_doctor"}}`, status: 200},
+		{name: "duplicate report field", contentType: "application/json", body: strings.Replace(validData, `"schema_version":1`, `"schema_version":1,"schema_version":1`, 1), status: 200},
+		{name: "duplicate check field", contentType: "application/json", body: strings.Replace(validData, `"id":"data_dir"`, `"id":"data_dir","id":"data_dir"`, 1), status: 200},
+		{name: "duplicate evidence field", contentType: "application/json", body: strings.Replace(validData, `"evidence":{`, `"evidence":{"duplicate":true,"duplicate":false,`, 1), status: 200},
+		{name: "unknown evidence field", contentType: "application/json", body: strings.Replace(validData, `"readable":true`, `"readable":true,"absolute_path":"CANARY_PATH"`, 1), status: 200},
+		{name: "negative evidence integer", contentType: "application/json", body: strings.Replace(validData, `"applied_version":5`, `"applied_version":-1`, 1), status: 200},
+		{name: "fractional evidence integer", contentType: "application/json", body: strings.Replace(validData, `"applied_version":5`, `"applied_version":1.5`, 1), status: 200},
+		{name: "string evidence integer", contentType: "application/json", body: strings.Replace(validData, `"applied_version":5`, `"applied_version":"5"`, 1), status: 200},
 		{name: "null data", contentType: "application/json", body: `{"data":null,"meta":{"request_id":"req_doctor"}}`, status: 200},
 		{name: "empty data", contentType: "application/json", body: `{"data":{},"meta":{"request_id":"req_doctor"}}`, status: 200},
 		{name: "unknown envelope", contentType: "application/json", body: `{"data":{},"meta":{"request_id":"req_doctor"},"extra":true}`, status: 200},
 		{name: "unknown report", contentType: "application/json", body: `{"data":` + strings.TrimSuffix(string(validReportJSON), "}") + `,"extra":true},"meta":{"request_id":"req_doctor"}}`, status: 200},
 		{name: "wrong schema", contentType: "application/json", body: strings.Replace(validData, `"schema_version":1`, `"schema_version":2`, 1), status: 200},
 		{name: "wrong content type", contentType: "text/plain", body: validData, status: 200},
+		{name: "non UTF-8 charset", contentType: "application/json; charset=latin1", body: validData, status: 200},
+		{name: "unexpected content type parameter", contentType: "application/json; version=1", body: validData, status: 200},
+		{name: "invalid UTF-8", contentType: "application/json", body: string([]byte{0xff, 0xfe}), status: 200},
 		{name: "wrong status", contentType: "application/json", body: `{"error":{"code":"NOT_READY","message":"not ready","details":{},"request_id":"req"}}`, status: 503},
 	}
 	for _, test := range tests {
@@ -189,6 +225,20 @@ func TestDoctorCLIExitMatrixPreservesPartialReports(t *testing.T) {
 	if timedOut.exit != ExitTimeout {
 		t.Fatalf("timeout = %#v", timedOut)
 	}
+	if runtime.GOOS != "windows" {
+		lockRoot := filepath.Join(dataDir, "locks")
+		if err := os.Chmod(lockRoot, 0); err != nil {
+			t.Fatal(err)
+		}
+		permissionFailure := execute(application, "", "doctor", "--deep", "--data-dir", dataDir, "--json")
+		if err := os.Chmod(lockRoot, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		permissionDocument := decodeOneDocument(t, permissionFailure.stdout)
+		if permissionFailure.exit != ExitIO || permissionDocument["ok"] != false || permissionDocument["error"].(map[string]any)["code"] != "IO_ERROR" || !documentCheckHasStatus(permissionDocument, doctor.CheckInstanceLocks, string(doctor.StatusFail)) {
+			t.Fatalf("lock permission failure = %#v document=%#v", permissionFailure, permissionDocument)
+		}
+	}
 	timeoutDocument := decodeOneDocument(t, timedOut.stdout)
 	if timeoutDocument["ok"] != false || timeoutDocument["data"] == nil || timeoutDocument["error"].(map[string]any)["code"] != "TIMEOUT" {
 		t.Fatalf("timeout document = %#v", timeoutDocument)
@@ -219,6 +269,24 @@ func TestDoctorCLIExitMatrixPreservesPartialReports(t *testing.T) {
 	}
 }
 
+func documentCheckHasStatus(document map[string]any, id, status string) bool {
+	data, ok := document["data"].(map[string]any)
+	if !ok {
+		return false
+	}
+	checks, ok := data["checks"].([]any)
+	if !ok {
+		return false
+	}
+	for _, value := range checks {
+		check, ok := value.(map[string]any)
+		if ok && check["id"] == id && check["status"] == status {
+			return true
+		}
+	}
+	return false
+}
+
 func TestDoctorCLIAPICancellationKeepsTimeoutClassification(t *testing.T) {
 	application := momentTestApplication()
 	t.Setenv("MOMENT_TOKEN", "CANARY_OWNER_TOKEN")
@@ -234,5 +302,25 @@ func TestDoctorCLIAPICancellationKeepsTimeoutClassification(t *testing.T) {
 	document := decodeOneDocument(t, output.stdout)
 	if document["ok"] != false || document["error"].(map[string]any)["code"] != "TIMEOUT" || strings.Contains(output.stdout+output.stderr, "CANARY_OWNER_TOKEN") {
 		t.Fatalf("API timeout document = %#v", document)
+	}
+}
+
+func TestDoctorCLIMapsServerTimeoutToExitNine(t *testing.T) {
+	application := momentTestApplication()
+	t.Setenv("MOMENT_TOKEN", "CANARY_OWNER_TOKEN")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusRequestTimeout)
+		_, _ = writer.Write([]byte(`{"error":{"code":"TIMEOUT","message":"doctor summary did not complete","details":{},"request_id":"req_timeout"}}`))
+	}))
+	defer server.Close()
+
+	output := execute(application, "", "doctor", "--url", server.URL, "--json")
+	if output.exit != ExitTimeout {
+		t.Fatalf("server timeout = %#v", output)
+	}
+	document := decodeOneDocument(t, output.stdout)
+	if document["ok"] != false || document["error"].(map[string]any)["code"] != "TIMEOUT" {
+		t.Fatalf("server timeout document = %#v", document)
 	}
 }

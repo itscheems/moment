@@ -103,6 +103,15 @@ func (database *SearchReadOnlyDatabase) BeginArchiveSnapshot(ctx context.Context
 	return beginArchiveSnapshot(ctx, database.pool)
 }
 
+// BeginArchiveSnapshot starts the portable authority reader on a private
+// diagnostic copy without invoking writable SQLite startup.
+func (database *DiagnosticDatabase) BeginArchiveSnapshot(ctx context.Context) (*ArchiveSnapshot, error) {
+	if database == nil || database.pool == nil {
+		return nil, ErrClosed
+	}
+	return beginArchiveSnapshot(ctx, database.pool)
+}
+
 func beginArchiveSnapshot(ctx context.Context, pool *sql.DB) (*ArchiveSnapshot, error) {
 	tx, err := pool.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

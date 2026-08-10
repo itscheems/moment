@@ -103,14 +103,24 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 		service.inspectDisk(builder, root)
 		return builder.finish(cancelled(err)), errIfCancelled(err)
 	}
-	readable := directoryReadable(root)
-	writable := permissionAllowsWrite(rootInfo)
+	rootPermissions, rootPermissionErr := runtimefs.InspectPathPermissions(root)
+	readable := rootPermissionErr == nil && directoryReadable(root) && rootPermissions.Read && rootPermissions.Traverse
+	writable := rootPermissionErr == nil && rootPermissions.Write
 	if !readable || !writable {
-		builder.set(failed(CheckDataDir, "the data directory permissions are not usable", "grant the Moment process read, traverse, and owner-write permission", map[string]any{"readable": readable, "writable_permission": writable}, failureIO))
+		builder.set(failed(CheckDataDir, "the data directory permissions are not usable", "grant the Moment process read, traverse, and owner-write permission", map[string]any{"readable": readable, "traversable_permission": rootPermissions.Traverse, "writable_permission": writable}, failureIO))
 	} else {
-		builder.set(pass(CheckDataDir, "the data directory is present and accessible", "no action is required", map[string]any{"readable": true, "writable_permission": true}))
+		builder.set(pass(CheckDataDir, "the data directory is present and accessible", "no action is required", map[string]any{"readable": true, "traversable_permission": true, "writable_permission": true}))
 	}
 	service.inspectDisk(builder, root)
+	if !readable {
+		for _, id := range []string{CheckSecretPermissions, CheckCurrentNextState, CheckInstanceLocks, CheckCurrentGeneration, CheckDatabaseOpen, CheckSchemaVersion, CheckSiteConfiguration} {
+			builder.set(skipped(id, "data_directory_unreadable"))
+		}
+		if mode == ModeDeep {
+			service.skipDatabaseAndMediaDeep(builder, "data_directory_unreadable")
+		}
+		return builder.finish(ctx.Err() != nil), errIfCancelled(ctx.Err())
+	}
 	service.inspectSecrets(builder, root)
 	service.inspectCurrentNext(builder, root)
 
@@ -135,7 +145,11 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 			builder.set(failed(CheckInstanceLocks, "lock inspection was cancelled", "retry with a longer --timeout", map[string]any{"snapshot_acquired": false}, failureCancelled))
 			return builder.finish(true), ctx.Err()
 		}
-		builder.set(failed(CheckInstanceLocks, "the read-only diagnostic snapshot could not be acquired", "finish the active import or repair persistent lock files, then retry", map[string]any{"snapshot_acquired": false}, failureUnavailable))
+		class := failureUnavailable
+		if errors.Is(lockerErr, fs.ErrPermission) {
+			class = failureIO
+		}
+		builder.set(failed(CheckInstanceLocks, "the read-only diagnostic snapshot could not be acquired", "finish the active import or repair persistent lock files, then retry", map[string]any{"snapshot_acquired": false, "permissions_valid": class != failureIO}, class))
 	} else {
 		defer func() { _ = held.Release() }()
 		serveState, probeErr := probeServeLock(ctx, locker)
@@ -144,7 +158,15 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 			return builder.finish(true), ctx.Err()
 		}
 		if probeErr != nil {
-			builder.set(failed(CheckInstanceLocks, "the serve lock state could not be inspected", "check lock-file permissions and OS advisory-lock support", map[string]any{"snapshot_acquired": true}, failureUnavailable))
+			class := failureUnavailable
+			if errors.Is(probeErr, fs.ErrPermission) {
+				class = failureIO
+			}
+			builder.set(failed(CheckInstanceLocks, "the serve lock state could not be inspected", "check lock-file permissions and OS advisory-lock support", map[string]any{"snapshot_acquired": true}, class))
+		} else if permissionIssues := locker.PermissionIssues(); len(permissionIssues) != 0 {
+			builder.set(failed(CheckInstanceLocks, "persistent lock permissions are not private and usable", "restrict the lock directory and files to the private runtime policy without deleting them", map[string]any{
+				"snapshot_acquired": true, "permissions_valid": false, "permission_issues": permissionIssues,
+			}, failureIO))
 		} else {
 			missingLocks := make([]string, 0, 3)
 			for _, name := range []runtimefs.LockName{runtimefs.ServeLock, runtimefs.MaintenanceLock, runtimefs.MediaLock} {
@@ -152,19 +174,23 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 					missingLocks = append(missingLocks, string(name))
 				}
 			}
-			order := "import_shared>maintenance_exclusive>media_shared"
-			if service.options.ActiveDatabase != nil && mode == ModeSummary {
-				order = "import_shared>maintenance_shared>media_shared"
+			evidence := map[string]any{
+				"snapshot_acquired": true, "permissions_valid": true, "serve_state": serveState, "legacy_uninitialized": missingLocks,
 			}
-			builder.set(pass(CheckInstanceLocks, "the OS-backed lock matrix is available", "no action is required", map[string]any{
-				"snapshot_acquired": true, "snapshot_order": order, "serve_state": serveState, "legacy_uninitialized": missingLocks,
-			}))
+			if mode == ModeDeep {
+				evidence["snapshot_order"] = "import_shared>maintenance_exclusive>media_shared"
+			}
+			builder.set(pass(CheckInstanceLocks, "the OS-backed lock matrix is available", "no action is required", evidence))
 		}
 	}
 
 	current, currentErr := (&runtimefs.Runtime{Root: root}).ResolveCurrent()
 	if instanceErr != nil || currentErr != nil {
-		builder.set(failed(CheckCurrentGeneration, "CURRENT does not select one complete generation", "restore a valid CURRENT pointer explicitly; never promote CURRENT.next automatically", map[string]any{"instance_valid": instanceErr == nil, "generation_valid": currentErr == nil}, failureIntegrity))
+		class := failureIntegrity
+		if errors.Is(instanceErr, fs.ErrPermission) || errors.Is(currentErr, fs.ErrPermission) {
+			class = failureIO
+		}
+		builder.set(failed(CheckCurrentGeneration, "CURRENT does not select one complete generation", "restore a valid CURRENT pointer explicitly; never promote CURRENT.next automatically", map[string]any{"instance_valid": instanceErr == nil, "generation_valid": currentErr == nil}, class))
 		builder.set(skipped(CheckDatabaseOpen, "current_generation_failed"))
 		builder.set(skipped(CheckSchemaVersion, "database_not_open"))
 		builder.set(skipped(CheckSiteConfiguration, "database_not_open"))
@@ -179,12 +205,20 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 	}
 	generationInfo, generationStatErr := os.Lstat(current.Root)
 	databaseInfo, databaseStatErr := os.Lstat(current.DatabasePath)
-	generationReadable := generationStatErr == nil && generationInfo.IsDir() && directoryReadable(current.Root)
-	databaseReadable := databaseStatErr == nil && databaseInfo.Mode().IsRegular() && permissionAllowsRead(databaseInfo)
+	generationPermissions, generationPermissionErr := runtimefs.InspectPathPermissions(current.Root)
+	databasePermissions, databasePermissionErr := runtimefs.InspectPathPermissions(current.DatabasePath)
+	generationReadable := generationStatErr == nil && generationPermissionErr == nil && generationInfo.IsDir() && directoryReadable(current.Root) && generationPermissions.Read && generationPermissions.Traverse
+	databaseReadable := databaseStatErr == nil && databasePermissionErr == nil && databaseInfo.Mode().IsRegular() && databasePermissions.Read
+	authorityPermissionsValid := runtimefs.VerifyWritablePrivateFilePermissions(filepath.Join(root, "instance.json")) == nil &&
+		runtimefs.VerifyWritablePrivateFilePermissions(filepath.Join(root, "CURRENT")) == nil &&
+		runtimefs.VerifyPrivateDirectoryPermissions(filepath.Join(root, "generations")) == nil &&
+		runtimefs.VerifyPrivateDirectoryPermissions(current.Root) == nil &&
+		runtimefs.VerifyWritablePrivateFilePermissions(current.DatabasePath) == nil
 	currentEvidence["generation_readable"] = generationReadable
 	currentEvidence["database_readable_permission"] = databaseReadable
-	if !generationReadable || !databaseReadable {
-		builder.set(failed(CheckCurrentGeneration, "CURRENT selects a generation with unusable permissions", "grant read and traverse permission to the selected generation and database", currentEvidence, failureIO))
+	currentEvidence["authority_permissions_valid"] = authorityPermissionsValid
+	if !generationReadable || !databaseReadable || !authorityPermissionsValid {
+		builder.set(failed(CheckCurrentGeneration, "CURRENT selects a generation with unusable permissions", "restore the private read/write/traverse policy on instance, pointer, generation, and database authority", currentEvidence, failureIO))
 	} else {
 		builder.set(pass(CheckCurrentGeneration, "CURRENT selects one structurally complete generation", "no action is required", currentEvidence))
 	}
@@ -318,16 +352,18 @@ func (service *Service) runDeep(ctx context.Context, builder *reportBuilder, roo
 	if ctx.Err() != nil {
 		return
 	}
-	staging, recovery, archiveErr := archive.DiagnosePersistentState(ctx, root, instance.ID, current.ID, service.options.Clock(), service.options.MaxStagingItems)
-	if archiveErr != nil || staging.Invalid != 0 || staging.Incomplete != 0 || staging.Committing != 0 || staging.Bounded {
+	staging, recovery, stagingErr, recoveryErr := archive.DiagnosePersistentState(ctx, root, instance.ID, current.ID, service.options.Clock(), service.options.MaxStagingItems)
+	if stagingErr != nil || staging.Invalid != 0 || staging.Incomplete != 0 || staging.Committing != 0 || staging.Bounded {
 		builder.set(failed(CheckStaleImportStaging, "import staging contains invalid, incomplete, or interrupted state", "finish or explicitly discard the diagnosed staging operation before retrying import", map[string]any{"total": staging.Total, "ready": staging.Ready, "expired": staging.Expired, "committing": staging.Committing, "used": staging.Used, "failed": staging.Failed, "invalid": staging.Invalid, "incomplete": staging.Incomplete, "bounded": staging.Bounded}, failureIntegrity))
 	} else if staging.Expired != 0 || staging.Failed != 0 || staging.Used != 0 {
 		builder.set(warning(CheckStaleImportStaging, "import staging contains terminal or expired cleanup candidates", "allow normal retention cleanup or discard the stale staging explicitly", map[string]any{"total": staging.Total, "ready": staging.Ready, "expired": staging.Expired, "used": staging.Used, "failed": staging.Failed, "invalid": 0, "incomplete": 0, "bounded": false}))
 	} else {
 		builder.set(pass(CheckStaleImportStaging, "import staging state is valid", "no action is required", map[string]any{"total": staging.Total, "ready": staging.Ready, "expired": 0, "committing": 0, "invalid": 0, "bounded": false}))
 	}
-	if archiveErr != nil || recovery.Invalid != 0 || recovery.CurrentMismatch != 0 || recovery.NeedsAttention != 0 || recovery.Active != 0 || recovery.Bounded {
+	if recoveryErr != nil || recovery.Invalid != 0 || recovery.CurrentMismatch != 0 || recovery.NeedsAttention != 0 || recovery.Active != 0 {
 		builder.set(failed(CheckImportRecoveryState, "import recovery journals require attention", "run doctor after stopping import activity and restore the journal-selected generation explicitly", map[string]any{"journals": recovery.Journals, "active": recovery.Active, "needs_attention": recovery.NeedsAttention, "current_mismatch": recovery.CurrentMismatch, "invalid": recovery.Invalid, "latest_phase": recovery.LatestPhase, "bounded": recovery.Bounded}, failureIntegrity))
+	} else if recovery.Bounded {
+		builder.set(warning(CheckImportRecoveryState, "import recovery history exceeds the displayed diagnostic count", "normal terminal history remains valid; retain backups before applying any explicit retention policy", map[string]any{"journals": recovery.Journals, "active": 0, "needs_attention": 0, "current_mismatch": 0, "invalid": 0, "latest_phase": recovery.LatestPhase, "bounded": true}))
 	} else {
 		builder.set(pass(CheckImportRecoveryState, "import recovery journals agree with CURRENT", "no action is required", map[string]any{"journals": recovery.Journals, "active": 0, "needs_attention": 0, "current_mismatch": 0, "invalid": 0, "latest_phase": recovery.LatestPhase, "bounded": false}))
 	}
@@ -337,8 +373,10 @@ func (service *Service) inspectMedia(ctx context.Context, builder *reportBuilder
 	originalInfo, originalErr := os.Lstat(current.OriginalsDir)
 	cacheRoot := filepath.Join(root, "cache", "previews")
 	cacheInfo, cacheErr := os.Lstat(cacheRoot)
-	originalReady := originalErr == nil && originalInfo.IsDir() && originalInfo.Mode()&os.ModeSymlink == 0 && directoryReadable(current.OriginalsDir) && permissionAllowsWrite(originalInfo)
-	cacheReady := cacheErr == nil && cacheInfo.IsDir() && cacheInfo.Mode()&os.ModeSymlink == 0 && directoryReadable(cacheRoot) && permissionAllowsWrite(cacheInfo)
+	originalPermissions, originalPermissionErr := runtimefs.InspectPathPermissions(current.OriginalsDir)
+	cachePermissions, cachePermissionErr := runtimefs.InspectPathPermissions(cacheRoot)
+	originalReady := originalErr == nil && originalPermissionErr == nil && originalInfo.IsDir() && originalInfo.Mode()&os.ModeSymlink == 0 && directoryReadable(current.OriginalsDir) && originalPermissions.Read && originalPermissions.Traverse && originalPermissions.Write && runtimefs.VerifyPrivateDirectoryPermissions(current.OriginalsDir) == nil
+	cacheReady := cacheErr == nil && cachePermissionErr == nil && cacheInfo.IsDir() && cacheInfo.Mode()&os.ModeSymlink == 0 && directoryReadable(cacheRoot) && cachePermissions.Read && cachePermissions.Traverse && cachePermissions.Write && runtimefs.VerifyPrivateDirectoryPermissions(cacheRoot) == nil
 	if !originalReady || !cacheReady {
 		builder.set(failed(CheckMediaDirectory, "media authority or preview cache directories are missing, unsafe, or inaccessible", "restore read, traverse, and owner-write permissions on media/original and the preview cache root", map[string]any{"originals_ready": originalReady, "preview_root_ready": cacheReady}, failureIO))
 	} else {
@@ -388,7 +426,7 @@ func (service *Service) inspectMedia(ctx context.Context, builder *reportBuilder
 	} else {
 		builder.set(pass(CheckMediaReferenceConsistency, "media reachability and unreferenced clocks agree", "no action is required", map[string]any{"records": len(records), "inconsistent": 0}))
 	}
-	missingReferenced, corrupt, readyPreviews, stalePreviews, missingPreviews := 0, 0, 0, 0, 0
+	missingReferenced, corrupt, mediaIO, readyPreviews, stalePreviews, missingPreviews := 0, 0, 0, 0, 0, 0
 	expectedPaths := make(map[string]struct{}, len(records))
 	unreferencedRecords := 0
 	for _, record := range records {
@@ -409,7 +447,9 @@ func (service *Service) inspectMedia(ctx context.Context, builder *reportBuilder
 		if !original.Present && state.Referenced {
 			missingReferenced++
 		}
-		if verifyErr != nil {
+		if errors.Is(verifyErr, media.ErrDiagnosticIO) {
+			mediaIO++
+		} else if verifyErr != nil {
 			corrupt++
 		}
 		previewState, previewErr := media.DiagnosePreview(ctx, root, record.SHA256)
@@ -434,10 +474,12 @@ func (service *Service) inspectMedia(ctx context.Context, builder *reportBuilder
 	} else {
 		builder.set(pass(CheckMissingMedia, "all referenced immutable originals are present", "no action is required", map[string]any{"missing_referenced": 0}))
 	}
-	if corrupt != 0 {
-		builder.set(failed(CheckMediaChecksum, "media metadata, checksum, type, or dimensions do not match immutable originals", "restore corrupt originals from a verified backup before export", map[string]any{"checked": len(records), "corrupt": corrupt}, failureIntegrity))
+	if mediaIO != 0 {
+		builder.set(failed(CheckMediaChecksum, "one or more immutable originals could not be read safely", "restore read and traverse permissions without changing original bytes", map[string]any{"checked": len(records), "corrupt": corrupt, "io_failures": mediaIO}, failureIO))
+	} else if corrupt != 0 {
+		builder.set(failed(CheckMediaChecksum, "media metadata, checksum, type, or dimensions do not match immutable originals", "restore corrupt originals from a verified backup before export", map[string]any{"checked": len(records), "corrupt": corrupt, "io_failures": 0}, failureIntegrity))
 	} else {
-		builder.set(pass(CheckMediaChecksum, "all media originals match their authoritative metadata", "no action is required", map[string]any{"checked": len(records), "corrupt": 0}))
+		builder.set(pass(CheckMediaChecksum, "all media originals match their authoritative metadata", "no action is required", map[string]any{"checked": len(records), "corrupt": 0, "io_failures": 0}))
 	}
 	orphanBlobs, scanBounded, scanErr := scanOrphanBlobs(ctx, current.Root, current.OriginalsDir, expectedPaths, service.options.MaxOriginalFiles)
 	if scanErr != nil || scanBounded {
@@ -516,6 +558,10 @@ func (service *Service) inspectCurrentNext(builder *reportBuilder, root string) 
 		builder.set(failed(CheckCurrentNextState, "CURRENT.next is unsafe or unreadable", "inspect the interrupted generation switch; never promote CURRENT.next automatically", map[string]any{"present": err == nil, "safe_regular_file": false}, failureIntegrity))
 		return
 	}
+	if runtimefs.VerifyWritablePrivateFilePermissions(filepath.Join(root, "CURRENT.next")) != nil {
+		builder.set(failed(CheckCurrentNextState, "CURRENT.next permissions are not private and writable", "restore the private file policy before explicit recovery; never promote CURRENT.next automatically", map[string]any{"present": true, "safe_regular_file": true, "permissions_valid": false}, failureIO))
+		return
+	}
 	builder.set(warning(CheckCurrentNextState, "an uncommitted CURRENT.next remnant is present", "verify CURRENT and the import journal, then use explicit recovery; never auto-promote the remnant", map[string]any{"present": true, "safe_regular_file": true}))
 }
 
@@ -560,20 +606,6 @@ func directoryReadable(path string) bool {
 	return (readErr == nil || errors.Is(readErr, io.EOF)) && closeErr == nil
 }
 
-func permissionAllowsWrite(info os.FileInfo) bool {
-	if runtime.GOOS == "windows" {
-		return true
-	}
-	return info.Mode().Perm()&0o200 != 0
-}
-
-func permissionAllowsRead(info os.FileInfo) bool {
-	if runtime.GOOS == "windows" {
-		return true
-	}
-	return info.Mode().Perm()&0o400 != 0
-}
-
 func scanOrphanBlobs(ctx context.Context, generationRoot, originalsRoot string, expected map[string]struct{}, limit int) (int, bool, error) {
 	entriesSeen, orphan := 0, 0
 	directories := []string{originalsRoot}
@@ -585,7 +617,8 @@ func scanOrphanBlobs(ctx context.Context, generationRoot, originalsRoot string, 
 		directoryPath := directories[last]
 		directories = directories[:last]
 		before, err := os.Lstat(directoryPath)
-		if err != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
+		permissions, permissionErr := runtimefs.InspectPathPermissions(directoryPath)
+		if err != nil || permissionErr != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 || !permissions.Read || !permissions.Traverse {
 			return orphan, false, errors.Join(errors.New("unsafe directory in original media tree"), err)
 		}
 		directory, err := os.Open(directoryPath)
@@ -616,6 +649,11 @@ func scanOrphanBlobs(ctx context.Context, generationRoot, originalsRoot string, 
 					return orphan, false, errors.Join(errors.New("unsafe entry in original media tree"), inspectErr)
 				}
 				if info.IsDir() {
+					permissions, permissionErr := runtimefs.InspectPathPermissions(path)
+					if permissionErr != nil || !permissions.Read || !permissions.Traverse {
+						_ = directory.Close()
+						return orphan, false, fs.ErrPermission
+					}
 					directories = append(directories, path)
 					continue
 				}
