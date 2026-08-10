@@ -17,6 +17,17 @@ const (
 var (
 	kernel32FS      = syscall.NewLazyDLL("kernel32.dll")
 	procMoveFileExW = kernel32FS.NewProc("MoveFileExW")
+	callMoveFileExW = func(source, destination *uint16, flags uint32) error {
+		result, _, callErr := procMoveFileExW.Call(
+			uintptr(unsafe.Pointer(source)),
+			uintptr(unsafe.Pointer(destination)),
+			uintptr(flags),
+		)
+		if result == 0 {
+			return callErr
+		}
+		return nil
+	}
 )
 
 func replaceFile(source, destination string) error {
@@ -28,15 +39,7 @@ func replaceFile(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	result, _, callErr := procMoveFileExW.Call(
-		uintptr(unsafe.Pointer(sourcePointer)),
-		uintptr(unsafe.Pointer(destinationPointer)),
-		movefileReplaceExisting|movefileWriteThrough,
-	)
-	if result == 0 {
-		return callErr
-	}
-	return nil
+	return callMoveFileExW(sourcePointer, destinationPointer, movefileReplaceExisting|movefileWriteThrough)
 }
 
 func syncDirectory(path string) error {

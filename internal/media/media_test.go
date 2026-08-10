@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
@@ -13,6 +14,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -116,6 +118,144 @@ func TestIngestDeduplicatesBytesAndProducesBoundedOrientedPreview(t *testing.T) 
 	}
 }
 
+func TestPNGAndWebPApplyEXIFOrientation(t *testing.T) {
+	t.Parallel()
+	store, _, _ := newTestStore(t, Limits{})
+	opaque := image.NewNRGBA(image.Rect(0, 0, 24, 12))
+	for index := range opaque.Pix {
+		opaque.Pix[index] = 0xff
+	}
+	var pngBuffer bytes.Buffer
+	if err := png.Encode(&pngBuffer, opaque); err != nil {
+		t.Fatal(err)
+	}
+	orientedPNG := injectPNGEXIFOrientation(t, pngBuffer.Bytes(), 6)
+	pngMedia, pngPreview, err := store.Ingest(context.Background(), "rotated.png", bytes.NewReader(orientedPNG))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pngMedia.Width != 12 || pngMedia.Height != 24 || pngPreview.Width != 12 || pngPreview.Height != 24 {
+		t.Fatalf("PNG oriented dimensions = %dx%d/%dx%d, want 12x24/12x24", pngMedia.Width, pngMedia.Height, pngPreview.Width, pngPreview.Height)
+	}
+
+	webpBytes, err := base64.StdEncoding.DecodeString(smallWebPBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits, err := (Limits{}).normalized()
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseInspection, err := inspectImage(webpBytes, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orientedWebP := injectWebPEXIFOrientation(t, webpBytes, baseInspection.width, baseInspection.height, 6)
+	webpStore, _, _ := newTestStore(t, Limits{})
+	webpMedia, webpPreview, err := webpStore.Ingest(context.Background(), "rotated.webp", bytes.NewReader(orientedWebP))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if webpMedia.Width != baseInspection.height || webpMedia.Height != baseInspection.width ||
+		webpPreview.Width != baseInspection.height || webpPreview.Height != baseInspection.width {
+		t.Fatalf("WebP oriented dimensions = %dx%d/%dx%d, want %dx%d", webpMedia.Width, webpMedia.Height,
+			webpPreview.Width, webpPreview.Height, baseInspection.height, baseInspection.width)
+	}
+}
+
+func TestOrientationMappingsTwoThroughEight(t *testing.T) {
+	t.Parallel()
+	source := image.NewNRGBA(image.Rect(0, 0, 2, 3))
+	value := uint8(1)
+	for y := 0; y < 3; y++ {
+		for x := 0; x < 2; x++ {
+			source.SetNRGBA(x, y, color.NRGBA{R: value, A: 0xff})
+			value++
+		}
+	}
+	expected := map[uint8][][]uint8{
+		2: {{2, 1}, {4, 3}, {6, 5}},
+		3: {{6, 5}, {4, 3}, {2, 1}},
+		4: {{5, 6}, {3, 4}, {1, 2}},
+		5: {{1, 3, 5}, {2, 4, 6}},
+		6: {{5, 3, 1}, {6, 4, 2}},
+		7: {{6, 4, 2}, {5, 3, 1}},
+		8: {{2, 4, 6}, {1, 3, 5}},
+	}
+	for orientation, rows := range expected {
+		t.Run(strconv.Itoa(int(orientation)), func(t *testing.T) {
+			result, err := orient(context.Background(), source, orientation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Bounds().Dy() != len(rows) || result.Bounds().Dx() != len(rows[0]) {
+				t.Fatalf("bounds = %v, want %dx%d", result.Bounds(), len(rows[0]), len(rows))
+			}
+			for y := range rows {
+				for x, want := range rows[y] {
+					got, _, _, _ := result.At(x, y).RGBA()
+					if uint8(got>>8) != want {
+						t.Fatalf("pixel (%d,%d) = %d, want %d", x, y, uint8(got>>8), want)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGIFFirstFrameUsesLogicalCanvasAndTransparency(t *testing.T) {
+	t.Parallel()
+	limits, err := (Limits{}).normalized()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("opaque background and offset frame", func(t *testing.T) {
+		palette := color.Palette{color.NRGBA{B: 0xff, A: 0xff}, color.NRGBA{R: 0xff, A: 0xff}}
+		frame := image.NewPaletted(image.Rect(50, 40, 60, 50), palette)
+		for index := range frame.Pix {
+			frame.Pix[index] = 1
+		}
+		contents := encodeGIFCanvas(t, palette, 0, frame)
+		inspection, err := inspectImage(contents, limits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decodeFull(context.Background(), inspection, contents)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if decoded.Bounds() != image.Rect(0, 0, 100, 100) {
+			t.Fatalf("canvas bounds = %v, want 100x100", decoded.Bounds())
+		}
+		if background := color.NRGBAModel.Convert(decoded.At(0, 0)).(color.NRGBA); background.B != 0xff || background.A != 0xff {
+			t.Fatalf("background = %#v, want opaque blue", background)
+		}
+		if foreground := color.NRGBAModel.Convert(decoded.At(55, 45)).(color.NRGBA); foreground.R != 0xff || foreground.A != 0xff {
+			t.Fatalf("frame = %#v, want opaque red", foreground)
+		}
+	})
+	t.Run("transparent canvas", func(t *testing.T) {
+		palette := color.Palette{color.NRGBA{}, color.NRGBA{R: 0xff, A: 0xff}}
+		frame := image.NewPaletted(image.Rect(20, 30, 30, 40), palette)
+		frame.Pix[0] = 1
+		contents := encodeGIFCanvas(t, palette, 0, frame)
+		inspection, err := inspectImage(contents, limits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decodeFull(context.Background(), inspection, contents)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, alpha := decoded.At(0, 0).RGBA(); alpha != 0 {
+			t.Fatalf("transparent canvas alpha = %#x, want 0", alpha)
+		}
+		if foreground := color.NRGBAModel.Convert(decoded.At(20, 30)).(color.NRGBA); foreground.R != 0xff || foreground.A != 0xff {
+			t.Fatalf("transparent frame foreground = %#v, want opaque red", foreground)
+		}
+	})
+}
+
 func TestHeaderBudgetsRejectBeforeFullDecode(t *testing.T) {
 	t.Parallel()
 	limits, err := (Limits{}).normalized()
@@ -166,6 +306,24 @@ func TestHeaderBudgetsRejectBeforeFullDecode(t *testing.T) {
 		_, err := inspectImage(contents, limits)
 		assertCode(t, err, domain.CodeMediaTypeUnsupported)
 	})
+	t.Run("WebP canvas and frame dimensions", func(t *testing.T) {
+		contents := encodeHeaderOnlyAlphaWebP(4, 4)
+		binary.LittleEndian.PutUint16(contents[len(contents)-4:len(contents)-2], 5)
+		_, err := inspectImage(contents, limits)
+		assertCode(t, err, domain.CodeMediaCorrupt)
+	})
+	t.Run("WebP chunk padding", func(t *testing.T) {
+		contents := encodeHeaderOnlyAlphaWebP(4, 4)
+		contents = contents[:len(contents)-1]
+		binary.LittleEndian.PutUint32(contents[4:8], uint32(len(contents)-8))
+		_, err := inspectImage(contents, limits)
+		assertCode(t, err, domain.CodeMediaCorrupt)
+	})
+	t.Run("truncated EXIF metadata is ignored safely", func(t *testing.T) {
+		if orientation, ok := orientationFromEXIF([]byte{'I', 'I', 42}); ok || orientation != 0 {
+			t.Fatalf("truncated EXIF orientation = %d/%v, want 0/false", orientation, ok)
+		}
+	})
 }
 
 func TestByteBudgetAndCancellationLeaveNoAuthority(t *testing.T) {
@@ -195,6 +353,119 @@ func TestByteBudgetAndCancellationLeaveNoAuthority(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("original authority contains rejected files: %v", entries)
+	}
+}
+
+func TestAlphaWebPHeaderScanAndWeightedPreviewBudget(t *testing.T) {
+	t.Parallel()
+	store, _, _ := newTestStore(t, Limits{MaxDimension: 4, MaxPixels: 16, PreviewWorkers: 2})
+	contents := encodeHeaderOnlyAlphaWebP(4, 4)
+	inspection, err := inspectImage(contents, store.options.Limits)
+	if err != nil {
+		t.Fatalf("header-only alpha WebP inspection expanded pixel data: %v", err)
+	}
+	if inspection.format != formatWebP || inspection.width != 4 || inspection.height != 4 {
+		t.Fatalf("inspection = %+v, want 4x4 WebP", inspection)
+	}
+
+	entered := make(chan struct{})
+	secondEntered := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int32
+	store.generateHook = func() {
+		if calls.Add(1) == 1 {
+			close(entered)
+		} else {
+			close(secondEntered)
+		}
+		<-release
+	}
+	firstContext, cancelFirst := context.WithCancel(context.Background())
+	secondContext, cancelSecond := context.WithCancel(context.Background())
+	firstResult := make(chan error, 1)
+	secondResult := make(chan error, 1)
+	go func() {
+		_, ensureErr := store.ensurePreviewBytes(firstContext, contents, inspection, strings.Repeat("a", 64))
+		firstResult <- ensureErr
+	}()
+	<-entered
+	go func() {
+		_, ensureErr := store.ensurePreviewBytes(secondContext, contents, inspection, strings.Repeat("b", 64))
+		secondResult <- ensureErr
+	}()
+	select {
+	case <-secondEntered:
+		t.Fatal("second maximum-size preview bypassed weighted memory budget")
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancelSecond()
+	if err := <-secondResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("weighted wait cancellation = %v, want context.Canceled", err)
+	}
+	cancelFirst()
+	close(release)
+	if err := <-firstResult; !errors.Is(err, context.Canceled) {
+		t.Fatalf("active preview cancellation = %v, want context.Canceled", err)
+	}
+	if !store.memory.TryAcquire(store.memoryCapacity) {
+		t.Fatal("weighted preview budget leaked after cancellation")
+	}
+	store.memory.Release(store.memoryCapacity)
+
+	tooLarge := inspection
+	tooLarge.width++
+	weight := previewMemoryWeight(uint64(tooLarge.width) * uint64(tooLarge.height))
+	if weight <= store.memoryCapacity {
+		t.Fatalf("test weight = %d, want greater than capacity %d", weight, store.memoryCapacity)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err = store.ensurePreviewBytes(ctx, contents, tooLarge, strings.Repeat("c", 64))
+	assertCode(t, err, domain.CodeMediaDimensionsExceeded)
+}
+
+func TestPixelStagesHonorMidFlightCancellation(t *testing.T) {
+	t.Parallel()
+	opaque := image.NewNRGBA(image.Rect(0, 0, 1_000, 500))
+	for index := 3; index < len(opaque.Pix); index += 4 {
+		opaque.Pix[index] = 0xff
+	}
+	tests := []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{name: "transparency scan", run: func(ctx context.Context) error {
+			_, err := imageHasTransparency(ctx, opaque)
+			return err
+		}},
+		{name: "resize", run: func(ctx context.Context) error {
+			_, err := resize(ctx, opaque, 100)
+			return err
+		}},
+		{name: "orientation", run: func(ctx context.Context) error {
+			_, err := orient(ctx, opaque, 6)
+			return err
+		}},
+		{name: "opaque materialization", run: func(ctx context.Context) error {
+			_, err := flattenOpaque(ctx, opaque)
+			return err
+		}},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			ctx := &cancelAfterChecksContext{Context: context.Background(), remaining: 2}
+			if err := testCase.run(ctx); !errors.Is(err, context.Canceled) {
+				t.Fatalf("mid-flight cancellation error = %v, want context.Canceled", err)
+			}
+		})
+	}
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := (&contextWriter{ctx: canceled, writer: &bytes.Buffer{}}).Write([]byte("preview")); !errors.Is(err, context.Canceled) {
+		t.Fatalf("encoder writer cancellation = %v, want context.Canceled", err)
+	}
+	if err := previewFailure(context.Canceled); !errors.Is(err, context.Canceled) {
+		t.Fatalf("preview cancellation mapping = %v, want context.Canceled", err)
 	}
 }
 
@@ -417,11 +688,116 @@ func encodeGIF(t *testing.T, frames int) []byte {
 	return buffer.Bytes()
 }
 
+func encodeGIFCanvas(t *testing.T, palette color.Palette, background byte, frame *image.Paletted) []byte {
+	t.Helper()
+	animation := &gif.GIF{
+		Image:           []*image.Paletted{frame},
+		Delay:           []int{5},
+		BackgroundIndex: background,
+		Config: image.Config{
+			ColorModel: palette,
+			Width:      100,
+			Height:     100,
+		},
+	}
+	var buffer bytes.Buffer
+	if err := gif.EncodeAll(&buffer, animation); err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func injectPNGEXIFOrientation(t *testing.T, pngBytes []byte, orientation uint16) []byte {
+	t.Helper()
+	if len(pngBytes) < 33 || !bytes.Equal(pngBytes[:8], pngSignature) {
+		t.Fatal("fixture is not PNG")
+	}
+	chunk := pngChunk("eXIf", makeTIFFOrientation(orientation))
+	result := append([]byte{}, pngBytes[:33]...)
+	result = append(result, chunk...)
+	return append(result, pngBytes[33:]...)
+}
+
+func pngChunk(kind string, data []byte) []byte {
+	result := make([]byte, 8+len(data)+4)
+	binary.BigEndian.PutUint32(result[:4], uint32(len(data)))
+	copy(result[4:8], kind)
+	copy(result[8:], data)
+	checksum := crc32.NewIEEE()
+	_, _ = checksum.Write(result[4 : 8+len(data)])
+	binary.BigEndian.PutUint32(result[8+len(data):], checksum.Sum32())
+	return result
+}
+
+func injectWebPEXIFOrientation(t *testing.T, webpBytes []byte, width, height uint32, orientation uint16) []byte {
+	t.Helper()
+	if len(webpBytes) < 20 || string(webpBytes[:4]) != "RIFF" || string(webpBytes[8:12]) != "WEBP" {
+		t.Fatal("fixture is not WebP")
+	}
+	extended := make([]byte, 10)
+	extended[0] = 0x08
+	writeUint24LE(extended[4:7], width-1)
+	writeUint24LE(extended[7:10], height-1)
+	body := append([]byte("WEBP"), webPChunk("VP8X", extended)...)
+	body = append(body, webPChunk("EXIF", makeTIFFOrientation(orientation))...)
+	body = append(body, webpBytes[12:]...)
+	result := make([]byte, 8, 8+len(body))
+	copy(result[:4], "RIFF")
+	binary.LittleEndian.PutUint32(result[4:8], uint32(len(body)))
+	return append(result, body...)
+}
+
+func encodeHeaderOnlyAlphaWebP(width, height uint32) []byte {
+	extended := make([]byte, 10)
+	extended[0] = 0x10
+	writeUint24LE(extended[4:7], width-1)
+	writeUint24LE(extended[7:10], height-1)
+	alpha := make([]byte, 1+width*height)
+	frame := make([]byte, 10)
+	copy(frame[3:6], []byte{0x9d, 0x01, 0x2a})
+	binary.LittleEndian.PutUint16(frame[6:8], uint16(width))
+	binary.LittleEndian.PutUint16(frame[8:10], uint16(height))
+	body := append([]byte("WEBP"), webPChunk("VP8X", extended)...)
+	body = append(body, webPChunk("ALPH", alpha)...)
+	body = append(body, webPChunk("VP8 ", frame)...)
+	result := make([]byte, 8, 8+len(body))
+	copy(result[:4], "RIFF")
+	binary.LittleEndian.PutUint32(result[4:8], uint32(len(body)))
+	return append(result, body...)
+}
+
+func webPChunk(kind string, data []byte) []byte {
+	result := make([]byte, 8, 8+len(data)+len(data)%2)
+	copy(result[:4], kind)
+	binary.LittleEndian.PutUint32(result[4:8], uint32(len(data)))
+	result = append(result, data...)
+	if len(data)%2 != 0 {
+		result = append(result, 0)
+	}
+	return result
+}
+
+func writeUint24LE(destination []byte, value uint32) {
+	destination[0] = byte(value)
+	destination[1] = byte(value >> 8)
+	destination[2] = byte(value >> 16)
+}
+
 func injectEXIFOrientation(t *testing.T, jpegBytes []byte, orientation uint16) []byte {
 	t.Helper()
 	if len(jpegBytes) < 2 || jpegBytes[0] != 0xff || jpegBytes[1] != 0xd8 {
 		t.Fatal("fixture is not JPEG")
 	}
+	tiff := makeTIFFOrientation(orientation)
+	segment := append([]byte("Exif\x00\x00"), tiff...)
+	marker := []byte{0xff, 0xe1, byte((len(segment) + 2) >> 8), byte(len(segment) + 2)}
+	result := append([]byte{}, jpegBytes[:2]...)
+	result = append(result, marker...)
+	result = append(result, segment...)
+	return append(result, jpegBytes[2:]...)
+}
+
+func makeTIFFOrientation(orientation uint16) []byte {
 	tiff := make([]byte, 26)
 	copy(tiff[:2], "II")
 	binary.LittleEndian.PutUint16(tiff[2:4], 42)
@@ -431,12 +807,20 @@ func injectEXIFOrientation(t *testing.T, jpegBytes []byte, orientation uint16) [
 	binary.LittleEndian.PutUint16(tiff[12:14], 3)
 	binary.LittleEndian.PutUint32(tiff[14:18], 1)
 	binary.LittleEndian.PutUint16(tiff[18:20], orientation)
-	segment := append([]byte("Exif\x00\x00"), tiff...)
-	marker := []byte{0xff, 0xe1, byte((len(segment) + 2) >> 8), byte(len(segment) + 2)}
-	result := append([]byte{}, jpegBytes[:2]...)
-	result = append(result, marker...)
-	result = append(result, segment...)
-	return append(result, jpegBytes[2:]...)
+	return tiff
+}
+
+type cancelAfterChecksContext struct {
+	context.Context
+	remaining int
+}
+
+func (ctx *cancelAfterChecksContext) Err() error {
+	ctx.remaining--
+	if ctx.remaining <= 0 {
+		return context.Canceled
+	}
+	return nil
 }
 
 func assertCode(t *testing.T, err error, code domain.Code) {

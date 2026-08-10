@@ -10,9 +10,13 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"io"
+	"math"
 	"os"
 	"path/filepath"
 
+	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/runtimefs"
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/webp"
 )
@@ -28,34 +32,61 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 	case <-ctx.Done():
 		return Preview{}, ctx.Err()
 	}
+	memoryWeight := previewMemoryWeight(uint64(inspection.width) * uint64(inspection.height))
+	if memoryWeight > store.memoryCapacity {
+		return Preview{}, domain.NewError(domain.CodeMediaDimensionsExceeded, "image exceeds the preview memory budget", map[string]any{
+			"estimated_bytes": memoryWeight,
+			"budget_bytes":    store.memoryCapacity,
+		})
+	}
+	if err := store.memory.Acquire(ctx, memoryWeight); err != nil {
+		return Preview{}, err
+	}
+	defer store.memory.Release(memoryWeight)
 	if store.generateHook != nil {
 		store.generateHook()
 	}
 	if err := ctx.Err(); err != nil {
 		return Preview{}, err
 	}
-	decoded, err := decodeFull(inspection.format, contents)
+	decoded, err := decodeFull(ctx, inspection, contents)
 	if err != nil {
 		return Preview{}, previewFailure(err)
 	}
 	if err := ctx.Err(); err != nil {
 		return Preview{}, err
 	}
-	oriented := orient(decoded, inspection.orientation)
-	alpha := imageHasTransparency(oriented)
-	resized := resize(oriented, store.options.Limits.PreviewMaxEdge)
+	alpha, err := imageHasTransparency(ctx, decoded)
+	if err != nil {
+		return Preview{}, err
+	}
+	resized, err := resize(ctx, decoded, store.options.Limits.PreviewMaxEdge)
+	if err != nil {
+		return Preview{}, err
+	}
+	oriented, err := orient(ctx, resized, inspection.orientation)
+	if err != nil {
+		return Preview{}, err
+	}
 	var encoded bytes.Buffer
+	output := &contextWriter{ctx: ctx, writer: &encoded}
 	mimeType := "image/jpeg"
 	extension := "jpg"
 	if alpha {
 		mimeType = "image/png"
 		extension = "png"
 		encoder := png.Encoder{CompressionLevel: png.BestCompression}
-		if err := encoder.Encode(&encoded, resized); err != nil {
+		if err := encoder.Encode(output, oriented); err != nil {
 			return Preview{}, previewFailure(err)
 		}
-	} else if err := jpeg.Encode(&encoded, flattenOpaque(resized), &jpeg.Options{Quality: 82}); err != nil {
-		return Preview{}, previewFailure(err)
+	} else {
+		opaque, err := flattenOpaque(ctx, oriented)
+		if err != nil {
+			return Preview{}, err
+		}
+		if err := jpeg.Encode(output, opaque, &jpeg.Options{Quality: 82}); err != nil {
+			return Preview{}, previewFailure(err)
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		return Preview{}, err
@@ -64,7 +95,7 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 	if err := writeCacheAtomic(ctx, path, encoded.Bytes(), store.beforePreviewCommit); err != nil {
 		return Preview{}, previewFailure(err)
 	}
-	bounds := resized.Bounds()
+	bounds := oriented.Bounds()
 	return Preview{
 		Path:             path,
 		RecipeVersion:    RecipeVersion,
@@ -76,9 +107,12 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 	}, nil
 }
 
-func decodeFull(imageFormat format, contents []byte) (image.Image, error) {
-	reader := bytes.NewReader(contents)
-	switch imageFormat {
+func decodeFull(ctx context.Context, inspection inspected, contents []byte) (image.Image, error) {
+	// Standard library and x/image decoders can still spend CPU between reader
+	// calls. The context reader stops at the next compressed-input read, while
+	// the weighted semaphore bounds all such in-flight pixel work.
+	reader := &contextReader{ctx: ctx, reader: bytes.NewReader(contents)}
+	switch inspection.format {
 	case formatJPEG:
 		return jpeg.Decode(reader)
 	case formatPNG:
@@ -86,7 +120,11 @@ func decodeFull(imageFormat format, contents []byte) (image.Image, error) {
 	case formatWebP:
 		return webp.Decode(reader)
 	case formatGIF:
-		return gif.Decode(reader)
+		frame, err := gif.Decode(reader)
+		if err != nil {
+			return nil, err
+		}
+		return composeGIFFirstFrame(ctx, inspection, frame)
 	default:
 		return nil, errors.New("unsupported image decoder")
 	}
@@ -127,11 +165,11 @@ func (store *Store) previewPath(sha, extension string) string {
 	return filepath.Join(store.runtime.Root, "cache", "previews", RecipeVersion, sha[:2], sha+"."+extension)
 }
 
-func resize(source image.Image, maxEdge uint32) image.Image {
+func resize(ctx context.Context, source image.Image, maxEdge uint32) (image.Image, error) {
 	bounds := source.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 	if width <= int(maxEdge) && height <= int(maxEdge) {
-		return source
+		return source, ctx.Err()
 	}
 	var targetWidth, targetHeight int
 	if width >= height {
@@ -142,15 +180,26 @@ func resize(source image.Image, maxEdge uint32) image.Image {
 		targetWidth = maxInt(1, int((int64(width)*int64(maxEdge)+int64(height)/2)/int64(height)))
 	}
 	destination := image.NewNRGBA(image.Rect(0, 0, targetWidth, targetHeight))
-	xdraw.ApproxBiLinear.Scale(destination, destination.Bounds(), source, bounds, xdraw.Over, nil)
-	return destination
+	// ApproxBiLinear clips against the destination bounds while preserving the
+	// full destination transform. Scaling in strips therefore makes long work
+	// cancellable without changing the recipe's geometry.
+	const rowsPerStrip = 32
+	for top := 0; top < targetHeight; top += rowsPerStrip {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		bottom := min(targetHeight, top+rowsPerStrip)
+		strip := destination.SubImage(image.Rect(0, top, targetWidth, bottom)).(*image.NRGBA)
+		xdraw.ApproxBiLinear.Scale(strip, destination.Bounds(), source, bounds, xdraw.Src, nil)
+	}
+	return destination, nil
 }
 
-func orient(source image.Image, orientation uint8) image.Image {
+func orient(ctx context.Context, source image.Image, orientation uint8) (image.Image, error) {
 	bounds := source.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
 	if orientation < 2 || orientation > 8 {
-		return source
+		return source, ctx.Err()
 	}
 	targetWidth, targetHeight := width, height
 	if orientation >= 5 {
@@ -158,6 +207,9 @@ func orient(source image.Image, orientation uint8) image.Image {
 	}
 	target := image.NewNRGBA(image.Rect(0, 0, targetWidth, targetHeight))
 	for y := 0; y < targetHeight; y++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		for x := 0; x < targetWidth; x++ {
 			var sourceX, sourceY int
 			switch orientation {
@@ -179,33 +231,87 @@ func orient(source image.Image, orientation uint8) image.Image {
 			target.Set(x, y, source.At(bounds.Min.X+sourceX, bounds.Min.Y+sourceY))
 		}
 	}
-	return target
+	return target, nil
 }
 
-func imageHasTransparency(source image.Image) bool {
+func imageHasTransparency(ctx context.Context, source image.Image) (bool, error) {
 	bounds := source.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			_, _, _, alpha := source.At(x, y).RGBA()
 			if alpha != 0xffff {
-				return true
+				return true, nil
 			}
 		}
 	}
-	return false
+	return false, nil
 }
 
-func flattenOpaque(source image.Image) *image.RGBA {
+func flattenOpaque(ctx context.Context, source image.Image) (*image.RGBA, error) {
 	bounds := source.Bounds()
 	target := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 	for y := 0; y < bounds.Dy(); y++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		for x := 0; x < bounds.Dx(); x++ {
 			value := color.RGBAModel.Convert(source.At(bounds.Min.X+x, bounds.Min.Y+y)).(color.RGBA)
 			value.A = 0xff
 			target.SetRGBA(x, y, value)
 		}
 	}
-	return target
+	return target, nil
+}
+
+func composeGIFFirstFrame(ctx context.Context, inspection inspected, frame image.Image) (image.Image, error) {
+	canvas := image.NewNRGBA(image.Rect(0, 0, int(inspection.width), int(inspection.height)))
+	if inspection.gifBackgroundSet && !inspection.gifFirstTransparent {
+		for y := 0; y < canvas.Bounds().Dy(); y++ {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			for x := 0; x < canvas.Bounds().Dx(); x++ {
+				canvas.SetNRGBA(x, y, inspection.gifBackground)
+			}
+		}
+	}
+	frameBounds := frame.Bounds().Intersect(canvas.Bounds())
+	for y := frameBounds.Min.Y; y < frameBounds.Max.Y; y++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		for x := frameBounds.Min.X; x < frameBounds.Max.X; x++ {
+			value := color.NRGBAModel.Convert(frame.At(x, y)).(color.NRGBA)
+			if value.A == 0 {
+				continue
+			}
+			canvas.SetNRGBA(x, y, value)
+		}
+	}
+	return canvas, nil
+}
+
+func previewMemoryWeight(pixels uint64) int64 {
+	maximumPixels := uint64((math.MaxInt64 - previewMemoryFixedBytes) / previewMemoryBytesPerPixel)
+	if pixels > maximumPixels {
+		return math.MaxInt64
+	}
+	return previewMemoryFixedBytes + int64(pixels)*previewMemoryBytesPerPixel
+}
+
+type contextWriter struct {
+	ctx    context.Context
+	writer io.Writer
+}
+
+func (writer *contextWriter) Write(data []byte) (int, error) {
+	if err := writer.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return writer.writer.Write(data)
 }
 
 func writeCacheAtomic(ctx context.Context, final string, contents []byte, beforeCommit func() error) error {
@@ -248,11 +354,11 @@ func writeCacheAtomic(ctx context.Context, final string, contents []byte, before
 			return err
 		}
 	}
-	if err := os.Rename(partialPath, final); err != nil {
+	if err := runtimefs.PublishPreparedFile(partialPath, final); err != nil {
 		return err
 	}
 	removePartial = false
-	return syncDirectory(directory)
+	return nil
 }
 
 func maxInt(left, right int) int {

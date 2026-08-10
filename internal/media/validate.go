@@ -2,16 +2,18 @@ package media
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
+	"hash/crc32"
 	"image"
+	"image/color"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
 	"io"
 
 	"github.com/moment/moment/internal/domain"
-	"golang.org/x/image/webp"
 )
 
 var (
@@ -26,7 +28,7 @@ func inspectImage(contents []byte, limits Limits) (inspected, error) {
 	case bytes.HasPrefix(contents, jpegSignature):
 		result, err = inspectJPEG(contents)
 	case bytes.HasPrefix(contents, pngSignature):
-		result, err = inspectPNG(contents)
+		result, err = inspectPNG(contents, limits)
 	case len(contents) >= 12 && string(contents[:4]) == "RIFF" && string(contents[8:12]) == "WEBP":
 		result, err = inspectWebP(contents)
 	case len(contents) >= 6 && (string(contents[:6]) == "GIF87a" || string(contents[:6]) == "GIF89a"):
@@ -40,14 +42,17 @@ func inspectImage(contents []byte, limits Limits) (inspected, error) {
 	if err := validateDimensions(result.width, result.height, limits); err != nil {
 		return inspected{}, err
 	}
-	// DecodeConfig is still cheap, but proves the selected decoder agrees with
-	// the hand-scanned header before any full pixel allocation is permitted.
-	config, err := decodeConfig(result.format, contents)
-	if err != nil {
-		return inspected{}, corrupt("image header is corrupt")
-	}
-	if config.Width <= 0 || config.Height <= 0 || uint32(config.Width) != result.width || uint32(config.Height) != result.height {
-		return inspected{}, corrupt("image header dimensions are inconsistent")
+	// Keep WebP container parsing independent from the full decoder. The scanner
+	// validates canvas and frame headers itself so pixel-sized work cannot move
+	// ahead of the preview resource budget as decoder internals evolve.
+	if result.format != formatWebP {
+		config, err := decodeConfig(result.format, contents)
+		if err != nil {
+			return inspected{}, corrupt("image header is corrupt")
+		}
+		if config.Width <= 0 || config.Height <= 0 || uint32(config.Width) != result.width || uint32(config.Height) != result.height {
+			return inspected{}, corrupt("image header dimensions are inconsistent")
+		}
 	}
 	return result, nil
 }
@@ -59,8 +64,6 @@ func decodeConfig(imageFormat format, contents []byte) (image.Config, error) {
 		return jpeg.DecodeConfig(reader)
 	case formatPNG:
 		return png.DecodeConfig(reader)
-	case formatWebP:
-		return webp.DecodeConfig(reader)
 	case formatGIF:
 		return gif.DecodeConfig(reader)
 	default:
@@ -82,16 +85,68 @@ func validateDimensions(width, height uint32, limits Limits) error {
 	return nil
 }
 
-func inspectPNG(contents []byte) (inspected, error) {
+func inspectPNG(contents []byte, limits Limits) (inspected, error) {
 	if len(contents) < 33 || string(contents[12:16]) != "IHDR" || binary.BigEndian.Uint32(contents[8:12]) != 13 {
 		return inspected{}, corrupt("PNG header is corrupt")
 	}
-	return inspected{
+	result := inspected{
 		format:      formatPNG,
 		width:       binary.BigEndian.Uint32(contents[16:20]),
 		height:      binary.BigEndian.Uint32(contents[20:24]),
 		orientation: 1,
-	}, nil
+	}
+	if err := validateDimensions(result.width, result.height, limits); err != nil {
+		return inspected{}, err
+	}
+	seenEXIF := false
+	seenEnd := false
+	for offset := 8; offset < len(contents); {
+		if len(contents)-offset < 12 {
+			return inspected{}, corrupt("PNG chunk header is truncated")
+		}
+		length := uint64(binary.BigEndian.Uint32(contents[offset : offset+4]))
+		dataStart := uint64(offset) + 8
+		dataEnd := dataStart + length
+		chunkEnd := dataEnd + 4
+		if dataEnd < dataStart || chunkEnd < dataEnd || chunkEnd > uint64(len(contents)) {
+			return inspected{}, corrupt("PNG chunk is truncated")
+		}
+		kind := string(contents[offset+4 : offset+8])
+		data := contents[dataStart:dataEnd]
+		checksum := crc32.NewIEEE()
+		_, _ = checksum.Write(contents[offset+4 : offset+8])
+		_, _ = checksum.Write(data)
+		if checksum.Sum32() != binary.BigEndian.Uint32(contents[dataEnd:chunkEnd]) {
+			return inspected{}, corrupt("PNG chunk checksum is invalid")
+		}
+		switch kind {
+		case "IHDR":
+			if offset != 8 || length != 13 {
+				return inspected{}, corrupt("PNG IHDR ordering is invalid")
+			}
+		case "eXIf":
+			if seenEXIF {
+				return inspected{}, corrupt("PNG contains duplicate eXIf chunks")
+			}
+			seenEXIF = true
+			if orientation, ok := orientationFromEXIF(data); ok {
+				result.orientation = orientation
+			}
+		case "IEND":
+			if length != 0 || chunkEnd != uint64(len(contents)) {
+				return inspected{}, corrupt("PNG IEND is invalid")
+			}
+			seenEnd = true
+		}
+		offset = int(chunkEnd)
+		if seenEnd {
+			break
+		}
+	}
+	if !seenEnd {
+		return inspected{}, corrupt("PNG IEND is missing")
+	}
+	return result, nil
 }
 
 func inspectJPEG(contents []byte) (inspected, error) {
@@ -130,7 +185,7 @@ func inspectJPEG(contents []byte) (inspected, error) {
 			result.width = uint32(binary.BigEndian.Uint16(segment[3:5]))
 		}
 		if marker == 0xe1 && len(segment) >= 6 && string(segment[:6]) == "Exif\x00\x00" {
-			if orientation, ok := exifOrientation(segment[6:]); ok {
+			if orientation, ok := orientationFromEXIF(segment); ok {
 				result.orientation = orientation
 			}
 		}
@@ -152,6 +207,13 @@ func isSOF(marker byte) bool {
 	default:
 		return false
 	}
+}
+
+func orientationFromEXIF(data []byte) (uint8, bool) {
+	if len(data) >= 6 && string(data[:6]) == "Exif\x00\x00" {
+		data = data[6:]
+	}
+	return exifOrientation(data)
 }
 
 func exifOrientation(tiff []byte) (uint8, bool) {
@@ -201,47 +263,96 @@ func inspectWebP(contents []byte) (inspected, error) {
 		return inspected{}, corrupt("WebP RIFF length is invalid")
 	}
 	result := inspected{format: formatWebP, orientation: 1}
-	for offset := 12; offset+8 <= int(declared); {
+	var frameWidth, frameHeight uint32
+	var extendedFlags byte
+	seenExtended := false
+	seenImage := false
+	seenEXIF := false
+	seenAlpha := false
+	frameAlpha := false
+	for offset := uint64(12); offset < declared; {
+		if declared-offset < 8 {
+			return inspected{}, corrupt("WebP chunk header is truncated")
+		}
 		kind := string(contents[offset : offset+4])
-		length := int(binary.LittleEndian.Uint32(contents[offset+4 : offset+8]))
+		length := uint64(binary.LittleEndian.Uint32(contents[offset+4 : offset+8]))
 		start := offset + 8
 		end := start + length
-		if length < 0 || end > int(declared) {
+		paddedEnd := end + length%2
+		if end < start || paddedEnd < end || paddedEnd > declared {
 			return inspected{}, corrupt("WebP chunk is truncated")
 		}
 		chunk := contents[start:end]
 		switch kind {
 		case "VP8X":
-			if len(chunk) < 10 {
-				return inspected{}, corrupt("WebP extended header is truncated")
+			if seenExtended || offset != 12 || len(chunk) != 10 {
+				return inspected{}, corrupt("WebP extended header is invalid")
 			}
-			if chunk[0]&0x02 != 0 {
+			seenExtended = true
+			extendedFlags = chunk[0]
+			if extendedFlags&0x02 != 0 {
 				return inspected{}, domain.NewError(domain.CodeMediaTypeUnsupported, "animated WebP is not supported", nil)
+			}
+			if extendedFlags&0xc1 != 0 || chunk[1] != 0 || chunk[2] != 0 || chunk[3] != 0 {
+				return inspected{}, corrupt("WebP extended header reserved bits are set")
 			}
 			result.width = readUint24LE(chunk[4:7]) + 1
 			result.height = readUint24LE(chunk[7:10]) + 1
 		case "VP8 ":
-			if len(chunk) < 10 || !bytes.Equal(chunk[3:6], []byte{0x9d, 0x01, 0x2a}) {
+			if seenImage || len(chunk) < 10 || chunk[0]&0x01 != 0 || !bytes.Equal(chunk[3:6], []byte{0x9d, 0x01, 0x2a}) {
 				return inspected{}, corrupt("WebP lossy frame header is corrupt")
 			}
-			if result.width == 0 {
-				result.width = uint32(binary.LittleEndian.Uint16(chunk[6:8]) & 0x3fff)
-				result.height = uint32(binary.LittleEndian.Uint16(chunk[8:10]) & 0x3fff)
-			}
+			seenImage = true
+			frameWidth = uint32(binary.LittleEndian.Uint16(chunk[6:8]) & 0x3fff)
+			frameHeight = uint32(binary.LittleEndian.Uint16(chunk[8:10]) & 0x3fff)
 		case "VP8L":
-			if len(chunk) < 5 || chunk[0] != 0x2f {
+			if seenImage || len(chunk) < 5 || chunk[0] != 0x2f {
 				return inspected{}, corrupt("WebP lossless frame header is corrupt")
 			}
-			if result.width == 0 {
-				bits := binary.LittleEndian.Uint32(chunk[1:5])
-				result.width = bits&0x3fff + 1
-				result.height = bits>>14&0x3fff + 1
+			seenImage = true
+			bits := binary.LittleEndian.Uint32(chunk[1:5])
+			if bits>>29 != 0 {
+				return inspected{}, corrupt("WebP lossless frame version is invalid")
 			}
+			frameWidth = bits&0x3fff + 1
+			frameHeight = bits>>14&0x3fff + 1
+			frameAlpha = bits&(1<<28) != 0
+		case "ALPH":
+			if seenAlpha || seenImage || len(chunk) < 1 {
+				return inspected{}, corrupt("WebP alpha chunk is invalid")
+			}
+			seenAlpha = true
+		case "EXIF":
+			if seenEXIF {
+				return inspected{}, corrupt("WebP contains duplicate EXIF chunks")
+			}
+			seenEXIF = true
+			if orientation, ok := orientationFromEXIF(chunk); ok {
+				result.orientation = orientation
+			}
+		case "ANIM", "ANMF":
+			return inspected{}, domain.NewError(domain.CodeMediaTypeUnsupported, "animated WebP is not supported", nil)
 		}
-		offset = end + length%2
+		offset = paddedEnd
 	}
-	if result.width == 0 || result.height == 0 {
+	if !seenImage || frameWidth == 0 || frameHeight == 0 {
 		return inspected{}, corrupt("WebP frame dimensions are missing")
+	}
+	if seenExtended {
+		if result.width != frameWidth || result.height != frameHeight {
+			return inspected{}, corrupt("WebP canvas and frame dimensions are inconsistent")
+		}
+		if seenEXIF != (extendedFlags&0x08 != 0) {
+			return inspected{}, corrupt("WebP EXIF feature flag is inconsistent")
+		}
+		if (seenAlpha || frameAlpha) != (extendedFlags&0x10 != 0) {
+			return inspected{}, corrupt("WebP alpha feature flag is inconsistent")
+		}
+	} else {
+		if seenEXIF || seenAlpha {
+			return inspected{}, corrupt("WebP extended metadata requires an extended header")
+		}
+		result.width, result.height = frameWidth, frameHeight
 	}
 	return result, nil
 }
@@ -259,23 +370,49 @@ func inspectGIF(contents []byte, limits Limits) (inspected, error) {
 	if err := validateDimensions(width, height, limits); err != nil {
 		return inspected{}, err
 	}
+	result := inspected{format: formatGIF, width: width, height: height, orientation: 1}
 	offset := 13
 	if contents[10]&0x80 != 0 {
-		offset += 3 * (1 << (uint(contents[10]&0x07) + 1))
+		colors := 1 << (uint(contents[10]&0x07) + 1)
+		tableBytes := 3 * colors
+		if offset+tableBytes > len(contents) {
+			return inspected{}, corrupt("GIF global color table is truncated")
+		}
+		backgroundIndex := int(contents[11])
+		if backgroundIndex >= colors {
+			return inspected{}, corrupt("GIF background color index is invalid")
+		}
+		colorOffset := offset + backgroundIndex*3
+		result.gifBackground = color.NRGBA{
+			R: contents[colorOffset], G: contents[colorOffset+1], B: contents[colorOffset+2], A: 0xff,
+		}
+		result.gifBackgroundSet = true
+		offset += tableBytes
 	}
 	if offset > len(contents) {
 		return inspected{}, corrupt("GIF global color table is truncated")
 	}
 	var frames uint32
 	var framePixels uint64
+	pendingTransparency := false
 	for offset < len(contents) {
 		switch contents[offset] {
 		case 0x3b:
 			if frames == 0 {
 				return inspected{}, corrupt("GIF contains no image frames")
 			}
-			return inspected{format: formatGIF, width: width, height: height, orientation: 1, animated: frames > 1}, nil
+			result.animated = frames > 1
+			return result, nil
 		case 0x21:
+			if offset+2 > len(contents) {
+				return inspected{}, corrupt("GIF extension label is truncated")
+			}
+			if contents[offset+1] == 0xf9 {
+				if offset+8 > len(contents) || contents[offset+2] != 4 || contents[offset+7] != 0 {
+					return inspected{}, corrupt("GIF graphic control extension is corrupt")
+				}
+				pendingTransparency = contents[offset+3]&0x01 != 0
+			}
 			offset += 2
 			var err error
 			offset, err = skipGIFSubBlocks(contents, offset)
@@ -294,6 +431,10 @@ func inspectGIF(contents []byte, limits Limits) (inspected, error) {
 				return inspected{}, corrupt("GIF frame bounds are invalid")
 			}
 			frames++
+			if frames == 1 {
+				result.gifFirstTransparent = pendingTransparency
+			}
+			pendingTransparency = false
 			framePixels += uint64(frameWidth) * uint64(frameHeight)
 			if frames > limits.MaxGIFFrames || framePixels > limits.MaxGIFFramePixels {
 				return inspected{}, domain.NewError(domain.CodeMediaDimensionsExceeded, "GIF frame budget is exceeded", map[string]any{
@@ -349,6 +490,9 @@ func previewFailure(err error) error {
 	}
 	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
 		return domain.NewError(domain.CodeMediaPreviewFailed, "preview generation failed", nil)
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
 	}
 	var domainError *domain.Error
 	if errors.As(err, &domainError) {

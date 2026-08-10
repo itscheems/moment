@@ -4,6 +4,7 @@ package media
 
 import (
 	"crypto/rand"
+	"image/color"
 	"io"
 	"time"
 
@@ -22,7 +23,12 @@ const (
 	DefaultPreviewConcurrency        = 2
 
 	// RecipeVersion changes whenever any output byte semantics change.
-	RecipeVersion = "v1-max1600-orient-jpeg82-alpha-png-gif-first"
+	RecipeVersion = "v2-max1600-orient-all-jpeg82-alpha-png-gif-canvas-first"
+
+	// Nine bytes cover the largest supported 16-bit RGBA decode plus bounded
+	// preview intermediates; fixed bytes cover compressed input and encoders.
+	previewMemoryBytesPerPixel int64 = 9
+	previewMemoryFixedBytes    int64 = 64 << 20
 )
 
 // Limits are hard resource ceilings. Zero values select the bounded defaults.
@@ -120,11 +126,14 @@ func (f format) extension() string {
 }
 
 type inspected struct {
-	format      format
-	width       uint32
-	height      uint32
-	orientation uint8
-	animated    bool
+	format              format
+	width               uint32
+	height              uint32
+	orientation         uint8
+	animated            bool
+	gifBackground       color.NRGBA
+	gifBackgroundSet    bool
+	gifFirstTransparent bool
 }
 
 // Media is the authoritative metadata persisted beside an immutable original.

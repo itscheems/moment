@@ -18,15 +18,18 @@ import (
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/storage/sqlite"
+	"golang.org/x/sync/semaphore"
 )
 
 // Store owns the media authority boundary for one active runtime generation.
 type Store struct {
-	runtime *runtimefs.Runtime
-	db      sqlite.Transactor
-	options Options
-	workers chan struct{}
-	flight  flightGroup
+	runtime        *runtimefs.Runtime
+	db             sqlite.Transactor
+	options        Options
+	workers        chan struct{}
+	memory         *semaphore.Weighted
+	memoryCapacity int64
+	flight         flightGroup
 	// generateHook is test-only instrumentation used to prove singleflight.
 	generateHook         func()
 	beforeOriginalCommit func() error
@@ -46,11 +49,14 @@ func NewStore(runtimeState *runtimefs.Runtime, database sqlite.Transactor, optio
 	if err != nil {
 		return nil, err
 	}
+	memoryCapacity := previewMemoryWeight(normalized.Limits.MaxPixels)
 	return &Store{
-		runtime: runtimeState,
-		db:      database,
-		options: normalized,
-		workers: make(chan struct{}, normalized.Limits.PreviewWorkers),
+		runtime:        runtimeState,
+		db:             database,
+		options:        normalized,
+		workers:        make(chan struct{}, normalized.Limits.PreviewWorkers),
+		memory:         semaphore.NewWeighted(memoryCapacity),
+		memoryCapacity: memoryCapacity,
 	}, nil
 }
 
@@ -362,15 +368,10 @@ func (store *Store) publishOriginal(ctx context.Context, storagePath string, con
 			return false, err
 		}
 	}
-	if err := os.Rename(partialPath, final); err != nil {
+	if err := runtimefs.PublishPreparedFile(partialPath, final); err != nil {
 		return false, fmt.Errorf("publish immutable original: %w", err)
 	}
 	removePartial = false
-	if err := syncDirectory(directory); err != nil {
-		_ = os.Remove(final)
-		_ = syncDirectory(directory)
-		return false, fmt.Errorf("sync original directory: %w", err)
-	}
 	return true, nil
 }
 
