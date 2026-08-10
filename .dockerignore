@@ -1,0 +1,17 @@
+.git
+.github
+.codex
+.worktrees
+.task
+work
+dist
+data
+moment-data
+web/node_modules
+web/coverage
+web/dist
+internal/webassets/dist
+*.log
+.env
+.env.*
+!.env.example
