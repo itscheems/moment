@@ -1,0 +1,74 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install the locked Web dependencies
+    cmds:
+      - pnpm --dir web install --frozen-lockfile
+
+  run:
+    desc: Build the Web bundle and run Moment
+    deps: [web:build]
+    cmds:
+      - go run ./cmd/moment {{.CLI_ARGS}}
+
+  fmt:
+    desc: Format Go and Web sources
+    cmds:
+      - go fmt ./...
+      - pnpm --dir web format
+
+  fmt:check:
+    desc: Check formatting without changing tracked sources
+    cmds:
+      - go fmt ./...
+      - git diff --exit-code -- "*.go"
+      - pnpm --dir web format:check
+
+  lint:
+    desc: Run static checks for Go and Web
+    deps: [web:build]
+    cmds:
+      - go vet ./...
+      - golangci-lint run
+      - pnpm --dir web lint
+      - pnpm --dir web typecheck
+
+  test:
+    desc: Run Go race tests and Web tests
+    deps: [web:build]
+    cmds:
+      - go test -race ./...
+      - pnpm --dir web test
+
+  build:
+    desc: Build one CGo-free Moment binary with embedded Web assets
+    deps: [web:build]
+    env:
+      CGO_ENABLED: "0"
+    cmds:
+      - mkdir -p dist
+      - go build -trimpath -o dist/moment{{exeExt}} ./cmd/moment
+
+  ci:
+    desc: Run the complete local CI gate
+    cmds:
+      - task: fmt:check
+      - task: lint
+      - task: test
+      - task: build
+
+  web:build:
+    internal: true
+    sources:
+      - web/src/**/*
+      - web/public/**/*
+      - web/index.html
+      - web/package.json
+      - web/pnpm-lock.yaml
+      - web/tsconfig*.json
+      - web/vite.config.ts
+    generates:
+      - internal/webassets/dist/**/*
+    cmds:
+      - pnpm --dir web build

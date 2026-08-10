@@ -1,0 +1,52 @@
+# Build and release output
+/dist/
+/bin/
+/.artifacts/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Coverage and profiling
+/coverage.out
+/coverage.html
+*.prof
+*.profraw
+
+# Web dependencies and generated assets
+/web/node_modules/
+/web/dist/
+/web/coverage/
+/internal/webassets/dist/
+/.pnpm-store/
+/.task/
+
+# Runtime data and local worktrees
+/data/
+/moment-data/
+/.worktrees/
+
+# Local Go workspace overrides; Moment v0 is a single Go module
+/go.work
+/go.work.sum
+
+# Environment, secrets, and logs
+.env
+.env.*
+!.env.example
+/logs/
+*.log
+/.env.local
+
+# Tool, editor, and OS state
+__pycache__/
+*.py[cod]
+/.mise.local.toml
+/.vscode/
+/.idea/
+.DS_Store
+**/.DS_Store
+*.swp
+*~
