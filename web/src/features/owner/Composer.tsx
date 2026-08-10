@@ -53,7 +53,6 @@ function newMediaItem(file: File): ComposerMediaItem {
   return {
     key: `local-${createMediaKey()}`,
     file,
-    objectUrl: URL.createObjectURL(file),
     localPreviewUrl: null,
     mediaId: null,
     previewUrl: "",
@@ -82,12 +81,6 @@ function readLocalPreview(file: File): Promise<string> {
     );
     reader.readAsDataURL(file);
   });
-}
-
-function releaseMedia(items: ComposerMediaItem[]): void {
-  for (const item of items) {
-    if (item.objectUrl) URL.revokeObjectURL(item.objectUrl);
-  }
 }
 
 function uploadMessage(error: unknown): string {
@@ -206,8 +199,6 @@ export function Composer({
     for (const controller of mediaUploadsRef.current.values())
       controller.abort();
     mediaUploadsRef.current.clear();
-    const current = mediaItemsRef.current;
-    releaseMedia(current);
     mediaItemsRef.current = [];
     setMediaItems([]);
   };
@@ -235,7 +226,6 @@ export function Composer({
       for (const controller of mediaUploadsRef.current.values())
         controller.abort();
       mediaUploadsRef.current.clear();
-      releaseMedia(mediaItemsRef.current);
       mediaItemsRef.current = [];
     },
     [],
@@ -716,7 +706,15 @@ export function Composer({
                     );
                   })
                   .catch(() => {
-                    if (!mountedRef.current) return;
+                    if (
+                      !mountedRef.current ||
+                      !mediaItemsRef.current.some(
+                        (candidate) =>
+                          candidate.key === item.key && candidate.file === file,
+                      )
+                    ) {
+                      return;
+                    }
                     setAnnouncement(
                       "有一张本地缩略图暂时无法显示；原文件仍可继续上传。",
                     );
@@ -733,8 +731,6 @@ export function Composer({
               const current = mediaItemsRef.current;
               mediaUploadsRef.current.get(key)?.abort();
               mediaUploadsRef.current.delete(key);
-              const removed = current.find((item) => item.key === key);
-              if (removed?.objectUrl) URL.revokeObjectURL(removed.objectUrl);
               const next = current.filter((item) => item.key !== key);
               replaceMedia(next);
               markMediaEdited("图片已移除，其余图片顺序已更新。");

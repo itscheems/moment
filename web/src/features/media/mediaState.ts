@@ -7,7 +7,6 @@ export type MediaUploadState = "ready" | "queued" | "uploading" | "failed";
 export interface ComposerMediaItem {
   key: string;
   file: File | null;
-  objectUrl: string | null;
   localPreviewUrl: string | null;
   mediaId: string | null;
   previewUrl: string;
@@ -43,7 +42,6 @@ export function itemsFromPost(media: PublicMediaUsage[]): ComposerMediaItem[] {
   return media.map((usage) => ({
     key: `stored-${usage.position}-${usage.mediaId}`,
     file: null,
-    objectUrl: null,
     localPreviewUrl: null,
     mediaId: usage.mediaId,
     previewUrl: `/api/v1/media/${encodeURIComponent(usage.mediaId)}/preview`,

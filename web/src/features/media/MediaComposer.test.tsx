@@ -18,7 +18,6 @@ function item(key: string): ComposerMediaItem {
   return {
     key,
     file: null,
-    objectUrl: null,
     localPreviewUrl: null,
     mediaId: `01K2ABCDEF0123456789ABCD${key}`,
     previewUrl: `/api/v1/media/${key}/preview`,

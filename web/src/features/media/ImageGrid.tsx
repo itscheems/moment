@@ -36,6 +36,10 @@ function originalUrl(mediaId: string) {
   return `/api/v1/media/${encodeURIComponent(mediaId)}`;
 }
 
+function usageKey(usage: PublicMediaUsage): string {
+  return `${usage.position}:${usage.mediaId}`;
+}
+
 function MediaImage({
   usage,
   index,
@@ -62,14 +66,14 @@ function MediaImage({
 
 export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
   const [selected, setSelected] = useState<number | null>(null);
-  const [failed, setFailed] = useState(() => new Set<number>());
+  const [failed, setFailed] = useState(() => new Set<string>());
   const [original, setOriginal] = useState(false);
   const [lightboxFailed, setLightboxFailed] = useState(false);
   if (media.length === 0) return null;
   const selectedUsage = selected === null ? null : media[selected];
 
-  const markFailed = (index: number) => {
-    setFailed((current) => new Set(current).add(index));
+  const markFailed = (usage: PublicMediaUsage) => {
+    setFailed((current) => new Set(current).add(usageKey(usage)));
   };
 
   return (
@@ -92,7 +96,7 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
             }}
             type="button"
           >
-            {failed.has(index) ? (
+            {failed.has(usageKey(usage)) ? (
               <span
                 className={styles.mediaFallback}
                 role="img"
@@ -106,7 +110,7 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
             ) : (
               <MediaImage
                 index={index}
-                onError={() => markFailed(index)}
+                onError={() => markFailed(usage)}
                 original={false}
                 total={media.length}
                 usage={usage}

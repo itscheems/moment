@@ -209,7 +209,11 @@ function instantField(record: Record<string, unknown>, field: string): string {
   return value;
 }
 
-const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+const ULID_PATTERN = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
+
+export function isCanonicalUlid(value: string): boolean {
+  return ULID_PATTERN.test(value);
+}
 const COMMENT_HTML_TAGS = new Set([
   "A",
   "BLOCKQUOTE",
@@ -352,9 +356,9 @@ export function parseComment(
   const postId = stringField(value, "post_id");
   const parentId = nullableStringField(value, "parent_id");
   if (
-    !ULID_PATTERN.test(id) ||
-    !ULID_PATTERN.test(postId) ||
-    (parentId !== null && !ULID_PATTERN.test(parentId))
+    !isCanonicalUlid(id) ||
+    !isCanonicalUlid(postId) ||
+    (parentId !== null && !isCanonicalUlid(parentId))
   ) {
     throw invalidResponse("comment contains an invalid identifier");
   }
@@ -459,7 +463,7 @@ export function parsePost(value: unknown): PublicPost {
     if (
       !isRecord(item) ||
       !hasExactKeys(item, ["media_id", "position", "alt_text"]) ||
-      !ULID_PATTERN.test(stringField(item, "media_id")) ||
+      !isCanonicalUlid(stringField(item, "media_id")) ||
       item.position !== index
     ) {
       throw invalidResponse("post media usage is not canonical");

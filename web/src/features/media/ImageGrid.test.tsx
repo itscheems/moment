@@ -72,6 +72,35 @@ describe("public image grid", () => {
     expect(screen.getByText("图片暂不可用")).toBeInTheDocument();
   });
 
+  it("does not carry a failed preview across reordered or replaced usages", () => {
+    const initial = media(2);
+    const { rerender } = render(<ImageGrid media={initial} />);
+    fireEvent.error(screen.getByRole("img", { name: /未提供图片描述/ }));
+    expect(screen.getByText("图片暂不可用")).toBeInTheDocument();
+
+    rerender(
+      <ImageGrid
+        media={[
+          { ...initial[1], position: 0 },
+          {
+            mediaId: "01K2ABCDEF0123456789ABCD09",
+            position: 1,
+            altText: "替换后的图片",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByText("图片暂不可用")).toBeNull();
+    expect(
+      screen.getByRole("group", { name: "2 张图片" }).querySelectorAll("img"),
+    ).toHaveLength(2);
+    expect(screen.getByRole("img", { name: "替换后的图片" })).toHaveAttribute(
+      "src",
+      "/api/v1/media/01K2ABCDEF0123456789ABCD09/preview",
+    );
+  });
+
   it("opens on preview, loads original only after explicit intent, and restores focus", async () => {
     render(<ImageGrid media={media(1)} />);
     const trigger = screen.getByRole("button", {

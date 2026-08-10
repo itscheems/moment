@@ -301,12 +301,6 @@ describe("owner composing flow", () => {
       }),
     );
     vi.stubGlobal("scrollTo", vi.fn());
-    const NativeURL = URL;
-    class ObjectURL extends NativeURL {
-      static createObjectURL = vi.fn(() => "blob:moment-local-preview");
-      static revokeObjectURL = vi.fn();
-    }
-    vi.stubGlobal("URL", ObjectURL);
     vi.stubGlobal(
       "confirm",
       vi.fn(() => true),
@@ -543,8 +537,6 @@ describe("owner composing flow", () => {
         )?.src,
       ).toMatch(/^data:image\/png;base64,/),
     );
-    expect(URL.createObjectURL).toHaveBeenCalledWith(file);
-
     await new Promise((resolve) => window.setTimeout(resolve, 550));
     expect(
       JSON.parse(window.localStorage.getItem(composeDraftKey(instance))!),
@@ -585,10 +577,6 @@ describe("owner composing flow", () => {
     fireEvent.click(screen.getByRole("button", { name: /移除/ }));
     expect(ControlledUploadRequest.requests[1].aborted).toBe(true);
     expect(screen.queryByText("第 1 张")).toBeNull();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith(
-      "blob:moment-local-preview",
-    );
-
     ControlledUploadRequest.requests[1].succeed(uploadEnvelope);
     await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(screen.queryByText("第 1 张")).toBeNull();

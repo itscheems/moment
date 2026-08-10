@@ -234,6 +234,20 @@ describe("owner API client", () => {
       },
       contentType: "application/json",
     },
+    {
+      name: "media ID above the canonical ULID range",
+      status: 201,
+      body: {
+        data: {
+          ...uploaded,
+          media: { ...uploaded.media, id: "81K2ABCDEF0123456789ABCDE1" },
+          original_url: "/api/v1/media/81K2ABCDEF0123456789ABCDE1",
+          preview_url: "/api/v1/media/81K2ABCDEF0123456789ABCDE1/preview",
+        },
+        meta: { request_id: "req_upload" },
+      },
+      contentType: "application/json",
+    },
   ])(
     "rejects $name for upload success",
     async ({ status, body, contentType }) => {

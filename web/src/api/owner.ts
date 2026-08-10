@@ -2,6 +2,7 @@ import {
   decodeCommentResponse,
   decodeCreatedComment,
   decodeResponse,
+  isCanonicalUlid,
   parseComment,
   parseDeletedCommentMeta,
   parsePost,
@@ -114,7 +115,7 @@ function parseUpload(data: unknown): UploadedMedia {
   const media = objectData(result.media);
   const preview = objectData(result.preview);
   const id = stringField(media, "id");
-  if (!/^[0-9A-HJKMNP-TV-Z]{26}$/.test(id)) {
+  if (!isCanonicalUlid(id)) {
     throw invalidResponse("uploaded media id is invalid");
   }
   const originalUrl = stringField(result, "original_url");

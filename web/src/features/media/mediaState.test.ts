@@ -15,7 +15,6 @@ function item(overrides: Partial<ComposerMediaItem> = {}): ComposerMediaItem {
   return {
     key: "media-1",
     file: null,
-    objectUrl: null,
     localPreviewUrl: null,
     mediaId: "01K2ABCDEF0123456789ABCDE1",
     previewUrl: "/api/v1/media/01K2ABCDEF0123456789ABCDE1/preview",
