@@ -74,3 +74,35 @@ directory, including paths that enter it through a symlink or filesystem alias.
 Raw stdout clients require the exact format header before their first byte;
 after streaming begins, a network or integrity failure is represented by a
 truncated ZIP on stdout, a non-zero exit, and diagnostics only on stderr.
+
+## Import inspection
+
+`moment backup inspect <archive.zip>` and authenticated
+`POST /api/v1/owner/import/inspect` run the same read-only preflight. The HTTP
+endpoint accepts a raw `application/zip` body. Before any member is copied into
+a candidate generation, inspection validates normalized controlled paths,
+duplicates, regular-file mode, compression method, declared and actual bytes,
+compression ratio, member/record quotas, protocol version, checksums, JSONL,
+the complete record graph, and every media signature, hash, size, MIME type,
+dimension, and animation budget.
+
+Valid records are then written through the current migrations and bulk import
+rules into `staging/import/<generation-id>/generation/`; Moment never imports a
+SQLite file from the ZIP. Entry Markdown is normalized again, FTS is rebuilt,
+foreign keys and SQLite integrity are checked, media references and nullable
+alt states are revalidated, and active `CURRENT` data remains untouched.
+
+The preview includes archive/expanded/staging bytes, pre-import backup and
+rollback reserves, a safety margin of at least 10% or 2 GiB, required
+additional bytes, estimated peak footprint, available bytes, replacement
+counts, time range, media bytes, and warnings. Insufficient space returns
+`IMPORT_DISK_SPACE_INSUFFICIENT` before a ready token exists.
+
+Successful inspection persists `archive.zip`, the rebuilt generation, and a
+private `staging.json`. Only a SHA-256 token hash is stored. The plaintext token
+is returned once, expires after 30 minutes, and is bound to archive hash,
+instance ID, owner session epoch, and generation ID. A ready token survives a
+restart; claim atomically changes it to `committing`, and ready tokens that are
+expired, mismatched, corrupt, already committing, or used cannot replay. This
+inspection contract does not switch `CURRENT`; replacement and rollback are a
+separate commit operation.

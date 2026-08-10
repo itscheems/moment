@@ -47,6 +47,15 @@ func PublishPreparedFileNoReplace(source, destination string) error {
 	return nil
 }
 
+// SyncDirectory completes the platform metadata durability barrier for a
+// directory whose entries were created without a prepared-file publication.
+func SyncDirectory(path string) error {
+	if path == "" {
+		return errors.New("directory path is required")
+	}
+	return syncDirectory(path)
+}
+
 func validatePreparedFile(source, destination string) (string, error) {
 	sourceDirectory, err := filepath.Abs(filepath.Dir(source))
 	if err != nil {

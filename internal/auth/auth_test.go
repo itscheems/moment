@@ -148,6 +148,9 @@ func TestBearerSessionsExpireAndRotationRevokesAllOldCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if epoch, err := manager.SessionEpochAuthorized(grant); err != nil || epoch != 1 {
+		t.Fatalf("authorized epoch = %d, err = %v", epoch, err)
+	}
 	rotated, err := manager.RotateAuthorized(grant)
 	if err != nil {
 		t.Fatal(err)
@@ -157,6 +160,9 @@ func TestBearerSessionsExpireAndRotationRevokesAllOldCredentials(t *testing.T) {
 	}
 	if manager.AuthenticateBearer(credential.Token) || !manager.AuthenticateBearer(rotated.Token) {
 		t.Fatal("rotation did not replace bearer authority")
+	}
+	if _, err := manager.SessionEpochAuthorized(grant); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("stale authorized epoch error = %v", err)
 	}
 	if _, err := manager.ValidateSession(cookie); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("old session error = %v", err)

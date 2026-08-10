@@ -14,8 +14,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/moment/moment/internal/archive"
+	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 )
 
@@ -303,6 +305,103 @@ func TestBackupExportDestinationFaultMappingAndDomainPriority(t *testing.T) {
 	commandErr = nil
 	if !errors.As(mapped, &commandErr) || commandErr.Code != string(domain.CodeExportInvalid) || commandErr.ExitCode != ExitIntegrity {
 		t.Fatalf("domain priority = %#v", commandErr)
+	}
+}
+
+func TestBackupInspectDirectJSONHelpAndActiveState(t *testing.T) {
+	runtimeState, dataDir := initializeSiteCLIData(t)
+	application := momentTestApplication()
+	archivePath := filepath.Join(t.TempDir(), "source.zip")
+	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", archivePath, "--json"); output.exit != ExitSuccess {
+		t.Fatalf("source export = %#v", output)
+	}
+	if _, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	result := execute(application, "", "backup", "inspect", archivePath, "--data-dir", dataDir, "--timeout", "30s", "--json")
+	if result.exit != ExitSuccess || result.stderr != "" {
+		t.Fatalf("inspect = %#v", result)
+	}
+	data := commandData(t, result)
+	if data["format_version"] != float64(archive.FormatVersion) || data["staging_token"] == "" || data["generation_id"] == "" {
+		t.Fatalf("inspection data = %#v", data)
+	}
+	disk := data["disk"].(map[string]any)
+	if disk["space_ok"] != true || disk["required_additional_bytes"].(float64) <= 0 {
+		t.Fatalf("disk = %#v", disk)
+	}
+	again := execute(application, "", "backup", "inspect", archivePath, "--data-dir", dataDir, "--json")
+	if again.exit != ExitConflict || decodeOneDocument(t, again.stdout)["error"].(map[string]any)["code"] != "IMPORT_IN_PROGRESS" {
+		t.Fatalf("active inspection = %#v", again)
+	}
+	help := execute(application, "", "backup", "inspect", "--help")
+	for _, expected := range []string{"<archive.zip>", "restartable staging", "one-time staging token", "never changes CURRENT", "moment backup inspect ./moment-export.zip"} {
+		if help.exit != ExitSuccess || !strings.Contains(help.stdout, expected) {
+			t.Fatalf("help missing %q: %#v", expected, help)
+		}
+	}
+}
+
+func TestBackupInspectAPIUploadParityErrorsAndTimeout(t *testing.T) {
+	application := momentTestApplication()
+	archivePath := filepath.Join(t.TempDir(), "source.zip")
+	if err := os.WriteFile(archivePath, []byte("PK\x03\x04payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MOMENT_TOKEN", "owner-test-token")
+	expires := time.Date(2026, 8, 11, 2, 0, 0, 0, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/owner/import/inspect" || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/zip" {
+			t.Errorf("request = %s %s %#v", request.Method, request.URL.Path, request.Header)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil || string(body) != "PK\x03\x04payload" {
+			t.Errorf("body = %q err=%v", body, err)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(writer, `{"data":{"format_version":1,"archive_sha256":"abc","generation_id":"import-1","counts":{"entries":1,"comments":2,"media":3},"time_range":{},"media_bytes":4,"missing_alt":0,"disk":{"archive_bytes":10,"expanded_bytes":20,"staging_bytes":20,"pre_import_backup_bytes":1,"rollback_reserve_bytes":1,"safety_margin_bytes":2,"required_additional_bytes":24,"estimated_peak_footprint_bytes":35,"available_bytes":100,"space_ok":true},"replacement":{"counts":{"entries":0,"comments":0,"media":0},"media_bytes":0,"data_bytes":1},"warnings":[],"expires_at":"2026-08-11T02:00:00Z","staging_token":"stage-token"},"meta":{"request_id":"req_import"}}`)
+	}))
+	defer server.Close()
+	output := execute(application, "", "--url", server.URL, "backup", "inspect", archivePath, "--json")
+	if output.exit != ExitSuccess || output.stderr != "" {
+		t.Fatalf("API inspect = %#v", output)
+	}
+	data := commandData(t, output)
+	if data["staging_token"] != "stage-token" || data["expires_at"] != expires.Format(time.RFC3339) {
+		t.Fatalf("API data = %#v", data)
+	}
+
+	integrity := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(writer, `{"error":{"code":"EXPORT_CHECKSUM_MISMATCH","message":"checksum failed","details":{"member":"data/site.json"},"request_id":"req"}}`)
+	}))
+	failed := execute(application, "", "--url", integrity.URL, "backup", "inspect", archivePath, "--json")
+	integrity.Close()
+	if failed.exit != ExitIntegrity || decodeOneDocument(t, failed.stdout)["error"].(map[string]any)["code"] != "EXPORT_CHECKSUM_MISMATCH" {
+		t.Fatalf("API integrity = %#v", failed)
+	}
+
+	timeout := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		select {
+		case <-request.Context().Done():
+		case <-time.After(100 * time.Millisecond):
+		}
+	}))
+	timedOut := execute(application, "", "--url", timeout.URL, "backup", "inspect", archivePath, "--timeout", "10ms", "--json")
+	timeout.Close()
+	if timedOut.exit != ExitTimeout || decodeOneDocument(t, timedOut.stdout)["error"].(map[string]any)["code"] != "TIMEOUT" {
+		t.Fatalf("API timeout = %#v", timedOut)
+	}
+
+	symlink := filepath.Join(t.TempDir(), "archive-link.zip")
+	if err := os.Symlink(archivePath, symlink); err != nil {
+		t.Fatal(err)
+	}
+	invalid := execute(application, "", "--url", server.URL, "backup", "inspect", symlink, "--json")
+	if invalid.exit != ExitInvalidInput || decodeOneDocument(t, invalid.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("symlink input = %#v", invalid)
 	}
 }
 

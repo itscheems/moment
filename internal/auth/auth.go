@@ -91,6 +91,17 @@ type Grant struct {
 	authority *snapshot
 }
 
+// SessionEpochAuthorized returns the epoch carried by a still-current grant.
+// It lets long-lived owner operations bind persisted work to the exact
+// authority admitted by middleware without exposing secret material.
+func (manager *Manager) SessionEpochAuthorized(grant Grant) (uint64, error) {
+	current := manager.current.Load()
+	if current == nil || grant.authority == nil || grant.authority != current {
+		return 0, ErrUnauthorized
+	}
+	return current.sessionEpoch, nil
+}
+
 type diskSecrets struct {
 	Version           int    `json:"version"`
 	TokenHash         string `json:"token_hash"`

@@ -143,20 +143,25 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 	if err != nil {
 		return Result{}, err
 	}
+	importInspector, err := archive.NewInspector(archive.InspectOptions{DataDir: runtime.Root})
+	if err != nil {
+		return Result{}, err
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
-		Assets:         assets,
-		OwnerAuth:      authManager,
-		SiteSettings:   siteService,
-		InstanceID:     runtime.Instance.ID,
-		Media:          mediaStore,
-		Posts:          postService,
-		Comments:       commentService,
-		Search:         searchService,
-		ShareMetadata:  shareMetadata,
-		Archive:        exporter,
-		SecureCookies:  !runtime.IsDevelopment(),
-		TrustedProxies: trustedProxies,
-		Log:            invocation.LogEvent,
+		Assets:          assets,
+		OwnerAuth:       authManager,
+		SiteSettings:    siteService,
+		InstanceID:      runtime.Instance.ID,
+		Media:           mediaStore,
+		Posts:           postService,
+		Comments:        commentService,
+		Search:          searchService,
+		ShareMetadata:   shareMetadata,
+		Archive:         exporter,
+		ImportInspector: importInspector,
+		SecureCookies:   !runtime.IsDevelopment(),
+		TrustedProxies:  trustedProxies,
+		Log:             invocation.LogEvent,
 		Readiness: func(ctx context.Context) error {
 			if err := database.Ready(ctx); err != nil {
 				return err

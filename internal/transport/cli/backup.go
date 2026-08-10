@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,11 +17,14 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/moment/moment/internal/archive"
+	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/buildinfo"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
@@ -45,6 +50,161 @@ func registerBackup(application *Application, info buildinfo.Info) {
 			return runBackupExport(ctx, invocation, input, info.Version)
 		},
 	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:      []string{"backup", "inspect"},
+		ArgsUsage: "<archive.zip>",
+		Short:     "Inspect a portable archive into restartable staging",
+		Long:      "Treat one Moment export as hostile input, validate it completely, rebuild the current schema and search index in a restartable staging generation, and issue one expiring commit token without changing active data.",
+		Inputs:    "Exactly one regular non-symlink v1 ZIP path. Direct mode stages locally and binds the result to the current owner epoch. API mode streams application/zip to the authenticated server. --timeout bounds upload, validation, media checks, migrations, and index rebuild.",
+		Output:    "The normal human/JSON contract reports format, counts, time range, media bytes, missing-alt warnings, replacement impact, the complete peak disk estimate, expiry, and the one-time staging token. Save the token for backup import confirmation.",
+		Errors:    "Hostile or corrupt archives use stable integrity errors and exit 7; unavailable input or disk uses exit 6; an active inspection uses IMPORT_IN_PROGRESS; cancellation uses exit 9.",
+		Safety:    "Inspection never changes CURRENT or active media. ZIP paths, links, duplicates, counts, sizes, ratios, checksums, records, references, and image bytes are bounded before staging members become authority candidates.",
+		Example: "moment backup inspect ./moment-export.zip --data-dir ./moment-data --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup inspect ./moment-export.zip --json",
+		Args:       cobra.ExactArgs(1),
+		Capability: CapabilityBoth,
+		Run:        runBackupInspect,
+	})
+}
+
+func runBackupInspect(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	archivePath := input.Args()[0]
+	var result archive.Inspection
+	var meta map[string]any
+	var err error
+	switch invocation.Mode() {
+	case ModeDirect:
+		target, targetErr := invocation.DirectTransport()
+		if targetErr != nil {
+			return Result{}, targetErr
+		}
+		runtimeState, openErr := runtimefs.OpenContext(ctx, target.DataDirectory())
+		if openErr != nil {
+			return Result{}, backupInspectCLIError(openErr)
+		}
+		status, statusErr := auth.ReadStatus(runtimeState.Root)
+		if statusErr != nil {
+			return Result{}, ownerAuthError(statusErr)
+		}
+		if !status.Initialized || status.SessionEpoch == 0 {
+			return Result{}, ownerAuthError(auth.ErrNotInitialized)
+		}
+		inspector, createErr := archive.NewInspector(archive.InspectOptions{DataDir: runtimeState.Root})
+		if createErr != nil {
+			return Result{}, createErr
+		}
+		result, err = inspector.InspectFile(ctx, archivePath, status.SessionEpoch)
+	case ModeAPI:
+		result, meta, err = uploadImportInspection(ctx, invocation, archivePath)
+	default:
+		return Result{}, errors.New("unsupported backup inspect transport")
+	}
+	if err != nil {
+		return Result{}, backupInspectCLIError(err)
+	}
+	text := fmt.Sprintf("Archive inspected into restartable staging\nFormat: v%d\nEntries: %d\nComments: %d\nMedia: %d\nRequired additional bytes: %d\nAvailable bytes: %d\nExpires: %s\nStaging token: %s",
+		result.FormatVersion, result.Counts.Entries, result.Counts.Comments, result.Counts.Media,
+		result.Disk.RequiredAdditionalBytes, result.Disk.AvailableBytes, result.ExpiresAt.Format(time.RFC3339), result.StagingToken)
+	return Result{Data: result, Text: text, Meta: meta}, nil
+}
+
+func uploadImportInspection(ctx context.Context, invocation Invocation, archivePath string) (archive.Inspection, map[string]any, error) {
+	before, err := os.Lstat(archivePath)
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
+		return archive.Inspection{}, nil, invalidArgument("archive input must be a regular non-symlink file", "provide one complete Moment export ZIP")
+	}
+	file, err := os.Open(archivePath)
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	defer func() { _ = file.Close() }()
+	after, err := file.Stat()
+	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
+		return archive.Inspection{}, nil, errors.Join(invalidArgument("archive input changed while opening", "retry with a stable regular non-symlink ZIP"), err)
+	}
+	target, err := invocation.APITransport()
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	token, err := readAPIToken(target)
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/inspect")
+	if err != nil {
+		return archive.Inspection{}, nil, invalidArgument("the import inspection endpoint URL is invalid", "check --url and retry")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, file)
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	request.ContentLength = after.Size()
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/zip")
+	request.Header.Set("Accept", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
+	if err != nil {
+		return archive.Inspection{}, nil, err
+	}
+	if len(body) > maxAPIResponse {
+		return archive.Inspection{}, nil, invalidAPIResponse()
+	}
+	if response.StatusCode != http.StatusCreated {
+		return archive.Inspection{}, nil, decodeOwnerAPIFailure(response.StatusCode, body)
+	}
+	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if parseErr != nil || mediaType != "application/json" {
+		return archive.Inspection{}, nil, invalidAPIResponse()
+	}
+	var envelope struct {
+		Data archive.Inspection `json:"data"`
+		Meta map[string]any     `json:"meta"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(&envelope); err != nil || decoder.Decode(&struct{}{}) != io.EOF || envelope.Data.StagingToken == "" {
+		return archive.Inspection{}, nil, invalidAPIResponse()
+	}
+	return envelope.Data, envelope.Meta, nil
+}
+
+func backupInspectCLIError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var commandErr *CommandError
+	if errors.As(err, &commandErr) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	var domainErr *domain.Error
+	if errors.As(err, &domainErr) {
+		exit := ExitIntegrity
+		suggestion := "repair or re-export the archive, then inspect it again"
+		switch domainErr.Code {
+		case domain.CodeInvalidArgument:
+			exit = ExitInvalidInput
+		case domain.CodeUnauthorized:
+			exit = ExitUnauthorized
+		case domain.CodeImportInProgress, domain.CodeImportStagingExpired:
+			exit = ExitConflict
+			suggestion = "finish, discard, or wait for the existing staging inspection before retrying"
+		case domain.CodeImportDiskSpaceInsufficient:
+			exit = ExitIO
+			suggestion = "free the reported additional bytes on the Moment data filesystem, then retry"
+		}
+		return NewCommandError(string(domainErr.Code), domainErr.Message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+	}
+	if errors.Is(err, runtimefs.ErrIncompleteLayout) || errors.Is(err, runtimefs.ErrInvalidInstance) || errors.Is(err, runtimefs.ErrInvalidCurrent) {
+		return NewCommandError("INSTANCE_NOT_READY", "the Moment data directory is not a complete readable instance", "initialize or repair the selected data directory before retrying import inspection", ExitIO).WithCause(err)
+	}
+	return err
 }
 
 func runBackupExport(ctx context.Context, invocation Invocation, input CommandInput, appVersion string) (Result, error) {

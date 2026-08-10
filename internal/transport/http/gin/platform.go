@@ -38,24 +38,25 @@ type BodyLimits struct {
 // Config composes the reusable HTTP platform. Register is transport-only and
 // may add feature handlers without exposing Gin to application/domain code.
 type Config struct {
-	Assets         fs.FS
-	Readiness      ReadinessFunc
-	OwnerAuth      *auth.Manager
-	SiteSettings   *app.SiteService
-	InstanceID     string
-	Posts          *app.PostService
-	Comments       *app.CommentService
-	Search         *app.SearchService
-	ShareMetadata  *app.ShareMetadataService
-	CommentLimiter CommentRateLimiter
-	Media          *media.Store
-	Archive        ArchiveExporter
-	SecureCookies  bool
-	TrustedProxies []string
-	RequestID      func() string
-	Log            LogFunc
-	Limits         BodyLimits
-	Register       func(*gin.Engine)
+	Assets          fs.FS
+	Readiness       ReadinessFunc
+	OwnerAuth       *auth.Manager
+	SiteSettings    *app.SiteService
+	InstanceID      string
+	Posts           *app.PostService
+	Comments        *app.CommentService
+	Search          *app.SearchService
+	ShareMetadata   *app.ShareMetadataService
+	CommentLimiter  CommentRateLimiter
+	Media           *media.Store
+	Archive         ArchiveExporter
+	ImportInspector ImportInspector
+	SecureCookies   bool
+	TrustedProxies  []string
+	RequestID       func() string
+	Log             LogFunc
+	Limits          BodyLimits
+	Register        func(*gin.Engine)
 }
 
 const (
@@ -149,6 +150,12 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("archive export route requires owner authentication")
 		}
 		RegisterExportRoutes(engine, config.Archive, config.OwnerAuth)
+	}
+	if config.ImportInspector != nil {
+		if config.OwnerAuth == nil {
+			return nil, errors.New("import inspection route requires owner authentication")
+		}
+		RegisterImportInspectRoutes(engine, config.ImportInspector, config.OwnerAuth)
 	}
 
 	if config.Register != nil {

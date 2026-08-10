@@ -16,6 +16,13 @@ type ArchiveCounts struct {
 	Media    int64
 }
 
+// ArchiveImpact describes authoritative portable data currently selected by
+// one SQLite snapshot. It is used only for replacement preflight estimates.
+type ArchiveImpact struct {
+	ArchiveCounts
+	MediaBytes int64
+}
+
 // ArchiveSite is the complete portable site singleton.
 type ArchiveSite struct {
 	Title           string
@@ -83,7 +90,21 @@ func (db *Database) BeginArchiveSnapshot(ctx context.Context) (*ArchiveSnapshot,
 	if err := db.requireReady(); err != nil {
 		return nil, err
 	}
-	tx, err := db.read.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	return beginArchiveSnapshot(ctx, db.read)
+}
+
+// BeginArchiveSnapshot starts an archive snapshot without invoking the normal
+// writable startup path. Import inspection uses this surface so replacement
+// impact calculation cannot migrate or otherwise mutate the active database.
+func (database *SearchReadOnlyDatabase) BeginArchiveSnapshot(ctx context.Context) (*ArchiveSnapshot, error) {
+	if database == nil || database.pool == nil {
+		return nil, ErrClosed
+	}
+	return beginArchiveSnapshot(ctx, database.pool)
+}
+
+func beginArchiveSnapshot(ctx context.Context, pool *sql.DB) (*ArchiveSnapshot, error) {
+	tx, err := pool.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, fmt.Errorf("begin archive snapshot: %w", err)
 	}
@@ -108,6 +129,22 @@ SELECT
 
 // Counts returns the values captured when the snapshot was established.
 func (snapshot *ArchiveSnapshot) Counts() ArchiveCounts { return snapshot.counts }
+
+// Impact returns replacement counts and reachable original bytes from the
+// already established snapshot.
+func (snapshot *ArchiveSnapshot) Impact(ctx context.Context) (ArchiveImpact, error) {
+	if err := snapshot.requireOpen(); err != nil {
+		return ArchiveImpact{}, err
+	}
+	impact := ArchiveImpact{ArchiveCounts: snapshot.counts}
+	if err := snapshot.tx.QueryRowContext(ctx, `
+SELECT COALESCE(sum(byte_size), 0)
+FROM media
+WHERE `+mediaReferencedSQL).Scan(&impact.MediaBytes); err != nil {
+		return ArchiveImpact{}, fmt.Errorf("read archive impact: %w", err)
+	}
+	return impact, nil
+}
 
 // ValidateIntegrity proves the archive's cross-record graph inside the same
 // SQLite snapshot used for serialization. Domain validation alone cannot see

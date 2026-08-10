@@ -15,6 +15,7 @@ import (
 	"hash"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -771,6 +772,11 @@ func validateMemberName(name string) error {
 	if name == "" || !utf8.ValidString(name) || path.IsAbs(name) || path.Clean(name) != name || strings.Contains(name, "\\") || strings.ContainsRune(name, 0) {
 		return fmt.Errorf("unsafe archive member name %q", name)
 	}
+	for _, segment := range strings.Split(name, "/") {
+		if segment == "" || segment == "." || segment == ".." {
+			return fmt.Errorf("unsafe archive member name %q", name)
+		}
+	}
 	for _, character := range name {
 		if character < 0x20 || character > 0x7e {
 			return fmt.Errorf("archive member name is not controlled ASCII: %q", name)
@@ -930,6 +936,9 @@ func ValidateFileContext(ctx context.Context, name string) error {
 		if !ok {
 			return archiveInvalid("prepared ZIP checksums omit a payload member", nil)
 		}
+		if expected.size == math.MaxInt64 || uint64(expected.size) != file.UncompressedSize64 {
+			return domain.NewError(domain.CodeExportChecksumMismatch, "a prepared archive member size does not match its ZIP header", map[string]any{"member": file.Name})
+		}
 		source, err := file.Open()
 		if err != nil {
 			return archiveInvalid("prepared ZIP payload member is unreadable", err)
@@ -945,10 +954,7 @@ func ValidateFileContext(ctx context.Context, name string) error {
 			}
 			copyDestination = io.MultiWriter(digest, &mediaContents)
 		}
-		copySource := io.Reader(contextReader{ctx: ctx, reader: source})
-		if isMedia {
-			copySource = io.LimitReader(copySource, media.DefaultMaxBytes+1)
-		}
+		copySource := io.Reader(io.LimitReader(contextReader{ctx: ctx, reader: source}, expected.size+1))
 		size, copyErr := io.CopyBuffer(copyDestination, copySource, buffer)
 		closeErr := source.Close()
 		if copyErr != nil || closeErr != nil {
@@ -1041,7 +1047,7 @@ func readChecksums(ctx context.Context, file *zip.File, maxEntries int) (map[str
 	return result, nil
 }
 
-const maxPortableRecordBytes = 2 << 20
+const maxPortableRecordBytes = 50 << 20
 
 func validatePortableRecords(ctx context.Context, files map[string]*zip.File, mediaMembers []*zip.File, document manifest, portableMedia map[string]media.Media) error {
 	siteData, err := readSmallZIPMember(ctx, files["data/site.json"], maxPortableRecordBytes)
@@ -1068,6 +1074,9 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	usageMediaIDs := make(map[string]struct{})
 	lastEntryID := ""
 	entries, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, fields map[string]json.RawMessage) error {
+		if int64(len(entryIDs)) >= document.Counts.Entries {
+			return errors.New("entry records exceed the manifest count")
+		}
 		if err := requireNonNull(fields, "id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"); err != nil {
 			return err
 		}
@@ -1124,6 +1133,9 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	commentIDs := make(map[string]commentReference)
 	var previousComment *commentOrder
 	comments, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
+		if int64(len(commentIDs)) >= document.Counts.Comments {
+			return errors.New("comment records exceed the manifest count")
+		}
 		if err := requireNonNull(fields, "id", "entry_id", "author_kind", "author_name", "content_md", "created_at"); err != nil {
 			return err
 		}
@@ -1169,6 +1181,9 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	mediaIDs := make(map[string]struct{})
 	lastMediaSHA, lastMediaID := "", ""
 	mediaCount, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, fields map[string]json.RawMessage) error {
+		if int64(len(mediaIDs)) >= document.Counts.Media {
+			return errors.New("media records exceed the manifest count")
+		}
 		if err := requireNonNull(fields, "id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"); err != nil {
 			return err
 		}
