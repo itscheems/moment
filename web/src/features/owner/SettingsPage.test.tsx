@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -101,6 +102,7 @@ class FakeUploadRequest extends EventTarget {
   status = 0;
   responseText = "";
   sent: Document | XMLHttpRequestBodyInit | null = null;
+  aborted = false;
 
   constructor() {
     super();
@@ -125,6 +127,7 @@ class FakeUploadRequest extends EventTarget {
   }
 
   abort() {
+    this.aborted = true;
     this.dispatchEvent(new Event("abort"));
     this.dispatchEvent(new Event("loadend"));
   }
@@ -168,12 +171,53 @@ class FakeUploadRequest extends EventTarget {
   }
 }
 
+class ControlledFileReader extends EventTarget {
+  static readonly EMPTY = 0;
+  static readonly LOADING = 1;
+  static readonly DONE = 2;
+  static readers: ControlledFileReader[] = [];
+
+  error: DOMException | null = null;
+  readyState = ControlledFileReader.EMPTY;
+  result: string | ArrayBuffer | null = null;
+
+  constructor() {
+    super();
+    ControlledFileReader.readers.push(this);
+  }
+
+  readAsDataURL() {
+    this.readyState = ControlledFileReader.LOADING;
+  }
+
+  abort() {
+    this.readyState = ControlledFileReader.DONE;
+    this.dispatchEvent(new ProgressEvent("abort"));
+    this.dispatchEvent(new ProgressEvent("loadend"));
+  }
+
+  fail() {
+    this.readyState = ControlledFileReader.DONE;
+    this.error = new DOMException("preview failed", "NotReadableError");
+    this.dispatchEvent(new ProgressEvent("error"));
+    this.dispatchEvent(new ProgressEvent("loadend"));
+  }
+
+  succeed(value = "data:image/png;base64,cG5n") {
+    this.readyState = ControlledFileReader.DONE;
+    this.result = value;
+    this.dispatchEvent(new ProgressEvent("load"));
+    this.dispatchEvent(new ProgressEvent("loadend"));
+  }
+}
+
 describe("owner site settings", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/owner/settings");
     window.sessionStorage.clear();
     installSession();
     FakeUploadRequest.requests = [];
+    ControlledFileReader.readers = [];
     vi.stubGlobal(
       "matchMedia",
       vi.fn().mockReturnValue({
@@ -183,6 +227,12 @@ describe("owner site settings", () => {
       }),
     );
     vi.stubGlobal("scrollTo", vi.fn());
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        return window.setTimeout(() => callback(0), 0);
+      }),
+    );
     vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
     vi.stubGlobal("URL", URL);
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:avatar-preview");
@@ -263,6 +313,76 @@ describe("owner site settings", () => {
     expect(screen.getAllByText("雨天手记").length).toBeGreaterThan(1);
   });
 
+  it("rebases edits made during a pending save and accepts IPv6 loopback URLs", async () => {
+    let resolveFirstPatch: ((response: Response) => void) | undefined;
+    let patchCount = 0;
+    const bodies: Record<string, unknown>[] = [];
+    installFetch(async (url, init) => {
+      if (url === "/api/v1/site") return json(siteEnvelope());
+      if (url === "/api/v1/owner/status") return json(statusEnvelope());
+      if (url === "/api/v1/owner/site" && init?.method === "PATCH") {
+        patchCount += 1;
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        bodies.push(body);
+        if (patchCount === 1) {
+          return await new Promise<Response>((resolve) => {
+            resolveFirstPatch = resolve;
+          });
+        }
+        return json({
+          data: { ...siteEnvelope().data, ...body },
+          meta: { request_id: "req_saved_again" },
+        });
+      }
+      return json({}, 404);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "站点身份" });
+
+    fireEvent.change(screen.getByLabelText(/站点标题/), {
+      target: { value: "提交中的标题" },
+    });
+    fireEvent.change(screen.getByLabelText(/公开站点地址/), {
+      target: { value: "http://[::1]:8080/memory" },
+    });
+    expect(screen.queryByText(/请输入 HTTPS 站点基址/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    await screen.findByText("正在保存站点设置…");
+
+    fireEvent.change(screen.getByLabelText(/站点标题/), {
+      target: { value: "保存期间继续写的标题" },
+    });
+    await act(async () => {
+      resolveFirstPatch?.(
+        json({
+          data: {
+            ...siteEnvelope().data,
+            title: "提交中的标题",
+            public_base_url: "http://[::1]:8080/memory",
+          },
+          meta: { request_id: "req_saved_first" },
+        }),
+      );
+    });
+
+    expect(
+      await screen.findByText("之前提交的设置已保存；新的更改仍待保存。"),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/站点标题/)).toHaveValue(
+      "保存期间继续写的标题",
+    );
+    expect(screen.getByRole("button", { name: "保存设置" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+    await screen.findByText("设置已保存，公开站点身份已更新。");
+    expect(bodies).toEqual([
+      {
+        title: "提交中的标题",
+        public_base_url: "http://[::1]:8080/memory",
+      },
+      { title: "保存期间继续写的标题" },
+    ]);
+  });
+
   it("keeps a failed avatar separate, then saves a managed avatar or explicit removal", async () => {
     const bodies: Record<string, unknown>[] = [];
     installFetch(async (url, init) => {
@@ -309,6 +429,39 @@ describe("owner site settings", () => {
     await waitFor(() =>
       expect(bodies.at(-1)).toEqual({ avatar_media_id: null }),
     );
+  });
+
+  it("uses CSP-safe data previews and cancels an upload without losing other edits", async () => {
+    vi.stubGlobal("FileReader", ControlledFileReader);
+    const createObjectURL = vi.spyOn(URL, "createObjectURL");
+    installFetch();
+    render(<App />);
+    await screen.findByRole("heading", { name: "站点身份" });
+
+    fireEvent.change(screen.getByLabelText(/简介/), {
+      target: { value: "这段简介仍需保存" },
+    });
+    const file = new File(["png"], "avatar.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("选择站点头像"), {
+      target: { files: [file] },
+    });
+    expect(
+      screen.getByText("正在读取本地预览；头像上传已同时开始。"),
+    ).toBeInTheDocument();
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(FakeUploadRequest.requests).toHaveLength(1);
+
+    act(() => ControlledFileReader.readers[0].fail());
+    expect(screen.getByText(/本地预览无法显示/)).toBeInTheDocument();
+    const picker = screen.getByRole("button", { name: "正在上传…" });
+    fireEvent.click(screen.getByRole("button", { name: "取消上传" }));
+    expect(FakeUploadRequest.requests[0].aborted).toBe(true);
+    await waitFor(() => expect(picker).toHaveFocus());
+    expect(screen.getByLabelText(/简介/)).toHaveValue("这段简介仍需保存");
+    expect(
+      screen.getByText("头像上传已取消，其他更改仍保留。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存设置" })).toBeEnabled();
   });
 
   it("keeps unsaved values visible when the owner session expires", async () => {
@@ -381,4 +534,78 @@ describe("owner site settings", () => {
     );
     expect(screen.getByText(/已复制。请确认/)).toBeInTheDocument();
   });
+
+  it.each([
+    ["网络中断", async () => Promise.reject(new TypeError("offline"))],
+    [
+      "成功响应被截断",
+      async () =>
+        new Response('{"data":', {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    ],
+  ])(
+    "blocks blind rotation retries when %s leaves the outcome unknown",
+    async (_name, rotateResponse) => {
+      installFetch(async (url, init) => {
+        if (url === "/api/v1/site") return json(siteEnvelope());
+        if (url === "/api/v1/owner/status") return json(statusEnvelope());
+        if (url === "/api/v1/owner/token/rotate" && init?.method === "POST") {
+          return await rotateResponse();
+        }
+        return json({}, 404);
+      });
+      render(<App />);
+      await screen.findByRole("heading", { name: "访问凭据" });
+
+      fireEvent.click(screen.getByRole("button", { name: "轮换凭据" }));
+      fireEvent.click(await screen.findByRole("button", { name: "确认轮换" }));
+
+      expect(
+        await screen.findByRole("heading", { name: "不要再次从浏览器轮换" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          "moment owner rotate-token --data-dir <数据目录> --json",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "轮换凭据" }),
+      ).not.toBeInTheDocument();
+      expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
+      expect(
+        screen.queryByRole("heading", { name: "重新确认所有者身份" }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    ["auth", failure("UNAUTHORIZED", 401), /服务器拒绝了当前会话/, false],
+    ["server", failure("INTERNAL", 500), /服务器明确返回轮换失败/, true],
+  ])(
+    "keeps a %s rotation failure distinct from an unknown outcome",
+    async (_name, response, message, sessionRemains) => {
+      installFetch(async (url, init) => {
+        if (url === "/api/v1/site") return json(siteEnvelope());
+        if (url === "/api/v1/owner/status") return json(statusEnvelope());
+        if (url === "/api/v1/owner/token/rotate" && init?.method === "POST") {
+          return response.clone();
+        }
+        return json({}, 404);
+      });
+      render(<App />);
+      await screen.findByRole("heading", { name: "访问凭据" });
+      fireEvent.click(screen.getByRole("button", { name: "轮换凭据" }));
+      fireEvent.click(await screen.findByRole("button", { name: "确认轮换" }));
+
+      expect(await screen.findByText(message)).toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: "不要再次从浏览器轮换" }),
+      ).not.toBeInTheDocument();
+      expect(Boolean(window.sessionStorage.getItem(sessionKey))).toBe(
+        sessionRemains,
+      );
+    },
+  );
 });

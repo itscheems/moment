@@ -191,6 +191,156 @@ describe("owner API client", () => {
     );
   });
 
+  it("fails closed on non-canonical settings, status, and rotation successes", async () => {
+    const siteData = {
+      title: "雨天记录",
+      bio: "沿着日常留下坐标",
+      timezone: "Asia/Shanghai",
+      public_base_url: "https://moment.example.com",
+      avatar_media_id: null,
+      comments_enabled: false,
+    };
+    const statusData = {
+      initialized: true,
+      session_epoch: 4,
+      initialized_at: "2026-08-01T00:00:00Z",
+      rotated_at: "2026-08-10T00:00:00Z",
+    };
+    const rotationData = {
+      token: "new-owner-token",
+      initialized: true,
+      session_epoch: 5,
+      initialized_at: "2026-08-01T00:00:00Z",
+      rotated_at: "2026-08-11T00:00:00Z",
+    };
+    const scenarios: Array<{
+      name: string;
+      response: () => Response;
+      run: (api: OwnerApi) => Promise<unknown>;
+    }> = [
+      {
+        name: "site requires HTTP 200",
+        response: () =>
+          json({ data: siteData, meta: { request_id: "req_site" } }, 201),
+        run: (api) => api.updateSite("csrf", { title: "雨天记录" }),
+      },
+      {
+        name: "site rejects extra data",
+        response: () =>
+          json({
+            data: { ...siteData, server_path: "/private/avatar" },
+            meta: { request_id: "req_site" },
+          }),
+        run: (api) => api.updateSite("csrf", { title: "雨天记录" }),
+      },
+      {
+        name: "status requires application/json",
+        response: () =>
+          new Response(
+            JSON.stringify({
+              data: statusData,
+              meta: { request_id: "req_status" },
+            }),
+            { status: 200, headers: { "Content-Type": "text/plain" } },
+          ),
+        run: (api) => api.status(),
+      },
+      {
+        name: "status rejects extra envelope fields",
+        response: () =>
+          json({
+            data: statusData,
+            meta: { request_id: "req_status" },
+            debug: true,
+          }),
+        run: (api) => api.status(),
+      },
+      {
+        name: "status rejects extra metadata",
+        response: () =>
+          json({
+            data: statusData,
+            meta: { request_id: "req_status", session: "private" },
+          }),
+        run: (api) => api.status(),
+      },
+      {
+        name: "status requires a positive epoch",
+        response: () =>
+          json({
+            data: { ...statusData, session_epoch: 0 },
+            meta: { request_id: "req_status" },
+          }),
+        run: (api) => api.status(),
+      },
+      {
+        name: "status requires RFC3339 UTC instants",
+        response: () =>
+          json({
+            data: {
+              ...statusData,
+              initialized_at: "2026-08-01T08:00:00+08:00",
+            },
+            meta: { request_id: "req_status" },
+          }),
+        run: (api) => api.status(),
+      },
+      {
+        name: "rotation rejects false initialized state",
+        response: () =>
+          json({
+            data: { ...rotationData, initialized: false },
+            meta: { request_id: "req_rotate" },
+          }),
+        run: (api) => api.rotateToken("csrf"),
+      },
+      {
+        name: "rotation rejects extra credential fields",
+        response: () =>
+          json({
+            data: { ...rotationData, token_hint: "secret" },
+            meta: { request_id: "req_rotate" },
+          }),
+        run: (api) => api.rotateToken("csrf"),
+      },
+      {
+        name: "rotation rejects impossible UTC dates",
+        response: () =>
+          json({
+            data: { ...rotationData, rotated_at: "2026-02-30T00:00:00Z" },
+            meta: { request_id: "req_rotate" },
+          }),
+        run: (api) => api.rotateToken("csrf"),
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const api = new OwnerApi(
+        vi.fn(async () => scenario.response()) as typeof fetch,
+      );
+      await expect(scenario.run(api), scenario.name).rejects.toMatchObject({
+        code: "API_RESPONSE_INVALID",
+      });
+    }
+
+    const unrotated = new OwnerApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            initialized: true,
+            session_epoch: 1,
+            initialized_at: "2026-08-01T00:00:00.123456789Z",
+          },
+          meta: { request_id: "req_status" },
+        }),
+      ) as typeof fetch,
+    );
+    await expect(unrotated.status()).resolves.toMatchObject({
+      sessionEpoch: 1,
+      rotatedAt: null,
+    });
+  });
+
   it("submits exact ordered usages while preserving nullable and padded alt text", async () => {
     const media = [
       {

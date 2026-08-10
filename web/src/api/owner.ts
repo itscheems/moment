@@ -85,14 +85,6 @@ function stringField(record: Record<string, unknown>, field: string): string {
   return value;
 }
 
-function integerField(record: Record<string, unknown>, field: string): number {
-  const value = record[field];
-  if (!Number.isSafeInteger(value) || Number(value) < 0) {
-    throw invalidResponse(`response field ${field} must be a safe integer`);
-  }
-  return Number(value);
-}
-
 function booleanField(record: Record<string, unknown>, field: string): boolean {
   const value = record[field];
   if (typeof value !== "boolean") {
@@ -126,10 +118,50 @@ function positiveIntegerField(
   return Number(value);
 }
 
-function instantField(record: Record<string, unknown>, field: string): string {
+function utcInstantField(
+  record: Record<string, unknown>,
+  field: string,
+): string {
   const value = stringField(record, field);
-  if (!Number.isFinite(Date.parse(value))) {
-    throw invalidResponse(`response field ${field} must be an instant`);
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/,
+  );
+  if (!match) {
+    throw invalidResponse(`response field ${field} must be a UTC instant`);
+  }
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] =
+    match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [
+    31,
+    leapYear ? 29 : 28,
+    31,
+    30,
+    31,
+    30,
+    31,
+    31,
+    30,
+    31,
+    30,
+    31,
+  ];
+  if (
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > monthDays[month - 1] ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  ) {
+    throw invalidResponse(`response field ${field} must be a UTC instant`);
   }
   return value;
 }
@@ -138,7 +170,36 @@ function optionalInstantField(
   record: Record<string, unknown>,
   field: string,
 ): string | null {
-  return record[field] === undefined ? null : instantField(record, field);
+  return record[field] === undefined ? null : utcInstantField(record, field);
+}
+
+async function decodeExactOwnerSuccess(
+  response: Response,
+  dataKeys: string[],
+  optionalDataKeys: string[] = [],
+): Promise<Record<string, unknown>> {
+  const result = await decodeResponse(response, {
+    strictSuccessEnvelope: response.ok,
+    requireJsonSuccess: response.ok,
+  });
+  if (response.status !== 200) {
+    throw invalidResponse("owner settings success must return HTTP 200");
+  }
+  if (
+    !hasExactKeys(result.meta, ["request_id"]) ||
+    !stringField(result.meta, "request_id")
+  ) {
+    throw invalidResponse("owner settings metadata is invalid");
+  }
+  const data = objectData(result.data);
+  const expectedDataKeys = [
+    ...dataKeys,
+    ...optionalDataKeys.filter((key) => key in data),
+  ];
+  if (!hasExactKeys(data, expectedDataKeys)) {
+    throw invalidResponse("owner settings data contains unsupported fields");
+  }
+  return data;
 }
 
 function sitePayload(update: SiteSettingsUpdate): Record<string, unknown> {
@@ -247,13 +308,19 @@ export class OwnerApi {
       ...requestInit("GET"),
       signal,
     });
-    const { data } = await decodeResponse(response);
-    const record = objectData(data);
+    const preliminary = await decodeExactOwnerSuccess(
+      response,
+      ["initialized", "session_epoch", "initialized_at"],
+      ["rotated_at"],
+    );
+    if (booleanField(preliminary, "initialized") !== true) {
+      throw invalidResponse("owner status must be initialized");
+    }
     return {
-      initialized: booleanField(record, "initialized"),
-      sessionEpoch: integerField(record, "session_epoch"),
-      initializedAt: optionalInstantField(record, "initialized_at"),
-      rotatedAt: optionalInstantField(record, "rotated_at"),
+      initialized: true,
+      sessionEpoch: positiveIntegerField(preliminary, "session_epoch"),
+      initializedAt: utcInstantField(preliminary, "initialized_at"),
+      rotatedAt: optionalInstantField(preliminary, "rotated_at"),
     };
   }
 
@@ -265,7 +332,14 @@ export class OwnerApi {
       "/api/v1/owner/site",
       requestInit("PATCH", csrfToken, sitePayload(update)),
     );
-    const { data } = await decodeResponse(response);
+    const data = await decodeExactOwnerSuccess(response, [
+      "title",
+      "bio",
+      "timezone",
+      "public_base_url",
+      "avatar_media_id",
+      "comments_enabled",
+    ]);
     return parseSiteIdentity(data);
   }
 
@@ -274,16 +348,24 @@ export class OwnerApi {
       "/api/v1/owner/token/rotate",
       requestInit("POST", csrfToken),
     );
-    const { data } = await decodeResponse(response);
-    const record = objectData(data);
+    const record = await decodeExactOwnerSuccess(response, [
+      "token",
+      "initialized",
+      "session_epoch",
+      "initialized_at",
+      "rotated_at",
+    ]);
     const token = stringField(record, "token");
-    const rotatedAt = instantField(record, "rotated_at");
+    const rotatedAt = utcInstantField(record, "rotated_at");
     if (!token) throw invalidResponse("rotated owner token cannot be empty");
+    if (booleanField(record, "initialized") !== true) {
+      throw invalidResponse("rotated owner credential must be initialized");
+    }
     return {
       token,
-      initialized: booleanField(record, "initialized"),
-      sessionEpoch: integerField(record, "session_epoch"),
-      initializedAt: instantField(record, "initialized_at"),
+      initialized: true,
+      sessionEpoch: positiveIntegerField(record, "session_epoch"),
+      initializedAt: utcInstantField(record, "initialized_at"),
       rotatedAt,
     };
   }

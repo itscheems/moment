@@ -45,6 +45,7 @@ interface FieldErrors {
 }
 
 type AvatarState = "idle" | "uploading" | "ready" | "failed";
+type AvatarPreviewState = "idle" | "reading" | "ready" | "failed";
 
 function formFromSite(site: SiteIdentity): SettingsForm {
   return {
@@ -82,11 +83,12 @@ function validateForm(form: SettingsForm): FieldErrors {
   if (publicBaseUrl) {
     try {
       const parsed = new URL(publicBaseUrl);
+      const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
       const localHTTP =
         parsed.protocol === "http:" &&
-        (parsed.hostname === "localhost" ||
-          parsed.hostname === "127.0.0.1" ||
-          parsed.hostname === "::1");
+        (hostname === "localhost" ||
+          hostname === "127.0.0.1" ||
+          hostname === "::1");
       if (
         (parsed.protocol !== "https:" && !localHTTP) ||
         parsed.username ||
@@ -131,6 +133,30 @@ function changedSiteFields(
 
 function hasFields(update: SiteSettingsUpdate): boolean {
   return Object.keys(update).length > 0;
+}
+
+function rebaseEditedForm(
+  latest: SettingsForm,
+  submitted: SettingsForm,
+  saved: SiteIdentity,
+): SettingsForm {
+  const confirmed = formFromSite(saved);
+  return {
+    title: latest.title === submitted.title ? confirmed.title : latest.title,
+    bio: latest.bio === submitted.bio ? confirmed.bio : latest.bio,
+    timezone:
+      latest.timezone === submitted.timezone
+        ? confirmed.timezone
+        : latest.timezone,
+    publicBaseUrl:
+      latest.publicBaseUrl === submitted.publicBaseUrl
+        ? confirmed.publicBaseUrl
+        : latest.publicBaseUrl,
+    commentsEnabled:
+      latest.commentsEnabled === submitted.commentsEnabled
+        ? confirmed.commentsEnabled
+        : latest.commentsEnabled,
+  };
 }
 
 function serverErrorMessage(error: unknown): string {
@@ -194,6 +220,7 @@ export function SettingsPage({
   const [statusAttempt, setStatusAttempt] = useState(0);
   const [rotationPending, setRotationPending] = useState(false);
   const [rotationError, setRotationError] = useState<string | null>(null);
+  const [rotationOutcomeUnknown, setRotationOutcomeUnknown] = useState(false);
   const [rotated, setRotated] = useState<RotatedCredential | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
@@ -204,11 +231,17 @@ export function SettingsPage({
   );
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
+  const [avatarPreviewState, setAvatarPreviewState] =
+    useState<AvatarPreviewState>("idle");
   const [avatarProgress, setAvatarProgress] = useState(0);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const localPreviewRef = useRef<string | null>(null);
+  const pickerButtonRef = useRef<HTMLButtonElement>(null);
+  const previewReaderRef = useRef<FileReader | null>(null);
   const avatarUploadRef = useRef<AbortController | null>(null);
+  const avatarRevisionRef = useRef(0);
+  const formRef = useRef(form);
+  const formRevisionRef = useRef(0);
   const mountedRef = useRef(true);
   const navigationBlockerId = useRef(Symbol("settings-navigation-blocker"));
   const allowLeaveRef = useRef(false);
@@ -229,18 +262,17 @@ export function SettingsPage({
     avatarState !== "uploading" &&
     session !== null;
 
-  const releaseLocalPreview = () => {
-    if (localPreviewRef.current) {
-      URL.revokeObjectURL(localPreviewRef.current);
-      localPreviewRef.current = null;
-    }
+  const cancelPreviewRead = () => {
+    const reader = previewReaderRef.current;
+    previewReaderRef.current = null;
+    if (reader?.readyState === FileReader.LOADING) reader.abort();
   };
 
   useEffect(
     () => () => {
       mountedRef.current = false;
       avatarUploadRef.current?.abort();
-      releaseLocalPreview();
+      cancelPreviewRead();
     },
     [],
   );
@@ -297,7 +329,10 @@ export function SettingsPage({
     field: Key,
     value: SettingsForm[Key],
   ) => {
-    setForm((current) => ({ ...current, [field]: value }));
+    const next = { ...formRef.current, [field]: value };
+    formRef.current = next;
+    formRevisionRef.current += 1;
+    setForm(next);
     setFieldErrors((current) => ({ ...current, [field]: undefined }));
     setSaveError(null);
     setSaveNotice("有尚未保存的更改。");
@@ -324,10 +359,11 @@ export function SettingsPage({
         controller.signal,
       );
       if (!mountedRef.current || avatarUploadRef.current !== controller) return;
-      releaseLocalPreview();
+      cancelPreviewRead();
       setAvatarMediaId(uploaded.id);
       setAvatarPreview(uploaded.previewUrl);
       setAvatarState("ready");
+      setAvatarPreviewState("idle");
       setAvatarProgress(100);
       setSaveNotice("头像已上传，保存设置后才会公开使用。");
     } catch (error) {
@@ -354,22 +390,61 @@ export function SettingsPage({
       setAvatarState("failed");
       return;
     }
-    releaseLocalPreview();
-    localPreviewRef.current = URL.createObjectURL(file);
+    avatarRevisionRef.current += 1;
+    cancelPreviewRead();
+    const reader = new FileReader();
+    previewReaderRef.current = reader;
     setAvatarFile(file);
-    setAvatarPreview(localPreviewRef.current);
+    setAvatarPreviewState("reading");
     setAvatarError(null);
+    reader.addEventListener("load", () => {
+      if (!mountedRef.current || previewReaderRef.current !== reader) return;
+      previewReaderRef.current = null;
+      if (
+        typeof reader.result === "string" &&
+        reader.result.startsWith("data:image/")
+      ) {
+        setAvatarPreview(reader.result);
+        setAvatarPreviewState("ready");
+      } else {
+        setAvatarPreviewState("failed");
+      }
+    });
+    reader.addEventListener("error", () => {
+      if (!mountedRef.current || previewReaderRef.current !== reader) return;
+      previewReaderRef.current = null;
+      setAvatarPreviewState("failed");
+    });
+    reader.readAsDataURL(file);
     void uploadAvatar(file);
   };
 
-  const removeAvatar = () => {
+  const cancelAvatarUpload = () => {
+    avatarRevisionRef.current += 1;
     avatarUploadRef.current?.abort();
     avatarUploadRef.current = null;
-    releaseLocalPreview();
+    cancelPreviewRead();
+    setAvatarFile(null);
+    setAvatarMediaId(baseline.avatarMediaId);
+    setAvatarPreview(avatarURL(baseline.avatarMediaId));
+    setAvatarState("idle");
+    setAvatarPreviewState("idle");
+    setAvatarProgress(0);
+    setAvatarError(null);
+    setSaveNotice("头像上传已取消，其他更改仍保留。");
+    window.requestAnimationFrame(() => pickerButtonRef.current?.focus());
+  };
+
+  const removeAvatar = () => {
+    avatarRevisionRef.current += 1;
+    avatarUploadRef.current?.abort();
+    avatarUploadRef.current = null;
+    cancelPreviewRead();
     setAvatarFile(null);
     setAvatarMediaId(null);
     setAvatarPreview(null);
     setAvatarState("idle");
+    setAvatarPreviewState("idle");
     setAvatarProgress(0);
     setAvatarError(null);
     setSaveError(null);
@@ -388,6 +463,9 @@ export function SettingsPage({
       !avatarAttemptPending,
     );
     if (!hasFields(submitted)) return;
+    const submittedForm = formRef.current;
+    const submittedFormRevision = formRevisionRef.current;
+    const submittedAvatarRevision = avatarRevisionRef.current;
     setSavePending(true);
     setSaveError(null);
     setSaveNotice("正在保存站点设置…");
@@ -395,22 +473,35 @@ export function SettingsPage({
       const saved = await api.updateSite(session.csrfToken, submitted);
       if (!mountedRef.current) return;
       const next = { ...saved, instanceId: baseline.instanceId };
+      const editedWhileSaving =
+        formRevisionRef.current !== submittedFormRevision;
+      const nextForm = editedWhileSaving
+        ? rebaseEditedForm(formRef.current, submittedForm, next)
+        : formFromSite(next);
       setBaseline(next);
-      setForm(formFromSite(next));
-      if (submitted.avatarMediaId !== undefined) {
-        releaseLocalPreview();
+      formRef.current = nextForm;
+      setForm(nextForm);
+      if (
+        submitted.avatarMediaId !== undefined &&
+        avatarRevisionRef.current === submittedAvatarRevision
+      ) {
+        cancelPreviewRead();
         setAvatarFile(null);
         setAvatarMediaId(next.avatarMediaId);
         setAvatarPreview(avatarURL(next.avatarMediaId));
         setAvatarState("idle");
+        setAvatarPreviewState("idle");
         setAvatarProgress(0);
         setAvatarError(null);
       }
       setFieldErrors({});
       setSaveNotice(
-        avatarAttemptPending
-          ? "资料已保存；头像仍待重试或移除。"
-          : "设置已保存，公开站点身份已更新。",
+        editedWhileSaving ||
+          avatarRevisionRef.current !== submittedAvatarRevision
+          ? "之前提交的设置已保存；新的更改仍待保存。"
+          : avatarAttemptPending
+            ? "资料已保存；头像仍待重试或移除。"
+            : "设置已保存，公开站点身份已更新。",
       );
       onSaved(next);
     } catch (error) {
@@ -465,12 +556,22 @@ export function SettingsPage({
       expireAfterTokenRotation();
     } catch (error) {
       if (!mountedRef.current) return;
-      const expired = expireIfInvalidSession(error);
-      setRotationError(
-        expired
-          ? "当前会话已失效，凭据没有轮换。重新登录后可以再试。"
-          : "凭据没有轮换，旧凭据与现有会话仍然有效。可以安全重试。",
-      );
+      const deterministicServerFailure =
+        error instanceof PublicApiError &&
+        error.status >= 400 &&
+        error.code !== "API_RESPONSE_INVALID";
+      if (!deterministicServerFailure) {
+        setRotationOutcomeUnknown(true);
+        setRotationError(null);
+        expireAfterTokenRotation();
+      } else {
+        const expired = expireIfInvalidSession(error);
+        setRotationError(
+          expired
+            ? "服务器拒绝了当前会话，未返回新凭据。请重新登录后再确认是否轮换。"
+            : "服务器明确返回轮换失败，未返回新凭据。修复服务问题后可重新确认。",
+        );
+      }
     } finally {
       if (mountedRef.current) setRotationPending(false);
     }
@@ -489,6 +590,7 @@ export function SettingsPage({
   const goToLogin = () => {
     allowLeaveRef.current = true;
     setRotated(null);
+    setRotationOutcomeUnknown(false);
     navigation.navigate("/owner/login?return=/owner/settings");
   };
 
@@ -561,6 +663,7 @@ export function SettingsPage({
                       className={styles.secondaryButton}
                       disabled={!session || avatarState === "uploading"}
                       onClick={() => fileInputRef.current?.click()}
+                      ref={pickerButtonRef}
                       type="button"
                     >
                       {avatarState === "uploading" ? "正在上传…" : "选择图片"}
@@ -585,6 +688,15 @@ export function SettingsPage({
                         重试头像
                       </button>
                     ) : null}
+                    {avatarState === "uploading" ? (
+                      <button
+                        className={styles.quietButton}
+                        onClick={cancelAvatarUpload}
+                        type="button"
+                      >
+                        取消上传
+                      </button>
+                    ) : null}
                   </div>
                   <input
                     accept="image/jpeg,image/png,image/webp,image/gif"
@@ -601,6 +713,15 @@ export function SettingsPage({
                       max="100"
                       value={avatarProgress}
                     />
+                  ) : null}
+                  {avatarPreviewState === "reading" ? (
+                    <p aria-live="polite" className={styles.previewNotice}>
+                      正在读取本地预览；头像上传已同时开始。
+                    </p>
+                  ) : avatarPreviewState === "failed" ? (
+                    <p className={styles.fieldError} role="alert">
+                      本地预览无法显示；上传仍会继续，完成后将使用受管预览。
+                    </p>
                   ) : null}
                   {avatarError ? (
                     <p className={styles.fieldError} role="alert">
@@ -815,6 +936,28 @@ export function SettingsPage({
                       : "离开本页后，Moment 不会再次显示这段凭据。"}
                 </p>
               </div>
+            ) : rotationOutcomeUnknown ? (
+              <div className={styles.rotationRecovery} role="alert">
+                <p>结果无法确认</p>
+                <h3>不要再次从浏览器轮换</h3>
+                <p>
+                  请求可能已在服务器完成，但响应没有被完整确认。当前页面已清除可能失效的会话，也不会提供重复轮换入口。
+                </p>
+                <p>
+                  先停止 Moment
+                  服务，在实例主机离线运行以下命令；立即保存它只显示一次的新凭据，再回来重新登录。
+                </p>
+                <code>
+                  {"moment owner rotate-token --data-dir <数据目录> --json"}
+                </code>
+                <button
+                  className={styles.secondaryButton}
+                  onClick={goToLogin}
+                  type="button"
+                >
+                  离线恢复完成，重新登录
+                </button>
+              </div>
             ) : (
               <div className={styles.rotationRow}>
                 <div>
@@ -848,7 +991,9 @@ export function SettingsPage({
                 {rotationError}
               </p>
             ) : null}
-            {!session && !rotated ? <OwnerLogin embedded site={site} /> : null}
+            {!session && !rotated && !rotationOutcomeUnknown ? (
+              <OwnerLogin embedded site={site} />
+            ) : null}
           </section>
 
           <section aria-labelledby="data-title" id="data">

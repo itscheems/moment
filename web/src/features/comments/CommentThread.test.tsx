@@ -423,7 +423,11 @@ describe("public comment thread", () => {
     const keys: string[] = [];
     installApi((url, init) => {
       if (url === "/api/v1/owner/status") {
-        return success({ initialized: true, session_epoch: 1 });
+        return success({
+          initialized: true,
+          session_epoch: 1,
+          initialized_at: "2026-08-01T00:00:00Z",
+        });
       }
       if (url.endsWith("/comments") && init?.method !== "POST") {
         return success({ items: [] });
@@ -489,7 +493,11 @@ describe("public comment thread", () => {
       const createBodies: Array<Record<string, unknown>> = [];
       installApi((url, init) => {
         if (url === "/api/v1/owner/status") {
-          return success({ initialized: true, session_epoch: 1 });
+          return success({
+            initialized: true,
+            session_epoch: 1,
+            initialized_at: "2026-08-01T00:00:00Z",
+          });
         }
         if (url.endsWith("/comments") && init?.method !== "POST") {
           return success({ items: [root] });
@@ -553,7 +561,11 @@ describe("public comment thread", () => {
     preauthenticate();
     installApi((url, init) => {
       if (url === "/api/v1/owner/status") {
-        return success({ initialized: true, session_epoch: 1 });
+        return success({
+          initialized: true,
+          session_epoch: 1,
+          initialized_at: "2026-08-01T00:00:00Z",
+        });
       }
       if (url.endsWith("/comments") && init?.method !== "DELETE") {
         return success({ items: [root, reply] });
@@ -592,7 +604,11 @@ describe("public comment thread", () => {
     const deleteTokens: Array<string | null> = [];
     installApi((url, init) => {
       if (url === "/api/v1/owner/status") {
-        return success({ initialized: true, session_epoch: 1 });
+        return success({
+          initialized: true,
+          session_epoch: 1,
+          initialized_at: "2026-08-01T00:00:00Z",
+        });
       }
       if (url.endsWith("/comments") && init?.method !== "DELETE") {
         return success({ items: [root] });
@@ -643,7 +659,11 @@ describe("public comment thread", () => {
     const deleteTokens: Array<string | null> = [];
     installApi((url, init) => {
       if (url === "/api/v1/owner/status") {
-        return success({ initialized: true, session_epoch: 1 });
+        return success({
+          initialized: true,
+          session_epoch: 1,
+          initialized_at: "2026-08-01T00:00:00Z",
+        });
       }
       if (url.endsWith("/comments") && init?.method !== "DELETE") {
         return success({ items: [root] });

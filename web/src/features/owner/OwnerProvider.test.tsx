@@ -103,7 +103,11 @@ describe("owner session cross-tab repair", () => {
         const url = String(input);
         if (url === "/api/v1/owner/status") {
           return json({
-            data: { initialized: true, session_epoch: 1 },
+            data: {
+              initialized: true,
+              session_epoch: 1,
+              initialized_at: "2026-08-01T00:00:00Z",
+            },
             meta: {},
           });
         }

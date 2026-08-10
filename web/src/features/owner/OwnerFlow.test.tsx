@@ -215,7 +215,11 @@ function post(
 
 function ownerStatus() {
   return json({
-    data: { initialized: true, session_epoch: 1 },
+    data: {
+      initialized: true,
+      session_epoch: 1,
+      initialized_at: "2026-08-01T00:00:00Z",
+    },
     meta: { request_id: "req_owner" },
   });
 }
