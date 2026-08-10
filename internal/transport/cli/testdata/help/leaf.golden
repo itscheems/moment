@@ -1,0 +1,28 @@
+Show the non-sensitive version, commit, and build date linked into this binary.
+
+INPUTS
+  No positional input. --json selects the stable machine envelope.
+
+OUTPUT
+  Build identity in human text or as data in the JSON envelope.
+
+ERRORS
+  Output failures return INTERNAL with exit code 10.
+
+Usage:
+  moment version [flags]
+
+Examples:
+moment version --json
+
+Flags:
+  -h, --help   help for version
+
+Global Flags:
+      --data-dir string     local Moment data directory (direct mode) (default "./moment-data")
+      --json                write one machine-readable JSON document to stdout
+      --log-level string    stderr log level: error, warn, info, or debug (default "info")
+      --no-input            fail instead of prompting for input
+      --timeout duration    maximum command duration (default 30s)
+      --token-file string   file containing the owner API token
+      --url string          Moment HTTP API base URL (API mode)
