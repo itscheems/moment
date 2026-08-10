@@ -76,13 +76,14 @@ ORDER BY name`)
 		t.Fatalf("schema tables = %v, want %v", actual, expected)
 	}
 
-	var version int
-	var checksum string
-	if err := db.read.QueryRowContext(ctx, `SELECT version, checksum FROM schema_migrations`).Scan(&version, &checksum); err != nil {
-		t.Fatal(err)
-	}
-	if version != 1 || checksum != db.migrations[0].checksum {
-		t.Fatalf("migration record = version %d checksum %q", version, checksum)
+	for index, migration := range db.migrations {
+		var checksum string
+		if err := db.read.QueryRowContext(ctx, `SELECT checksum FROM schema_migrations WHERE version = ?`, index+1).Scan(&checksum); err != nil {
+			t.Fatal(err)
+		}
+		if checksum != migration.checksum {
+			t.Fatalf("migration %d checksum = %q, want %q", index+1, checksum, migration.checksum)
+		}
 	}
 
 	var matches int
@@ -316,6 +317,8 @@ func TestSchemaCatalogTamperingFailsReadiness(t *testing.T) {
 		{name: "FTS virtual table", statement: `DROP TABLE entry_fts`},
 		{name: "comment insert trigger", statement: `DROP TRIGGER comments_parent_insert_guard`},
 		{name: "comment update trigger", statement: `DROP TRIGGER comments_parent_update_guard`},
+		{name: "media path insert trigger", statement: `DROP TRIGGER media_storage_path_insert_guard`},
+		{name: "media path update trigger", statement: `DROP TRIGGER media_storage_path_update_guard`},
 		{name: "required index", statement: `DROP INDEX entries_timeline_idx`},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -351,7 +354,7 @@ CREATE TABLE migration_must_rollback (id INTEGER);
 THIS IS NOT VALID SQL;`
 	digest := sha256.Sum256([]byte(sqlText))
 	db.migrations = append(db.migrations, migration{
-		version:  2,
+		version:  len(db.migrations) + 1,
 		name:     "injected_failure",
 		sql:      sqlText,
 		checksum: hex.EncodeToString(digest[:]),
@@ -365,7 +368,7 @@ THIS IS NOT VALID SQL;`
 		t.Fatalf("failed migration readiness error = %v", err)
 	}
 	assertCount(t, db.write, `SELECT count(*) FROM sqlite_schema WHERE name = 'migration_must_rollback'`, 0)
-	assertCount(t, db.write, `SELECT count(*) FROM schema_migrations`, 1)
+	assertCount(t, db.write, `SELECT count(*) FROM schema_migrations`, len(db.migrations)-1)
 }
 
 func TestSchemaEnforcesAuthorityConstraints(t *testing.T) {
@@ -377,10 +380,10 @@ func TestSchemaEnforcesAuthorityConstraints(t *testing.T) {
 	insertEntry(t, db, entryTwo, "two")
 	mustWrite(t, db, `
 INSERT INTO media (id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms, unreferenced_since_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, mediaOne, strings.Repeat("a", 64), "media/original/aa/a.jpg", "a.jpg", "image/jpeg", 100, 10, 10, 1)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, mediaOne, strings.Repeat("a", 64), "media/original/aa/"+strings.Repeat("a", 64)+".jpg", "a.jpg", "image/jpeg", 100, 10, 10, 1)
 	mustWrite(t, db, `
 INSERT INTO media (id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms, unreferenced_since_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, mediaTwo, strings.Repeat("b", 64), "media/original/bb/b.png", "b.png", "image/png", 200, 20, 20, 1)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, mediaTwo, strings.Repeat("b", 64), "media/original/bb/"+strings.Repeat("b", 64)+".png", "b.png", "image/png", 200, 20, 20, 1)
 
 	mustWrite(t, db, `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, entryOne, mediaOne)
 	mustWrite(t, db, `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 1, '')`, entryOne, mediaOne)
@@ -418,6 +421,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, mediaTwo, strings.Repeat("b", 64), "m
 INSERT INTO media VALUES (?, ?, ?, 'bad.bmp', 'image/bmp', 1, 1, 1, 1, NULL)`, entryThree, strings.Repeat("c", 64), "media/original/cc/c.bmp")
 	assertWriteRejected(t, db, `
 INSERT INTO media VALUES (?, ?, '../escape.jpg', 'escape.jpg', 'image/jpeg', 1, 1, 1, 1, NULL)`, entryThree, strings.Repeat("c", 64))
+	for _, invalidPath := range []string{
+		".",
+		"other/file.jpg",
+		"media/original/cc/" + strings.Repeat("c", 64) + ":evil.jpg",
+		"media/original/dd/" + strings.Repeat("c", 64) + ".jpg",
+		"media/original/cc/" + strings.Repeat("c", 64) + ".png",
+	} {
+		assertWriteRejected(t, db, `
+INSERT INTO media VALUES (?, ?, ?, 'invalid.jpg', 'image/jpeg', 1, 1, 1, 1, NULL)`, entryThree, strings.Repeat("c", 64), invalidPath)
+	}
 
 	mustWrite(t, db, `INSERT INTO comments VALUES (?, ?, NULL, 'owner', 'Owner', 'root', 1)`, commentRoot, entryOne)
 	mustWrite(t, db, `INSERT INTO comments VALUES (?, ?, ?, 'guest', 'Guest', 'reply', 2)`, commentLeaf, entryOne, commentRoot)

@@ -27,6 +27,8 @@ var requiredCatalogObjects = []expectedCatalogObject{
 	{name: "idempotency_keys_created_idx", kind: "index", table: "idempotency_keys"},
 	{name: "comments_parent_insert_guard", kind: "trigger", table: "comments"},
 	{name: "comments_parent_update_guard", kind: "trigger", table: "comments"},
+	{name: "media_storage_path_insert_guard", kind: "trigger", table: "media"},
+	{name: "media_storage_path_update_guard", kind: "trigger", table: "media"},
 }
 
 type catalogQueryer interface {
