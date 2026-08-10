@@ -1,0 +1,66 @@
+.timelineList {
+  min-block-size: 28rem;
+}
+
+.moreRow,
+.moreError,
+.endMark {
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-4) var(--space-6) var(--space-6) 4.25rem;
+}
+
+.moreRow button,
+.moreError button {
+  min-block-size: var(--target-size);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-5);
+  color: var(--accent);
+  background: var(--surface);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.moreRow button:hover,
+.moreError button:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.moreRow button:disabled {
+  color: var(--text-tertiary);
+  cursor: wait;
+}
+
+.moreError {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.endMark {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+@media (max-width: 719px) {
+  .moreRow,
+  .moreError,
+  .endMark {
+    padding-inline: 4.5rem var(--space-4);
+  }
+}

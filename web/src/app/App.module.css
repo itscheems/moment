@@ -1,0 +1,30 @@
+.siteError {
+  min-block-size: var(--target-size);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-3) var(--space-6);
+  color: var(--danger);
+  background: var(--surface);
+  font-size: var(--text-sm);
+}
+
+.siteError button {
+  min-block-size: var(--target-size);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-4);
+  color: var(--danger);
+  background: transparent;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+@media (max-width: 719px) {
+  .siteError {
+    padding-inline: var(--space-4);
+  }
+}

@@ -1,4 +1,9 @@
+import type { ReactNode } from "react";
+
+import type { SiteIdentity } from "../api/public";
+import { InternalLink, useNavigation } from "../app/navigation";
 import type { AppRoute, RouteId } from "../app/routes";
+import { SiteAvatar } from "../features/posts/PostPresentation";
 import { Icon, type IconName } from "./icons";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
@@ -35,19 +40,28 @@ const mobileNav = [
   ownerNav,
 ];
 
-function Brand() {
+function Brand({ site }: { site: SiteIdentity }) {
+  const title = site.title.trim() || "Moment";
   return (
-    <a aria-label="Moment 首页" className={styles.brand} href="/">
-      <svg aria-hidden="true" className={styles.brandMark} viewBox="0 0 40 40">
-        <path d="M9 31V11l11 10 11-10v20" />
-        <circle cx="9" cy="9" r="2.4" />
-        <circle cx="31" cy="9" r="2.4" />
-      </svg>
+    <InternalLink aria-label={`${title}首页`} className={styles.brand} href="/">
+      {site.avatarMediaId ? (
+        <SiteAvatar eager site={site} />
+      ) : (
+        <svg
+          aria-hidden="true"
+          className={styles.brandMark}
+          viewBox="0 0 40 40"
+        >
+          <path d="M9 31V11l11 10 11-10v20" />
+          <circle cx="9" cy="9" r="2.4" />
+          <circle cx="31" cy="9" r="2.4" />
+        </svg>
+      )}
       <span>
-        <strong>Moment</strong>
-        <small>记下此刻，找回后来</small>
+        <strong>{title}</strong>
+        <small>{site.bio.trim() || "记下此刻，找回后来"}</small>
       </span>
-    </a>
+    </InternalLink>
   );
 }
 
@@ -62,7 +76,7 @@ function NavLink({
 }) {
   const current = item.active.includes(route.id);
   return (
-    <a
+    <InternalLink
       aria-current={current ? "page" : undefined}
       aria-label={compact ? item.label : undefined}
       className={styles.navLink}
@@ -70,23 +84,23 @@ function NavLink({
     >
       <Icon name={item.icon} />
       <span>{item.label}</span>
-    </a>
+    </InternalLink>
   );
 }
 
-function LeftRail({ route }: { route: AppRoute }) {
+function LeftRail({ route, site }: { route: AppRoute; site: SiteIdentity }) {
   return (
     <aside aria-label="站点导航" className={styles.leftRail}>
-      <Brand />
+      <Brand site={site} />
       <nav aria-label="主要导航" className={styles.desktopNav}>
         {primaryNav.map((item) => (
           <NavLink item={item} key={item.href} route={route} />
         ))}
       </nav>
-      <a className={styles.publishAction} href="/owner/compose">
+      <InternalLink className={styles.publishAction} href="/owner/compose">
         <Icon name="publish" />
         <span>发布 Moment</span>
-      </a>
+      </InternalLink>
       <div className={styles.railBottom}>
         <NavLink item={ownerNav} route={route} />
         <ThemeMenu />
@@ -95,7 +109,13 @@ function LeftRail({ route }: { route: AppRoute }) {
   );
 }
 
-function MemoryRail({ years }: { years: readonly number[] }) {
+function MemoryRail({
+  years,
+  site,
+}: {
+  years: readonly number[];
+  site: SiteIdentity;
+}) {
   if (years.length === 0) {
     return null;
   }
@@ -104,7 +124,7 @@ function MemoryRail({ years }: { years: readonly number[] }) {
     <aside aria-label="记忆导航" className={styles.rightRail}>
       <section className={styles.siteNote}>
         <p className={styles.railEyebrow}>个人时间流</p>
-        <p>把今天写下来，也让未来的自己找得到。</p>
+        <p>{site.bio.trim() || "把今天写下来，也让未来的自己找得到。"}</p>
       </section>
       <section aria-labelledby="memory-map-title" className={styles.memoryMap}>
         <header>
@@ -112,34 +132,34 @@ function MemoryRail({ years }: { years: readonly number[] }) {
             <p className={styles.railEyebrow}>记忆坐标</p>
             <h2 id="memory-map-title">按年份回看</h2>
           </div>
-          <a href="/archive">全部</a>
+          <InternalLink href="/archive">全部</InternalLink>
         </header>
         <ol>
           {years.map((value, index) => (
             <li key={value}>
-              <a href={`/archive?year=${value}`}>
+              <InternalLink href={`/archive?year=${value}`}>
                 <span>{value}</span>
                 <small>{index === 0 ? "现在" : "过去"}</small>
-              </a>
+              </InternalLink>
             </li>
           ))}
         </ol>
       </section>
-      <a className={styles.searchPrompt} href="/search">
+      <InternalLink className={styles.searchPrompt} href="/search">
         <Icon name="search" />
         <span>
           <strong>找回一句话</strong>
           <small>从文字与日期开始</small>
         </span>
-      </a>
+      </InternalLink>
     </aside>
   );
 }
 
-function MobileHeader() {
+function MobileHeader({ site }: { site: SiteIdentity }) {
   return (
     <header className={styles.mobileHeader}>
-      <Brand />
+      <Brand site={site} />
       <ThemeMenu />
     </header>
   );
@@ -158,26 +178,39 @@ function MobileNavigation({ route }: { route: AppRoute }) {
 export function AppShell({
   route,
   state,
+  site,
+  children,
   memoryYears = [],
 }: {
   route: AppRoute;
   state: string | null;
+  site: SiteIdentity;
+  children?: ReactNode;
   memoryYears?: readonly number[];
 }) {
+  const { goBack } = useNavigation();
   return (
     <div className={styles.viewport}>
       <a className={styles.skipLink} href="#main-content">
         跳到主要内容
       </a>
-      <MobileHeader />
+      <MobileHeader site={site} />
       <div className={styles.shell}>
-        <LeftRail route={route} />
-        <main className={styles.timeline} id="main-content">
+        <LeftRail route={route} site={site} />
+        <main className={styles.timeline} id="main-content" tabIndex={-1}>
           <header className={styles.timelineHeader}>
             {route.id === "detail" || route.id === "owner-edit" ? (
-              <a aria-label="返回时间流" className={styles.backLink} href="/">
+              <InternalLink
+                aria-label="返回时间流"
+                className={styles.backLink}
+                href="/"
+                onClick={(event) => {
+                  event.preventDefault();
+                  goBack("/");
+                }}
+              >
                 <Icon name="back" />
-              </a>
+              </InternalLink>
             ) : null}
             <div>
               <p>{route.eyebrow}</p>
@@ -187,9 +220,9 @@ export function AppShell({
               <span className={styles.ownerBadge}>Owner</span>
             ) : null}
           </header>
-          <ShellState route={route} state={state} />
+          {children ?? <ShellState route={route} state={state} />}
         </main>
-        <MemoryRail years={memoryYears} />
+        <MemoryRail site={site} years={memoryYears} />
       </div>
       <MobileNavigation route={route} />
     </div>

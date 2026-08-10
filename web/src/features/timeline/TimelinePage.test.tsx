@@ -1,0 +1,131 @@
+import "@testing-library/jest-dom/vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { PublicApi, type SiteIdentity } from "../../api/public";
+import { NavigationProvider } from "../../app/navigation";
+import { TimelinePage } from "./TimelinePage";
+
+const site: SiteIdentity = {
+  title: "乔乔的 Moment",
+  bio: "一些正在发生的事",
+  timezone: "Asia/Shanghai",
+  publicBaseUrl: null,
+  avatarMediaId: null,
+  commentsEnabled: true,
+};
+
+function post(id: string, content: string) {
+  return {
+    id,
+    content_md: content,
+    content_html: `<p>${content}</p>`,
+    created_at: "2026-08-10T01:00:00.000Z",
+    updated_at: "2026-08-10T01:00:00.000Z",
+    published_at: "2026-08-10T01:00:00.000Z",
+  };
+}
+
+function page(items: unknown[], nextCursor: string | null): Response {
+  return new Response(
+    JSON.stringify({
+      data: { items },
+      meta: { next_cursor: nextCursor, request_id: "req_posts" },
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+function renderTimeline(api: PublicApi, initialSearch = "") {
+  return render(
+    <NavigationProvider>
+      <TimelinePage api={api} initialSearch={initialSearch} site={site} />
+    </NavigationProvider>,
+  );
+}
+
+describe("public timeline", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        window.setTimeout(() => callback(0), 0);
+        return 1;
+      }),
+    );
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("continues the opaque cursor in server order and focuses new content", async () => {
+    const first = post("01K2ABCDEF0123456789ABCDE0", "最近的一段");
+    const second = post("01K2ABCDEF0123456789ABCDE1", "更早的一段");
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("cursor=cursor-one")
+        ? page([second], null)
+        : page([first], "cursor-one"),
+    );
+    renderTimeline(new PublicApi(fetcher as typeof fetch), "?from=2026-08-01");
+
+    expect(await screen.findByText("最近的一段")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
+    const older = await screen.findByText("更早的一段");
+    expect(older).toBeInTheDocument();
+    await waitFor(() => expect(older.closest("article")).toHaveFocus());
+    expect(fetcher).toHaveBeenLastCalledWith(
+      "/api/v1/posts?limit=20&cursor=cursor-one&from=2026-08-01",
+      expect.any(Object),
+    );
+    expect(screen.getByText("已经走到这段时间流的起点")).toBeInTheDocument();
+  });
+
+  it("retries an initial failure without losing the deliberate error state", async () => {
+    let attempt = 0;
+    const fetcher = vi.fn(async () => {
+      attempt += 1;
+      if (attempt === 1) throw new TypeError("offline");
+      return page([post("01K2ABCDEF0123456789ABCDE0", "重新取回")], null);
+    });
+    renderTimeline(new PublicApi(fetcher as typeof fetch));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "这次没有取回时间流",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(await screen.findByText("重新取回")).toBeInTheDocument();
+  });
+
+  it("does not append a duplicate returned by a continued page", async () => {
+    const original = post("01K2ABCDEF0123456789ABCDE0", "只出现一次");
+    let attempt = 0;
+    const fetcher = vi.fn(async () => {
+      attempt += 1;
+      return attempt === 1 ? page([original], "next") : page([original], null);
+    });
+    renderTimeline(new PublicApi(fetcher as typeof fetch));
+    await screen.findByText("只出现一次");
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "下一页数据不完整",
+    );
+    expect(screen.getAllByText("只出现一次")).toHaveLength(1);
+  });
+
+  it("renders a useful empty state", async () => {
+    renderTimeline(
+      new PublicApi(vi.fn(async () => page([], null)) as typeof fetch),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "第一段记忆还没写下" }),
+    ).toBeInTheDocument();
+  });
+});
