@@ -280,6 +280,15 @@ func decodeOwnerAPIFailure(status int, body []byte) error {
 		exit = ExitConflict
 	case "INVALID_ARGUMENT":
 		exit = ExitInvalidInput
+	case "MEDIA_NOT_FOUND":
+		exit = ExitNotFound
+		suggestion = "choose an existing managed media ID or clear the reference"
+	case "DATA_INTEGRITY_FAILED":
+		exit = ExitIntegrity
+		suggestion = "run diagnostics before retrying"
+	case "CANCELLED":
+		exit = ExitTimeout
+		suggestion = "retry when the caller can keep the operation context active"
 	case "INTERNAL":
 		exit = ExitInternal
 	default:

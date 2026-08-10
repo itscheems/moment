@@ -220,6 +220,43 @@ func OpenContext(ctx context.Context, dataDir string) (*Runtime, error) {
 	return openResolved(root, instance, locks)
 }
 
+// OpenForWriteContext resolves CURRENT while holding locks in the global
+// Import -> Maintenance order, then returns with maintenance.lock shared for
+// the caller's complete ordinary write. The caller must release the lease.
+func OpenForWriteContext(ctx context.Context, dataDir string) (*Runtime, *Lease, error) {
+	root, err := ResolveDataDir(dataDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := ensureBaseDirectories(root); err != nil {
+		return nil, nil, err
+	}
+	instance, err := readInstance(filepath.Join(root, instanceFile))
+	if err != nil {
+		return nil, nil, err
+	}
+	locks, err := NewLocker(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	importLease, err := locks.Acquire(ctx, ImportLock, Exclusive)
+	if err != nil {
+		return nil, nil, fmt.Errorf("coordinate runtime write startup: %w", err)
+	}
+	maintenanceLease, err := locks.Acquire(ctx, MaintenanceLock, Shared)
+	if err != nil {
+		_ = importLease.Release()
+		return nil, nil, fmt.Errorf("coordinate runtime write startup: %w", err)
+	}
+	manager, openErr := openResolved(root, instance, locks)
+	releaseImportErr := importLease.Release()
+	if openErr != nil || releaseImportErr != nil {
+		_ = maintenanceLease.Release()
+		return nil, nil, errors.Join(openErr, releaseImportErr)
+	}
+	return manager, maintenanceLease, nil
+}
+
 func openResolved(root string, instance Instance, locks *Locker) (*Runtime, error) {
 	manager := &Runtime{Root: root, Instance: instance, Locks: locks}
 	generation, err := manager.ResolveCurrent()

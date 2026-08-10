@@ -158,7 +158,13 @@ type Lease struct {
 	state        platformLockState
 	localRelease func()
 	once         sync.Once
+	released     atomic.Bool
 	err          error
+}
+
+// Holds reports whether this unreleased lease owns the requested lock mode.
+func (l *Lease) Holds(name LockName, mode LockMode) bool {
+	return l != nil && !l.released.Load() && l.name == name && l.mode == mode
 }
 
 // Release relinquishes ownership. It is safe to call more than once.
@@ -167,6 +173,7 @@ func (l *Lease) Release() error {
 		return nil
 	}
 	l.once.Do(func() {
+		l.released.Store(true)
 		unlockErr := unlockFile(l.file, &l.state)
 		closeErr := l.file.Close()
 		l.localRelease()

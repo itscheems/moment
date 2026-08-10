@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 )
 
@@ -39,6 +40,7 @@ type Config struct {
 	Assets         fs.FS
 	Readiness      ReadinessFunc
 	OwnerAuth      *auth.Manager
+	SiteSettings   *app.SiteService
 	SecureCookies  bool
 	TrustedProxies []string
 	RequestID      func() string
@@ -105,6 +107,12 @@ func New(config Config) (*gin.Engine, error) {
 	})
 	if config.OwnerAuth != nil {
 		RegisterOwnerRoutes(engine, config.OwnerAuth, CookieOptions{Secure: config.SecureCookies})
+	}
+	if config.SiteSettings != nil {
+		if config.OwnerAuth == nil {
+			return nil, errors.New("site settings routes require owner authentication")
+		}
+		RegisterSiteRoutes(engine, config.SiteSettings, config.OwnerAuth)
 	}
 
 	if config.Register != nil {

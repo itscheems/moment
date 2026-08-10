@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
@@ -91,13 +92,29 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 			ExitIntegrity,
 		).WithCause(err)
 	}
+	siteRepository, err := sqlitestore.NewSiteRepository(database, runtime.Locks)
+	if err != nil {
+		return Result{}, err
+	}
+	siteService, err := app.NewSiteService(siteRepository, app.SiteOptions{
+		AllowDevelopmentLocalHTTP: runtime.IsDevelopment(),
+	})
+	if err != nil {
+		return Result{}, err
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:         assets,
-		Readiness:      database.Ready,
 		OwnerAuth:      authManager,
+		SiteSettings:   siteService,
 		SecureCookies:  !runtime.IsDevelopment(),
 		TrustedProxies: trustedProxies,
 		Log:            invocation.LogEvent,
+		Readiness: func(ctx context.Context) error {
+			if err := database.Ready(ctx); err != nil {
+				return err
+			}
+			return siteService.Ready(ctx)
+		},
 	})
 	if err != nil {
 		return Result{}, invalidArgument(

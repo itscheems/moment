@@ -1,0 +1,279 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"sync"
+	"testing"
+
+	"github.com/moment/moment/internal/domain"
+)
+
+const testAvatarID = "01ARZ3NDEKTSV4RRFFQ69G5FAY"
+
+type memorySiteTransactions struct {
+	mu       sync.Mutex
+	settings *SiteSettings
+	media    map[string]bool
+	failPut  bool
+}
+
+func (transactions *memorySiteTransactions) Read(_ context.Context, operation func(SiteStore) error) error {
+	transactions.mu.Lock()
+	defer transactions.mu.Unlock()
+	return operation(&memorySiteStore{settings: cloneSettingsPointer(transactions.settings), media: transactions.media})
+}
+
+func (transactions *memorySiteTransactions) Write(_ context.Context, operation func(SiteStore) error) error {
+	transactions.mu.Lock()
+	defer transactions.mu.Unlock()
+	store := &memorySiteStore{
+		settings: cloneSettingsPointer(transactions.settings),
+		media:    transactions.media,
+		failPut:  transactions.failPut,
+	}
+	if err := operation(store); err != nil {
+		return err
+	}
+	transactions.settings = cloneSettingsPointer(store.settings)
+	return nil
+}
+
+type memorySiteStore struct {
+	settings *SiteSettings
+	media    map[string]bool
+	failPut  bool
+}
+
+func (store *memorySiteStore) SiteSettings(context.Context) (SiteSettings, error) {
+	if store.settings == nil {
+		return SiteSettings{}, errors.New("missing settings")
+	}
+	return cloneSiteSettings(*store.settings), nil
+}
+
+func (store *memorySiteStore) MediaExists(_ context.Context, id domain.ID) (bool, error) {
+	return store.media[id.String()], nil
+}
+
+func (store *memorySiteStore) UpdateSiteSettings(_ context.Context, settings SiteSettings) error {
+	if store.failPut {
+		return errors.New("injected write failure")
+	}
+	cloned := cloneSiteSettings(settings)
+	store.settings = &cloned
+	return nil
+}
+
+func newTestSiteService(t *testing.T, transactions *memorySiteTransactions, development bool) *SiteService {
+	t.Helper()
+	service, err := NewSiteService(transactions, SiteOptions{
+		AllowDevelopmentLocalHTTP: development,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
+func TestSiteDefaultsAndPartialNullableUpdates(t *testing.T) {
+	initial := SiteSettings{Title: "Moment", Timezone: "Asia/Shanghai", CommentsEnabled: true}
+	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{testAvatarID: true}}
+	service := newTestSiteService(t, transactions, true)
+
+	defaults, err := service.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.Title != "Moment" || defaults.Timezone != "Asia/Shanghai" || !defaults.CommentsEnabled || defaults.PublicBaseURL != nil || defaults.AvatarMediaID != nil {
+		t.Fatalf("defaults = %#v", defaults)
+	}
+
+	title := "Jojo's moments"
+	publicURL := "HTTP://LOCALHOST:80/journal/"
+	avatar := testAvatarID
+	comments := false
+	updated, err := service.Update(context.Background(), SiteUpdate{
+		Title:           &title,
+		PublicBaseURL:   &NullableString{Value: &publicURL},
+		AvatarMediaID:   &NullableString{Value: &avatar},
+		CommentsEnabled: &comments,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Title != title || updated.PublicBaseURL == nil || *updated.PublicBaseURL != "http://localhost/journal" ||
+		updated.AvatarMediaID == nil || *updated.AvatarMediaID != avatar || updated.CommentsEnabled {
+		t.Fatalf("updated = %#v", updated)
+	}
+
+	cleared, err := service.Update(context.Background(), SiteUpdate{
+		PublicBaseURL: &NullableString{Value: nil},
+		AvatarMediaID: &NullableString{Value: nil},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.PublicBaseURL != nil || cleared.AvatarMediaID != nil || cleared.Title != title || cleared.CommentsEnabled {
+		t.Fatalf("cleared = %#v", cleared)
+	}
+	wildcardLocalhost := "http://journal.localhost"
+	if _, err := service.Update(context.Background(), SiteUpdate{
+		PublicBaseURL: &NullableString{Value: &wildcardLocalhost},
+	}); !domain.HasCode(err, domain.CodeInvalidArgument) {
+		t.Fatalf("non-exact localhost HTTP error = %v", err)
+	}
+}
+
+func TestSiteUpdateValidationAndAtomicRollback(t *testing.T) {
+	initial := SiteSettings{Title: "Before", Bio: "kept", Timezone: "UTC", CommentsEnabled: true}
+	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
+	service := newTestSiteService(t, transactions, false)
+
+	for name, update := range map[string]SiteUpdate{
+		"empty": {},
+		"invalid timezone": {
+			Timezone: ptr("UTC+08:00"),
+		},
+		"local timezone": {
+			Timezone: ptr("Local"),
+		},
+		"invalid URL": {
+			PublicBaseURL: &NullableString{Value: ptr("https://user@example.com?q=1#frag")},
+		},
+		"production HTTP": {
+			PublicBaseURL: &NullableString{Value: ptr("http://localhost")},
+		},
+		"development remote HTTP": {
+			PublicBaseURL: &NullableString{Value: ptr("http://example.com")},
+		},
+		"invalid host": {
+			PublicBaseURL: &NullableString{Value: ptr("https://bad_host.example")},
+		},
+		"invalid port": {
+			PublicBaseURL: &NullableString{Value: ptr("https://example.com:bad")},
+		},
+		"out of range port": {
+			PublicBaseURL: &NullableString{Value: ptr("https://example.com:99999")},
+		},
+		"empty query": {
+			PublicBaseURL: &NullableString{Value: ptr("https://example.com?")},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := service.Update(context.Background(), update); !domain.HasCode(err, domain.CodeInvalidArgument) {
+				t.Fatalf("error = %v", err)
+			}
+			if !reflect.DeepEqual(*transactions.settings, initial) {
+				t.Fatalf("invalid update changed settings: %#v", transactions.settings)
+			}
+		})
+	}
+
+	changedTitle := "Must roll back"
+	missingAvatar := "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
+	if _, err := service.Update(context.Background(), SiteUpdate{
+		Title:         &changedTitle,
+		AvatarMediaID: &NullableString{Value: &missingAvatar},
+	}); !domain.HasCode(err, domain.CodeMediaNotFound) {
+		t.Fatalf("missing avatar error = %v", err)
+	}
+	if !reflect.DeepEqual(*transactions.settings, initial) {
+		t.Fatalf("missing avatar partially committed: %#v", transactions.settings)
+	}
+
+	transactions.failPut = true
+	if _, err := service.Update(context.Background(), SiteUpdate{Title: &changedTitle}); !domain.HasCode(err, domain.CodeInternal) {
+		t.Fatalf("write failure = %v", err)
+	}
+	if !reflect.DeepEqual(*transactions.settings, initial) {
+		t.Fatalf("failed write partially committed: %#v", transactions.settings)
+	}
+}
+
+func TestHostTimezoneDetectionUsesIANAInputsAndFallsBack(t *testing.T) {
+	tests := []struct {
+		name    string
+		sources hostTimezoneSources
+		want    string
+	}{
+		{name: "TZ", sources: hostTimezoneSources{tz: "Asia/Shanghai"}, want: "Asia/Shanghai"},
+		{name: "TZ zoneinfo path", sources: hostTimezoneSources{tz: ":/usr/share/zoneinfo/Europe/London"}, want: "Europe/London"},
+		{name: "local name", sources: hostTimezoneSources{localName: "America/New_York"}, want: "America/New_York"},
+		{name: "zoneinfo symlink", sources: hostTimezoneSources{
+			localName: "Local",
+			readlink:  func(string) (string, error) { return "../usr/share/zoneinfo/Europe/Paris", nil },
+		}, want: "Europe/Paris"},
+		{name: "timezone file", sources: hostTimezoneSources{
+			localName: "Local",
+			readlink:  func(string) (string, error) { return "", errors.New("not a symlink") },
+			readFile:  func(string) ([]byte, error) { return []byte("Asia/Tokyo\n"), nil },
+		}, want: "Asia/Tokyo"},
+		{name: "fixed offset falls back", sources: hostTimezoneSources{tz: "UTC+08:00", localName: "Local"}, want: "UTC"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := detectHostTimezone(test.sources); got != test.want {
+				t.Fatalf("timezone = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestSiteAcceptsSingleSegmentIANALinks(t *testing.T) {
+	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
+	service := newTestSiteService(t, transactions, false)
+	for _, timezone := range []string{"GMT", "CET", "Singapore", "Turkey", "Zulu"} {
+		if _, err := service.Update(context.Background(), SiteUpdate{Timezone: &timezone}); err != nil {
+			t.Fatalf("IANA link %q was rejected: %v", timezone, err)
+		}
+	}
+}
+
+func TestSiteConcurrentPartialUpdatesMergeInsideSerializedWrite(t *testing.T) {
+	initial := SiteSettings{Title: "Before", Timezone: "UTC", CommentsEnabled: true}
+	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
+	service := newTestSiteService(t, transactions, false)
+	title := "After"
+	bio := "A durable personal record"
+
+	var wait sync.WaitGroup
+	wait.Add(2)
+	errors := make(chan error, 2)
+	go func() {
+		defer wait.Done()
+		_, err := service.Update(context.Background(), SiteUpdate{Title: &title})
+		errors <- err
+	}()
+	go func() {
+		defer wait.Done()
+		_, err := service.Update(context.Background(), SiteUpdate{Bio: &bio})
+		errors <- err
+	}()
+	wait.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	settings, err := service.Get(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.Title != title || settings.Bio != bio {
+		t.Fatalf("lost partial update: %#v", settings)
+	}
+}
+
+func cloneSettingsPointer(settings *SiteSettings) *SiteSettings {
+	if settings == nil {
+		return nil
+	}
+	cloned := cloneSiteSettings(*settings)
+	return &cloned
+}
+
+func ptr(value string) *string { return &value }

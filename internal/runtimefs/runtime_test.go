@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestInitializeAndRestartResolveOneGeneration(t *testing.T) {
@@ -50,6 +51,60 @@ func TestInitializeAndRestartResolveOneGeneration(t *testing.T) {
 		if info, err := os.Stat(path); err != nil || !info.IsDir() {
 			t.Fatalf("required runtime directory %s is not ready: %v", path, err)
 		}
+	}
+}
+
+func TestOpenForWriteResolvesCurrentUnderMaintenanceLease(t *testing.T) {
+	dataDir := t.TempDir()
+	runtimeState, err := Initialize(context.Background(), Config{DataDir: dataDir, Environment: EnvironmentDevelopment})
+	if err != nil {
+		t.Fatal(err)
+	}
+	importBlocker, err := runtimeState.Locks.Acquire(context.Background(), ImportLock, Exclusive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelledContext, cancelBlocked := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancelBlocked()
+	if _, _, err := OpenForWriteContext(cancelledContext, dataDir); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("OpenForWrite did not honor import lock cancellation: %v", err)
+	}
+	if err := importBlocker.Release(); err != nil {
+		t.Fatal(err)
+	}
+	guarded, maintenance, err := OpenForWriteContext(context.Background(), dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if guarded.Current.ID != runtimeState.Current.ID || !maintenance.Holds(MaintenanceLock, Shared) {
+		t.Fatalf("guarded runtime = %#v, maintenance held = %v", guarded.Current, maintenance.Holds(MaintenanceLock, Shared))
+	}
+
+	// Import is released after CURRENT resolution; maintenance remains held.
+	importLease, err := guarded.Locks.Acquire(context.Background(), ImportLock, Exclusive)
+	if err != nil {
+		t.Fatalf("import lock remained held: %v", err)
+	}
+	if err := importLease.Release(); err != nil {
+		t.Fatal(err)
+	}
+	blockedContext, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	if _, err := guarded.Locks.Acquire(blockedContext, MaintenanceLock, Exclusive); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("exclusive maintenance was not blocked: %v", err)
+	}
+	if err := maintenance.Release(); err != nil {
+		t.Fatal(err)
+	}
+	if maintenance.Holds(MaintenanceLock, Shared) {
+		t.Fatal("released maintenance lease still reports ownership")
+	}
+	exclusive, err := guarded.Locks.Acquire(context.Background(), MaintenanceLock, Exclusive)
+	if err != nil {
+		t.Fatalf("exclusive maintenance did not acquire after release: %v", err)
+	}
+	if err := exclusive.Release(); err != nil {
+		t.Fatal(err)
 	}
 }
 

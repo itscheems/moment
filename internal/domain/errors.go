@@ -25,6 +25,7 @@ const (
 	CodeMediaDimensionsExceeded     Code = "MEDIA_DIMENSIONS_EXCEEDED"
 	CodeMediaCorrupt                Code = "MEDIA_CORRUPT"
 	CodeMediaPreviewFailed          Code = "MEDIA_PREVIEW_FAILED"
+	CodeMediaNotFound               Code = "MEDIA_NOT_FOUND"
 	CodeUnauthorized                Code = "UNAUTHORIZED"
 	CodeIdempotencyKeyReused        Code = "IDEMPOTENCY_KEY_REUSED"
 	CodeImportInProgress            Code = "IMPORT_IN_PROGRESS"

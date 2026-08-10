@@ -449,8 +449,9 @@ INSERT INTO media VALUES (?, ?, ?, 'invalid.jpg', 'image/jpeg', 1, 1, 1, 1, NULL
 	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id = ?`, 0, commentElse)
 
 	mustWrite(t, db, `
-INSERT INTO site_settings (id, title, bio, timezone, public_base_url, avatar_media_id, comments_enabled)
-VALUES (1, 'Moment', '', 'Asia/Shanghai', NULL, ?, 1)`, mediaTwo)
+UPDATE site_settings
+SET title = 'Moment', bio = '', timezone = 'Asia/Shanghai', public_base_url = NULL, avatar_media_id = ?, comments_enabled = 1
+WHERE id = 1`, mediaTwo)
 	var publicBaseURL sql.NullString
 	if err := db.read.QueryRowContext(ctx, `SELECT public_base_url FROM site_settings WHERE id = 1`).Scan(&publicBaseURL); err != nil {
 		t.Fatal(err)
