@@ -156,7 +156,7 @@ function PublicApp() {
       {siteLoading ? <TimelineLoading /> : null}
       {!siteLoading && hasTimeline ? (
         <div hidden={route.id !== "home"}>
-          {owner.state === "owner" ? (
+          {owner.state === "owner" || owner.state === "expired" ? (
             <Composer site={site} variant="inline" />
           ) : null}
           <TimelinePage
@@ -180,14 +180,14 @@ function PublicApp() {
         <OwnerLogin site={site} />
       ) : null}
       {!siteLoading && route.id === "owner-compose" ? (
-        owner.state === "owner" ? (
+        owner.state === "owner" || owner.state === "expired" ? (
           <Composer site={site} variant="page" />
         ) : (
           <OwnerLogin embedded site={site} />
         )
       ) : null}
       {!siteLoading && route.id === "owner-edit" ? (
-        owner.state === "owner" ? (
+        owner.state === "owner" || owner.state === "expired" ? (
           <EditPage api={api} id={editId(location.pathname)} site={site} />
         ) : (
           <OwnerLogin embedded site={site} />

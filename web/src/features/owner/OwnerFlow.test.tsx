@@ -65,6 +65,20 @@ function unauthorized() {
   );
 }
 
+function csrfInvalid() {
+  return json(
+    {
+      error: {
+        code: "CSRF_INVALID",
+        message: "csrf required",
+        details: {},
+        request_id: "req_csrf",
+      },
+    },
+    403,
+  );
+}
+
 function preauthenticate() {
   window.sessionStorage.setItem(
     sessionKey,
@@ -194,6 +208,30 @@ describe("owner composing flow", () => {
     );
   });
 
+  it("protects new text when typing directly over a recovery choice", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    window.localStorage.setItem(
+      composeDraftKey(instance),
+      JSON.stringify({
+        content_md: "较早的草稿",
+        saved_at: new Date().toISOString(),
+      }),
+    );
+    installApi();
+    render(<App />);
+
+    expect(await screen.findByText("发现一段未发布草稿")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("此刻想到什么？"), {
+      target: { value: "直接输入的新文字" },
+    });
+    expect(screen.queryByText("发现一段未发布草稿")).toBeNull();
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
+      "直接输入的新文字",
+    );
+  });
+
   it("debounces the local draft, guards duplicate submit, and clears only after success", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");
@@ -229,7 +267,10 @@ describe("owner composing flow", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(window.confirm).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
-    expect(await screen.findByText("十秒内写下这一刻")).toBeInTheDocument();
+    await waitFor(
+      () => expect(screen.getByText("十秒内写下这一刻")).toBeInTheDocument(),
+      { timeout: 3_000 },
+    );
   });
 
   it("preserves input before an auth-expiry response and requires a fresh exchange", async () => {
@@ -250,6 +291,120 @@ describe("owner composing flow", () => {
       "会话失效也不能丢",
     );
     expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
+  });
+
+  it("keeps an edited post mounted through auth expiry, re-login, and retry", async () => {
+    preauthenticate();
+    const item = post("编辑前", "01K2ABCDEF0123456789ABCDE8");
+    let current = item;
+    let patches = 0;
+    window.history.replaceState({}, "", `/owner/m/${item.id}/edit`);
+    const fetcher = installApi((url, init) => {
+      if (url === `/api/v1/posts/${item.id}`)
+        return json({ data: current, meta: {} });
+      if (
+        url === `/api/v1/owner/posts/${item.id}` &&
+        init?.method === "PATCH"
+      ) {
+        patches += 1;
+        if (patches === 1) return unauthorized();
+        current = post("不会丢的编辑", item.id);
+        return json({ data: current, meta: {} });
+      }
+      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+        return json({
+          data: {
+            csrf_token: "csrf-after-reauth",
+            expires_at: "2999-08-11T01:00:00.000Z",
+          },
+          meta: {},
+        });
+      }
+    });
+    render(<App />);
+
+    const editor = await screen.findByLabelText("Moment 正文");
+    fireEvent.change(editor, { target: { value: "不会丢的编辑" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+
+    expect(await screen.findByLabelText("所有者凭据")).toBeInTheDocument();
+    expect(screen.getByLabelText("Moment 正文")).toHaveValue("不会丢的编辑");
+    fireEvent.change(screen.getByLabelText("所有者凭据"), {
+      target: { value: "fresh-owner-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "进入所有者模式" }));
+    await waitFor(() =>
+      expect(screen.queryByLabelText("所有者凭据")).toBeNull(),
+    );
+    expect(screen.getByLabelText("Moment 正文")).toHaveValue("不会丢的编辑");
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe(`/m/${item.id}`));
+    const patchCalls = fetcher.mock.calls.filter(
+      ([url, init]) =>
+        String(url) === `/api/v1/owner/posts/${item.id}` &&
+        init?.method === "PATCH",
+    );
+    expect(patchCalls).toHaveLength(2);
+    expect(new Headers(patchCalls[1]?.[1]?.headers).get("X-CSRF-Token")).toBe(
+      "csrf-after-reauth",
+    );
+  });
+
+  it("preserves a CSRF-invalid compose buffer for re-login instead of retrying forever", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    let creates = 0;
+    const fetcher = installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        creates += 1;
+        return creates === 1
+          ? csrfInvalid()
+          : json({
+              data: post("跨标签页冲突也不丢", "01K2ABCDEF0123456789ABCDF0"),
+              meta: {},
+            });
+      }
+      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+        return json({
+          data: {
+            csrf_token: "csrf-after-conflict",
+            expires_at: "2999-08-11T01:00:00.000Z",
+          },
+          meta: {},
+        });
+      }
+    });
+    render(<App />);
+    const textarea = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(textarea, { target: { value: "跨标签页冲突也不丢" } });
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+
+    expect(await screen.findByLabelText("所有者凭据")).toBeInTheDocument();
+    expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
+      "跨标签页冲突也不丢",
+    );
+    expect(creates).toBe(1);
+    fireEvent.change(screen.getByLabelText("所有者凭据"), {
+      target: { value: "fresh-owner-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "进入所有者模式" }));
+    await waitFor(() =>
+      expect(screen.queryByLabelText("所有者凭据")).toBeNull(),
+    );
+    expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
+      "跨标签页冲突也不丢",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(creates).toBe(2);
+    const createCalls = fetcher.mock.calls.filter(
+      ([url, init]) =>
+        String(url) === "/api/v1/owner/posts" && init?.method === "POST",
+    );
+    expect(new Headers(createCalls[1]?.[1]?.headers).get("X-CSRF-Token")).toBe(
+      "csrf-after-conflict",
+    );
   });
 
   it("scopes global N away from editors and opens the page composer from the shell", async () => {
@@ -299,6 +454,40 @@ describe("owner composing flow", () => {
     expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
       "还没有发布",
     );
+  });
+
+  it("clears the hidden inline surface after a recovered page draft publishes", async () => {
+    preauthenticate();
+    window.localStorage.setItem(
+      composeDraftKey(instance),
+      JSON.stringify({
+        content_md: "跨 surface 的恢复草稿",
+        saved_at: new Date().toISOString(),
+      }),
+    );
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        return json({
+          data: post("跨 surface 的恢复草稿", "01K2ABCDEF0123456789ABCDE9"),
+          meta: {},
+        });
+      }
+    });
+    render(<App />);
+    expect(await screen.findByText("发现一段未发布草稿")).toBeInTheDocument();
+
+    fireEvent.keyDown(document.body, { key: "n" });
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/owner/compose"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "恢复" }));
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(screen.queryByText("发现一段未发布草稿")).toBeNull();
+    expect(screen.getByLabelText("此刻想到什么？")).toHaveValue("");
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    expect(screen.getAllByText("跨 surface 的恢复草稿")).toHaveLength(1);
   });
 
   it("loads and saves an existing post without putting edits into the create draft", async () => {

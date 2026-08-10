@@ -5,15 +5,18 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { InternalLink, useNavigation } from "../../app/navigation";
+import { useNavigation } from "../../app/navigation";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
+  COMPOSE_DRAFT_CLEARED_EVENT,
   clearComposeDraft,
+  composeDraftKey,
   loadComposeDraft,
   saveComposeDraft,
   type ComposeDraft,
 } from "./draft";
 import { useOwner } from "./OwnerProvider";
+import { OwnerLogin } from "./OwnerLogin";
 import { announceOwnerPost } from "./postEvents";
 import styles from "./Owner.module.css";
 
@@ -57,7 +60,7 @@ export function Composer({
   post?: PublicPost;
 }) {
   const { navigate, setNavigationBlocker } = useNavigation();
-  const { api, session, expireIfUnauthorized } = useOwner();
+  const { api, session, expireIfInvalidSession } = useOwner();
   const initialContent = post?.contentMd ?? "";
   const [content, setContent] = useState(initialContent);
   const [draft, setDraft] = useState<ComposeDraft | null>(() =>
@@ -79,6 +82,53 @@ export function Composer({
   const valid = content.trim().length > 0 && count <= MAX_CONTENT;
   const hasUnpublishedChange =
     dirty && content !== initialContent && !allowLeaveRef.current;
+
+  useEffect(() => {
+    if (!session || !authExpired) return;
+    setAuthExpired(false);
+    setError(null);
+    setAnnouncement("会话已刷新，可以重试当前操作。");
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [authExpired, session]);
+
+  useEffect(() => {
+    const instanceId = site.instanceId;
+    if (variant === "edit" || !instanceId) return;
+    const resetDraftSurface = () => {
+      allowLeaveRef.current = true;
+      setDraft(null);
+      setContent("");
+      setDirty(false);
+      setError(null);
+    };
+    const clearedInThisDocument = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (
+        typeof detail === "object" &&
+        detail !== null &&
+        (detail as { instanceId?: unknown }).instanceId === instanceId
+      ) {
+        resetDraftSurface();
+      }
+    };
+    const clearedInAnotherDocument = (event: StorageEvent) => {
+      if (
+        event.key === composeDraftKey(instanceId) &&
+        event.newValue === null
+      ) {
+        resetDraftSurface();
+      }
+    };
+    window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, clearedInThisDocument);
+    window.addEventListener("storage", clearedInAnotherDocument);
+    return () => {
+      window.removeEventListener(
+        COMPOSE_DRAFT_CLEARED_EVENT,
+        clearedInThisDocument,
+      );
+      window.removeEventListener("storage", clearedInAnotherDocument);
+    };
+  }, [site.instanceId, variant]);
 
   useEffect(() => {
     if (variant === "edit" || !dirty || draft || allowLeaveRef.current) return;
@@ -154,9 +204,9 @@ export function Composer({
         navigate(post ? `/m/${encodeURIComponent(saved.id)}` : "/");
       }
     } catch (nextError) {
-      if (expireIfUnauthorized(nextError)) {
+      if (expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("登录已过期。文字已保留，重新登录后可以继续。");
+        setError("当前写入会话已失效。文字已保留，刷新身份后可以重试。");
       } else {
         setError(messageFor(nextError));
       }
@@ -238,6 +288,7 @@ export function Composer({
             disabled={pending}
             id={`${variant}-composer-content`}
             onChange={(event) => {
+              if (draft) setDraft(null);
               setContent(event.target.value);
               setDirty(true);
               setError(null);
@@ -281,14 +332,7 @@ export function Composer({
               id={`${variant}-composer-error`}
               role="alert"
             >
-              {error}{" "}
-              {authExpired ? (
-                <InternalLink
-                  href={`/owner/login?return=${encodeURIComponent(window.location.pathname)}`}
-                >
-                  重新登录
-                </InternalLink>
-              ) : null}
+              {error} {authExpired ? <span>请在下方刷新身份。</span> : null}
             </p>
           ) : (
             <span id={`${variant}-composer-error`} />
@@ -297,7 +341,7 @@ export function Composer({
             <p aria-live="polite">{announcement}</p>
             <button
               className={styles.primaryButton}
-              disabled={!valid || pending}
+              disabled={!valid || pending || !session}
               type="submit"
             >
               {pending
@@ -310,6 +354,7 @@ export function Composer({
             </button>
           </footer>
         </form>
+        {!session ? <OwnerLogin embedded site={site} /> : null}
       </div>
     </section>
   );

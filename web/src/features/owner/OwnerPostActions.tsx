@@ -14,7 +14,7 @@ export function OwnerPostActions({
   post: PublicPost;
   onDeleted?: (post: PublicPost) => void;
 }) {
-  const { api, session, expireIfUnauthorized } = useOwner();
+  const { api, session, expireIfInvalidSession } = useOwner();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pendingRef = useRef(false);
@@ -32,7 +32,7 @@ export function OwnerPostActions({
       onDeleted?.(deleted);
     } catch (nextError) {
       setError(
-        expireIfUnauthorized(nextError)
+        expireIfInvalidSession(nextError)
           ? "登录已过期，重新登录后再删除。"
           : "没有删除这个 Moment，可以安全重试。",
       );

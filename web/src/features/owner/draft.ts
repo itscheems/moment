@@ -1,5 +1,6 @@
 const DRAFT_PREFIX = "moment.compose.draft.v1:";
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1_000;
+export const COMPOSE_DRAFT_CLEARED_EVENT = "moment:compose-draft-cleared";
 
 export interface ComposeDraft {
   contentMd: string;
@@ -84,6 +85,11 @@ export function saveComposeDraft(
 export function clearComposeDraft(instanceId: string | null): void {
   if (!instanceId) return;
   storage()?.removeItem(key(instanceId));
+  window.dispatchEvent(
+    new CustomEvent(COMPOSE_DRAFT_CLEARED_EVENT, {
+      detail: { instanceId },
+    }),
+  );
 }
 
 export function composeDraftKey(instanceId: string): string {

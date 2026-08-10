@@ -174,13 +174,12 @@ export function TimelinePage({
       combined = reconcileOwnerEvents(combined);
       setPosts(combined);
       setNextCursor(page.nextCursor);
-      onYearsChange?.(yearsFor(combined, site.timezone));
     } catch (error) {
       if (!controller.signal.aborted) setInitialError(error);
     } finally {
       if (!controller.signal.aborted) setLoadingInitial(false);
     }
-  }, [api, onYearsChange, reconcileOwnerEvents, site.timezone]);
+  }, [api, reconcileOwnerEvents]);
 
   useEffect(() => {
     void loadInitial();
@@ -210,12 +209,15 @@ export function TimelinePage({
           } else {
             next = current.filter((post) => post.id !== event.post.id);
           }
-          onYearsChange?.(yearsFor(next, site.timezone));
           return next;
         });
       }),
-    [onYearsChange, site.timezone],
+    [],
   );
+
+  useEffect(() => {
+    onYearsChange?.(yearsFor(posts, site.timezone));
+  }, [onYearsChange, posts, site.timezone]);
 
   useEffect(() => {
     if (loadingInitial || initialError || initialEntryRestored.current) {
@@ -244,7 +246,6 @@ export function TimelinePage({
       setPosts(combined);
       setNextCursor(page.nextCursor);
       replaceTimelineProgress(requestedCursor);
-      onYearsChange?.(yearsFor(combined, site.timezone));
       if (firstNew) {
         window.requestAnimationFrame(() => {
           Array.from(document.querySelectorAll<HTMLElement>("[data-post-id]"))

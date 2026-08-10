@@ -98,10 +98,14 @@ export function OwnerLogin({
 
   return (
     <section className={styles.loginGate}>
-      <p className={styles.eyebrow}>私人入口</p>
-      <h2>用所有者凭据继续</h2>
+      <p className={styles.eyebrow}>
+        {state === "expired" ? "刷新写入身份" : "私人入口"}
+      </p>
+      <h2>{state === "expired" ? "重新确认所有者身份" : "用所有者凭据继续"}</h2>
       <p>
-        凭据只用于换取当前浏览器的安全会话，不会写入地址、草稿或浏览器存储。
+        {state === "expired"
+          ? "当前文字仍保留在编辑器中。凭据只用于换取新的安全会话。"
+          : "凭据只用于换取当前浏览器的安全会话，不会写入地址、草稿或浏览器存储。"}
       </p>
       {state === "unavailable" ? (
         <div className={styles.inlineNotice} role="alert">
