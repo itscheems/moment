@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -19,6 +21,12 @@ const (
 	FormatText Format = "text"
 	// FormatJSON writes one JSON object per line.
 	FormatJSON Format = "json"
+
+	redactedValue       = "[REDACTED]"
+	maxLogValueDepth    = 8
+	maxLogCollectionLen = 64
+	maxLogStringBytes   = 4096
+	maxLogNameBytes     = 128
 )
 
 var priorities = map[string]int{
@@ -86,6 +94,10 @@ func (logger *Logger) Event(level, event string, fields Fields) {
 	entry["time"] = logger.now().UTC().Format(time.RFC3339Nano)
 	entry["level"] = level
 	entry["event"] = safeEventName(event)
+	if len(fields) > maxLogCollectionLen {
+		entry["fields"] = redactedValue
+		fields = nil
+	}
 	for key, value := range fields {
 		key = safeFieldKey(key)
 		if key == "" || key == "time" || key == "level" || key == "event" {
@@ -112,7 +124,7 @@ func (logger *Logger) Event(level, event string, fields Fields) {
 
 func safeEventName(event string) string {
 	event = strings.TrimSpace(event)
-	if event == "" {
+	if event == "" || len(event) > maxLogNameBytes {
 		return "unknown"
 	}
 	var builder strings.Builder
@@ -133,6 +145,9 @@ func safeEventName(event string) string {
 
 func safeFieldKey(key string) string {
 	key = strings.TrimSpace(key)
+	if len(key) > maxLogNameBytes {
+		return ""
+	}
 	var builder strings.Builder
 	for _, character := range key {
 		switch {
@@ -151,30 +166,97 @@ func safeFieldKey(key string) string {
 
 func redactValue(key string, value any) any {
 	if sensitiveField(key) {
-		return "[REDACTED]"
+		return redactedValue
 	}
-	switch typed := value.(type) {
-	case Fields:
-		result := make(Fields, len(typed))
-		for nestedKey, nestedValue := range typed {
-			result[nestedKey] = redactValue(nestedKey, nestedValue)
+	return redactReflectValue(reflect.ValueOf(value), 0)
+}
+
+func redactReflectValue(value reflect.Value, depth int) any {
+	if !value.IsValid() {
+		return nil
+	}
+	if depth >= maxLogValueDepth {
+		return redactedValue
+	}
+	if value.Kind() == reflect.Interface {
+		if value.IsNil() {
+			return nil
 		}
-		return result
-	case map[string]any:
-		result := make(map[string]any, len(typed))
-		for nestedKey, nestedValue := range typed {
-			result[nestedKey] = redactValue(nestedKey, nestedValue)
+		return redactReflectValue(value.Elem(), depth+1)
+	}
+	if value.CanInterface() {
+		if _, isError := value.Interface().(error); isError {
+			return redactedValue
 		}
-		return result
-	case []any:
-		result := make([]any, len(typed))
-		for index, nestedValue := range typed {
-			result[index] = redactValue("item", nestedValue)
+		if timestamp, isTime := value.Interface().(time.Time); isTime {
+			return timestamp.UTC().Format(time.RFC3339Nano)
 		}
-		return result
+	}
+
+	switch value.Kind() {
+	case reflect.Bool:
+		return value.Bool()
+	case reflect.String:
+		if value.Len() > maxLogStringBytes {
+			return redactedValue
+		}
+		return value.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return value.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return value.Uint()
+	case reflect.Float32, reflect.Float64:
+		number := value.Float()
+		if math.IsNaN(number) || math.IsInf(number, 0) {
+			return redactedValue
+		}
+		return number
+	case reflect.Map:
+		return redactMap(value, depth+1)
+	case reflect.Slice, reflect.Array:
+		return redactCollection(value, depth+1)
+	case reflect.Invalid:
+		return nil
 	default:
-		return value
+		return redactedValue
 	}
+}
+
+func redactMap(value reflect.Value, depth int) any {
+	if value.Type().Key().Kind() != reflect.String || value.Len() > maxLogCollectionLen {
+		return redactedValue
+	}
+	if value.Kind() == reflect.Map && value.IsNil() {
+		return nil
+	}
+	result := make(map[string]any, value.Len())
+	iterator := value.MapRange()
+	for iterator.Next() {
+		key := safeFieldKey(iterator.Key().String())
+		if key == "" {
+			continue
+		}
+		if sensitiveField(key) {
+			result[key] = redactedValue
+			continue
+		}
+		result[key] = redactReflectValue(iterator.Value(), depth)
+	}
+	return result
+}
+
+func redactCollection(value reflect.Value, depth int) any {
+	if value.Len() > maxLogCollectionLen || value.Type().Elem().Kind() == reflect.Uint8 {
+		return redactedValue
+	}
+	if value.Kind() == reflect.Slice && value.IsNil() {
+		return nil
+	}
+	result := make([]any, value.Len())
+	for index := range value.Len() {
+		result[index] = redactReflectValue(value.Index(index), depth)
+	}
+	return result
 }
 
 func sensitiveField(key string) bool {
