@@ -110,20 +110,19 @@ describe("App shell and public routes", () => {
     expect(document.title).toBe("乔乔的 Moment");
   });
 
-  it("keeps placeholder loading and error examples for later route slices", async () => {
+  it("replaces discovery placeholders with recoverable URL-state errors", async () => {
     window.history.replaceState({}, "", "/search?state=loading");
     const { unmount } = render(<App />);
     expect(screen.getByRole("heading", { name: "搜索" })).toBeInTheDocument();
-    expect(await screen.findByLabelText("正在加载时间流")).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
+    expect(
+      await screen.findByRole("heading", { name: "这些搜索条件无法还原" }),
+    ).toBeInTheDocument();
 
     unmount();
     window.history.replaceState({}, "", "/archive?state=error");
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "这次没有取回时间流",
+      "这些归档条件无法还原",
     );
   });
 

@@ -1,0 +1,671 @@
+.memoryPage {
+  min-inline-size: 0;
+}
+
+.searchForm {
+  display: grid;
+  gap: var(--space-4);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-6);
+  background: var(--surface);
+}
+
+.queryField,
+.dateFields label {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.queryField > span,
+.dateFields label > span {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.queryField input {
+  min-block-size: 3.25rem;
+  inline-size: 100%;
+  border: 0;
+  border-block-end: 2px solid var(--border-strong);
+  border-radius: 0;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 4vw, 2rem);
+  letter-spacing: -0.025em;
+}
+
+.queryField input:focus {
+  border-block-end-color: var(--accent);
+}
+
+.queryField small {
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.dateFields {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.dateFields input {
+  min-block-size: var(--target-size);
+  inline-size: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  font-family: var(--font-utility);
+  font-size: var(--text-sm);
+}
+
+.dateFields button,
+.message button,
+.messageActions a,
+.message > div > a,
+.moreError button,
+.moreRow button {
+  min-block-size: var(--target-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-4);
+  color: var(--accent-contrast);
+  background: var(--accent);
+  font-weight: 650;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.dateFields button:hover,
+.message button:hover,
+.moreError button:hover,
+.moreRow button:hover {
+  background: var(--accent-hover);
+}
+
+.formError {
+  min-block-size: 1.25rem;
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.loading {
+  min-block-size: 12rem;
+  display: grid;
+  place-items: center;
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-8);
+  color: var(--text-secondary);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--surface-muted),
+    transparent
+  );
+  background-size: 240% 100%;
+  animation: memory-scan 1.5s var(--ease-out) infinite;
+}
+
+@keyframes memory-scan {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.message {
+  display: grid;
+  grid-template-columns: 4.25rem minmax(0, 1fr);
+  min-block-size: 19rem;
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-8) var(--space-8) var(--space-8) 0;
+}
+
+.message > span {
+  z-index: 2;
+  align-self: start;
+  justify-self: center;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: var(--space-2) var(--space-1);
+  color: var(--accent);
+  background: var(--surface);
+  font-family: var(--font-utility);
+  font-size: 0.65rem;
+  writing-mode: vertical-rl;
+}
+
+.message > div {
+  max-inline-size: 31rem;
+  padding-inline-start: var(--space-5);
+}
+
+.message h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.55rem, 4vw, 2.35rem);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+
+.message p {
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.message > div > a,
+.message > div > button,
+.messageActions {
+  margin-block-start: var(--space-5);
+}
+
+.messageActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.messageActions a,
+.message > div > a {
+  color: var(--accent);
+  background: transparent;
+}
+
+.searchSummary {
+  min-block-size: 5.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-4) var(--space-6);
+}
+
+.searchSummary p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.searchSummary strong {
+  color: var(--text-primary);
+  font-family: var(--font-utility);
+}
+
+.searchSummary > a,
+.breadcrumbs a,
+.calendarSection header a,
+.dayResults > header a {
+  min-block-size: var(--target-size);
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: var(--text-sm);
+  text-underline-offset: 0.2em;
+}
+
+.activeContext {
+  margin-block-start: var(--space-1) !important;
+  color: var(--text-tertiary) !important;
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.yearTrack {
+  display: flex;
+  overflow-x: auto;
+  border-block-end: 1px solid var(--border-subtle);
+  padding-inline: var(--space-6);
+  scrollbar-width: thin;
+}
+
+.yearTrack a {
+  position: relative;
+  min-inline-size: 6rem;
+  min-block-size: 4.25rem;
+  display: grid;
+  align-content: center;
+  border-inline-end: 1px solid var(--border-subtle);
+  padding-inline: var(--space-4);
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.yearTrack a:first-child {
+  border-inline-start: 1px solid var(--border-subtle);
+}
+
+.yearTrack a::after {
+  content: "";
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline: var(--space-4);
+  block-size: 0.2rem;
+  background: transparent;
+}
+
+.yearTrack a[aria-current="page"] {
+  color: var(--text-primary);
+  background: var(--accent-soft);
+}
+
+.yearTrack a[aria-current="page"]::after {
+  background: var(--accent);
+}
+
+.yearTrack strong,
+.yearTrack span {
+  display: block;
+}
+
+.yearTrack strong {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+}
+
+.yearTrack span {
+  margin-block-start: var(--space-1);
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.resultList {
+  min-inline-size: 0;
+}
+
+.snippet {
+  display: grid;
+  gap: var(--space-1);
+  border-inline-start: 2px solid var(--accent);
+  margin: var(--space-2) 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-secondary);
+  background: var(--accent-soft);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.snippet > span {
+  color: var(--accent);
+  font-family: var(--font-utility);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+}
+
+.snippet mark {
+  border-radius: 0.2rem;
+  color: inherit;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  font-weight: 700;
+}
+
+.moreError,
+.moreRow {
+  min-block-size: 5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-4);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.moreError button,
+.moreRow button {
+  min-block-size: var(--target-size);
+}
+
+.moreRow button:disabled {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.endMark {
+  margin: 0;
+  padding: var(--space-8) var(--space-6);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.archiveIntro {
+  min-block-size: 8.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-6);
+}
+
+.archiveIntro p,
+.archiveIntro h2 {
+  margin: 0;
+}
+
+.archiveIntro p,
+.calendarSection header p,
+.dayResults > header p {
+  color: var(--accent);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  font-weight: 650;
+}
+
+.archiveIntro h2 {
+  margin-block-start: var(--space-2);
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+}
+
+.archiveIntro > span {
+  border-block: 1px solid var(--border-strong);
+  padding-block: var(--space-3);
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.breadcrumbs {
+  min-block-size: var(--target-size);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-block-end: 1px solid var(--border-subtle);
+  padding-inline: var(--space-6);
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.breadcrumbs a[aria-current="page"],
+.breadcrumbs span[aria-current="page"] {
+  color: var(--text-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.archiveYears > section {
+  display: grid;
+  grid-template-columns: 8rem minmax(0, 1fr);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.archiveYears header {
+  border-inline-end: 1px solid var(--border-subtle);
+  padding: var(--space-6);
+}
+
+.archiveYears h2,
+.archiveYears header span {
+  margin: 0;
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+}
+
+.archiveYears h2 {
+  font-size: var(--text-2xl);
+  font-weight: 500;
+}
+
+.archiveYears header span {
+  display: block;
+  margin-block-start: var(--space-2);
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.archiveYears ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.archiveYears li + li {
+  border-block-start: 1px solid var(--border-subtle);
+}
+
+.archiveYears li a {
+  min-block-size: 4.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-inline: var(--space-5);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.archiveYears li a:hover {
+  background: var(--surface-hover);
+}
+
+.archiveYears li strong {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+}
+
+.archiveYears li span {
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.calendarSection > header,
+.dayResults > header {
+  min-block-size: 6rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-4) var(--space-6);
+}
+
+.calendarSection header p,
+.calendarSection header h2,
+.dayResults > header p,
+.dayResults > header h2 {
+  margin: 0;
+}
+
+.calendarSection header h2,
+.dayResults > header h2 {
+  margin-block-start: var(--space-1);
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 550;
+}
+
+.weekHeader,
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.weekHeader {
+  border-block-end: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.weekHeader li {
+  padding-block: var(--space-3);
+}
+
+.calendarGrid {
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.calendarGrid li {
+  min-block-size: 5.5rem;
+  border-inline-end: 1px solid var(--border-subtle);
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.calendarGrid li:nth-child(7n) {
+  border-inline-end: 0;
+}
+
+.calendarDay a,
+.calendarEmptyDay > span {
+  min-block-size: 100%;
+  display: grid;
+  align-content: space-between;
+  padding: var(--space-3);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.calendarDay a:hover {
+  background: var(--surface-hover);
+}
+
+.calendarDay a[aria-current="date"] {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+.calendarDay strong,
+.calendarEmptyDay > span {
+  font-family: var(--font-utility);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.calendarDay span {
+  justify-self: end;
+  border-block-end: 1px solid currentColor;
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.calendarEmptyDay > span {
+  color: var(--text-tertiary);
+  opacity: 0.58;
+}
+
+.calendarBlank {
+  background: var(--surface-muted);
+  opacity: 0.35;
+}
+
+.dayResults > header {
+  border-block-start: 1px solid var(--border-strong);
+}
+
+@media (max-width: 719px) {
+  .searchForm,
+  .archiveIntro {
+    padding: var(--space-4);
+  }
+
+  .dateFields {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .dateFields button {
+    grid-column: 1 / -1;
+  }
+
+  .message {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    padding: var(--space-8) var(--space-4) var(--space-8) 0;
+  }
+
+  .message > div {
+    padding-inline-start: var(--space-2);
+  }
+
+  .searchSummary,
+  .calendarSection > header,
+  .dayResults > header {
+    padding-inline: var(--space-4);
+  }
+
+  .searchSummary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .yearTrack {
+    padding-inline: var(--space-4);
+  }
+
+  .archiveIntro {
+    min-block-size: 7rem;
+  }
+
+  .archiveIntro > span {
+    display: none;
+  }
+
+  .breadcrumbs {
+    overflow-x: auto;
+    padding-inline: var(--space-4);
+    white-space: nowrap;
+  }
+
+  .archiveYears > section {
+    grid-template-columns: 5.25rem minmax(0, 1fr);
+  }
+
+  .archiveYears header {
+    padding: var(--space-5) var(--space-3);
+  }
+
+  .archiveYears h2 {
+    font-size: var(--text-xl);
+  }
+
+  .calendarGrid li {
+    min-block-size: 4.25rem;
+  }
+
+  .calendarDay a,
+  .calendarEmptyDay > span {
+    padding: var(--space-2);
+  }
+
+  .moreError {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading {
+    animation: none;
+    background: var(--surface-muted);
+  }
+}

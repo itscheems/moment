@@ -193,6 +193,127 @@ describe("public API client", () => {
     );
   });
 
+  it("maps search hits, complete year counts, and encoded cursor filters", async () => {
+    const fetcher = vi.fn(async () =>
+      json({
+        data: {
+          items: [{ ...post, snippet: "旧城雨落在街口" }],
+          year_counts: [
+            { year: 2026, count: 3 },
+            { year: 2024, count: 1 },
+          ],
+        },
+        meta: { next_cursor: "opaque+/=cursor", request_id: "req_search" },
+      }),
+    );
+    const api = new PublicApi(fetcher as typeof fetch);
+
+    await expect(
+      api.search({
+        query: "旧城 雨",
+        from: "2024-01-01",
+        to: "2027-01-01",
+        cursor: "opaque+/=before",
+      }),
+    ).resolves.toEqual({
+      items: [
+        {
+          post: expect.objectContaining({ id: post.id }),
+          snippet: "旧城雨落在街口",
+        },
+      ],
+      yearCounts: [
+        { year: 2026, count: 3 },
+        { year: 2024, count: 1 },
+      ],
+      nextCursor: "opaque+/=cursor",
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /\/api\/v1\/search\?q=%E6%97%A7%E5%9F%8E\+%E9%9B%A8&limit=20&cursor=opaque%2B%2F%3Dbefore&from=2024-01-01&to=2027-01-01/,
+      ),
+      expect.objectContaining({ signal: undefined }),
+    );
+  });
+
+  it("rejects malformed search and archive aggregate ordering", async () => {
+    const badSearch = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            items: [{ ...post, snippet: "match" }],
+            year_counts: [
+              { year: 2025, count: 1 },
+              { year: 2026, count: 1 },
+            ],
+          },
+          meta: { next_cursor: null },
+        }),
+      ) as typeof fetch,
+    );
+    await expect(badSearch.search({ query: "match" })).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+
+    const badArchive = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            items: [
+              { year: 2026, month: 7, count: 1 },
+              { year: 2026, month: 8, count: 1 },
+            ],
+          },
+          meta: {},
+        }),
+      ) as typeof fetch,
+    );
+    await expect(badArchive.archiveMonths()).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+  });
+
+  it("maps archive month counts and validates the requested calendar", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("/api/v1/archive/months")) {
+        return json({
+          data: {
+            items: [
+              { year: 2026, month: 8, count: 4 },
+              { year: 2025, month: 12, count: 2 },
+            ],
+          },
+          meta: {},
+        });
+      }
+      return json({
+        data: {
+          month: "2026-08",
+          days: [
+            { day: 2, count: 1 },
+            { day: 31, count: 3 },
+          ],
+        },
+        meta: {},
+      });
+    });
+    const api = new PublicApi(fetcher as typeof fetch);
+    await expect(api.archiveMonths()).resolves.toEqual({
+      items: [
+        { year: 2026, month: 8, count: 4 },
+        { year: 2025, month: 12, count: 2 },
+      ],
+    });
+    await expect(api.archiveMonth("2026-08")).resolves.toEqual({
+      month: "2026-08",
+      days: [
+        { day: 2, count: 1 },
+        { day: 31, count: 3 },
+      ],
+    });
+  });
+
   it("gracefully disables instance-scoped features when site meta omits the runtime ID", async () => {
     const api = new PublicApi(
       vi.fn(async () =>

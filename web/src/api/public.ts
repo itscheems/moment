@@ -37,6 +37,41 @@ export interface TimelineRequest {
   signal?: AbortSignal;
 }
 
+export interface SearchHit {
+  post: PublicPost;
+  snippet: string;
+}
+
+export interface SearchPage {
+  items: SearchHit[];
+  yearCounts: Array<{ year: number; count: number }>;
+  nextCursor: string | null;
+}
+
+export interface SearchRequest {
+  query: string;
+  cursor?: string | null;
+  from?: string | null;
+  to?: string | null;
+  limit?: number;
+  signal?: AbortSignal;
+}
+
+export interface ArchiveMonthCount {
+  year: number;
+  month: number;
+  count: number;
+}
+
+export interface ArchiveMonths {
+  items: ArchiveMonthCount[];
+}
+
+export interface ArchiveMonth {
+  month: string;
+  days: Array<{ day: number; count: number }>;
+}
+
 export interface PublicComment {
   id: string;
   postId: string;
@@ -151,6 +186,17 @@ function nonNegativeIntegerField(
     );
   }
   return Number(value);
+}
+
+function positiveIntegerField(
+  record: Record<string, unknown>,
+  field: string,
+): number {
+  const value = nonNegativeIntegerField(record, field);
+  if (value < 1) {
+    throw invalidResponse(`response field ${field} must be a positive integer`);
+  }
+  return value;
 }
 
 function nullableStringField(
@@ -493,6 +539,146 @@ export function parsePost(value: unknown): PublicPost {
   };
 }
 
+function nullableCursor(meta: Record<string, unknown>): string | null {
+  const value = meta.next_cursor;
+  if (value !== null && typeof value !== "string") {
+    throw invalidResponse("next_cursor must be a string or null");
+  }
+  if (
+    typeof value === "string" &&
+    (value.length === 0 || value.length > 4_096)
+  ) {
+    throw invalidResponse("next_cursor must be a bounded opaque string");
+  }
+  return value;
+}
+
+function parseSearchHit(value: unknown): SearchHit {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "id",
+      "content_md",
+      "content_html",
+      "created_at",
+      "updated_at",
+      "published_at",
+      "media",
+      "snippet",
+    ])
+  ) {
+    throw invalidResponse(
+      "search hit contains an unsupported or missing field",
+    );
+  }
+  const snippet = stringField(value, "snippet");
+  if (!snippet.trim()) {
+    throw invalidResponse("search snippet must contain visible text");
+  }
+  const postValue = { ...value };
+  delete postValue.snippet;
+  return { post: parsePost(postValue), snippet };
+}
+
+function parseYearCounts(value: unknown): SearchPage["yearCounts"] {
+  if (!Array.isArray(value)) {
+    throw invalidResponse("year_counts must be an array");
+  }
+  return value.map((item, index, items) => {
+    if (!isRecord(item) || !hasExactKeys(item, ["year", "count"])) {
+      throw invalidResponse("year count must contain only year and count");
+    }
+    const year = positiveIntegerField(item, "year");
+    const count = positiveIntegerField(item, "count");
+    if (index > 0) {
+      const previous = items[index - 1];
+      if (
+        !isRecord(previous) ||
+        positiveIntegerField(previous, "year") <= year
+      ) {
+        throw invalidResponse(
+          "year_counts must use reverse chronological order",
+        );
+      }
+    }
+    return { year, count };
+  });
+}
+
+function parseArchiveMonths(value: unknown): ArchiveMonths {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["items"]) ||
+    !Array.isArray(value.items)
+  ) {
+    throw invalidResponse("archive months must contain only an items array");
+  }
+  const items = value.items.map((item, index, values) => {
+    if (!isRecord(item) || !hasExactKeys(item, ["year", "month", "count"])) {
+      throw invalidResponse("archive month count is invalid");
+    }
+    const year = positiveIntegerField(item, "year");
+    const month = positiveIntegerField(item, "month");
+    const count = positiveIntegerField(item, "count");
+    if (month > 12)
+      throw invalidResponse("archive month must be between 1 and 12");
+    if (index > 0) {
+      const previous = values[index - 1];
+      if (!isRecord(previous))
+        throw invalidResponse("archive month count is invalid");
+      const previousYear = positiveIntegerField(previous, "year");
+      const previousMonth = positiveIntegerField(previous, "month");
+      if (
+        previousYear < year ||
+        (previousYear === year && previousMonth <= month)
+      ) {
+        throw invalidResponse(
+          "archive months must use reverse chronological order",
+        );
+      }
+    }
+    return { year, month, count };
+  });
+  return { items };
+}
+
+function parseArchiveMonth(
+  value: unknown,
+  expectedMonth: string,
+): ArchiveMonth {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["month", "days"]) ||
+    !Array.isArray(value.days) ||
+    stringField(value, "month") !== expectedMonth
+  ) {
+    throw invalidResponse(
+      "archive calendar does not match the requested month",
+    );
+  }
+  const [yearText, monthText] = expectedMonth.split("-");
+  const daysInMonth = new Date(
+    Date.UTC(Number(yearText), Number(monthText), 0),
+  ).getUTCDate();
+  const days = value.days.map((item, index, items) => {
+    if (!isRecord(item) || !hasExactKeys(item, ["day", "count"])) {
+      throw invalidResponse("archive day count is invalid");
+    }
+    const day = positiveIntegerField(item, "day");
+    const count = positiveIntegerField(item, "count");
+    if (day > daysInMonth)
+      throw invalidResponse("archive day is outside the requested month");
+    if (index > 0) {
+      const previous = items[index - 1];
+      if (!isRecord(previous) || positiveIntegerField(previous, "day") >= day) {
+        throw invalidResponse("archive days must use calendar order");
+      }
+    }
+    return { day, count };
+  });
+  return { month: expectedMonth, days };
+}
+
 export async function decodeResponse(
   response: Response,
   options: {
@@ -672,6 +858,72 @@ export class PublicApi {
       ids.add(item.id);
     }
     return { items, nextCursor };
+  }
+
+  async search(request: SearchRequest): Promise<SearchPage> {
+    const query = new URLSearchParams({
+      q: request.query,
+      limit: String(request.limit ?? 20),
+    });
+    if (request.cursor) query.set("cursor", request.cursor);
+    if (request.from) query.set("from", request.from);
+    if (request.to) query.set("to", request.to);
+    const response = await this.fetcher(`/api/v1/search?${query}`, {
+      headers: { Accept: "application/json" },
+      signal: request.signal,
+    });
+    const { data, meta } = await decodeResponse(response);
+    if (
+      !isRecord(data) ||
+      !hasExactKeys(data, ["items", "year_counts"]) ||
+      !Array.isArray(data.items)
+    ) {
+      throw invalidResponse("search data must contain items and year_counts");
+    }
+    const items = data.items.map(parseSearchHit);
+    const ids = new Set<string>();
+    for (const item of items) {
+      if (ids.has(item.post.id))
+        throw invalidResponse("search page contains a duplicate post");
+      ids.add(item.post.id);
+    }
+    return {
+      items,
+      yearCounts: parseYearCounts(data.year_counts),
+      nextCursor: nullableCursor(meta),
+    };
+  }
+
+  async archiveMonths(
+    request: {
+      from?: string | null;
+      to?: string | null;
+      signal?: AbortSignal;
+    } = {},
+  ): Promise<ArchiveMonths> {
+    const query = new URLSearchParams();
+    if (request.from) query.set("from", request.from);
+    if (request.to) query.set("to", request.to);
+    const suffix = query.size > 0 ? `?${query}` : "";
+    const response = await this.fetcher(`/api/v1/archive/months${suffix}`, {
+      headers: { Accept: "application/json" },
+      signal: request.signal,
+    });
+    const { data } = await decodeResponse(response);
+    return parseArchiveMonths(data);
+  }
+
+  async archiveMonth(
+    month: string,
+    signal?: AbortSignal,
+  ): Promise<ArchiveMonth> {
+    const query = new URLSearchParams({ month });
+    const response = await this.fetcher(`/api/v1/archive/month?${query}`, {
+      headers: { Accept: "application/json" },
+      signal,
+    });
+    const { data } = await decodeResponse(response);
+    return parseArchiveMonth(data, month);
   }
 
   async post(id: string, signal?: AbortSignal): Promise<PublicPost> {

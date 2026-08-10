@@ -11,6 +11,8 @@ import { EditPage } from "../features/owner/EditPage";
 import { OwnerLogin } from "../features/owner/OwnerLogin";
 import { OwnerProvider, useOwner } from "../features/owner/OwnerProvider";
 import { SettingsPage } from "../features/owner/SettingsPage";
+import { ArchivePage } from "../features/memory/ArchivePage";
+import { SearchPage } from "../features/memory/SearchPage";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { NavigationProvider, useNavigation } from "./navigation";
 import { resolveRoute } from "./routes";
@@ -53,6 +55,13 @@ function editableTarget(target: EventTarget | null): boolean {
   );
 }
 
+function routeSearchKey(search: string): string {
+  const params = new URLSearchParams(search);
+  return JSON.stringify(
+    Array.from(params.entries()).filter(([name]) => name !== "loaded_through"),
+  );
+}
+
 function PublicApp() {
   const location = useNavigation();
   const route = resolveRoute(location.pathname);
@@ -64,6 +73,7 @@ function PublicApp() {
   const [siteError, setSiteError] = useState(false);
   const [siteAttempt, setSiteAttempt] = useState(0);
   const [memoryYears, setMemoryYears] = useState<number[]>([]);
+  const [discoveryYears, setDiscoveryYears] = useState<number[]>([]);
   const [homeVisited, setHomeVisited] = useState(route.id === "home");
   const initialHomeSearch = useRef(route.id === "home" ? location.search : "");
 
@@ -133,6 +143,47 @@ function PublicApp() {
     };
   }, [location, owner.state]);
 
+  useEffect(() => {
+    let composing = false;
+    const startComposition = () => {
+      composing = true;
+    };
+    const endComposition = () => {
+      composing = false;
+    };
+    const focusSearch = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.key !== "/" ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        event.isComposing ||
+        composing ||
+        editableTarget(event.target) ||
+        document.querySelector('[role="dialog"]')
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (route.id !== "search") location.navigate("/search");
+      window.requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLInputElement>("#moment-search-input")
+          ?.focus();
+      });
+    };
+    document.addEventListener("compositionstart", startComposition);
+    document.addEventListener("compositionend", endComposition);
+    window.addEventListener("keydown", focusSearch);
+    return () => {
+      document.removeEventListener("compositionstart", startComposition);
+      document.removeEventListener("compositionend", endComposition);
+      window.removeEventListener("keydown", focusSearch);
+    };
+  }, [location, route.id]);
+
   const hasTimeline = route.id === "home" || homeVisited;
   const placeholderRoute =
     route.id !== "home" &&
@@ -140,11 +191,18 @@ function PublicApp() {
     route.id !== "owner-login" &&
     route.id !== "owner-compose" &&
     route.id !== "owner-edit" &&
-    route.id !== "owner-settings";
+    route.id !== "owner-settings" &&
+    route.id !== "search" &&
+    route.id !== "archive";
+
+  const shellYears =
+    route.id === "search" || route.id === "archive"
+      ? discoveryYears
+      : memoryYears;
 
   return (
     <AppShell
-      memoryYears={memoryYears}
+      memoryYears={shellYears}
       ownerSettingsAvailable={
         owner.state === "owner" || owner.state === "expired"
       }
@@ -187,6 +245,26 @@ function PublicApp() {
           api={api}
           id={detailId(location.pathname)}
           owner={owner.state === "owner"}
+          site={site}
+        />
+      ) : null}
+      {!siteLoading && route.id === "search" ? (
+        <SearchPage
+          api={api}
+          key={routeSearchKey(location.search)}
+          onYearsChange={setDiscoveryYears}
+          owner={owner.state === "owner"}
+          search={location.search}
+          site={site}
+        />
+      ) : null}
+      {!siteLoading && route.id === "archive" ? (
+        <ArchivePage
+          api={api}
+          key={routeSearchKey(location.search)}
+          onYearsChange={setDiscoveryYears}
+          owner={owner.state === "owner"}
+          search={location.search}
           site={site}
         />
       ) : null}

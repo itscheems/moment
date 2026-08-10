@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
 import { formatMomentDate } from "./dates";
@@ -48,6 +50,7 @@ export function PostPresentation({
   owner = false,
   fresh = false,
   onDeleted,
+  context,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -56,6 +59,7 @@ export function PostPresentation({
   owner?: boolean;
   fresh?: boolean;
   onDeleted?: (post: PublicPost) => void;
+  context?: ReactNode;
 }) {
   const title = site.title.trim() || "Moment";
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
@@ -92,6 +96,7 @@ export function PostPresentation({
             <time dateTime={post.publishedAt}>{published.relative}</time>
           </InternalLink>
         </header>
+        {context}
         <div
           className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
           dangerouslySetInnerHTML={{ __html: post.contentHtml }}
