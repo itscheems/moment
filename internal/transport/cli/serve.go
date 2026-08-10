@@ -135,6 +135,10 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 	if err != nil {
 		return Result{}, err
 	}
+	shareMetadata, err := app.NewShareMetadataService(siteService, postService)
+	if err != nil {
+		return Result{}, err
+	}
 	exporter, err := archive.NewExporter(archive.Options{DataDir: runtime.Root, AppVersion: info.Version})
 	if err != nil {
 		return Result{}, err
@@ -148,6 +152,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 		Posts:          postService,
 		Comments:       commentService,
 		Search:         searchService,
+		ShareMetadata:  shareMetadata,
 		Archive:        exporter,
 		SecureCookies:  !runtime.IsDevelopment(),
 		TrustedProxies: trustedProxies,

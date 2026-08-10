@@ -24,6 +24,25 @@ const ContentNormalizerVersion = 2
 //
 // Both entry ingestion and search queries call this exact function.
 func NormalizeContentV2(source string) (string, error) {
+	visible, err := visibleMarkdownText(source)
+	if err != nil {
+		return "", err
+	}
+	return cleanVisibleText(cases.Fold().String(norm.NFKC.String(visible))), nil
+}
+
+// VisibleContent converts Markdown to display-safe source text without
+// case folding. Share metadata uses it for the human-facing first-line title;
+// search authority continues to use the versioned NormalizeContentV2 result.
+func VisibleContent(source string) (string, error) {
+	visible, err := visibleMarkdownText(source)
+	if err != nil {
+		return "", err
+	}
+	return cleanVisibleText(norm.NFKC.String(visible)), nil
+}
+
+func visibleMarkdownText(source string) (string, error) {
 	if !utf8.ValidString(source) {
 		return "", NewError(CodeInvalidArgument, "content must be valid UTF-8", map[string]any{"field": "content"})
 	}
@@ -69,10 +88,13 @@ func NormalizeContentV2(source string) (string, error) {
 		return "", NewError(CodeInternal, "could not normalize content", nil)
 	}
 
-	normalized := cases.Fold().String(norm.NFKC.String(output.String()))
+	return output.String(), nil
+}
+
+func cleanVisibleText(value string) string {
 	var clean strings.Builder
 	spacePending := false
-	for _, character := range normalized {
+	for _, character := range value {
 		switch {
 		case unicode.IsSpace(character):
 			spacePending = clean.Len() > 0
@@ -86,7 +108,7 @@ func NormalizeContentV2(source string) (string, error) {
 			clean.WriteRune(character)
 		}
 	}
-	return strings.TrimSpace(clean.String()), nil
+	return strings.TrimSpace(clean.String())
 }
 
 func hasAncestor(node ast.Node, kind ast.NodeKind) bool {

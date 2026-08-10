@@ -46,6 +46,7 @@ type Config struct {
 	Posts          *app.PostService
 	Comments       *app.CommentService
 	Search         *app.SearchService
+	ShareMetadata  *app.ShareMetadataService
 	CommentLimiter CommentRateLimiter
 	Media          *media.Store
 	Archive        ArchiveExporter
@@ -165,7 +166,7 @@ func New(config Config) (*gin.Engine, error) {
 			Failure(ctx, http.StatusNotFound, "ROUTE_NOT_FOUND", "the route does not exist", nil)
 			return
 		}
-		serveWeb(config.Assets, ctx)
+		serveWeb(config.Assets, config.ShareMetadata, ctx)
 	})
 	return engine, nil
 }
@@ -193,7 +194,7 @@ func validateLimits(limits BodyLimits) error {
 	return nil
 }
 
-func serveWeb(assets fs.FS, ctx *gin.Context) {
+func serveWeb(assets fs.FS, share *app.ShareMetadataService, ctx *gin.Context) {
 	assetPath := strings.TrimPrefix(path.Clean("/"+ctx.Request.URL.Path), "/")
 	if assetPath != "" && assetPath != "." {
 		if data, err := fs.ReadFile(assets, assetPath); err == nil {
@@ -214,6 +215,9 @@ func serveWeb(assets fs.FS, ctx *gin.Context) {
 	if err != nil {
 		Failure(ctx, http.StatusInternalServerError, "WEB_ASSETS_UNAVAILABLE", "the embedded web application is unavailable", nil)
 		return
+	}
+	if metadata, ok := shareMetadataForRequest(ctx, share); ok {
+		index = injectShareMetadata(index, metadata)
 	}
 	ctx.Header("Cache-Control", "no-cache")
 	writeWebContent(ctx, http.StatusOK, "text/html; charset=utf-8", index)

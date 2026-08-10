@@ -44,3 +44,14 @@ func TestNormalizeContentV2KeepsAdjacentCJKAndCodeURLs(t *testing.T) {
 		t.Fatalf("NormalizeContentV2() = %q, want %q", actual, want)
 	}
 }
+
+func TestVisibleContentPreservesDisplayCaseWhileRemovingMarkdownDestinations(t *testing.T) {
+	t.Parallel()
+	actual, err := VisibleContent("# HéLLo **Ｍｏｍｅｎｔ** [Label](https://private.example) <https://hidden.example>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if actual != "HéLLo Moment Label" {
+		t.Fatalf("VisibleContent() = %q", actual)
+	}
+}
