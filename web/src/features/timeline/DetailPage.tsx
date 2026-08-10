@@ -7,6 +7,7 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { PostPresentation } from "../posts/PostPresentation";
+import { CommentThread } from "../comments/CommentThread";
 import { useNavigation } from "../../app/navigation";
 import { PublicError, TimelineLoading } from "./PublicStates";
 
@@ -61,12 +62,15 @@ export function DetailPage({
     return <PublicError kind={detailErrorKind(error)} onRetry={load} />;
   }
   return post ? (
-    <PostPresentation
-      detail
-      onDeleted={() => navigate("/")}
-      owner={owner}
-      post={post}
-      site={site}
-    />
+    <>
+      <PostPresentation
+        detail
+        onDeleted={() => navigate("/")}
+        owner={owner}
+        post={post}
+        site={site}
+      />
+      <CommentThread api={api} postId={post.id} site={site} />
+    </>
   ) : null;
 }

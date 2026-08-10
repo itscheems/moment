@@ -1,7 +1,13 @@
 import {
+  decodeCommentResponse,
+  decodeCreatedComment,
   decodeResponse,
+  parseComment,
+  parseDeletedCommentMeta,
   parsePost,
   PublicApiError,
+  type CreatedComment,
+  type PublicComment,
   type PublicPost,
 } from "./public";
 
@@ -13,6 +19,11 @@ export interface OwnerSession {
 export interface OwnerStatus {
   initialized: boolean;
   sessionEpoch: number;
+}
+
+export interface DeletedComment {
+  comment: PublicComment;
+  repliesAffected: number;
 }
 
 type Fetcher = typeof fetch;
@@ -157,5 +168,56 @@ export class OwnerApi {
     );
     const { data } = await decodeResponse(response);
     return parsePost(data);
+  }
+
+  async createComment(
+    csrfToken: string,
+    postId: string,
+    contentMd: string,
+    parentId: string | null,
+    idempotencyKey: string,
+  ): Promise<CreatedComment> {
+    const init = requestInit("POST", csrfToken, {
+      content_md: contentMd,
+      parent_id: parentId,
+    });
+    const headers = new Headers(init.headers);
+    headers.set("Idempotency-Key", idempotencyKey);
+    const response = await this.fetcher(
+      `/api/v1/owner/posts/${encodeURIComponent(postId)}/comments`,
+      { ...init, headers },
+    );
+    return decodeCreatedComment(response, postId, {
+      parentId,
+      authorKind: "owner",
+    });
+  }
+
+  async deleteComment(
+    csrfToken: string,
+    postId: string,
+    commentId: string,
+  ): Promise<DeletedComment> {
+    const response = await this.fetcher(
+      `/api/v1/owner/comments/${encodeURIComponent(commentId)}`,
+      requestInit("DELETE", csrfToken),
+    );
+    const { data, meta } = await decodeCommentResponse(response, [
+      "deleted",
+      "dry_run",
+      "replies_affected",
+    ]);
+    if (response.status !== 200) {
+      throw invalidResponse("comment deletion must return HTTP 200");
+    }
+    const comment = parseComment(data, postId);
+    const result = parseDeletedCommentMeta(meta);
+    if (!result.deleted || result.dryRun || comment.id !== commentId) {
+      throw invalidResponse("comment deletion was not confirmed");
+    }
+    if (comment.parentId !== null && result.repliesAffected !== 0) {
+      throw invalidResponse("a reply deletion cannot affect child comments");
+    }
+    return { comment, repliesAffected: result.repliesAffected };
   }
 }
