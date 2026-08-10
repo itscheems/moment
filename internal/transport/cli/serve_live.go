@@ -3,8 +3,10 @@ package cli
 import (
 	"context"
 	"errors"
+	"io"
 	"io/fs"
 	"sync"
+	"time"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/archive"
@@ -36,6 +38,10 @@ type hostedImportCommitter struct {
 
 func (committer *hostedImportCommitter) Commit(ctx context.Context, token string, epoch uint64) (archive.CommitResult, error) {
 	return committer.core.Commit(ctx, token, epoch, committer.host)
+}
+
+func (committer *hostedImportCommitter) CommitArchive(ctx context.Context, source io.Reader, epoch uint64) (archive.CommitResult, error) {
+	return committer.core.CommitArchive(ctx, source, epoch, committer.host)
 }
 
 func (committer *hostedImportCommitter) Status(ctx context.Context) (archive.CommitStatus, error) {
@@ -119,7 +125,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	if err != nil {
 		return fail(err)
 	}
-	inspector, err := archive.NewInspector(archive.InspectOptions{DataDir: runtimeState.Root, ActiveDatabase: database})
+	inspector, err := archive.NewInspector(archive.InspectOptions{DataDir: runtimeState.Root, ActiveDatabase: database, ImportLockWait: 250 * time.Millisecond})
 	if err != nil {
 		return fail(err)
 	}

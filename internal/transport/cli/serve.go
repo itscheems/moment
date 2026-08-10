@@ -97,6 +97,9 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 		secureCookies: !runtime.IsDevelopment(), log: invocation.LogEvent, exporter: exporter,
 	}
 	host.committer = &hostedImportCommitter{core: committer, host: host}
+	retentionContext, cancelRetention := context.WithCancel(ctx)
+	defer cancelRetention()
+	go committer.RunRetention(retentionContext)
 	defer func() { _ = host.CloseActive() }()
 	if err := server.Run(ctx, server.Config{
 		Runtime: runtime, Handler: board,

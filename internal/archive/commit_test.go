@@ -2,9 +2,11 @@ package archive
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io/fs"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,6 +74,113 @@ func TestCommitCreatesVerifiedBackupSwitchesAndRejectsReplay(t *testing.T) {
 	}
 }
 
+func TestGenerationRetentionKeepsBeforeAndSweepsAtTwentyFourHours(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	archivePath := exportFixtureFile(t, fixture)
+	previous := fixture.runtime.Current.ID
+	if err := fixture.database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.InitializeOffline(context.Background(), fixture.runtime, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 11, 3, 20, 0, 0, time.UTC)
+	inspection, err := testInspector(t, fixture.runtime.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	if _, err := committer.Commit(context.Background(), inspection.StagingToken, 1, nil); err != nil {
+		t.Fatal(err)
+	}
+	previousRoot := filepath.Join(fixture.runtime.Root, "generations", previous)
+	now = now.Add(generationRetention - time.Millisecond)
+	if err := committer.SweepRetainedGenerations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(previousRoot); err != nil {
+		t.Fatalf("generation was removed before retention elapsed: %v", err)
+	}
+	now = now.Add(time.Millisecond)
+	if err := committer.SweepRetainedGenerations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(previousRoot); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("generation remained at retention boundary: %v", err)
+	}
+}
+
+func TestGenerationRetentionFailsClosedForUnsafeEntryAndNeedsAttention(t *testing.T) {
+	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 12, 4, 0, 0, 0, time.UTC)
+	committer := testCommitter(t, runtimeState.Root, &now, math.MaxUint64)
+	id := "import-20260811T040000000Z-0011223344556677"
+	candidate := filepath.Join(runtimeState.Root, "generations", id)
+	if err := os.Mkdir(candidate, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	status := CommitStatus{
+		OperationID: id, Phase: CommitNeedsAttention, ActiveGeneration: runtimeState.Current.ID,
+		PreviousGeneration: runtimeState.Current.ID, NewGeneration: id,
+		ErrorCode: string(domain.CodeDataIntegrityFailed), StartedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-48 * time.Hour),
+	}
+	if err := committer.writeStatus(filepath.Join(runtimeState.Root, "staging", "import", id), status); err != nil {
+		t.Fatal(err)
+	}
+	if err := committer.SweepRetainedGenerations(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(candidate); err != nil {
+		t.Fatalf("needs_attention generation was removed: %v", err)
+	}
+	unsafe := filepath.Join(runtimeState.Root, "generations", "unsafe-link")
+	if err := os.Symlink(runtimeState.Current.Root, unsafe); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if err := committer.SweepRetainedGenerations(context.Background()); err == nil {
+		t.Fatal("unsafe generation entry did not fail closed")
+	}
+	if _, err := os.Stat(candidate); err != nil {
+		t.Fatalf("fail-closed sweep removed protected generation: %v", err)
+	}
+}
+
+func TestGenerationRetentionKeepsCandidateWhenBackupRevalidationFails(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	archivePath := exportFixtureFile(t, fixture)
+	previous := fixture.runtime.Current.ID
+	if err := fixture.database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.InitializeOffline(context.Background(), fixture.runtime, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 11, 3, 40, 0, 0, time.UTC)
+	inspection, err := testInspector(t, fixture.runtime.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	result, err := committer.Commit(context.Background(), inspection.StagingToken, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupPath := filepath.Join(fixture.runtime.Root, "backups", result.Status.BackupName)
+	if err := os.WriteFile(backupPath, []byte("corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(generationRetention)
+	if err := committer.SweepRetainedGenerations(context.Background()); err == nil {
+		t.Fatal("corrupt retained backup did not fail closed")
+	}
+	if _, err := os.Stat(filepath.Join(fixture.runtime.Root, "generations", previous)); err != nil {
+		t.Fatalf("candidate was removed despite corrupt backup: %v", err)
+	}
+}
+
 func TestCommitReadinessFailureRollsBackTrueCurrent(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	archivePath := exportFixtureFile(t, fixture)
@@ -99,6 +208,62 @@ func TestCommitReadinessFailureRollsBackTrueCurrent(t *testing.T) {
 	}
 	if _, replayErr := committer.Commit(context.Background(), inspection.StagingToken, 9, host); !domain.HasCode(replayErr, domain.CodeImportStagingInvalid) {
 		t.Fatalf("rolled-back token replay error = %v", replayErr)
+	}
+}
+
+func TestSucceededJournalFailureRollsBackWithoutUsedMarkerConflict(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	archivePath := exportFixtureFile(t, fixture)
+	previous := fixture.runtime.Current.ID
+	if err := fixture.database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.InitializeOffline(context.Background(), fixture.runtime, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 11, 4, 10, 0, 0, time.UTC)
+	inspection, err := testInspector(t, fixture.runtime.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	injected := false
+	committer.statusWriter = func(stageRoot string, status CommitStatus) error {
+		if status.Phase == CommitSucceeded && !injected {
+			injected = true
+			return errors.New("injected succeeded journal failure")
+		}
+		return writeCommitStatus(stageRoot, status)
+	}
+	if _, err := committer.Commit(context.Background(), inspection.StagingToken, 1, nil); err == nil {
+		t.Fatal("succeeded journal failure unexpectedly returned success")
+	}
+	status, err := committer.Status(context.Background())
+	if err != nil || status.Phase != CommitRolledBack || status.ActiveGeneration != previous {
+		t.Fatalf("journal failure status=%#v err=%v", status, err)
+	}
+	metadata, err := readStagingMetadata(filepath.Join(fixture.runtime.Root, "staging", "import", inspection.GenerationID))
+	if err != nil || metadata.State != stagingFailed {
+		t.Fatalf("journal failure metadata=%#v err=%v", metadata, err)
+	}
+	runtimeState, err := runtimefs.OpenForCoordination(fixture.runtime.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := runtimeState.Locks.AcquireSet(context.Background(),
+		runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Exclusive},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Release() }()
+	if err := runtimeState.RefreshCurrent(held); err != nil {
+		t.Fatal(err)
+	}
+	if err := committer.RecoverWithinLocks(context.Background(), runtimeState, held); err != nil {
+		t.Fatalf("restart reconciliation error=%v", err)
 	}
 }
 
@@ -159,6 +324,67 @@ func TestCommitReloadsOwnerEpochAfterMaintenanceWait(t *testing.T) {
 	backups, err := os.ReadDir(filepath.Join(fixture.runtime.Root, "backups"))
 	if err != nil || len(backups) != 0 {
 		t.Fatalf("owner rotation created backup: %#v %v", backups, err)
+	}
+}
+
+func TestMaintenanceDrainCancellationRemainsRecoverablePreSwitchFailure(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	archivePath := exportFixtureFile(t, fixture)
+	now := time.Date(2026, 8, 11, 4, 32, 0, 0, time.UTC)
+	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := &rejectNewGenerationHost{database: fixture.database, epoch: 9, begin: func() error { return context.Canceled }}
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	if _, err := committer.Commit(context.Background(), inspection.StagingToken, 9, host); !errors.Is(err, context.Canceled) {
+		t.Fatalf("drain cancellation error=%v", err)
+	}
+	if host.endCalls != 0 || host.database == nil {
+		t.Fatalf("drain cancellation changed live admission/bundle: end=%d database=%v", host.endCalls, host.database)
+	}
+	status, err := committer.Status(context.Background())
+	if err != nil || status.Phase != CommitFailed || status.ActiveGeneration != fixture.runtime.Current.ID || status.ErrorCode != "CANCELLED" {
+		t.Fatalf("drain cancellation status=%#v err=%v", status, err)
+	}
+	metadata, err := readStagingMetadata(filepath.Join(fixture.runtime.Root, "staging", "import", inspection.GenerationID))
+	if err != nil || metadata.State != stagingFailed {
+		t.Fatalf("drain cancellation metadata=%#v err=%v", metadata, err)
+	}
+	runtimeState, err := runtimefs.Open(fixture.runtime.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := runtimeState.Locks.AcquireSet(context.Background(),
+		runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Exclusive},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Release() }()
+	if err := committer.RecoverWithinLocks(context.Background(), runtimeState, held); err != nil {
+		t.Fatalf("restart recovery rejected pre-switch cancellation: %v", err)
+	}
+}
+
+func TestMaintenanceDrainTimeoutPersistsStableTimeoutCode(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	archivePath := exportFixtureFile(t, fixture)
+	now := time.Date(2026, 8, 11, 4, 34, 0, 0, time.UTC)
+	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := &rejectNewGenerationHost{database: fixture.database, epoch: 9, begin: func() error { return context.DeadlineExceeded }}
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	if _, err := committer.Commit(context.Background(), inspection.StagingToken, 9, host); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("drain timeout error=%v", err)
+	}
+	status, err := committer.Status(context.Background())
+	if err != nil || status.Phase != CommitFailed || status.ErrorCode != "TIMEOUT" || status.ActiveGeneration != fixture.runtime.Current.ID {
+		t.Fatalf("drain timeout status=%#v err=%v", status, err)
 	}
 }
 
@@ -233,6 +459,117 @@ func TestCommitRevalidatesEveryStagedOriginalAfterAdmissionWait(t *testing.T) {
 	if entries, _ := os.ReadDir(filepath.Join(fixture.runtime.Root, "backups")); len(entries) != 0 {
 		t.Fatalf("tampered staging created %d backups", len(entries))
 	}
+}
+
+func TestCommitRejectsUnreferencedStagedMediaAfterInspection(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	archivePath := exportFixtureFile(t, fixture)
+	now := time.Date(2026, 8, 11, 4, 47, 0, 0, time.UTC)
+	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageDatabase := filepath.Join(fixture.runtime.Root, "staging", "import", inspection.GenerationID, "generation", "moment.db")
+	host := &rejectNewGenerationHost{database: fixture.database, epoch: 9, begin: func() error {
+		return mutateStagedDatabase(stageDatabase, `
+INSERT INTO media (
+    id, sha256, storage_path, original_name, mime_type,
+    byte_size, width, height, created_at_ms, unreferenced_since_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", strings.Repeat("a", 64),
+			"media/original/aa/"+strings.Repeat("a", 64)+".png", "extra.png", "image/png",
+			1, 1, 1, now.UnixMilli(), now.UnixMilli())
+	}}
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	if _, err := committer.Commit(context.Background(), inspection.StagingToken, 9, host); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+		t.Fatalf("unreferenced staged media error=%v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(fixture.runtime.Root, "backups")); len(entries) != 0 {
+		t.Fatalf("invalid staged media created %d backups", len(entries))
+	}
+}
+
+func TestCommitRecomputesDerivedEntryContentAfterInspection(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	archivePath := exportFixtureFile(t, fixture)
+	now := time.Date(2026, 8, 11, 4, 49, 0, 0, time.UTC)
+	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageDatabase := filepath.Join(fixture.runtime.Root, "staging", "import", inspection.GenerationID, "generation", "moment.db")
+	host := &rejectNewGenerationHost{database: fixture.database, epoch: 9, begin: func() error {
+		if err := mutateStagedDatabase(stageDatabase, `UPDATE entries SET content_text = 'synchronized tamper'`); err != nil {
+			return err
+		}
+		return mutateStagedDatabase(stageDatabase, `UPDATE entry_fts SET content_text = 'synchronized tamper'`)
+	}}
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	if _, err := committer.Commit(context.Background(), inspection.StagingToken, 9, host); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+		t.Fatalf("synchronized derived-content tamper error=%v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(fixture.runtime.Root, "backups")); len(entries) != 0 {
+		t.Fatalf("invalid derived content created %d backups", len(entries))
+	}
+}
+
+func TestCommitRejectsDuplicateStagedFTSIdentity(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	archivePath := exportFixtureFile(t, fixture)
+	now := time.Date(2026, 8, 11, 4, 50, 0, 0, time.UTC)
+	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageDatabase := filepath.Join(fixture.runtime.Root, "staging", "import", inspection.GenerationID, "generation", "moment.db")
+	host := &rejectNewGenerationHost{database: fixture.database, epoch: 9, begin: func() error {
+		return mutateStagedDatabase(stageDatabase, `
+INSERT INTO entry_fts (entry_id, content_text)
+SELECT entry_id, content_text FROM entry_fts LIMIT 1`)
+	}}
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	if _, err := committer.Commit(context.Background(), inspection.StagingToken, 9, host); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+		t.Fatalf("duplicate staged FTS identity error=%v", err)
+	}
+}
+
+func TestCommitRejectsExtraStagedGenerationPaths(t *testing.T) {
+	for _, relative := range []string{"secret.txt", "media/other/nested.txt", "media/original/ff/orphan.png"} {
+		t.Run(strings.ReplaceAll(relative, "/", "_"), func(t *testing.T) {
+			fixture := newExportFixture(t, true)
+			archivePath := exportFixtureFile(t, fixture)
+			now := time.Date(2026, 8, 11, 4, 51, 0, 0, time.UTC)
+			inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 9)
+			if err != nil {
+				t.Fatal(err)
+			}
+			generationRoot := filepath.Join(fixture.runtime.Root, "staging", "import", inspection.GenerationID, "generation")
+			host := &rejectNewGenerationHost{database: fixture.database, epoch: 9, begin: func() error {
+				target := filepath.Join(generationRoot, filepath.FromSlash(relative))
+				if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+					return err
+				}
+				return os.WriteFile(target, []byte("orphan"), 0o600)
+			}}
+			committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+			if _, err := committer.Commit(context.Background(), inspection.StagingToken, 9, host); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+				t.Fatalf("extra staged path %q error=%v", relative, err)
+			}
+		})
+	}
+}
+
+func mutateStagedDatabase(path, statement string, arguments ...any) error {
+	dsn := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: "_busy_timeout=5000&_foreign_keys=on"}).String()
+	database, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return err
+	}
+	if _, err = database.Exec(statement, arguments...); err != nil {
+		_ = database.Close()
+		return err
+	}
+	return database.Close()
 }
 
 func TestCommitFinalDiskKeepsSeparateBackupAndRollbackReserve(t *testing.T) {
@@ -579,6 +916,103 @@ func TestCommitStatusPrefersInterruptedOperationAcrossClockRollback(t *testing.T
 	actual, err := committer.Status(context.Background())
 	if err != nil || actual.OperationID != claim.GenerationID {
 		t.Fatalf("clock rollback selected status=%#v err=%v", actual, err)
+	}
+}
+
+func TestCommitStatusUsesDurableLatestOperationAcrossTerminalClockRollback(t *testing.T) {
+	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 11, 8, 0, 0, 0, time.UTC)
+	committer := testCommitter(t, runtimeState.Root, &now, math.MaxUint64)
+	firstID := "import-20260811T080000000Z-0011223344556677"
+	firstCompleted := now
+	first := CommitStatus{
+		OperationID: firstID, Phase: CommitFailed, ActiveGeneration: runtimeState.Current.ID,
+		PreviousGeneration: runtimeState.Current.ID, NewGeneration: firstID,
+		ErrorCode: string(domain.CodeDataIntegrityFailed), StartedAt: now, UpdatedAt: now, CompletedAt: &firstCompleted,
+	}
+	if err := committer.writeStatus(filepath.Join(runtimeState.Root, "staging", "import", firstID), first); err != nil {
+		t.Fatal(err)
+	}
+	rolledBackClock := now.Add(-time.Hour)
+	secondID := "import-20260811T070000000Z-8899aabbccddeeff"
+	secondCompleted := rolledBackClock
+	second := CommitStatus{
+		OperationID: secondID, Phase: CommitFailed, ActiveGeneration: runtimeState.Current.ID,
+		PreviousGeneration: runtimeState.Current.ID, NewGeneration: secondID,
+		ErrorCode: string(domain.CodeDataIntegrityFailed), StartedAt: rolledBackClock, UpdatedAt: rolledBackClock, CompletedAt: &secondCompleted,
+	}
+	if err := committer.writeStatus(filepath.Join(runtimeState.Root, "staging", "import", secondID), second); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := committer.Status(context.Background())
+	if err != nil || actual.OperationID != secondID {
+		t.Fatalf("latest terminal across clock rollback=%#v err=%v", actual, err)
+	}
+}
+
+func TestCommitStatusUsesCurrentAcrossPostSwitchJournalGap(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	archivePath := exportFixtureFile(t, fixture)
+	now := time.Date(2026, 8, 11, 7, 30, 0, 0, time.UTC)
+	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := fixture.runtime.Current.ID
+	stageRoot := filepath.Join(fixture.runtime.Root, "staging", "import", inspection.GenerationID)
+	committer := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64)
+	status := CommitStatus{
+		OperationID: inspection.GenerationID, Phase: CommitSwitching, ActiveGeneration: previous,
+		PreviousGeneration: previous, NewGeneration: inspection.GenerationID, StartedAt: now, UpdatedAt: now,
+	}
+	if err := committer.writeStatus(stageRoot, status); err != nil {
+		t.Fatal(err)
+	}
+	held, err := fixture.runtime.Locks.AcquireSet(context.Background(),
+		runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Exclusive},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Release() }()
+	finalized, err := fixture.runtime.FinalizeStagedGeneration(context.Background(), stagingGeneration(stageRoot, inspection.GenerationID), held)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.runtime.SwitchCurrent(context.Background(), finalized.ID, held); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := committer.Status(context.Background())
+	if err != nil || actual.Phase != CommitSwitching || actual.ActiveGeneration != finalized.ID {
+		t.Fatalf("post-switch status=%#v err=%v", actual, err)
+	}
+}
+
+func TestCommitStatusRejectsTerminalPhaseCurrentContradiction(t *testing.T) {
+	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 11, 7, 45, 0, 0, time.UTC)
+	committer := testCommitter(t, runtimeState.Root, &now, math.MaxUint64)
+	id := "import-20260811T074500000Z-0011223344556677"
+	completed := now
+	status := CommitStatus{
+		OperationID: id, Phase: CommitSucceeded, ActiveGeneration: id,
+		PreviousGeneration: runtimeState.Current.ID, NewGeneration: id,
+		BackupName: "pre-import.zip", BackupVerified: true,
+		StartedAt: now, UpdatedAt: now, CompletedAt: &completed,
+	}
+	if err := committer.writeStatus(filepath.Join(runtimeState.Root, "staging", "import", id), status); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := committer.Status(context.Background()); !domain.HasCode(err, domain.CodeDataIntegrityFailed) {
+		t.Fatalf("terminal/current contradiction error=%v", err)
 	}
 }
 

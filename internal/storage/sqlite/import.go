@@ -200,19 +200,24 @@ func (importer *PortableImporter) Commit(ctx context.Context, expected ArchiveCo
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return fmt.Errorf("iterate portable import foreign keys: %w", err)
 	}
-	var missingFTS, extraFTS, mismatchedFTS int64
+	var ftsRows, missingFTS, extraFTS, mismatchedFTS, duplicateFTS int64
 	if err := importer.tx.QueryRowContext(ctx, `
 SELECT
+	  (SELECT count(*) FROM entry_fts),
   (SELECT count(*) FROM entries AS e WHERE NOT EXISTS (SELECT 1 FROM entry_fts AS f WHERE f.entry_id = e.id)),
 	  (SELECT count(*) FROM entry_fts AS f WHERE NOT EXISTS (SELECT 1 FROM entries AS e WHERE e.id = f.entry_id)),
-	  (SELECT count(*) FROM entry_fts AS f JOIN entries AS e ON e.id = f.entry_id WHERE f.content_text <> e.content_text)`).Scan(&missingFTS, &extraFTS, &mismatchedFTS); err != nil {
+	  (SELECT count(*) FROM entry_fts AS f JOIN entries AS e ON e.id = f.entry_id WHERE f.content_text <> e.content_text),
+	  (SELECT count(*) FROM (SELECT entry_id FROM entry_fts GROUP BY entry_id HAVING count(*) <> 1))`).Scan(
+		&ftsRows, &missingFTS, &extraFTS, &mismatchedFTS, &duplicateFTS,
+	); err != nil {
 		return fmt.Errorf("check portable import FTS identity: %w", err)
 	}
 	var normalizerVersion int
 	if err := importer.tx.QueryRowContext(ctx, `SELECT normalizer_version FROM search_index_state WHERE id = 1`).Scan(&normalizerVersion); err != nil {
 		return fmt.Errorf("check portable import normalizer version: %w", err)
 	}
-	if missingFTS != 0 || extraFTS != 0 || mismatchedFTS != 0 || normalizerVersion != domain.ContentNormalizerVersion {
+	if ftsRows != expected.Entries || missingFTS != 0 || extraFTS != 0 || mismatchedFTS != 0 || duplicateFTS != 0 ||
+		normalizerVersion != domain.ContentNormalizerVersion {
 		return errors.New("portable import FTS content or normalizer version is inconsistent")
 	}
 	if err := importer.tx.Commit(); err != nil {
@@ -262,16 +267,19 @@ func (db *Database) ValidatePortableReady(ctx context.Context, expected ArchiveC
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
 		return fmt.Errorf("iterate staged foreign keys: %w", err)
 	}
-	var entries, comments, mediaCount, missingFTS, extraFTS, mismatchedFTS int64
+	var entries, comments, mediaCount, mediaGC, ftsRows, missingFTS, extraFTS, mismatchedFTS, duplicateFTS int64
 	if err := db.read.QueryRowContext(ctx, `
 SELECT
   (SELECT count(*) FROM entries),
   (SELECT count(*) FROM comments),
-  (SELECT count(*) FROM media WHERE `+mediaReferencedSQL+`),
+	  (SELECT count(*) FROM media),
+	  (SELECT count(*) FROM media WHERE unreferenced_since_ms IS NOT NULL),
+	  (SELECT count(*) FROM entry_fts),
   (SELECT count(*) FROM entries AS e WHERE NOT EXISTS (SELECT 1 FROM entry_fts AS f WHERE f.entry_id = e.id)),
 	  (SELECT count(*) FROM entry_fts AS f WHERE NOT EXISTS (SELECT 1 FROM entries AS e WHERE e.id = f.entry_id)),
-	  (SELECT count(*) FROM entry_fts AS f JOIN entries AS e ON e.id = f.entry_id WHERE f.content_text <> e.content_text)`).Scan(
-		&entries, &comments, &mediaCount, &missingFTS, &extraFTS, &mismatchedFTS,
+	  (SELECT count(*) FROM entry_fts AS f JOIN entries AS e ON e.id = f.entry_id WHERE f.content_text <> e.content_text),
+	  (SELECT count(*) FROM (SELECT entry_id FROM entry_fts GROUP BY entry_id HAVING count(*) <> 1))`).Scan(
+		&entries, &comments, &mediaCount, &mediaGC, &ftsRows, &missingFTS, &extraFTS, &mismatchedFTS, &duplicateFTS,
 	); err != nil {
 		return fmt.Errorf("check staged portable counts: %w", err)
 	}
@@ -279,8 +287,29 @@ SELECT
 	if err := db.read.QueryRowContext(ctx, `SELECT normalizer_version FROM search_index_state WHERE id = 1`).Scan(&normalizerVersion); err != nil {
 		return fmt.Errorf("check staged normalizer version: %w", err)
 	}
-	if entries != expected.Entries || comments != expected.Comments || mediaCount != expected.Media || missingFTS != 0 || extraFTS != 0 || mismatchedFTS != 0 || normalizerVersion != domain.ContentNormalizerVersion {
+	if entries != expected.Entries || comments != expected.Comments || mediaCount != expected.Media || mediaGC != 0 ||
+		ftsRows != entries || missingFTS != 0 || extraFTS != 0 || mismatchedFTS != 0 || duplicateFTS != 0 ||
+		normalizerVersion != domain.ContentNormalizerVersion {
 		return errors.New("staged portable counts, FTS content, or normalizer version are inconsistent")
+	}
+	rows, err = db.read.QueryContext(ctx, `SELECT id, content_md, content_text FROM entries ORDER BY id`)
+	if err != nil {
+		return fmt.Errorf("query staged normalized content: %w", err)
+	}
+	for rows.Next() {
+		var id, contentMD, contentText string
+		if err := rows.Scan(&id, &contentMD, &contentText); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("scan staged normalized content: %w", err)
+		}
+		expectedText, err := domain.NormalizeContentV2(contentMD)
+		if err != nil || contentText != expectedText {
+			_ = rows.Close()
+			return errors.Join(fmt.Errorf("staged normalized content for %s is inconsistent", id), err)
+		}
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return fmt.Errorf("iterate staged normalized content: %w", err)
 	}
 	return db.ProbeCapabilities(ctx)
 }

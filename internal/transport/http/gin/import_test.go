@@ -19,9 +19,31 @@ func (function importInspectorFunc) Inspect(ctx context.Context, input io.Reader
 	return function(ctx, input, epoch)
 }
 
+type importInspectorPlanner struct {
+	inspect importInspectorFunc
+	plan    func(context.Context, io.Reader, uint64) (archive.ImportPlan, error)
+}
+
+func (value importInspectorPlanner) Inspect(ctx context.Context, input io.Reader, epoch uint64) (archive.Inspection, error) {
+	return value.inspect(ctx, input, epoch)
+}
+
+func (value importInspectorPlanner) Plan(ctx context.Context, input io.Reader, epoch uint64) (archive.ImportPlan, error) {
+	return value.plan(ctx, input, epoch)
+}
+
 type fakeImportCommitter struct {
 	commit func(context.Context, string, uint64) (archive.CommitResult, error)
 	status func(context.Context) (archive.CommitStatus, error)
+}
+
+type fakeArchiveImportCommitter struct {
+	fakeImportCommitter
+	restore func(context.Context, io.Reader, uint64) (archive.CommitResult, error)
+}
+
+func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.CommitResult, error) {
+	return fake.restore(ctx, input, epoch)
 }
 
 func (fake fakeImportCommitter) Commit(ctx context.Context, token string, epoch uint64) (archive.CommitResult, error) {
@@ -173,6 +195,67 @@ func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
 	}
 	if called != 1 {
 		t.Fatalf("invalid requests invoked inspector: %d", called)
+	}
+}
+
+func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
+	fixture := newOwnerTestFixture(t, false)
+	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
+	id := "import-20260811T013000000Z-0011223344556677"
+	inspector := importInspectorPlanner{
+		inspect: importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+			return archive.Inspection{}, errors.New("inspect must not run")
+		}),
+		plan: func(_ context.Context, input io.Reader, epoch uint64) (archive.ImportPlan, error) {
+			body, err := io.ReadAll(input)
+			if err != nil || string(body) != "zip-plan" || epoch != 1 {
+				t.Fatalf("plan body=%q epoch=%d err=%v", body, epoch, err)
+			}
+			return archive.ImportPlan{DryRun: true, FormatVersion: archive.FormatVersion, ArchiveSHA256: strings.Repeat("a", 64), Warnings: []string{}, Disk: archive.DiskEstimate{SpaceOK: true}}, nil
+		},
+	}
+	committer := fakeArchiveImportCommitter{
+		fakeImportCommitter: fakeImportCommitter{
+			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+				return archive.CommitResult{}, errors.New("token commit must not run")
+			},
+			status: func(context.Context) (archive.CommitStatus, error) {
+				return archive.CommitStatus{}, errors.New("status must not run")
+			},
+		},
+		restore: func(_ context.Context, input io.Reader, epoch uint64) (archive.CommitResult, error) {
+			body, err := io.ReadAll(input)
+			if err != nil || string(body) != "zip-restore" || epoch != 1 {
+				t.Fatalf("restore body=%q epoch=%d err=%v", body, epoch, err)
+			}
+			return archive.CommitResult{Status: archive.CommitStatus{
+				OperationID: id, Phase: archive.CommitSucceeded, ActiveGeneration: id, PreviousGeneration: "gen-old", NewGeneration: id,
+				BackupName: "pre-import.zip", BackupVerified: true, StartedAt: now, UpdatedAt: now, CompletedAt: &now,
+			}}, nil
+		},
+	}
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, ImportInspector: inspector, ImportCommitter: committer, RequestID: func() string { return "req_archive" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	planRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/plan", fixture.token, strings.NewReader("zip-plan"))
+	planRequest.Header.Set("Content-Type", "application/zip")
+	planResponse := performRequest(engine, planRequest)
+	if planResponse.Code != http.StatusOK || !strings.Contains(planResponse.Body.String(), `"dry_run":true`) || strings.Contains(planResponse.Body.String(), "staging_token") {
+		t.Fatalf("plan response=%d %s", planResponse.Code, planResponse.Body.String())
+	}
+	restoreRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/restore", fixture.token, strings.NewReader("zip-restore"))
+	restoreRequest.Header.Set("Content-Type", "application/zip")
+	restoreResponse := performRequest(engine, restoreRequest)
+	if restoreResponse.Code != http.StatusOK || !strings.Contains(restoreResponse.Body.String(), `"phase":"succeeded"`) {
+		t.Fatalf("restore response=%d %s", restoreResponse.Code, restoreResponse.Body.String())
+	}
+	for _, path := range []string{"/api/v1/owner/import/plan?x=1", "/api/v1/owner/import/restore?x=1"} {
+		request := headerRequest(http.MethodPost, path, fixture.token, strings.NewReader("zip"))
+		request.Header.Set("Content-Type", "application/zip")
+		if response := performRequest(engine, request); response.Code != http.StatusBadRequest {
+			t.Fatalf("query %s status=%d", path, response.Code)
+		}
 	}
 }
 

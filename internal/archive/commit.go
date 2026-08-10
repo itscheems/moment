@@ -23,8 +23,12 @@ import (
 const (
 	commitJournalVersion = 1
 	commitJournalLimit   = int64(32 << 10)
+	commitLatestFile     = "LATEST"
 	rollbackTimeout      = 2 * time.Minute
 	directServeLockWait  = 150 * time.Millisecond
+	onlineImportLockWait = 250 * time.Millisecond
+	generationRetention  = 24 * time.Hour
+	retentionSweepEvery  = time.Hour
 )
 
 // CommitPhase is a stable import status consumed by CLI, Web, and doctor.
@@ -106,6 +110,7 @@ type Committer struct {
 	inspector      *Inspector
 	exporter       *Exporter
 	switchCurrent  func(context.Context, *runtimefs.Runtime, string, *runtimefs.LeaseSet) error
+	statusWriter   func(string, CommitStatus) error
 }
 
 // NewCommitter constructs the import commit use case.
@@ -133,11 +138,123 @@ func NewCommitter(options CommitOptions) (*Committer, error) {
 	}, nil
 }
 
+// PlanFileOffline runs the complete import rebuild under Import→Serve and
+// removes its private staging generation before returning the safe preview.
+func (committer *Committer) PlanFileOffline(ctx context.Context, archivePath string, sessionEpoch uint64) (result ImportPlan, resultErr error) {
+	if committer == nil {
+		return ImportPlan{}, errors.New("import committer is required")
+	}
+	runtimeState, held, err := committer.acquireOfflineInspection(ctx)
+	if err != nil {
+		return ImportPlan{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	file, err := openArchiveInput(archivePath)
+	if err != nil {
+		return ImportPlan{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, file.Close()) }()
+	return committer.inspector.planWithinLocks(ctx, file, sessionEpoch, runtimeState, held)
+}
+
+func (committer *Committer) acquireOfflineInspection(ctx context.Context) (*runtimefs.Runtime, *runtimefs.LeaseSet, error) {
+	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	held, err := runtimeState.Locks.AcquireSet(ctx, runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive})
+	if err != nil {
+		return nil, nil, err
+	}
+	lockContext, cancelLock := context.WithTimeout(ctx, directServeLockWait)
+	err = runtimeState.Locks.ExtendSet(lockContext, held, runtimefs.LockRequest{Name: runtimefs.ServeLock, Mode: runtimefs.Exclusive})
+	cancelLock()
+	if err == nil {
+		return runtimeState, held, nil
+	}
+	releaseErr := held.Release()
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, nil, errors.Join(ctxErr, releaseErr)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, nil, errors.Join(domain.NewError(domain.CodeInstanceInUse, "Moment is serving this instance", nil), releaseErr)
+	}
+	return nil, nil, errors.Join(domain.NewError(domain.CodeInstanceInUse, "Moment is serving this instance", nil), err, releaseErr)
+}
+
+// CommitFileOffline performs path inspection and token consumption under one
+// continuous Import→Serve ownership, so no server can start between archive
+// materialization and CURRENT replacement.
+func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath string, sessionEpoch uint64) (result CommitResult, resultErr error) {
+	if committer == nil || sessionEpoch == 0 {
+		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires an archive and owner epoch", nil)
+	}
+	runtimeState, held, err := committer.acquireOfflineInspection(ctx)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	file, err := openArchiveInput(archivePath)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, file.Close()) }()
+	inspection, err := committer.inspector.inspectWithinLocks(ctx, file, sessionEpoch, runtimeState, held, true)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, nil)
+	if err != nil {
+		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
+	}
+	return result, err
+}
+
+// CommitArchive is the live-server single-request archive restore path. The
+// server already owns serve.lock, while this method keeps import.lock from the
+// first uploaded byte through the terminal commit state.
+func (committer *Committer) CommitArchive(ctx context.Context, source io.Reader, sessionEpoch uint64, host CommitHost) (result CommitResult, resultErr error) {
+	if committer == nil || source == nil || host == nil || sessionEpoch == 0 {
+		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "online import requires an archive, host, and owner epoch", nil)
+	}
+	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	lockContext, cancelLock := context.WithTimeout(ctx, onlineImportLockWait)
+	held, err := runtimeState.Locks.AcquireSet(lockContext, runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive})
+	cancelLock()
+	if err != nil {
+		if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+			return CommitResult{}, domain.NewError(domain.CodeImportInProgress, "another import operation owns the coordinator", nil)
+		}
+		return CommitResult{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	inspection, err := committer.inspector.inspectWithinLocks(ctx, source, sessionEpoch, runtimeState, held, true)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, host)
+	if err != nil {
+		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
+	}
+	return result, err
+}
+
 // Commit claims and consumes exactly one staged token. API callers supply a
 // host; direct callers pass nil and therefore also acquire serve.lock.
 func (committer *Committer) Commit(ctx context.Context, token string, sessionEpoch uint64, host CommitHost) (result CommitResult, resultErr error) {
 	if committer == nil || sessionEpoch == 0 {
 		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires a staging token and owner epoch", nil)
+	}
+	if host == nil {
+		runtimeState, held, err := committer.acquireOfflineInspection(ctx)
+		if err != nil {
+			return CommitResult{}, err
+		}
+		defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+		return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
 	if err != nil {
@@ -148,19 +265,13 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 		return CommitResult{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	if host == nil {
-		lockContext, cancelLock := context.WithTimeout(ctx, directServeLockWait)
-		lockErr := runtimeState.Locks.ExtendSet(lockContext, held, runtimefs.LockRequest{Name: runtimefs.ServeLock, Mode: runtimefs.Exclusive})
-		cancelLock()
-		if lockErr != nil {
-			if err := ctx.Err(); err != nil {
-				return CommitResult{}, err
-			}
-			if errors.Is(lockErr, context.DeadlineExceeded) {
-				return CommitResult{}, domain.NewError(domain.CodeInstanceInUse, "Moment is serving this instance", nil)
-			}
-			return CommitResult{}, errors.Join(domain.NewError(domain.CodeInstanceInUse, "Moment is serving this instance", nil), lockErr)
-		}
+	return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, host)
+}
+
+func (committer *Committer) commitWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, token string, sessionEpoch uint64, host CommitHost) (result CommitResult, resultErr error) {
+	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
+		(host == nil && !held.Holds(runtimefs.ServeLock, runtimefs.Exclusive)) {
+		return CommitResult{}, runtimefs.ErrInsufficientLocks
 	}
 	if err := runtimeState.RefreshCurrent(held); err != nil {
 		return CommitResult{}, err
@@ -180,7 +291,11 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 		return CommitResult{}, err
 	}
 	terminal := false
-	bundleReady := false
+	// Before maintenance begins the server's old live bundle is ready. A drain
+	// cancellation restores that admission state and must remain a recoverable
+	// pre-switch failure rather than needs_attention.
+	bundleReady := host != nil
+	maintenanceEntered := false
 	defer func() {
 		if !terminal && resultErr != nil {
 			actual, resolveErr := runtimeState.ResolveCurrent()
@@ -198,7 +313,7 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 		}
 		// Keep admission closed until the terminal journal and unreplayable
 		// staging state have both been persisted.
-		if host != nil && bundleReady {
+		if host != nil && maintenanceEntered && bundleReady {
 			host.EndMaintenance()
 		}
 	}()
@@ -207,6 +322,7 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 		if err := host.BeginMaintenance(ctx); err != nil {
 			return CommitResult{}, err
 		}
+		maintenanceEntered = true
 		bundleReady = true
 	}
 	if err := runtimeState.Locks.ExtendSet(ctx, held,
@@ -328,12 +444,6 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 		return rolled, rollbackErr
 	}
 	bundleReady = true
-	if err := committer.inspector.FinishClaim(claim, true, held); err != nil {
-		rolled, rollbackErr := committer.rollback(ctx, runtimeState, held, claim, status, host, err)
-		bundleReady = rolled.Status.RollbackSucceeded
-		terminal = true
-		return rolled, rollbackErr
-	}
 	completed := committer.nextStatusTime(status)
 	status.Phase, status.ActiveGeneration, status.UpdatedAt, status.CompletedAt = CommitSucceeded, finalized.ID, completed, &completed
 	if err := committer.writeStatus(claim.StageRoot, status); err != nil {
@@ -342,12 +452,166 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 		terminal = true
 		return rolled, rollbackErr
 	}
+	// The terminal journal is durable authority before the replay marker. A
+	// crash or marker failure leaves succeeded+committing, which startup can
+	// reconcile idempotently without rolling back a ready generation.
 	terminal = true
+	if err := committer.inspector.FinishClaim(claim, true, held); err != nil {
+		return CommitResult{Status: status}, err
+	}
+	// Retention is post-readiness housekeeping. Failure is fail-closed (nothing
+	// is deleted) and does not turn a proven import into a false rollback.
+	_ = committer.sweepRetainedGenerationsWithinLocks(ctx, runtimeState, held)
 	return CommitResult{Status: status}, nil
 }
 
 func (committer *Committer) now() time.Time {
 	return committer.clock().UTC().Truncate(time.Millisecond)
+}
+
+// RunRetention performs startup and periodic cleanup while a server remains
+// alive. Persisted journals make the same sweep restartable after downtime.
+func (committer *Committer) RunRetention(ctx context.Context) {
+	if committer == nil {
+		return
+	}
+	_ = committer.SweepRetainedGenerations(ctx)
+	ticker := time.NewTicker(retentionSweepEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = committer.SweepRetainedGenerations(ctx)
+		}
+	}
+}
+
+// SweepRetainedGenerations removes only terminal, backup-protected generation
+// copies whose diagnostic retention has fully elapsed.
+func (committer *Committer) SweepRetainedGenerations(ctx context.Context) (resultErr error) {
+	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
+	if err != nil {
+		return err
+	}
+	held, err := runtimeState.Locks.AcquireSet(ctx,
+		runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Exclusive},
+	)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	if err := runtimeState.RefreshCurrent(held); err != nil {
+		return err
+	}
+	return committer.sweepRetainedGenerationsWithinLocks(ctx, runtimeState, held)
+}
+
+func (committer *Committer) sweepRetainedGenerationsWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet) error {
+	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) ||
+		!held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
+		return runtimefs.ErrInsufficientLocks
+	}
+	current, err := runtimeState.ResolveCurrent()
+	if err != nil {
+		return err
+	}
+	statuses, err := committer.retentionStatuses(runtimeState.Root)
+	if err != nil {
+		return err
+	}
+	now := committer.now()
+	protected := map[string]struct{}{current.ID: {}}
+	type candidate struct{ status CommitStatus }
+	candidates := make(map[string]candidate)
+	for _, status := range statuses {
+		if status.CompletedAt == nil || !terminalCommitPhase(status.Phase) || now.Before(status.CompletedAt.Add(generationRetention)) {
+			protected[status.PreviousGeneration] = struct{}{}
+			protected[status.NewGeneration] = struct{}{}
+			continue
+		}
+		if !status.BackupVerified || status.BackupName == "" {
+			continue
+		}
+		switch status.Phase {
+		case CommitSucceeded:
+			candidates[status.PreviousGeneration] = candidate{status: status}
+		case CommitFailed, CommitRolledBack:
+			candidates[status.NewGeneration] = candidate{status: status}
+		}
+	}
+	generationsRoot := filepath.Join(runtimeState.Root, "generations")
+	entries, err := os.ReadDir(generationsRoot)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		info, err := os.Lstat(filepath.Join(generationsRoot, entry.Name()))
+		if err != nil || !validCommitGenerationID(entry.Name(), false) || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.Join(errors.New("generations directory contains an unsafe retention entry"), err)
+		}
+	}
+	for id, item := range candidates {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if _, keep := protected[id]; keep {
+			continue
+		}
+		backupPath := filepath.Join(runtimeState.Root, "backups", item.status.BackupName)
+		if err := ValidateFileContext(ctx, backupPath); err != nil {
+			return fmt.Errorf("revalidate retained pre-import backup: %w", err)
+		}
+		target := filepath.Join(generationsRoot, id)
+		info, err := os.Lstat(target)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || filepath.Dir(target) != generationsRoot || filepath.Base(target) != id || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.Join(errors.New("refuse unsafe retained generation cleanup target"), err)
+		}
+		if err := os.RemoveAll(target); err != nil {
+			return err
+		}
+		if err := runtimefs.SyncDirectory(generationsRoot); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (committer *Committer) retentionStatuses(root string) ([]CommitStatus, error) {
+	statusRoot := filepath.Join(root, "staging", "import-status")
+	entries, err := os.ReadDir(statusRoot)
+	if err != nil {
+		return nil, err
+	}
+	statuses := make([]CommitStatus, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		path := filepath.Join(statusRoot, name)
+		info, err := os.Lstat(path)
+		if name == commitLatestFile || isCommitStatusTemporary(name) || isCommitLatestTemporary(name) {
+			if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+				return nil, errors.Join(errors.New("import retention status authority is unsafe"), err)
+			}
+			continue
+		}
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || filepath.Ext(name) != ".json" {
+			return nil, errors.Join(errors.New("import status directory contains an unsafe retention entry"), err)
+		}
+		status, err := readCommitStatus(path)
+		if err != nil || strings.TrimSuffix(name, ".json") != status.OperationID {
+			return nil, errors.Join(errors.New("import retention status identity is invalid"), err)
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses, nil
 }
 
 func (committer *Committer) nextStatusTime(status CommitStatus) time.Time {
@@ -470,8 +734,11 @@ func (committer *Committer) rollback(ctx context.Context, runtimeState *runtimef
 		status.Phase = CommitNeedsAttention
 	}
 	status.ErrorCode = errorCode(primary)
-	finishErr := committer.inspector.FinishClaim(claim, false, held)
 	writeErr := committer.writeStatus(claim.StageRoot, status)
+	finishErr := error(nil)
+	if writeErr == nil {
+		finishErr = committer.inspector.FinishClaim(claim, false, held)
+	}
 	return CommitResult{Status: status}, errors.Join(primary, rollbackErr, finishErr, writeErr)
 }
 
@@ -524,10 +791,10 @@ func (committer *Committer) RecoverWithinLocks(ctx context.Context, runtimeState
 		if status.RollbackAttempted {
 			status.Phase, status.RollbackSucceeded = CommitRolledBack, true
 		}
-		if err := committer.inspector.FinishClaim(claim, false, held); err != nil {
+		if err := committer.writeStatus(stageRoot, status); err != nil {
 			return err
 		}
-		return committer.writeStatus(stageRoot, status)
+		return committer.inspector.FinishClaim(claim, false, held)
 	}
 	if current.ID != status.NewGeneration {
 		status.Phase, status.ErrorCode, status.UpdatedAt = CommitNeedsAttention, string(domain.CodeDataIntegrityFailed), completed
@@ -540,11 +807,11 @@ func (committer *Committer) RecoverWithinLocks(ctx context.Context, runtimeState
 		verificationErr = committer.reactivate(ctx, runtimeState, current.ID, nil)
 	}
 	if verificationErr == nil {
-		if finishErr := committer.inspector.FinishClaim(claim, true, held); finishErr != nil {
-			return finishErr
-		}
 		status.Phase, status.UpdatedAt, status.CompletedAt = CommitSucceeded, completed, &completed
-		return committer.writeStatus(stageRoot, status)
+		if err := committer.writeStatus(stageRoot, status); err != nil {
+			return err
+		}
+		return committer.inspector.FinishClaim(claim, true, held)
 	}
 	status.Phase, status.RollbackAttempted, status.UpdatedAt = CommitRollingBack, true, committer.nextStatusTime(status)
 	if err := committer.writeStatus(stageRoot, status); err != nil {
@@ -570,10 +837,10 @@ func (committer *Committer) RecoverWithinLocks(ctx context.Context, runtimeState
 	status.Phase, status.ActiveGeneration, status.RollbackSucceeded = CommitRolledBack, status.PreviousGeneration, true
 	completed = committer.nextStatusTime(status)
 	status.ErrorCode, status.UpdatedAt, status.CompletedAt = string(domain.CodeDataIntegrityFailed), completed, &completed
-	if err := committer.inspector.FinishClaim(claim, false, held); err != nil {
+	if err := committer.writeStatus(stageRoot, status); err != nil {
 		return err
 	}
-	return committer.writeStatus(stageRoot, status)
+	return committer.inspector.FinishClaim(claim, false, held)
 }
 
 func (committer *Committer) validateRecoveredGeneration(ctx context.Context, runtimeState *runtimefs.Runtime, stageRoot string, status CommitStatus) error {
@@ -612,7 +879,42 @@ func (committer *Committer) Status(ctx context.Context) (CommitStatus, error) {
 	if err != nil {
 		return CommitStatus{}, err
 	}
-	return committer.latestStatus(root)
+	status, err := committer.latestStatus(root)
+	if err != nil {
+		return CommitStatus{}, err
+	}
+	// CURRENT is the sole authority for the active generation. The commit
+	// journal is intentionally persisted before pointer changes, so a crash in
+	// the switch-to-verifying gap can leave its cached active_generation stale.
+	// Status remains lock-free and resolves the immutable pointer snapshot
+	// directly; it never repairs or mutates runtime state.
+	current, err := (&runtimefs.Runtime{Root: root}).ResolveCurrent()
+	if err != nil {
+		return CommitStatus{}, domain.NewError(domain.CodeDataIntegrityFailed, "resolve active generation for import status", nil)
+	}
+	if current.ID != status.PreviousGeneration && current.ID != status.NewGeneration {
+		return CommitStatus{}, domain.NewError(domain.CodeDataIntegrityFailed, "CURRENT does not match the latest import operation", map[string]any{
+			"active_generation": current.ID,
+		})
+	}
+	expectedCurrent := "either"
+	switch status.Phase {
+	case CommitClaimed, CommitBackingUp, CommitFinalizing, CommitFailed, CommitRolledBack:
+		expectedCurrent = "previous"
+	case CommitVerifying, CommitSucceeded:
+		expectedCurrent = "new"
+	case CommitSwitching, CommitRollingBack, CommitNeedsAttention:
+	default:
+		return CommitStatus{}, domain.NewError(domain.CodeDataIntegrityFailed, "latest import status phase is invalid", nil)
+	}
+	if (expectedCurrent == "previous" && current.ID != status.PreviousGeneration) ||
+		(expectedCurrent == "new" && current.ID != status.NewGeneration) {
+		return CommitStatus{}, domain.NewError(domain.CodeDataIntegrityFailed, "CURRENT contradicts the latest import status phase", map[string]any{
+			"active_generation": current.ID, "phase": status.Phase,
+		})
+	}
+	status.ActiveGeneration = current.ID
+	return status, nil
 }
 
 func (committer *Committer) latestStatus(root string) (CommitStatus, error) {
@@ -636,17 +938,29 @@ func (committer *Committer) latestStatusWithRoot(root string) (CommitStatus, str
 		metadataState string
 	}
 	statuses := make([]locatedStatus, 0, len(entries))
+	latestID := ""
 	for _, entry := range entries {
 		name := entry.Name()
 		path := filepath.Join(statusRoot, name)
 		info, infoErr := os.Lstat(path)
-		if isCommitStatusTemporary(name) {
+		if isCommitStatusTemporary(name) || isCommitLatestTemporary(name) {
 			if infoErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 				return CommitStatus{}, "", errors.Join(errors.New("import status temporary entry is unsafe"), infoErr)
 			}
 			// WritePrivateFileAtomic may leave this same-directory prepared file
 			// after SIGKILL. It is never authority and must not block recovery or
 			// concurrent status reads.
+			continue
+		}
+		if name == commitLatestFile {
+			if infoErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() < 2 || info.Size() > 130 {
+				return CommitStatus{}, "", errors.Join(errors.New("import latest-operation pointer is unsafe"), infoErr)
+			}
+			data, readErr := os.ReadFile(path)
+			if readErr != nil || len(data) < 2 || data[len(data)-1] != '\n' || !validCommitGenerationID(string(data[:len(data)-1]), true) {
+				return CommitStatus{}, "", errors.Join(errors.New("import latest-operation pointer is invalid"), readErr)
+			}
+			latestID = string(data[:len(data)-1])
 			continue
 		}
 		if infoErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || filepath.Ext(name) != ".json" {
@@ -691,6 +1005,16 @@ func (committer *Committer) latestStatusWithRoot(root string) (CommitStatus, str
 	if len(active) == 1 {
 		return active[0].status, active[0].root, nil
 	}
+	if latestID != "" {
+		for _, located := range statuses {
+			if located.status.OperationID == latestID {
+				return located.status, located.root, nil
+			}
+		}
+		return CommitStatus{}, "", errors.New("latest import operation has no durable journal")
+	}
+	// Backward-compatible fallback for instances created before LATEST existed.
+	// The next status transition atomically installs the monotonic authority.
 	sort.Slice(statuses, func(i, j int) bool { return statuses[i].status.UpdatedAt.After(statuses[j].status.UpdatedAt) })
 	return statuses[0].status, statuses[0].root, nil
 }
@@ -718,7 +1042,26 @@ func isCommitStatusTemporary(name string) bool {
 	return true
 }
 
+func isCommitLatestTemporary(name string) bool {
+	if !strings.HasPrefix(name, "."+commitLatestFile+"-") || len(name) == len("."+commitLatestFile+"-") {
+		return false
+	}
+	for _, character := range name[len("."+commitLatestFile+"-"):] {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (committer *Committer) writeStatus(stageRoot string, status CommitStatus) error {
+	if committer.statusWriter != nil {
+		return committer.statusWriter(stageRoot, status)
+	}
+	return writeCommitStatus(stageRoot, status)
+}
+
+func writeCommitStatus(stageRoot string, status CommitStatus) error {
 	if err := validateCommitStatus(status); err != nil {
 		return err
 	}
@@ -734,7 +1077,10 @@ func (committer *Committer) writeStatus(stageRoot string, status CommitStatus) e
 	if err != nil {
 		return err
 	}
-	return runtimefs.WritePrivateFileAtomic(statusRoot, status.OperationID+".json", append(data, '\n'))
+	if err := runtimefs.WritePrivateFileAtomic(statusRoot, status.OperationID+".json", append(data, '\n')); err != nil {
+		return err
+	}
+	return runtimefs.WritePrivateFileAtomic(statusRoot, commitLatestFile, []byte(status.OperationID+"\n"))
 }
 
 func readCommitStatus(path string) (CommitStatus, error) {
@@ -816,6 +1162,12 @@ func validCommitGenerationID(value string, requireImport bool) bool {
 }
 
 func errorCode(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "TIMEOUT"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "CANCELLED"
+	}
 	var domainErr *domain.Error
 	if errors.As(err, &domainErr) {
 		return string(domainErr.Code)

@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -67,6 +68,7 @@ type InspectOptions struct {
 	Random         io.Reader
 	AvailableBytes func(string) (uint64, error)
 	ActiveDatabase *sqlitestore.Database
+	ImportLockWait time.Duration
 }
 
 // ImportCounts are portable record counts safe for Web and CLI preview.
@@ -121,6 +123,22 @@ type Inspection struct {
 	StagingToken  string            `json:"staging_token,omitempty"`
 }
 
+// ImportPlan is the zero-persistence dry-run result. It contains the complete
+// replacement and disk preview but deliberately excludes staging identity,
+// expiry, and claim credentials.
+type ImportPlan struct {
+	DryRun        bool              `json:"dry_run"`
+	FormatVersion int               `json:"format_version"`
+	ArchiveSHA256 string            `json:"archive_sha256"`
+	Counts        ImportCounts      `json:"counts"`
+	TimeRange     ImportTimeRange   `json:"time_range"`
+	MediaBytes    int64             `json:"media_bytes"`
+	MissingAlt    int64             `json:"missing_alt"`
+	Disk          DiskEstimate      `json:"disk"`
+	Replacement   ReplacementImpact `json:"replacement"`
+	Warnings      []string          `json:"warnings"`
+}
+
 // StagingClaim is the one-time, already verified handoff consumed by import
 // commit. Claiming does not switch CURRENT or mutate active authority data.
 type StagingClaim struct {
@@ -157,6 +175,7 @@ type Inspector struct {
 	random         io.Reader
 	availableBytes func(string) (uint64, error)
 	activeDatabase *sqlitestore.Database
+	importLockWait time.Duration
 }
 
 // NewInspector constructs an import inspection use case.
@@ -194,6 +213,9 @@ func NewInspector(options InspectOptions) (*Inspector, error) {
 	if options.TokenTTL <= 0 || options.TokenTTL > defaultInspectionTTL {
 		return nil, errors.New("import staging token TTL must be positive and no greater than 30 minutes")
 	}
+	if options.ImportLockWait < 0 || options.ImportLockWait > 5*time.Second {
+		return nil, errors.New("import inspection lock wait must be between zero and 5 seconds")
+	}
 	if options.Clock == nil {
 		options.Clock = time.Now
 	}
@@ -206,32 +228,41 @@ func NewInspector(options InspectOptions) (*Inspector, error) {
 	return &Inspector{
 		dataDir: options.DataDir, limits: limits, tokenTTL: options.TokenTTL,
 		clock: options.Clock, random: options.Random, availableBytes: options.AvailableBytes,
-		activeDatabase: options.ActiveDatabase,
+		activeDatabase: options.ActiveDatabase, importLockWait: options.ImportLockWait,
 	}, nil
 }
 
 // InspectFile securely opens one regular non-symlink local archive.
 func (inspector *Inspector) InspectFile(ctx context.Context, archivePath string, sessionEpoch uint64) (Inspection, error) {
-	if strings.TrimSpace(archivePath) == "" || strings.ContainsRune(archivePath, 0) {
-		return Inspection{}, domain.NewError(domain.CodeInvalidArgument, "archive path is required", map[string]any{"field": "archive"})
-	}
-	before, err := os.Lstat(archivePath)
-	if err != nil {
-		return Inspection{}, err
-	}
-	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
-		return Inspection{}, domain.NewError(domain.CodeExportInvalid, "archive input must be a regular non-symlink file", nil)
-	}
-	file, err := os.Open(archivePath)
+	file, err := openArchiveInput(archivePath)
 	if err != nil {
 		return Inspection{}, err
 	}
 	defer func() { _ = file.Close() }()
+	return inspector.Inspect(ctx, file, sessionEpoch)
+}
+
+func openArchiveInput(archivePath string) (*os.File, error) {
+	if strings.TrimSpace(archivePath) == "" || strings.ContainsRune(archivePath, 0) {
+		return nil, domain.NewError(domain.CodeInvalidArgument, "archive path is required", map[string]any{"field": "archive"})
+	}
+	before, err := os.Lstat(archivePath)
+	if err != nil {
+		return nil, err
+	}
+	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
+		return nil, domain.NewError(domain.CodeExportInvalid, "archive input must be a regular non-symlink file", nil)
+	}
+	file, err := os.Open(archivePath)
+	if err != nil {
+		return nil, err
+	}
 	after, err := file.Stat()
 	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
-		return Inspection{}, errors.Join(domain.NewError(domain.CodeExportInvalid, "archive input changed while opening", nil), err)
+		_ = file.Close()
+		return nil, errors.Join(domain.NewError(domain.CodeExportInvalid, "archive input changed while opening", nil), err)
 	}
-	return inspector.Inspect(ctx, file, sessionEpoch)
+	return file, nil
 }
 
 // Inspect streams one archive into an isolated staging directory, validates it
@@ -247,15 +278,124 @@ func (inspector *Inspector) Inspect(ctx context.Context, source io.Reader, sessi
 	if err := ctx.Err(); err != nil {
 		return Inspection{}, err
 	}
-	runtimeState, err := runtimefs.OpenContext(ctx, inspector.dataDir)
+	runtimeState, err := runtimefs.OpenForCoordination(inspector.dataDir)
 	if err != nil {
 		return Inspection{}, err
 	}
-	lease, err := runtimeState.Locks.Acquire(ctx, runtimefs.ImportLock, runtimefs.Exclusive)
+	held, err := inspector.acquireImportSet(ctx, runtimeState)
 	if err != nil {
 		return Inspection{}, fmt.Errorf("acquire import inspection lock: %w", err)
 	}
-	defer func() { resultErr = errors.Join(resultErr, lease.Release()) }()
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	return inspector.inspectWithinLocks(ctx, source, sessionEpoch, runtimeState, held, true)
+}
+
+// Plan validates and rebuilds the archive with the same hostile-input path as
+// Inspect, then durably removes its private staging directory before return.
+// It never cleans or replaces a pre-existing staging operation.
+func (inspector *Inspector) Plan(ctx context.Context, source io.Reader, sessionEpoch uint64) (result ImportPlan, resultErr error) {
+	if inspector == nil || source == nil {
+		return ImportPlan{}, errors.New("import inspector and archive input are required")
+	}
+	runtimeState, err := runtimefs.OpenForCoordination(inspector.dataDir)
+	if err != nil {
+		return ImportPlan{}, err
+	}
+	held, err := inspector.acquireImportSet(ctx, runtimeState)
+	if err != nil {
+		return ImportPlan{}, fmt.Errorf("acquire import plan lock: %w", err)
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	return inspector.planWithinLocks(ctx, source, sessionEpoch, runtimeState, held)
+}
+
+func (inspector *Inspector) acquireImportSet(ctx context.Context, runtimeState *runtimefs.Runtime) (*runtimefs.LeaseSet, error) {
+	lockContext := ctx
+	cancel := func() {}
+	if inspector.importLockWait > 0 {
+		lockContext, cancel = context.WithTimeout(ctx, inspector.importLockWait)
+	}
+	defer cancel()
+	held, err := runtimeState.Locks.AcquireSet(lockContext, runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive})
+	if err != nil && inspector.importLockWait > 0 && ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+		return nil, domain.NewError(domain.CodeImportInProgress, "another import operation owns the coordinator", nil)
+	}
+	return held, err
+}
+
+func (inspector *Inspector) planWithinLocks(ctx context.Context, source io.Reader, sessionEpoch uint64, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet) (result ImportPlan, resultErr error) {
+	parent := filepath.Join(runtimeState.Root, "staging", "import")
+	before, err := os.ReadDir(parent)
+	if err != nil {
+		return ImportPlan{}, err
+	}
+	baseline := make(map[string]struct{}, len(before))
+	for _, entry := range before {
+		baseline[entry.Name()] = struct{}{}
+	}
+	// Cleanup is detached from request cancellation and covers every exit after
+	// a stage is allocated, including hostile ZIP, disk, rebuild, and timeout
+	// failures. Only names absent from the locked baseline are eligible.
+	defer func() {
+		cleanupContext, cancelCleanup := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+		defer cancelCleanup()
+		if err := cleanupContext.Err(); err != nil {
+			resultErr = errors.Join(resultErr, err)
+			return
+		}
+		after, err := os.ReadDir(parent)
+		if err != nil {
+			resultErr = errors.Join(resultErr, err)
+			return
+		}
+		for _, entry := range after {
+			if _, existed := baseline[entry.Name()]; existed {
+				continue
+			}
+			stageRoot := filepath.Join(parent, entry.Name())
+			if err := removeStagingDirectory(parent, stageRoot); err != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("remove dry-run import staging: %w", err))
+				return
+			}
+		}
+		verified, err := os.ReadDir(parent)
+		if err != nil || len(verified) != len(baseline) {
+			resultErr = errors.Join(resultErr, errors.New("dry-run import staging cleanup did not restore the original directory set"), err)
+			return
+		}
+		for _, entry := range verified {
+			if _, existed := baseline[entry.Name()]; !existed {
+				resultErr = errors.Join(resultErr, errors.New("dry-run import staging cleanup left an unexpected entry"))
+				return
+			}
+		}
+	}()
+	inspection, err := inspector.inspectWithinLocks(ctx, source, sessionEpoch, runtimeState, held, false)
+	if err != nil {
+		return ImportPlan{}, err
+	}
+	return importPlanFromInspection(inspection), nil
+}
+
+func importPlanFromInspection(value Inspection) ImportPlan {
+	return ImportPlan{
+		DryRun: true, FormatVersion: value.FormatVersion, ArchiveSHA256: value.ArchiveSHA256,
+		Counts: value.Counts, TimeRange: value.TimeRange, MediaBytes: value.MediaBytes, MissingAlt: value.MissingAlt,
+		Disk: value.Disk, Replacement: value.Replacement, Warnings: value.Warnings,
+	}
+}
+
+func (inspector *Inspector) inspectWithinLocks(ctx context.Context, source io.Reader, sessionEpoch uint64, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, cleanupExisting bool) (result Inspection, resultErr error) {
+	if inspector == nil || source == nil || runtimeState == nil || held == nil ||
+		!held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
+		return Inspection{}, runtimefs.ErrInsufficientLocks
+	}
+	if sessionEpoch == 0 {
+		return Inspection{}, domain.NewError(domain.CodeUnauthorized, "owner session epoch is required for import inspection", nil)
+	}
+	if err := ctx.Err(); err != nil {
+		return Inspection{}, err
+	}
 	current, err := runtimeState.ResolveCurrent()
 	if err != nil {
 		return Inspection{}, err
@@ -265,7 +405,7 @@ func (inspector *Inspector) Inspect(ctx context.Context, source io.Reader, sessi
 	if now.IsZero() {
 		return Inspection{}, errors.New("import inspection clock returned zero time")
 	}
-	if err := inspector.cleanupAndCheckActive(runtimeState.Root, now, sessionEpoch); err != nil {
+	if err := inspector.checkActive(runtimeState.Root, now, sessionEpoch, cleanupExisting); err != nil {
 		return Inspection{}, err
 	}
 
@@ -456,6 +596,22 @@ func (inspector *Inspector) FinishClaim(claim StagingClaim, succeeded bool, held
 		state.State = stagingFailed
 	}
 	return writeStagingMetadata(claim.StageRoot, state)
+}
+
+func (inspector *Inspector) discardReadyWithinLocks(runtimeState *runtimefs.Runtime, generationID string, held *runtimefs.LeaseSet) error {
+	if inspector == nil || runtimeState == nil || held == nil || !validCommitGenerationID(generationID, true) ||
+		!held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
+		return runtimefs.ErrInsufficientLocks
+	}
+	stageRoot := filepath.Join(runtimeState.Root, "staging", "import", generationID)
+	metadata, err := readStagingMetadata(stageRoot)
+	if err != nil {
+		return err
+	}
+	if metadata.GenerationID != generationID || metadata.State != stagingReady {
+		return nil
+	}
+	return removeStagingDirectory(filepath.Dir(stageRoot), stageRoot)
 }
 
 func (inspector *Inspector) copyArchive(ctx context.Context, source io.Reader, destination string) (size int64, digestHex string, resultErr error) {
@@ -1129,7 +1285,7 @@ func (inspector *Inspector) createStage(root string, now time.Time) (string, str
 	return "", "", errors.New("could not allocate a unique import staging generation")
 }
 
-func (inspector *Inspector) cleanupAndCheckActive(root string, now time.Time, sessionEpoch uint64) error {
+func (inspector *Inspector) checkActive(root string, now time.Time, sessionEpoch uint64, cleanup bool) error {
 	parent := filepath.Join(root, "staging", "import")
 	entries, err := os.ReadDir(parent)
 	if err != nil {
@@ -1147,6 +1303,9 @@ func (inspector *Inspector) cleanupAndCheckActive(root string, now time.Time, se
 		}
 		metadata, err := readStagingMetadata(stageRoot)
 		if errors.Is(err, fs.ErrNotExist) {
+			if !cleanup {
+				return importStagingInvalid("import staging metadata is missing", err)
+			}
 			if err := removeStagingDirectory(parent, stageRoot); err != nil {
 				return err
 			}
@@ -1157,13 +1316,17 @@ func (inspector *Inspector) cleanupAndCheckActive(root string, now time.Time, se
 		}
 		switch metadata.State {
 		case stagingFailed, stagingUsed:
-			if err := removeStagingDirectory(parent, stageRoot); err != nil {
-				return err
+			if cleanup {
+				if err := removeStagingDirectory(parent, stageRoot); err != nil {
+					return err
+				}
 			}
 		case stagingReady:
 			if metadata.ExpiresAtMS <= now.UnixMilli() || metadata.SessionEpoch != sessionEpoch {
-				if err := removeStagingDirectory(parent, stageRoot); err != nil {
-					return err
+				if cleanup {
+					if err := removeStagingDirectory(parent, stageRoot); err != nil {
+						return err
+					}
 				}
 				continue
 			}
@@ -1178,10 +1341,28 @@ func (inspector *Inspector) cleanupAndCheckActive(root string, now time.Time, se
 }
 
 func removeStagingDirectory(parent, stageRoot string) error {
-	if err := os.RemoveAll(stageRoot); err != nil {
+	expectedParent, err := filepath.Abs(filepath.Clean(parent))
+	if err != nil {
 		return err
 	}
-	return runtimefs.SyncDirectory(parent)
+	actualRoot, err := filepath.Abs(filepath.Clean(stageRoot))
+	if err != nil || filepath.Dir(actualRoot) != expectedParent || !strings.HasPrefix(filepath.Base(actualRoot), "import-") {
+		return errors.Join(errors.New("refuse unsafe import staging cleanup target"), err)
+	}
+	info, err := os.Lstat(actualRoot)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("refuse unsafe import staging cleanup entry")
+	}
+	if err := os.RemoveAll(actualRoot); err != nil {
+		return err
+	}
+	return runtimefs.SyncDirectory(expectedParent)
 }
 
 func (inspector *Inspector) loadReady(ctx context.Context, token string, sessionEpoch uint64) (_ stagingMetadata, _ manifest, _ string, lease *runtimefs.Lease, resultErr error) {
@@ -1269,14 +1450,8 @@ func (inspector *Inspector) loadReadyHeld(ctx context.Context, runtimeState *run
 }
 
 func validateStagingGeneration(ctx context.Context, parent *runtimefs.Runtime, generation runtimefs.Generation, archivePath string, document manifest) error {
-	for _, target := range []struct {
-		name string
-		dir  bool
-	}{{generation.Root, true}, {generation.MediaRoot, true}, {generation.OriginalsDir, true}, {generation.DatabasePath, false}} {
-		info, err := os.Lstat(target.name)
-		if err != nil || info.Mode()&os.ModeSymlink != 0 || target.dir != info.IsDir() || !target.dir && !info.Mode().IsRegular() {
-			return errors.Join(errors.New("staging generation structure is invalid"), err)
-		}
+	if err := validatePortableGenerationTree(ctx, generation, archivePath); err != nil {
+		return err
 	}
 	runtimeState := &runtimefs.Runtime{Root: parent.Root, Instance: parent.Instance, Current: generation, Locks: parent.Locks}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
@@ -1317,6 +1492,67 @@ func validateStagingGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		})
 		return errors.Join(verifyErr, file.Close())
 	})
+}
+
+func validatePortableGenerationTree(ctx context.Context, generation runtimefs.Generation, archivePath string) error {
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+	mediaRecords := findZIPMember(reader.File, "data/media.jsonl")
+	expected := map[string]bool{
+		".": true, "moment.db": false, "media": true, "media/original": true,
+	}
+	_, err = validateJSONLines[mediaRecord](ctx, mediaRecords, []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+		storagePath, err := portableStoragePath(value.SHA256, value.MIMEType)
+		if err != nil {
+			return err
+		}
+		expected[path.Dir(storagePath)] = true
+		expected[storagePath] = false
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(expected))
+	err = filepath.WalkDir(generation.Root, func(candidate string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("staging generation contains a symlink")
+		}
+		relative, err := filepath.Rel(generation.Root, candidate)
+		if err != nil {
+			return err
+		}
+		relative = filepath.ToSlash(relative)
+		directory, ok := expected[relative]
+		if !ok || directory != info.IsDir() || !directory && !info.Mode().IsRegular() {
+			return fmt.Errorf("staging generation contains unexpected path %q", relative)
+		}
+		if _, duplicate := seen[relative]; duplicate {
+			return fmt.Errorf("staging generation path %q is duplicated", relative)
+		}
+		seen[relative] = struct{}{}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if len(seen) != len(expected) {
+		return errors.New("staging generation is missing an expected canonical path")
+	}
+	return nil
 }
 
 func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, archivePath string) error {

@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,6 +23,7 @@ import (
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/runtimefs"
 )
 
 func TestBackupExportDirectFileStdoutFlagsAndStableErrors(t *testing.T) {
@@ -396,6 +398,102 @@ func TestBackupImportDirectSafetySuccessReplayAndHelp(t *testing.T) {
 	}
 }
 
+func TestBackupImportArchiveDryRunHasNoDurableSideEffectsAndPathCommits(t *testing.T) {
+	runtimeState, dataDir := initializeSiteCLIData(t)
+	application := momentTestApplication()
+	archivePath := filepath.Join(t.TempDir(), "source.zip")
+	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", archivePath, "--json"); output.exit != ExitSuccess {
+		t.Fatalf("source export=%#v", output)
+	}
+	if _, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	currentBefore, err := os.ReadFile(filepath.Join(dataDir, "CURRENT"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracked := []string{
+		filepath.Join(dataDir, "staging", "import"), filepath.Join(dataDir, "staging", "import-status"),
+		filepath.Join(dataDir, "backups"), filepath.Join(dataDir, "generations"),
+	}
+	before := make(map[string][]string, len(tracked))
+	for _, root := range tracked {
+		before[root] = directoryNames(t, root)
+	}
+	serve, err := runtimeState.Locks.Acquire(context.Background(), runtimefs.ServeLock, runtimefs.Exclusive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--yes", "--json")
+	if blocked.exit != ExitConflict || decodeOneDocument(t, blocked.stdout)["error"].(map[string]any)["code"] != string(domain.CodeInstanceInUse) {
+		t.Fatalf("server-running path import=%#v", blocked)
+	}
+	if err := serve.Release(); err != nil {
+		t.Fatal(err)
+	}
+	for _, root := range tracked {
+		if got := directoryNames(t, root); !reflect.DeepEqual(got, before[root]) {
+			t.Fatalf("server-blocked path import changed %s", root)
+		}
+	}
+	dryRun := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--dry-run", "--json")
+	if dryRun.exit != ExitSuccess || dryRun.stderr != "" {
+		t.Fatalf("archive dry-run=%#v", dryRun)
+	}
+	data := commandData(t, dryRun)
+	if data["dry_run"] != true || data["staging_token"] != nil || data["generation_id"] != nil || data["expires_at"] != nil {
+		t.Fatalf("dry-run leaked staging authority=%#v", data)
+	}
+	currentAfter, _ := os.ReadFile(filepath.Join(dataDir, "CURRENT"))
+	if !bytes.Equal(currentBefore, currentAfter) {
+		t.Fatal("dry-run changed CURRENT")
+	}
+	for _, root := range tracked {
+		if got := directoryNames(t, root); !reflect.DeepEqual(got, before[root]) {
+			t.Fatalf("dry-run changed %s: before=%#v after=%#v", root, before[root], got)
+		}
+	}
+	invalidArchive := filepath.Join(t.TempDir(), "invalid.zip")
+	if err := os.WriteFile(invalidArchive, []byte("not a zip"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	invalid := execute(application, "", "backup", "import", invalidArchive, "--data-dir", dataDir, "--dry-run", "--json")
+	if invalid.exit != ExitIntegrity {
+		t.Fatalf("invalid dry-run=%#v", invalid)
+	}
+	for _, root := range tracked {
+		if got := directoryNames(t, root); !reflect.DeepEqual(got, before[root]) {
+			t.Fatalf("failed dry-run changed %s: before=%#v after=%#v", root, before[root], got)
+		}
+	}
+	withoutConfirmation := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--json")
+	if withoutConfirmation.exit != ExitInvalidInput {
+		t.Fatalf("path import without confirmation=%#v", withoutConfirmation)
+	}
+	for _, root := range tracked {
+		if got := directoryNames(t, root); !reflect.DeepEqual(got, before[root]) {
+			t.Fatalf("unconfirmed path import changed %s", root)
+		}
+	}
+	committed := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--yes", "--json")
+	if committed.exit != ExitSuccess || commandData(t, committed)["status"].(map[string]any)["phase"] != string(archive.CommitSucceeded) {
+		t.Fatalf("path import=%#v", committed)
+	}
+}
+
+func directoryNames(t *testing.T, root string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, len(entries))
+	for index, entry := range entries {
+		names[index] = entry.Name()
+	}
+	return names
+}
+
 func TestBackupImportAPIStrictSuccessAndMalformedResponse(t *testing.T) {
 	application := momentTestApplication()
 	t.Setenv("MOMENT_TOKEN", "owner-test-token")
@@ -454,6 +552,66 @@ func TestBackupImportAPIStrictSuccessAndMalformedResponse(t *testing.T) {
 		if failed.exit != ExitUnavailable || decodeOneDocument(t, failed.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" || failed.stderr != "" {
 			t.Fatalf("malformed response accepted: %#v body=%s", failed, malformed)
 		}
+	}
+}
+
+func TestBackupImportAPIArchivePlanAndSingleRequestRestore(t *testing.T) {
+	application := momentTestApplication()
+	t.Setenv("MOMENT_TOKEN", "owner-test-token")
+	archiveBody := []byte("PK\x03\x04payload")
+	archivePath := filepath.Join(t.TempDir(), "source.zip")
+	if err := os.WriteFile(archivePath, archiveBody, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	planEnvelope := validImportPlanAPIEnvelope(int64(len(archiveBody)))
+	planBody, _ := json.Marshal(planEnvelope)
+	now := time.Date(2026, 8, 11, 7, 30, 0, 0, time.UTC)
+	operationID := "import-20260811T073000000Z-0011223344556677"
+	commitBody, _ := json.Marshal(map[string]any{
+		"data": map[string]any{"status": map[string]any{
+			"operation_id": operationID, "phase": "succeeded", "active_generation": operationID,
+			"previous_generation": "gen-old", "new_generation": operationID,
+			"backup_name": "pre-import.zip", "backup_verified": true,
+			"rollback_attempted": false, "rollback_succeeded": false,
+			"started_at": now.Format(time.RFC3339Nano), "updated_at": now.Format(time.RFC3339Nano), "completed_at": now.Format(time.RFC3339Nano),
+		}},
+		"meta": map[string]any{"request_id": "req_restore"},
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil || !bytes.Equal(body, archiveBody) || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/zip" {
+			t.Errorf("upload path=%s body=%q headers=%#v err=%v", request.URL.Path, body, request.Header, err)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/owner/import/plan":
+			_, _ = writer.Write(planBody)
+		case "/api/v1/owner/import/restore":
+			_, _ = writer.Write(commitBody)
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	plan := execute(application, "", "--url", server.URL, "backup", "import", archivePath, "--dry-run", "--json")
+	if plan.exit != ExitSuccess || plan.stderr != "" || commandData(t, plan)["dry_run"] != true || strings.Contains(plan.stdout, "staging_token") {
+		t.Fatalf("API plan=%#v", plan)
+	}
+	restored := execute(application, "", "--url", server.URL, "backup", "import", archivePath, "--yes", "--json")
+	if restored.exit != ExitSuccess || restored.stderr != "" || commandData(t, restored)["status"].(map[string]any)["active_generation"] != operationID {
+		t.Fatalf("API restore=%#v", restored)
+	}
+	malformedEnvelope := validImportPlanAPIEnvelope(int64(len(archiveBody)))
+	malformedEnvelope["data"].(map[string]any)["staging_token"] = "must-not-be-accepted"
+	malformedBody, _ := json.Marshal(malformedEnvelope)
+	malformed := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write(malformedBody)
+	}))
+	failed := execute(application, "", "--url", malformed.URL, "backup", "import", archivePath, "--dry-run", "--json")
+	malformed.Close()
+	if failed.exit != ExitUnavailable || decodeOneDocument(t, failed.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+		t.Fatalf("malformed plan accepted=%#v", failed)
 	}
 }
 
@@ -742,6 +900,16 @@ func validImportInspectionAPIEnvelope(archiveBytes int64, expiresAt time.Time) m
 		},
 		"meta": map[string]any{"request_id": "req_import"},
 	}
+}
+
+func validImportPlanAPIEnvelope(archiveBytes int64) map[string]any {
+	value := validImportInspectionAPIEnvelope(archiveBytes, time.Now().UTC().Add(importInspectionTokenTTL))
+	data := value["data"].(map[string]any)
+	delete(data, "generation_id")
+	delete(data, "expires_at")
+	delete(data, "staging_token")
+	data["dry_run"] = true
+	return value
 }
 
 type failingBackupWriter struct{}

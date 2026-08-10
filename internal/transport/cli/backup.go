@@ -73,18 +73,20 @@ func registerBackup(application *Application, info buildinfo.Info) {
 		Run:        runBackupInspect,
 	})
 	application.MustRegisterLeaf(LeafSpec{
-		Path:   []string{"backup", "import"},
-		Short:  "Commit one inspected staging generation",
-		Long:   "Consume one expiring staging token, enter exclusive maintenance, create and verify a pre-import backup, atomically switch CURRENT, prove readiness, and automatically roll back on failure.",
-		Inputs: "Provide exactly one --staging-token from backup inspect. Direct mode requires the server to be stopped; API mode performs online maintenance. --timeout bounds waits and pre-switch work; recovery continues safely after a post-switch cancellation.",
-		Output: "The normal human/JSON contract reports the durable operation phase, true active/previous/new generations, verified backup name, rollback outcome, and timestamps. The token is never echoed.",
-		Errors: "Replay, expiry, owner rotation, disk pressure, instance use, integrity, maintenance, and rollback failures use stable codes and exits. Resolve an ambiguous API result with 'moment backup status', never by replaying the token.",
-		Safety: "This command replaces active authority. --yes is required in non-interactive and JSON operation; --no-input never confirms implicitly.",
-		Example: "moment backup import --staging-token <token> --data-dir ./moment-data --yes --json\n" +
-			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup import --staging-token <token> --yes --json",
+		Path:      []string{"backup", "import"},
+		ArgsUsage: "[archive.zip]",
+		Short:     "Plan or commit one portable archive replacement",
+		Long:      "Validate one archive and replace the active generation in one coordinated operation, or consume an advanced staging token from backup inspect. Commit creates and verifies a pre-import backup, atomically switches CURRENT, proves readiness, and can automatically roll back on failure.",
+		Inputs:    "Provide exactly one positional archive path or --staging-token. Direct mode requires the server to be stopped and holds Import→Serve continuously before reading the archive; API archive mode uploads and commits in one authenticated request. --dry-run requires a path and returns only a fully validated replacement plan.",
+		Output:    "Dry-run reports the token-free replacement/disk plan after removing all temporary staging. Commit reports the durable operation phase, true active/previous/new generations, verified backup name, rollback outcome, and timestamps. Tokens are never echoed.",
+		Errors:    "Replay, expiry, owner rotation, disk pressure, instance use, integrity, maintenance, and rollback failures use stable codes and exits. Resolve an ambiguous API result with 'moment backup status', never by replaying the token.",
+		Safety:    "This command replaces active authority. --dry-run leaves no staging token, journal, backup, CURRENT, or maintenance change. Actual import confirmation happens before archive staging; --no-input never confirms implicitly.",
+		Example: "moment backup import ./moment-export.zip --data-dir ./moment-data --dry-run --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup import ./moment-export.zip --yes --json",
+		Args:       cobra.MaximumNArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
-			Destructive: true, Confirmation: "Replace the active Moment dataset using this inspected staging token?",
+			Destructive: true, SupportsDryRun: true, Confirmation: "Replace the active Moment dataset using this archive or inspected staging token?",
 		},
 		Flags: func(flags *pflag.FlagSet) {
 			registerSingleStringFlag(flags, "staging-token", "one-time token returned by backup inspect")
@@ -143,8 +145,30 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 	if err != nil {
 		return Result{}, err
 	}
-	if !input.Changed("staging-token") || token == "" || len(token) > 256 || strings.TrimSpace(token) != token {
-		return Result{}, invalidArgument("--staging-token must be provided exactly once", "use the unexpired token returned by backup inspect")
+	hasToken := input.Changed("staging-token")
+	arguments := input.Args()
+	hasArchive := len(arguments) == 1
+	if hasToken == hasArchive {
+		return Result{}, invalidArgument("provide exactly one archive path or --staging-token", "use a local Moment export ZIP, or the unexpired token returned by backup inspect")
+	}
+	if hasToken && (token == "" || len(token) > 256 || strings.TrimSpace(token) != token) {
+		return Result{}, invalidArgument("--staging-token must be non-empty and canonical", "use the unexpired token returned by backup inspect")
+	}
+	if invocation.Safety().DryRun && hasToken {
+		return Result{}, invalidArgument("--dry-run requires an archive path", "provide the export ZIP instead of an already persistent staging token")
+	}
+	archivePath := ""
+	if hasArchive {
+		archivePath = arguments[0]
+	}
+	if invocation.Safety().DryRun {
+		plan, meta, planErr := runBackupImportPlan(ctx, invocation, archivePath, appVersion)
+		if planErr != nil {
+			return Result{}, backupImportCLIError(planErr)
+		}
+		text := fmt.Sprintf("Import dry-run validated with no persistent staging\nEntries: %d\nComments: %d\nMedia: %d\nRequired additional bytes: %d\nAvailable bytes: %d",
+			plan.Counts.Entries, plan.Counts.Comments, plan.Counts.Media, plan.Disk.RequiredAdditionalBytes, plan.Disk.AvailableBytes)
+		return Result{Data: plan, Text: text, Meta: meta}, nil
 	}
 	var result archive.CommitResult
 	var meta map[string]any
@@ -154,21 +178,29 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 		if targetErr != nil {
 			return Result{}, targetErr
 		}
-		runtimeState, openErr := runtimefs.OpenContext(ctx, target.DataDirectory())
+		root, openErr := runtimefs.ResolveDataDir(target.DataDirectory())
 		if openErr != nil {
 			return Result{}, backupImportCLIError(openErr)
 		}
-		status, statusErr := auth.ReadStatus(runtimeState.Root)
+		status, statusErr := auth.ReadStatus(root)
 		if statusErr != nil || !status.Initialized || status.SessionEpoch == 0 {
 			return Result{}, ownerAuthError(errors.Join(statusErr, auth.ErrNotInitialized))
 		}
-		committer, createErr := archive.NewCommitter(archive.CommitOptions{DataDir: runtimeState.Root, AppVersion: appVersion})
+		committer, createErr := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
 		if createErr != nil {
 			return Result{}, createErr
 		}
-		result, err = committer.Commit(ctx, token, status.SessionEpoch, nil)
+		if hasArchive {
+			result, err = committer.CommitFileOffline(ctx, archivePath, status.SessionEpoch)
+		} else {
+			result, err = committer.Commit(ctx, token, status.SessionEpoch, nil)
+		}
 	case ModeAPI:
-		result, meta, err = commitImportAPI(ctx, invocation, token)
+		if hasArchive {
+			result, meta, err = restoreImportAPI(ctx, invocation, archivePath)
+		} else {
+			result, meta, err = commitImportAPI(ctx, invocation, token)
+		}
 	default:
 		return Result{}, errors.New("unsupported backup import transport")
 	}
@@ -179,6 +211,34 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 	text := fmt.Sprintf("Import committed\nPhase: %s\nActive generation: %s\nPrevious generation: %s\nVerified backup: %s",
 		status.Phase, status.ActiveGeneration, status.PreviousGeneration, status.BackupName)
 	return Result{Data: result, Text: text, Meta: meta}, nil
+}
+
+func runBackupImportPlan(ctx context.Context, invocation Invocation, archivePath, appVersion string) (archive.ImportPlan, map[string]any, error) {
+	switch invocation.Mode() {
+	case ModeDirect:
+		target, err := invocation.DirectTransport()
+		if err != nil {
+			return archive.ImportPlan{}, nil, err
+		}
+		root, err := runtimefs.ResolveDataDir(target.DataDirectory())
+		if err != nil {
+			return archive.ImportPlan{}, nil, err
+		}
+		status, err := auth.ReadStatus(root)
+		if err != nil || !status.Initialized || status.SessionEpoch == 0 {
+			return archive.ImportPlan{}, nil, ownerAuthError(errors.Join(err, auth.ErrNotInitialized))
+		}
+		committer, err := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
+		if err != nil {
+			return archive.ImportPlan{}, nil, err
+		}
+		plan, err := committer.PlanFileOffline(ctx, archivePath, status.SessionEpoch)
+		return plan, nil, err
+	case ModeAPI:
+		return uploadImportPlan(ctx, invocation, archivePath)
+	default:
+		return archive.ImportPlan{}, nil, errors.New("unsupported backup import transport")
+	}
 }
 
 func runBackupInspect(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -285,6 +345,89 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 	return inspection, meta, nil
 }
 
+func uploadImportPlan(ctx context.Context, invocation Invocation, archivePath string) (archive.ImportPlan, map[string]any, error) {
+	body, archiveBytes, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/plan", http.StatusOK)
+	if err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	plan, meta, err := decodeImportPlanAPI(body, archiveBytes)
+	if err != nil {
+		return archive.ImportPlan{}, nil, invalidAPIResponse()
+	}
+	return plan, meta, nil
+}
+
+func restoreImportAPI(ctx context.Context, invocation Invocation, archivePath string) (archive.CommitResult, map[string]any, error) {
+	body, _, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/restore", http.StatusOK)
+	if err != nil {
+		return archive.CommitResult{}, nil, err
+	}
+	result, meta, err := decodeImportCommitAPI(body)
+	if err != nil {
+		return archive.CommitResult{}, nil, invalidAPIResponse()
+	}
+	return result, meta, nil
+}
+
+func uploadImportArchive(ctx context.Context, invocation Invocation, archivePath, endpointPath string, successStatus int) ([]byte, int64, error) {
+	before, err := os.Lstat(archivePath)
+	if err != nil {
+		return nil, 0, err
+	}
+	if !before.Mode().IsRegular() || before.Mode()&os.ModeSymlink != 0 {
+		return nil, 0, invalidArgument("archive input must be a regular non-symlink file", "provide one complete Moment export ZIP")
+	}
+	file, err := os.Open(archivePath)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = file.Close() }()
+	after, err := file.Stat()
+	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) {
+		return nil, 0, errors.Join(invalidArgument("archive input changed while opening", "retry with a stable regular non-symlink ZIP"), err)
+	}
+	target, err := invocation.APITransport()
+	if err != nil {
+		return nil, 0, err
+	}
+	token, err := readAPIToken(target)
+	if err != nil {
+		return nil, 0, err
+	}
+	endpoint, err := url.JoinPath(target.BaseURL().String(), endpointPath)
+	if err != nil {
+		return nil, 0, invalidArgument("the import endpoint URL is invalid", "check --url and retry")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, file)
+	if err != nil {
+		return nil, 0, err
+	}
+	request.ContentLength = after.Size()
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/zip")
+	request.Header.Set("Accept", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
+	if err != nil {
+		return nil, 0, err
+	}
+	if len(body) > maxAPIResponse {
+		return nil, 0, invalidAPIResponse()
+	}
+	if response.StatusCode != successStatus {
+		return nil, 0, decodeOwnerAPIFailure(response.StatusCode, body)
+	}
+	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if parseErr != nil || mediaType != "application/json" {
+		return nil, 0, invalidAPIResponse()
+	}
+	return body, after.Size(), nil
+}
+
 func commitImportAPI(ctx context.Context, invocation Invocation, stagingToken string) (archive.CommitResult, map[string]any, error) {
 	target, err := invocation.APITransport()
 	if err != nil {
@@ -378,6 +521,66 @@ func importStatusAPI(ctx context.Context, invocation Invocation) (archive.Commit
 		return archive.CommitStatus{}, nil, invalidAPIResponse()
 	}
 	return status, meta, nil
+}
+
+func decodeImportPlanAPI(body []byte, expectedArchiveBytes int64) (archive.ImportPlan, map[string]any, error) {
+	if !utf8.Valid(body) {
+		return archive.ImportPlan{}, nil, errors.New("import plan response is not valid UTF-8")
+	}
+	envelope, err := decodeExactJSONObject(body, "data", "meta")
+	if err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	data, err := decodeExactJSONObject(envelope["data"],
+		"dry_run", "format_version", "archive_sha256", "counts", "time_range", "media_bytes", "missing_alt",
+		"disk", "replacement", "warnings",
+	)
+	if err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	if _, err := decodeExactJSONObject(data["counts"], "entries", "comments", "media"); err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	timeRange, err := decodeImportTimeRangeObject(data["time_range"])
+	if err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	if _, err := decodeExactJSONObject(data["disk"],
+		"archive_bytes", "expanded_bytes", "staging_bytes", "pre_import_backup_bytes", "rollback_reserve_bytes",
+		"safety_margin_bytes", "required_additional_bytes", "estimated_peak_footprint_bytes", "available_bytes", "space_ok",
+	); err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	replacement, err := decodeExactJSONObject(data["replacement"], "counts", "media_bytes", "data_bytes")
+	if err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	if _, err := decodeExactJSONObject(replacement["counts"], "entries", "comments", "media"); err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
+	if err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	var plan archive.ImportPlan
+	decoder := json.NewDecoder(bytes.NewReader(envelope["data"]))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&plan); err != nil || decoder.Decode(&struct{}{}) != io.EOF || !plan.DryRun {
+		return archive.ImportPlan{}, nil, errors.New("import plan data cannot be decoded exactly")
+	}
+	requestID, err := decodeImportRequestID(metadata["request_id"])
+	if err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	preview := archive.Inspection{
+		FormatVersion: plan.FormatVersion, ArchiveSHA256: plan.ArchiveSHA256, Counts: plan.Counts,
+		TimeRange: plan.TimeRange, MediaBytes: plan.MediaBytes, MissingAlt: plan.MissingAlt,
+		Disk: plan.Disk, Replacement: plan.Replacement, Warnings: plan.Warnings,
+	}
+	if err := validateImportPreviewAPI(preview, timeRange, expectedArchiveBytes); err != nil {
+		return archive.ImportPlan{}, nil, err
+	}
+	return plan, map[string]any{"request_id": requestID}, nil
 }
 
 func decodeImportCommitAPI(body []byte) (archive.CommitResult, map[string]any, error) {
@@ -727,6 +930,28 @@ func validateImportInspectionAPI(value archive.Inspection, raw map[string]json.R
 	if value.FormatVersion != archive.FormatVersion || !validLowerHex(value.ArchiveSHA256, sha256.Size) || !validImportGenerationID(value.GenerationID) {
 		return errors.New("import inspection identity is invalid")
 	}
+	if err := validateImportPreviewAPI(value, timeRange, expectedArchiveBytes); err != nil {
+		return err
+	}
+	expiresAt, err := decodeCanonicalUTCTime(raw["expires_at"])
+	if err != nil || observedAt.IsZero() || !value.ExpiresAt.Equal(expiresAt) {
+		return errors.New("import inspection expiry is invalid")
+	}
+	latestExpiry := observedAt.UTC().Add(importInspectionTokenTTL + importInspectionClockSkew)
+	if !expiresAt.After(observedAt.UTC()) || expiresAt.After(latestExpiry) {
+		return errors.New("import inspection expiry is outside the usable token window")
+	}
+	token, err := base64.RawURLEncoding.Strict().DecodeString(value.StagingToken)
+	if err != nil || len(token) != sha256.Size || base64.RawURLEncoding.EncodeToString(token) != value.StagingToken {
+		return errors.New("import inspection staging token is invalid")
+	}
+	return nil
+}
+
+func validateImportPreviewAPI(value archive.Inspection, timeRange map[string]json.RawMessage, expectedArchiveBytes int64) error {
+	if value.FormatVersion != archive.FormatVersion || !validLowerHex(value.ArchiveSHA256, sha256.Size) {
+		return errors.New("import preview identity is invalid")
+	}
 	if !validImportCounts(value.Counts, true) || !validImportCounts(value.Replacement.Counts, false) || value.MediaBytes < 0 || value.MissingAlt < 0 || value.Replacement.MediaBytes < 0 || value.Replacement.DataBytes < 0 || value.Replacement.MediaBytes > value.Replacement.DataBytes {
 		return errors.New("import inspection counts are invalid")
 	}
@@ -746,18 +971,6 @@ func validateImportInspectionAPI(value archive.Inspection, raw map[string]json.R
 		if err != nil || from.After(to) || !value.TimeRange.From.Equal(from) || !value.TimeRange.To.Equal(to) {
 			return errors.New("import inspection time range is invalid")
 		}
-	}
-	expiresAt, err := decodeCanonicalUTCTime(raw["expires_at"])
-	if err != nil || observedAt.IsZero() || !value.ExpiresAt.Equal(expiresAt) {
-		return errors.New("import inspection expiry is invalid")
-	}
-	latestExpiry := observedAt.UTC().Add(importInspectionTokenTTL + importInspectionClockSkew)
-	if !expiresAt.After(observedAt.UTC()) || expiresAt.After(latestExpiry) {
-		return errors.New("import inspection expiry is outside the usable token window")
-	}
-	token, err := base64.RawURLEncoding.Strict().DecodeString(value.StagingToken)
-	if err != nil || len(token) != sha256.Size || base64.RawURLEncoding.EncodeToString(token) != value.StagingToken {
-		return errors.New("import inspection staging token is invalid")
 	}
 	if value.Warnings == nil || len(value.Warnings) > 1 {
 		return errors.New("import inspection warnings are invalid")

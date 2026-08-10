@@ -525,6 +525,86 @@ func TestInspectRejectsDuplicateSymlinkRatioQuotaDiskAndCancellation(t *testing.
 	})
 }
 
+func TestImportPlanCleansTemporaryStagingOnSuccessInvalidAndCancellation(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	now := time.Date(2026, 8, 11, 4, 30, 0, 0, time.UTC)
+	inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
+	plan, err := inspector.Plan(context.Background(), bytes.NewReader(exportFixtureBytes(t, fixture)), 1)
+	if err != nil || !plan.DryRun || plan.ArchiveSHA256 == "" {
+		t.Fatalf("plan=%#v err=%v", plan, err)
+	}
+	assertImportStagingEmpty(t, fixture.runtime.Root)
+	if _, err := inspector.Plan(context.Background(), strings.NewReader("not a zip"), 1); !domain.HasCode(err, domain.CodeExportInvalid) {
+		t.Fatalf("invalid plan error=%v", err)
+	}
+	assertImportStagingEmpty(t, fixture.runtime.Root)
+	ctx, cancel := context.WithCancel(context.Background())
+	reader := &cancelAfterReader{reader: bytes.NewReader(exportFixtureBytes(t, fixture)), cancel: cancel}
+	if _, err := inspector.Plan(ctx, reader, 1); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled plan error=%v", err)
+	}
+	assertImportStagingEmpty(t, fixture.runtime.Root)
+}
+
+func TestResumeRejectsDuplicateFTSAndExtraGenerationPath(t *testing.T) {
+	t.Run("duplicate FTS", func(t *testing.T) {
+		fixture := newExportFixture(t, true)
+		now := time.Date(2026, 8, 11, 4, 35, 0, 0, time.UTC)
+		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
+		inspection, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		databasePath := filepath.Join(fixture.runtime.Root, "staging", "import", inspection.GenerationID, "generation", "moment.db")
+		if err := mutateStagedDatabase(databasePath, `INSERT INTO entry_fts (entry_id, content_text) SELECT entry_id, content_text FROM entry_fts LIMIT 1`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := inspector.Resume(context.Background(), inspection.StagingToken, 1); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+			t.Fatalf("duplicate FTS resume error=%v", err)
+		}
+	})
+	t.Run("orphan tree path", func(t *testing.T) {
+		fixture := newExportFixture(t, true)
+		now := time.Date(2026, 8, 11, 4, 36, 0, 0, time.UTC)
+		inspector := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64)
+		inspection, err := inspector.InspectFile(context.Background(), exportFixtureFile(t, fixture), 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		orphan := filepath.Join(fixture.runtime.Root, "staging", "import", inspection.GenerationID, "generation", "media", "original", "ff", "orphan.png")
+		if err := os.MkdirAll(filepath.Dir(orphan), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(orphan, []byte("orphan"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := inspector.Resume(context.Background(), inspection.StagingToken, 1); !domain.HasCode(err, domain.CodeImportStagingInvalid) {
+			t.Fatalf("orphan path resume error=%v", err)
+		}
+	})
+}
+
+func TestLiveInspectorFailsFastBehindCommitCoordinator(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	inspector, err := NewInspector(InspectOptions{
+		DataDir: fixture.runtime.Root, ActiveDatabase: fixture.database, ImportLockWait: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := fixture.runtime.Locks.AcquireSet(context.Background(), runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = held.Release() }()
+	started := time.Now()
+	_, err = inspector.Inspect(context.Background(), bytes.NewReader(exportFixtureBytes(t, fixture)), 1)
+	if !domain.HasCode(err, domain.CodeImportInProgress) || time.Since(started) > time.Second {
+		t.Fatalf("waiting live inspect error=%v elapsed=%s", err, time.Since(started))
+	}
+	assertImportStagingEmpty(t, fixture.runtime.Root)
+}
+
 func testInspector(t *testing.T, dataDir string, database *sqlitestore.Database, now *time.Time, available uint64) *Inspector {
 	t.Helper()
 	inspector, err := NewInspector(InspectOptions{
@@ -567,6 +647,17 @@ func assertNoReadyStaging(t *testing.T, root string) {
 		if err == nil && metadata.State == stagingReady {
 			t.Fatalf("unexpected ready staging %s", entry.Name())
 		}
+	}
+}
+
+func assertImportStagingEmpty(t *testing.T, root string) {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(root, "staging", "import"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("dry-run left import staging entries: %#v", entries)
 	}
 }
 

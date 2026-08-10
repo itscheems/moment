@@ -20,6 +20,10 @@ type ImportInspector interface {
 	Inspect(context.Context, io.Reader, uint64) (archive.Inspection, error)
 }
 
+type importPlanner interface {
+	Plan(context.Context, io.Reader, uint64) (archive.ImportPlan, error)
+}
+
 // ImportCommitter exposes token consumption and durable status without
 // coupling Gin to live-bundle maintenance implementation.
 type ImportCommitter interface {
@@ -27,11 +31,18 @@ type ImportCommitter interface {
 	Status(context.Context) (archive.CommitStatus, error)
 }
 
+type archiveImportCommitter interface {
+	CommitArchive(context.Context, io.Reader, uint64) (archive.CommitResult, error)
+}
+
 // RegisterImportInspectRoutes installs the owner-only raw ZIP upload endpoint.
 func RegisterImportInspectRoutes(engine *gin.Engine, inspector ImportInspector, manager *auth.Manager) {
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
 	owner.POST("/import/inspect", inspectImport(inspector, manager))
+	if planner, ok := inspector.(importPlanner); ok {
+		owner.POST("/import/plan", planImport(planner, manager))
+	}
 }
 
 // RegisterImportCommitRoutes installs the owner-only destructive commit and
@@ -40,7 +51,92 @@ func RegisterImportCommitRoutes(engine *gin.Engine, committer ImportCommitter, m
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
 	owner.POST("/import/commit", commitImport(committer, manager))
+	if restorer, ok := committer.(archiveImportCommitter); ok {
+		owner.POST("/import/restore", restoreImport(restorer, manager))
+	}
 	owner.GET("/import/status", importStatus(committer))
+}
+
+func planImport(planner importPlanner, manager *auth.Manager) gin.HandlerFunc {
+	return importArchiveUpload(manager, "plan", func(ctx context.Context, source io.Reader, epoch uint64) (any, error) {
+		return planner.Plan(ctx, source, epoch)
+	}, http.StatusOK)
+}
+
+func restoreImport(restorer archiveImportCommitter, manager *auth.Manager) gin.HandlerFunc {
+	return importArchiveUpload(manager, "restore", func(ctx context.Context, source io.Reader, epoch uint64) (any, error) {
+		return restorer.CommitArchive(ctx, source, epoch)
+	}, http.StatusOK)
+}
+
+func importArchiveUpload(manager *auth.Manager, operation string, run func(context.Context, io.Reader, uint64) (any, error), successStatus int) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if ctx.Request.URL.RawQuery != "" {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import "+operation+" does not accept query parameters", map[string]any{"field": "query"})
+			return
+		}
+		mediaType, _, err := mime.ParseMediaType(ctx.GetHeader("Content-Type"))
+		if err != nil || mediaType != "application/zip" {
+			Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "import "+operation+" requires application/zip", map[string]any{"field": "content_type"})
+			return
+		}
+		grant, ok := ownerGrant(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		epoch, err := manager.SessionEpochAuthorized(grant)
+		if err != nil {
+			unauthorized(ctx)
+			return
+		}
+		result, err := run(ctx.Request.Context(), ctx.Request.Body, epoch)
+		if err == nil {
+			Success(ctx, successStatus, result, nil)
+			return
+		}
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			limit, _ := ctx.Get(bodyLimitKey)
+			bodyTooLarge(ctx, limit.(int64))
+			return
+		}
+		writeImportUploadError(ctx, operation, err)
+	}
+}
+
+func writeImportUploadError(ctx *gin.Context, operation string, err error) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		Failure(ctx, http.StatusRequestTimeout, "TIMEOUT", "import "+operation+" timed out", nil)
+		return
+	}
+	if ctx.Request.Context().Err() != nil || errors.Is(err, context.Canceled) {
+		Failure(ctx, http.StatusRequestTimeout, "CANCELLED", "import "+operation+" was cancelled", nil)
+		return
+	}
+	var domainErr *domain.Error
+	if !errors.As(err, &domainErr) {
+		Failure(ctx, http.StatusInternalServerError, "INTERNAL", "import "+operation+" could not complete", nil)
+		return
+	}
+	status := http.StatusUnprocessableEntity
+	switch domainErr.Code {
+	case domain.CodeInvalidArgument:
+		status = http.StatusBadRequest
+	case domain.CodeUnauthorized:
+		status = http.StatusUnauthorized
+	case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeInstanceInUse:
+		status = http.StatusConflict
+	case domain.CodeImportStagingExpired:
+		status = http.StatusGone
+	case domain.CodeImportDiskSpaceInsufficient:
+		status = http.StatusInsufficientStorage
+	case domain.CodeMaintenanceMode:
+		status = http.StatusServiceUnavailable
+	case domain.CodeDataIntegrityFailed:
+		status = http.StatusInternalServerError
+	}
+	Failure(ctx, status, string(domainErr.Code), domainErr.Message, domainErr.Details)
 }
 
 func commitImport(committer ImportCommitter, manager *auth.Manager) gin.HandlerFunc {
@@ -127,7 +223,11 @@ func decodeCommitRequest(body []byte) (string, error) {
 }
 
 func writeImportCommitError(ctx *gin.Context, err error) {
-	if ctx.Request.Context().Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, context.DeadlineExceeded) {
+		Failure(ctx, http.StatusRequestTimeout, "TIMEOUT", "import commit timed out", nil)
+		return
+	}
+	if ctx.Request.Context().Err() != nil || errors.Is(err, context.Canceled) {
 		Failure(ctx, http.StatusRequestTimeout, "CANCELLED", "import commit was cancelled", nil)
 		return
 	}
