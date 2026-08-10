@@ -1,13 +1,14 @@
-import styles from "./App.module.css";
+import { AppShell } from "../components/AppShell";
+import { ThemeProvider } from "../theme/ThemeProvider";
+import { resolveRoute } from "./routes";
 
 export function App() {
+  const route = resolveRoute(window.location.pathname);
+  const state = new URLSearchParams(window.location.search).get("state");
+
   return (
-    <main className={styles.shell}>
-      <section aria-labelledby="moment-title" className={styles.content}>
-        <p className={styles.eyebrow}>Portable personal timeline</p>
-        <h1 id="moment-title">Moment</h1>
-        <p>Capture now. Find later.</p>
-      </section>
-    </main>
+    <ThemeProvider>
+      <AppShell route={route} state={state} />
+    </ThemeProvider>
   );
 }

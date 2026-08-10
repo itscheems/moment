@@ -8,6 +8,8 @@ export default defineConfig({
     outDir: "../internal/webassets/dist",
   },
   test: {
+    css: true,
     environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
   },
 });
