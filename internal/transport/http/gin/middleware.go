@@ -49,7 +49,6 @@ func accessLogMiddleware(log LogFunc) gin.HandlerFunc {
 			"route":       route,
 			"status":      ctx.Writer.Status(),
 			"duration_ms": time.Since(startedAt).Milliseconds(),
-			"client_ip":   ctx.ClientIP(),
 		})
 	}
 }

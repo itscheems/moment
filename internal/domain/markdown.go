@@ -16,20 +16,33 @@ import (
 // MaxContentCodePoints is the v0 Unicode code-point limit for an Entry body.
 const MaxContentCodePoints = 20_000
 
+// MaxCommentContentCodePoints is the v0 Unicode code-point limit for a
+// comment. Comments use the same safe Markdown grammar as posts.
+const MaxCommentContentCodePoints = 2_000
+
 var markdownEngine = goldmark.New(
 	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 )
 
 // ValidateMarkdown applies the one authoritative save/import Markdown policy.
 func ValidateMarkdown(source string) error {
+	return validateMarkdown(source, MaxContentCodePoints)
+}
+
+// ValidateCommentMarkdown applies the authoritative comment Markdown policy.
+func ValidateCommentMarkdown(source string) error {
+	return validateMarkdown(source, MaxCommentContentCodePoints)
+}
+
+func validateMarkdown(source string, limit int) error {
 	if !utf8.ValidString(source) {
 		return NewError(CodeInvalidArgument, "content must be valid UTF-8", map[string]any{"field": "content"})
 	}
 	if strings.TrimSpace(source) == "" {
 		return NewError(CodeContentEmpty, "content must contain a non-whitespace character", nil)
 	}
-	if count := utf8.RuneCountInString(source); count > MaxContentCodePoints {
-		return NewError(CodeContentTooLarge, "content exceeds the code-point limit", map[string]any{"limit": MaxContentCodePoints, "actual": count})
+	if count := utf8.RuneCountInString(source); count > limit {
+		return NewError(CodeContentTooLarge, "content exceeds the code-point limit", map[string]any{"limit": limit, "actual": count})
 	}
 
 	data := []byte(source)
@@ -54,6 +67,15 @@ func ValidateMarkdown(source string) error {
 		}
 		return ast.WalkContinue, nil
 	})
+}
+
+// RenderCommentMarkdown returns safe HTML after applying the smaller comment
+// content budget.
+func RenderCommentMarkdown(source string) (string, error) {
+	if err := ValidateCommentMarkdown(source); err != nil {
+		return "", err
+	}
+	return renderValidatedMarkdown(source)
 }
 
 func validateLink(destination []byte) error {
@@ -86,6 +108,10 @@ func RenderMarkdown(source string) (string, error) {
 	if err := ValidateMarkdown(source); err != nil {
 		return "", err
 	}
+	return renderValidatedMarkdown(source)
+}
+
+func renderValidatedMarkdown(source string) (string, error) {
 	var output bytes.Buffer
 	if err := markdownEngine.Convert([]byte(source), &output); err != nil {
 		return "", NewError(CodeInternal, "could not render content", nil)

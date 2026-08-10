@@ -19,6 +19,7 @@ const (
 	CodeCommentNotFound             Code = "COMMENT_NOT_FOUND"
 	CodeCommentDepthExceeded        Code = "COMMENT_DEPTH_EXCEEDED"
 	CodeCommentsDisabled            Code = "COMMENTS_DISABLED"
+	CodeCommentRejected             Code = "COMMENT_REJECTED"
 	CodeRateLimited                 Code = "RATE_LIMITED"
 	CodeMediaTypeUnsupported        Code = "MEDIA_TYPE_UNSUPPORTED"
 	CodeMediaTooLarge               Code = "MEDIA_TOO_LARGE"

@@ -75,6 +75,31 @@ func TestRenderMarkdownIsSafe(t *testing.T) {
 	}
 }
 
+func TestCommentIdentityAndMarkdownBoundaries(t *testing.T) {
+	t.Parallel()
+	name, err := NormalizeCommentAuthorName("  访客  ")
+	if err != nil || name != "访客" {
+		t.Fatalf("normalized name = %q, %v", name, err)
+	}
+	for _, value := range []string{"", " \n ", "bad\nname", strings.Repeat("名", MaxCommentAuthorNameCodePoints+1)} {
+		if _, err := NormalizeCommentAuthorName(value); !HasCode(err, CodeInvalidArgument) {
+			t.Fatalf("invalid name %q = %v", value, err)
+		}
+	}
+	if err := ValidateCommentMarkdown(strings.Repeat("评", MaxCommentContentCodePoints)); err != nil {
+		t.Fatalf("exact comment content limit: %v", err)
+	}
+	for _, content := range []string{strings.Repeat("评", MaxCommentContentCodePoints+1), "<script>alert(1)</script>", "![remote](https://example.test/a.png)"} {
+		if err := ValidateCommentMarkdown(content); err == nil {
+			t.Fatalf("unsafe comment content passed: %q", content)
+		}
+	}
+	html, err := RenderCommentMarkdown("safe **reply** [link](https://example.test)")
+	if err != nil || !strings.Contains(html, "<strong>reply</strong>") || !strings.Contains(html, "nofollow noopener noreferrer") {
+		t.Fatalf("rendered comment = %q, %v", html, err)
+	}
+}
+
 func TestEntryUpdatePreservesTimelinePosition(t *testing.T) {
 	t.Parallel()
 	created := time.Date(2026, time.August, 10, 8, 9, 10, 987654321, time.FixedZone("source", 8*60*60))

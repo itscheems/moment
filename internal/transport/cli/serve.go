@@ -115,12 +115,21 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 	if err != nil {
 		return Result{}, err
 	}
+	commentRepository, err := sqlitestore.NewCommentRepository(database, runtime.Locks)
+	if err != nil {
+		return Result{}, err
+	}
+	commentService, err := app.NewCommentService(commentRepository)
+	if err != nil {
+		return Result{}, err
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:         assets,
 		OwnerAuth:      authManager,
 		SiteSettings:   siteService,
 		Media:          mediaStore,
 		Posts:          postService,
+		Comments:       commentService,
 		SecureCookies:  !runtime.IsDevelopment(),
 		TrustedProxies: trustedProxies,
 		Log:            invocation.LogEvent,

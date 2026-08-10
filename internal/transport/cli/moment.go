@@ -50,5 +50,6 @@ func NewMoment(info buildinfo.Info) *Application {
 	registerSite(application)
 	registerMedia(application)
 	registerPosts(application)
+	registerComments(application)
 	return application
 }

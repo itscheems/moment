@@ -521,7 +521,7 @@ func postAPIRequest(
 		return nil, response.StatusCode, err
 	}
 	if len(responseBody) > maxPostAPIResponse {
-		return nil, response.StatusCode, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the post API response exceeded the allowed size", "reduce --limit or inspect the compatible server", ExitUnavailable)
+		return nil, response.StatusCode, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the Moment API response exceeded the allowed size", "reduce --limit or inspect the compatible server", ExitUnavailable)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, response.StatusCode, decodeOwnerAPIFailure(response.StatusCode, responseBody)
@@ -534,7 +534,9 @@ func postAPIRequest(
 	if err != nil {
 		return nil, response.StatusCode, invalidAPIResponse()
 	}
-	if err := json.Unmarshal(data, destination); err != nil {
+	dataDecoder := json.NewDecoder(bytes.NewReader(data))
+	dataDecoder.DisallowUnknownFields()
+	if err := dataDecoder.Decode(destination); err != nil || dataDecoder.Decode(&struct{}{}) != io.EOF {
 		return nil, response.StatusCode, invalidAPIResponse()
 	}
 	switch typed := destination.(type) {

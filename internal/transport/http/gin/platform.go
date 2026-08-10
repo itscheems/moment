@@ -43,6 +43,8 @@ type Config struct {
 	OwnerAuth      *auth.Manager
 	SiteSettings   *app.SiteService
 	Posts          *app.PostService
+	Comments       *app.CommentService
+	CommentLimiter CommentRateLimiter
 	Media          *media.Store
 	SecureCookies  bool
 	TrustedProxies []string
@@ -128,6 +130,12 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("post routes require owner authentication and site settings")
 		}
 		RegisterPostRoutes(engine, config.Posts, config.SiteSettings, config.OwnerAuth)
+	}
+	if config.Comments != nil {
+		if config.OwnerAuth == nil {
+			return nil, errors.New("comment routes require owner authentication")
+		}
+		RegisterCommentRoutes(engine, config.Comments, config.OwnerAuth, config.CommentLimiter)
 	}
 
 	if config.Register != nil {
