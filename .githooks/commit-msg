@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+message_file="${1:?commit message file is required}"
+message="$(<"$message_file")"
+subject="${message%%$'\n'*}"
+public_message="$(sed '/^# ------------------------ >8 ------------------------$/,$d; /^#/d' <<<"$message")"
+
+if [[ "$subject" == Merge\ * ]]; then
+  exit 0
+fi
+
+types='feat|fix|refactor|perf|test|docs|build|ci|chore|revert'
+scopes='domain|app|storage|media|archive|auth|http|cli|web|observability|build|docs|workflow|workspace'
+pattern="^(${types})\((${scopes})\)!?: [a-z0-9][^[:cntrl:]]+$"
+
+if [[ ! "$subject" =~ $pattern ]]; then
+  echo "BLOCKED: commit subject must match type(scope): imperative description." >&2
+  echo "Allowed types: ${types//|/, }." >&2
+  echo "Allowed scopes: ${scopes//|/, }." >&2
+  exit 1
+fi
+
+if (( ${#subject} > 100 )); then
+  echo "BLOCKED: commit subject exceeds 100 characters." >&2
+  exit 1
+fi
+
+if [[ "$subject" == *. ]]; then
+  echo "BLOCKED: commit subject must not end with a period." >&2
+  exit 1
+fi
+
+if grep -Eiq '(MOM-[0-9]{3}|(task|phase|wave|unit|step)[ -]?[0-9]+|work/v[0-9]+/tasks|\.codex/|Roku|golang-template|Claude|Codex|ChatGPT|generated with)' <<<"$public_message"; then
+  echo "BLOCKED: commit text leaks internal planning, reference-project, or AI/tool provenance." >&2
+  exit 1
+fi

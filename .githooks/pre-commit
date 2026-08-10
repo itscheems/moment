@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+if [[ "$branch" == "main" ]]; then
+  echo "BLOCKED: do not commit directly on main; use a focused feature or maintenance branch." >&2
+  exit 1
+fi
+
+if ! git diff --cached --check; then
+  echo "BLOCKED: staged changes contain whitespace errors or conflict markers." >&2
+  exit 1
+fi
+
+staged_paths="$(git diff --cached --name-only --diff-filter=ACMR)"
+if printf '%s\n' "$staged_paths" | grep -E '(^|/)\.env($|\.)' | grep -vE '(^|/)\.env\.example$' >/dev/null; then
+  echo "BLOCKED: a local environment or secret file is staged." >&2
+  exit 1
+fi
+
+if printf '%s\n' "$staged_paths" | grep -E '(^|/)(node_modules|dist|data|moment-data|\.worktrees)(/|$)' >/dev/null; then
+  echo "BLOCKED: generated, runtime, or worktree content is staged." >&2
+  exit 1
+fi
