@@ -29,8 +29,11 @@ type Timeouts struct {
 // Config defines one production server process. Listener is a deterministic
 // test seam; production callers supply Address instead.
 type Config struct {
-	Runtime        *runtimefs.Runtime
-	Handler        http.Handler
+	Runtime *runtimefs.Runtime
+	Handler http.Handler
+	// AfterLock runs after serve.lock is owned and before the listener opens.
+	// It is used for state that must not race offline instance mutation.
+	AfterLock      func(context.Context) error
 	Address        string
 	Listener       net.Listener
 	Timeouts       Timeouts
@@ -65,6 +68,11 @@ func Run(ctx context.Context, config Config) (runErr error) {
 	defer func() {
 		runErr = errors.Join(runErr, lease.Release())
 	}()
+	if config.AfterLock != nil {
+		if err := config.AfterLock(ctx); err != nil {
+			return fmt.Errorf("prepare server after acquiring serve lock: %w", err)
+		}
+	}
 
 	listener := config.Listener
 	if listener == nil {

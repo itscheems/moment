@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/auth"
 )
 
 // LogFunc receives only bounded, preselected event fields.
@@ -37,6 +38,8 @@ type BodyLimits struct {
 type Config struct {
 	Assets         fs.FS
 	Readiness      ReadinessFunc
+	OwnerAuth      *auth.Manager
+	SecureCookies  bool
 	TrustedProxies []string
 	RequestID      func() string
 	Log            LogFunc
@@ -100,6 +103,9 @@ func New(config Config) (*gin.Engine, error) {
 		}
 		Success(ctx, http.StatusOK, map[string]string{"status": "ready"}, nil)
 	})
+	if config.OwnerAuth != nil {
+		RegisterOwnerRoutes(engine, config.OwnerAuth, CookieOptions{Secure: config.SecureCookies})
+	}
 
 	if config.Register != nil {
 		config.Register(engine)

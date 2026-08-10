@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -22,10 +23,6 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		t.Skip("os.Interrupt is not supported for child processes on Windows")
 	}
 	dataDir := filepath.Join(t.TempDir(), "data")
-	instance, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: dataDir})
-	if err != nil {
-		t.Fatal(err)
-	}
 	binary := os.Getenv("MOMENT_SMOKE_BINARY")
 	if binary == "" {
 		binary = filepath.Join(t.TempDir(), "moment")
@@ -33,7 +30,33 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		if output, err := build.CombinedOutput(); err != nil {
 			t.Fatalf("build binary: %v\n%s", err, output)
 		}
-	} else if binary, err = filepath.Abs(binary); err != nil {
+	} else {
+		absoluteBinary, err := filepath.Abs(binary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		binary = absoluteBinary
+	}
+	initCommand := exec.Command(binary, "owner", "init", "--data-dir", dataDir, "--json")
+	initOutput, err := initCommand.Output()
+	if err != nil {
+		t.Fatalf("owner init: %v", err)
+	}
+	var initialized struct {
+		Data struct {
+			Token        string `json:"token"`
+			SessionEpoch uint64 `json:"session_epoch"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(initOutput, &initialized); err != nil {
+		t.Fatalf("decode owner init: %v; output=%s", err, initOutput)
+	}
+	if initialized.Data.Token == "" || initialized.Data.SessionEpoch != 1 {
+		t.Fatalf("owner init result = %#v", initialized.Data)
+	}
+	originalToken := initialized.Data.Token
+	instance, err := runtimefs.Open(dataDir)
+	if err != nil {
 		t.Fatal(err)
 	}
 	address := availableAddress(t)
@@ -84,6 +107,64 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 	if readyResponse.StatusCode != http.StatusOK {
 		t.Fatalf("readiness status = %d, want %d; stderr=%s", readyResponse.StatusCode, http.StatusOK, stderr.String())
 	}
+
+	directRotate := exec.Command(binary, "owner", "rotate-token", "--data-dir", dataDir, "--json")
+	directOutput, directErr := directRotate.Output()
+	var directExit *exec.ExitError
+	if !errors.As(directErr, &directExit) || directExit.ExitCode() != 4 || !strings.Contains(string(directOutput), `"code":"INSTANCE_IN_USE"`) {
+		t.Fatalf("direct rotation while serving err=%v output=%s", directErr, directOutput)
+	}
+
+	apiStatus := exec.Command(binary, "--url", "http://"+address, "owner", "status", "--json")
+	apiStatus.Env = append(os.Environ(), "MOMENT_TOKEN="+originalToken)
+	statusOutput, err := apiStatus.Output()
+	if err != nil || !strings.Contains(string(statusOutput), `"session_epoch":1`) {
+		t.Fatalf("API status err=%v output=%s", err, statusOutput)
+	}
+	apiRotate := exec.Command(binary, "--url", "http://"+address, "owner", "rotate-token", "--json")
+	apiRotate.Env = append(os.Environ(), "MOMENT_TOKEN="+originalToken)
+	rotationOutput, err := apiRotate.Output()
+	if err != nil {
+		t.Fatalf("API rotation: %v output=%s", err, rotationOutput)
+	}
+	var rotated struct {
+		Data struct {
+			Token        string `json:"token"`
+			SessionEpoch uint64 `json:"session_epoch"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rotationOutput, &rotated); err != nil {
+		t.Fatalf("decode API rotation: %v; output=%s", err, rotationOutput)
+	}
+	if rotated.Data.Token == "" || rotated.Data.Token == originalToken || rotated.Data.SessionEpoch != 2 {
+		t.Fatalf("API rotation result = %#v", rotated.Data)
+	}
+	request, err := http.NewRequest(http.MethodGet, "http://"+address+"/api/v1/owner/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+originalToken)
+	oldResponse, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = oldResponse.Body.Close()
+	if oldResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("old token status = %d", oldResponse.StatusCode)
+	}
+	request, err = http.NewRequest(http.MethodGet, "http://"+address+"/api/v1/owner/status", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+rotated.Data.Token)
+	newResponse, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = newResponse.Body.Close()
+	if newResponse.StatusCode != http.StatusOK {
+		t.Fatalf("new token status = %d", newResponse.StatusCode)
+	}
 	if err := command.Process.Signal(os.Interrupt); err != nil {
 		t.Fatal(err)
 	}
@@ -114,6 +195,9 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		if !events[name] {
 			t.Fatalf("missing %s log: %s", name, stderr.String())
 		}
+	}
+	if strings.Contains(stderr.String(), originalToken) || strings.Contains(stderr.String(), rotated.Data.Token) {
+		t.Fatalf("server logs leaked owner token: %s", stderr.String())
 	}
 
 	lockContext, cancelLock := context.WithTimeout(context.Background(), time.Second)

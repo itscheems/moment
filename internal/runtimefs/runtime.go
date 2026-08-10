@@ -309,6 +309,17 @@ func writeJSONAtomic(root, name string, value any) error {
 		return err
 	}
 	data = append(data, '\n')
+	return WritePrivateFileAtomic(root, name, data)
+}
+
+// WritePrivateFileAtomic durably publishes a mode-0600 file in root. The
+// basename restriction prevents callers from using the durability primitive as
+// an unchecked path-writing API. Publication uses the platform's atomic
+// replace primitive followed by the matching metadata barrier.
+func WritePrivateFileAtomic(root, name string, data []byte) error {
+	if name == "" || filepath.Base(name) != name || name == "." || name == ".." {
+		return fmt.Errorf("private file name must be a basename: %q", name)
+	}
 	temporary, err := os.CreateTemp(root, "."+name+"-*")
 	if err != nil {
 		return err

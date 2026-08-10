@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -81,9 +82,20 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 			ExitInternal,
 		).WithCause(err)
 	}
+	authManager, err := auth.NewManager(runtime.Root, auth.Options{})
+	if err != nil {
+		return Result{}, NewCommandError(
+			"OWNER_AUTH_INVALID",
+			"owner authentication configuration is invalid",
+			"inspect the selected data directory and retry",
+			ExitIntegrity,
+		).WithCause(err)
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:         assets,
 		Readiness:      database.Ready,
+		OwnerAuth:      authManager,
+		SecureCookies:  !runtime.IsDevelopment(),
 		TrustedProxies: trustedProxies,
 		Log:            invocation.LogEvent,
 	})
@@ -94,11 +106,28 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput) (R
 		)
 	}
 	if err := server.Run(ctx, server.Config{
-		Runtime: runtime,
-		Handler: engine,
-		Address: listenAddress,
-		Log:     invocation.LogEvent,
+		Runtime:   runtime,
+		Handler:   engine,
+		AfterLock: func(context.Context) error { return authManager.Load() },
+		Address:   listenAddress,
+		Log:       invocation.LogEvent,
 	}); err != nil {
+		switch {
+		case errors.Is(err, auth.ErrNotInitialized):
+			return Result{}, NewCommandError(
+				"OWNER_NOT_INITIALIZED",
+				"owner authentication is not initialized",
+				"run 'moment owner init --data-dir <path>' while the server is stopped",
+				ExitConflict,
+			).WithCause(err)
+		case errors.Is(err, auth.ErrInvalidSecrets), errors.Is(err, auth.ErrSecretPermissions):
+			return Result{}, NewCommandError(
+				"OWNER_SECRETS_INVALID",
+				"owner authentication secrets are invalid or insecure",
+				"restore a protected secrets.json or inspect the selected data directory",
+				ExitIntegrity,
+			).WithCause(err)
+		}
 		return Result{}, err
 	}
 	return Result{

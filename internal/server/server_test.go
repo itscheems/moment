@@ -120,3 +120,36 @@ func TestLoopbackListenerDetection(t *testing.T) {
 		t.Fatal("unspecified public bind was treated as loopback")
 	}
 }
+
+func TestAfterLockPreparationIsExclusiveAndFailureReleasesLock(t *testing.T) {
+	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparationFailure := errors.New("prepare failed")
+	err = Run(context.Background(), Config{
+		Runtime: runtimeState,
+		Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),
+		AfterLock: func(context.Context) error {
+			lockContext, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			_, lockErr := runtimeState.Locks.Acquire(lockContext, runtimefs.ServeLock, runtimefs.Exclusive)
+			if !errors.Is(lockErr, context.DeadlineExceeded) {
+				t.Fatalf("AfterLock did not run under serve ownership: %v", lockErr)
+			}
+			return preparationFailure
+		},
+	})
+	if !errors.Is(err, preparationFailure) {
+		t.Fatalf("Run error = %v", err)
+	}
+	lockContext, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	lease, err := runtimeState.Locks.Acquire(lockContext, runtimefs.ServeLock, runtimefs.Exclusive)
+	if err != nil {
+		t.Fatalf("preparation failure left serve lock held: %v", err)
+	}
+	if err := lease.Release(); err != nil {
+		t.Fatal(err)
+	}
+}

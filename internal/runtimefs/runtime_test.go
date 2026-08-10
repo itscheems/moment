@@ -64,6 +64,35 @@ func TestInitializeRejectsEnvironmentMismatch(t *testing.T) {
 	}
 }
 
+func TestWritePrivateFileAtomicReplacesDurablyWithPrivateMode(t *testing.T) {
+	root := t.TempDir()
+	if err := WritePrivateFileAtomic(root, "secrets.json", []byte("first")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WritePrivateFileAtomic(root, "secrets.json", []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(filepath.Join(root, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "second" {
+		t.Fatalf("contents = %q", contents)
+	}
+	info, err := os.Stat(filepath.Join(root, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %04o", info.Mode().Perm())
+	}
+	for _, name := range []string{"", ".", "..", "../secrets.json", "nested/secrets.json"} {
+		if err := WritePrivateFileAtomic(root, name, []byte("invalid")); err == nil {
+			t.Fatalf("name %q was accepted", name)
+		}
+	}
+}
+
 func TestValidCurrentWinsOverStaleNext(t *testing.T) {
 	runtime, err := Initialize(context.Background(), Config{DataDir: t.TempDir()})
 	if err != nil {
