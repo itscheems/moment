@@ -8,6 +8,7 @@ import {
   composeDraftClearAllKey,
   composeDraftClearanceKey,
   composeDraftKey,
+  createComposeDraft,
   fingerprintComposeDraft,
   loadComposeDraft,
   parseComposeDraftClearance,
@@ -44,7 +45,7 @@ describe("instance-scoped compose draft", () => {
     );
   });
 
-  it("reads old exact v1 values and ignores expired or malformed values", () => {
+  it("reads old exact v1 values and removes expired or malformed values", () => {
     window.localStorage.setItem(
       composeDraftKey(instance),
       JSON.stringify({
@@ -65,9 +66,42 @@ describe("instance-scoped compose draft", () => {
         Date.parse(old.savedAt) + 31 * 24 * 60 * 60 * 1_000,
       ),
     ).toBeNull();
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
 
     window.localStorage.setItem(composeDraftKey(instance), '{"token":"no"}');
+    const writes = vi
+      .spyOn(window.localStorage, "setItem")
+      .mockImplementation(() => {
+        throw new DOMException("quota exceeded");
+      });
     expect(loadComposeDraft(instance)).toBeNull();
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    writes.mockRestore();
+  });
+
+  it("removes a far-future draft without poisoning the next timestamp", () => {
+    const now = Date.parse("2026-08-10T01:02:03.000Z");
+    window.localStorage.setItem(
+      composeDraftKey(instance),
+      JSON.stringify({
+        content_md: "来自遥远未来",
+        saved_at: "+275760-09-13T00:00:00.000Z",
+      }),
+    );
+
+    expect(loadComposeDraft(instance, now)).toBeNull();
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+
+    const current = createComposeDraft(
+      "现在重新写",
+      null,
+      new Date("2026-08-10T01:02:04.000Z"),
+    );
+    expect(current.savedAt).toBe("2026-08-10T01:02:04.000Z");
+    expect(saveComposeDraft(instance, current)).toBe(true);
+    expect(loadComposeDraft(instance, Date.parse(current.savedAt))).toEqual(
+      current,
+    );
   });
 
   it("fails open when localStorage is denied", () => {
@@ -206,6 +240,29 @@ describe("instance-scoped compose draft", () => {
     });
   });
 
+  it("still removes matching text when the clearance marker cannot be written", () => {
+    const published = draft("写标记失败也不留正文", "2026-08-10T01:02:03.000Z");
+    saveComposeDraft(instance, published);
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    );
+    vi.spyOn(window.localStorage, "setItem").mockImplementation(
+      (key, value) => {
+        if (key === composeDraftClearanceKey(instance)) {
+          throw new DOMException("quota exceeded");
+        }
+        originalSetItem(key, value);
+      },
+    );
+
+    clearComposeDraft(instance, { reason: "published", draft: published });
+
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    expect(
+      window.localStorage.getItem(composeDraftClearanceKey(instance)),
+    ).toBeNull();
+  });
+
   it("keeps logout as the only unconditional all-clear", () => {
     const clearedAt = new Date("2026-08-10T01:03:00.000Z");
     saveComposeDraft(
@@ -229,6 +286,34 @@ describe("instance-scoped compose draft", () => {
     expect(window.localStorage.getItem(composeDraftClearAllKey(instance))).toBe(
       JSON.stringify(detail),
     );
+  });
+
+  it("announces logout after its marker and before removing the draft", () => {
+    const value = draft("退出顺序", "2026-08-10T01:02:03.000Z");
+    saveComposeDraft(instance, value);
+    const operations: string[] = [];
+    const originalSetItem = window.localStorage.setItem.bind(
+      window.localStorage,
+    );
+    const originalRemoveItem = window.localStorage.removeItem.bind(
+      window.localStorage,
+    );
+    vi.spyOn(window.localStorage, "setItem").mockImplementation((key, next) => {
+      if (key === composeDraftClearAllKey(instance)) operations.push("marker");
+      originalSetItem(key, next);
+    });
+    vi.spyOn(window.localStorage, "removeItem").mockImplementation((key) => {
+      if (key === composeDraftKey(instance)) operations.push("remove");
+      originalRemoveItem(key);
+    });
+    const onClear = () => operations.push("event");
+    window.addEventListener(COMPOSE_DRAFT_CLEARED_EVENT, onClear);
+
+    clearComposeDraft(instance, { reason: "logout" });
+
+    window.removeEventListener(COMPOSE_DRAFT_CLEARED_EVENT, onClear);
+    expect(operations).toEqual(["marker", "event", "remove"]);
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
   });
 
   it("strictly rejects malformed fingerprint clearances", () => {

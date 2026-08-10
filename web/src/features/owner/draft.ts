@@ -63,11 +63,7 @@ function clearAllKey(instanceId: string): string {
 
 function storage(): Storage | null {
   try {
-    const candidate = window.localStorage;
-    const probe = `${DRAFT_PREFIX}probe`;
-    candidate.setItem(probe, "1");
-    candidate.removeItem(probe);
-    return candidate;
+    return window.localStorage;
   } catch {
     return null;
   }
@@ -136,7 +132,6 @@ function parseStoredDraft(value: string | null): ComposeDraft | null {
   if (typeof draft.content_md !== "string" || !isTimestamp(draft.saved_at)) {
     return null;
   }
-  observeDraftTime(draft.saved_at);
   return {
     contentMd: draft.content_md,
     fingerprint: fingerprintComposeDraft(draft.content_md),
@@ -298,15 +293,32 @@ export function loadComposeDraft(
   if (!instanceId || !INSTANCE_PATTERN.test(instanceId)) return null;
   const target = storage();
   if (!target) return null;
-  let draft: ComposeDraft | null;
+  let raw: string | null;
   try {
-    draft = parseStoredDraft(target.getItem(draftKey(instanceId)));
+    raw = target.getItem(draftKey(instanceId));
   } catch {
     return null;
   }
-  if (!draft) return null;
+  if (raw === null) return null;
+  const draft = parseStoredDraft(raw);
+  if (!draft) {
+    try {
+      target.removeItem(draftKey(instanceId));
+    } catch {
+      // Invalid local data is ignored when storage cleanup is denied.
+    }
+    return null;
+  }
   const savedTime = Date.parse(draft.savedAt);
-  if (savedTime > now + 60_000 || now - savedTime > MAX_AGE_MS) return null;
+  if (savedTime > now + 60_000 || now - savedTime > MAX_AGE_MS) {
+    try {
+      target.removeItem(draftKey(instanceId));
+    } catch {
+      // Expired or future local data is ignored when cleanup is denied.
+    }
+    return null;
+  }
+  observeDraftTime(draft.savedAt);
   const clearance = matchingClearance(target, instanceId, draft);
   if (clearance) {
     removeStoredDraftIfMatching(target, instanceId, clearance);
@@ -373,18 +385,20 @@ export function clearComposeDraft(
     try {
       const target = window.localStorage;
       try {
-        target.removeItem(draftKey(instanceId));
-      } catch {
-        // The marker can still suppress a draft that cannot be removed.
-      }
-      try {
         target.setItem(clearAllKey(instanceId), JSON.stringify(detail));
       } catch {
         // Same-document logout still clears every mounted draft surface.
       }
+      dispatchComposeDraftClear(detail);
+      try {
+        target.removeItem(draftKey(instanceId));
+      } catch {
+        // The marker can still suppress a draft that cannot be removed.
+      }
     } catch {
-      // Same-document logout still clears every mounted draft surface.
+      dispatchComposeDraftClear(detail);
     }
+    return;
   } else {
     if (
       !FINGERPRINT_PATTERN.test(request.draft.fingerprint) ||
@@ -403,14 +417,27 @@ export function clearComposeDraft(
       reason: request.reason,
       cleared_at: clearedAt,
     };
+    let target: Storage | null = null;
     try {
-      const target = window.localStorage;
-      target.setItem(clearanceKey(instanceId), JSON.stringify(detail));
-      removeStoredDraftIfMatching(target, instanceId, detail);
+      target = window.localStorage;
+    } catch {
+      // Same-document identity clearing remains available without persistence.
+    }
+    try {
+      target?.setItem(clearanceKey(instanceId), JSON.stringify(detail));
+    } catch {
+      // A failed marker write must not retain already published local text.
+    }
+    try {
+      if (target) removeStoredDraftIfMatching(target, instanceId, detail);
     } catch {
       // Same-document identity clearing remains available without persistence.
     }
   }
+  dispatchComposeDraftClear(detail);
+}
+
+function dispatchComposeDraftClear(detail: ComposeDraftClearEvent): void {
   window.dispatchEvent(
     new CustomEvent(COMPOSE_DRAFT_CLEARED_EVENT, {
       detail,

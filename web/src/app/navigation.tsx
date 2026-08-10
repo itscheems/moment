@@ -68,6 +68,7 @@ function restoreEntry(state: unknown) {
 export function NavigationProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState(currentLocation);
   const navigationBlockers = useRef(new Map<symbol, () => boolean>());
+  const suppressNextPopGuard = useRef(false);
 
   const canLeave = useCallback(() => {
     const blockers = Array.from(navigationBlockers.current.values()).reverse();
@@ -85,32 +86,36 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const commitNavigation = useCallback((href: string) => {
+    const activeFocusKey =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement.closest<HTMLElement>("[data-focus-key]")
+            ?.dataset.focusKey
+        : undefined;
+    window.history.replaceState(
+      {
+        ...historyState(),
+        momentFocusKey: activeFocusKey,
+        momentScrollY: window.scrollY,
+      },
+      "",
+      window.location.href,
+    );
+    window.history.pushState(
+      { momentInternal: true, momentScrollY: 0 },
+      "",
+      href,
+    );
+    setLocation(currentLocation());
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, []);
+
   const navigate = useCallback(
     (href: string) => {
       if (!canLeave()) return;
-      const activeFocusKey =
-        document.activeElement instanceof HTMLElement
-          ? document.activeElement.closest<HTMLElement>("[data-focus-key]")
-              ?.dataset.focusKey
-          : undefined;
-      window.history.replaceState(
-        {
-          ...historyState(),
-          momentFocusKey: activeFocusKey,
-          momentScrollY: window.scrollY,
-        },
-        "",
-        window.location.href,
-      );
-      window.history.pushState(
-        { momentInternal: true, momentScrollY: 0 },
-        "",
-        href,
-      );
-      setLocation(currentLocation());
-      window.scrollTo({ top: 0, behavior: "auto" });
+      commitNavigation(href);
     },
-    [canLeave],
+    [canLeave, commitNavigation],
   );
 
   const replaceTimelineProgress = useCallback((cursor: string) => {
@@ -133,17 +138,25 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       const state = window.history.state as MomentHistoryState | null;
       if (!canLeave()) return;
       if (state?.momentInternal) {
+        suppressNextPopGuard.current = true;
         window.history.back();
         return;
       }
-      navigate(fallback);
+      commitNavigation(fallback);
     },
-    [canLeave, navigate],
+    [canLeave, commitNavigation],
   );
 
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
+      if (suppressNextPopGuard.current) {
+        suppressNextPopGuard.current = false;
+        setLocation(currentLocation());
+        restoreEntry(event.state);
+        return;
+      }
       if (!canLeave()) {
+        suppressNextPopGuard.current = true;
         window.history.go(1);
         return;
       }

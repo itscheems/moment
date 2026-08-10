@@ -686,6 +686,37 @@ describe("owner composing flow", () => {
     expect(beforeUnload.defaultPrevented).toBe(true);
   });
 
+  it("re-saves a dirty draft when another document removes its projection", async () => {
+    preauthenticate();
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(inline, { target: { value: "清理竞态里的新正文" } });
+    await new Promise((resolve) => window.setTimeout(resolve, 550));
+    const removed = window.localStorage.getItem(composeDraftKey(instance));
+    expect(removed).toContain("清理竞态里的新正文");
+
+    window.localStorage.removeItem(composeDraftKey(instance));
+    fireEvent(
+      window,
+      new StorageEvent("storage", {
+        key: composeDraftKey(instance),
+        oldValue: removed,
+        newValue: null,
+      }),
+    );
+
+    expect(inline).toHaveValue("清理竞态里的新正文");
+    expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
+      "清理竞态里的新正文",
+    );
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(false);
+    fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
+    expect(window.location.pathname).toBe("/");
+    expect(confirm).toHaveBeenCalledOnce();
+  });
+
   it("clears inline only when another tab marks the same draft identity", async () => {
     preauthenticate();
     installApi();
@@ -852,6 +883,27 @@ describe("owner composing flow", () => {
       "csrf-from-session",
     );
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+  });
+
+  it("confirms only once when a direct edit falls back to the timeline", async () => {
+    preauthenticate();
+    const item = post("直接进入的编辑", "01K2ABCDEF0123456789ABCDF4");
+    window.history.replaceState({}, "", `/owner/m/${item.id}/edit`);
+    installApi((url) => {
+      if (url === `/api/v1/posts/${item.id}`) {
+        return json({ data: item, meta: {} });
+      }
+    });
+    const confirm = vi.mocked(window.confirm);
+    confirm.mockReturnValue(true);
+    render(<App />);
+    const editor = await screen.findByLabelText("Moment 正文");
+    fireEvent.change(editor, { target: { value: "尚未保存的编辑" } });
+
+    fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(confirm).toHaveBeenCalledOnce();
   });
 
   it("uses a focus-restoring confirmation before owner deletion", async () => {

@@ -13,6 +13,7 @@ import {
   clearComposeDraft,
   composeDraftClearAllKey,
   composeDraftClearanceKey,
+  composeDraftKey,
   createComposeDraft,
   loadComposeDraft,
   parseComposeDraftClearEvent,
@@ -83,6 +84,7 @@ export function Composer({
   const [announcement, setAnnouncement] = useState("");
   const pendingRef = useRef(false);
   const allowLeaveRef = useRef(false);
+  const dirtyRef = useRef(false);
   const activeDraftRef = useRef(activeDraft);
   const navigationBlockerId = useRef(Symbol("composer-navigation-blocker"));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -109,6 +111,7 @@ export function Composer({
       setActiveDraft(null);
       setDraft(null);
       setContent("");
+      dirtyRef.current = false;
       setDirty(false);
       setError(null);
     };
@@ -133,6 +136,15 @@ export function Composer({
       if (clearance) handleClearance(clearance);
     };
     const clearedInAnotherDocument = (event: StorageEvent) => {
+      if (
+        event.key === composeDraftKey(instanceId) &&
+        event.newValue === null
+      ) {
+        if (dirtyRef.current && activeDraftRef.current) {
+          saveComposeDraft(instanceId, activeDraftRef.current);
+        }
+        return;
+      }
       const clearance = parseComposeDraftClearEventValue(event.newValue);
       if (!clearance || clearance.instance_id !== instanceId) return;
       const expectedKey =
@@ -236,6 +248,7 @@ export function Composer({
         ? await api.update(session.csrfToken, post.id, content)
         : await api.create(session.csrfToken, content, idempotencyKey.current);
       allowLeaveRef.current = true;
+      dirtyRef.current = false;
       setDirty(false);
       if (!post && submittedDraft) {
         clearComposeDraft(site.instanceId, {
@@ -275,6 +288,7 @@ export function Composer({
     setActiveDraft(draft);
     setContent(draft.contentMd);
     setDraft(null);
+    dirtyRef.current = true;
     setDirty(true);
     setAnnouncement("已恢复未发布草稿；图片需要重新选择。当前版本仅恢复文字。");
     window.requestAnimationFrame(() => textareaRef.current?.focus());
@@ -357,6 +371,7 @@ export function Composer({
               }
               if (draft) setDraft(null);
               setContent(event.target.value);
+              dirtyRef.current = true;
               setDirty(true);
               setError(null);
             }}
