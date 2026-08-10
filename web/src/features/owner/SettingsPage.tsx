@@ -15,6 +15,7 @@ import type {
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { fileValidation } from "../media/mediaState";
+import { BackupRestore } from "./BackupRestore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { OwnerLogin } from "./OwnerLogin";
 import { useOwner } from "./OwnerProvider";
@@ -235,6 +236,7 @@ export function SettingsPage({
     useState<AvatarPreviewState>("idle");
   const [avatarProgress, setAvatarProgress] = useState(0);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [dataRestoreBusy, setDataRestoreBusy] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickerButtonRef = useRef<HTMLButtonElement>(null);
   const previewReaderRef = useRef<FileReader | null>(null);
@@ -260,6 +262,7 @@ export function SettingsPage({
     Object.keys(validation).length === 0 &&
     !savePending &&
     avatarState !== "uploading" &&
+    !dataRestoreBusy &&
     session !== null;
 
   const cancelPreviewRead = () => {
@@ -302,12 +305,14 @@ export function SettingsPage({
 
   useEffect(() => {
     const protectOneTimeCredential = rotated !== null;
-    const shouldBlock = dirty || protectOneTimeCredential;
+    const shouldBlock = dirty || protectOneTimeCredential || dataRestoreBusy;
     const confirmLeave = () =>
       window.confirm(
-        protectOneTimeCredential
-          ? "新的所有者凭据只显示这一次。确认已经保存并离开吗？"
-          : "站点设置还没有保存。确定离开吗？",
+        dataRestoreBusy
+          ? "恢复状态仍在确认。离开后服务器会继续运行，返回本页可重新查询。确定离开吗？"
+          : protectOneTimeCredential
+            ? "新的所有者凭据只显示这一次。确认已经保存并离开吗？"
+            : "站点设置还没有保存。确定离开吗？",
       );
     navigation.setNavigationBlocker(
       navigationBlockerId.current,
@@ -323,12 +328,13 @@ export function SettingsPage({
       window.removeEventListener("beforeunload", beforeUnload);
       navigation.setNavigationBlocker(navigationBlockerId.current, null);
     };
-  }, [dirty, navigation, rotated]);
+  }, [dataRestoreBusy, dirty, navigation, rotated]);
 
   const updateForm = <Key extends keyof SettingsForm>(
     field: Key,
     value: SettingsForm[Key],
   ) => {
+    if (dataRestoreBusy) return;
     const next = { ...formRef.current, [field]: value };
     formRef.current = next;
     formRevisionRef.current += 1;
@@ -339,7 +345,7 @@ export function SettingsPage({
   };
 
   const uploadAvatar = async (file: File) => {
-    if (!session) return;
+    if (!session || dataRestoreBusy) return;
     avatarUploadRef.current?.abort();
     const controller = new AbortController();
     avatarUploadRef.current = controller;
@@ -383,7 +389,7 @@ export function SettingsPage({
   const selectAvatar = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0] ?? null;
     event.currentTarget.value = "";
-    if (!file) return;
+    if (!file || dataRestoreBusy) return;
     const error = fileValidation(file, []);
     if (error) {
       setAvatarError(error);
@@ -436,6 +442,7 @@ export function SettingsPage({
   };
 
   const removeAvatar = () => {
+    if (dataRestoreBusy) return;
     avatarRevisionRef.current += 1;
     avatarUploadRef.current?.abort();
     avatarUploadRef.current = null;
@@ -453,6 +460,7 @@ export function SettingsPage({
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
+    if (dataRestoreBusy) return;
     const errors = validateForm(form);
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0 || !canSave || !session) return;
@@ -539,7 +547,7 @@ export function SettingsPage({
   };
 
   const rotate = async () => {
-    if (!session || rotationPending) return;
+    if (!session || rotationPending || dataRestoreBusy) return;
     setRotationPending(true);
     setRotationError(null);
     setCopyState("idle");
@@ -637,7 +645,12 @@ export function SettingsPage({
         </nav>
 
         <div className={styles.settingsContent}>
-          <form noValidate onSubmit={(event) => void save(event)}>
+          <form
+            aria-disabled={dataRestoreBusy}
+            inert={dataRestoreBusy ? true : undefined}
+            noValidate
+            onSubmit={(event) => void save(event)}
+          >
             <section aria-labelledby="identity-title" id="identity">
               <header className={styles.sectionHeader}>
                 <div>
@@ -661,7 +674,11 @@ export function SettingsPage({
                   <div className={styles.inlineActions}>
                     <button
                       className={styles.secondaryButton}
-                      disabled={!session || avatarState === "uploading"}
+                      disabled={
+                        !session ||
+                        avatarState === "uploading" ||
+                        dataRestoreBusy
+                      }
                       onClick={() => fileInputRef.current?.click()}
                       ref={pickerButtonRef}
                       type="button"
@@ -671,7 +688,11 @@ export function SettingsPage({
                     {avatarPreview || baseline.avatarMediaId ? (
                       <button
                         className={styles.quietButton}
-                        disabled={!session || avatarState === "uploading"}
+                        disabled={
+                          !session ||
+                          avatarState === "uploading" ||
+                          dataRestoreBusy
+                        }
                         onClick={removeAvatar}
                         type="button"
                       >
@@ -681,7 +702,7 @@ export function SettingsPage({
                     {avatarState === "failed" && avatarFile ? (
                       <button
                         className={styles.quietButton}
-                        disabled={!session}
+                        disabled={!session || dataRestoreBusy}
                         onClick={() => void uploadAvatar(avatarFile)}
                         type="button"
                       >
@@ -691,6 +712,7 @@ export function SettingsPage({
                     {avatarState === "uploading" ? (
                       <button
                         className={styles.quietButton}
+                        disabled={dataRestoreBusy}
                         onClick={cancelAvatarUpload}
                         type="button"
                       >
@@ -701,7 +723,9 @@ export function SettingsPage({
                   <input
                     accept="image/jpeg,image/png,image/webp,image/gif"
                     aria-label="选择站点头像"
-                    disabled={!session || avatarState === "uploading"}
+                    disabled={
+                      !session || avatarState === "uploading" || dataRestoreBusy
+                    }
                     onChange={selectAvatar}
                     ref={fileInputRef}
                     tabIndex={-1}
@@ -735,6 +759,7 @@ export function SettingsPage({
                 <label className={styles.fullField}>
                   <span>站点标题</span>
                   <input
+                    disabled={dataRestoreBusy}
                     onChange={(event) =>
                       updateForm("title", event.target.value)
                     }
@@ -745,6 +770,7 @@ export function SettingsPage({
                 <label className={styles.fullField}>
                   <span>简介</span>
                   <textarea
+                    disabled={dataRestoreBusy}
                     onChange={(event) => updateForm("bio", event.target.value)}
                     rows={3}
                     value={form.bio}
@@ -759,6 +785,7 @@ export function SettingsPage({
                     }
                     aria-invalid={Boolean(effectiveErrors.timezone)}
                     list="moment-timezones"
+                    disabled={dataRestoreBusy}
                     onChange={(event) =>
                       updateForm("timezone", event.target.value)
                     }
@@ -788,6 +815,7 @@ export function SettingsPage({
                     }
                     aria-invalid={Boolean(effectiveErrors.publicBaseUrl)}
                     inputMode="url"
+                    disabled={dataRestoreBusy}
                     onChange={(event) =>
                       updateForm("publicBaseUrl", event.target.value)
                     }
@@ -825,6 +853,7 @@ export function SettingsPage({
                 </span>
                 <input
                   checked={form.commentsEnabled}
+                  disabled={dataRestoreBusy}
                   onChange={(event) =>
                     updateForm("commentsEnabled", event.target.checked)
                   }
@@ -977,7 +1006,9 @@ export function SettingsPage({
                   trigger={
                     <button
                       className={styles.dangerButton}
-                      disabled={!session || rotationPending || dirty}
+                      disabled={
+                        !session || rotationPending || dirty || dataRestoreBusy
+                      }
                       type="button"
                     >
                       轮换凭据
@@ -1002,12 +1033,19 @@ export function SettingsPage({
                 <p>Portable data</p>
                 <h2 id="data-title">备份与恢复</h2>
               </div>
-              <span>后续接入</span>
+              <span>仅所有者</span>
             </header>
-            <p className={styles.futureNote}>
-              这里已经为整站导出、恢复预检与替换确认保留位置。本页暂不提供这些操作；当前仍可通过现有
-              API 或 CLI 管理备份。
-            </p>
+            <BackupRestore
+              onRestoreBusyChange={setDataRestoreBusy}
+              settingsBlocked={
+                dirty ||
+                savePending ||
+                avatarAttemptPending ||
+                avatarPreviewState === "reading" ||
+                rotationPending ||
+                rotated !== null
+              }
+            />
           </section>
         </div>
       </div>

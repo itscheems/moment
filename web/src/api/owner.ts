@@ -64,6 +64,68 @@ export interface PostMediaInput {
   altText: string | null;
 }
 
+export interface ImportCounts {
+  entries: number;
+  comments: number;
+  media: number;
+}
+
+export interface ImportDiskEstimate {
+  archiveBytes: number;
+  expandedBytes: number;
+  stagingBytes: number;
+  preImportBackupBytes: number;
+  rollbackReserveBytes: number;
+  safetyMarginBytes: number;
+  requiredAdditionalBytes: number;
+  estimatedPeakFootprintBytes: number;
+  availableBytes: number;
+  spaceOK: boolean;
+}
+
+export interface ImportPlan {
+  formatVersion: number;
+  archiveSHA256: string;
+  counts: ImportCounts;
+  timeRange: { from: string | null; to: string | null };
+  mediaBytes: number;
+  missingAlt: number;
+  disk: ImportDiskEstimate;
+  replacement: {
+    counts: ImportCounts;
+    mediaBytes: number;
+    dataBytes: number;
+  };
+  warnings: string[];
+}
+
+export type ImportPhase =
+  | "claimed"
+  | "backing_up"
+  | "finalizing"
+  | "switching"
+  | "verifying"
+  | "rolling_back"
+  | "succeeded"
+  | "failed"
+  | "rolled_back"
+  | "needs_attention";
+
+export interface ImportStatus {
+  operationId: string;
+  phase: ImportPhase;
+  activeGeneration: string;
+  previousGeneration: string;
+  newGeneration: string;
+  backupVerified: boolean;
+  rollbackAttempted: boolean;
+  rollbackSucceeded: boolean;
+  errorCode: string | null;
+  startedAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
 type Fetcher = typeof fetch;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -114,6 +176,19 @@ function positiveIntegerField(
   const value = record[field];
   if (!Number.isSafeInteger(value) || Number(value) <= 0) {
     throw invalidResponse(`response field ${field} must be a positive integer`);
+  }
+  return Number(value);
+}
+
+function nonNegativeIntegerField(
+  record: Record<string, unknown>,
+  field: string,
+): number {
+  const value = record[field];
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw invalidResponse(
+      `response field ${field} must be a non-negative safe integer`,
+    );
   }
   return Number(value);
 }
@@ -171,6 +246,674 @@ function optionalInstantField(
   field: string,
 ): string | null {
   return record[field] === undefined ? null : utcInstantField(record, field);
+}
+
+function canonicalUTCField(
+  record: Record<string, unknown>,
+  field: string,
+): string {
+  const value = utcInstantField(record, field);
+  const fraction = value.match(/\.(\d+)Z$/)?.[1];
+  if (fraction?.endsWith("0")) {
+    throw invalidResponse(`response field ${field} must be canonical UTC`);
+  }
+  return value;
+}
+
+function canonicalUTCKey(value: string): string {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/,
+  );
+  if (!match) throw invalidResponse("UTC instant cannot be ordered");
+  const [, year, month, day, hour, minute, second, fraction = ""] = match;
+  return `${year}${month}${day}${hour}${minute}${second}${fraction.padEnd(9, "0")}`;
+}
+
+function compareCanonicalUTC(left: string, right: string): number {
+  return canonicalUTCKey(left).localeCompare(canonicalUTCKey(right));
+}
+
+function parseImportCounts(value: unknown): ImportCounts {
+  const record = objectData(value);
+  if (!hasExactKeys(record, ["entries", "comments", "media"])) {
+    throw invalidResponse("import counts contain unsupported fields");
+  }
+  return {
+    entries: nonNegativeIntegerField(record, "entries"),
+    comments: nonNegativeIntegerField(record, "comments"),
+    media: nonNegativeIntegerField(record, "media"),
+  };
+}
+
+function parseImportDisk(value: unknown): ImportDiskEstimate {
+  const record = objectData(value);
+  const fields = [
+    "archive_bytes",
+    "expanded_bytes",
+    "staging_bytes",
+    "pre_import_backup_bytes",
+    "rollback_reserve_bytes",
+    "safety_margin_bytes",
+    "required_additional_bytes",
+    "estimated_peak_footprint_bytes",
+    "available_bytes",
+    "space_ok",
+  ];
+  if (!hasExactKeys(record, fields)) {
+    throw invalidResponse("import disk estimate contains unsupported fields");
+  }
+  const disk = {
+    archiveBytes: nonNegativeIntegerField(record, "archive_bytes"),
+    expandedBytes: nonNegativeIntegerField(record, "expanded_bytes"),
+    stagingBytes: nonNegativeIntegerField(record, "staging_bytes"),
+    preImportBackupBytes: nonNegativeIntegerField(
+      record,
+      "pre_import_backup_bytes",
+    ),
+    rollbackReserveBytes: nonNegativeIntegerField(
+      record,
+      "rollback_reserve_bytes",
+    ),
+    safetyMarginBytes: nonNegativeIntegerField(record, "safety_margin_bytes"),
+    requiredAdditionalBytes: nonNegativeIntegerField(
+      record,
+      "required_additional_bytes",
+    ),
+    estimatedPeakFootprintBytes: nonNegativeIntegerField(
+      record,
+      "estimated_peak_footprint_bytes",
+    ),
+    availableBytes: nonNegativeIntegerField(record, "available_bytes"),
+    spaceOK: booleanField(record, "space_ok"),
+  };
+  const required =
+    disk.stagingBytes +
+    disk.preImportBackupBytes +
+    disk.rollbackReserveBytes +
+    disk.safetyMarginBytes;
+  if (
+    !Number.isSafeInteger(required) ||
+    required !== disk.requiredAdditionalBytes ||
+    disk.spaceOK !== disk.availableBytes >= disk.requiredAdditionalBytes ||
+    disk.estimatedPeakFootprintBytes < disk.requiredAdditionalBytes
+  ) {
+    throw invalidResponse("import disk estimate is internally inconsistent");
+  }
+  return disk;
+}
+
+function parseImportPlan(
+  data: unknown,
+  expectedArchiveBytes: number,
+): ImportPlan {
+  const record = objectData(data);
+  if (
+    !hasExactKeys(record, [
+      "dry_run",
+      "format_version",
+      "archive_sha256",
+      "counts",
+      "time_range",
+      "media_bytes",
+      "missing_alt",
+      "disk",
+      "replacement",
+      "warnings",
+    ]) ||
+    record.dry_run !== true ||
+    record.format_version !== 1
+  ) {
+    throw invalidResponse("import plan contract is invalid");
+  }
+  const archiveSHA256 = stringField(record, "archive_sha256");
+  if (!/^[0-9a-f]{64}$/.test(archiveSHA256)) {
+    throw invalidResponse("import plan archive SHA-256 is invalid");
+  }
+  const timeRange = objectData(record.time_range);
+  if (
+    !hasExactKeys(
+      timeRange,
+      ["from", "to"].filter((field) => field in timeRange),
+    )
+  ) {
+    throw invalidResponse("import time range contains unsupported fields");
+  }
+  const from =
+    "from" in timeRange ? canonicalUTCField(timeRange, "from") : null;
+  const to = "to" in timeRange ? canonicalUTCField(timeRange, "to") : null;
+  if (
+    (from === null) !== (to === null) ||
+    (from && to && compareCanonicalUTC(from, to) > 0)
+  ) {
+    throw invalidResponse("import time range is inconsistent");
+  }
+  const replacement = objectData(record.replacement);
+  if (!hasExactKeys(replacement, ["counts", "media_bytes", "data_bytes"])) {
+    throw invalidResponse(
+      "import replacement impact contains unsupported fields",
+    );
+  }
+  if (
+    !Array.isArray(record.warnings) ||
+    record.warnings.some(
+      (warning) => typeof warning !== "string" || warning.length > 2_000,
+    )
+  ) {
+    throw invalidResponse("import warnings are invalid");
+  }
+  const counts = parseImportCounts(record.counts);
+  const mediaBytes = nonNegativeIntegerField(record, "media_bytes");
+  const missingAlt = nonNegativeIntegerField(record, "missing_alt");
+  const disk = parseImportDisk(record.disk);
+  const replacementCounts = parseImportCounts(replacement.counts);
+  const replacementMediaBytes = nonNegativeIntegerField(
+    replacement,
+    "media_bytes",
+  );
+  const replacementDataBytes = nonNegativeIntegerField(
+    replacement,
+    "data_bytes",
+  );
+  const warnings = [...record.warnings];
+  const jsonBytes = disk.expandedBytes - mediaBytes;
+  const stagingBytes = mediaBytes + jsonBytes + jsonBytes;
+  const baseRequired =
+    stagingBytes + replacementDataBytes + replacementDataBytes;
+  const safetyMargin = Math.max(Math.floor(baseRequired / 10), 2 ** 31);
+  const requiredAdditional = baseRequired + safetyMargin;
+  const peak = expectedArchiveBytes + replacementDataBytes + requiredAdditional;
+  if (
+    expectedArchiveBytes <= 0 ||
+    counts.entries > 100_000 ||
+    counts.comments > 500_000 ||
+    counts.media > 100_000 ||
+    replacementMediaBytes > replacementDataBytes ||
+    mediaBytes > disk.expandedBytes ||
+    disk.archiveBytes !== expectedArchiveBytes ||
+    disk.expandedBytes <= 0 ||
+    disk.stagingBytes !== stagingBytes ||
+    disk.preImportBackupBytes !== replacementDataBytes ||
+    disk.rollbackReserveBytes !== replacementDataBytes ||
+    disk.safetyMarginBytes !== safetyMargin ||
+    disk.requiredAdditionalBytes !== requiredAdditional ||
+    disk.estimatedPeakFootprintBytes !== peak ||
+    !disk.spaceOK ||
+    ![stagingBytes, baseRequired, safetyMargin, requiredAdditional, peak].every(
+      Number.isSafeInteger,
+    )
+  ) {
+    throw invalidResponse("import preview relationships are invalid");
+  }
+  if (
+    counts.entries === 0
+      ? counts.comments !== 0 ||
+        missingAlt !== 0 ||
+        from !== null ||
+        to !== null
+      : from === null || to === null
+  ) {
+    throw invalidResponse("import preview time range is invalid");
+  }
+  const expectedWarning = `${missingAlt} media usages have no image description`;
+  if (
+    warnings.length > 1 ||
+    (missingAlt === 0
+      ? warnings.length !== 0
+      : warnings.length !== 1 || warnings[0] !== expectedWarning)
+  ) {
+    throw invalidResponse("import warnings do not match the preview");
+  }
+  return {
+    formatVersion: 1,
+    archiveSHA256,
+    counts,
+    timeRange: { from, to },
+    mediaBytes,
+    missingAlt,
+    disk,
+    replacement: {
+      counts: replacementCounts,
+      mediaBytes: replacementMediaBytes,
+      dataBytes: replacementDataBytes,
+    },
+    warnings,
+  };
+}
+
+const importPhases = new Set<ImportPhase>([
+  "claimed",
+  "backing_up",
+  "finalizing",
+  "switching",
+  "verifying",
+  "rolling_back",
+  "succeeded",
+  "failed",
+  "rolled_back",
+  "needs_attention",
+]);
+
+function validImportOperationId(value: string): boolean {
+  const match = value.match(
+    /^import-(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})Z-([0-9a-f]{16})$/,
+  );
+  if (!match) return false;
+  const [, year, month, day, hour, minute, second, milliseconds] = match;
+  const instant = new Date(
+    `${year}-${month}-${day}T${hour}:${minute}:${second}.${milliseconds}Z`,
+  );
+  return (
+    Number.isFinite(instant.valueOf()) &&
+    instant.toISOString() ===
+      `${year}-${month}-${day}T${hour}:${minute}:${second}.${milliseconds}Z`
+  );
+}
+
+function parseImportStatus(data: unknown): ImportStatus {
+  const record = objectData(data);
+  const required = [
+    "operation_id",
+    "phase",
+    "active_generation",
+    "previous_generation",
+    "new_generation",
+    "backup_verified",
+    "rollback_attempted",
+    "rollback_succeeded",
+    "started_at",
+    "updated_at",
+  ];
+  const optional = ["backup_name", "error_code", "completed_at"];
+  if (
+    !hasExactKeys(record, [
+      ...required,
+      ...optional.filter((field) => field in record),
+    ])
+  ) {
+    throw invalidResponse("import status contains unsupported fields");
+  }
+  const phase = stringField(record, "phase") as ImportPhase;
+  if (!importPhases.has(phase)) {
+    throw invalidResponse("import status phase is invalid");
+  }
+  const operationId = stringField(record, "operation_id");
+  const activeGeneration = stringField(record, "active_generation");
+  const previousGeneration = stringField(record, "previous_generation");
+  const newGeneration = stringField(record, "new_generation");
+  const generationPattern = /^[A-Za-z0-9_-]{1,128}$/;
+  if (
+    !validImportOperationId(operationId) ||
+    operationId !== newGeneration ||
+    !generationPattern.test(activeGeneration) ||
+    !generationPattern.test(previousGeneration) ||
+    previousGeneration === newGeneration ||
+    (activeGeneration !== previousGeneration &&
+      activeGeneration !== newGeneration)
+  ) {
+    throw invalidResponse("import status generation binding is invalid");
+  }
+  const completedAt =
+    "completed_at" in record ? canonicalUTCField(record, "completed_at") : null;
+  const completionRequired = ["succeeded", "failed", "rolled_back"].includes(
+    phase,
+  );
+  const completionForbidden = activePhasesForResponse.has(phase);
+  if (
+    (completionRequired && completedAt === null) ||
+    (completionForbidden && completedAt !== null)
+  ) {
+    throw invalidResponse("import status completion is inconsistent");
+  }
+  const startedAt = canonicalUTCField(record, "started_at");
+  const updatedAt = canonicalUTCField(record, "updated_at");
+  if (
+    compareCanonicalUTC(updatedAt, startedAt) < 0 ||
+    (completedAt && compareCanonicalUTC(completedAt, updatedAt) < 0)
+  ) {
+    throw invalidResponse("import status timestamps are inconsistent");
+  }
+  const backupVerified = booleanField(record, "backup_verified");
+  const rollbackAttempted = booleanField(record, "rollback_attempted");
+  const rollbackSucceeded = booleanField(record, "rollback_succeeded");
+  const backupName =
+    "backup_name" in record ? stringField(record, "backup_name") : null;
+  if (
+    backupVerified !== (backupName !== null) ||
+    (backupName !== null &&
+      (!backupName.endsWith(".zip") ||
+        backupName.includes("/") ||
+        backupName.includes("\\")))
+  ) {
+    throw invalidResponse("import status backup proof is invalid");
+  }
+  const errorCode =
+    "error_code" in record ? stringField(record, "error_code") : null;
+  if (
+    (errorCode !== null && !/^[A-Z0-9_]{1,128}$/.test(errorCode)) ||
+    (errorCode === null) !== !("error_code" in record) ||
+    (rollbackSucceeded && !rollbackAttempted)
+  ) {
+    throw invalidResponse("import status rollback proof is invalid");
+  }
+  const terminalTimeMatches = completedAt === updatedAt;
+  const invalidPhase = (() => {
+    switch (phase) {
+      case "claimed":
+      case "backing_up":
+        return (
+          backupVerified ||
+          rollbackAttempted ||
+          completedAt !== null ||
+          errorCode !== null ||
+          activeGeneration !== previousGeneration
+        );
+      case "finalizing":
+        return (
+          !backupVerified ||
+          rollbackAttempted ||
+          completedAt !== null ||
+          errorCode !== null ||
+          activeGeneration !== previousGeneration
+        );
+      case "switching":
+        return (
+          !backupVerified ||
+          rollbackAttempted ||
+          completedAt !== null ||
+          errorCode !== null
+        );
+      case "verifying":
+        return (
+          !backupVerified ||
+          rollbackAttempted ||
+          completedAt !== null ||
+          errorCode !== null ||
+          activeGeneration !== newGeneration
+        );
+      case "rolling_back":
+        return (
+          !backupVerified ||
+          !rollbackAttempted ||
+          rollbackSucceeded ||
+          completedAt !== null ||
+          errorCode !== null
+        );
+      case "succeeded":
+        return (
+          !backupVerified ||
+          rollbackAttempted ||
+          errorCode !== null ||
+          !terminalTimeMatches ||
+          activeGeneration !== newGeneration
+        );
+      case "failed":
+        return (
+          rollbackAttempted ||
+          errorCode === null ||
+          !terminalTimeMatches ||
+          activeGeneration !== previousGeneration
+        );
+      case "rolled_back":
+        return (
+          !backupVerified ||
+          !rollbackAttempted ||
+          !rollbackSucceeded ||
+          errorCode === null ||
+          !terminalTimeMatches ||
+          activeGeneration !== previousGeneration
+        );
+      case "needs_attention":
+        return errorCode === null || rollbackSucceeded;
+    }
+  })();
+  if (invalidPhase) {
+    throw invalidResponse("import status fields contradict its phase");
+  }
+  return {
+    operationId,
+    phase,
+    activeGeneration,
+    previousGeneration,
+    newGeneration,
+    backupVerified,
+    rollbackAttempted,
+    rollbackSucceeded,
+    errorCode,
+    startedAt,
+    updatedAt,
+    completedAt,
+  };
+}
+
+async function decodeImportSuccess(
+  response: Response,
+  expectedStatus: number,
+): Promise<unknown> {
+  const text = await response.text();
+  assertNoDuplicateJSONKeys(text);
+  const replay = new Response(text, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+  const { data, meta } = await decodeResponse(replay, {
+    strictSuccessEnvelope: response.ok,
+    requireJsonSuccess: response.ok,
+  });
+  const requestID = hasExactKeys(meta, ["request_id"])
+    ? stringField(meta, "request_id")
+    : "";
+  if (
+    response.status !== expectedStatus ||
+    !/^req_[A-Za-z0-9_-]{1,124}$/.test(requestID)
+  ) {
+    throw invalidResponse("import response metadata is invalid");
+  }
+  return data;
+}
+
+const activePhasesForResponse = new Set<ImportPhase>([
+  "claimed",
+  "backing_up",
+  "finalizing",
+  "switching",
+  "verifying",
+  "rolling_back",
+]);
+
+function assertNoDuplicateJSONKeys(source: string): void {
+  let index = 0;
+  const whitespace = () => {
+    while (/\s/.test(source[index] ?? "")) index += 1;
+  };
+  const stringToken = (): string => {
+    if (source[index] !== '"') throw invalidResponse("JSON string is invalid");
+    const start = index;
+    index += 1;
+    while (index < source.length) {
+      const character = source[index];
+      if (character === '"') {
+        index += 1;
+        try {
+          return JSON.parse(source.slice(start, index)) as string;
+        } catch {
+          throw invalidResponse("JSON string is invalid");
+        }
+      }
+      if (character === "\\") index += 1;
+      index += 1;
+    }
+    throw invalidResponse("JSON string is incomplete");
+  };
+  const value = (): void => {
+    whitespace();
+    if (source[index] === "{") {
+      index += 1;
+      whitespace();
+      const keys = new Set<string>();
+      if (source[index] === "}") {
+        index += 1;
+        return;
+      }
+      while (index < source.length) {
+        const key = stringToken();
+        if (keys.has(key))
+          throw invalidResponse("JSON object has duplicate keys");
+        keys.add(key);
+        whitespace();
+        if (source[index] !== ":")
+          throw invalidResponse("JSON object is invalid");
+        index += 1;
+        value();
+        whitespace();
+        if (source[index] === "}") {
+          index += 1;
+          return;
+        }
+        if (source[index] !== ",")
+          throw invalidResponse("JSON object is invalid");
+        index += 1;
+        whitespace();
+      }
+      throw invalidResponse("JSON object is incomplete");
+    }
+    if (source[index] === "[") {
+      index += 1;
+      whitespace();
+      if (source[index] === "]") {
+        index += 1;
+        return;
+      }
+      while (index < source.length) {
+        value();
+        whitespace();
+        if (source[index] === "]") {
+          index += 1;
+          return;
+        }
+        if (source[index] !== ",")
+          throw invalidResponse("JSON array is invalid");
+        index += 1;
+      }
+      throw invalidResponse("JSON array is incomplete");
+    }
+    if (source[index] === '"') {
+      stringToken();
+      return;
+    }
+    const match = source
+      .slice(index)
+      .match(
+        /^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/,
+      );
+    if (!match) throw invalidResponse("JSON value is invalid");
+    index += match[0].length;
+  };
+  value();
+  whitespace();
+  if (index !== source.length) throw invalidResponse("JSON has trailing data");
+}
+
+function uploadArchive(
+  path: string,
+  csrfToken: string,
+  file: File,
+  expectedSHA256: string | null,
+  onProgress: (percent: number | null) => void,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(
+        new PublicApiError("archive upload was cancelled", {
+          code: "CANCELLED",
+          status: 0,
+        }),
+      );
+      return;
+    }
+    const request = new XMLHttpRequest();
+    let settled = false;
+    const finish = (action: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      action();
+    };
+    const abort = () => request.abort();
+    request.open("POST", path);
+    request.withCredentials = true;
+    request.setRequestHeader("Accept", "application/json");
+    request.setRequestHeader("Content-Type", "application/zip");
+    request.setRequestHeader("X-CSRF-Token", csrfToken);
+    if (expectedSHA256) {
+      request.setRequestHeader("X-Moment-Archive-SHA256", expectedSHA256);
+    }
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        onProgress(
+          Math.min(99, Math.round((event.loaded / event.total) * 100)),
+        );
+      } else {
+        onProgress(null);
+      }
+    });
+    request.addEventListener("error", () =>
+      finish(() =>
+        reject(
+          new PublicApiError("archive upload connection was lost", {
+            code: "NETWORK_ERROR",
+            status: 0,
+          }),
+        ),
+      ),
+    );
+    request.addEventListener("abort", () =>
+      finish(() =>
+        reject(
+          new PublicApiError("archive upload was cancelled", {
+            code: "CANCELLED",
+            status: 0,
+          }),
+        ),
+      ),
+    );
+    request.addEventListener("load", () => {
+      if (
+        request.status < 200 ||
+        request.status > 599 ||
+        request.status === 204 ||
+        request.status === 205 ||
+        request.status === 304
+      ) {
+        finish(() =>
+          reject(invalidResponse("archive upload response status is invalid")),
+        );
+        return;
+      }
+      const headers = new Headers();
+      const contentType = request.getResponseHeader("Content-Type");
+      if (contentType) headers.set("Content-Type", contentType);
+      let response: Response;
+      try {
+        response = new Response(request.responseText, {
+          status: request.status,
+          headers,
+        });
+      } catch {
+        finish(() =>
+          reject(invalidResponse("archive upload response is invalid")),
+        );
+        return;
+      }
+      void decodeImportSuccess(response, 200)
+        .then((data) => finish(() => resolve(data)))
+        .catch((error: unknown) => finish(() => reject(error)));
+    });
+    signal?.addEventListener("abort", abort, { once: true });
+    onProgress(null);
+    request.send(file);
+  });
 }
 
 async function decodeExactOwnerSuccess(
@@ -368,6 +1111,65 @@ export class OwnerApi {
       initializedAt: utcInstantField(record, "initialized_at"),
       rotatedAt,
     };
+  }
+
+  async planImport(
+    csrfToken: string,
+    file: File,
+    onProgress: (percent: number | null) => void = () => undefined,
+    signal?: AbortSignal,
+  ): Promise<ImportPlan> {
+    const data = await uploadArchive(
+      "/api/v1/owner/import/plan",
+      csrfToken,
+      file,
+      null,
+      onProgress,
+      signal,
+    );
+    onProgress(100);
+    return parseImportPlan(data, file.size);
+  }
+
+  async restoreImport(
+    csrfToken: string,
+    file: File,
+    expectedSHA256: string,
+    onProgress: (percent: number | null) => void = () => undefined,
+    signal?: AbortSignal,
+  ): Promise<ImportStatus> {
+    if (!/^[0-9a-f]{64}$/.test(expectedSHA256)) {
+      throw invalidResponse("expected archive SHA-256 is invalid");
+    }
+    const data = objectData(
+      await uploadArchive(
+        "/api/v1/owner/import/restore",
+        csrfToken,
+        file,
+        expectedSHA256,
+        onProgress,
+        signal,
+      ),
+    );
+    if (!hasExactKeys(data, ["status"])) {
+      throw invalidResponse("restore result contains unsupported fields");
+    }
+    onProgress(100);
+    const status = parseImportStatus(data.status);
+    if (status.phase !== "succeeded") {
+      throw invalidResponse(
+        "restore response is not a successful terminal state",
+      );
+    }
+    return status;
+  }
+
+  async importStatus(signal?: AbortSignal): Promise<ImportStatus> {
+    const response = await this.fetcher("/api/v1/owner/import/status", {
+      ...requestInit("GET"),
+      signal,
+    });
+    return parseImportStatus(await decodeImportSuccess(response, 200));
   }
 
   async logout(csrfToken: string): Promise<void> {

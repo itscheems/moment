@@ -84,11 +84,21 @@ function installFetch(
     return json({}, 404);
   },
 ) {
-  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
-    handler(String(input), init),
+  const fetcher = vi.fn(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/v1/owner/import/status") {
+        return failure("IMPORT_STAGING_INVALID", 409);
+      }
+      return handler(url, init);
+    },
   );
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
+}
+
+async function waitForRestoreStatus() {
+  await waitFor(() => expect(screen.getByLabelText(/站点标题/)).toBeEnabled());
 }
 
 class FakeUploadRequest extends EventTarget {
@@ -251,6 +261,7 @@ describe("owner site settings", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<App />);
     await screen.findByRole("heading", { name: "站点身份" });
+    await waitForRestoreStatus();
 
     fireEvent.change(screen.getByLabelText(/站点时区/), {
       target: { value: "Mars/Olympus" },
@@ -291,6 +302,7 @@ describe("owner site settings", () => {
     });
     render(<App />);
     await screen.findByRole("heading", { name: "站点身份" });
+    await waitForRestoreStatus();
 
     fireEvent.change(screen.getByLabelText(/站点标题/), {
       target: { value: "雨天手记" },
@@ -338,6 +350,7 @@ describe("owner site settings", () => {
     });
     render(<App />);
     await screen.findByRole("heading", { name: "站点身份" });
+    await waitForRestoreStatus();
 
     fireEvent.change(screen.getByLabelText(/站点标题/), {
       target: { value: "提交中的标题" },
@@ -400,6 +413,7 @@ describe("owner site settings", () => {
     });
     render(<App />);
     await screen.findByRole("heading", { name: "站点身份" });
+    await waitForRestoreStatus();
 
     const file = new File(["png"], "avatar.png", { type: "image/png" });
     fireEvent.change(screen.getByLabelText("选择站点头像"), {
@@ -437,6 +451,7 @@ describe("owner site settings", () => {
     installFetch();
     render(<App />);
     await screen.findByRole("heading", { name: "站点身份" });
+    await waitForRestoreStatus();
 
     fireEvent.change(screen.getByLabelText(/简介/), {
       target: { value: "这段简介仍需保存" },
@@ -475,6 +490,7 @@ describe("owner site settings", () => {
     });
     render(<App />);
     await screen.findByRole("heading", { name: "站点身份" });
+    await waitForRestoreStatus();
     fireEvent.change(screen.getByLabelText(/站点标题/), {
       target: { value: "仍在输入中的标题" },
     });
@@ -514,6 +530,7 @@ describe("owner site settings", () => {
     });
     render(<App />);
     await screen.findByRole("heading", { name: "访问凭据" });
+    await waitForRestoreStatus();
 
     const trigger = screen.getByRole("button", { name: "轮换凭据" });
     trigger.focus();
@@ -558,6 +575,7 @@ describe("owner site settings", () => {
       });
       render(<App />);
       await screen.findByRole("heading", { name: "访问凭据" });
+      await waitForRestoreStatus();
 
       fireEvent.click(screen.getByRole("button", { name: "轮换凭据" }));
       fireEvent.click(await screen.findByRole("button", { name: "确认轮换" }));
@@ -596,6 +614,7 @@ describe("owner site settings", () => {
       });
       render(<App />);
       await screen.findByRole("heading", { name: "访问凭据" });
+      await waitForRestoreStatus();
       fireEvent.click(screen.getByRole("button", { name: "轮换凭据" }));
       fireEvent.click(await screen.findByRole("button", { name: "确认轮换" }));
 
