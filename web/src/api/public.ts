@@ -592,6 +592,36 @@ export async function decodeCommentResponse(
   return result;
 }
 
+export function parseSiteIdentity(
+  data: unknown,
+  instanceId: string | null = null,
+): SiteIdentity {
+  if (!isRecord(data)) throw invalidResponse("site data must be an object");
+  const commentsEnabled = data.comments_enabled;
+  if (typeof commentsEnabled !== "boolean") {
+    throw invalidResponse("response field comments_enabled must be a boolean");
+  }
+  const timezone = stringField(data, "timezone");
+  try {
+    new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format();
+  } catch {
+    throw invalidResponse("response field timezone must be an IANA timezone");
+  }
+  const avatarMediaId = nullableStringField(data, "avatar_media_id");
+  if (avatarMediaId !== null && !isCanonicalUlid(avatarMediaId)) {
+    throw invalidResponse("response field avatar_media_id must be a media ID");
+  }
+  return {
+    title: stringField(data, "title"),
+    bio: stringField(data, "bio"),
+    timezone,
+    publicBaseUrl: nullableStringField(data, "public_base_url"),
+    avatarMediaId,
+    commentsEnabled,
+    instanceId,
+  };
+}
+
 export class PublicApi {
   private readonly fetcher: Fetcher;
 
@@ -605,19 +635,6 @@ export class PublicApi {
       signal,
     });
     const { data, meta } = await decodeResponse(response);
-    if (!isRecord(data)) throw invalidResponse("site data must be an object");
-    const commentsEnabled = data.comments_enabled;
-    if (typeof commentsEnabled !== "boolean") {
-      throw invalidResponse(
-        "response field comments_enabled must be a boolean",
-      );
-    }
-    const timezone = stringField(data, "timezone");
-    try {
-      new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format();
-    } catch {
-      throw invalidResponse("response field timezone must be an IANA timezone");
-    }
     const instanceId = meta.instance_id;
     if (
       instanceId !== undefined &&
@@ -625,15 +642,7 @@ export class PublicApi {
     ) {
       throw invalidResponse("meta instance_id must be a runtime instance ID");
     }
-    return {
-      title: stringField(data, "title"),
-      bio: stringField(data, "bio"),
-      timezone,
-      publicBaseUrl: nullableStringField(data, "public_base_url"),
-      avatarMediaId: nullableStringField(data, "avatar_media_id"),
-      commentsEnabled,
-      instanceId: instanceId ?? null,
-    };
+    return parseSiteIdentity(data, instanceId ?? null);
   }
 
   async timeline(request: TimelineRequest = {}): Promise<TimelinePage> {

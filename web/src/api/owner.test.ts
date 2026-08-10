@@ -112,6 +112,85 @@ afterEach(() => {
 });
 
 describe("owner API client", () => {
+  it("patches only changed site fields and parses auth rotation metadata", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        requests.push({ url, init });
+        if (url.endsWith("/site")) {
+          return json({
+            data: {
+              title: "雨天记录",
+              bio: "沿着日常留下坐标",
+              timezone: "Asia/Shanghai",
+              public_base_url: "https://moment.example.com",
+              avatar_media_id: null,
+              comments_enabled: false,
+            },
+            meta: { request_id: "req_site" },
+          });
+        }
+        if (url.endsWith("/status")) {
+          return json({
+            data: {
+              initialized: true,
+              session_epoch: 4,
+              initialized_at: "2026-08-01T00:00:00Z",
+              rotated_at: "2026-08-10T00:00:00Z",
+            },
+            meta: { request_id: "req_status" },
+          });
+        }
+        return json({
+          data: {
+            token: "new-owner-token",
+            initialized: true,
+            session_epoch: 5,
+            initialized_at: "2026-08-01T00:00:00Z",
+            rotated_at: "2026-08-11T00:00:00Z",
+          },
+          meta: { request_id: "req_rotate" },
+        });
+      },
+    );
+    const api = new OwnerApi(fetcher as typeof fetch);
+
+    await expect(
+      api.updateSite("csrf-settings", {
+        title: "雨天记录",
+        publicBaseUrl: "https://moment.example.com",
+        commentsEnabled: false,
+      }),
+    ).resolves.toMatchObject({
+      title: "雨天记录",
+      publicBaseUrl: "https://moment.example.com",
+      commentsEnabled: false,
+      instanceId: null,
+    });
+    expect(JSON.parse(String(requests[0].init?.body))).toEqual({
+      title: "雨天记录",
+      public_base_url: "https://moment.example.com",
+      comments_enabled: false,
+    });
+    expect(new Headers(requests[0].init?.headers).get("X-CSRF-Token")).toBe(
+      "csrf-settings",
+    );
+
+    await expect(api.status()).resolves.toMatchObject({
+      sessionEpoch: 4,
+      rotatedAt: "2026-08-10T00:00:00Z",
+    });
+    await expect(api.rotateToken("csrf-settings")).resolves.toMatchObject({
+      token: "new-owner-token",
+      sessionEpoch: 5,
+    });
+    expect(requests[2].init?.body).toBeUndefined();
+    expect(new Headers(requests[2].init?.headers).get("X-CSRF-Token")).toBe(
+      "csrf-settings",
+    );
+  });
+
   it("submits exact ordered usages while preserving nullable and padded alt text", async () => {
     const media = [
       {

@@ -10,6 +10,7 @@ import { Composer } from "../features/owner/Composer";
 import { EditPage } from "../features/owner/EditPage";
 import { OwnerLogin } from "../features/owner/OwnerLogin";
 import { OwnerProvider, useOwner } from "../features/owner/OwnerProvider";
+import { SettingsPage } from "../features/owner/SettingsPage";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { NavigationProvider, useNavigation } from "./navigation";
 import { resolveRoute } from "./routes";
@@ -138,10 +139,19 @@ function PublicApp() {
     route.id !== "detail" &&
     route.id !== "owner-login" &&
     route.id !== "owner-compose" &&
-    route.id !== "owner-edit";
+    route.id !== "owner-edit" &&
+    route.id !== "owner-settings";
 
   return (
-    <AppShell memoryYears={memoryYears} route={route} site={site} state={state}>
+    <AppShell
+      memoryYears={memoryYears}
+      ownerSettingsAvailable={
+        owner.state === "owner" || owner.state === "expired"
+      }
+      route={route}
+      site={site}
+      state={state}
+    >
       {siteError ? (
         <div className={styles.siteError} role="alert">
           <span>站点资料没有加载完成，暂时使用默认身份。</span>
@@ -193,6 +203,13 @@ function PublicApp() {
       {!siteLoading && route.id === "owner-edit" ? (
         owner.state === "owner" || owner.state === "expired" ? (
           <EditPage api={api} id={editId(location.pathname)} site={site} />
+        ) : (
+          <OwnerLogin embedded site={site} />
+        )
+      ) : null}
+      {!siteLoading && route.id === "owner-settings" ? (
+        owner.state === "owner" || owner.state === "expired" ? (
+          <SettingsPage onSaved={setSite} site={site} />
         ) : (
           <OwnerLogin embedded site={site} />
         )

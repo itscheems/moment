@@ -6,10 +6,12 @@ import {
   parseComment,
   parseDeletedCommentMeta,
   parsePost,
+  parseSiteIdentity,
   PublicApiError,
   type CreatedComment,
   type PublicComment,
   type PublicPost,
+  type SiteIdentity,
 } from "./public";
 
 export interface OwnerSession {
@@ -20,6 +22,25 @@ export interface OwnerSession {
 export interface OwnerStatus {
   initialized: boolean;
   sessionEpoch: number;
+  initializedAt: string | null;
+  rotatedAt: string | null;
+}
+
+export interface RotatedCredential {
+  token: string;
+  initialized: boolean;
+  sessionEpoch: number;
+  initializedAt: string;
+  rotatedAt: string;
+}
+
+export interface SiteSettingsUpdate {
+  title?: string;
+  bio?: string;
+  timezone?: string;
+  publicBaseUrl?: string | null;
+  avatarMediaId?: string | null;
+  commentsEnabled?: boolean;
 }
 
 export interface DeletedComment {
@@ -103,6 +124,38 @@ function positiveIntegerField(
     throw invalidResponse(`response field ${field} must be a positive integer`);
   }
   return Number(value);
+}
+
+function instantField(record: Record<string, unknown>, field: string): string {
+  const value = stringField(record, field);
+  if (!Number.isFinite(Date.parse(value))) {
+    throw invalidResponse(`response field ${field} must be an instant`);
+  }
+  return value;
+}
+
+function optionalInstantField(
+  record: Record<string, unknown>,
+  field: string,
+): string | null {
+  return record[field] === undefined ? null : instantField(record, field);
+}
+
+function sitePayload(update: SiteSettingsUpdate): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (update.title !== undefined) payload.title = update.title;
+  if (update.bio !== undefined) payload.bio = update.bio;
+  if (update.timezone !== undefined) payload.timezone = update.timezone;
+  if (update.publicBaseUrl !== undefined) {
+    payload.public_base_url = update.publicBaseUrl;
+  }
+  if (update.avatarMediaId !== undefined) {
+    payload.avatar_media_id = update.avatarMediaId;
+  }
+  if (update.commentsEnabled !== undefined) {
+    payload.comments_enabled = update.commentsEnabled;
+  }
+  return payload;
 }
 
 function parseUpload(data: unknown): UploadedMedia {
@@ -199,6 +252,39 @@ export class OwnerApi {
     return {
       initialized: booleanField(record, "initialized"),
       sessionEpoch: integerField(record, "session_epoch"),
+      initializedAt: optionalInstantField(record, "initialized_at"),
+      rotatedAt: optionalInstantField(record, "rotated_at"),
+    };
+  }
+
+  async updateSite(
+    csrfToken: string,
+    update: SiteSettingsUpdate,
+  ): Promise<SiteIdentity> {
+    const response = await this.fetcher(
+      "/api/v1/owner/site",
+      requestInit("PATCH", csrfToken, sitePayload(update)),
+    );
+    const { data } = await decodeResponse(response);
+    return parseSiteIdentity(data);
+  }
+
+  async rotateToken(csrfToken: string): Promise<RotatedCredential> {
+    const response = await this.fetcher(
+      "/api/v1/owner/token/rotate",
+      requestInit("POST", csrfToken),
+    );
+    const { data } = await decodeResponse(response);
+    const record = objectData(data);
+    const token = stringField(record, "token");
+    const rotatedAt = instantField(record, "rotated_at");
+    if (!token) throw invalidResponse("rotated owner token cannot be empty");
+    return {
+      token,
+      initialized: booleanField(record, "initialized"),
+      sessionEpoch: integerField(record, "session_epoch"),
+      initializedAt: instantField(record, "initialized_at"),
+      rotatedAt,
     };
   }
 

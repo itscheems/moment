@@ -22,23 +22,14 @@ const primaryNav: NavItem[] = [
   { label: "归档", href: "/archive", icon: "archive", active: ["archive"] },
 ];
 
-const ownerNav: NavItem = {
-  label: "所有者",
-  href: "/owner/login",
-  icon: "owner",
-  active: ["owner-login", "owner-settings", "owner-edit"],
-};
-
-const mobileNav = [
-  ...primaryNav,
-  {
-    label: "发布",
-    href: "/owner/compose",
-    icon: "publish" as const,
-    active: ["owner-compose" as const],
-  },
-  ownerNav,
-];
+function ownerNav(settingsAvailable: boolean): NavItem {
+  return {
+    label: "所有者",
+    href: settingsAvailable ? "/owner/settings" : "/owner/login",
+    icon: "owner",
+    active: ["owner-login", "owner-settings", "owner-edit"],
+  };
+}
 
 function Brand({ site }: { site: SiteIdentity }) {
   const title = site.title.trim() || "Moment";
@@ -88,7 +79,15 @@ function NavLink({
   );
 }
 
-function LeftRail({ route, site }: { route: AppRoute; site: SiteIdentity }) {
+function LeftRail({
+  route,
+  site,
+  ownerSettingsAvailable,
+}: {
+  route: AppRoute;
+  site: SiteIdentity;
+  ownerSettingsAvailable: boolean;
+}) {
   return (
     <aside aria-label="站点导航" className={styles.leftRail}>
       <Brand site={site} />
@@ -102,7 +101,7 @@ function LeftRail({ route, site }: { route: AppRoute; site: SiteIdentity }) {
         <span>发布 Moment</span>
       </InternalLink>
       <div className={styles.railBottom}>
-        <NavLink item={ownerNav} route={route} />
+        <NavLink item={ownerNav(ownerSettingsAvailable)} route={route} />
         <ThemeMenu />
       </div>
     </aside>
@@ -165,10 +164,26 @@ function MobileHeader({ site }: { site: SiteIdentity }) {
   );
 }
 
-function MobileNavigation({ route }: { route: AppRoute }) {
+function MobileNavigation({
+  route,
+  ownerSettingsAvailable,
+}: {
+  route: AppRoute;
+  ownerSettingsAvailable: boolean;
+}) {
+  const items: NavItem[] = [
+    ...primaryNav,
+    {
+      label: "发布",
+      href: "/owner/compose",
+      icon: "publish",
+      active: ["owner-compose"],
+    },
+    ownerNav(ownerSettingsAvailable),
+  ];
   return (
     <nav aria-label="移动导航" className={styles.mobileNav}>
-      {mobileNav.map((item) => (
+      {items.map((item) => (
         <NavLink compact item={item} key={item.href} route={route} />
       ))}
     </nav>
@@ -181,12 +196,14 @@ export function AppShell({
   site,
   children,
   memoryYears = [],
+  ownerSettingsAvailable = false,
 }: {
   route: AppRoute;
   state: string | null;
   site: SiteIdentity;
   children?: ReactNode;
   memoryYears?: readonly number[];
+  ownerSettingsAvailable?: boolean;
 }) {
   const { goBack } = useNavigation();
   return (
@@ -196,7 +213,11 @@ export function AppShell({
       </a>
       <MobileHeader site={site} />
       <div className={styles.shell}>
-        <LeftRail route={route} site={site} />
+        <LeftRail
+          ownerSettingsAvailable={ownerSettingsAvailable}
+          route={route}
+          site={site}
+        />
         <main className={styles.timeline} id="main-content" tabIndex={-1}>
           <header className={styles.timelineHeader}>
             {route.id === "detail" || route.id === "owner-edit" ? (
@@ -224,7 +245,10 @@ export function AppShell({
         </main>
         <MemoryRail site={site} years={memoryYears} />
       </div>
-      <MobileNavigation route={route} />
+      <MobileNavigation
+        ownerSettingsAvailable={ownerSettingsAvailable}
+        route={route}
+      />
     </div>
   );
 }

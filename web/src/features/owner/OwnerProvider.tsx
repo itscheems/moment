@@ -47,6 +47,7 @@ interface OwnerContextValue {
   login: (token: string) => Promise<void>;
   logout: (instanceId: string | null) => Promise<void>;
   expireIfInvalidSession: (error: unknown) => boolean;
+  expireAfterTokenRotation: () => void;
   retryStatus: () => void;
 }
 
@@ -407,6 +408,12 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
     [clearSession, requestSyncedSession],
   );
 
+  const expireAfterTokenRotation = useCallback(() => {
+    const marker = nextMarker(markerRef.current);
+    clearSession("expired", marker);
+    broadcast({ type: "clear-session", marker });
+  }, [broadcast, clearSession]);
+
   const retryStatus = useCallback(
     () => setStatusAttempt((value) => value + 1),
     [],
@@ -420,9 +427,19 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       expireIfInvalidSession,
+      expireAfterTokenRotation,
       retryStatus,
     }),
-    [api, expireIfInvalidSession, login, logout, retryStatus, session, state],
+    [
+      api,
+      expireAfterTokenRotation,
+      expireIfInvalidSession,
+      login,
+      logout,
+      retryStatus,
+      session,
+      state,
+    ],
   );
 
   return (
