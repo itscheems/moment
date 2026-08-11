@@ -308,6 +308,7 @@ func siteAPIRequest(
 
 func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
 	if !hasRequiredAPIDataFields(data, "title", "bio", "timezone", "public_base_url", "avatar_media_id", "comments_enabled") ||
+		!hasRequiredNonNullAPIDataFields(data, "title", "bio", "timezone", "comments_enabled") ||
 		settings.Timezone == "" || settings.Timezone == "Local" || strings.HasPrefix(settings.Timezone, "/") || strings.Contains(settings.Timezone, "..") {
 		return false
 	}

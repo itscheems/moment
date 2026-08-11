@@ -353,16 +353,24 @@ func mediaAPIUpload(ctx context.Context, invocation Invocation, filename string,
 }
 
 func validMediaUploadAPIData(data json.RawMessage, result media.UploadResult) bool {
+	fields, ok := apiDataFields(data)
+	if !ok {
+		return false
+	}
+	mediaData := fields["media"]
 	if !hasRequiredAPIDataFields(data, "media", "preview", "original_url", "preview_url") ||
+		!hasRequiredNonNullAPIDataFields(data, "media", "preview", "original_url", "preview_url") ||
 		!hasRequiredNestedAPIDataFields(data, "media", "id", "sha256", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "unreferenced_since", "animated_original") ||
-		!hasRequiredNestedAPIDataFields(data, "preview", "recipe_version", "sha256", "mime_type", "width", "height", "animated_original") {
+		!hasRequiredNonNullNestedAPIDataFields(data, "media", "id", "sha256", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "animated_original") ||
+		!hasRequiredNonNullNestedAPIDataFields(data, "preview", "recipe_version", "sha256", "mime_type", "width", "height", "animated_original") {
 		return false
 	}
 	id, err := domain.ParseID(result.Media.ID.String())
 	if err != nil || id != result.Media.ID || result.Media.OriginalName == "" || !validAPIResponseSHA256(result.Media.SHA256) ||
 		!controlledMediaType(result.Media.MIMEType) || result.Media.ByteSize <= 0 || result.Media.ByteSize > media.DefaultMaxBytes ||
 		result.Media.Width == 0 || result.Media.Height == 0 || !validCanonicalAPITime(result.Media.CreatedAt) ||
-		(result.Media.UnreferencedSince != nil && !validCanonicalAPITimePointer(result.Media.UnreferencedSince)) {
+		!validCanonicalAPIInstantField(mediaData, "created_at", result.Media.CreatedAt) ||
+		!validNullableCanonicalAPIInstantField(mediaData, "unreferenced_since", result.Media.UnreferencedSince) {
 		return false
 	}
 	if result.Preview.RecipeVersion == "" || !validAPIResponseSHA256(result.Preview.SHA256) || !controlledMediaType(result.Preview.MIMEType) ||
@@ -373,11 +381,19 @@ func validMediaUploadAPIData(data json.RawMessage, result media.UploadResult) bo
 }
 
 func hasRequiredNestedAPIDataFields(data json.RawMessage, object string, required ...string) bool {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(data, &fields) != nil {
+	fields, ok := apiDataFields(data)
+	if !ok {
 		return false
 	}
 	return hasRequiredAPIDataFields(fields[object], required...)
+}
+
+func hasRequiredNonNullNestedAPIDataFields(data json.RawMessage, object string, required ...string) bool {
+	fields, ok := apiDataFields(data)
+	if !ok {
+		return false
+	}
+	return hasRequiredNonNullAPIDataFields(fields[object], required...)
 }
 
 func validAPIResponseSHA256(value string) bool {

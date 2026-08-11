@@ -218,3 +218,25 @@ func TestSiteAPIRejectsMissingRequiredSuccessData(t *testing.T) {
 		}
 	}
 }
+
+func TestSiteAPIRejectsNullRequiredSuccessScalars(t *testing.T) {
+	t.Setenv("MOMENT_TOKEN", "test-token")
+	tests := []string{
+		`{"data":{"title":null,"bio":"","timezone":"UTC","public_base_url":null,"avatar_media_id":null,"comments_enabled":false},"meta":{"request_id":"req_site"}}`,
+		`{"data":{"title":"Moment","bio":null,"timezone":"UTC","public_base_url":null,"avatar_media_id":null,"comments_enabled":false},"meta":{"request_id":"req_site"}}`,
+		`{"data":{"title":"Moment","bio":"","timezone":null,"public_base_url":null,"avatar_media_id":null,"comments_enabled":false},"meta":{"request_id":"req_site"}}`,
+		`{"data":{"title":"Moment","bio":"","timezone":"UTC","public_base_url":null,"avatar_media_id":null,"comments_enabled":null},"meta":{"request_id":"req_site"}}`,
+	}
+	for _, body := range tests {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(body))
+		}))
+		output := execute(momentTestApplication(), "", "--url", server.URL, "site", "get", "--json")
+		server.Close()
+		if output.exit != ExitUnavailable || output.stderr != "" ||
+			decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+			t.Fatalf("body=%s output=%#v", body, output)
+		}
+	}
+}

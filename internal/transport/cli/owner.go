@@ -211,29 +211,37 @@ func ownerAPIRequest(ctx context.Context, invocation Invocation, method, endpoin
 func validOwnerAPIData(data json.RawMessage, destination any) bool {
 	switch value := destination.(type) {
 	case *auth.Status:
-		if !hasRequiredAPIDataFields(data, "initialized", "session_epoch") {
+		if !hasRequiredNonNullAPIDataFields(data, "initialized", "session_epoch", "initialized_at") ||
+			!value.Initialized || value.SessionEpoch == 0 || !validCanonicalAPITimePointer(value.InitializedAt) ||
+			!validCanonicalAPIInstantField(data, "initialized_at", *value.InitializedAt) || !validOwnerRotationState(data, value.SessionEpoch, *value.InitializedAt, value.RotatedAt) {
 			return false
 		}
-		if !value.Initialized {
-			return value.SessionEpoch == 0 && value.InitializedAt == nil && value.RotatedAt == nil
-		}
-		return value.SessionEpoch > 0 && validCanonicalAPITimePointer(value.InitializedAt) &&
-			(value.RotatedAt == nil || validCanonicalAPITimePointer(value.RotatedAt))
+		return true
 	case *auth.Credential:
-		if !hasRequiredAPIDataFields(data, "token", "initialized", "session_epoch", "initialized_at") ||
-			!value.Initialized || value.SessionEpoch == 0 || len(value.Token) < 32 || strings.TrimSpace(value.Token) != value.Token ||
-			strings.ContainsAny(value.Token, " \t\r\n") || !validCanonicalAPITime(value.InitializedAt) {
+		if !hasRequiredNonNullAPIDataFields(data, "token", "initialized", "session_epoch", "initialized_at") ||
+			!value.Initialized || value.SessionEpoch < 2 || len(value.Token) < 32 || strings.TrimSpace(value.Token) != value.Token ||
+			strings.ContainsAny(value.Token, " \t\r\n") || !validCanonicalAPITime(value.InitializedAt) ||
+			!validCanonicalAPIInstantField(data, "initialized_at", value.InitializedAt) ||
+			!validOwnerRotationState(data, value.SessionEpoch, value.InitializedAt, value.RotatedAt) {
 			return false
 		}
-		return value.RotatedAt == nil || validCanonicalAPITimePointer(value.RotatedAt)
+		return true
 	default:
 		return false
 	}
 }
 
+func validOwnerRotationState(data json.RawMessage, epoch uint64, initializedAt time.Time, rotatedAt *time.Time) bool {
+	if epoch == 1 {
+		return rotatedAt == nil && validOptionalCanonicalAPIInstantField(data, "rotated_at", nil)
+	}
+	return epoch > 1 && rotatedAt != nil && !rotatedAt.Before(initializedAt) &&
+		validOptionalCanonicalAPIInstantField(data, "rotated_at", rotatedAt)
+}
+
 func hasRequiredAPIDataFields(data json.RawMessage, required ...string) bool {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(data, &fields) != nil || fields == nil {
+	fields, ok := apiDataFields(data)
+	if !ok {
 		return false
 	}
 	for _, field := range required {
@@ -244,12 +252,78 @@ func hasRequiredAPIDataFields(data json.RawMessage, required ...string) bool {
 	return true
 }
 
+func hasRequiredNonNullAPIDataFields(data json.RawMessage, required ...string) bool {
+	fields, ok := apiDataFields(data)
+	if !ok {
+		return false
+	}
+	for _, field := range required {
+		value, present := fields[field]
+		if !present || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return false
+		}
+	}
+	return true
+}
+
+func apiDataFields(data json.RawMessage) (map[string]json.RawMessage, bool) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil || fields == nil {
+		return nil, false
+	}
+	return fields, true
+}
+
 func validCanonicalAPITime(value time.Time) bool {
-	return !value.IsZero() && value.Location() == time.UTC
+	return !value.IsZero() && value.Location() == time.UTC && value.Nanosecond()%int(time.Millisecond) == 0
 }
 
 func validCanonicalAPITimePointer(value *time.Time) bool {
 	return value != nil && validCanonicalAPITime(*value)
+}
+
+func validCanonicalAPIInstantField(data json.RawMessage, field string, expected time.Time) bool {
+	fields, ok := apiDataFields(data)
+	if !ok {
+		return false
+	}
+	return validCanonicalAPIRawInstant(fields[field], expected)
+}
+
+func validOptionalCanonicalAPIInstantField(data json.RawMessage, field string, expected *time.Time) bool {
+	fields, ok := apiDataFields(data)
+	if !ok {
+		return false
+	}
+	raw, present := fields[field]
+	if expected == nil {
+		return !present
+	}
+	return present && validCanonicalAPIRawInstant(raw, *expected)
+}
+
+func validNullableCanonicalAPIInstantField(data json.RawMessage, field string, expected *time.Time) bool {
+	fields, ok := apiDataFields(data)
+	if !ok {
+		return false
+	}
+	raw, present := fields[field]
+	if !present {
+		return false
+	}
+	if expected == nil {
+		return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
+	}
+	return validCanonicalAPIRawInstant(raw, *expected)
+}
+
+func validCanonicalAPIRawInstant(raw json.RawMessage, expected time.Time) bool {
+	var encoded string
+	if json.Unmarshal(raw, &encoded) != nil || encoded == "" || !strings.HasSuffix(encoded, "Z") {
+		return false
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, encoded)
+	return err == nil && validCanonicalAPITime(parsed) && parsed.Equal(expected) && encoded == parsed.Format(time.RFC3339Nano)
 }
 
 func ownerAPIRawRequest(ctx context.Context, invocation Invocation, method, endpoint string, strictJSON bool) (json.RawMessage, map[string]any, int, error) {

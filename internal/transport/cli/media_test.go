@@ -223,6 +223,48 @@ func TestMediaAddRejectsMissingRequiredSuccessData(t *testing.T) {
 	}
 }
 
+func TestMediaAddRejectsNullRequiredSuccessBooleans(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	proxy := newMetaMutatingProxy(t, fixture.server.URL, func(document map[string]any) {
+		data := document["data"].(map[string]any)
+		data["media"].(map[string]any)["animated_original"] = nil
+		data["preview"].(map[string]any)["animated_original"] = nil
+	})
+	defer proxy.Close()
+	output := execute(momentTestApplication(), "", "--url", proxy.URL, "media", "add", writeCLIImage(t), "--json")
+	if output.exit != ExitUnavailable || output.stderr != "" ||
+		decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+		t.Fatalf("output = %#v", output)
+	}
+}
+
+func TestMediaAddRejectsNoncanonicalSuccessTimestamps(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	tests := []struct {
+		name  string
+		field string
+	}{
+		{name: "created at", field: "created_at"},
+		{name: "unreferenced since", field: "unreferenced_since"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			proxy := newMetaMutatingProxy(t, fixture.server.URL, func(document map[string]any) {
+				mediaData := document["data"].(map[string]any)["media"].(map[string]any)
+				mediaData[test.field] = "2026-08-10T00:00:00.000000001Z"
+			})
+			defer proxy.Close()
+			output := execute(momentTestApplication(), "", "--url", proxy.URL, "media", "add", writeCLIImage(t), "--json")
+			if output.exit != ExitUnavailable || output.stderr != "" ||
+				decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+				t.Fatalf("output = %#v", output)
+			}
+		})
+	}
+}
+
 func TestDirectMediaHoldsCurrentUntilCommandRuntimeCloses(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
 	originalGeneration := runtimeState.Current.ID

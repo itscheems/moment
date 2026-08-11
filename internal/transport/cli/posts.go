@@ -20,7 +20,9 @@ import (
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
+	"github.com/moment/moment/internal/transport/commentdto"
 	"github.com/moment/moment/internal/transport/postdto"
+	"github.com/moment/moment/internal/transport/searchdto"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -945,6 +947,9 @@ func postAPIRequest(
 	if err := dataDecoder.Decode(destination); err != nil || dataDecoder.Decode(&struct{}{}) != io.EOF {
 		return nil, response.StatusCode, invalidAPIResponse()
 	}
+	if !validPostAPIRawData(data, destination) {
+		return nil, response.StatusCode, invalidAPIResponse()
+	}
 	switch typed := destination.(type) {
 	case *postdto.Post:
 		if err := postdto.ValidatePost(*typed); err != nil {
@@ -956,6 +961,129 @@ func postAPIRequest(
 		}
 	}
 	return meta, response.StatusCode, nil
+}
+
+func validPostAPIRawData(data json.RawMessage, destination any) bool {
+	switch typed := destination.(type) {
+	case *postdto.Post:
+		return typed != nil && validRawAPIPost(data, *typed)
+	case *postdto.Page:
+		return typed != nil && validRawAPIPostPage(data, *typed)
+	case *commentdto.Comment:
+		return typed != nil && validRawAPIComment(data, *typed)
+	case *commentdto.Thread:
+		return typed != nil && validRawAPICommentThread(data, *typed)
+	case *searchdto.SearchData:
+		return typed != nil && validRawAPISearch(data, *typed)
+	default:
+		return false
+	}
+}
+
+func validRawAPIPost(data json.RawMessage, post postdto.Post) bool {
+	if !hasRequiredNonNullAPIDataFields(data, "id", "content_md", "content_html", "created_at", "updated_at", "published_at", "media") ||
+		!validCanonicalAPIInstantField(data, "created_at", post.CreatedAt) ||
+		!validCanonicalAPIInstantField(data, "updated_at", post.UpdatedAt) ||
+		!validCanonicalAPIInstantField(data, "published_at", post.PublishedAt) {
+		return false
+	}
+	fields, ok := apiDataFields(data)
+	if !ok {
+		return false
+	}
+	mediaItems, ok := apiRawArray(fields["media"])
+	if !ok || len(mediaItems) != len(post.Media) {
+		return false
+	}
+	for _, usage := range mediaItems {
+		if !hasRequiredAPIDataFields(usage, "media_id", "position", "alt_text") ||
+			!hasRequiredNonNullAPIDataFields(usage, "media_id", "position") {
+			return false
+		}
+	}
+	return true
+}
+
+func validRawAPIPostPage(data json.RawMessage, page postdto.Page) bool {
+	if !hasRequiredNonNullAPIDataFields(data, "items") {
+		return false
+	}
+	fields, _ := apiDataFields(data)
+	items, ok := apiRawArray(fields["items"])
+	if !ok || len(items) != len(page.Items) {
+		return false
+	}
+	for index := range items {
+		if !validRawAPIPost(items[index], page.Items[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func validRawAPIComment(data json.RawMessage, comment commentdto.Comment) bool {
+	if !hasRequiredAPIDataFields(data, "id", "post_id", "parent_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at") ||
+		!hasRequiredNonNullAPIDataFields(data, "id", "post_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at") ||
+		!validCanonicalAPIInstantField(data, "created_at", comment.CreatedAt) {
+		return false
+	}
+	fields, _ := apiDataFields(data)
+	parent := bytes.TrimSpace(fields["parent_id"])
+	if comment.ParentID == nil {
+		return bytes.Equal(parent, []byte("null"))
+	}
+	return !bytes.Equal(parent, []byte("null"))
+}
+
+func validRawAPICommentThread(data json.RawMessage, thread commentdto.Thread) bool {
+	if !hasRequiredNonNullAPIDataFields(data, "items") {
+		return false
+	}
+	fields, _ := apiDataFields(data)
+	items, ok := apiRawArray(fields["items"])
+	if !ok || len(items) != len(thread.Items) {
+		return false
+	}
+	for index := range items {
+		if !validRawAPIComment(items[index], thread.Items[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func validRawAPISearch(data json.RawMessage, search searchdto.SearchData) bool {
+	if !hasRequiredNonNullAPIDataFields(data, "items", "year_counts") {
+		return false
+	}
+	fields, _ := apiDataFields(data)
+	items, itemsOK := apiRawArray(fields["items"])
+	years, yearsOK := apiRawArray(fields["year_counts"])
+	if !itemsOK || !yearsOK || len(items) != len(search.Items) || len(years) != len(search.YearCounts) {
+		return false
+	}
+	for index := range items {
+		if !hasRequiredNonNullAPIDataFields(items[index], "snippet") || !validRawAPIPost(items[index], search.Items[index].Post) {
+			return false
+		}
+	}
+	for _, year := range years {
+		if !hasRequiredNonNullAPIDataFields(year, "year", "count") {
+			return false
+		}
+	}
+	return true
+}
+
+func apiRawArray(data json.RawMessage) ([]json.RawMessage, bool) {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil, false
+	}
+	var items []json.RawMessage
+	if json.Unmarshal(data, &items) != nil || items == nil {
+		return nil, false
+	}
+	return items, true
 }
 
 func decodePostAPIEnvelope(body []byte) (json.RawMessage, map[string]any, error) {

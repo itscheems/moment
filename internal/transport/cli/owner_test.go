@@ -419,6 +419,15 @@ func TestOwnerAPIStrictSuccessAndFailureEnvelopes(t *testing.T) {
 		{name: "success blank request ID", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"  "}}`},
 		{name: "success wrong request ID", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":7}}`},
 		{name: "success zero status DTO", status: http.StatusOK, contentType: "application/json", body: `{"data":{},"meta":{"request_id":"req"}}`},
+		{name: "success null initialized", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":null,"session_epoch":0},"meta":{"request_id":"req"}}`},
+		{name: "success null session epoch", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":false,"session_epoch":null},"meta":{"request_id":"req"}}`},
+		{name: "success null omitted timestamp", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":false,"session_epoch":0,"initialized_at":null},"meta":{"request_id":"req"}}`},
+		{name: "success unreachable uninitialized API status", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":false,"session_epoch":0},"meta":{"request_id":"req"}}`},
+		{name: "success nanosecond timestamp", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00.000000001Z"},"meta":{"request_id":"req"}}`},
+		{name: "success noncanonical UTC offset", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00+00:00"},"meta":{"request_id":"req"}}`},
+		{name: "success epoch one with rotation", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z","rotated_at":"2026-08-10T00:01:00Z"},"meta":{"request_id":"req"}}`},
+		{name: "success rotated epoch missing rotation", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":2,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`},
+		{name: "success rotation precedes initialization", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":2,"initialized_at":"2026-08-10T00:01:00Z","rotated_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`},
 		{name: "failure trailing value", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED","message":"denied","details":{},"request_id":"req"}} {}`},
 		{name: "failure unknown field", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED","message":"denied","details":{},"request_id":"req","token":"no"}}`},
 		{name: "failure duplicate code", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED","code":"INTERNAL","message":"denied","details":{},"request_id":"req"}}`},
@@ -450,15 +459,22 @@ func TestOwnerAPIStrictSuccessAndFailureEnvelopes(t *testing.T) {
 
 func TestOwnerRotateRejectsZeroCredentialAPIResponse(t *testing.T) {
 	t.Setenv("MOMENT_TOKEN", "test-token")
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"data":{},"meta":{"request_id":"req"}}`))
-	}))
-	defer server.Close()
-	output := execute(momentTestApplication(), "", "--url", server.URL, "owner", "rotate-token", "--json")
-	if output.exit != ExitUnavailable || output.stderr != "" ||
-		decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
-		t.Fatalf("output = %#v", output)
+	tests := []string{
+		`{"data":{},"meta":{"request_id":"req"}}`,
+		`{"data":{"token":"0123456789abcdef0123456789abcdef","initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`,
+		`{"data":{"token":"0123456789abcdef0123456789abcdef","initialized":true,"session_epoch":2,"initialized_at":"2026-08-10T00:01:00Z","rotated_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`,
+	}
+	for _, body := range tests {
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(body))
+		}))
+		output := execute(momentTestApplication(), "", "--url", server.URL, "owner", "rotate-token", "--json")
+		server.Close()
+		if output.exit != ExitUnavailable || output.stderr != "" ||
+			decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+			t.Fatalf("body=%s output=%#v", body, output)
+		}
 	}
 }
 

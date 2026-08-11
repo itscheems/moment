@@ -220,6 +220,80 @@ func TestSharedSuccessAdaptersRequireExactHTTPStatus(t *testing.T) {
 	}
 }
 
+func TestSharedPostCommentSearchAdaptersRejectNullOrMissingCanonicalScalars(t *testing.T) {
+	application := momentTestApplication()
+	postFixture := newPostCLIFixture(t)
+	post := commandData(t, execute(application, "", "post", "create", "--data-dir", postFixture.dataDir,
+		"--content", "strict nullable scalar search", "--idempotency-key", "strict-null-scalars", "--json"))
+	postID := post["id"].(string)
+	const mediaID = "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
+
+	tests := []struct {
+		name     string
+		upstream string
+		token    string
+		args     []string
+		mutate   func(map[string]any)
+	}{
+		{
+			name: "post media position null", upstream: postFixture.server.URL, token: postFixture.token,
+			args: []string{"post", "get", postID, "--json"},
+			mutate: func(document map[string]any) {
+				document["data"].(map[string]any)["media"] = []any{map[string]any{"media_id": mediaID, "position": nil, "alt_text": nil}}
+			},
+		},
+		{
+			name: "search post position null", upstream: postFixture.server.URL, token: postFixture.token,
+			args: []string{"search", "query", "--query", "nullable", "--json"},
+			mutate: func(document map[string]any) {
+				items := document["data"].(map[string]any)["items"].([]any)
+				items[0].(map[string]any)["media"] = []any{map[string]any{"media_id": mediaID, "position": nil, "alt_text": nil}}
+			},
+		},
+	}
+
+	commentFixture := newCommentCLIFixture(t)
+	comment := commandData(t, execute(application, "", "comment", "create", commentFixture.postID, "--data-dir", commentFixture.dataDir,
+		"--content", "strict comment scalar", "--idempotency-key", "strict-comment-null", "--json"))
+	_ = comment
+	for _, mutation := range []struct {
+		name   string
+		mutate func(map[string]any)
+	}{
+		{name: "comment depth null", mutate: func(item map[string]any) { item["depth"] = nil }},
+		{name: "comment parent and depth missing", mutate: func(item map[string]any) { delete(item, "parent_id"); delete(item, "depth") }},
+	} {
+		mutation := mutation
+		tests = append(tests, struct {
+			name     string
+			upstream string
+			token    string
+			args     []string
+			mutate   func(map[string]any)
+		}{
+			name: mutation.name, upstream: commentFixture.server.URL, token: commentFixture.token,
+			args: []string{"comment", "list", commentFixture.postID, "--json"},
+			mutate: func(document map[string]any) {
+				item := document["data"].(map[string]any)["items"].([]any)[0].(map[string]any)
+				mutation.mutate(item)
+			},
+		})
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			proxy := newMetaMutatingProxy(t, test.upstream, test.mutate)
+			defer proxy.Close()
+			t.Setenv("MOMENT_TOKEN", test.token)
+			output := execute(application, "", append([]string{"--url", proxy.URL}, test.args...)...)
+			if output.exit != ExitUnavailable || output.stderr != "" ||
+				decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+				t.Fatalf("output=%#v", output)
+			}
+		})
+	}
+}
+
 func newMetaMutatingProxy(t *testing.T, upstream string, mutate func(map[string]any)) *httptest.Server {
 	t.Helper()
 	return newSuccessMutatingProxy(t, upstream, 0, mutate)
