@@ -2,6 +2,7 @@ package devtools
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"debug/buildinfo"
 	"encoding/hex"
@@ -84,6 +85,7 @@ type performanceEvidence struct {
 	Binary  binaryIdentity `json:"binary"`
 	Fixture struct {
 		ProbeScenario         string `json:"probe_scenario"`
+		ProbeBackupScenario   string `json:"probe_backup_scenario"`
 		ProbeStageTimeout     string `json:"probe_stage_timeout"`
 		ProbeTimeoutNoPartial bool   `json:"probe_timeout_no_partial"`
 		ProbeArchiveRoundTrip bool   `json:"probe_archive_round_trip"`
@@ -257,6 +259,120 @@ func assertDryRunTargetUnchanged(t *testing.T, before, after []authorityTreeEntr
 	t.Helper()
 	if !authorityTreesEqual(before, after) {
 		t.Fatalf("dry-run changed initialized authority tree: before=%#v after=%#v", before, after)
+	}
+}
+
+func initializedAuthorityDataBytes(t *testing.T, dataDir string) int64 {
+	t.Helper()
+	runtimeState, maintenance, err := runtimefs.OpenForSnapshotContext(context.Background(), dataDir)
+	if err != nil {
+		t.Fatalf("open initialized authority snapshot: %v", err)
+	}
+	defer func() {
+		if err := maintenance.Release(); err != nil {
+			t.Fatalf("release initialized authority snapshot: %v", err)
+		}
+	}()
+	var total int64
+	err = filepath.WalkDir(runtimeState.Current.Root, func(_ string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("measure initialized authority bytes: %v", err)
+	}
+	if total <= 0 || total >= 1<<20 {
+		t.Fatalf("initialized authority bytes = %d, expected a bounded nonempty authority", total)
+	}
+	return total
+}
+
+func assertEmptyTargetImportPlan(
+	t *testing.T,
+	plan archive.ImportPlan,
+	expected Counts,
+	archiveBytes int64,
+	archiveSHA256 string,
+	replacementDataBytes int64,
+) {
+	t.Helper()
+	if err := validateEmptyTargetImportPlan(plan, expected, archiveBytes, archiveSHA256, replacementDataBytes); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func validateEmptyTargetImportPlan(
+	plan archive.ImportPlan,
+	expected Counts,
+	archiveBytes int64,
+	archiveSHA256 string,
+	replacementDataBytes int64,
+) error {
+	expectedArchiveCounts := archive.ImportCounts{Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media}
+	if !plan.DryRun || plan.FormatVersion != 1 || plan.ArchiveSHA256 != archiveSHA256 ||
+		plan.Counts != expectedArchiveCounts || plan.MediaBytes != expected.MediaBytes {
+		return fmt.Errorf("empty-target import archive plan = %#v", plan)
+	}
+	if plan.Replacement.Counts != (archive.ImportCounts{}) || plan.Replacement.MediaBytes != 0 ||
+		plan.Replacement.DataBytes != replacementDataBytes {
+		return fmt.Errorf("empty-target replacement impact = %#v, data bytes want %d", plan.Replacement, replacementDataBytes)
+	}
+	disk := plan.Disk
+	wantRequired := disk.StagingBytes + 2*replacementDataBytes + disk.SafetyMarginBytes
+	wantPeak := archiveBytes + replacementDataBytes + wantRequired
+	if disk.ArchiveBytes != archiveBytes || disk.ExpandedBytes <= 0 || disk.StagingBytes < plan.MediaBytes ||
+		disk.PreImportBackupBytes != replacementDataBytes || disk.RollbackReserveBytes != replacementDataBytes ||
+		disk.SafetyMarginBytes <= 0 || disk.RequiredAdditionalBytes != wantRequired ||
+		disk.EstimatedPeakFootprintBytes != wantPeak || disk.AvailableBytes < disk.RequiredAdditionalBytes || !disk.SpaceOK {
+		return fmt.Errorf("empty-target import disk estimate = %#v, want required=%d peak=%d", disk, wantRequired, wantPeak)
+	}
+	return nil
+}
+
+func TestEmptyTargetImportPlanContractRejectsSemanticDrift(t *testing.T) {
+	expected := Counts{Entries: 4, Comments: 8, Media: 6, MediaBytes: 24_576}
+	const archiveBytes = int64(30_000)
+	const replacementBytes = int64(1_000)
+	const archiveSHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	plan := archive.ImportPlan{
+		DryRun: true, FormatVersion: 1, ArchiveSHA256: archiveSHA,
+		Counts: archive.ImportCounts{Entries: 4, Comments: 8, Media: 6}, MediaBytes: expected.MediaBytes,
+		Replacement: archive.ReplacementImpact{DataBytes: replacementBytes},
+		Disk: archive.DiskEstimate{
+			ArchiveBytes: archiveBytes, ExpandedBytes: 28_000, StagingBytes: 26_000,
+			PreImportBackupBytes: replacementBytes, RollbackReserveBytes: replacementBytes,
+			SafetyMarginBytes: 3_000, RequiredAdditionalBytes: 31_000,
+			EstimatedPeakFootprintBytes: 62_000, AvailableBytes: 100_000, SpaceOK: true,
+		},
+	}
+	if err := validateEmptyTargetImportPlan(plan, expected, archiveBytes, archiveSHA, replacementBytes); err != nil {
+		t.Fatal(err)
+	}
+	tests := map[string]archive.ImportPlan{
+		"archive counts": func() archive.ImportPlan { value := plan; value.Counts.Entries = 0; return value }(),
+		"replacement counts": func() archive.ImportPlan {
+			value := plan
+			value.Replacement.Counts.Entries = 4
+			return value
+		}(),
+		"disk formula": func() archive.ImportPlan { value := plan; value.Disk.RequiredAdditionalBytes++; return value }(),
+		"space gate":   func() archive.ImportPlan { value := plan; value.Disk.SpaceOK = false; return value }(),
+	}
+	for name, candidate := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := validateEmptyTargetImportPlan(candidate, expected, archiveBytes, archiveSHA, replacementBytes); err == nil {
+				t.Fatal("invalid empty-target import plan was accepted")
+			}
+		})
 	}
 }
 
@@ -462,7 +578,7 @@ func TestRestoredDoctorReportContract(t *testing.T) {
 	})
 }
 
-func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir string) {
+func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir string, expected Counts) {
 	t.Helper()
 	timedOutArchive := filepath.Join(workDir, "fixture-probe-timeout.zip")
 	timeoutCommand := exec.Command(binary, "backup", "export", "--data-dir", sourceDir, "--output", timedOutArchive,
@@ -510,6 +626,7 @@ func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir strin
 	if !initialized.Data.Initialized {
 		t.Fatal("fixture backup validation probe was not initialized")
 	}
+	replacementDataBytes := initializedAuthorityDataBytes(t, validationDir)
 	validationBefore := snapshotAuthorityTree(t, validationDir)
 	dryRunOutput, err := exec.Command(binary, "backup", "import", archivePath, "--data-dir", validationDir,
 		"--timeout", performanceStageTimeout, "--dry-run", "--json").Output()
@@ -518,9 +635,7 @@ func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir strin
 	}
 	var inspected commandEnvelope[archive.ImportPlan]
 	decodeCommandEnvelope(t, dryRunOutput, &inspected)
-	if inspected.Data.ArchiveSHA256 != exported.Data.ArchiveSHA256 {
-		t.Fatalf("fixture backup dry-run hash = %q, want %q", inspected.Data.ArchiveSHA256, exported.Data.ArchiveSHA256)
-	}
+	assertEmptyTargetImportPlan(t, inspected.Data, expected, archiveInfo.Size(), exported.Data.ArchiveSHA256, replacementDataBytes)
 	assertDryRunTargetUnchanged(t, validationBefore, snapshotAuthorityTree(t, validationDir))
 
 	restoreDir := filepath.Join(workDir, "fixture-probe-restore")
@@ -677,7 +792,27 @@ func probeReleaseFixtureInvocation(t *testing.T, releaseBinary, workDir string) 
 	probeServerURL, stopProbeServer := startReleasePerformanceServer(t, releaseBinary, probeDir)
 	assertHTTPPerformanceFixture(t, &http.Client{Timeout: 5 * time.Second}, probeServerURL, 0)
 	stopProbeServer()
-	probeReleaseBackupInvocation(t, releaseBinary, workDir, probeDir)
+	backupProbeDir := filepath.Join(workDir, "backup-fixture-probe")
+	if err := os.Mkdir(backupProbeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	backupProbeOutput, err := exec.Command(releaseBinary,
+		"dev", "scenario", "timeline-basic", "--data-dir", backupProbeDir, "--seed", "1", "--yes", "--no-input", "--json").Output()
+	if err != nil {
+		t.Fatalf("release backup fixture invocation probe: %v; stdout=%s", err, backupProbeOutput)
+	}
+	var backupProbe commandEnvelope[struct {
+		Plan struct {
+			RecipeVersion string `json:"recipe_version"`
+			Counts        Counts `json:"counts"`
+		} `json:"plan"`
+	}]
+	decodeCommandEnvelope(t, backupProbeOutput, &backupProbe)
+	expectedBackupCounts := Counts{Entries: 25}
+	if backupProbe.Data.Plan.RecipeVersion != RecipeVersion || backupProbe.Data.Plan.Counts != expectedBackupCounts {
+		t.Fatalf("release backup fixture invocation probe plan = %#v", backupProbe.Data.Plan)
+	}
+	probeReleaseBackupInvocation(t, releaseBinary, workDir, backupProbeDir, expectedBackupCounts)
 }
 
 func TestReleasePerformanceBinaryProbe(t *testing.T) {
@@ -783,6 +918,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	if !initialized.Data.Initialized {
 		t.Fatal("release binary did not initialize the import validation target")
 	}
+	replacementDataBytes := initializedAuthorityDataBytes(t, validationDir)
 	validationBefore := snapshotAuthorityTree(t, validationDir)
 	dryRunOutput, validationPeak, validationMinimumDisk, validationElapsed := runMeasuredReleaseCommand(t, releaseBinary, workDir,
 		"backup", "import", archivePath, "--data-dir", validationDir, "--timeout", performanceStageTimeout, "--dry-run", "--json")
@@ -791,13 +927,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	}
 	var restored commandEnvelope[archive.ImportPlan]
 	decodeCommandEnvelope(t, dryRunOutput, &restored)
-	if restored.Data.ArchiveSHA256 != exported.Data.ArchiveSHA256 ||
-		restored.Data.Replacement.Counts.Entries != counts.Entries ||
-		restored.Data.Replacement.Counts.Comments != counts.Comments ||
-		restored.Data.Replacement.Counts.Media != counts.Media ||
-		restored.Data.Replacement.MediaBytes != counts.MediaBytes {
-		t.Fatalf("restored authority preview = %#v", restored.Data)
-	}
+	assertEmptyTargetImportPlan(t, restored.Data, counts, archiveInfo.Size(), exported.Data.ArchiveSHA256, replacementDataBytes)
 	assertDryRunTargetUnchanged(t, validationBefore, snapshotAuthorityTree(t, validationDir))
 
 	restoreDir := filepath.Join(workDir, "restore")
@@ -846,6 +976,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	evidence.Environment.PeakDiskUsedBytes = diskBefore - evidence.Environment.MinimumDiskAvailableBytes
 	evidence.Binary = identity
 	evidence.Fixture.ProbeScenario = "timeline-empty"
+	evidence.Fixture.ProbeBackupScenario = "timeline-basic"
 	evidence.Fixture.ProbeStageTimeout = performanceStageTimeout
 	evidence.Fixture.ProbeTimeoutNoPartial = true
 	evidence.Fixture.ProbeArchiveRoundTrip = true

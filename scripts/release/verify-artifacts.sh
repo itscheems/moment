@@ -189,7 +189,8 @@ verify_performance_evidence() {
     .binary.go_version == "go1.25.12" and
     .environment.goos == "linux" and .environment.goarch == "amd64" and .environment.go_version == "go1.25.12" and
     .environment.gomaxprocs > 0 and .environment.rss_sample_interval_ms == 25 and
-    .fixture.probe_scenario == "timeline-empty" and .fixture.probe_stage_timeout == "30m" and
+    .fixture.probe_scenario == "timeline-empty" and .fixture.probe_backup_scenario == "timeline-basic" and
+    .fixture.probe_stage_timeout == "30m" and
     .fixture.probe_timeout_no_partial == true and .fixture.probe_archive_round_trip == true and
     .fixture.probe_deep_doctor == true and .fixture.recipe_version == "moment-dev-v1" and
     .fixture.entries == 10000 and .fixture.comments == 50000 and .fixture.media == 20000 and
