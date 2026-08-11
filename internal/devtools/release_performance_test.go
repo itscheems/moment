@@ -24,12 +24,13 @@ import (
 )
 
 const (
-	timelineP95Limit  = 100 * time.Millisecond
-	searchP95Limit    = 200 * time.Millisecond
-	archiveP95Limit   = 250 * time.Millisecond
-	streamRSSLimit    = uint64(768 << 20)
-	performanceWarmup = 5
-	performanceRuns   = 31
+	timelineP95Limit        = 100 * time.Millisecond
+	searchP95Limit          = 200 * time.Millisecond
+	archiveP95Limit         = 250 * time.Millisecond
+	streamRSSLimit          = uint64(768 << 20)
+	performanceWarmup       = 5
+	performanceRuns         = 31
+	performanceStageTimeout = "30m"
 )
 
 type performanceMetric struct {
@@ -72,14 +73,18 @@ type performanceEvidence struct {
 	} `json:"environment"`
 	Binary  binaryIdentity `json:"binary"`
 	Fixture struct {
-		ProbeScenario string `json:"probe_scenario"`
-		RecipeVersion string `json:"recipe_version"`
-		Entries       int64  `json:"entries"`
-		Comments      int64  `json:"comments"`
-		Media         int64  `json:"media"`
-		MediaBytes    int64  `json:"media_bytes"`
-		PeakRSSBytes  uint64 `json:"peak_rss_bytes"`
-		RSSLimitBytes uint64 `json:"rss_limit_bytes"`
+		ProbeScenario         string `json:"probe_scenario"`
+		ProbeStageTimeout     string `json:"probe_stage_timeout"`
+		ProbeTimeoutNoPartial bool   `json:"probe_timeout_no_partial"`
+		ProbeArchiveRoundTrip bool   `json:"probe_archive_round_trip"`
+		ProbeDeepDoctor       bool   `json:"probe_deep_doctor"`
+		RecipeVersion         string `json:"recipe_version"`
+		Entries               int64  `json:"entries"`
+		Comments              int64  `json:"comments"`
+		Media                 int64  `json:"media"`
+		MediaBytes            int64  `json:"media_bytes"`
+		PeakRSSBytes          uint64 `json:"peak_rss_bytes"`
+		RSSLimitBytes         uint64 `json:"rss_limit_bytes"`
 	} `json:"fixture"`
 	Latency struct {
 		Timeline performanceMetric `json:"timeline"`
@@ -147,6 +152,88 @@ func decodeCommandEnvelope[T any](t *testing.T, output []byte, destination *comm
 	}
 	if !destination.OK {
 		t.Fatal("release command returned a non-success JSON envelope")
+	}
+}
+
+func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir string) {
+	t.Helper()
+	timedOutArchive := filepath.Join(workDir, "fixture-probe-timeout.zip")
+	timeoutCommand := exec.Command(binary, "backup", "export", "--data-dir", sourceDir, "--output", timedOutArchive,
+		"--timeout", "1ns", "--no-input", "--json")
+	timeoutOutput, timeoutErr := timeoutCommand.Output()
+	exitError, ok := timeoutErr.(*exec.ExitError)
+	if !ok || exitError.ExitCode() != 9 {
+		t.Fatalf("short backup timeout exit = %v, output=%s", timeoutErr, timeoutOutput)
+	}
+	var timeoutEnvelope struct {
+		OK    bool `json:"ok"`
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(timeoutOutput, &timeoutEnvelope); err != nil || timeoutEnvelope.OK || timeoutEnvelope.Error.Code != "TIMEOUT" {
+		t.Fatalf("short backup timeout envelope = %#v, err=%v", timeoutEnvelope, err)
+	}
+	if _, err := os.Stat(timedOutArchive); !os.IsNotExist(err) {
+		t.Fatalf("short backup timeout left partial output: %v", err)
+	}
+
+	archivePath := filepath.Join(workDir, "fixture-probe.zip")
+	exportOutput, err := exec.Command(binary, "backup", "export", "--data-dir", sourceDir, "--output", archivePath,
+		"--timeout", performanceStageTimeout, "--no-input", "--json").Output()
+	if err != nil {
+		t.Fatalf("fixture backup export probe: %v; stdout=%s", err, exportOutput)
+	}
+	var exported commandEnvelope[archive.Summary]
+	decodeCommandEnvelope(t, exportOutput, &exported)
+	archiveInfo, err := os.Stat(archivePath)
+	if err != nil || archiveInfo.Size() == 0 || exported.Data.ArchiveBytes != archiveInfo.Size() {
+		t.Fatalf("fixture backup export probe summary=%#v info=%v err=%v", exported.Data, archiveInfo, err)
+	}
+
+	restoreDir := filepath.Join(workDir, "fixture-probe-restore")
+	initializeOutput, err := exec.Command(binary, "owner", "init", "--data-dir", restoreDir, "--json").Output()
+	if err != nil {
+		t.Fatalf("fixture backup restore init probe: %v", err)
+	}
+	var initialized commandEnvelope[struct {
+		Initialized bool `json:"initialized"`
+	}]
+	decodeCommandEnvelope(t, initializeOutput, &initialized)
+	if !initialized.Data.Initialized {
+		t.Fatal("fixture backup restore probe was not initialized")
+	}
+	importOutput, err := exec.Command(binary, "backup", "import", archivePath, "--data-dir", restoreDir,
+		"--timeout", performanceStageTimeout, "--yes", "--no-input", "--json").Output()
+	if err != nil {
+		t.Fatalf("fixture backup import probe: %v; stdout=%s", err, importOutput)
+	}
+	var imported commandEnvelope[archive.CommitResult]
+	decodeCommandEnvelope(t, importOutput, &imported)
+	if imported.Data.Status.Phase != archive.CommitSucceeded {
+		t.Fatalf("fixture backup import probe phase = %q", imported.Data.Status.Phase)
+	}
+	dryRunOutput, err := exec.Command(binary, "backup", "import", archivePath, "--data-dir", restoreDir,
+		"--timeout", performanceStageTimeout, "--dry-run", "--json").Output()
+	if err != nil {
+		t.Fatalf("fixture backup dry-run probe: %v; stdout=%s", err, dryRunOutput)
+	}
+	var inspected commandEnvelope[archive.ImportPlan]
+	decodeCommandEnvelope(t, dryRunOutput, &inspected)
+	if inspected.Data.ArchiveSHA256 != exported.Data.ArchiveSHA256 {
+		t.Fatalf("fixture backup dry-run hash = %q, want %q", inspected.Data.ArchiveSHA256, exported.Data.ArchiveSHA256)
+	}
+	doctorOutput, err := exec.Command(binary, "doctor", "--deep", "--data-dir", restoreDir,
+		"--timeout", performanceStageTimeout, "--json").Output()
+	if err != nil {
+		t.Fatalf("fixture backup deep doctor probe: %v; stdout=%s", err, doctorOutput)
+	}
+	var doctor commandEnvelope[struct {
+		Status string `json:"status"`
+	}]
+	decodeCommandEnvelope(t, doctorOutput, &doctor)
+	if doctor.Data.Status != "healthy" {
+		t.Fatalf("fixture backup deep doctor probe status = %q", doctor.Data.Status)
 	}
 }
 
@@ -302,6 +389,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	probeServerURL, stopProbeServer := startReleasePerformanceServer(t, releaseBinary, probeDir)
 	assertHTTPPerformanceFixture(t, &http.Client{Timeout: 5 * time.Second}, probeServerURL, 0)
 	stopProbeServer()
+	probeReleaseBackupInvocation(t, releaseBinary, workDir, probeDir)
 	if err := os.Mkdir(dataDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +427,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	stopServer()
 
 	exportOutput, exportPeak, exportMinimumDisk, exportElapsed := runMeasuredReleaseCommand(t, releaseBinary, workDir,
-		"backup", "export", "--data-dir", dataDir, "--output", archivePath, "--no-input", "--json")
+		"backup", "export", "--data-dir", dataDir, "--output", archivePath, "--timeout", performanceStageTimeout, "--no-input", "--json")
 	var exported commandEnvelope[archive.Summary]
 	decodeCommandEnvelope(t, exportOutput, &exported)
 	archiveInfo, err := os.Stat(archivePath)
@@ -366,7 +454,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 		t.Fatal("release binary did not initialize the restore target")
 	}
 	importOutput, importPeak, importMinimumDisk, importElapsed := runMeasuredReleaseCommand(t, releaseBinary, workDir,
-		"backup", "import", archivePath, "--data-dir", restoreDir, "--yes", "--no-input", "--json")
+		"backup", "import", archivePath, "--data-dir", restoreDir, "--timeout", performanceStageTimeout, "--yes", "--no-input", "--json")
 	var imported commandEnvelope[archive.CommitResult]
 	decodeCommandEnvelope(t, importOutput, &imported)
 	if imported.Data.Status.Phase != archive.CommitSucceeded {
@@ -377,7 +465,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	}
 
 	dryRunOutput, validationPeak, validationMinimumDisk, validationElapsed := runMeasuredReleaseCommand(t, releaseBinary, workDir,
-		"backup", "import", archivePath, "--data-dir", restoreDir, "--dry-run", "--json")
+		"backup", "import", archivePath, "--data-dir", restoreDir, "--timeout", performanceStageTimeout, "--dry-run", "--json")
 	if validationPeak >= streamRSSLimit {
 		t.Fatalf("import validation peak RSS = %d, limit %d", validationPeak, streamRSSLimit)
 	}
@@ -390,7 +478,8 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 		restored.Data.Replacement.MediaBytes != counts.MediaBytes {
 		t.Fatalf("restored authority preview = %#v", restored.Data)
 	}
-	doctorOutput, err := exec.Command(releaseBinary, "doctor", "--deep", "--data-dir", restoreDir, "--json").Output()
+	doctorOutput, err := exec.Command(releaseBinary, "doctor", "--deep", "--data-dir", restoreDir,
+		"--timeout", performanceStageTimeout, "--json").Output()
 	if err != nil {
 		t.Fatalf("deep doctor restored authority: %v", err)
 	}
@@ -422,6 +511,10 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	evidence.Environment.PeakDiskUsedBytes = diskBefore - evidence.Environment.MinimumDiskAvailableBytes
 	evidence.Binary = identity
 	evidence.Fixture.ProbeScenario = "timeline-empty"
+	evidence.Fixture.ProbeStageTimeout = performanceStageTimeout
+	evidence.Fixture.ProbeTimeoutNoPartial = true
+	evidence.Fixture.ProbeArchiveRoundTrip = true
+	evidence.Fixture.ProbeDeepDoctor = true
 	evidence.Fixture.RecipeVersion = fixture.Data.Plan.RecipeVersion
 	evidence.Fixture.Entries = counts.Entries
 	evidence.Fixture.Comments = counts.Comments
