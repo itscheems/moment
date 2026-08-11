@@ -6,12 +6,14 @@ import (
 	"debug/buildinfo"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -20,6 +22,7 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/archive"
+	"github.com/moment/moment/internal/doctor"
 	"github.com/moment/moment/internal/runtimefs"
 )
 
@@ -155,6 +158,140 @@ func decodeCommandEnvelope[T any](t *testing.T, output []byte, destination *comm
 	}
 }
 
+func validateRestoredDoctorRegistry(checks []doctor.Check) error {
+	registry := doctor.Registry()
+	if len(registry) != 21 {
+		return fmt.Errorf("doctor schema v1 registry contains %d checks, want 21", len(registry))
+	}
+	if len(checks) != len(registry) {
+		return fmt.Errorf("restored doctor returned %d checks, want %d", len(checks), len(registry))
+	}
+	seen := make(map[string]struct{}, len(checks))
+	for index, check := range checks {
+		if _, duplicate := seen[check.ID]; duplicate {
+			return fmt.Errorf("restored doctor duplicated check %q", check.ID)
+		}
+		seen[check.ID] = struct{}{}
+		if check.ID != registry[index] {
+			return fmt.Errorf("restored doctor check %d = %q, want %q", index, check.ID, registry[index])
+		}
+	}
+	return nil
+}
+
+func assertRestoredDoctorReport(t *testing.T, output []byte) {
+	t.Helper()
+	var envelope commandEnvelope[doctor.Report]
+	decodeCommandEnvelope(t, output, &envelope)
+	report := envelope.Data
+	if report.SchemaVersion != doctor.SchemaVersion || report.Mode != doctor.ModeDeep ||
+		report.FailureKind != doctor.FailureNone {
+		t.Fatalf("restored doctor report identity = schema:%d mode:%q failure:%q checks:%d", report.SchemaVersion, report.Mode, report.FailureKind, len(report.Checks))
+	}
+	if err := validateRestoredDoctorRegistry(report.Checks); err != nil {
+		t.Fatal(err)
+	}
+	registry := doctor.Registry()
+	warnings := make([]doctor.Check, 0, 1)
+	for _, check := range report.Checks {
+		switch check.Status {
+		case doctor.StatusPass:
+			if check.Severity != doctor.SeverityInfo {
+				t.Fatalf("restored doctor pass check %q severity = %q", check.ID, check.Severity)
+			}
+		case doctor.StatusWarning:
+			warnings = append(warnings, check)
+		default:
+			t.Fatalf("restored doctor check %q status = %q", check.ID, check.Status)
+		}
+	}
+	switch report.Status {
+	case doctor.OverallHealthy:
+		if report.Counts != (doctor.Counts{Pass: len(registry)}) || len(warnings) != 0 {
+			t.Fatalf("healthy restored doctor counts=%#v warnings=%d", report.Counts, len(warnings))
+		}
+	case doctor.OverallWarning:
+		if report.Counts != (doctor.Counts{Pass: len(registry) - 1, Warning: 1}) || len(warnings) != 1 {
+			t.Fatalf("warning restored doctor counts=%#v warnings=%d", report.Counts, len(warnings))
+		}
+		warning := warnings[0]
+		expectedEvidence := map[string]any{
+			"total": float64(1), "ready": float64(0), "expired": float64(0), "used": float64(1),
+			"failed": float64(0), "invalid": float64(0), "incomplete": float64(0), "bounded": false,
+		}
+		if warning.ID != doctor.CheckStaleImportStaging || warning.Severity != doctor.SeverityWarning ||
+			warning.Summary != "import staging contains terminal or expired cleanup candidates" ||
+			warning.Remediation != "allow normal retention cleanup or discard the stale staging explicitly" ||
+			!reflect.DeepEqual(warning.Evidence, expectedEvidence) {
+			t.Fatalf("restored doctor warning = %#v", warning)
+		}
+	default:
+		t.Fatalf("restored doctor overall status = %q", report.Status)
+	}
+}
+
+func TestRestoredDoctorReportContract(t *testing.T) {
+	registry := doctor.Registry()
+	checks := make([]doctor.Check, len(registry))
+	for index, id := range registry {
+		checks[index] = doctor.Check{ID: id, Status: doctor.StatusPass, Severity: doctor.SeverityInfo, Evidence: map[string]any{}}
+	}
+	encode := func(t *testing.T, report doctor.Report) []byte {
+		t.Helper()
+		output, err := json.Marshal(commandEnvelope[doctor.Report]{OK: true, Data: report})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return output
+	}
+	t.Run("healthy", func(t *testing.T) {
+		report := doctor.Report{
+			SchemaVersion: doctor.SchemaVersion, Mode: doctor.ModeDeep, Status: doctor.OverallHealthy,
+			Checks: checks, Counts: doctor.Counts{Pass: len(registry)},
+		}
+		assertRestoredDoctorReport(t, encode(t, report))
+	})
+	t.Run("retained import staging warning", func(t *testing.T) {
+		warningChecks := append([]doctor.Check(nil), checks...)
+		for index := range warningChecks {
+			if warningChecks[index].ID == doctor.CheckStaleImportStaging {
+				warningChecks[index] = doctor.Check{
+					ID: doctor.CheckStaleImportStaging, Status: doctor.StatusWarning, Severity: doctor.SeverityWarning,
+					Summary:     "import staging contains terminal or expired cleanup candidates",
+					Remediation: "allow normal retention cleanup or discard the stale staging explicitly",
+					Evidence: map[string]any{
+						"total": 1, "ready": 0, "expired": 0, "used": 1,
+						"failed": 0, "invalid": 0, "incomplete": 0, "bounded": false,
+					},
+				}
+			}
+		}
+		report := doctor.Report{
+			SchemaVersion: doctor.SchemaVersion, Mode: doctor.ModeDeep, Status: doctor.OverallWarning,
+			Checks: warningChecks, Counts: doctor.Counts{Pass: len(registry) - 1, Warning: 1},
+		}
+		assertRestoredDoctorReport(t, encode(t, report))
+	})
+	t.Run("registry shape rejects drift", func(t *testing.T) {
+		tests := map[string][]doctor.Check{
+			"reordered": func() []doctor.Check {
+				value := append([]doctor.Check(nil), checks...)
+				value[0], value[1] = value[1], value[0]
+				return value
+			}(),
+			"missing": append([]doctor.Check(nil), checks[:len(checks)-1]...),
+			"extra":   append(append([]doctor.Check(nil), checks...), checks[0]),
+		}
+		for name, value := range tests {
+			t.Run(name, func(t *testing.T) {
+				if err := validateRestoredDoctorRegistry(value); err == nil {
+					t.Fatal("doctor registry drift was accepted")
+				}
+			})
+		}
+	})
+}
+
 func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir string) {
 	t.Helper()
 	timedOutArchive := filepath.Join(workDir, "fixture-probe-timeout.zip")
@@ -228,13 +365,7 @@ func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir strin
 	if err != nil {
 		t.Fatalf("fixture backup deep doctor probe: %v; stdout=%s", err, doctorOutput)
 	}
-	var doctor commandEnvelope[struct {
-		Status string `json:"status"`
-	}]
-	decodeCommandEnvelope(t, doctorOutput, &doctor)
-	if doctor.Data.Status != "healthy" {
-		t.Fatalf("fixture backup deep doctor probe status = %q", doctor.Data.Status)
-	}
+	assertRestoredDoctorReport(t, doctorOutput)
 }
 
 func runMeasuredReleaseCommand(t *testing.T, binary, diskPath string, arguments ...string) ([]byte, uint64, uint64, time.Duration) {
@@ -483,13 +614,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	if err != nil {
 		t.Fatalf("deep doctor restored authority: %v", err)
 	}
-	var doctor commandEnvelope[struct {
-		Status string `json:"status"`
-	}]
-	decodeCommandEnvelope(t, doctorOutput, &doctor)
-	if doctor.Data.Status != "healthy" {
-		t.Fatalf("restored authority doctor status = %q", doctor.Data.Status)
-	}
+	assertRestoredDoctorReport(t, doctorOutput)
 	restoredServerURL, stopRestoredServer := startReleasePerformanceServer(t, releaseBinary, restoreDir)
 	assertHTTPPerformanceFixture(t, &http.Client{Timeout: 5 * time.Second}, restoredServerURL, int(counts.Entries))
 	stopRestoredServer()
