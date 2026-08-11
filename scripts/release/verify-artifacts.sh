@@ -189,7 +189,7 @@ verify_performance_evidence() {
     .binary.go_version == "go1.25.12" and
     .environment.goos == "linux" and .environment.goarch == "amd64" and .environment.go_version == "go1.25.12" and
     .environment.gomaxprocs > 0 and .environment.rss_sample_interval_ms == 25 and
-    .fixture.probe_scenario == "timeline-empty" and .fixture.probe_backup_scenario == "timeline-basic" and
+    .fixture.probe_scenario == "timeline-empty" and .fixture.probe_backup_scenario == "post-with-images" and
     .fixture.probe_stage_timeout == "30m" and
     .fixture.probe_timeout_no_partial == true and .fixture.probe_archive_round_trip == true and
     .fixture.probe_deep_doctor == true and .fixture.recipe_version == "moment-dev-v1" and
@@ -209,6 +209,8 @@ verify_performance_evidence() {
     .streaming.import_validation.target_state == "initialized-empty" and
     .streaming.import_validation.target_unchanged == true and
     .streaming.import_validation.validation_before_actual_import == true and
+    .restored_doctor.expected_missing_previews == 20000 and
+    .restored_doctor.preview_warning == true and (.restored_doctor.staging_warning | type == "boolean") and
     .streaming.export.elapsed_ms > 0 and .streaming.import.elapsed_ms > 0 and .streaming.import_validation.elapsed_ms > 0 and
     (.archive_sha256 | test("^[0-9a-f]{64}$")) and
     .environment.disk_available_before_bytes >= 118111600640 and

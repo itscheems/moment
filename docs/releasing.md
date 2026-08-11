@@ -47,6 +47,13 @@ initialized empty target then receives the actual import and must pass the
 exact deep-doctor and real-socket API checks. Keeping validation before the
 actual import avoids manufacturing a second rollback copy of an already
 restored 20 GiB authority while preserving both measured archive passes.
+Portable archives intentionally exclude derived preview caches. The restored
+deep-doctor evidence therefore requires one precisely bounded `preview_cache`
+warning with zero ready or stale previews and 20,000 missing current-recipe
+previews; an exact terminal import-staging retention warning may also be
+recorded. Any other warning, failure, skipped check, count, or recipe drift
+fails the gate. These diagnostic warnings do not waive original-media checksum,
+database integrity, recovery, or any other doctor check.
 
 On another native host, maintainers can exercise the identical real fixture,
 socket latency, export, import, validation, and deep-doctor flow without

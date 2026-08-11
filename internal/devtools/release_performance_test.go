@@ -24,6 +24,7 @@ import (
 
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/doctor"
+	momentmedia "github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 )
 
@@ -63,6 +64,12 @@ type binaryIdentity struct {
 	BuildDate string `json:"build_date"`
 	GoVersion string `json:"go_version"`
 	SHA256    string `json:"sha256"`
+}
+
+type restoredDoctorEvidence struct {
+	ExpectedMissingPreviews int64 `json:"expected_missing_previews"`
+	PreviewWarning          bool  `json:"preview_warning"`
+	StagingWarning          bool  `json:"staging_warning"`
 }
 
 type performanceEvidence struct {
@@ -108,8 +115,9 @@ type performanceEvidence struct {
 		Import           streamMetric           `json:"import"`
 		ImportValidation importValidationMetric `json:"import_validation"`
 	} `json:"streaming"`
-	ArchiveSHA256    string `json:"archive_sha256"`
-	FixtureElapsedMS int64  `json:"fixture_elapsed_ms"`
+	RestoredDoctor   restoredDoctorEvidence `json:"restored_doctor"`
+	ArchiveSHA256    string                 `json:"archive_sha256"`
+	FixtureElapsedMS int64                  `json:"fixture_elapsed_ms"`
 }
 
 func TestImportValidationEvidenceContract(t *testing.T) {
@@ -120,6 +128,7 @@ func TestImportValidationEvidenceContract(t *testing.T) {
 		TargetUnchanged:              true,
 		ValidationBeforeActualImport: true,
 	}
+	evidence.RestoredDoctor = restoredDoctorEvidence{ExpectedMissingPreviews: 20_000, PreviewWarning: true, StagingWarning: true}
 	encoded, err := json.Marshal(evidence)
 	if err != nil {
 		t.Fatal(err)
@@ -135,6 +144,11 @@ func TestImportValidationEvidenceContract(t *testing.T) {
 		validation["target_state"] != "initialized-empty" || validation["target_unchanged"] != true ||
 		validation["validation_before_actual_import"] != true {
 		t.Fatalf("import validation evidence = %#v", validation)
+	}
+	restoredDoctor := document["restored_doctor"].(map[string]any)
+	if restoredDoctor["expected_missing_previews"] != float64(20_000) || restoredDoctor["preview_warning"] != true ||
+		restoredDoctor["staging_warning"] != true {
+		t.Fatalf("restored doctor evidence = %#v", restoredDoctor)
 	}
 }
 
@@ -465,7 +479,7 @@ func validateRestoredDoctorRegistry(checks []doctor.Check) error {
 	return nil
 }
 
-func assertRestoredDoctorReport(t *testing.T, output []byte) {
+func assertRestoredDoctorReport(t *testing.T, output []byte, expectedMissingPreviews int64) restoredDoctorEvidence {
 	t.Helper()
 	var envelope commandEnvelope[doctor.Report]
 	decodeCommandEnvelope(t, output, &envelope)
@@ -477,43 +491,76 @@ func assertRestoredDoctorReport(t *testing.T, output []byte) {
 	if err := validateRestoredDoctorRegistry(report.Checks); err != nil {
 		t.Fatal(err)
 	}
+	if err := validateRestoredDoctorStatus(report, expectedMissingPreviews); err != nil {
+		t.Fatal(err)
+	}
+	result := restoredDoctorEvidence{ExpectedMissingPreviews: expectedMissingPreviews}
+	for _, check := range report.Checks {
+		if check.Status != doctor.StatusWarning {
+			continue
+		}
+		result.PreviewWarning = result.PreviewWarning || check.ID == doctor.CheckPreviewCache
+		result.StagingWarning = result.StagingWarning || check.ID == doctor.CheckStaleImportStaging
+	}
+	return result
+}
+
+func validateRestoredDoctorStatus(report doctor.Report, expectedMissingPreviews int64) error {
 	registry := doctor.Registry()
 	warnings := make([]doctor.Check, 0, 1)
 	for _, check := range report.Checks {
 		switch check.Status {
 		case doctor.StatusPass:
 			if check.Severity != doctor.SeverityInfo {
-				t.Fatalf("restored doctor pass check %q severity = %q", check.ID, check.Severity)
+				return fmt.Errorf("restored doctor pass check %q severity = %q", check.ID, check.Severity)
 			}
 		case doctor.StatusWarning:
 			warnings = append(warnings, check)
 		default:
-			t.Fatalf("restored doctor check %q status = %q", check.ID, check.Status)
+			return fmt.Errorf("restored doctor check %q status = %q", check.ID, check.Status)
 		}
 	}
-	switch report.Status {
-	case doctor.OverallHealthy:
-		if report.Counts != (doctor.Counts{Pass: len(registry)}) || len(warnings) != 0 {
-			t.Fatalf("healthy restored doctor counts=%#v warnings=%d", report.Counts, len(warnings))
-		}
-	case doctor.OverallWarning:
-		if report.Counts != (doctor.Counts{Pass: len(registry) - 1, Warning: 1}) || len(warnings) != 1 {
-			t.Fatalf("warning restored doctor counts=%#v warnings=%d", report.Counts, len(warnings))
-		}
-		warning := warnings[0]
-		expectedEvidence := map[string]any{
-			"total": float64(1), "ready": float64(0), "expired": float64(0), "used": float64(1),
-			"failed": float64(0), "invalid": float64(0), "incomplete": float64(0), "bounded": false,
-		}
-		if warning.ID != doctor.CheckStaleImportStaging || warning.Severity != doctor.SeverityWarning ||
-			warning.Summary != "import staging contains terminal or expired cleanup candidates" ||
-			warning.Remediation != "allow normal retention cleanup or discard the stale staging explicitly" ||
-			!reflect.DeepEqual(warning.Evidence, expectedEvidence) {
-			t.Fatalf("restored doctor warning = %#v", warning)
-		}
-	default:
-		t.Fatalf("restored doctor overall status = %q", report.Status)
+	wantStatus := doctor.OverallHealthy
+	if len(warnings) > 0 {
+		wantStatus = doctor.OverallWarning
 	}
+	if report.Status != wantStatus || report.Counts != (doctor.Counts{Pass: len(registry) - len(warnings), Warning: len(warnings)}) {
+		return fmt.Errorf("restored doctor status=%q counts=%#v warnings=%d", report.Status, report.Counts, len(warnings))
+	}
+	previewSeen := false
+	for _, warning := range warnings {
+		switch warning.ID {
+		case doctor.CheckPreviewCache:
+			expectedEvidence := map[string]any{
+				"ready": float64(0), "stale": float64(0), "missing": float64(expectedMissingPreviews),
+				"recipe_version": momentmedia.RecipeVersion,
+			}
+			if expectedMissingPreviews <= 0 || previewSeen || warning.Severity != doctor.SeverityWarning ||
+				warning.Summary != "derived previews are missing or stale" ||
+				warning.Remediation != "run 'moment media rebuild-previews --dry-run --json' and rebuild if desired" ||
+				!reflect.DeepEqual(warning.Evidence, expectedEvidence) {
+				return fmt.Errorf("restored doctor preview warning = %#v", warning)
+			}
+			previewSeen = true
+		case doctor.CheckStaleImportStaging:
+			expectedEvidence := map[string]any{
+				"total": float64(1), "ready": float64(0), "expired": float64(0), "used": float64(1),
+				"failed": float64(0), "invalid": float64(0), "incomplete": float64(0), "bounded": false,
+			}
+			if warning.Severity != doctor.SeverityWarning ||
+				warning.Summary != "import staging contains terminal or expired cleanup candidates" ||
+				warning.Remediation != "allow normal retention cleanup or discard the stale staging explicitly" ||
+				!reflect.DeepEqual(warning.Evidence, expectedEvidence) {
+				return fmt.Errorf("restored doctor staging warning = %#v", warning)
+			}
+		default:
+			return fmt.Errorf("restored doctor unexpected warning = %#v", warning)
+		}
+	}
+	if previewSeen != (expectedMissingPreviews > 0) {
+		return fmt.Errorf("restored doctor preview warning present=%t, expected missing=%d", previewSeen, expectedMissingPreviews)
+	}
+	return nil
 }
 
 func TestRestoredDoctorReportContract(t *testing.T) {
@@ -535,7 +582,7 @@ func TestRestoredDoctorReportContract(t *testing.T) {
 			SchemaVersion: doctor.SchemaVersion, Mode: doctor.ModeDeep, Status: doctor.OverallHealthy,
 			Checks: checks, Counts: doctor.Counts{Pass: len(registry)},
 		}
-		assertRestoredDoctorReport(t, encode(t, report))
+		assertRestoredDoctorReport(t, encode(t, report), 0)
 	})
 	t.Run("retained import staging warning", func(t *testing.T) {
 		warningChecks := append([]doctor.Check(nil), checks...)
@@ -556,7 +603,96 @@ func TestRestoredDoctorReportContract(t *testing.T) {
 			SchemaVersion: doctor.SchemaVersion, Mode: doctor.ModeDeep, Status: doctor.OverallWarning,
 			Checks: warningChecks, Counts: doctor.Counts{Pass: len(registry) - 1, Warning: 1},
 		}
-		assertRestoredDoctorReport(t, encode(t, report))
+		assertRestoredDoctorReport(t, encode(t, report), 0)
+	})
+	previewWarning := func(value []doctor.Check, missing int) []doctor.Check {
+		result := append([]doctor.Check(nil), value...)
+		for index := range result {
+			if result[index].ID == doctor.CheckPreviewCache {
+				result[index] = doctor.Check{
+					ID: doctor.CheckPreviewCache, Status: doctor.StatusWarning, Severity: doctor.SeverityWarning,
+					Summary:     "derived previews are missing or stale",
+					Remediation: "run 'moment media rebuild-previews --dry-run --json' and rebuild if desired",
+					Evidence: map[string]any{
+						"ready": 0, "stale": 0, "missing": missing, "recipe_version": momentmedia.RecipeVersion,
+					},
+				}
+			}
+		}
+		return result
+	}
+	t.Run("portable preview warning", func(t *testing.T) {
+		report := doctor.Report{
+			SchemaVersion: doctor.SchemaVersion, Mode: doctor.ModeDeep, Status: doctor.OverallWarning,
+			Checks: previewWarning(checks, 12), Counts: doctor.Counts{Pass: len(registry) - 1, Warning: 1},
+		}
+		assertRestoredDoctorReport(t, encode(t, report), 12)
+	})
+	t.Run("portable preview and retained staging warnings", func(t *testing.T) {
+		warningChecks := previewWarning(checks, 12)
+		for index := range warningChecks {
+			if warningChecks[index].ID == doctor.CheckStaleImportStaging {
+				warningChecks[index] = doctor.Check{
+					ID: doctor.CheckStaleImportStaging, Status: doctor.StatusWarning, Severity: doctor.SeverityWarning,
+					Summary:     "import staging contains terminal or expired cleanup candidates",
+					Remediation: "allow normal retention cleanup or discard the stale staging explicitly",
+					Evidence: map[string]any{
+						"total": 1, "ready": 0, "expired": 0, "used": 1,
+						"failed": 0, "invalid": 0, "incomplete": 0, "bounded": false,
+					},
+				}
+			}
+		}
+		report := doctor.Report{
+			SchemaVersion: doctor.SchemaVersion, Mode: doctor.ModeDeep, Status: doctor.OverallWarning,
+			Checks: warningChecks, Counts: doctor.Counts{Pass: len(registry) - 2, Warning: 2},
+		}
+		assertRestoredDoctorReport(t, encode(t, report), 12)
+	})
+	t.Run("portable preview expectation rejects drift", func(t *testing.T) {
+		base := doctor.Report{
+			SchemaVersion: doctor.SchemaVersion, Mode: doctor.ModeDeep, Status: doctor.OverallWarning,
+			Checks: previewWarning(checks, 12), Counts: doctor.Counts{Pass: len(registry) - 1, Warning: 1},
+		}
+		tests := map[string]doctor.Report{
+			"missing preview warning": func() doctor.Report {
+				value := base
+				value.Status = doctor.OverallHealthy
+				value.Checks = checks
+				value.Counts = doctor.Counts{Pass: len(registry)}
+				return value
+			}(),
+			"wrong missing count": func() doctor.Report {
+				value := base
+				value.Checks = previewWarning(checks, 11)
+				return value
+			}(),
+			"ready preview": func() doctor.Report {
+				value := base
+				value.Checks = previewWarning(checks, 12)
+				value.Checks[13].Evidence["ready"] = 1
+				return value
+			}(),
+			"stale preview": func() doctor.Report {
+				value := base
+				value.Checks = previewWarning(checks, 12)
+				value.Checks[13].Evidence["stale"] = 1
+				return value
+			}(),
+			"recipe drift": func() doctor.Report {
+				value := base
+				value.Checks = previewWarning(checks, 12)
+				value.Checks[13].Evidence["recipe_version"] = "drifted"
+				return value
+			}(),
+		}
+		for name, report := range tests {
+			t.Run(name, func(t *testing.T) {
+				if err := validateRestoredDoctorStatus(report, 12); err == nil {
+					t.Fatal("invalid restored preview state was accepted")
+				}
+			})
+		}
 	})
 	t.Run("registry shape rejects drift", func(t *testing.T) {
 		tests := map[string][]doctor.Check{
@@ -662,7 +798,7 @@ func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir strin
 	if err != nil {
 		t.Fatalf("fixture backup deep doctor probe: %v; stdout=%s", err, doctorOutput)
 	}
-	assertRestoredDoctorReport(t, doctorOutput)
+	assertRestoredDoctorReport(t, doctorOutput, expected.Media)
 }
 
 func runMeasuredReleaseCommand(t *testing.T, binary, diskPath string, arguments ...string) ([]byte, uint64, uint64, time.Duration) {
@@ -797,7 +933,7 @@ func probeReleaseFixtureInvocation(t *testing.T, releaseBinary, workDir string) 
 		t.Fatal(err)
 	}
 	backupProbeOutput, err := exec.Command(releaseBinary,
-		"dev", "scenario", "timeline-basic", "--data-dir", backupProbeDir, "--seed", "1", "--yes", "--no-input", "--json").Output()
+		"dev", "scenario", "post-with-images", "--data-dir", backupProbeDir, "--seed", "1", "--yes", "--no-input", "--json").Output()
 	if err != nil {
 		t.Fatalf("release backup fixture invocation probe: %v; stdout=%s", err, backupProbeOutput)
 	}
@@ -808,7 +944,7 @@ func probeReleaseFixtureInvocation(t *testing.T, releaseBinary, workDir string) 
 		} `json:"plan"`
 	}]
 	decodeCommandEnvelope(t, backupProbeOutput, &backupProbe)
-	expectedBackupCounts := Counts{Entries: 25}
+	expectedBackupCounts := Counts{Entries: 3, Media: 12, MediaBytes: 12 * 4096}
 	if backupProbe.Data.Plan.RecipeVersion != RecipeVersion || backupProbe.Data.Plan.Counts != expectedBackupCounts {
 		t.Fatalf("release backup fixture invocation probe plan = %#v", backupProbe.Data.Plan)
 	}
@@ -954,7 +1090,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	if err != nil {
 		t.Fatalf("deep doctor restored authority: %v", err)
 	}
-	assertRestoredDoctorReport(t, doctorOutput)
+	restoredDoctor := assertRestoredDoctorReport(t, doctorOutput, counts.Media)
 	restoredServerURL, stopRestoredServer := startReleasePerformanceServer(t, releaseBinary, restoreDir)
 	assertHTTPPerformanceFixture(t, &http.Client{Timeout: 5 * time.Second}, restoredServerURL, int(counts.Entries))
 	stopRestoredServer()
@@ -976,7 +1112,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	evidence.Environment.PeakDiskUsedBytes = diskBefore - evidence.Environment.MinimumDiskAvailableBytes
 	evidence.Binary = identity
 	evidence.Fixture.ProbeScenario = "timeline-empty"
-	evidence.Fixture.ProbeBackupScenario = "timeline-basic"
+	evidence.Fixture.ProbeBackupScenario = "post-with-images"
 	evidence.Fixture.ProbeStageTimeout = performanceStageTimeout
 	evidence.Fixture.ProbeTimeoutNoPartial = true
 	evidence.Fixture.ProbeArchiveRoundTrip = true
@@ -999,6 +1135,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 		TargetUnchanged:              true,
 		ValidationBeforeActualImport: true,
 	}
+	evidence.RestoredDoctor = restoredDoctor
 	evidence.ArchiveSHA256 = exported.Data.ArchiveSHA256
 	encoded, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {

@@ -34,10 +34,12 @@ fi
 mkdir -p dist
 if (( validation_only == 1 )); then
   evidence="$(cd dist && pwd -P)/performance-validation-evidence.json"
+  log="$(cd dist && pwd -P)/performance-validation.log"
 else
   evidence="$(cd dist && pwd -P)/performance-evidence.json"
+  log="$(cd dist && pwd -P)/performance.log"
 fi
-rm -f -- "$evidence"
+rm -f -- "$evidence" "$log"
 native_archive=""
 for candidate in dist/*.tar.gz dist/*.zip; do
   [[ -f "$candidate" ]] || continue
@@ -70,8 +72,18 @@ binary_commit="$(jq -er '.data.commit' <<<"$metadata")"
 binary_build_date="$(jq -er '.data.build_date' <<<"$metadata")"
 [[ "$binary_commit" == "$commit" ]] || { echo "performance binary commit does not match source HEAD" >&2; exit 1; }
 
+set +e
 MOMENT_RUN_DEV_SCALE=1 MOMENT_PERFORMANCE_VALIDATION_ONLY="$validation_only" MOMENT_PERFORMANCE_BINARY="$binary" MOMENT_PERFORMANCE_WORKDIR="$work" MOMENT_PERFORMANCE_EVIDENCE="$evidence" \
-  go test -count=1 -timeout=90m -v ./internal/devtools -run '^TestAcceptanceScaleEndToEnd$'
+  go test -count=1 -timeout=90m -v ./internal/devtools -run '^TestAcceptanceScaleEndToEnd$' 2>&1 | tee "$log"
+pipeline_status=("${PIPESTATUS[@]}")
+set -e
+if (( pipeline_status[0] != 0 )); then
+  exit "${pipeline_status[0]}"
+fi
+if (( pipeline_status[1] != 0 )); then
+  echo "performance log capture failed" >&2
+  exit "${pipeline_status[1]}"
+fi
 [[ -s "$evidence" ]] || { echo "performance evidence was not produced" >&2; exit 1; }
 if (( validation_only == 1 )); then
   jq -e \
@@ -88,7 +100,7 @@ if (( validation_only == 1 )); then
     .environment.goos == $goos and .environment.goarch == $goarch and
     .environment.go_version == "go1.25.12" and .environment.gomaxprocs > 0 and
     .environment.rss_sample_interval_ms == 25 and
-    .fixture.probe_scenario == "timeline-empty" and .fixture.probe_backup_scenario == "timeline-basic" and
+    .fixture.probe_scenario == "timeline-empty" and .fixture.probe_backup_scenario == "post-with-images" and
     .fixture.probe_stage_timeout == "30m" and
     .fixture.probe_timeout_no_partial == true and .fixture.probe_archive_round_trip == true and
     .fixture.probe_deep_doctor == true and .fixture.recipe_version == "moment-dev-v1" and
@@ -109,6 +121,8 @@ if (( validation_only == 1 )); then
     .streaming.import_validation.target_state == "initialized-empty" and
     .streaming.import_validation.target_unchanged == true and
     .streaming.import_validation.validation_before_actual_import == true and
+    .restored_doctor.expected_missing_previews == 20000 and
+    .restored_doctor.preview_warning == true and (.restored_doctor.staging_warning | type == "boolean") and
     .streaming.export.elapsed_ms > 0 and .streaming.import.elapsed_ms > 0 and
     .streaming.import_validation.elapsed_ms > 0 and .fixture_elapsed_ms > 0 and .total_elapsed_ms > 0 and
     (.archive_sha256 | test("^[0-9a-f]{64}$")) and
@@ -124,6 +138,8 @@ else
     .fixture.media_bytes == 21474836480 and
     .streaming.import_validation.target_state == "initialized-empty" and
     .streaming.import_validation.target_unchanged == true and
-    .streaming.import_validation.validation_before_actual_import == true
+    .streaming.import_validation.validation_before_actual_import == true and
+    .restored_doctor.expected_missing_previews == 20000 and
+    .restored_doctor.preview_warning == true and (.restored_doctor.staging_warning | type == "boolean")
   ' "$evidence" >/dev/null
 fi
