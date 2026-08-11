@@ -242,7 +242,7 @@ if [[ "${MOMENT_REQUIRE_QUALIFICATION:-0}" == "1" ]]; then
       .scanners.syft.version == "1.50.0" and .scanners.grype.version == "0.116.1" and
       .scanners.grype_database.valid == true and (.scanners.grype_database | has("path") | not) and
       (.scanners.govulncheck | contains("govulncheck@v1.6.0")) and
-      ([.. | strings | select(startswith("/") or test("^[A-Za-z]:[\\\\/]"))] | length == 0) and
+      ([.scanners | .. | strings | select(startswith("/") or test("^[A-Za-z]:[\\\\/]"))] | length == 0) and
       .verification.archive_members == true and .verification.native_metadata == true and
       .verification.embedded_web_and_migrations == true and .verification.checksums == true and
       .verification.govulncheck_reachable_and_imported_vulnerabilities_absent == true and
@@ -256,7 +256,7 @@ if [[ "${MOMENT_REQUIRE_QUALIFICATION:-0}" == "1" ]]; then
     .user == "65532:65532" and .data_dir == "/data" and .sbom.sha256 == $sbom_sha256 and
     .scanners.syft.version == "1.50.0" and .scanners.grype.version == "0.116.1" and
     .scanners.grype_database.valid == true and (.scanners.grype_database | has("path") | not) and
-    ([.. | strings | select(startswith("/") or test("^[A-Za-z]:[\\\\/]"))] | length == 0) and
+    ([.scanners | .. | strings | select(startswith("/") or test("^[A-Za-z]:[\\\\/]"))] | length == 0) and
     .vulnerability_policy_sha256 == $policy_sha256 and
     .verification.anonymous_volume_init == true and .verification.named_volume_init == true and
     .verification.persistence_restart == true and .verification.graceful_sigterm == true and
