@@ -71,15 +71,23 @@
   min-block-size: 1.25rem;
   display: flex;
   align-items: baseline;
-  gap: 0.28rem;
-  overflow: hidden;
+  justify-content: space-between;
+  gap: var(--space-2);
   color: var(--text-secondary);
   font-size: 0.9375rem;
   line-height: 1.25;
+}
+
+.bylineIdentity {
+  min-inline-size: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.28rem;
+  overflow: hidden;
   white-space: nowrap;
 }
 
-.byline strong {
+.bylineIdentity strong {
   min-inline-size: 0;
   overflow: hidden;
   color: var(--text-primary);
@@ -87,7 +95,7 @@
   text-overflow: ellipsis;
 }
 
-.byline a {
+.bylineIdentity a {
   min-inline-size: 0;
   overflow: hidden;
   color: var(--text-secondary);
@@ -95,8 +103,8 @@
   text-overflow: ellipsis;
 }
 
-.byline a:hover,
-.byline a:focus-visible {
+.bylineIdentity a:hover,
+.bylineIdentity a:focus-visible {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 0.18em;
@@ -213,12 +221,12 @@
 }
 
 .postActions {
-  max-inline-size: 13rem;
+  max-inline-size: 18rem;
   min-block-size: 2.25rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-5);
+  gap: clamp(var(--space-5), 7vw, var(--space-10));
   margin-block-start: 0.3rem;
   color: var(--text-secondary);
 }

@@ -5,7 +5,7 @@
 
 .threadHeader {
   border-block-end: 1px solid var(--border-subtle);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-4);
 }
 
 .threadMark {
@@ -64,8 +64,8 @@
 
 .commentForm > header {
   display: flex;
-  align-items: start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--space-3);
 }
 
@@ -136,16 +136,16 @@
 
 .commentForm textarea {
   inline-size: 100%;
-  block-size: 5rem;
-  min-block-size: 5rem;
-  resize: vertical;
+  min-block-size: 3rem;
+  field-sizing: content;
+  resize: none;
   border: 0;
-  border-block-end: 1px solid var(--border-subtle);
-  margin-block-start: var(--space-3);
-  padding: var(--space-3) 0;
+  margin: 0;
+  padding: 0.45rem 0 var(--space-2);
+  outline: 0;
   color: var(--text-primary);
   background: transparent;
-  font-size: 1rem;
+  font-size: 1.15rem;
   line-height: 1.45;
 }
 
@@ -164,7 +164,9 @@
 }
 
 .formMeta {
-  margin-block-start: var(--space-2);
+  min-block-size: 0;
+  justify-content: flex-end;
+  margin: 0;
 }
 
 .countInvalid,
@@ -207,8 +209,10 @@
 }
 
 .commentForm > footer {
-  min-block-size: 2.75rem;
-  margin-block-start: var(--space-2);
+  min-block-size: 2.5rem;
+  border-block-start: 1px solid var(--border-subtle);
+  margin-block-start: var(--space-1);
+  padding-block-start: var(--space-2);
 }
 
 .primaryAction,

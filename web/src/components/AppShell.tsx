@@ -35,17 +35,9 @@ function Brand({ site }: { site: SiteIdentity }) {
   const title = site.title.trim() || "Moment";
   return (
     <InternalLink aria-label={`${title}首页`} className={styles.brand} href="/">
-      {site.avatarMediaId ? (
-        <SiteAvatar eager site={site} />
-      ) : (
-        <svg
-          aria-hidden="true"
-          className={styles.brandMark}
-          viewBox="0 0 40 40"
-        >
-          <path d="M7 30V10l13 14 13-14v20" />
-        </svg>
-      )}
+      <svg aria-hidden="true" className={styles.brandMark} viewBox="0 0 40 40">
+        <path d="M7 30V10l13 14 13-14v20" />
+      </svg>
       <span className={styles.brandLabel}>{title}</span>
     </InternalLink>
   );

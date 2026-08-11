@@ -170,7 +170,7 @@
 }
 
 .pageComposer {
-  min-block-size: 24rem;
+  min-block-size: 0;
 }
 
 .newTick {
@@ -206,17 +206,19 @@
 }
 
 .composerForm textarea {
+  field-sizing: content;
   inline-size: 100%;
-  resize: vertical;
+  min-block-size: 3.75rem;
+  max-block-size: 18rem;
+  resize: none;
   border: 0;
-  border: 0;
-  border-block-end: 1px solid var(--border-subtle);
   border-radius: 0;
   padding: var(--space-2) 0 var(--space-3);
+  overflow-y: auto;
   color: var(--text-primary);
   background: transparent;
-  font-size: 1.1rem;
-  line-height: 1.48;
+  font-size: 1.25rem;
+  line-height: 1.4;
 }
 
 .composerForm textarea::placeholder {
@@ -224,29 +226,27 @@
 }
 
 .composerForm textarea:focus-visible {
-  outline-offset: 0.25rem;
+  outline: none;
 }
 
-.composerMeta,
-.composerFooter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+.pageComposer .composerForm textarea {
+  min-block-size: 8rem;
 }
 
-.composerMeta {
-  margin-block-start: var(--space-3);
+.composerGuidance {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.composerCount {
+  justify-self: end;
+  margin: 0 0 var(--space-1);
   color: var(--text-tertiary);
   font-family: var(--font-utility);
   font-size: var(--text-xs);
-}
-
-.composerMeta p {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-  margin: 0;
 }
 
 .countInvalid {
@@ -269,16 +269,35 @@
   font-weight: 700;
 }
 
-.composerFooter {
-  min-block-size: 2.75rem;
-  margin-block-start: var(--space-2);
+.composerPublishButton {
+  min-block-size: 2.25rem;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: #fff;
+  background: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 700;
 }
 
-.composerFooter p {
-  margin: 0;
-  color: var(--accent);
-  font-size: var(--text-sm);
-  font-weight: 650;
+.composerPublishButton:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.primaryButton.composerPublishButton:disabled {
+  color: #fff;
+  background: var(--accent);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .draftRecovery {
@@ -317,38 +336,103 @@
   background: transparent;
 }
 
-.postActions {
-  min-block-size: var(--target-size);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
-  margin-block-start: var(--space-3);
-  color: var(--text-tertiary);
-  font-size: var(--text-sm);
+.ownerPostMenu {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
 }
 
-.postActions a,
-.postActions button {
-  min-block-size: var(--target-size);
-  display: inline-flex;
-  align-items: center;
-  border-radius: var(--radius-action);
-  padding-inline: var(--space-3);
+.ownerMenuTrigger {
+  inline-size: 2rem;
+  block-size: 2rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  margin-block: -0.4rem;
+  padding: 0;
   color: var(--text-secondary);
   background: transparent;
-  text-decoration: none;
+  cursor: pointer;
 }
 
-.postActions a:hover,
-.postActions button:hover {
+.ownerMenuTrigger svg {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+}
+
+.ownerMenuTrigger:hover,
+.ownerMenuTrigger:focus-visible,
+.ownerMenuTrigger[data-popup-open] {
   color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ownerMenuPositioner {
+  z-index: var(--layer-popover);
+}
+
+.ownerMenuPopup {
+  min-inline-size: 12rem;
+  overflow: hidden;
+  outline: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  padding-block: var(--space-1);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: var(--transform-origin);
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
+}
+
+.ownerMenuPopup[data-starting-style],
+.ownerMenuPopup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.98) translateY(-0.2rem);
+}
+
+.ownerMenuItem {
+  min-block-size: 2.75rem;
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  padding-inline: var(--space-4);
+  outline: 0;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.ownerMenuItem svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+
+.ownerMenuItem[data-highlighted] {
   background: var(--surface-hover);
 }
 
-.postActions span {
-  flex-basis: 100%;
+.ownerMenuDanger {
   color: var(--danger);
+}
+
+.ownerActionError {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 2.25rem;
+  inset-inline-end: 0;
+  inline-size: max-content;
+  max-inline-size: min(18rem, calc(100vw - 2rem));
+  border-radius: 0.75rem;
+  padding: var(--space-2) var(--space-3);
+  color: #fff;
+  background: var(--danger);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--text-xs);
 }
 
 .routeState {
@@ -367,7 +451,7 @@
   position: fixed;
   z-index: var(--layer-popover);
   inset: 0;
-  background: rgb(10 18 13 / 52%);
+  background: rgb(0 0 0 / 40%);
 }
 
 .dialogViewport {
@@ -415,20 +499,22 @@
   }
 
   .composer {
-    grid-template-columns: 4.5rem minmax(0, 1fr);
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    gap: 0.7rem;
+    padding-inline: var(--space-3);
   }
 
   .composerMain {
-    padding-inline: 0 var(--space-4);
-  }
-
-  .composerHeader > span,
-  .composerMeta p span:first-child {
-    display: none;
+    padding-inline: 0;
   }
 
   .composerForm textarea {
-    min-block-size: 10rem;
+    min-block-size: 3.5rem;
+    font-size: 1.125rem;
+  }
+
+  .pageComposer .composerForm textarea {
+    min-block-size: 7rem;
   }
 
   .draftRecovery {

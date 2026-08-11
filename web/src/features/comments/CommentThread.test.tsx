@@ -259,7 +259,7 @@ describe("public comment thread", () => {
     });
     renderThread();
 
-    await screen.findByText("还没有公开回应");
+    await screen.findByText("暂无回应");
     fireEvent.change(screen.getByLabelText("显示名"), {
       target: { value: "访客" },
     });
@@ -369,7 +369,7 @@ describe("public comment thread", () => {
     });
     renderThread();
 
-    await screen.findByText("还没有公开回应");
+    await screen.findByText("暂无回应");
     fireEvent.change(screen.getByLabelText("显示名"), {
       target: { value: "访客" },
     });
@@ -445,7 +445,7 @@ describe("public comment thread", () => {
     });
     renderThread();
 
-    await screen.findByText("还没有公开回应");
+    await screen.findByText("暂无回应");
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("回应内容"), {
       target: { value: "Owner 重试" },
@@ -594,7 +594,7 @@ describe("public comment thread", () => {
     );
     expect(screen.queryByText("顶级回应")).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "公开回应" })).toHaveFocus(),
+      expect(screen.getByRole("heading", { name: "回应" })).toHaveFocus(),
     );
   });
 
@@ -710,7 +710,7 @@ describe("public comment thread", () => {
     );
     expect(deleteTokens).toEqual(["csrf-new"]);
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "公开回应" })).toHaveFocus(),
+      expect(screen.getByRole("heading", { name: "回应" })).toHaveFocus(),
     );
   });
 });

@@ -9,7 +9,11 @@ export type IconName =
   | "theme"
   | "back"
   | "reply"
-  | "share";
+  | "share"
+  | "media"
+  | "more"
+  | "edit"
+  | "delete";
 
 const paths: Record<IconName, React.ReactNode> = {
   home: (
@@ -58,6 +62,32 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5" />
       <path d="M5 13.5V20h14v-6.5" />
+    </>
+  ),
+  media: (
+    <>
+      <rect height="15" rx="2" width="18" x="3" y="4.5" />
+      <circle cx="8.25" cy="9" r="1.4" />
+      <path d="m5.5 17 4.2-4.2 2.8 2.8 2.15-2.15L18.5 17" />
+    </>
+  ),
+  more: (
+    <>
+      <circle cx="5" cy="12" r="1" />
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+    </>
+  ),
+  edit: (
+    <>
+      <path d="m14.5 5.5 4 4L9 19l-4.5.5L5 15z" />
+      <path d="m12.5 7.5 4 4" />
+    </>
+  ),
+  delete: (
+    <>
+      <path d="M5 7h14M9 7V4.5h6V7M7.5 7l.8 13h7.4l.8-13" />
+      <path d="M10 10.5v6M14 10.5v6" />
     </>
   ),
 };

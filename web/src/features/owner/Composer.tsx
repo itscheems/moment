@@ -654,21 +654,40 @@ export function Composer({
             }}
             placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
             ref={textareaRef}
-            rows={variant === "inline" ? 4 : 7}
+            rows={variant === "inline" ? 2 : 4}
             value={content}
           />
-          <div className={styles.composerMeta}>
-            <p id={`${variant}-composer-guidance`}>
-              <span>Markdown</span>
-              <span>⌘/Ctrl + Enter 发布</span>
-            </p>
-            <span className={count > MAX_CONTENT ? styles.countInvalid : ""}>
+          <p
+            className={styles.composerGuidance}
+            id={`${variant}-composer-guidance`}
+          >
+            支持 Markdown。按 Command 或 Control 加 Enter 发布。
+          </p>
+          {count >= MAX_CONTENT * 0.9 ? (
+            <p
+              className={`${styles.composerCount} ${count > MAX_CONTENT ? styles.countInvalid : ""}`}
+            >
               {count.toLocaleString("zh-CN")} /{" "}
               {MAX_CONTENT.toLocaleString("zh-CN")}
-            </span>
-          </div>
+            </p>
+          ) : null}
           <MediaComposer
             disabled={pending}
+            footerAction={
+              <button
+                className={`${styles.primaryButton} ${styles.composerPublishButton}`}
+                disabled={!valid || pending || !session}
+                type="submit"
+              >
+                {pending
+                  ? post
+                    ? "正在保存…"
+                    : "正在发布…"
+                  : post
+                    ? "保存更改"
+                    : "发布"}
+              </button>
+            }
             items={mediaItems}
             onAdd={(files) => {
               const next = [...mediaItemsRef.current];
@@ -743,7 +762,7 @@ export function Composer({
             onRetry={(key) => void retryUpload(key)}
           />
           {mediaItems.some((item) => item.altMode === "missing") ? (
-            <p className={styles.storageNotice} role="status">
+            <p className={styles.srOnly} role="status">
               {mediaItems.filter((item) => item.altMode === "missing").length}{" "}
               张图片尚未描述；这不会阻止发布。
             </p>
@@ -769,22 +788,9 @@ export function Composer({
           ) : (
             <span id={`${variant}-composer-error`} />
           )}
-          <footer className={styles.composerFooter}>
-            <p aria-live="polite">{announcement}</p>
-            <button
-              className={styles.primaryButton}
-              disabled={!valid || pending || !session}
-              type="submit"
-            >
-              {pending
-                ? post
-                  ? "正在保存…"
-                  : "正在发布…"
-                : post
-                  ? "保存更改"
-                  : "发布"}
-            </button>
-          </footer>
+          <p aria-live="polite" className={styles.srOnly}>
+            {announcement}
+          </p>
         </form>
         {!session ? <OwnerLogin embedded site={site} /> : null}
       </div>

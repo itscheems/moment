@@ -7,14 +7,20 @@
 }
 
 .composerMedia {
-  margin-block-start: var(--space-4);
-  border-block: 1px solid var(--border-subtle);
-  padding-block: var(--space-3);
+  min-inline-size: 0;
+  margin-block-start: var(--space-2);
 }
 
+.composerMedia > input[type="file"] {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.mediaControls,
 .mediaToolbar,
-.mediaToolbar > div,
-.editorStatus,
 .editorActions,
 .altModes,
 .lightboxActions {
@@ -22,22 +28,20 @@
   align-items: center;
 }
 
-.mediaToolbar {
+.mediaControls {
+  min-block-size: 2.5rem;
   justify-content: space-between;
   gap: var(--space-3);
+  border-block-start: 1px solid var(--border-subtle);
+  padding-block-start: var(--space-2);
 }
 
-.mediaToolbar > div {
+.mediaToolbar {
+  min-inline-size: 0;
   gap: var(--space-2);
 }
 
-.mediaToolbar strong {
-  font-size: var(--text-sm);
-}
-
 .mediaToolbar span,
-.mediaGuidance,
-.editorStatus span,
 .altInput small {
   color: var(--text-tertiary);
   font-family: var(--font-utility);
@@ -45,6 +49,7 @@
 }
 
 .mediaToolbar button,
+.editorRemove,
 .editorActions button,
 .lightboxActions button,
 .lightboxClose {
@@ -61,28 +66,30 @@
 }
 
 .mediaToolbar button {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  justify-content: center;
+  border-radius: 50%;
+  padding: 0;
   color: var(--accent);
+  background: transparent;
+}
+
+.mediaToolbar button:hover:not(:disabled),
+.mediaToolbar button:focus-visible {
   background: var(--accent-soft);
 }
 
-.mediaToolbar button[aria-disabled="true"],
+.mediaToolbar button svg {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+
+.mediaToolbar button:disabled,
 .editorActions button:disabled,
 .lightboxActions button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.mediaToolbar input[type="file"] {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-
-.mediaGuidance {
-  margin: var(--space-2) 0 0;
-  line-height: 1.5;
 }
 
 .mediaError {
@@ -94,24 +101,29 @@
 .mediaEditorList {
   list-style: none;
   display: grid;
-  gap: 0;
-  margin: var(--space-3) 0 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
   padding: 0;
 }
 
 .mediaEditorList > li {
-  display: grid;
-  grid-template-columns: 6rem minmax(0, 1fr);
-  gap: var(--space-4);
-  border-block-start: 1px solid var(--border-subtle);
-  padding-block: var(--space-4);
+  position: relative;
+  min-inline-size: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+}
+
+.mediaEditorList > li:only-child {
+  grid-column: 1 / -1;
 }
 
 .editorPreview {
   position: relative;
-  aspect-ratio: 1;
+  aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: var(--radius-action);
   background: var(--surface-muted);
 }
 
@@ -132,7 +144,7 @@
   text-align: center;
 }
 
-.editorPreview > span {
+.editorOrder {
   position: absolute;
   inset-block-start: var(--space-2);
   inset-inline-start: var(--space-2);
@@ -146,33 +158,98 @@
   text-align: center;
 }
 
+.editorRemove {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  inline-size: 2rem;
+  block-size: 2rem;
+  justify-content: center;
+  border-radius: 50%;
+  padding: 0;
+  color: #fff;
+  background: rgb(15 20 25 / 82%);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.editorRemove:hover:not(:disabled),
+.editorRemove:focus-visible {
+  background: rgb(15 20 25 / 96%);
+}
+
 .editorMain {
   min-inline-size: 0;
-}
-
-.editorStatus {
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.editorStatus strong {
-  font-size: var(--text-sm);
+  padding: 0;
 }
 
 .editorMain progress {
-  inline-size: 100%;
+  inline-size: calc(100% - 1.4rem);
   block-size: 0.35rem;
-  margin-block-start: var(--space-2);
+  margin: var(--space-2) 0 0 0.7rem;
   accent-color: var(--accent);
+}
+
+.altDisclosure {
+  margin: 0;
+  padding: 0;
+}
+
+.altDisclosure summary {
+  position: absolute;
+  z-index: 1;
+  inset-block-end: var(--space-2);
+  inset-inline-start: var(--space-2);
+  inline-size: fit-content;
+  border-radius: 999px;
+  padding: 0.25rem 0.55rem;
+  color: #fff;
+  background: rgb(15 20 25 / 82%);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+
+.altDisclosure summary:hover,
+.altDisclosure summary:focus-visible {
+  background: rgb(15 20 25 / 96%);
+}
+
+.altDisclosure[open] {
+  border-block-start: 1px solid var(--border-subtle);
+  padding: 0.65rem 0.7rem 0.75rem;
+}
+
+.altDisclosure[open] summary {
+  position: static;
+  color: var(--accent);
+  background: transparent;
+  padding: 0;
+}
+
+.editorMain > .mediaError {
+  margin: var(--space-2) 0.7rem 0;
+}
+
+.altDisclosure summary::-webkit-details-marker {
+  display: none;
 }
 
 .altFieldset {
   border: 0;
-  margin: var(--space-3) 0 0;
+  margin: var(--space-2) 0 0;
   padding: 0;
 }
 
-.altFieldset legend,
+.altFieldset legend {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
 .altInput > span {
   color: var(--text-secondary);
   font-size: var(--text-sm);
@@ -181,12 +258,12 @@
 
 .altModes {
   flex-wrap: wrap;
-  gap: var(--space-3);
+  gap: var(--space-2);
   margin-block-start: var(--space-2);
 }
 
 .altModes label {
-  min-block-size: var(--target-size);
+  min-block-size: 2.25rem;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -208,8 +285,8 @@
   inline-size: 100%;
   resize: vertical;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-action);
-  padding: var(--space-3);
+  border-radius: 0.75rem;
+  padding: var(--space-2) var(--space-3);
   color: var(--text-primary);
   background: var(--surface);
   line-height: 1.5;
@@ -226,7 +303,13 @@
 .editorActions {
   flex-wrap: wrap;
   gap: var(--space-1);
-  margin-block-start: var(--space-2);
+  margin-block-start: var(--space-1);
+}
+
+.editorActions button {
+  min-block-size: 2rem;
+  padding-inline: var(--space-2);
+  font-size: var(--text-xs);
 }
 
 .editorActions button:hover:not(:disabled),
@@ -234,6 +317,16 @@
 .lightboxClose:hover {
   color: var(--accent);
   background: var(--surface-hover);
+}
+
+@media (max-width: 519px) {
+  .mediaEditorList {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mediaEditorList > li:only-child {
+    grid-column: auto;
+  }
 }
 
 .imageGrid {

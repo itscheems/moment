@@ -147,15 +147,20 @@ export function PostPresentation({
       </div>
       <div className={styles.postMain}>
         <header className={styles.byline}>
-          <strong>{title}</strong>
-          <span aria-hidden="true">·</span>
-          <InternalLink
-            data-focus-key={`${post.id}:relative-time`}
-            href={detailHref}
-            title={published.absolute}
-          >
-            <time dateTime={post.publishedAt}>{published.relative}</time>
-          </InternalLink>
+          <div className={styles.bylineIdentity}>
+            <strong>{title}</strong>
+            <span aria-hidden="true">·</span>
+            <InternalLink
+              data-focus-key={`${post.id}:relative-time`}
+              href={detailHref}
+              title={published.absolute}
+            >
+              <time dateTime={post.publishedAt}>{published.relative}</time>
+            </InternalLink>
+          </div>
+          {owner ? (
+            <OwnerPostActions onDeleted={onDeleted} post={post} />
+          ) : null}
         </header>
         {context}
         <div
@@ -196,7 +201,6 @@ export function PostPresentation({
             title={`${title} 的 Moment`}
           />
         </div>
-        {owner ? <OwnerPostActions onDeleted={onDeleted} post={post} /> : null}
       </div>
     </article>
   );

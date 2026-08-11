@@ -1544,17 +1544,19 @@ describe("owner composing flow", () => {
     });
     render(<App />);
     await screen.findByText("准备删除");
-    const remove = screen.getByRole("button", { name: "删除" });
-    fireEvent.click(remove);
+    const more = screen.getByRole("button", { name: "更多操作" });
+    fireEvent.click(more);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     expect(
       await screen.findByRole("heading", { name: "删除这段 Moment？" }),
     ).toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: "n" });
     expect(window.location.pathname).toBe("/");
     fireEvent.click(screen.getByRole("button", { name: "保留" }));
-    await waitFor(() => expect(remove).toHaveFocus());
+    await waitFor(() => expect(more).toHaveFocus());
 
-    fireEvent.click(remove);
+    fireEvent.click(more);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     fireEvent.click(await screen.findByRole("button", { name: "删除 Moment" }));
     await waitFor(() => expect(screen.queryByText("准备删除")).toBeNull());
   });

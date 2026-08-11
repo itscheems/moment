@@ -345,14 +345,14 @@ function CommentForm({
         className={styles.commentForm}
         onSubmit={(event) => void submit(event)}
       >
-        <header>
-          <div>
+        <header className={styles.commentComposerHeader}>
+          <div className={styles.srOnly}>
             <p>{parentId ? "一级回复" : "加入这段对话"}</p>
             <h3>
               {parentId ? `回复 ${rootAuthor ?? "这条回应"}` : "写下回应"}
             </h3>
           </div>
-          <span>{mode === "owner" ? "Owner 身份" : "访客"}</span>
+          <span>{mode === "owner" ? "所有者" : "访客"}</span>
         </header>
         {mode === "guest" ? (
           <div className={styles.nameField}>
@@ -400,10 +400,10 @@ function CommentForm({
               event.currentTarget.form?.requestSubmit();
             }
           }}
-          placeholder="支持 Markdown；请勿粘贴图片语法。"
+          placeholder={parentId ? "发布回复" : "发布你的回应"}
           ref={textareaRef}
           required
-          rows={parentId ? 4 : 5}
+          rows={parentId ? 1 : 2}
           value={content}
         />
         <input
@@ -417,9 +417,17 @@ function CommentForm({
           value={website}
         />
         <div className={styles.formMeta} id={`${formId}-guidance`}>
-          <span>Markdown · Ctrl/⌘ + Enter 发表</span>
+          <span className={styles.srOnly}>
+            支持 Markdown；请勿粘贴图片语法。Ctrl/⌘ + Enter 发表
+          </span>
           <span
-            className={contentCount > MAX_COMMENT ? styles.countInvalid : ""}
+            className={
+              contentCount > MAX_COMMENT
+                ? styles.countInvalid
+                : contentCount > MAX_COMMENT * 0.9
+                  ? ""
+                  : styles.srOnly
+            }
             aria-label={`回应 ${contentCount} / ${MAX_COMMENT} 字`}
           >
             {contentCount}/{MAX_COMMENT}
@@ -461,6 +469,7 @@ function CommentForm({
             <span />
           )}
           <button
+            aria-label={parentId ? "发表回复" : "发表回应"}
             className={styles.primaryAction}
             disabled={
               pending ||
@@ -472,13 +481,13 @@ function CommentForm({
             }
             type="submit"
           >
-            {pending
-              ? "正在发表…"
-              : rateLimited
-                ? `${remaining} 秒后重试`
-                : parentId
-                  ? "发表回复"
-                  : "发表回应"}
+            <span aria-hidden="true">
+              {pending
+                ? "正在发表…"
+                : rateLimited
+                  ? `${remaining} 秒后重试`
+                  : "回复"}
+            </span>
           </button>
         </footer>
       </form>
@@ -820,9 +829,8 @@ export function CommentThread({
           回应
         </span>
         <div>
-          <p>沿着这段 Moment 继续</p>
           <h2 id="comments-heading" ref={headingRef} tabIndex={-1}>
-            公开回应
+            回应
           </h2>
           <span>
             {items ? `${items.length} 条，最多一级回复` : "最多一级回复"}
@@ -881,12 +889,7 @@ export function CommentThread({
 
           {items.length === 0 ? (
             <div className={styles.emptyThread}>
-              <strong>还没有公开回应</strong>
-              <span>
-                {commentsEnabled
-                  ? "可以从上面的表单留下第一条。"
-                  : "回应关闭期间，仍可以安静阅读这段 Moment。"}
-              </span>
+              <strong>暂无回应</strong>
             </div>
           ) : (
             <ol className={styles.commentList}>
