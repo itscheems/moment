@@ -44,7 +44,7 @@ export function PublicError({
   const content = {
     timeline: {
       marker: "暂时中断",
-      title: "这次没有取回时间流",
+      title: "无法加载时间流",
       detail: "检查网络后再试；已经发布的内容不会受到影响。",
     },
     detail: {
@@ -68,7 +68,7 @@ export function PublicError({
     <section className={styles.message} role="alert">
       <span className={styles.timeMark}>{content.marker}</span>
       <div>
-        <p className={styles.eyebrow}>没有加载完成</p>
+        <p className={styles.eyebrow}>加载失败</p>
         <h2>{content.title}</h2>
         <p>{content.detail}</p>
         <div className={styles.actions}>

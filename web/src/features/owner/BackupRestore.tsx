@@ -815,7 +815,7 @@ export function BackupRestore({
         <div className={styles.restorePreview}>
           <header>
             <div>
-              <p>Verified replacement preview</p>
+              <p>已验证的替换预览</p>
               <h3>恢复前影响清单</h3>
             </div>
             <span>格式 v{plan.formatVersion}</span>

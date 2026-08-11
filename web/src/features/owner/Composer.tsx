@@ -157,6 +157,7 @@ export function Composer({
   );
   const [activeDraft, setActiveDraft] = useState<ComposeDraft | null>(draft);
   const [announcement, setAnnouncement] = useState("");
+  const [focused, setFocused] = useState(false);
   const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>(() =>
     itemsFromPost(post?.media ?? []),
   );
@@ -186,6 +187,15 @@ export function Composer({
     });
   const valid =
     content.trim().length > 0 && count <= MAX_CONTENT && mediaError === null;
+  const expanded =
+    variant !== "inline" ||
+    focused ||
+    content.length > 0 ||
+    mediaItems.length > 0 ||
+    draft !== null ||
+    pending ||
+    error !== null ||
+    mediaError !== null;
   const hasUnpublishedChange =
     dirty &&
     (content !== initialContent || mediaChanged) &&
@@ -220,6 +230,15 @@ export function Composer({
     setAnnouncement("会话已刷新，可以重试当前操作。");
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }, [authExpired, session]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    if (expanded) {
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 288)}px`;
+    }
+  }, [content, expanded]);
 
   useEffect(
     () => () => {
@@ -581,7 +600,18 @@ export function Composer({
   return (
     <section
       aria-label={post ? "编辑 Moment" : "发布 Moment"}
-      className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer}`}
+      className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${expanded ? styles.composerExpanded : ""} ${variant === "inline" && !expanded ? styles.composerCollapsed : ""}`}
+      onBlurCapture={(event) => {
+        if (variant !== "inline") return;
+        if (
+          !event.currentTarget.contains(event.relatedTarget as Node | null) &&
+          content.trim().length === 0 &&
+          mediaItemsRef.current.length === 0
+        ) {
+          setFocused(false);
+        }
+      }}
+      onFocusCapture={() => setFocused(true)}
     >
       <div aria-hidden="true" className={styles.newTick}>
         <SiteAvatar site={site} />
@@ -654,7 +684,7 @@ export function Composer({
             }}
             placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
             ref={textareaRef}
-            rows={variant === "inline" ? 2 : 4}
+            rows={variant === "inline" ? (expanded ? 3 : 1) : 4}
             value={content}
           />
           <p

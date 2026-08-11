@@ -214,7 +214,7 @@ describe("public timeline", () => {
     renderTimeline(new PublicApi(fetcher as typeof fetch));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "这次没有取回时间流",
+      "无法加载时间流",
     );
     fireEvent.click(screen.getByRole("button", { name: "重试" }));
     expect(await screen.findByText("重新取回")).toBeInTheDocument();

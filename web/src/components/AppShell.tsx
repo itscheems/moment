@@ -121,7 +121,7 @@ function MemoryRail({
         >
           <header>
             <div>
-              <p className={styles.railEyebrow}>你的归档</p>
+              <p className={styles.railEyebrow}>归档</p>
               <h2 id="memory-map-title">按年份回看</h2>
             </div>
             <InternalLink href="/archive">查看全部</InternalLink>
@@ -218,9 +218,6 @@ export function AppShell({
               <p>{route.eyebrow}</p>
               <h1>{route.title}</h1>
             </div>
-            {route.ownerOnly ? (
-              <span className={styles.ownerBadge}>Owner</span>
-            ) : null}
             <span className={styles.headerTheme}>
               <ThemeMenu />
             </span>

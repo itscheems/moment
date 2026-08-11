@@ -20,10 +20,14 @@
 
 .positioner {
   z-index: var(--layer-popover);
+  inline-size: max-content;
+  max-inline-size: calc(100vw - 2rem);
 }
 
 .popup {
-  min-inline-size: 11rem;
+  inline-size: 12rem;
+  min-inline-size: 12rem;
+  max-inline-size: calc(100vw - 2rem);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-panel);
   padding: var(--space-2);
@@ -48,6 +52,7 @@
   font-family: var(--font-utility);
   font-size: var(--text-xs);
   letter-spacing: 0.06em;
+  white-space: nowrap;
 }
 
 .item {
@@ -60,6 +65,7 @@
   padding-inline: var(--space-3);
   outline: 0;
   cursor: default;
+  white-space: nowrap;
 }
 
 .item[data-highlighted] {

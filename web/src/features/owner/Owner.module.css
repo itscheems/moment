@@ -163,6 +163,7 @@
   border-block-end: 1px solid var(--border-subtle);
   padding: var(--space-3) var(--space-4);
   background: var(--surface);
+  transition: padding-block var(--motion-fast) var(--ease-out);
 }
 
 .inlineComposer {
@@ -208,7 +209,7 @@
 .composerForm textarea {
   field-sizing: content;
   inline-size: 100%;
-  min-block-size: 3.75rem;
+  min-block-size: 2.75rem;
   max-block-size: 18rem;
   resize: none;
   border: 0;
@@ -219,6 +220,7 @@
   background: transparent;
   font-size: 1.25rem;
   line-height: 1.4;
+  transition: min-block-size var(--motion-fast) var(--ease-out);
 }
 
 .composerForm textarea::placeholder {
@@ -231,6 +233,14 @@
 
 .pageComposer .composerForm textarea {
   min-block-size: 8rem;
+}
+
+.inlineComposer.composerExpanded .composerForm textarea {
+  min-block-size: 6rem;
+}
+
+.inlineComposer.composerCollapsed {
+  padding-block: var(--space-2);
 }
 
 .composerGuidance {

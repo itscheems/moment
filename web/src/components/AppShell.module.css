@@ -209,16 +209,6 @@
   background: var(--surface-hover);
 }
 
-.ownerBadge {
-  margin-inline-start: auto;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  padding: 0.2rem 0.55rem;
-  color: var(--text-secondary);
-  font-size: var(--text-xs);
-  font-weight: 600;
-}
-
 .mobileAvatar,
 .headerTheme {
   display: none;
@@ -427,10 +417,6 @@
     block-size: 2rem;
     border-width: 1px;
     font-size: 0.9rem;
-  }
-
-  .ownerBadge {
-    display: none;
   }
 
   .headerTheme {

@@ -747,6 +747,30 @@ describe("owner composing flow", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the inline composer compact until it receives focus", async () => {
+    preauthenticate();
+    installApi();
+    render(<App />);
+
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    expect(inline).toHaveAttribute("rows", "1");
+    expect(
+      screen.getByRole("button", { name: "选择图片" }),
+    ).toBeInTheDocument();
+
+    fireEvent.focus(inline);
+    expect(inline).toHaveAttribute("rows", "3");
+    expect(
+      screen.getByRole("button", { name: "选择图片" }),
+    ).toBeInTheDocument();
+
+    fireEvent.blur(inline, { relatedTarget: null });
+    await waitFor(() => expect(inline).toHaveAttribute("rows", "1"));
+    expect(
+      screen.getByRole("button", { name: "选择图片" }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps an unsaved page composer in place until leave is confirmed", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");

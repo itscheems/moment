@@ -622,7 +622,7 @@ export function SettingsPage({
         <div className={styles.identityCopy}>
           <p>公开身份预览</p>
           <h2>{title}</h2>
-          <span>{form.bio.trim() || "记下此刻，找回后来"}</span>
+          <span>{form.bio.trim() || "未填写简介"}</span>
         </div>
         <dl className={styles.identityCoordinates}>
           <div>
@@ -654,7 +654,7 @@ export function SettingsPage({
             <section aria-labelledby="identity-title" id="identity">
               <header className={styles.sectionHeader}>
                 <div>
-                  <p>Public colophon</p>
+                  <p>公开资料</p>
                   <h2 id="identity-title">站点身份</h2>
                 </div>
                 <span>公开可见</span>
@@ -840,7 +840,7 @@ export function SettingsPage({
             <section aria-labelledby="conversation-title" id="conversation">
               <header className={styles.sectionHeader}>
                 <div>
-                  <p>Conversation</p>
+                  <p>评论设置</p>
                   <h2 id="conversation-title">访客互动</h2>
                 </div>
               </header>
@@ -891,7 +891,7 @@ export function SettingsPage({
           <section aria-labelledby="access-title" id="access">
             <header className={styles.sectionHeader}>
               <div>
-                <p>Owner access</p>
+                <p>所有者访问</p>
                 <h2 id="access-title">访问凭据</h2>
               </div>
               <span>私密</span>
@@ -1030,7 +1030,7 @@ export function SettingsPage({
           <section aria-labelledby="data-title" id="data">
             <header className={styles.sectionHeader}>
               <div>
-                <p>Portable data</p>
+                <p>站点数据</p>
                 <h2 id="data-title">备份与恢复</h2>
               </div>
               <span>仅所有者</span>
