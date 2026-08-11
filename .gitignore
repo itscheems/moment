@@ -26,6 +26,7 @@
 # Runtime data and local worktrees
 /data/
 /moment-data/
+/.moment-local/
 /.worktrees/
 
 # Local Go workspace overrides; Moment v0 is a single Go module

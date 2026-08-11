@@ -39,14 +39,25 @@ To start a local site:
 mise exec -- task run
 ```
 
-The first run initializes the ignored `moment-data/` directory and prints the
-one-time owner token. Later runs reuse that data. The server listens on
-`127.0.0.1:8080` and stops cleanly with `Ctrl+C`. Override the defaults when
-needed:
+The first run initializes the ignored `moment-data/` directory. Its one-time
+owner token is saved to the ignored `.moment-local/owner.token` file and shown
+in an interactive terminal, so the owner Web screens can be tested without
+guessing a password. Later runs reuse both files. The server listens on
+`127.0.0.1:8080` and stops cleanly with `Ctrl+C`.
+
+An owner token cannot be recovered from an existing instance. If the local
+token file is missing, rotate the token while the server is stopped:
+
+```sh
+mise exec -- task run -- --rotate-owner-token
+```
+
+Override the defaults when needed:
 
 ```sh
 MOMENT_DATA_DIR=/absolute/path/to/data \
 MOMENT_LISTEN=127.0.0.1:18080 \
+MOMENT_OWNER_TOKEN_FILE=/absolute/path/to/owner.token \
 mise exec -- task run
 ```
 
