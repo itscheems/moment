@@ -299,6 +299,9 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	if probe.Data.Plan.RecipeVersion != RecipeVersion || probe.Data.Plan.Counts != (Counts{}) {
 		t.Fatalf("release fixture invocation probe plan = %#v", probe.Data.Plan)
 	}
+	probeServerURL, stopProbeServer := startReleasePerformanceServer(t, releaseBinary, probeDir)
+	assertHTTPPerformanceFixture(t, &http.Client{Timeout: 5 * time.Second}, probeServerURL, 0)
+	stopProbeServer()
 	if err := os.Mkdir(dataDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -511,44 +514,48 @@ func assertHTTPPerformanceFixture(t *testing.T, client *http.Client, baseURL str
 	type counted struct {
 		Count int `json:"count"`
 	}
+	type responseMeta struct {
+		RequestID string `json:"request_id"`
+	}
+	expectedPageItems := min(20, expectedEntries)
 	var timeline struct {
-		OK   bool `json:"ok"`
 		Data struct {
 			Items []json.RawMessage `json:"items"`
 		} `json:"data"`
+		Meta responseMeta `json:"meta"`
 	}
 	readHTTPJSON(t, client, baseURL+"/api/v1/posts?limit=20", &timeline)
-	if !timeline.OK || len(timeline.Data.Items) != 20 {
-		t.Fatalf("timeline HTTP fixture = ok:%v items:%d", timeline.OK, len(timeline.Data.Items))
+	if len(timeline.Data.Items) != expectedPageItems || strings.TrimSpace(timeline.Meta.RequestID) == "" {
+		t.Fatalf("timeline HTTP fixture = items:%d request_id:%q", len(timeline.Data.Items), timeline.Meta.RequestID)
 	}
 	var search struct {
-		OK   bool `json:"ok"`
 		Data struct {
 			Items      []json.RawMessage `json:"items"`
 			YearCounts []counted         `json:"year_counts"`
 		} `json:"data"`
+		Meta responseMeta `json:"meta"`
 	}
 	readHTTPJSON(t, client, baseURL+"/api/v1/search?q=acceptance&limit=20", &search)
 	var searchCount int
 	for _, item := range search.Data.YearCounts {
 		searchCount += item.Count
 	}
-	if !search.OK || len(search.Data.Items) != 20 || searchCount != expectedEntries {
-		t.Fatalf("search HTTP fixture = ok:%v items:%d count:%d", search.OK, len(search.Data.Items), searchCount)
+	if len(search.Data.Items) != expectedPageItems || searchCount != expectedEntries || strings.TrimSpace(search.Meta.RequestID) == "" {
+		t.Fatalf("search HTTP fixture = items:%d count:%d request_id:%q", len(search.Data.Items), searchCount, search.Meta.RequestID)
 	}
 	var months struct {
-		OK   bool `json:"ok"`
 		Data struct {
 			Items []counted `json:"items"`
 		} `json:"data"`
+		Meta responseMeta `json:"meta"`
 	}
 	readHTTPJSON(t, client, baseURL+"/api/v1/archive/months", &months)
 	var archiveCount int
 	for _, item := range months.Data.Items {
 		archiveCount += item.Count
 	}
-	if !months.OK || archiveCount != expectedEntries {
-		t.Fatalf("archive HTTP fixture = ok:%v count:%d", months.OK, archiveCount)
+	if archiveCount != expectedEntries || strings.TrimSpace(months.Meta.RequestID) == "" {
+		t.Fatalf("archive HTTP fixture = count:%d request_id:%q", archiveCount, months.Meta.RequestID)
 	}
 }
 
@@ -559,11 +566,27 @@ func readHTTPJSON(t *testing.T, client *http.Client, endpoint string, destinatio
 		t.Fatal(err)
 	}
 	defer func() { _ = response.Body.Close() }()
-	decoder := json.NewDecoder(io.LimitReader(response.Body, (1<<20)+1))
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("GET %s returned %d", endpoint, response.StatusCode)
 	}
-	if err := decoder.Decode(destination); err != nil {
+	if !strings.HasPrefix(response.Header.Get("Content-Type"), "application/json") {
+		t.Fatalf("GET %s content type = %q", endpoint, response.Header.Get("Content-Type"))
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, (1<<20)+1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) > 1<<20 {
+		t.Fatalf("GET %s response exceeded 1 MiB", endpoint)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope) != 2 || envelope["data"] == nil || envelope["meta"] == nil {
+		t.Fatalf("GET %s response must contain exactly data and meta", endpoint)
+	}
+	if err := json.Unmarshal(body, destination); err != nil {
 		t.Fatal(err)
 	}
 }
