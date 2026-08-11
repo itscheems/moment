@@ -1,0 +1,405 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "ecosystem": "Go",
+      "name": "github.com/dustin/go-humanize",
+      "version": "v1.0.1",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/dustin/go-humanize@v1.0.1",
+      "purl": "pkg:golang/github.com/dustin/go-humanize@v1.0.1"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/gabriel-vasile/mimetype",
+      "version": "v1.4.12",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/gabriel-vasile/mimetype@v1.4.12",
+      "purl": "pkg:golang/github.com/gabriel-vasile/mimetype@v1.4.12"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/gin-contrib/sse",
+      "version": "v1.1.0",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/gin-contrib/sse@v1.1.0",
+      "purl": "pkg:golang/github.com/gin-contrib/sse@v1.1.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/gin-gonic/gin",
+      "version": "v1.12.0",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/gin-gonic/gin@v1.12.0",
+      "purl": "pkg:golang/github.com/gin-gonic/gin@v1.12.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/go-playground/locales",
+      "version": "v0.14.1",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/go-playground/locales@v0.14.1",
+      "purl": "pkg:golang/github.com/go-playground/locales@v0.14.1"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/go-playground/universal-translator",
+      "version": "v0.18.1",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/go-playground/universal-translator@v0.18.1",
+      "purl": "pkg:golang/github.com/go-playground/universal-translator@v0.18.1"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/go-playground/validator/v10",
+      "version": "v10.30.1",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/go-playground/validator/v10@v10.30.1",
+      "purl": "pkg:golang/github.com/go-playground/validator/v10@v10.30.1"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/goccy/go-yaml",
+      "version": "v1.19.2",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/goccy/go-yaml@v1.19.2",
+      "purl": "pkg:golang/github.com/goccy/go-yaml@v1.19.2"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/google/uuid",
+      "version": "v1.6.0",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/github.com/google/uuid@v1.6.0",
+      "purl": "pkg:golang/github.com/google/uuid@v1.6.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/inconshreveable/mousetrap",
+      "version": "v1.1.0",
+      "license": "Apache-2.0",
+      "source": "https://pkg.go.dev/github.com/inconshreveable/mousetrap@v1.1.0",
+      "purl": "pkg:golang/github.com/inconshreveable/mousetrap@v1.1.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/leodido/go-urn",
+      "version": "v1.4.0",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/leodido/go-urn@v1.4.0",
+      "purl": "pkg:golang/github.com/leodido/go-urn@v1.4.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/mattn/go-isatty",
+      "version": "v0.0.24",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/mattn/go-isatty@v0.0.24",
+      "purl": "pkg:golang/github.com/mattn/go-isatty@v0.0.24"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/ncruces/go-strftime",
+      "version": "v1.0.0",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/ncruces/go-strftime@v1.0.0",
+      "purl": "pkg:golang/github.com/ncruces/go-strftime@v1.0.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/oklog/ulid/v2",
+      "version": "v2.1.2",
+      "license": "Apache-2.0",
+      "source": "https://pkg.go.dev/github.com/oklog/ulid/v2@v2.1.2",
+      "purl": "pkg:golang/github.com/oklog/ulid/v2@v2.1.2"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/pelletier/go-toml/v2",
+      "version": "v2.2.4",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/pelletier/go-toml/v2@v2.2.4",
+      "purl": "pkg:golang/github.com/pelletier/go-toml/v2@v2.2.4"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/quic-go/qpack",
+      "version": "v0.6.0",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/quic-go/qpack@v0.6.0",
+      "purl": "pkg:golang/github.com/quic-go/qpack@v0.6.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/quic-go/quic-go",
+      "version": "v0.59.1",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/quic-go/quic-go@v0.59.1",
+      "purl": "pkg:golang/github.com/quic-go/quic-go@v0.59.1"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/remyoudompheng/bigfft",
+      "version": "v0.0.0-20230129092748-24d4a6f8daec",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/github.com/remyoudompheng/bigfft@v0.0.0-20230129092748-24d4a6f8daec",
+      "purl": "pkg:golang/github.com/remyoudompheng/bigfft@v0.0.0-20230129092748-24d4a6f8daec"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/spf13/cobra",
+      "version": "v1.10.2",
+      "license": "Apache-2.0",
+      "source": "https://pkg.go.dev/github.com/spf13/cobra@v1.10.2",
+      "purl": "pkg:golang/github.com/spf13/cobra@v1.10.2"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/spf13/pflag",
+      "version": "v1.0.9",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/github.com/spf13/pflag@v1.0.9",
+      "purl": "pkg:golang/github.com/spf13/pflag@v1.0.9"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/ugorji/go/codec",
+      "version": "v1.3.1",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/ugorji/go/codec@v1.3.1",
+      "purl": "pkg:golang/github.com/ugorji/go/codec@v1.3.1"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "github.com/yuin/goldmark",
+      "version": "v1.8.5",
+      "license": "MIT",
+      "source": "https://pkg.go.dev/github.com/yuin/goldmark@v1.8.5",
+      "purl": "pkg:golang/github.com/yuin/goldmark@v1.8.5"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "Go standard library",
+      "version": "go1.25.12",
+      "license": "BSD-3-Clause",
+      "source": "https://go.dev/LICENSE",
+      "purl": "pkg:golang/stdlib@go1.25.12"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "go.mongodb.org/mongo-driver/v2",
+      "version": "v2.5.0",
+      "license": "Apache-2.0",
+      "source": "https://pkg.go.dev/go.mongodb.org/mongo-driver/v2@v2.5.0",
+      "purl": "pkg:golang/go.mongodb.org/mongo-driver/v2@v2.5.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "golang.org/x/crypto",
+      "version": "v0.53.0",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/golang.org/x/crypto@v0.53.0",
+      "purl": "pkg:golang/golang.org/x/crypto@v0.53.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "golang.org/x/image",
+      "version": "v0.44.0",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/golang.org/x/image@v0.44.0",
+      "purl": "pkg:golang/golang.org/x/image@v0.44.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "golang.org/x/net",
+      "version": "v0.56.0",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/golang.org/x/net@v0.56.0",
+      "purl": "pkg:golang/golang.org/x/net@v0.56.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "golang.org/x/sync",
+      "version": "v0.22.0",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/golang.org/x/sync@v0.22.0",
+      "purl": "pkg:golang/golang.org/x/sync@v0.22.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "golang.org/x/sys",
+      "version": "v0.47.0",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/golang.org/x/sys@v0.47.0",
+      "purl": "pkg:golang/golang.org/x/sys@v0.47.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "golang.org/x/text",
+      "version": "v0.40.0",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/golang.org/x/text@v0.40.0",
+      "purl": "pkg:golang/golang.org/x/text@v0.40.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "google.golang.org/protobuf",
+      "version": "v1.36.10",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/google.golang.org/protobuf@v1.36.10",
+      "purl": "pkg:golang/google.golang.org/protobuf@v1.36.10"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "modernc.org/libc",
+      "version": "v1.74.4",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/modernc.org/libc@v1.74.4",
+      "purl": "pkg:golang/modernc.org/libc@v1.74.4"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "modernc.org/mathutil",
+      "version": "v1.7.1",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/modernc.org/mathutil@v1.7.1",
+      "purl": "pkg:golang/modernc.org/mathutil@v1.7.1"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "modernc.org/memory",
+      "version": "v1.11.0",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/modernc.org/memory@v1.11.0",
+      "purl": "pkg:golang/modernc.org/memory@v1.11.0"
+    },
+    {
+      "ecosystem": "Go",
+      "name": "modernc.org/sqlite",
+      "version": "v1.56.0",
+      "license": "BSD-3-Clause",
+      "source": "https://pkg.go.dev/modernc.org/sqlite@v1.56.0",
+      "purl": "pkg:golang/modernc.org/sqlite@v1.56.0"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "@babel/runtime",
+      "version": "7.29.7",
+      "license": "MIT",
+      "source": "https://babel.dev/docs/en/next/babel-runtime",
+      "purl": "pkg:npm/%40babel/runtime@7.29.7"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "@base-ui/react",
+      "version": "1.6.0",
+      "license": "MIT",
+      "source": "https://base-ui.com",
+      "purl": "pkg:npm/%40base-ui/react@1.6.0"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "@base-ui/utils",
+      "version": "0.3.1",
+      "license": "MIT",
+      "source": "https://github.com/mui/base-ui#readme",
+      "purl": "pkg:npm/%40base-ui/utils@0.3.1"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "@floating-ui/core",
+      "version": "1.8.0",
+      "license": "MIT",
+      "source": "https://floating-ui.com",
+      "purl": "pkg:npm/%40floating-ui/core@1.8.0"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "@floating-ui/dom",
+      "version": "1.8.0",
+      "license": "MIT",
+      "source": "https://floating-ui.com",
+      "purl": "pkg:npm/%40floating-ui/dom@1.8.0"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "@floating-ui/react-dom",
+      "version": "2.1.9",
+      "license": "MIT",
+      "source": "https://floating-ui.com/docs/react-dom",
+      "purl": "pkg:npm/%40floating-ui/react-dom@2.1.9"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "@floating-ui/utils",
+      "version": "0.2.12",
+      "license": "MIT",
+      "source": "https://floating-ui.com",
+      "purl": "pkg:npm/%40floating-ui/utils@0.2.12"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "@noble/hashes",
+      "version": "2.3.0",
+      "license": "MIT",
+      "source": "https://paulmillr.com/noble/",
+      "purl": "pkg:npm/%40noble/hashes@2.3.0"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "@types/react",
+      "version": "19.2.18",
+      "license": "MIT",
+      "source": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react",
+      "purl": "pkg:npm/%40types/react@19.2.18"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "csstype",
+      "version": "3.2.3",
+      "license": "MIT",
+      "source": "https://github.com/frenic/csstype#readme",
+      "purl": "pkg:npm/csstype@3.2.3"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "react-dom",
+      "version": "19.2.8",
+      "license": "MIT",
+      "source": "https://react.dev/",
+      "purl": "pkg:npm/react-dom@19.2.8"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "react",
+      "version": "19.2.8",
+      "license": "MIT",
+      "source": "https://react.dev/",
+      "purl": "pkg:npm/react@19.2.8"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "reselect",
+      "version": "5.2.0",
+      "license": "MIT",
+      "source": "https://github.com/reduxjs/reselect#readme",
+      "purl": "pkg:npm/reselect@5.2.0"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "scheduler",
+      "version": "0.27.0",
+      "license": "MIT",
+      "source": "https://react.dev/",
+      "purl": "pkg:npm/scheduler@0.27.0"
+    },
+    {
+      "ecosystem": "Web",
+      "name": "use-sync-external-store",
+      "version": "1.6.0",
+      "license": "MIT",
+      "source": "https://github.com/facebook/react#readme",
+      "purl": "pkg:npm/use-sync-external-store@1.6.0"
+    }
+  ]
+}

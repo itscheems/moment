@@ -47,7 +47,7 @@ tasks:
     env:
       CGO_ENABLED: "0"
     cmds:
-      - mkdir -p dist
+      - node -e "require('node:fs').mkdirSync('dist', {recursive:true})"
       - go build -trimpath -o dist/moment{{exeExt}} ./cmd/moment
 
   ci:
@@ -57,6 +57,77 @@ tasks:
       - task: lint
       - task: test
       - task: build
+
+  lock:test:
+    desc: Prove real cross-process lock behavior on the host OS
+    cmds:
+      - go test -count=1 -v ./internal/runtimefs -run '^(TestCrossProcessSharedExclusiveAndCrashRelease|TestLockOrderIsRejectedAcrossProcessBoundary)$'
+
+  security:
+    desc: Run source, dependency, license, and adversarial security gates
+    deps: [web:build]
+    cmds:
+      - bash scripts/release/check-vulnerabilities.sh
+      - pnpm --dir web audit --registry=https://registry.npmjs.org --audit-level high
+      - gitleaks git --redact --no-banner --no-color .
+      - bash scripts/release/check-licenses.sh
+      - go test -race ./internal/domain ./internal/media ./internal/archive ./internal/auth ./internal/observability ./internal/transport/http/gin
+
+  release:cross-build:
+    desc: Cross-build every supported CGo-free target
+    deps: [web:build]
+    cmds:
+      - bash scripts/release/cross-build.sh
+
+  release:snapshot:
+    desc: Build the complete local GoReleaser snapshot with checksums and SBOMs
+    cmds:
+      - bash scripts/release/assert-clean-tree.sh
+      - goreleaser check
+      - bash scripts/release/goreleaser-build.sh --snapshot --clean --skip=publish
+      - bash scripts/release/finalize-artifacts.sh
+
+  release:reproducible:
+    desc: Build the same snapshot twice and require byte-identical release archives
+    cmds:
+      - bash scripts/release/reproducible-snapshot.sh
+
+  release:artifacts:
+    desc: Verify release archive contents, checksums, metadata, and embedded runtime assets
+    cmds:
+      - bash scripts/release/verify-artifacts.sh
+      - bash scripts/release/verify-version-rejection.sh
+
+  release:container:
+    desc: Verify the non-root container lifecycle and persistent data volume
+    cmds:
+      - bash scripts/release/container-smoke.sh
+
+  release:performance:full:
+    desc: Run the real 20 GiB qualification fixture and declared latency gates
+    deps: [web:build, release:reproducible]
+    env:
+      MOMENT_RUN_DEV_SCALE: "1"
+    cmds:
+      - task: release:artifacts
+      - bash scripts/release/performance-full.sh
+
+  release:preflight:
+    desc: Run fast release gates before the dedicated 20 GiB qualification
+    cmds:
+      - task: ci
+      - task: lock:test
+      - task: security
+      - task: release:cross-build
+      - task: release:reproducible
+      - task: release:artifacts
+      - task: release:container
+
+  release:qualification:
+    desc: Run the complete release gate including the real 20 GiB fixture
+    cmds:
+      - task: release:preflight
+      - task: release:performance:full
 
   web:build:
     internal: true

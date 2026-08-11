@@ -461,8 +461,8 @@ func TestOwnerRotateRejectsZeroCredentialAPIResponse(t *testing.T) {
 	t.Setenv("MOMENT_TOKEN", "test-token")
 	tests := []string{
 		`{"data":{},"meta":{"request_id":"req"}}`,
-		`{"data":{"token":"0123456789abcdef0123456789abcdef","initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`,
-		`{"data":{"token":"0123456789abcdef0123456789abcdef","initialized":true,"session_epoch":2,"initialized_at":"2026-08-10T00:01:00Z","rotated_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`,
+		`{"data":{"token":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`,
+		`{"data":{"token":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","initialized":true,"session_epoch":2,"initialized_at":"2026-08-10T00:01:00Z","rotated_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`,
 	}
 	for _, body := range tests {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

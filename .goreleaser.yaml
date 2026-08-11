@@ -11,25 +11,51 @@ builds:
   - id: moment
     main: ./cmd/moment
     binary: moment
+    mod_timestamp: "{{ .Env.MOMENT_RELEASE_EPOCH }}"
     env:
       - CGO_ENABLED=0
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    flags:
+      - -trimpath
     ldflags:
       - >-
         -s -w
         -X github.com/moment/moment/internal/buildinfo.Version={{.Version}}
-        -X github.com/moment/moment/internal/buildinfo.Commit={{.Commit}}
-        -X github.com/moment/moment/internal/buildinfo.BuildDate={{.Date}}
+        -X github.com/moment/moment/internal/buildinfo.Commit={{ .Env.MOMENT_RELEASE_COMMIT }}
+        -X github.com/moment/moment/internal/buildinfo.BuildDate={{ .Env.MOMENT_RELEASE_DATE }}
 
 archives:
-  - formats: [tar.gz]
+  - id: moment
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
+    files:
+      - src: README.md
+        info:
+          mtime: "{{ .Env.MOMENT_RELEASE_DATE }}"
+      - src: THIRD_PARTY_NOTICES.md
+        info:
+          mtime: "{{ .Env.MOMENT_RELEASE_DATE }}"
+      - src: THIRD_PARTY_LICENSES.txt
+        info:
+          mtime: "{{ .Env.MOMENT_RELEASE_DATE }}"
 
 checksum:
-  name_template: checksums.txt
+  disable: true
+
+sboms:
+  - id: archives
+    artifacts: archive
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+# Publishing is owned by the tag workflow so repository identity always comes
+# from GitHub's authenticated event instead of hard-coded owner metadata.
+release:
+  disable: true
 
 changelog:
   use: git

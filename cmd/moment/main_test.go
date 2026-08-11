@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -18,12 +19,10 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/runtimefs"
+	"github.com/moment/moment/internal/webassets"
 )
 
 func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Interrupt is not supported for child processes on Windows")
-	}
 	dataDir := filepath.Join(t.TempDir(), "data")
 	binary := os.Getenv("MOMENT_SMOKE_BINARY")
 	if binary == "" {
@@ -72,6 +71,7 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 	var stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
+	configureInterruptProcess(command)
 	if err := command.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -108,6 +108,49 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 	_ = readyResponse.Body.Close()
 	if readyResponse.StatusCode != http.StatusOK {
 		t.Fatalf("readiness status = %d, want %d; stderr=%s", readyResponse.StatusCode, http.StatusOK, stderr.String())
+	}
+	shellResponse, err := client.Get("http://" + address + "/")
+	if err != nil {
+		t.Fatalf("embedded Web request failed: %v", err)
+	}
+	shellBody, readErr := io.ReadAll(io.LimitReader(shellResponse.Body, (1<<20)+1))
+	_ = shellResponse.Body.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	expectedShell, err := webassets.Public()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if shellResponse.StatusCode != http.StatusOK || !bytes.Contains(shellBody, []byte(`<div id="root"></div>`)) ||
+		!strings.HasPrefix(shellResponse.Header.Get("Content-Type"), "text/html") ||
+		!strings.Contains(shellResponse.Header.Get("Content-Security-Policy"), "default-src 'self'") {
+		t.Fatalf("embedded Web shell status=%d content-type=%q CSP=%q root=%v", shellResponse.StatusCode, shellResponse.Header.Get("Content-Type"), shellResponse.Header.Get("Content-Security-Policy"), bytes.Contains(shellBody, []byte(`<div id="root"></div>`)))
+	}
+	if err := fs.WalkDir(expectedShell, ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || path == "index.html" {
+			return walkErr
+		}
+		expectedAsset, readErr := fs.ReadFile(expectedShell, path)
+		if readErr != nil {
+			return readErr
+		}
+		assetResponse, requestErr := client.Get("http://" + address + "/" + path)
+		if requestErr != nil {
+			return requestErr
+		}
+		actualAsset, readErr := io.ReadAll(io.LimitReader(assetResponse.Body, int64(len(expectedAsset))+1))
+		_ = assetResponse.Body.Close()
+		if readErr != nil {
+			return readErr
+		}
+		if assetResponse.StatusCode != http.StatusOK || !bytes.Equal(actualAsset, expectedAsset) ||
+			assetResponse.Header.Get("Content-Type") == "" || assetResponse.Header.Get("X-Content-Type-Options") != "nosniff" {
+			t.Fatalf("embedded asset %s status=%d content-type=%q bytes_match=%v", path, assetResponse.StatusCode, assetResponse.Header.Get("Content-Type"), bytes.Equal(actualAsset, expectedAsset))
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	directCreate := exec.Command(binary, "post", "create", "--data-dir", dataDir, "--content", "binary parity", "--idempotency-key", "binary-post-001", "--json")
@@ -217,7 +260,7 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 	if newResponse.StatusCode != http.StatusOK {
 		t.Fatalf("new token status = %d", newResponse.StatusCode)
 	}
-	if err := command.Process.Signal(os.Interrupt); err != nil {
+	if err := interruptProcess(command); err != nil {
 		t.Fatal(err)
 	}
 	waitResult := make(chan error, 1)

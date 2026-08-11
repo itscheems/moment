@@ -256,6 +256,10 @@ func TestAcceptanceScaleEndToEnd(t *testing.T) {
 	if os.Getenv("MOMENT_RUN_DEV_SCALE") != "1" {
 		t.Skip("set MOMENT_RUN_DEV_SCALE=1 on a disposable volume with at least 24 GiB free")
 	}
+	if evidencePath := os.Getenv("MOMENT_PERFORMANCE_EVIDENCE"); evidencePath != "" {
+		qualifyAcceptanceScale(t, evidencePath)
+		return
+	}
 	runtimeState := developmentRuntime(t)
 	result, err := Execute(context.Background(), Request{
 		DataDir: runtimeState.Root, Operation: OperationScenario, Scenario: "acceptance-scale", Seed: 1,

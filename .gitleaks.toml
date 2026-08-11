@@ -1,0 +1,12 @@
+title = "Moment secret scanning policy"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+targetRules = ["generic-api-key"]
+description = "Ignore the exact non-secret credential literal used by the malformed owner-response test."
+condition = "AND"
+regexTarget = "match"
+regexes = ['''token":"0123456789abcdef0123456789abcdef"''']
+paths = ['''^internal/transport/cli/owner_test\.go$''']

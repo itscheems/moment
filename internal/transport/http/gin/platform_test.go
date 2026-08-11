@@ -56,9 +56,19 @@ func TestHealthReadinessHeadersAndRequestIDs(t *testing.T) {
 		"X-Content-Type-Options": "nosniff",
 		"X-Frame-Options":        "DENY",
 		"Referrer-Policy":        "same-origin",
+		"Permissions-Policy":     "camera=(), microphone=(), geolocation=()",
 	} {
 		if got := health.Header().Get(header); got != want {
 			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+	csp := health.Header().Get("Content-Security-Policy")
+	for _, directive := range []string{
+		"default-src 'self'", "img-src 'self' data:", "script-src 'self'", "connect-src 'self'",
+		"object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "form-action 'self'",
+	} {
+		if !strings.Contains(csp, directive) {
+			t.Errorf("Content-Security-Policy missing %q: %q", directive, csp)
 		}
 	}
 

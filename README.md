@@ -23,6 +23,9 @@ The stable entry points are:
 - `task build` — write the single CGo-free binary to `dist/`;
 - `task ci` — run the complete local gate.
 
+Release qualification, artifact verification, native installation, and
+container lifecycle commands are documented in [docs/releasing.md](docs/releasing.md).
+
 After building:
 
 ```sh
