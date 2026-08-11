@@ -23,6 +23,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
+published_port() {
+  local container_name="$1"
+  local output_path="$2"
+  local value
+
+  docker port "$container_name" 8080/tcp >"$output_path"
+  value="$(sed -n 's/.*://p' "$output_path")"
+  if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+    echo "expected exactly one numeric published port for $container_name" >&2
+    cat "$output_path" >&2
+    return 1
+  fi
+  printf '%s' "$value"
+}
+
 docker build \
   --build-arg "VERSION=$version" \
   --build-arg "COMMIT=$commit" \
@@ -52,7 +67,7 @@ while [[ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}
   sleep 1
 done
 
-port="$(docker port "$container" 8080/tcp | sed -n 's/.*://p' | head -n 1)"
+port="$(published_port "$container" "$scratch/container-port.txt")"
 curl --fail --silent --show-error "http://127.0.0.1:${port}/readyz" >/dev/null
 curl --fail --silent --show-error --dump-header "$scratch/web-headers.txt" \
   --output "$scratch/container-index.html" "http://127.0.0.1:${port}/"
@@ -91,7 +106,7 @@ while [[ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}
   (( SECONDS < deadline )) || { docker logs "$restart_container" >&2; exit 1; }
   sleep 1
 done
-restart_port="$(docker port "$restart_container" 8080/tcp | sed -n 's/.*://p' | head -n 1)"
+restart_port="$(published_port "$restart_container" "$scratch/restart-container-port.txt")"
 curl --fail --silent --show-error "http://127.0.0.1:${restart_port}/api/v1/posts/${post_id}" | jq -e --arg id "$post_id" '.data.id == $id' >/dev/null
 docker stop --time 15 "$restart_container" >/dev/null
 docker logs "$restart_container" >"$scratch/restart-server.log" 2>&1

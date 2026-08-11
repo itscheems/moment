@@ -67,6 +67,7 @@ tasks:
     desc: Run source, dependency, license, and adversarial security gates
     deps: [web:build]
     cmds:
+      - node scripts/release/check-pipefail-pipelines.mjs
       - bash scripts/release/check-vulnerabilities.sh
       - pnpm --dir web audit --registry=https://registry.npmjs.org --audit-level high
       - gitleaks git --redact --no-banner --no-color .
