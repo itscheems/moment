@@ -24,12 +24,12 @@
 }
 
 .primaryButton {
-  color: var(--accent-contrast);
-  background: var(--accent);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
 }
 
 .primaryButton:hover {
-  background: var(--accent-hover);
+  background: var(--button-primary-hover);
 }
 
 .secondaryButton {
@@ -58,14 +58,14 @@
 .loginGate {
   max-inline-size: 33rem;
   margin-inline: auto;
-  padding: clamp(2.5rem, 9vw, 6rem) var(--space-6);
+  padding: clamp(2rem, 7vw, 4rem) var(--space-6);
 }
 
 .loginGate h2 {
   margin: var(--space-2) 0 0;
   font-family: var(--font-display);
-  font-size: clamp(1.65rem, 5vw, 2.15rem);
-  font-weight: 600;
+  font-size: clamp(1.55rem, 5vw, 1.9rem);
+  font-weight: 750;
   letter-spacing: -0.035em;
 }
 
@@ -88,19 +88,49 @@
   font-weight: 650;
 }
 
-.loginForm input {
+.tokenField {
+  position: relative;
+}
+
+.tokenField input {
   min-block-size: 3rem;
   inline-size: 100%;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-action);
-  padding-inline: var(--space-4);
+  padding-inline: var(--space-4) 4.5rem;
   color: var(--text-primary);
   background: var(--surface);
   font-family: var(--font-utility);
 }
 
-.loginForm input:focus {
+.tokenField input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  outline: none;
+}
+
+.tokenField button {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: var(--space-2);
+  min-block-size: auto;
+  border: 0;
+  padding-inline: var(--space-2);
+  color: var(--accent);
+  background: transparent;
+  font-size: var(--text-sm);
+}
+
+.loginForm small {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.loginForm code {
+  margin-inline-start: 0.25rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
 }
 
 .loginForm p,
@@ -140,7 +170,7 @@
 }
 
 .pageComposer {
-  min-block-size: 32rem;
+  min-block-size: 24rem;
 }
 
 .newTick {
@@ -162,36 +192,8 @@
   padding: 0;
 }
 
-.inlineComposer .composerHeader {
-  display: none;
-}
-
-.composerHeader {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.composerHeader h2 {
-  margin: var(--space-1) 0 0;
-  font-size: 1.15rem;
-  font-weight: 750;
-  letter-spacing: -0.025em;
-}
-
-.composerHeader > span {
-  color: var(--text-tertiary);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
-}
-
 .composerForm {
   display: grid;
-  margin-block-start: var(--space-2);
-}
-
-.inlineComposer .composerForm {
   margin-block-start: 0;
 }
 

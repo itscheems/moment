@@ -50,6 +50,14 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain("--focus-ring:");
   });
 
+  it("uses blue emphasis with black and white primary controls", () => {
+    expect(globalCss).toContain("--accent: #1d9bf0");
+    expect(globalCss).toContain("--button-primary: #0f1419");
+    expect(globalCss).toContain("--button-primary: #eff3f4");
+    expect(contrast("#ffffff", "#0f1419")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#0f1419", "#eff3f4")).toBeGreaterThanOrEqual(4.5);
+  });
+
   it("keeps small tertiary copy readable on every light surface", () => {
     const tertiary = "#536471";
     expect(globalCss).toContain(`--text-tertiary: ${tertiary}`);

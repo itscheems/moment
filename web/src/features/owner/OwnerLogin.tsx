@@ -21,6 +21,7 @@ export function OwnerLogin({
   const { navigate } = useNavigation();
   const { state, login, logout, retryStatus } = useOwner();
   const [token, setToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pendingRef = useRef(false);
@@ -43,8 +44,8 @@ export function OwnerLogin({
     } catch (nextError) {
       setError(
         nextError instanceof PublicApiError && nextError.status === 401
-          ? "这个所有者凭据无效，请检查后重试。"
-          : "登录没有完成。凭据仍只留在当前输入框中，可以安全重试。",
+          ? "这个所有者令牌无效，请检查后重试。"
+          : "登录没有完成。令牌仍只留在当前输入框中，可以安全重试。",
       );
     } finally {
       pendingRef.current = false;
@@ -99,13 +100,13 @@ export function OwnerLogin({
   return (
     <section className={styles.loginGate}>
       <p className={styles.eyebrow}>
-        {state === "expired" ? "刷新写入身份" : "私人入口"}
+        {state === "expired" ? "会话已过期" : "所有者登录"}
       </p>
-      <h2>{state === "expired" ? "重新确认所有者身份" : "用所有者凭据继续"}</h2>
+      <h2>{state === "expired" ? "重新登录" : "输入所有者令牌"}</h2>
       <p>
         {state === "expired"
-          ? "当前文字仍保留在编辑器中。凭据只用于换取新的安全会话。"
-          : "凭据只用于换取当前浏览器的安全会话，不会写入地址、草稿或浏览器存储。"}
+          ? "当前文字仍保留在编辑器中。重新输入令牌即可继续。"
+          : "这不是账号密码。令牌在初始化或轮换时生成，只用于登录当前浏览器。"}
       </p>
       {state === "unavailable" ? (
         <div className={styles.inlineNotice} role="alert">
@@ -119,25 +120,38 @@ export function OwnerLogin({
         className={styles.loginForm}
         onSubmit={(event) => void submit(event)}
       >
-        <label htmlFor="owner-token">所有者凭据</label>
-        <input
-          autoCapitalize="none"
-          autoComplete="off"
-          id="owner-token"
-          name="owner-token"
-          onChange={(event) => setToken(event.target.value)}
-          required
-          spellCheck={false}
-          type="password"
-          value={token}
-        />
+        <label htmlFor="owner-token">所有者令牌</label>
+        <div className={styles.tokenField}>
+          <input
+            autoCapitalize="none"
+            autoComplete="off"
+            id="owner-token"
+            name="owner-token"
+            onChange={(event) => setToken(event.target.value)}
+            required
+            spellCheck={false}
+            type={showToken ? "text" : "password"}
+            value={token}
+          />
+          <button
+            aria-pressed={showToken}
+            onClick={() => setShowToken((current) => !current)}
+            type="button"
+          >
+            {showToken ? "隐藏" : "显示"}
+          </button>
+        </div>
+        <small>
+          本地开发时，启动命令会显示令牌，并保存到
+          <code>.moment-local/owner.token</code>。
+        </small>
         {error ? <p role="alert">{error}</p> : null}
         <button
           className={styles.primaryButton}
           disabled={!token || pending}
           type="submit"
         >
-          {pending ? "正在登录…" : "进入所有者模式"}
+          {pending ? "正在登录…" : "登录"}
         </button>
       </form>
     </section>

@@ -340,9 +340,9 @@ describe("owner composing flow", () => {
     });
     render(<App />);
 
-    const token = await screen.findByLabelText("所有者凭据");
+    const token = await screen.findByLabelText("所有者令牌");
     fireEvent.change(token, { target: { value: bearer } });
-    fireEvent.click(screen.getByRole("button", { name: "进入所有者模式" }));
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
     expect(await screen.findByLabelText("此刻想到什么？")).toBeInTheDocument();
 
     expect(window.sessionStorage.getItem(sessionKey)).toContain(
@@ -605,7 +605,7 @@ describe("owner composing flow", () => {
     fireEvent.change(textarea, { target: { value: "会话失效也不能丢" } });
     fireEvent.click(screen.getByRole("button", { name: "发布" }));
 
-    expect(await screen.findByLabelText("所有者凭据")).toBeInTheDocument();
+    expect(await screen.findByLabelText("所有者令牌")).toBeInTheDocument();
     expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
       "会话失效也不能丢",
     );
@@ -646,14 +646,14 @@ describe("owner composing flow", () => {
     fireEvent.change(editor, { target: { value: "不会丢的编辑" } });
     fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
 
-    expect(await screen.findByLabelText("所有者凭据")).toBeInTheDocument();
+    expect(await screen.findByLabelText("所有者令牌")).toBeInTheDocument();
     expect(screen.getByLabelText("Moment 正文")).toHaveValue("不会丢的编辑");
-    fireEvent.change(screen.getByLabelText("所有者凭据"), {
+    fireEvent.change(screen.getByLabelText("所有者令牌"), {
       target: { value: "fresh-owner-token" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "进入所有者模式" }));
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
     await waitFor(() =>
-      expect(screen.queryByLabelText("所有者凭据")).toBeNull(),
+      expect(screen.queryByLabelText("所有者令牌")).toBeNull(),
     );
     expect(screen.getByLabelText("Moment 正文")).toHaveValue("不会丢的编辑");
     fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
@@ -699,17 +699,17 @@ describe("owner composing flow", () => {
     fireEvent.change(textarea, { target: { value: "跨标签页冲突也不丢" } });
     fireEvent.click(screen.getByRole("button", { name: "发布" }));
 
-    expect(await screen.findByLabelText("所有者凭据")).toBeInTheDocument();
+    expect(await screen.findByLabelText("所有者令牌")).toBeInTheDocument();
     expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
       "跨标签页冲突也不丢",
     );
     expect(creates).toBe(1);
-    fireEvent.change(screen.getByLabelText("所有者凭据"), {
+    fireEvent.change(screen.getByLabelText("所有者令牌"), {
       target: { value: "fresh-owner-token" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "进入所有者模式" }));
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
     await waitFor(() =>
-      expect(screen.queryByLabelText("所有者凭据")).toBeNull(),
+      expect(screen.queryByLabelText("所有者令牌")).toBeNull(),
     );
     expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
       "跨标签页冲突也不丢",

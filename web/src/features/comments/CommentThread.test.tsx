@@ -534,7 +534,7 @@ describe("public comment thread", () => {
       expect(within(surface).getByRole("alert")).toHaveTextContent(
         "文字已保留",
       );
-      const credential = within(surface).getByLabelText("所有者凭据");
+      const credential = within(surface).getByLabelText("所有者令牌");
       fireEvent.change(credential, { target: { value: "new-owner-token" } });
       fireEvent.click(
         within(surface).getByRole("button", { name: "刷新身份" }),
@@ -638,7 +638,7 @@ describe("public comment thread", () => {
     fireEvent.click(await screen.findByRole("button", { name: "删除回应" }));
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
-    fireEvent.change(within(dialog).getByLabelText("所有者凭据"), {
+    fireEvent.change(within(dialog).getByLabelText("所有者令牌"), {
       target: { value: "new-owner-token" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));
@@ -693,7 +693,7 @@ describe("public comment thread", () => {
     expect(
       within(dialog).getByRole("button", { name: "删除回应" }),
     ).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText("所有者凭据"), {
+    fireEvent.change(within(dialog).getByLabelText("所有者令牌"), {
       target: { value: "new-owner-token" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));

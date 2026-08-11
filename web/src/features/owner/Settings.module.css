@@ -701,12 +701,12 @@
 
 .primaryButton {
   border: 0;
-  color: var(--accent-contrast);
-  background: var(--accent);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
 }
 
 .primaryButton:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--button-primary-hover);
 }
 
 .secondaryButton {

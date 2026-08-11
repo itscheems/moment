@@ -99,7 +99,7 @@ describe("search and archive memory layer", () => {
     expect(window.location.pathname).toBe("/");
     fireEvent.keyDown(window, { key: "/" });
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
-    const input = await screen.findByPlaceholderText("中文、英文、数字或短语");
+    const input = await screen.findByPlaceholderText("搜索");
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => resolve()),
     );

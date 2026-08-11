@@ -587,16 +587,6 @@ export function Composer({
         <SiteAvatar site={site} />
       </div>
       <div className={styles.composerMain}>
-        <header className={styles.composerHeader}>
-          <div>
-            <p className={styles.eyebrow}>
-              {post ? "补充这段记忆" : "新的时间刻度"}
-            </p>
-            <h2>{post ? "编辑文字" : "现在，写下来"}</h2>
-          </div>
-          <span>{variant === "inline" ? "N 新建" : "文字优先 · 可附图"}</span>
-        </header>
-
         {draft ? (
           <div className={styles.draftRecovery} role="status">
             <div>
@@ -662,9 +652,9 @@ export function Composer({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder="一句话也可以。支持 Markdown。"
+            placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
             ref={textareaRef}
-            rows={variant === "inline" ? 4 : 10}
+            rows={variant === "inline" ? 4 : 7}
             value={content}
           />
           <div className={styles.composerMeta}>

@@ -226,12 +226,12 @@
 }
 
 .primaryAction {
-  color: var(--accent-contrast);
-  background: var(--accent);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
 }
 
 .primaryAction:hover {
-  background: var(--accent-hover);
+  background: var(--button-primary-hover);
 }
 
 .secondaryAction,
@@ -309,8 +309,8 @@
 }
 
 .reauth button {
-  color: var(--accent-contrast);
-  background: var(--accent);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
 }
 
 .threadState {

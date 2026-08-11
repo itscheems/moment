@@ -501,7 +501,7 @@ describe("owner site settings", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/站点标题/)).toHaveValue("仍在输入中的标题");
     expect(
-      screen.getByRole("heading", { name: "重新确认所有者身份" }),
+      screen.getByRole("heading", { name: "重新登录" }),
     ).toBeInTheDocument();
   });
 
@@ -593,7 +593,7 @@ describe("owner site settings", () => {
       ).not.toBeInTheDocument();
       expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
       expect(
-        screen.queryByRole("heading", { name: "重新确认所有者身份" }),
+        screen.queryByRole("heading", { name: "重新登录" }),
       ).not.toBeInTheDocument();
     },
   );

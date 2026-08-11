@@ -37,7 +37,7 @@ const emptyCopy: Record<
   "owner-login": {
     marker: "Owner",
     title: "进入你的私人入口",
-    detail: "使用站点所有者凭据登录后即可发布与管理内容。",
+    detail: "使用站点所有者令牌登录后即可发布与管理内容。",
   },
   "owner-compose": {
     marker: "现在",

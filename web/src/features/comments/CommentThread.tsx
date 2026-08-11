@@ -143,7 +143,7 @@ function Reauthenticate({
       setToken("");
       onReady();
     } catch {
-      setError("身份刷新没有完成。凭据仍只在当前输入框中，可以重试。");
+      setError("身份刷新没有完成。令牌仍只在当前输入框中，可以重试。");
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -156,7 +156,7 @@ function Reauthenticate({
         <strong>重新确认所有者身份</strong>
         <span>回应文字不会离开当前页面。</span>
       </div>
-      <label htmlFor={inputId}>所有者凭据</label>
+      <label htmlFor={inputId}>所有者令牌</label>
       <input
         autoCapitalize="none"
         autoComplete="off"

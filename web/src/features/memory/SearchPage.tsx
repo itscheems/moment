@@ -14,8 +14,10 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
+import { Icon } from "../../components/icons";
 import { formatMomentDate } from "../posts/dates";
 import { PostPresentation } from "../posts/PostPresentation";
+import { DatePicker } from "./DatePicker";
 import {
   activeSearchYear,
   parseSearchLocation,
@@ -314,38 +316,38 @@ export function SearchPage({
       <form className={styles.searchForm} onSubmit={submit}>
         <label className={styles.queryField} htmlFor="moment-search-input">
           <span>搜索 Moment</span>
-          <input
-            aria-describedby="search-shortcut search-form-error"
-            aria-keyshortcuts="/"
-            aria-label="搜索 Moment"
-            autoComplete="off"
-            autoFocus={!state.query}
-            id="moment-search-input"
-            maxLength={1_000}
-            onChange={(event) => setQueryInput(event.target.value)}
-            placeholder="中文、英文、数字或短语"
-            type="search"
-            value={queryInput}
-          />
+          <div className={styles.queryControl}>
+            <Icon name="search" />
+            <input
+              aria-describedby="search-shortcut search-form-error"
+              aria-keyshortcuts="/"
+              aria-label="搜索 Moment"
+              autoComplete="off"
+              autoFocus={!state.query}
+              id="moment-search-input"
+              maxLength={1_000}
+              onChange={(event) => setQueryInput(event.target.value)}
+              placeholder="搜索"
+              type="search"
+              value={queryInput}
+            />
+          </div>
           <small id="search-shortcut">在页面空白处按 / 可立即搜索</small>
         </label>
         <div className={styles.dateFields}>
-          <label>
-            <span>起始日（含）</span>
-            <input
-              onChange={(event) => setFromInput(event.target.value)}
-              type="date"
-              value={fromInput}
-            />
-          </label>
-          <label>
-            <span>结束日（不含）</span>
-            <input
-              onChange={(event) => setToInput(event.target.value)}
-              type="date"
-              value={toInput}
-            />
-          </label>
+          <DatePicker
+            id="moment-search-from"
+            label="起始日（含）"
+            onChange={setFromInput}
+            value={fromInput}
+          />
+          <DatePicker
+            align="end"
+            id="moment-search-to"
+            label="结束日（不含）"
+            onChange={setToInput}
+            value={toInput}
+          />
           <button type="submit">搜索</button>
         </div>
         <p className={styles.formError} id="search-form-error" role="alert">
