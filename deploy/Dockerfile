@@ -20,7 +20,7 @@ RUN CGO_ENABLED=0 go build -buildvcs=false -trimpath \
     -ldflags "-s -w -X github.com/moment/moment/internal/buildinfo.Version=${VERSION} -X github.com/moment/moment/internal/buildinfo.Commit=${COMMIT} -X github.com/moment/moment/internal/buildinfo.BuildDate=${BUILD_DATE}" \
     -o /out/moment ./cmd/moment
 
-FROM alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
+FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
 RUN addgroup -S -g 65532 moment \
     && adduser -S -D -H -u 65532 -G moment moment \
     && mkdir -p /data \
