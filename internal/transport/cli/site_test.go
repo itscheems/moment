@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -195,6 +196,25 @@ func TestSiteCommandCancellationAndHelpContract(t *testing.T) {
 			if !strings.Contains(output.stdout, required) {
 				t.Fatalf("args %v missing %q:\n%s", args, required, output.stdout)
 			}
+		}
+	}
+}
+
+func TestSiteAPIRejectsMissingRequiredSuccessData(t *testing.T) {
+	t.Setenv("MOMENT_TOKEN", "test-token")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"data":{},"meta":{"request_id":"req_site"}}`))
+	}))
+	defer server.Close()
+	for _, args := range [][]string{
+		{"--url", server.URL, "site", "get", "--json"},
+		{"--url", server.URL, "site", "update", "--title", "Moment", "--json"},
+	} {
+		output := execute(momentTestApplication(), "", args...)
+		if output.exit != ExitUnavailable || output.stderr != "" ||
+			decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+			t.Fatalf("args=%v output=%#v", args, output)
 		}
 	}
 }

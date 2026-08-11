@@ -527,18 +527,21 @@ func TestPostAPIRejectsNonCanonicalSuccessEnvelopes(t *testing.T) {
 	validData := `{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","content_md":"valid","content_html":"<p>valid</p>\n","created_at":"2026-08-10T12:00:00Z","updated_at":"2026-08-10T12:00:00Z","published_at":"2026-08-10T12:00:00Z","media":[]}`
 	responses := map[string]string{
 		"null data":            `{"data":null,"meta":{"request_id":"req_fake"}}`,
-		"zero post":            `{"data":{"id":"","content_md":"","content_html":"","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z","published_at":"0001-01-01T00:00:00Z"},"meta":{}}`,
-		"null items":           `{"data":{"items":null},"meta":{"next_cursor":null}}`,
-		"missing cursor":       `{"data":{"items":[]},"meta":{}}`,
-		"empty next cursor":    `{"data":{"items":[]},"meta":{"next_cursor":""}}`,
+		"zero post":            `{"data":{"id":"","content_md":"","content_html":"","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z","published_at":"0001-01-01T00:00:00Z"},"meta":{"request_id":"req_fake"}}`,
+		"null items":           `{"data":{"items":null},"meta":{"request_id":"req_fake","next_cursor":null}}`,
+		"missing cursor":       `{"data":{"items":[]},"meta":{"request_id":"req_fake"}}`,
+		"empty next cursor":    `{"data":{"items":[]},"meta":{"request_id":"req_fake","next_cursor":""}}`,
 		"missing meta":         `{"data":` + validData + `}`,
-		"unknown top field":    `{"data":` + validData + `,"meta":{},"extra":true}`,
-		"duplicate data":       `{"data":` + validData + `,"data":` + validData + `,"meta":{}}`,
-		"trailing document":    `{"data":` + validData + `,"meta":{}} {}`,
+		"empty meta":           `{"data":` + validData + `,"meta":{}}`,
+		"blank request id":     `{"data":` + validData + `,"meta":{"request_id":"  "}}`,
+		"wrong request id":     `{"data":` + validData + `,"meta":{"request_id":7}}`,
+		"unknown top field":    `{"data":` + validData + `,"meta":{"request_id":"req_fake"},"extra":true}`,
+		"duplicate data":       `{"data":` + validData + `,"data":` + validData + `,"meta":{"request_id":"req_fake"}}`,
+		"trailing document":    `{"data":` + validData + `,"meta":{"request_id":"req_fake"}} {}`,
 		"null envelope meta":   `{"data":` + validData + `,"meta":null}`,
 		"scalar envelope meta": `{"data":` + validData + `,"meta":true}`,
-		"null post media":      `{"data":` + strings.Replace(validData, `"media":[]`, `"media":null`, 1) + `,"meta":{}}`,
-		"usage missing alt":    `{"data":` + strings.Replace(validData, `"media":[]`, `"media":[{"media_id":"01ARZ3NDEKTSV4RRFFQ69G5FAW","position":0}]`, 1) + `,"meta":{}}`,
+		"null post media":      `{"data":` + strings.Replace(validData, `"media":[]`, `"media":null`, 1) + `,"meta":{"request_id":"req_fake"}}`,
+		"usage missing alt":    `{"data":` + strings.Replace(validData, `"media":[]`, `"media":[{"media_id":"01ARZ3NDEKTSV4RRFFQ69G5FAW","position":0}]`, 1) + `,"meta":{"request_id":"req_fake"}}`,
 	}
 	for name, body := range responses {
 		t.Run(name, func(t *testing.T) {
@@ -561,7 +564,7 @@ func TestPostAPIRejectsNonCanonicalSuccessEnvelopes(t *testing.T) {
 	t.Run("non JSON content type", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 			writer.Header().Set("Content-Type", "text/plain")
-			_, _ = writer.Write([]byte(`{"data":` + validData + `,"meta":{}}`))
+			_, _ = writer.Write([]byte(`{"data":` + validData + `,"meta":{"request_id":"req_fake"}}`))
 		}))
 		defer server.Close()
 		output := execute(momentTestApplication(), "", "--url", server.URL, "post", "get", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "--json")
@@ -588,13 +591,13 @@ func TestPostAPIRequiresMutationMetadataAndStatusPairing(t *testing.T) {
 		meta   map[string]any
 		args   []string
 	}{
-		{name: "create missing replayed", status: http.StatusCreated, meta: map[string]any{}, args: []string{"post", "create", "--content", "valid"}},
-		{name: "create wrong replayed type", status: http.StatusCreated, meta: map[string]any{"replayed": "false"}, args: []string{"post", "create", "--content", "valid"}},
-		{name: "create status conflicts false", status: http.StatusOK, meta: map[string]any{"replayed": false}, args: []string{"post", "create", "--content", "valid"}},
-		{name: "create status conflicts true", status: http.StatusCreated, meta: map[string]any{"replayed": true}, args: []string{"post", "create", "--content", "valid"}},
-		{name: "delete missing deleted", status: http.StatusOK, meta: map[string]any{}, args: []string{"post", "delete", canonical.ID, "--yes"}},
-		{name: "delete false", status: http.StatusOK, meta: map[string]any{"deleted": false}, args: []string{"post", "delete", canonical.ID, "--yes"}},
-		{name: "delete wrong type", status: http.StatusOK, meta: map[string]any{"deleted": "true"}, args: []string{"post", "delete", canonical.ID, "--yes"}},
+		{name: "create missing replayed", status: http.StatusCreated, meta: map[string]any{"request_id": "req"}, args: []string{"post", "create", "--content", "valid"}},
+		{name: "create wrong replayed type", status: http.StatusCreated, meta: map[string]any{"request_id": "req", "replayed": "false"}, args: []string{"post", "create", "--content", "valid"}},
+		{name: "create status conflicts false", status: http.StatusOK, meta: map[string]any{"request_id": "req", "replayed": false}, args: []string{"post", "create", "--content", "valid"}},
+		{name: "create status conflicts true", status: http.StatusCreated, meta: map[string]any{"request_id": "req", "replayed": true}, args: []string{"post", "create", "--content", "valid"}},
+		{name: "delete missing deleted", status: http.StatusOK, meta: map[string]any{"request_id": "req"}, args: []string{"post", "delete", canonical.ID, "--yes"}},
+		{name: "delete false", status: http.StatusOK, meta: map[string]any{"request_id": "req", "deleted": false}, args: []string{"post", "delete", canonical.ID, "--yes"}},
+		{name: "delete wrong type", status: http.StatusOK, meta: map[string]any{"request_id": "req", "deleted": "true"}, args: []string{"post", "delete", canonical.ID, "--yes"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

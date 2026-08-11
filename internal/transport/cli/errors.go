@@ -260,10 +260,14 @@ func validCommandError(commandError *CommandError) bool {
 	if commandError.ExitCode < ExitInvalidInput || commandError.ExitCode > ExitInternal {
 		return false
 	}
-	if commandError.Code == "" || commandError.Code[0] < 'A' || commandError.Code[0] > 'Z' {
+	return validStableErrorCode(commandError.Code)
+}
+
+func validStableErrorCode(code string) bool {
+	if code == "" || code[0] < 'A' || code[0] > 'Z' {
 		return false
 	}
-	for _, character := range commandError.Code {
+	for _, character := range code {
 		if (character < 'A' || character > 'Z') && (character < '0' || character > '9') && character != '_' {
 			return false
 		}

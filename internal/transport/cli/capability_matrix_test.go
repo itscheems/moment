@@ -144,6 +144,10 @@ func TestCheckedInCapabilityMatrixMatchesEveryRegisteredLeaf(t *testing.T) {
 		if row.ExpectedExits[1] != ExitInvalidInput || row.ExpectedExits[len(row.ExpectedExits)-1] != ExitInternal {
 			t.Fatalf("%s omits common input/internal exits: %#v", row.Command, row.ExpectedExits)
 		}
+		if (row.Command == "init" || row.Command == "owner init") &&
+			!reflect.DeepEqual(row.Direct.Locks, []string{"import:exclusive", "serve:exclusive"}) {
+			t.Fatalf("%s initialization lock order = %#v", row.Command, row.Direct.Locks)
+		}
 	}
 	if len(seen) != len(leaves) {
 		missing := make([]string, 0)
@@ -268,7 +272,7 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"dev scenario":           "008cd54831c7ef825cf0e41d7370ba3026e19e9452aab49202d958cbc793b5d8",
 		"dev seed":               "652cb437617e1c3e6d94d016bb75f325710cf092008899ccc6da9dcf13d7fdbb",
 		"doctor":                 "6dd90e5897b539b1f8048d016a8e091ffdaf91392ae22902c256ab5dfcffe44e",
-		"init":                   "1aa57e0cc287754c3515c7155864ae9e79fe99d3afcd5d298e1eb3aa238b4c19",
+		"init":                   "1dd44779f406db30589ba2b0d248a147ab21a109273421425d95ebd1492edf8f",
 		"media":                  "c41a56ccf11dae431650b9b7a726820567c3f31d30612a383f5d3ce8dd0efede",
 		"media add":              "5dde8c7f45f638cef87117dd6431edde094175378e5745fe3d9dfe07811ecc7d",
 		"media get":              "6840a6e4053f84760e7a1a92efdd31c9a77965a502a2b9e41d57c9696e2618f5",
@@ -278,7 +282,7 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"media verify":           "6440583fd5a92254431d459066dfad2c2376f6145816f68ea59b142a4789ef4e",
 		"moment":                 "523e7afd292a0f8b5336537d1d8db5f808b9cb1b093a27a5005b290275a4305b",
 		"owner":                  "623d517d548b68bf12499451b46d1b4a34d4ac6b0d7252bb59db8338875e1e9d",
-		"owner init":             "3e2d3549b6ade126689229226e50f68c9b5868376873c44a1c9fa20d0818419e",
+		"owner init":             "e79729458feaa3e8d4599971244aefaffa11e9f57e67cd15ffafc48255ace663",
 		"owner rotate-token":     "3e34b359dcfd5ced8c32ea28d9160947ab67a314d327fe9a3d213142bced6e0c",
 		"owner status":           "ca4e6635f78403f88e14f77f225d3aad619123cf25c0e73b57f3daa61eb39d34",
 		"post":                   "97fba13be8410b983c125b46ffebd5f43b67f5728aef6173a39291b5006364ac",

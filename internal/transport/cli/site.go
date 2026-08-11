@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
@@ -63,7 +64,7 @@ func runSiteGet(ctx context.Context, invocation Invocation, _ CommandInput) (Res
 	case ModeDirect:
 		settings, err = directSiteGet(ctx, invocation)
 	case ModeAPI:
-		meta, err = siteAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/site", nil, false, &settings)
+		meta, err = siteAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/site", http.StatusOK, nil, false, &settings)
 	default:
 		err = errors.New("unsupported site get transport")
 	}
@@ -88,7 +89,7 @@ func runSiteUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 	case ModeDirect:
 		settings, err = directSiteUpdate(ctx, invocation, update)
 	case ModeAPI:
-		meta, err = siteAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/site", payload, true, &settings)
+		meta, err = siteAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/site", http.StatusOK, payload, true, &settings)
 	default:
 		err = errors.New("unsupported site update transport")
 	}
@@ -237,6 +238,7 @@ func siteAPIRequest(
 	invocation Invocation,
 	method string,
 	endpoint string,
+	expectedStatus int,
 	payload any,
 	authenticate bool,
 	destination any,
@@ -290,7 +292,41 @@ func siteAPIRequest(
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
 	}
-	return decodeStrictAPISuccess(responseBody, destination)
+	if response.StatusCode != expectedStatus {
+		return nil, invalidAPIResponse()
+	}
+	data, meta, err := decodeStrictAPISuccess(responseBody, destination)
+	if err != nil {
+		return nil, err
+	}
+	settings, ok := destination.(*app.SiteSettings)
+	if !ok || !validSiteAPIData(data, *settings) {
+		return nil, invalidAPIResponse()
+	}
+	return meta, nil
+}
+
+func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
+	if !hasRequiredAPIDataFields(data, "title", "bio", "timezone", "public_base_url", "avatar_media_id", "comments_enabled") ||
+		settings.Timezone == "" || settings.Timezone == "Local" || strings.HasPrefix(settings.Timezone, "/") || strings.Contains(settings.Timezone, "..") {
+		return false
+	}
+	if _, err := time.LoadLocation(settings.Timezone); err != nil {
+		return false
+	}
+	if settings.PublicBaseURL != nil {
+		normalized, err := app.NormalizePublicBaseURL(*settings.PublicBaseURL, true)
+		if err != nil || normalized != *settings.PublicBaseURL {
+			return false
+		}
+	}
+	if settings.AvatarMediaID != nil {
+		id, err := domain.ParseID(*settings.AvatarMediaID)
+		if err != nil || id.String() != *settings.AvatarMediaID {
+			return false
+		}
+	}
+	return true
 }
 
 func siteResult(action string, settings app.SiteSettings) Result {

@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -112,6 +114,77 @@ func TestInitIsExactOwnerInitAlias(t *testing.T) {
 		!strings.Contains(help.stdout, "moment init --data-dir ./moment-data --json") {
 		t.Fatalf("alias help = %#v", help)
 	}
+}
+
+func TestInitAliasesDoNotMutateAServiceOwnedInstance(t *testing.T) {
+	application := momentTestApplication()
+	dataDir := t.TempDir()
+	commandData(t, execute(application, "", "owner", "init", "--data-dir", dataDir, "--json"))
+	runtimeState, err := runtimefs.Open(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeStatus, err := auth.ReadStatus(runtimeState.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve, err := runtimeState.Locks.Acquire(context.Background(), runtimefs.ServeLock, runtimefs.Exclusive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = serve.Release() }()
+	beforeTree := fingerprintOwnerInstance(t, dataDir)
+
+	for _, command := range [][]string{{"init"}, {"owner", "init"}} {
+		args := append(append([]string(nil), command...), "--data-dir", dataDir, "--json")
+		output := execute(application, "", args...)
+		if output.exit != ExitConflict || output.stderr != "" ||
+			decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INSTANCE_IN_USE" {
+			t.Fatalf("command=%v output=%#v", command, output)
+		}
+		if afterTree := fingerprintOwnerInstance(t, dataDir); !reflect.DeepEqual(beforeTree, afterTree) {
+			t.Fatalf("command=%v mutated service-owned tree\nbefore=%#v\nafter=%#v", command, beforeTree, afterTree)
+		}
+		afterStatus, err := auth.ReadStatus(runtimeState.Root)
+		if err != nil || !reflect.DeepEqual(beforeStatus, afterStatus) {
+			t.Fatalf("command=%v changed credential status: before=%#v after=%#v err=%v", command, beforeStatus, afterStatus, err)
+		}
+	}
+}
+
+func fingerprintOwnerInstance(t *testing.T, root string) map[string]string {
+	t.Helper()
+	fingerprint := make(map[string]string)
+	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			fingerprint[relative] = "directory"
+			return nil
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			fingerprint[relative] = "symlink:" + target
+			return nil
+		}
+		contents, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		fingerprint[relative] = fmt.Sprintf("file:%x", sha256.Sum256(contents))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return fingerprint
 }
 
 func TestOwnerDirectCommandsInitializeInspectRotateAndDoNotLeak(t *testing.T) {
@@ -337,13 +410,20 @@ func TestOwnerAPIStrictSuccessAndFailureEnvelopes(t *testing.T) {
 		contentType string
 		body        string
 	}{
-		{name: "success unknown envelope", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{},"extra":true}`},
-		{name: "success unknown DTO", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z","secret":"no"},"meta":{}}`},
-		{name: "success duplicate DTO", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"session_epoch":2,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{}}`},
-		{name: "success wrong content type", status: http.StatusOK, contentType: "text/plain", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{}}`},
+		{name: "success unknown envelope", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"},"extra":true}`},
+		{name: "success unknown DTO", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z","secret":"no"},"meta":{"request_id":"req"}}`},
+		{name: "success duplicate DTO", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"session_epoch":2,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`},
+		{name: "success wrong content type", status: http.StatusOK, contentType: "text/plain", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"req"}}`},
+		{name: "success missing meta", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"}}`},
+		{name: "success empty meta", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{}}`},
+		{name: "success blank request ID", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":"  "}}`},
+		{name: "success wrong request ID", status: http.StatusOK, contentType: "application/json", body: `{"data":{"initialized":true,"session_epoch":1,"initialized_at":"2026-08-10T00:00:00Z"},"meta":{"request_id":7}}`},
+		{name: "success zero status DTO", status: http.StatusOK, contentType: "application/json", body: `{"data":{},"meta":{"request_id":"req"}}`},
 		{name: "failure trailing value", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED","message":"denied","details":{},"request_id":"req"}} {}`},
 		{name: "failure unknown field", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED","message":"denied","details":{},"request_id":"req","token":"no"}}`},
 		{name: "failure duplicate code", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED","code":"INTERNAL","message":"denied","details":{},"request_id":"req"}}`},
+		{name: "failure lowercase code", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"unauthorized","message":"denied","details":{},"request_id":"req"}}`},
+		{name: "failure illegal code", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED!","message":"denied","details":{},"request_id":"req"}}`},
 		{name: "failure missing message", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED","details":{},"request_id":"req"}}`},
 		{name: "failure blank message", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED","message":"  ","details":{},"request_id":"req"}}`},
 		{name: "failure missing details", status: http.StatusUnauthorized, contentType: "application/json", body: `{"error":{"code":"UNAUTHORIZED","message":"denied","request_id":"req"}}`},
@@ -365,6 +445,20 @@ func TestOwnerAPIStrictSuccessAndFailureEnvelopes(t *testing.T) {
 				t.Fatalf("output = %#v", output)
 			}
 		})
+	}
+}
+
+func TestOwnerRotateRejectsZeroCredentialAPIResponse(t *testing.T) {
+	t.Setenv("MOMENT_TOKEN", "test-token")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"data":{},"meta":{"request_id":"req"}}`))
+	}))
+	defer server.Close()
+	output := execute(momentTestApplication(), "", "--url", server.URL, "owner", "rotate-token", "--json")
+	if output.exit != ExitUnavailable || output.stderr != "" ||
+		decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+		t.Fatalf("output = %#v", output)
 	}
 }
 

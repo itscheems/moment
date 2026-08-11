@@ -959,48 +959,7 @@ func postAPIRequest(
 }
 
 func decodePostAPIEnvelope(body []byte) (json.RawMessage, map[string]any, error) {
-	if !utf8.Valid(body) {
-		return nil, nil, errors.New("API response is not valid UTF-8")
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	token, err := decoder.Token()
-	if err != nil || token != json.Delim('{') {
-		return nil, nil, errors.New("API response is not an object")
-	}
-	var (
-		data     json.RawMessage
-		meta     map[string]any
-		seenData bool
-		seenMeta bool
-	)
-	for decoder.More() {
-		keyToken, err := decoder.Token()
-		key, ok := keyToken.(string)
-		if err != nil || !ok {
-			return nil, nil, errors.New("API response key is invalid")
-		}
-		switch key {
-		case "data":
-			if seenData || decoder.Decode(&data) != nil || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
-				return nil, nil, errors.New("API response data is invalid")
-			}
-			seenData = true
-		case "meta":
-			if seenMeta || decoder.Decode(&meta) != nil || meta == nil {
-				return nil, nil, errors.New("API response meta is invalid")
-			}
-			seenMeta = true
-		default:
-			return nil, nil, errors.New("API response contains an unknown field")
-		}
-	}
-	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || !seenData || !seenMeta {
-		return nil, nil, errors.New("API response envelope is incomplete")
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return nil, nil, errors.New("API response contains trailing data")
-	}
-	return data, meta, nil
+	return decodeStrictAPIEnvelope(body)
 }
 
 func postResult(action string, post postdto.Post, meta map[string]any) Result {

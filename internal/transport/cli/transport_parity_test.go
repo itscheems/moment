@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -91,15 +93,8 @@ func TestParityNormalizationNeverRemovesSubstantiveFields(t *testing.T) {
 func TestAllAPIFamiliesRejectIncompleteSharedErrorEnvelope(t *testing.T) {
 	const token = "CANARY_SHARED_OWNER_TOKEN"
 	t.Setenv("MOMENT_TOKEN", token)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.Header().Set("Content-Type", "application/json")
-		writer.WriteHeader(http.StatusUnauthorized)
-		_, _ = writer.Write([]byte(`{"error":{"code":"UNAUTHORIZED","message":"","details":null,"request_id":""}}`))
-	}))
-	defer server.Close()
-
 	mediaOutput := filepath.Join(t.TempDir(), "media.png")
-	tests := []struct {
+	families := []struct {
 		name string
 		args []string
 	}{
@@ -113,16 +108,182 @@ func TestAllAPIFamiliesRejectIncompleteSharedErrorEnvelope(t *testing.T) {
 		{name: "doctor", args: []string{"doctor", "--json"}},
 	}
 	application := momentTestApplication()
+	responses := []struct {
+		name string
+		body string
+	}{
+		{name: "incomplete", body: `{"error":{"code":"UNAUTHORIZED","message":"","details":null,"request_id":""}}`},
+		{name: "lowercase code", body: `{"error":{"code":"unauthorized","message":"denied","details":{},"request_id":"req"}}`},
+		{name: "illegal code", body: `{"error":{"code":"UNAUTHORIZED!","message":"denied","details":{},"request_id":"req"}}`},
+	}
+	for _, response := range responses {
+		t.Run(response.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(http.StatusUnauthorized)
+				_, _ = writer.Write([]byte(response.body))
+			}))
+			defer server.Close()
+			for _, family := range families {
+				t.Run(family.name, func(t *testing.T) {
+					args := append([]string{"--url", server.URL}, family.args...)
+					output := execute(application, "", args...)
+					document := decodeOneDocument(t, output.stdout)
+					if output.exit != ExitUnavailable || output.stderr != "" ||
+						document["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" ||
+						strings.Contains(output.stdout+output.stderr, token) {
+						t.Fatalf("output=%#v document=%#v", output, document)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestSharedSuccessAdaptersRequireServerRequestID(t *testing.T) {
+	application := momentTestApplication()
+	postFixture := newPostCLIFixture(t)
+	post := commandData(t, execute(application, "", "post", "create", "--data-dir", postFixture.dataDir,
+		"--content", "strict response metadata", "--idempotency-key", "strict-response-meta", "--json"))
+	postID := post["id"].(string)
+	commentFixture := newCommentCLIFixture(t)
+	imagePath := writeCLIImage(t)
+
+	missing := func(document map[string]any) { delete(document, "meta") }
+	empty := func(document map[string]any) { document["meta"] = map[string]any{} }
+	blank := func(document map[string]any) { document["meta"] = map[string]any{"request_id": "  "} }
+	wrongType := func(document map[string]any) { document["meta"] = map[string]any{"request_id": 7} }
+	tests := []struct {
+		name     string
+		upstream string
+		token    string
+		mutate   func(map[string]any)
+		args     []string
+	}{
+		{name: "owner empty", upstream: postFixture.server.URL, token: postFixture.token, mutate: empty, args: []string{"owner", "status", "--json"}},
+		{name: "site missing", upstream: postFixture.server.URL, token: postFixture.token, mutate: missing, args: []string{"site", "get", "--json"}},
+		{name: "media blank", upstream: postFixture.server.URL, token: postFixture.token, mutate: blank, args: []string{"media", "add", imagePath, "--json"}},
+		{name: "post wrong type", upstream: postFixture.server.URL, token: postFixture.token, mutate: wrongType, args: []string{"post", "get", postID, "--json"}},
+		{name: "comment empty", upstream: commentFixture.server.URL, token: commentFixture.token, mutate: empty, args: []string{"comment", "list", commentFixture.postID, "--json"}},
+		{name: "search blank", upstream: postFixture.server.URL, token: postFixture.token, mutate: blank, args: []string{"search", "query", "--query", "strict", "--json"}},
+	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			args := append([]string{"--url", server.URL}, test.args...)
+			proxy := newMetaMutatingProxy(t, test.upstream, test.mutate)
+			defer proxy.Close()
+			t.Setenv("MOMENT_TOKEN", test.token)
+			args := append([]string{"--url", proxy.URL}, test.args...)
 			output := execute(application, "", args...)
 			document := decodeOneDocument(t, output.stdout)
 			if output.exit != ExitUnavailable || output.stderr != "" ||
 				document["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" ||
-				strings.Contains(output.stdout+output.stderr, token) {
+				strings.Contains(output.stdout+output.stderr, test.token) {
 				t.Fatalf("output=%#v document=%#v", output, document)
 			}
 		})
 	}
+}
+
+func TestSharedSuccessAdaptersRequireExactHTTPStatus(t *testing.T) {
+	application := momentTestApplication()
+	fixture := newPostCLIFixture(t)
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	imagePath := writeCLIImage(t)
+	added := commandData(t, execute(application, "", "media", "add", imagePath, "--data-dir", fixture.dataDir, "--json"))
+	mediaID := added["media"].(map[string]any)["id"].(string)
+
+	tests := []struct {
+		name   string
+		status int
+		args   []string
+	}{
+		{name: "owner status", status: http.StatusCreated, args: []string{"owner", "status", "--json"}},
+		{name: "site get", status: http.StatusCreated, args: []string{"site", "get", "--json"}},
+		{name: "site update", status: http.StatusAccepted, args: []string{"site", "update", "--title", "Exact status", "--json"}},
+		{name: "media add", status: http.StatusOK, args: []string{"media", "add", imagePath, "--json"}},
+		{name: "media get", status: http.StatusPartialContent, args: []string{"media", "get", mediaID, "--output", filepath.Join(t.TempDir(), "media.png"), "--json"}},
+		{name: "owner rotate", status: http.StatusAccepted, args: []string{"owner", "rotate-token", "--json"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			proxy := newStatusMutatingProxy(t, fixture.server.URL, test.status)
+			defer proxy.Close()
+			args := append([]string{"--url", proxy.URL}, test.args...)
+			output := execute(application, "", args...)
+			document := decodeOneDocument(t, output.stdout)
+			if output.exit != ExitUnavailable || output.stderr != "" ||
+				document["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" ||
+				strings.Contains(output.stdout+output.stderr, fixture.token) {
+				t.Fatalf("output=%#v document=%#v", output, document)
+			}
+		})
+	}
+}
+
+func newMetaMutatingProxy(t *testing.T, upstream string, mutate func(map[string]any)) *httptest.Server {
+	t.Helper()
+	return newSuccessMutatingProxy(t, upstream, 0, mutate)
+}
+
+func newStatusMutatingProxy(t *testing.T, upstream string, status int) *httptest.Server {
+	t.Helper()
+	return newSuccessMutatingProxy(t, upstream, status, nil)
+}
+
+func newSuccessMutatingProxy(t *testing.T, upstream string, status int, mutate func(map[string]any)) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		forward, err := http.NewRequestWithContext(request.Context(), request.Method, upstream+request.URL.RequestURI(), request.Body)
+		if err != nil {
+			t.Errorf("build forwarded request: %v", err)
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		forward.Header = request.Header.Clone()
+		response, err := http.DefaultClient.Do(forward)
+		if err != nil {
+			t.Errorf("forward request: %v", err)
+			writer.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = response.Body.Close() }()
+		body, err := io.ReadAll(response.Body)
+		if err != nil {
+			t.Errorf("read forwarded response: %v", err)
+			writer.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			t.Errorf("upstream did not return success: status=%d body=%q", response.StatusCode, body)
+			writer.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		if mutate != nil {
+			var document map[string]any
+			if json.Unmarshal(body, &document) != nil {
+				t.Errorf("upstream did not return a success envelope: status=%d body=%q", response.StatusCode, body)
+				writer.WriteHeader(http.StatusBadGateway)
+				return
+			}
+			mutate(document)
+			body, err = json.Marshal(document)
+			if err != nil {
+				t.Errorf("encode mutated response: %v", err)
+				writer.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
+		for key, values := range response.Header {
+			if strings.EqualFold(key, "Content-Length") {
+				continue
+			}
+			writer.Header()[key] = append([]string(nil), values...)
+		}
+		responseStatus := status
+		if responseStatus == 0 {
+			responseStatus = response.StatusCode
+		}
+		writer.WriteHeader(responseStatus)
+		_, _ = writer.Write(body)
+	}))
 }

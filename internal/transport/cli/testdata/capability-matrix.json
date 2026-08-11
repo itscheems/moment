@@ -112,7 +112,7 @@
     },
     {
       "command": "init",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["serve:exclusive"]},
+      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive"]},
       "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
       "destructive": {"requires_yes": false, "supports_dry_run": false},
       "output_schema": "owner_credential_v1",
@@ -175,7 +175,7 @@
     },
     {
       "command": "owner init",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["serve:exclusive"]},
+      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive"]},
       "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
       "destructive": {"requires_yes": false, "supports_dry_run": false},
       "output_schema": "owner_credential_v1",

@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/moment/moment/internal/auth"
@@ -41,7 +42,7 @@ func registerOwner(application *Application) {
 		Inputs:     "A local --data-dir. No token input is accepted; a cryptographically random token is generated.",
 		Output:     "The bearer token is shown exactly once with safe owner metadata. Save it immediately.",
 		Errors:     "An active server returns INSTANCE_IN_USE; existing credentials return OWNER_ALREADY_INITIALIZED.",
-		Safety:     "Offline only. The command exclusively owns serve.lock and never overwrites an existing owner.",
+		Safety:     "Offline only. The command owns import.lock then serve.lock exclusively through database and credential initialization, and never overwrites an existing owner.",
 		Example:    "moment owner init --data-dir ./moment-data --json",
 		Capability: CapabilityDirectOnly,
 		Run:        runOwnerInit,
@@ -87,19 +88,26 @@ func runOwnerInit(ctx context.Context, invocation Invocation, _ CommandInput) (R
 	if err != nil {
 		return Result{}, ownerRuntimeError(err)
 	}
-	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
-	if err != nil {
-		return Result{}, NewCommandError(
-			"DATABASE_NOT_READY",
-			"the Moment database could not be initialized",
-			"inspect the selected data directory and retry",
-			ExitIntegrity,
-		).WithCause(err)
-	}
-	if err := database.Close(); err != nil {
-		return Result{}, err
-	}
-	credential, err := auth.InitializeOffline(ctx, runtimeState, auth.Options{})
+	var credential auth.Credential
+	err = auth.WithOfflineInitializationLocks(ctx, runtimeState, func(held *runtimefs.LeaseSet) error {
+		if err := runtimeState.RefreshCurrent(held); err != nil {
+			return err
+		}
+		database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
+		if err != nil {
+			return NewCommandError(
+				"DATABASE_NOT_READY",
+				"the Moment database could not be initialized",
+				"inspect the selected data directory and retry",
+				ExitIntegrity,
+			).WithCause(err)
+		}
+		if err := database.Close(); err != nil {
+			return err
+		}
+		credential, err = auth.InitializeOfflineWithinLocks(ctx, runtimeState, held, auth.Options{})
+		return err
+	})
 	if err != nil {
 		return Result{}, ownerAuthError(err)
 	}
@@ -124,7 +132,7 @@ func runOwnerStatus(ctx context.Context, invocation Invocation, _ CommandInput) 
 		return ownerStatusResult(status), nil
 	case ModeAPI:
 		var status auth.Status
-		meta, err := ownerAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/owner/status", &status)
+		meta, err := ownerAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/owner/status", http.StatusOK, &status)
 		if err != nil {
 			return Result{}, err
 		}
@@ -154,7 +162,7 @@ func runOwnerRotate(ctx context.Context, invocation Invocation, _ CommandInput) 
 		return ownerCredentialResult("Owner token rotated", credential), nil
 	case ModeAPI:
 		var credential auth.Credential
-		meta, err := ownerAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/token/rotate", &credential)
+		meta, err := ownerAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/token/rotate", http.StatusOK, &credential)
 		if err != nil {
 			return Result{}, err
 		}
@@ -181,17 +189,67 @@ func ownerStatusResult(status auth.Status) Result {
 	return Result{Data: status, Text: text}
 }
 
-func ownerAPIRequest(ctx context.Context, invocation Invocation, method, endpoint string, destination any) (map[string]any, error) {
-	data, meta, _, err := ownerAPIRawRequest(ctx, invocation, method, endpoint, true)
+func ownerAPIRequest(ctx context.Context, invocation Invocation, method, endpoint string, expectedStatus int, destination any) (map[string]any, error) {
+	data, meta, status, err := ownerAPIRawRequest(ctx, invocation, method, endpoint, true)
 	if err != nil {
 		return nil, err
+	}
+	if status != expectedStatus {
+		return nil, invalidAPIResponse()
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
 		return nil, invalidAPIResponse()
 	}
+	if !validOwnerAPIData(data, destination) {
+		return nil, invalidAPIResponse()
+	}
 	return meta, nil
+}
+
+func validOwnerAPIData(data json.RawMessage, destination any) bool {
+	switch value := destination.(type) {
+	case *auth.Status:
+		if !hasRequiredAPIDataFields(data, "initialized", "session_epoch") {
+			return false
+		}
+		if !value.Initialized {
+			return value.SessionEpoch == 0 && value.InitializedAt == nil && value.RotatedAt == nil
+		}
+		return value.SessionEpoch > 0 && validCanonicalAPITimePointer(value.InitializedAt) &&
+			(value.RotatedAt == nil || validCanonicalAPITimePointer(value.RotatedAt))
+	case *auth.Credential:
+		if !hasRequiredAPIDataFields(data, "token", "initialized", "session_epoch", "initialized_at") ||
+			!value.Initialized || value.SessionEpoch == 0 || len(value.Token) < 32 || strings.TrimSpace(value.Token) != value.Token ||
+			strings.ContainsAny(value.Token, " \t\r\n") || !validCanonicalAPITime(value.InitializedAt) {
+			return false
+		}
+		return value.RotatedAt == nil || validCanonicalAPITimePointer(value.RotatedAt)
+	default:
+		return false
+	}
+}
+
+func hasRequiredAPIDataFields(data json.RawMessage, required ...string) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil || fields == nil {
+		return false
+	}
+	for _, field := range required {
+		if _, present := fields[field]; !present {
+			return false
+		}
+	}
+	return true
+}
+
+func validCanonicalAPITime(value time.Time) bool {
+	return !value.IsZero() && value.Location() == time.UTC
+}
+
+func validCanonicalAPITimePointer(value *time.Time) bool {
+	return value != nil && validCanonicalAPITime(*value)
 }
 
 func ownerAPIRawRequest(ctx context.Context, invocation Invocation, method, endpoint string, strictJSON bool) (json.RawMessage, map[string]any, int, error) {
@@ -236,23 +294,21 @@ func ownerAPIRawRequest(ctx context.Context, invocation Invocation, method, endp
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, nil, response.StatusCode, decodeOwnerAPIFailure(response.StatusCode, body)
 	}
+	if strictJSON {
+		data, meta, decodeErr := decodeStrictAPIEnvelope(body)
+		if decodeErr != nil {
+			return nil, nil, response.StatusCode, invalidAPIResponse()
+		}
+		return data, meta, response.StatusCode, nil
+	}
 	var raw struct {
 		Data json.RawMessage `json:"data"`
 		Meta map[string]any  `json:"meta"`
 	}
-	if strictJSON {
-		decoder := json.NewDecoder(strings.NewReader(string(body)))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&raw); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
-			return nil, nil, response.StatusCode, invalidAPIResponse()
-		}
-	} else if err := json.Unmarshal(body, &raw); err != nil {
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, nil, response.StatusCode, invalidAPIResponse()
 	}
 	if len(raw.Data) == 0 || string(bytes.TrimSpace(raw.Data)) == "null" {
-		return nil, nil, response.StatusCode, invalidAPIResponse()
-	}
-	if strictJSON && raw.Meta == nil {
 		return nil, nil, response.StatusCode, invalidAPIResponse()
 	}
 	return raw.Data, raw.Meta, response.StatusCode, nil
@@ -267,9 +323,9 @@ func validAPIJSONContentType(value string) bool {
 	return len(parameters) == 0 || (hasCharset && strings.EqualFold(charset, "utf-8"))
 }
 
-func decodeStrictAPISuccess(body []byte, destination any) (map[string]any, error) {
+func decodeStrictAPIEnvelope(body []byte) (json.RawMessage, map[string]any, error) {
 	if err := validateUniqueJSONObjects(body); err != nil {
-		return nil, invalidAPIResponse()
+		return nil, nil, invalidAPIResponse()
 	}
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
@@ -278,15 +334,28 @@ func decodeStrictAPISuccess(body []byte, destination any) (map[string]any, error
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&envelope); err != nil || decoder.Decode(&struct{}{}) != io.EOF ||
-		len(envelope.Data) == 0 || bytes.Equal(bytes.TrimSpace(envelope.Data), []byte("null")) || envelope.Meta == nil {
-		return nil, invalidAPIResponse()
+		len(envelope.Data) == 0 || bytes.Equal(bytes.TrimSpace(envelope.Data), []byte("null")) || !validAPIResponseMeta(envelope.Meta) {
+		return nil, nil, invalidAPIResponse()
 	}
-	dataDecoder := json.NewDecoder(bytes.NewReader(envelope.Data))
+	return envelope.Data, envelope.Meta, nil
+}
+
+func validAPIResponseMeta(meta map[string]any) bool {
+	requestID, ok := meta["request_id"].(string)
+	return ok && strings.TrimSpace(requestID) != "" && strings.TrimSpace(requestID) == requestID
+}
+
+func decodeStrictAPISuccess(body []byte, destination any) (json.RawMessage, map[string]any, error) {
+	data, meta, err := decodeStrictAPIEnvelope(body)
+	if err != nil {
+		return nil, nil, err
+	}
+	dataDecoder := json.NewDecoder(bytes.NewReader(data))
 	dataDecoder.DisallowUnknownFields()
 	if err := dataDecoder.Decode(destination); err != nil || dataDecoder.Decode(&struct{}{}) != io.EOF {
-		return nil, invalidAPIResponse()
+		return nil, nil, invalidAPIResponse()
 	}
-	return envelope.Meta, nil
+	return data, meta, nil
 }
 
 func validateUniqueJSONObjects(document []byte) error {
@@ -410,7 +479,7 @@ func decodeOwnerAPIFailure(status int, body []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&envelope); err != nil || decoder.Decode(&struct{}{}) != io.EOF ||
-		strings.TrimSpace(envelope.Error.Code) == "" || strings.TrimSpace(envelope.Error.Code) != envelope.Error.Code ||
+		!validStableErrorCode(envelope.Error.Code) ||
 		strings.TrimSpace(envelope.Error.Message) == "" || envelope.Error.Details == nil ||
 		strings.TrimSpace(envelope.Error.RequestID) == "" || strings.TrimSpace(envelope.Error.RequestID) != envelope.Error.RequestID {
 		return invalidAPIResponse()

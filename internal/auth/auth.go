@@ -203,11 +203,55 @@ func InitializeOffline(ctx context.Context, runtimeState *runtimefs.Runtime, opt
 	if runtimeState == nil || runtimeState.Locks == nil {
 		return Credential{}, errors.New("resolved runtime is required")
 	}
-	lease, err := acquireOfflineLease(ctx, runtimeState.Locks)
-	if err != nil {
+	var initialized Credential
+	err := WithOfflineInitializationLocks(ctx, runtimeState, func(held *runtimefs.LeaseSet) error {
+		var initializeErr error
+		initialized, initializeErr = InitializeOfflineWithinLocks(ctx, runtimeState, held, options)
+		return initializeErr
+	})
+	return initialized, err
+}
+
+// WithOfflineInitializationLocks continuously owns Import -> Serve while an
+// instance-wide owner bootstrap operation resolves CURRENT and performs its
+// database and credential mutations.
+func WithOfflineInitializationLocks(ctx context.Context, runtimeState *runtimefs.Runtime, operation func(*runtimefs.LeaseSet) error) (err error) {
+	if runtimeState == nil || runtimeState.Locks == nil || operation == nil {
+		return errors.New("resolved runtime and initialization operation are required")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	lockContext, cancel := context.WithTimeout(ctx, offlineLockTimeout)
+	defer cancel()
+	held, acquireErr := runtimeState.Locks.AcquireSet(lockContext,
+		runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive},
+		runtimefs.LockRequest{Name: runtimefs.ServeLock, Mode: runtimefs.Exclusive},
+	)
+	if acquireErr != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if errors.Is(acquireErr, context.DeadlineExceeded) {
+			return ErrInstanceInUse
+		}
+		return fmt.Errorf("acquire offline owner initialization locks: %w", acquireErr)
+	}
+	defer func() { err = errors.Join(err, held.Release()) }()
+	return operation(held)
+}
+
+// InitializeOfflineWithinLocks publishes the first owner credential while the
+// caller continuously owns this runtime's Import -> Serve initialization set.
+func InitializeOfflineWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, options Options) (Credential, error) {
+	if err := ctx.Err(); err != nil {
 		return Credential{}, err
 	}
-	defer func() { _ = lease.Release() }()
+	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) ||
+		!held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
+		!held.Holds(runtimefs.ServeLock, runtimefs.Exclusive) {
+		return Credential{}, runtimefs.ErrInsufficientLocks
+	}
 
 	if _, err := readSnapshot(runtimeState.Root); err == nil {
 		return Credential{}, ErrAlreadyInitialized
@@ -220,6 +264,9 @@ func InitializeOffline(ctx context.Context, runtimeState *runtimefs.Runtime, opt
 	}
 	token, loaded, err := manager.newSnapshot(nil)
 	if err != nil {
+		return Credential{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return Credential{}, err
 	}
 	if err := writeSnapshot(runtimeState.Root, loaded); err != nil {

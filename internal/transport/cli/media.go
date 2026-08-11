@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -338,7 +339,53 @@ func mediaAPIUpload(ctx context.Context, invocation Invocation, filename string,
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
 	}
-	return decodeStrictAPISuccess(responseBody, destination)
+	if response.StatusCode != http.StatusCreated {
+		return nil, invalidAPIResponse()
+	}
+	data, meta, err := decodeStrictAPISuccess(responseBody, destination)
+	if err != nil {
+		return nil, err
+	}
+	if destination == nil || !validMediaUploadAPIData(data, *destination) {
+		return nil, invalidAPIResponse()
+	}
+	return meta, nil
+}
+
+func validMediaUploadAPIData(data json.RawMessage, result media.UploadResult) bool {
+	if !hasRequiredAPIDataFields(data, "media", "preview", "original_url", "preview_url") ||
+		!hasRequiredNestedAPIDataFields(data, "media", "id", "sha256", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "unreferenced_since", "animated_original") ||
+		!hasRequiredNestedAPIDataFields(data, "preview", "recipe_version", "sha256", "mime_type", "width", "height", "animated_original") {
+		return false
+	}
+	id, err := domain.ParseID(result.Media.ID.String())
+	if err != nil || id != result.Media.ID || result.Media.OriginalName == "" || !validAPIResponseSHA256(result.Media.SHA256) ||
+		!controlledMediaType(result.Media.MIMEType) || result.Media.ByteSize <= 0 || result.Media.ByteSize > media.DefaultMaxBytes ||
+		result.Media.Width == 0 || result.Media.Height == 0 || !validCanonicalAPITime(result.Media.CreatedAt) ||
+		(result.Media.UnreferencedSince != nil && !validCanonicalAPITimePointer(result.Media.UnreferencedSince)) {
+		return false
+	}
+	if result.Preview.RecipeVersion == "" || !validAPIResponseSHA256(result.Preview.SHA256) || !controlledMediaType(result.Preview.MIMEType) ||
+		result.Preview.Width == 0 || result.Preview.Height == 0 || result.Preview.AnimatedOriginal != result.Media.AnimatedOriginal {
+		return false
+	}
+	return result.OriginalURL == "/api/v1/media/"+id.String() && result.PreviewURL == "/api/v1/media/"+id.String()+"/preview"
+}
+
+func hasRequiredNestedAPIDataFields(data json.RawMessage, object string, required ...string) bool {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil {
+		return false
+	}
+	return hasRequiredAPIDataFields(fields[object], required...)
+}
+
+func validAPIResponseSHA256(value string) bool {
+	if len(value) != sha256.Size*2 || strings.ToLower(value) != value {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
 }
 
 type cliContextReader struct {
@@ -371,10 +418,16 @@ func mediaAPIDownload(ctx context.Context, invocation Invocation, id domain.ID) 
 		return media.Asset{}, err
 	}
 	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
+	if response.StatusCode != http.StatusOK {
+		if response.StatusCode >= 200 && response.StatusCode < 300 {
+			return media.Asset{}, invalidAPIResponse()
+		}
 		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
 		if readErr != nil {
 			return media.Asset{}, readErr
+		}
+		if len(body) > maxAPIResponse {
+			return media.Asset{}, invalidAPIResponse()
 		}
 		if !validAPIJSONContentType(response.Header.Get("Content-Type")) {
 			return media.Asset{}, invalidAPIResponse()

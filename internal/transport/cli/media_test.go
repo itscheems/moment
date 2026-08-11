@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -188,6 +189,37 @@ func TestMediaHelpAndCancellationContract(t *testing.T) {
 				t.Fatalf("help %s missing %q:\n%s", command, required, output.stdout)
 			}
 		}
+	}
+}
+
+func TestMediaDownloadRejectsOversizedValidAPIError(t *testing.T) {
+	valid := []byte(`{"error":{"code":"MEDIA_NOT_FOUND","message":"media is missing","details":{},"request_id":"req_media"}}`)
+	body := append(valid, bytes.Repeat([]byte(" "), maxAPIResponse+1-len(valid))...)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusNotFound)
+		_, _ = writer.Write(body)
+	}))
+	defer server.Close()
+	output := execute(momentTestApplication(), "", "--url", server.URL, "media", "get", "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+		"--output", filepath.Join(t.TempDir(), "missing.png"), "--json")
+	if output.exit != ExitUnavailable || output.stderr != "" ||
+		decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+		t.Fatalf("output = %#v", output)
+	}
+}
+
+func TestMediaAddRejectsMissingRequiredSuccessData(t *testing.T) {
+	t.Setenv("MOMENT_TOKEN", "test-token")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"data":{},"meta":{"request_id":"req_media"}}`))
+	}))
+	defer server.Close()
+	output := execute(momentTestApplication(), "", "--url", server.URL, "media", "add", writeCLIImage(t), "--json")
+	if output.exit != ExitUnavailable || output.stderr != "" ||
+		decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "DEPENDENCY_INVALID_RESPONSE" {
+		t.Fatalf("output = %#v", output)
 	}
 }
 
