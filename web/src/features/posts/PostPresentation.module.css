@@ -1,9 +1,20 @@
 .post {
   position: relative;
   display: grid;
-  grid-template-columns: 4.25rem minmax(0, 1fr);
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: var(--space-3);
   border-block-end: 1px solid var(--border-subtle);
+  padding: 0.75rem var(--space-4);
   background: var(--surface);
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.post:not(.detail) {
+  cursor: pointer;
+}
+
+.post:not(.detail):hover {
+  background: var(--surface-hover);
 }
 
 .fresh {
@@ -22,25 +33,22 @@
   }
 }
 
-.timeColumn {
-  position: relative;
-  z-index: 2;
+.avatarColumn {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-3);
-  padding-block: var(--space-4);
+  align-items: flex-start;
+  justify-content: center;
 }
 
 .avatar,
 .avatarFallback {
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  display: block;
   flex: 0 0 auto;
-  border: 2px solid var(--surface);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
   border-radius: 50%;
   background: var(--accent-soft);
-  box-shadow: 0 0 0 1px var(--border-subtle);
 }
 
 .avatar {
@@ -51,37 +59,24 @@
   display: grid;
   place-items: center;
   color: var(--accent);
-  font-family: var(--font-display);
-  font-size: var(--text-lg);
-  font-weight: 600;
-}
-
-.dateMark {
-  max-inline-size: 3.75rem;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  padding: 0.18rem 0.38rem;
-  color: var(--text-tertiary);
-  background: var(--surface);
-  font-family: var(--font-utility);
-  font-size: 0.62rem;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.025em;
-  white-space: nowrap;
+  font-size: 1rem;
+  font-weight: 750;
 }
 
 .postMain {
   min-inline-size: 0;
-  padding: var(--space-4) var(--space-6) var(--space-5) var(--space-4);
 }
 
 .byline {
-  min-block-size: 1.5rem;
+  min-block-size: 1.25rem;
   display: flex;
   align-items: baseline;
-  gap: var(--space-2);
-  color: var(--text-tertiary);
-  font-size: var(--text-sm);
+  gap: 0.28rem;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .byline strong {
@@ -90,30 +85,29 @@
   color: var(--text-primary);
   font-weight: 700;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .byline a {
-  min-block-size: 2rem;
-  display: inline-flex;
-  align-items: center;
-  color: var(--text-tertiary);
+  min-inline-size: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
   text-decoration: none;
+  text-overflow: ellipsis;
 }
 
 .byline a:hover,
 .byline a:focus-visible {
   color: var(--accent);
   text-decoration: underline;
-  text-underline-offset: 0.22em;
+  text-underline-offset: 0.18em;
 }
 
 .markdown {
-  margin-block-start: var(--space-2);
+  margin-block-start: 0.22rem;
   overflow-wrap: anywhere;
   color: var(--text-primary);
-  font-size: 1rem;
-  line-height: 1.62;
+  font-size: 0.9375rem;
+  line-height: 1.48;
 }
 
 .markdown > :first-child {
@@ -132,29 +126,28 @@
 .markdown h2,
 .markdown h3,
 .markdown h4 {
-  margin-block: 0.8em;
+  margin-block: 0.72em;
 }
 
 .markdown h1,
 .markdown h2,
 .markdown h3,
 .markdown h4 {
-  font-family: var(--font-display);
-  font-weight: 600;
-  line-height: 1.3;
+  font-weight: 750;
+  line-height: 1.25;
 }
 
 .markdown h1 {
-  font-size: 1.6rem;
+  font-size: 1.45rem;
 }
 
 .markdown h2 {
-  font-size: 1.4rem;
+  font-size: 1.25rem;
 }
 
 .markdown h3,
 .markdown h4 {
-  font-size: 1.18rem;
+  font-size: 1.08rem;
 }
 
 .markdown a {
@@ -164,9 +157,9 @@
 }
 
 .markdown blockquote {
-  border-inline-start: 2px solid var(--accent);
+  border-inline-start: 3px solid var(--border-strong);
   margin-inline: 0;
-  padding-inline-start: var(--space-4);
+  padding-inline-start: var(--space-3);
   color: var(--text-secondary);
 }
 
@@ -174,7 +167,7 @@
   border-radius: 0.3rem;
   padding: 0.08rem 0.28rem;
   background: var(--surface-muted);
-  font-family: var(--font-utility);
+  font-family: var(--font-mono);
   font-size: 0.88em;
 }
 
@@ -184,7 +177,7 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-action);
   padding: var(--space-4);
-  background: var(--canvas);
+  background: var(--surface-hover);
 }
 
 .markdown pre code {
@@ -199,79 +192,149 @@
 
 .collapsed {
   position: relative;
-  max-block-size: 14.5rem;
+  max-block-size: 18rem;
   overflow: hidden;
-  mask-image: linear-gradient(to bottom, #000 78%, transparent);
+  mask-image: linear-gradient(to bottom, #000 82%, transparent);
 }
 
-.readMore,
-.openPost {
-  min-block-size: var(--target-size);
+.readMore {
+  min-block-size: 2.25rem;
   inline-size: fit-content;
   display: flex;
   align-items: center;
-  margin-block-start: var(--space-2);
   color: var(--accent);
-  font-size: var(--text-sm);
-  font-weight: 650;
-  text-underline-offset: 0.22em;
-}
-
-.openPost {
-  color: var(--text-secondary);
-  font-weight: 500;
+  font-size: 0.9375rem;
   text-decoration: none;
 }
 
-.openPost:hover,
-.openPost:focus-visible {
-  color: var(--accent);
+.readMore:hover,
+.readMore:focus-visible {
   text-decoration: underline;
 }
 
-.detail .postMain {
-  padding-block-end: var(--space-8);
+.postActions {
+  max-inline-size: 13rem;
+  min-block-size: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-5);
+  margin-block-start: 0.3rem;
+  color: var(--text-secondary);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .fresh {
-    animation: none;
+.postAction {
+  min-inline-size: 2.25rem;
+  min-block-size: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  border-radius: 999px;
+  padding-inline: 0.42rem;
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: 0.8125rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.postAction svg {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+}
+
+.postAction:hover,
+.postAction:focus-visible {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.shareStatus {
+  position: fixed;
+  z-index: 50;
+  inset-inline-start: 50%;
+  inset-block-end: 1.5rem;
+  max-inline-size: calc(100vw - 2rem);
+  transform: translateX(-50%);
+  border-radius: 999px;
+  padding: 0.7rem 1rem;
+  color: #fff;
+  background: #0f1419;
+  box-shadow: 0 0.25rem 1rem rgb(15 20 25 / 18%);
+  font-size: 0.875rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+@media (max-width: 719px) {
+  .shareStatus {
+    inset-block-end: 4.75rem;
   }
 }
 
+.detail {
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: var(--space-3);
+  padding-block: var(--space-4);
+  cursor: default;
+}
+
+.detail .avatar,
+.detail .avatarFallback {
+  inline-size: 3rem;
+  block-size: 3rem;
+}
+
 .detail .markdown {
-  margin-block-start: var(--space-5);
-  font-size: 1.04rem;
-  line-height: 1.72;
+  margin-block-start: var(--space-4);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+}
+
+.detail .postActions {
+  max-inline-size: none;
+  justify-content: flex-start;
+  border-block-start: 1px solid var(--border-subtle);
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-2);
 }
 
 .publishedLine {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  border-block-start: 1px solid var(--border-subtle);
-  margin: var(--space-8) 0 0;
-  padding-block-start: var(--space-4);
-  color: var(--text-tertiary);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
+  margin: var(--space-5) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
 }
 
 @media (max-width: 719px) {
   .post {
-    grid-template-columns: 4.5rem minmax(0, 1fr);
-  }
-
-  .postMain {
-    padding-inline: var(--space-2) var(--space-4);
-  }
-
-  .dateMark {
-    font-size: 0.58rem;
+    gap: 0.7rem;
+    padding-inline: var(--space-3);
   }
 
   .markdown {
-    font-size: 0.96rem;
+    font-size: 0.9375rem;
+  }
+
+  .detail {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+  }
+
+  .detail .avatar,
+  .detail .avatarFallback {
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
   }
 
   .detail .markdown {
@@ -280,6 +343,14 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .fresh {
+    animation: none;
+  }
+
+  .post {
+    transition: none;
+  }
+
   .collapsed {
     mask-image: none;
   }

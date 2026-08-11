@@ -669,6 +669,9 @@ function CommentItem({
       tabIndex={-1}
     >
       <article aria-label={`${authorName}的${root ? "回应" : "一级回复"}`}>
+        <span aria-hidden="true" className={styles.commentAvatar}>
+          {Array.from(authorName)[0]?.toLocaleUpperCase() ?? "M"}
+        </span>
         <header className={styles.commentByline}>
           <strong>{authorName}</strong>
           {comment.authorKind === "owner" ? (
@@ -807,7 +810,11 @@ export function CommentThread({
   );
 
   return (
-    <section aria-labelledby="comments-heading" className={styles.thread}>
+    <section
+      aria-labelledby="comments-heading"
+      className={styles.thread}
+      id="comments"
+    >
       <header className={styles.threadHeader}>
         <span aria-hidden="true" className={styles.threadMark}>
           回应

@@ -43,9 +43,7 @@ function Brand({ site }: { site: SiteIdentity }) {
           className={styles.brandMark}
           viewBox="0 0 40 40"
         >
-          <path d="M9 31V11l11 10 11-10v20" />
-          <circle cx="9" cy="9" r="2.4" />
-          <circle cx="31" cy="9" r="2.4" />
+          <path d="M7 30V10l13 14 13-14v20" />
         </svg>
       )}
       <span>
@@ -108,59 +106,42 @@ function LeftRail({
   );
 }
 
-function MemoryRail({
-  years,
-  site,
-}: {
-  years: readonly number[];
-  site: SiteIdentity;
-}) {
-  if (years.length === 0) {
-    return null;
-  }
-
+function MemoryRail({ years }: { years: readonly number[] }) {
   return (
     <aside aria-label="记忆导航" className={styles.rightRail}>
-      <section className={styles.siteNote}>
-        <p className={styles.railEyebrow}>个人时间流</p>
-        <p>{site.bio.trim() || "把今天写下来，也让未来的自己找得到。"}</p>
-      </section>
-      <section aria-labelledby="memory-map-title" className={styles.memoryMap}>
-        <header>
-          <div>
-            <p className={styles.railEyebrow}>记忆坐标</p>
-            <h2 id="memory-map-title">按年份回看</h2>
-          </div>
-          <InternalLink href="/archive">全部</InternalLink>
-        </header>
-        <ol>
-          {years.map((value, index) => (
-            <li key={value}>
-              <InternalLink href={`/archive?year=${value}`}>
-                <span>{value}</span>
-                <small>{index === 0 ? "现在" : "过去"}</small>
-              </InternalLink>
-            </li>
-          ))}
-        </ol>
-      </section>
       <InternalLink className={styles.searchPrompt} href="/search">
         <Icon name="search" />
         <span>
-          <strong>找回一句话</strong>
-          <small>从文字与日期开始</small>
+          <strong>搜索 Moment</strong>
+          <small>按文字或日期查找</small>
         </span>
       </InternalLink>
+      {years.length > 0 ? (
+        <section
+          aria-labelledby="memory-map-title"
+          className={styles.memoryMap}
+        >
+          <header>
+            <div>
+              <p className={styles.railEyebrow}>你的归档</p>
+              <h2 id="memory-map-title">按年份回看</h2>
+            </div>
+            <InternalLink href="/archive">查看全部</InternalLink>
+          </header>
+          <ol>
+            {years.map((value, index) => (
+              <li key={value}>
+                <InternalLink href={`/archive?year=${value}`}>
+                  <span>{value}</span>
+                  <small>{index === 0 ? "现在" : "过去"}</small>
+                </InternalLink>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
+      <p className={styles.rightFooter}>Moment · 私人的公开时间流</p>
     </aside>
-  );
-}
-
-function MobileHeader({ site }: { site: SiteIdentity }) {
-  return (
-    <header className={styles.mobileHeader}>
-      <Brand site={site} />
-      <ThemeMenu />
-    </header>
   );
 }
 
@@ -211,7 +192,6 @@ export function AppShell({
       <a className={styles.skipLink} href="#main-content">
         跳到主要内容
       </a>
-      <MobileHeader site={site} />
       <div className={styles.shell}>
         <LeftRail
           ownerSettingsAvailable={ownerSettingsAvailable}
@@ -232,7 +212,11 @@ export function AppShell({
               >
                 <Icon name="back" />
               </InternalLink>
-            ) : null}
+            ) : (
+              <span className={styles.mobileAvatar}>
+                <SiteAvatar eager site={site} />
+              </span>
+            )}
             <div>
               <p>{route.eyebrow}</p>
               <h1>{route.title}</h1>
@@ -240,10 +224,13 @@ export function AppShell({
             {route.ownerOnly ? (
               <span className={styles.ownerBadge}>Owner</span>
             ) : null}
+            <span className={styles.headerTheme}>
+              <ThemeMenu />
+            </span>
           </header>
           {children ?? <ShellState route={route} state={state} />}
         </main>
-        <MemoryRail site={site} years={memoryYears} />
+        <MemoryRail years={memoryYears} />
       </div>
       <MobileNavigation
         ownerSettingsAvailable={ownerSettingsAvailable}

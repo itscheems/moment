@@ -7,6 +7,7 @@ import {
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { MediaComposer } from "../media/MediaComposer";
+import { SiteAvatar } from "../posts/PostPresentation";
 import {
   altValue,
   applyUpload,
@@ -583,7 +584,7 @@ export function Composer({
       className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer}`}
     >
       <div aria-hidden="true" className={styles.newTick}>
-        <span />
+        <SiteAvatar site={site} />
       </div>
       <div className={styles.composerMain}>
         <header className={styles.composerHeader}>

@@ -6,7 +6,7 @@
 .moreError,
 .endMark {
   border-block-end: 1px solid var(--border-subtle);
-  padding: var(--space-4) var(--space-6) var(--space-6) 4.25rem;
+  padding: var(--space-4);
 }
 
 .moreRow button,
@@ -61,6 +61,6 @@
   .moreRow,
   .moreError,
   .endMark {
-    padding-inline: 4.5rem var(--space-4);
+    padding-inline: var(--space-3);
   }
 }

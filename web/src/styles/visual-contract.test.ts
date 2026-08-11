@@ -28,7 +28,9 @@ function contrast(foreground: string, background: string): number {
 
 describe("visual foundation contract", () => {
   it("locks the wide, tablet, and mobile shell boundaries", () => {
-    expect(shellCss).toContain("minmax(38.75rem, 41.25rem)");
+    expect(shellCss).toContain(
+      "minmax(13rem, 17.25rem) 37.5rem minmax(19rem, 22rem)",
+    );
     expect(shellCss).toContain(
       "@media (min-width: 720px) and (max-width: 1279px)",
     );
@@ -49,10 +51,9 @@ describe("visual foundation contract", () => {
   });
 
   it("keeps small tertiary copy readable on every light surface", () => {
-    const tertiary = "#657168";
+    const tertiary = "#536471";
     expect(globalCss).toContain(`--text-tertiary: ${tertiary}`);
-    expect(contrast(tertiary, "#f3f6f3")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(tertiary, "#fbfcfb")).toBeGreaterThanOrEqual(4.5);
     expect(contrast(tertiary, "#ffffff")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(tertiary, "#f7f9f9")).toBeGreaterThanOrEqual(4.5);
   });
 });

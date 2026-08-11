@@ -4,9 +4,9 @@
 
 .searchForm {
   display: grid;
-  gap: var(--space-4);
+  gap: var(--space-3);
   border-block-end: 1px solid var(--border-subtle);
-  padding: var(--space-6);
+  padding: var(--space-3) var(--space-4) var(--space-4);
   background: var(--surface);
 }
 
@@ -23,27 +23,34 @@
   font-weight: 650;
 }
 
+.queryField > span {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
 .queryField input {
-  min-block-size: 3.25rem;
+  min-block-size: 2.75rem;
   inline-size: 100%;
-  border: 0;
-  border-block-end: 2px solid var(--border-strong);
-  border-radius: 0;
-  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
   color: var(--text-primary);
-  background: transparent;
-  font-family: var(--font-display);
-  font-size: clamp(1.35rem, 4vw, 2rem);
-  letter-spacing: -0.025em;
+  background: var(--surface-muted);
+  font-size: 1rem;
 }
 
 .queryField input:focus {
-  border-block-end-color: var(--accent);
+  border-color: var(--accent);
+  outline: none;
+  background: var(--surface);
 }
 
 .queryField small {
+  padding-inline: var(--space-4);
   color: var(--text-tertiary);
-  font-family: var(--font-utility);
   font-size: var(--text-xs);
 }
 
@@ -55,7 +62,7 @@
 }
 
 .dateFields input {
-  min-block-size: var(--target-size);
+  min-block-size: 2.75rem;
   inline-size: 100%;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-action);
@@ -77,7 +84,7 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--accent);
-  border-radius: var(--radius-action);
+  border-radius: 999px;
   padding-inline: var(--space-4);
   color: var(--accent-contrast);
   background: var(--accent);
@@ -127,44 +134,30 @@
 }
 
 .message {
-  display: grid;
-  grid-template-columns: 4.25rem minmax(0, 1fr);
-  min-block-size: 19rem;
+  min-block-size: 17rem;
   border-block-end: 1px solid var(--border-subtle);
-  padding: var(--space-8) var(--space-8) var(--space-8) 0;
+  padding: 3.5rem var(--space-8);
 }
 
 .message > span {
-  z-index: 2;
-  align-self: start;
-  justify-self: center;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  padding: var(--space-2) var(--space-1);
-  color: var(--accent);
-  background: var(--surface);
-  font-family: var(--font-utility);
-  font-size: 0.65rem;
-  writing-mode: vertical-rl;
+  display: none;
 }
 
 .message > div {
-  max-inline-size: 31rem;
-  padding-inline-start: var(--space-5);
+  max-inline-size: 28rem;
 }
 
 .message h2 {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(1.55rem, 4vw, 2.35rem);
-  font-weight: 500;
-  letter-spacing: -0.04em;
+  font-size: clamp(1.65rem, 4vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
 }
 
 .message p {
-  margin: var(--space-4) 0 0;
+  margin: var(--space-3) 0 0;
   color: var(--text-secondary);
-  line-height: 1.7;
+  line-height: 1.5;
 }
 
 .message > div > a,
@@ -374,10 +367,9 @@
 
 .archiveIntro h2 {
   margin-block-start: var(--space-2);
-  font-family: var(--font-display);
-  font-size: clamp(1.4rem, 4vw, 2rem);
-  font-weight: 500;
-  letter-spacing: -0.035em;
+  font-size: clamp(1.35rem, 4vw, 1.7rem);
+  font-weight: 800;
+  letter-spacing: -0.025em;
 }
 
 .archiveIntro > span {
@@ -429,7 +421,7 @@
 
 .archiveYears h2 {
   font-size: var(--text-2xl);
-  font-weight: 500;
+  font-weight: 750;
 }
 
 .archiveYears header span {
@@ -466,8 +458,8 @@
 }
 
 .archiveYears li strong {
-  font-family: var(--font-display);
   font-size: var(--text-lg);
+  font-weight: 700;
 }
 
 .archiveYears li span {
@@ -599,12 +591,12 @@
   }
 
   .message {
-    grid-template-columns: 4.5rem minmax(0, 1fr);
-    padding: var(--space-8) var(--space-4) var(--space-8) 0;
+    min-block-size: 15rem;
+    padding: var(--space-8) var(--space-5);
   }
 
   .message > div {
-    padding-inline-start: var(--space-2);
+    padding: 0;
   }
 
   .searchSummary,

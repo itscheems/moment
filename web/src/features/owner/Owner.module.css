@@ -17,7 +17,7 @@
 .dialogTrigger {
   min-block-size: var(--target-size);
   border: 0;
-  border-radius: var(--radius-action);
+  border-radius: 999px;
   padding-inline: var(--space-4);
   font-weight: 650;
   cursor: pointer;
@@ -128,8 +128,10 @@
 .composer {
   position: relative;
   display: grid;
-  grid-template-columns: 4.25rem minmax(0, 1fr);
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: var(--space-3);
   border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-3) var(--space-4);
   background: var(--surface);
 }
 
@@ -142,43 +144,26 @@
 }
 
 .newTick {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  justify-content: center;
-  padding-block-start: var(--space-5);
-}
-
-.newTick::before {
-  content: "NOW";
-  min-inline-size: 2.75rem;
-  block-size: 1.55rem;
   display: grid;
   place-items: center;
-  border: 1px solid var(--accent);
-  border-radius: 999px;
-  color: var(--accent);
-  background: var(--surface);
-  font-family: var(--font-utility);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
+  border-radius: 50%;
+  align-self: start;
 }
 
-.newTick span {
-  position: absolute;
-  inset-block-start: 3.65rem;
-  inline-size: 0.5rem;
-  block-size: 0.5rem;
-  border: 2px solid var(--surface);
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+.newTick > img,
+.newTick > span {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  font-size: 1rem;
 }
 
 .composerMain {
   min-inline-size: 0;
-  padding: var(--space-5) var(--space-6) var(--space-6) var(--space-4);
+  padding: 0;
+}
+
+.inlineComposer .composerHeader {
+  display: none;
 }
 
 .composerHeader {
@@ -190,9 +175,8 @@
 
 .composerHeader h2 {
   margin: var(--space-1) 0 0;
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  font-weight: 600;
+  font-size: 1.15rem;
+  font-weight: 750;
   letter-spacing: -0.025em;
 }
 
@@ -204,7 +188,11 @@
 
 .composerForm {
   display: grid;
-  margin-block-start: var(--space-4);
+  margin-block-start: var(--space-2);
+}
+
+.inlineComposer .composerForm {
+  margin-block-start: 0;
 }
 
 .composerForm > label {
@@ -219,13 +207,14 @@
   inline-size: 100%;
   resize: vertical;
   border: 0;
-  border-block: 1px solid var(--border-subtle);
+  border: 0;
+  border-block-end: 1px solid var(--border-subtle);
   border-radius: 0;
-  padding: var(--space-4) 0;
+  padding: var(--space-2) 0 var(--space-3);
   color: var(--text-primary);
   background: transparent;
-  font-size: 1.05rem;
-  line-height: 1.62;
+  font-size: 1.1rem;
+  line-height: 1.48;
 }
 
 .composerForm textarea::placeholder {
@@ -279,8 +268,8 @@
 }
 
 .composerFooter {
-  min-block-size: 3.5rem;
-  margin-block-start: var(--space-3);
+  min-block-size: 2.75rem;
+  margin-block-start: var(--space-2);
 }
 
 .composerFooter p {

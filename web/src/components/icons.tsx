@@ -1,7 +1,15 @@
 import type { SVGProps } from "react";
 
 export type IconName =
-  "home" | "search" | "archive" | "publish" | "owner" | "theme" | "back";
+  | "home"
+  | "search"
+  | "archive"
+  | "publish"
+  | "owner"
+  | "theme"
+  | "back"
+  | "reply"
+  | "share";
 
 const paths: Record<IconName, React.ReactNode> = {
   home: (
@@ -41,6 +49,15 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="m14.5 6-6 6 6 6" />
       <path d="M9 12h10" />
+    </>
+  ),
+  reply: (
+    <path d="M20 11.5a7.5 7.5 0 0 1-8 7.45 8.7 8.7 0 0 1-3.2-.92L4 19l1.1-4.2A7.5 7.5 0 1 1 20 11.5Z" />
+  ),
+  share: (
+    <>
+      <path d="M12 16V4M7.5 8.5 12 4l4.5 4.5" />
+      <path d="M5 13.5V20h14v-6.5" />
     </>
   ),
 };
