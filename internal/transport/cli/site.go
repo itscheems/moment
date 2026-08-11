@@ -284,20 +284,13 @@ func siteAPIRequest(
 	if len(responseBody) > maxAPIResponse {
 		return nil, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the Moment API response exceeded the allowed size", "check the server and reverse proxy configuration", ExitUnavailable)
 	}
+	if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(responseBody) != nil {
+		return nil, invalidAPIResponse()
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
 	}
-	var envelope struct {
-		Data json.RawMessage `json:"data"`
-		Meta map[string]any  `json:"meta"`
-	}
-	if err := json.Unmarshal(responseBody, &envelope); err != nil || len(envelope.Data) == 0 {
-		return nil, invalidAPIResponse()
-	}
-	if err := json.Unmarshal(envelope.Data, destination); err != nil {
-		return nil, invalidAPIResponse()
-	}
-	return envelope.Meta, nil
+	return decodeStrictAPISuccess(responseBody, destination)
 }
 
 func siteResult(action string, settings app.SiteSettings) Result {
@@ -324,22 +317,9 @@ func siteCLIError(err error) error {
 	if !errors.As(err, &domainErr) {
 		return err
 	}
-	exit := ExitInternal
-	suggestion := "retry once; if it repeats, inspect the selected Moment instance"
-	switch domainErr.Code {
-	case domain.CodeInvalidArgument:
-		exit = ExitInvalidInput
-		suggestion = "correct the named setting and retry"
-	case domain.CodeMediaNotFound:
-		exit = ExitNotFound
-		suggestion = "choose an existing managed media ID or clear the avatar"
-	case domain.CodeDataIntegrityFailed:
-		exit = ExitIntegrity
-		suggestion = "run diagnostics before changing site settings"
-	}
 	message := strings.TrimSpace(domainErr.Message)
 	if message == "" {
 		message = "the site settings operation failed"
 	}
-	return NewCommandError(string(domainErr.Code), message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+	return canonicalPublicError(string(domainErr.Code), message, domainErr.Details, 0).WithCause(err)
 }

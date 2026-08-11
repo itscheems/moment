@@ -217,6 +217,18 @@ func TestBackupExportAPIParityHeaderValidationTruncationAndTimeout(t *testing.T)
 		t.Fatalf("truncated API left partial files: %#v", partials)
 	}
 
+	preparationTimeout := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusGatewayTimeout)
+		_, _ = io.WriteString(writer, `{"error":{"code":"EXPORT_PREPARATION_TIMEOUT","message":"archive preparation exceeded its time budget","details":{},"request_id":"req_export_timeout"}}`)
+	}))
+	preparationTimeoutOutput := execute(application, "", "--url", preparationTimeout.URL, "backup", "export", "--output", filepath.Join(t.TempDir(), "timeout.zip"), "--json")
+	preparationTimeout.Close()
+	if preparationTimeoutOutput.exit != ExitTimeout || preparationTimeoutOutput.stderr != "" ||
+		decodeOneDocument(t, preparationTimeoutOutput.stdout)["error"].(map[string]any)["code"] != "EXPORT_PREPARATION_TIMEOUT" {
+		t.Fatalf("preparation timeout = %#v", preparationTimeoutOutput)
+	}
+
 	invalid := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/zip")
 		writer.Header().Set("X-Archive-Format", archive.FormatHeaderValue)

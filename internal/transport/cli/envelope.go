@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -14,20 +15,42 @@ type envelope struct {
 	Error *CommandError  `json:"error,omitempty"`
 }
 
+// jsonOutputError distinguishes a failed stdout write from a failed JSON
+// encoding. Once any part of a document may have reached stdout, callers must
+// never append a fallback document to the same stream.
+type jsonOutputError struct{ cause error }
+
+func (err *jsonOutputError) Error() string { return err.cause.Error() }
+func (err *jsonOutputError) Unwrap() error { return err.cause }
+
+func isJSONOutputError(err error) bool {
+	var outputErr *jsonOutputError
+	return errors.As(err, &outputErr)
+}
+
 func writeJSONDocument(writer io.Writer, value any) error {
 	document, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
 	document = append(document, '\n')
-	_, err = writer.Write(document)
-	return err
+	written, err := writer.Write(document)
+	if err == nil && written != len(document) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		return &jsonOutputError{cause: err}
+	}
+	return nil
 }
 
 func writeMachineError(writer io.Writer, commandError *CommandError) (ExitCode, error) {
 	err := writeJSONDocument(writer, envelope{OK: false, Error: commandError})
 	if err == nil {
 		return commandError.ExitCode, nil
+	}
+	if isJSONOutputError(err) {
+		return ExitInternal, err
 	}
 	fallback := internalError(err)
 	return ExitInternal, writeJSONDocument(writer, envelope{OK: false, Error: fallback})

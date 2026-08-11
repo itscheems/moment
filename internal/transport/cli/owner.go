@@ -34,7 +34,7 @@ type apiFailure struct {
 }
 
 func registerOwner(application *Application) {
-	application.MustRegisterLeaf(LeafSpec{
+	initSpec := LeafSpec{
 		Path:       []string{"owner", "init"},
 		Short:      "Initialize the single owner credential",
 		Long:       "Initialize the local Moment instance and create its single owner credential offline.",
@@ -45,7 +45,14 @@ func registerOwner(application *Application) {
 		Example:    "moment owner init --data-dir ./moment-data --json",
 		Capability: CapabilityDirectOnly,
 		Run:        runOwnerInit,
-	})
+	}
+	application.MustRegisterLeaf(initSpec)
+	initAlias := initSpec
+	initAlias.Path = []string{"init"}
+	initAlias.Short = "Initialize the Moment instance and owner"
+	initAlias.Long = "Initialize the local Moment instance and create its single owner credential offline. This is the exact public alias of 'moment owner init'."
+	initAlias.Example = "moment init --data-dir ./moment-data --json"
+	application.MustRegisterLeaf(initAlias)
 	application.MustRegisterLeaf(LeafSpec{
 		Path:       []string{"owner", "status"},
 		Short:      "Inspect safe owner authentication status",
@@ -175,11 +182,13 @@ func ownerStatusResult(status auth.Status) Result {
 }
 
 func ownerAPIRequest(ctx context.Context, invocation Invocation, method, endpoint string, destination any) (map[string]any, error) {
-	data, meta, _, err := ownerAPIRawRequest(ctx, invocation, method, endpoint, false)
+	data, meta, _, err := ownerAPIRawRequest(ctx, invocation, method, endpoint, true)
 	if err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(data, destination); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
 		return nil, invalidAPIResponse()
 	}
 	return meta, nil
@@ -221,19 +230,11 @@ func ownerAPIRawRequest(ctx context.Context, invocation Invocation, method, endp
 			ExitUnavailable,
 		)
 	}
+	if strictJSON && (!validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(body) != nil) {
+		return nil, nil, response.StatusCode, invalidAPIResponse()
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, nil, response.StatusCode, decodeOwnerAPIFailure(response.StatusCode, body)
-	}
-	if strictJSON {
-		mediaType, parameters, contentTypeErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
-		charset, hasCharset := parameters["charset"]
-		if contentTypeErr != nil || mediaType != "application/json" || len(parameters) > 1 ||
-			(len(parameters) == 1 && (!hasCharset || !strings.EqualFold(charset, "utf-8"))) {
-			return nil, nil, response.StatusCode, invalidAPIResponse()
-		}
-		if err := validateUniqueJSONObjects(body); err != nil {
-			return nil, nil, response.StatusCode, invalidAPIResponse()
-		}
 	}
 	var raw struct {
 		Data json.RawMessage `json:"data"`
@@ -255,6 +256,37 @@ func ownerAPIRawRequest(ctx context.Context, invocation Invocation, method, endp
 		return nil, nil, response.StatusCode, invalidAPIResponse()
 	}
 	return raw.Data, raw.Meta, response.StatusCode, nil
+}
+
+func validAPIJSONContentType(value string) bool {
+	mediaType, parameters, err := mime.ParseMediaType(value)
+	if err != nil || mediaType != "application/json" || len(parameters) > 1 {
+		return false
+	}
+	charset, hasCharset := parameters["charset"]
+	return len(parameters) == 0 || (hasCharset && strings.EqualFold(charset, "utf-8"))
+}
+
+func decodeStrictAPISuccess(body []byte, destination any) (map[string]any, error) {
+	if err := validateUniqueJSONObjects(body); err != nil {
+		return nil, invalidAPIResponse()
+	}
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+		Meta map[string]any  `json:"meta"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil || decoder.Decode(&struct{}{}) != io.EOF ||
+		len(envelope.Data) == 0 || bytes.Equal(bytes.TrimSpace(envelope.Data), []byte("null")) || envelope.Meta == nil {
+		return nil, invalidAPIResponse()
+	}
+	dataDecoder := json.NewDecoder(bytes.NewReader(envelope.Data))
+	dataDecoder.DisallowUnknownFields()
+	if err := dataDecoder.Decode(destination); err != nil || dataDecoder.Decode(&struct{}{}) != io.EOF {
+		return nil, invalidAPIResponse()
+	}
+	return envelope.Meta, nil
 }
 
 func validateUniqueJSONObjects(document []byte) error {
@@ -372,55 +404,18 @@ func validateAPIToken(value, source string) (string, error) {
 
 func decodeOwnerAPIFailure(status int, body []byte) error {
 	var envelope apiFailure
-	if err := json.Unmarshal(body, &envelope); err != nil || envelope.Error.Code == "" {
+	if err := validateUniqueJSONObjects(body); err != nil {
 		return invalidAPIResponse()
 	}
-	exit := ExitUnavailable
-	suggestion := "inspect the running Moment server and retry"
-	switch envelope.Error.Code {
-	case "UNAUTHORIZED", "CSRF_INVALID":
-		exit = ExitUnauthorized
-		suggestion = "update MOMENT_TOKEN or --token-file with the current owner token"
-	case "INSTANCE_IN_USE", "OWNER_ALREADY_INITIALIZED", "OWNER_NOT_INITIALIZED":
-		exit = ExitConflict
-	case "INVALID_ARGUMENT":
-		exit = ExitInvalidInput
-	case "POST_NOT_FOUND":
-		exit = ExitNotFound
-		suggestion = "run 'moment post list --json' to inspect available posts"
-	case "COMMENT_NOT_FOUND":
-		exit = ExitNotFound
-		suggestion = "run 'moment comment list <post-id> --json' to inspect available comments"
-	case "CONTENT_EMPTY", "CONTENT_TOO_LARGE", "EXTERNAL_IMAGE_NOT_ALLOWED", "IDEMPOTENCY_KEY_REUSED":
-		exit = ExitConflict
-		suggestion = "correct the content or use a new idempotency key, then retry"
-	case "MEDIA_NOT_FOUND":
-		exit = ExitNotFound
-		suggestion = "choose an existing managed media ID or clear the reference"
-	case "DATA_INTEGRITY_FAILED", "EXPORT_INVALID", "EXPORT_CHECKSUM_MISMATCH", "EXPORT_VERSION_UNSUPPORTED":
-		exit = ExitIntegrity
-		suggestion = "run diagnostics before retrying"
-	case "IMPORT_DISK_SPACE_INSUFFICIENT":
-		exit = ExitIO
-		suggestion = "free the reported additional bytes on the server data filesystem, then retry"
-	case "IMPORT_IN_PROGRESS", "IMPORT_STAGING_INVALID", "IMPORT_STAGING_EXPIRED":
-		exit = ExitConflict
-		suggestion = "finish, discard, or wait for the existing staging inspection before retrying"
-	case "CANCELLED", "TIMEOUT":
-		exit = ExitTimeout
-		suggestion = "retry when the caller can keep the operation context active"
-	case "INTERNAL":
-		exit = ExitInternal
-	default:
-		if status >= 400 && status < 500 {
-			exit = ExitConflict
-		}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil || decoder.Decode(&struct{}{}) != io.EOF ||
+		strings.TrimSpace(envelope.Error.Code) == "" || strings.TrimSpace(envelope.Error.Code) != envelope.Error.Code ||
+		strings.TrimSpace(envelope.Error.Message) == "" || envelope.Error.Details == nil ||
+		strings.TrimSpace(envelope.Error.RequestID) == "" || strings.TrimSpace(envelope.Error.RequestID) != envelope.Error.RequestID {
+		return invalidAPIResponse()
 	}
-	message := strings.TrimSpace(envelope.Error.Message)
-	if message == "" {
-		message = "the Moment API rejected the owner request"
-	}
-	return NewCommandError(envelope.Error.Code, message, suggestion, exit).WithDetails(envelope.Error.Details)
+	return canonicalPublicError(envelope.Error.Code, envelope.Error.Message, envelope.Error.Details, status)
 }
 
 func invalidAPIResponse() error {

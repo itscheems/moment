@@ -430,12 +430,11 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 	if len(body) > maxAPIResponse {
 		return archive.Inspection{}, nil, invalidAPIResponse()
 	}
+	if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(body) != nil {
+		return archive.Inspection{}, nil, invalidAPIResponse()
+	}
 	if response.StatusCode != http.StatusCreated {
 		return archive.Inspection{}, nil, decodeOwnerAPIFailure(response.StatusCode, body)
-	}
-	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if parseErr != nil || mediaType != "application/json" {
-		return archive.Inspection{}, nil, invalidAPIResponse()
 	}
 	inspection, meta, err := decodeImportInspectionAPI(body, after.Size(), time.Now().UTC())
 	if err != nil {
@@ -525,12 +524,11 @@ func uploadImportArchive(ctx context.Context, invocation Invocation, archivePath
 	if len(body) > maxAPIResponse {
 		return nil, 0, invalidAPIResponse()
 	}
+	if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(body) != nil {
+		return nil, 0, invalidAPIResponse()
+	}
 	if response.StatusCode != successStatus {
 		return nil, 0, decodeOwnerAPIFailure(response.StatusCode, body)
-	}
-	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if parseErr != nil || mediaType != "application/json" {
-		return nil, 0, invalidAPIResponse()
 	}
 	return body, after.Size(), nil
 }
@@ -571,12 +569,11 @@ func commitImportAPI(ctx context.Context, invocation Invocation, stagingToken st
 	if len(responseBody) > maxAPIResponse {
 		return archive.CommitResult{}, nil, invalidAPIResponse()
 	}
+	if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(responseBody) != nil {
+		return archive.CommitResult{}, nil, invalidAPIResponse()
+	}
 	if response.StatusCode != http.StatusOK {
 		return archive.CommitResult{}, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
-	}
-	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if parseErr != nil || mediaType != "application/json" {
-		return archive.CommitResult{}, nil, invalidAPIResponse()
 	}
 	result, meta, err := decodeImportCommitAPI(responseBody)
 	if err != nil {
@@ -616,12 +613,11 @@ func importStatusAPI(ctx context.Context, invocation Invocation) (archive.Commit
 	if len(responseBody) > maxAPIResponse {
 		return archive.CommitStatus{}, nil, invalidAPIResponse()
 	}
+	if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(responseBody) != nil {
+		return archive.CommitStatus{}, nil, invalidAPIResponse()
+	}
 	if response.StatusCode != http.StatusOK {
 		return archive.CommitStatus{}, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
-	}
-	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if parseErr != nil || mediaType != "application/json" {
-		return archive.CommitStatus{}, nil, invalidAPIResponse()
 	}
 	status, meta, err := decodeImportStatusAPI(responseBody)
 	if err != nil {
@@ -1177,21 +1173,7 @@ func backupInspectCLIError(err error) error {
 	}
 	var domainErr *domain.Error
 	if errors.As(err, &domainErr) {
-		exit := ExitIntegrity
-		suggestion := "repair or re-export the archive, then inspect it again"
-		switch domainErr.Code {
-		case domain.CodeInvalidArgument:
-			exit = ExitInvalidInput
-		case domain.CodeUnauthorized:
-			exit = ExitUnauthorized
-		case domain.CodeImportInProgress, domain.CodeImportStagingExpired:
-			exit = ExitConflict
-			suggestion = "finish, discard, or wait for the existing staging inspection before retrying"
-		case domain.CodeImportDiskSpaceInsufficient:
-			exit = ExitIO
-			suggestion = "free the reported additional bytes on the Moment data filesystem, then retry"
-		}
-		return NewCommandError(string(domainErr.Code), domainErr.Message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+		return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
 	}
 	if errors.Is(err, runtimefs.ErrIncompleteLayout) || errors.Is(err, runtimefs.ErrInvalidInstance) || errors.Is(err, runtimefs.ErrInvalidCurrent) {
 		return NewCommandError("INSTANCE_NOT_READY", "the Moment data directory is not a complete readable instance", "initialize or repair the selected data directory before retrying import inspection", ExitIO).WithCause(err)
@@ -1209,25 +1191,7 @@ func backupImportCLIError(err error) error {
 	}
 	var domainErr *domain.Error
 	if errors.As(err, &domainErr) {
-		exit := ExitIntegrity
-		suggestion := "check authenticated import status and run doctor before retrying; never replay an already claimed token"
-		switch domainErr.Code {
-		case domain.CodeInvalidArgument:
-			exit = ExitInvalidInput
-		case domain.CodeUnauthorized:
-			exit = ExitUnauthorized
-			suggestion = "authenticate again and inspect a new archive under the current owner epoch"
-		case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeImportStagingExpired, domain.CodeInstanceInUse:
-			exit = ExitConflict
-		case domain.CodeImportDiskSpaceInsufficient:
-			exit = ExitIO
-			suggestion = "free the reported additional bytes on the Moment data filesystem, inspect again if needed, then retry"
-		case domain.CodeMaintenanceMode:
-			exit = ExitUnavailable
-		case domain.CodeDataIntegrityFailed:
-			exit = ExitIntegrity
-		}
-		return NewCommandError(string(domainErr.Code), domainErr.Message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+		return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
 	}
 	if errors.Is(err, runtimefs.ErrIncompleteLayout) || errors.Is(err, runtimefs.ErrInvalidInstance) || errors.Is(err, runtimefs.ErrInvalidCurrent) {
 		return NewCommandError("INSTANCE_NOT_READY", "the Moment data directory is not a complete ready instance", "repair the selected instance and run doctor before retrying import", ExitIO).WithCause(err)
@@ -1388,6 +1352,9 @@ func downloadExport(ctx context.Context, invocation Invocation, destination io.W
 		if len(body) > maxAPIResponse {
 			return archive.Summary{}, invalidAPIResponse()
 		}
+		if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(body) != nil {
+			return archive.Summary{}, invalidAPIResponse()
+		}
 		return archive.Summary{}, decodeOwnerAPIFailure(response.StatusCode, body)
 	}
 	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
@@ -1442,13 +1409,7 @@ func backupCLIError(err error) error {
 	}
 	var domainErr *domain.Error
 	if errors.As(err, &domainErr) {
-		exit := ExitIntegrity
-		suggestion := "run diagnostics and repair authoritative data before retrying export"
-		if domainErr.Code == domain.CodeInvalidArgument {
-			exit = ExitInvalidInput
-			suggestion = "correct the export input and retry"
-		}
-		return NewCommandError(string(domainErr.Code), domainErr.Message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+		return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
 	}
 	if errors.Is(err, archive.ErrDestinationUnavailable) {
 		return NewCommandError("OUTPUT_UNAVAILABLE", "the archive output path cannot be published safely", "choose a writable file path with an existing directory, then retry", ExitIO).WithCause(err)

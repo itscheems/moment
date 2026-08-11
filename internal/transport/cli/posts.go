@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -931,12 +930,11 @@ func postAPIRequest(
 	if len(responseBody) > maxPostAPIResponse {
 		return nil, response.StatusCode, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the Moment API response exceeded the allowed size", "reduce --limit or inspect the compatible server", ExitUnavailable)
 	}
+	if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(responseBody) != nil {
+		return nil, response.StatusCode, invalidAPIResponse()
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, response.StatusCode, decodeOwnerAPIFailure(response.StatusCode, responseBody)
-	}
-	mediaType, _, contentTypeErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if contentTypeErr != nil || mediaType != "application/json" {
-		return nil, response.StatusCode, invalidAPIResponse()
 	}
 	data, meta, err := decodePostAPIEnvelope(responseBody)
 	if err != nil {
@@ -1062,25 +1060,5 @@ func postCLIError(err error) error {
 	if !errors.As(err, &domainErr) {
 		return err
 	}
-	exit := ExitInternal
-	suggestion := "retry once; if it repeats, inspect the selected Moment instance"
-	switch domainErr.Code {
-	case domain.CodeInvalidArgument:
-		exit = ExitInvalidInput
-		suggestion = "correct the named post input and retry"
-	case domain.CodePostNotFound, domain.CodeMediaNotFound:
-		exit = ExitNotFound
-		if domainErr.Code == domain.CodeMediaNotFound {
-			suggestion = "run 'moment media list --json' in direct mode to inspect managed media"
-		} else {
-			suggestion = "run 'moment post list --json' to inspect available posts"
-		}
-	case domain.CodeContentEmpty, domain.CodeContentTooLarge, domain.CodeExternalImageNotAllowed, domain.CodeIdempotencyKeyReused, domain.CodeMediaTooLarge:
-		exit = ExitConflict
-		suggestion = "correct the post content or use a new idempotency key, then retry"
-	case domain.CodeDataIntegrityFailed:
-		exit = ExitIntegrity
-		suggestion = "run diagnostics before changing posts"
-	}
-	return NewCommandError(string(domainErr.Code), domainErr.Message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+	return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
 }

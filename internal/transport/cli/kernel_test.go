@@ -24,6 +24,26 @@ type commandOutput struct {
 	stderr string
 }
 
+type partialFailureWriter struct {
+	bytes.Buffer
+	limit  int
+	writes int
+}
+
+func (writer *partialFailureWriter) Write(value []byte) (int, error) {
+	writer.writes++
+	limit := writer.limit
+	if limit > len(value) {
+		limit = len(value)
+	}
+	_, _ = writer.Buffer.Write(value[:limit])
+	return limit, io.ErrClosedPipe
+}
+
+func (writer *partialFailureWriter) WriteString(value string) (int, error) {
+	return writer.Write([]byte(value))
+}
+
 func newTestApplication() *Application {
 	baseTime := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
 	var clockCalls atomic.Int64
@@ -261,6 +281,15 @@ func TestBinaryStdoutIsExplicitAndNeverMixesWithJSONEnvelope(t *testing.T) {
 	jsonOutput := execute(application, "", "fixture", "binary", "--json")
 	if jsonOutput.exit != ExitInvalidInput || strings.Contains(jsonOutput.stdout, "PK\x03\x04") || decodeOneDocument(t, jsonOutput.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("binary JSON = %#v", jsonOutput)
+	}
+	partial := &partialFailureWriter{limit: 6}
+	var diagnostics bytes.Buffer
+	exit := application.Execute(context.Background(), []string{"fixture", "binary"}, Streams{
+		In: strings.NewReader(""), Out: partial, Err: &diagnostics,
+	})
+	if exit != ExitInternal || partial.writes != 1 || partial.String() != "PK\x03\x04ra" ||
+		!strings.Contains(diagnostics.String(), "INTERNAL") || strings.Contains(diagnostics.String(), "PK\x03\x04") {
+		t.Fatalf("partial raw exit=%d writes=%d stdout=%q stderr=%q", exit, partial.writes, partial.String(), diagnostics.String())
 	}
 }
 
@@ -642,6 +671,47 @@ func TestUnencodableResultBecomesOneInternalErrorDocument(t *testing.T) {
 	decoded := decodeOneDocument(t, output.stdout)
 	if decoded["error"].(map[string]any)["code"] != "INTERNAL" {
 		t.Fatalf("stdout = %q", output.stdout)
+	}
+}
+
+func TestPartialJSONWriteNeverAppendsFallbackDocument(t *testing.T) {
+	tests := []struct {
+		name string
+		run  Handler
+	}{
+		{
+			name: "success",
+			run: func(context.Context, Invocation, CommandInput) (Result, error) {
+				return Result{Data: map[string]any{"secret": "owner-token-must-not-reach-diagnostics"}}, nil
+			},
+		},
+		{
+			name: "error",
+			run: func(context.Context, Invocation, CommandInput) (Result, error) {
+				return Result{}, NewCommandError("POST_NOT_FOUND", "missing", "list posts", ExitNotFound)
+			},
+		},
+		{
+			name: "report failure",
+			run: func(context.Context, Invocation, CommandInput) (Result, error) {
+				return Result{Data: map[string]any{"checks": 2}, Failure: NewCommandError("DATA_INTEGRITY_FAILED", "bad", "inspect", ExitIntegrity)}, nil
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			application := newTestApplication()
+			registerFixture(application, "partial", CapabilityBoth, test.run)
+			writer := &partialFailureWriter{limit: 24}
+			var stderr bytes.Buffer
+			exit := application.Execute(context.Background(), []string{"fixture", "partial", "--json"}, Streams{
+				In: strings.NewReader(""), Out: writer, Err: &stderr,
+			})
+			if exit != ExitInternal || writer.writes != 1 || strings.Count(writer.String(), `{"ok"`) > 1 ||
+				strings.Contains(stderr.String(), "owner-token-must-not-reach-diagnostics") {
+				t.Fatalf("exit=%d writes=%d stdout=%q stderr=%q", exit, writer.writes, writer.String(), stderr.String())
+			}
+		})
 	}
 }
 

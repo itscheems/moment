@@ -34,9 +34,33 @@ type Application struct {
 }
 
 type executionState struct {
-	started  bool
-	streamed bool
-	result   Result
+	started       bool
+	streamed      bool
+	result        Result
+	outputFailure error
+}
+
+type commandOutputError struct{ cause error }
+
+func (err *commandOutputError) Error() string { return err.cause.Error() }
+func (err *commandOutputError) Unwrap() error { return err.cause }
+
+type commandOutputWriter struct {
+	destination io.Writer
+	state       *executionState
+}
+
+func (writer commandOutputWriter) Write(value []byte) (int, error) {
+	written, err := writer.destination.Write(value)
+	if err == nil && written != len(value) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		wrapped := &commandOutputError{cause: err}
+		writer.state.outputFailure = wrapped
+		return written, wrapped
+	}
+	return written, nil
 }
 
 // New constructs a featureless CLI kernel.
@@ -179,10 +203,13 @@ func (application *Application) Execute(ctx context.Context, args []string, stre
 	root, options, state := application.buildRoot(streams)
 	root.SetArgs(args)
 	root.SetIn(streams.In)
-	root.SetOut(streams.Out)
+	root.SetOut(commandOutputWriter{destination: streams.Out, state: state})
 	root.SetErr(streams.Err)
 
 	err := root.ExecuteContext(ctx)
+	if err == nil && state.outputFailure != nil {
+		err = state.outputFailure
+	}
 	jsonMode := options.JSON || containsJSONFlag(args)
 	if err != nil {
 		commandError := normalizeError(err, state.started)
@@ -221,6 +248,10 @@ func (application *Application) Execute(ctx context.Context, args []string, stre
 			if err := writeJSONDocument(streams.Out, envelope{
 				OK: false, Data: state.result.Data, Meta: meta, Error: state.result.Failure,
 			}); err != nil {
+				if isJSONOutputError(err) {
+					_, _ = fmt.Fprintln(streams.Err, "INTERNAL: write JSON diagnostic output")
+					return ExitInternal
+				}
 				exitCode, writeErr := writeMachineError(streams.Out, internalError(err))
 				if writeErr != nil {
 					_, _ = fmt.Fprintf(streams.Err, "INTERNAL: write JSON diagnostic failure: %v\n", writeErr)
@@ -231,6 +262,10 @@ func (application *Application) Execute(ctx context.Context, args []string, stre
 			return state.result.Failure.ExitCode
 		}
 		if err := writeJSONDocument(streams.Out, envelope{OK: true, Data: state.result.Data, Meta: meta}); err != nil {
+			if isJSONOutputError(err) {
+				_, _ = fmt.Fprintln(streams.Err, "INTERNAL: write JSON command output")
+				return ExitInternal
+			}
 			fallback := NewCommandError(
 				"INTERNAL",
 				"the command result could not be encoded",

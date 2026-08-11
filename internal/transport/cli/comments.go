@@ -347,21 +347,5 @@ func commentCLIError(err error) error {
 	if !errors.As(err, &domainErr) {
 		return err
 	}
-	exit := ExitInternal
-	suggestion := "retry once; if it repeats, inspect the selected Moment instance"
-	switch domainErr.Code {
-	case domain.CodeInvalidArgument:
-		exit = ExitInvalidInput
-		suggestion = "correct the named comment input and retry"
-	case domain.CodePostNotFound, domain.CodeCommentNotFound:
-		exit = ExitNotFound
-		suggestion = "run 'moment post list --json' or 'moment comment list <post-id> --json' to inspect available resources"
-	case domain.CodeContentEmpty, domain.CodeContentTooLarge, domain.CodeExternalImageNotAllowed, domain.CodeCommentDepthExceeded, domain.CodeCommentsDisabled, domain.CodeCommentRejected, domain.CodeRateLimited, domain.CodeIdempotencyKeyReused:
-		exit = ExitConflict
-		suggestion = "correct the comment input or site state, then retry"
-	case domain.CodeDataIntegrityFailed:
-		exit = ExitIntegrity
-		suggestion = "run diagnostics before changing comments"
-	}
-	return NewCommandError(string(domainErr.Code), domainErr.Message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+	return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
 }

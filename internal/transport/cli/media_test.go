@@ -145,13 +145,14 @@ func TestMediaDirectAPIParityAndUnsupportedMaintenanceModes(t *testing.T) {
 		t.Fatalf("direct = %#v\napi = %#v", direct, api)
 	}
 	id := direct["media"].(map[string]any)["id"].(string)
-	directOutput := filepath.Join(t.TempDir(), "direct.png")
-	apiOutput := filepath.Join(t.TempDir(), "api.png")
-	directGet := commandData(t, execute(application, "", "media", "get", id, "--output", directOutput, "--data-dir", dataDir, "--json"))
-	apiGet := commandData(t, execute(application, "", "--url", server.URL, "media", "get", id, "--output", apiOutput, "--json"))
-	directGet["output_path"] = "normalized"
-	apiGet["output_path"] = "normalized"
-	if !reflect.DeepEqual(directGet, apiGet) || !bytes.Equal(mustRead(t, directOutput), mustRead(t, apiOutput)) {
+	outputPath := filepath.Join(t.TempDir(), "parity.png")
+	directGet := commandData(t, execute(application, "", "media", "get", id, "--output", outputPath, "--data-dir", dataDir, "--json"))
+	directBytes := mustRead(t, outputPath)
+	if err := os.Remove(outputPath); err != nil {
+		t.Fatal(err)
+	}
+	apiGet := commandData(t, execute(application, "", "--url", server.URL, "media", "get", id, "--output", outputPath, "--json"))
+	if !reflect.DeepEqual(directGet, apiGet) || !bytes.Equal(directBytes, mustRead(t, outputPath)) {
 		t.Fatalf("direct get = %#v api get = %#v", directGet, apiGet)
 	}
 

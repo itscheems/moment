@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -260,6 +261,87 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 	if err := lease.Release(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestInitAliasAndBrokenPipeBinaryContracts(t *testing.T) {
+	binary := os.Getenv("MOMENT_SMOKE_BINARY")
+	if binary == "" {
+		binary = filepath.Join(t.TempDir(), "moment")
+		build := exec.Command("go", "build", "-trimpath", "-o", binary, ".")
+		if output, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("build binary: %v\n%s", err, output)
+		}
+	}
+
+	runJSON := func(args ...string) (map[string]any, []byte, error) {
+		t.Helper()
+		command := exec.Command(binary, args...)
+		output, err := command.Output()
+		if len(output) == 0 || output[len(output)-1] != '\n' {
+			t.Fatalf("%v did not write one newline-terminated JSON document: %q", args, output)
+		}
+		decoder := json.NewDecoder(bytes.NewReader(output))
+		var document map[string]any
+		if decodeErr := decoder.Decode(&document); decodeErr != nil {
+			t.Fatalf("decode %v: %v output=%q", args, decodeErr, output)
+		}
+		var extra any
+		if decodeErr := decoder.Decode(&extra); !errors.Is(decodeErr, io.EOF) {
+			t.Fatalf("%v wrote extra JSON: %v output=%q", args, decodeErr, output)
+		}
+		return document, output, err
+	}
+
+	aliasDir := filepath.Join(t.TempDir(), "alias")
+	alias, _, err := runJSON("init", "--data-dir", aliasDir, "--json")
+	if err != nil || alias["ok"] != true {
+		t.Fatalf("init alias err=%v document=%#v", err, alias)
+	}
+	credential := alias["data"].(map[string]any)
+	if credential["initialized"] != true || credential["session_epoch"] != float64(1) || credential["token"] == "" {
+		t.Fatalf("init credential = %#v", credential)
+	}
+	duplicate, _, err := runJSON("owner", "init", "--data-dir", aliasDir, "--json")
+	var duplicateExit *exec.ExitError
+	if !errors.As(err, &duplicateExit) || duplicateExit.ExitCode() != 4 ||
+		duplicate["error"].(map[string]any)["code"] != "OWNER_ALREADY_INITIALIZED" {
+		t.Fatalf("duplicate err=%v document=%#v", err, duplicate)
+	}
+	unsupported, _, err := runJSON("--url", "http://127.0.0.1:1", "init", "--json")
+	var unsupportedExit *exec.ExitError
+	if !errors.As(err, &unsupportedExit) || unsupportedExit.ExitCode() != 2 ||
+		unsupported["error"].(map[string]any)["code"] != "MODE_UNSUPPORTED" {
+		t.Fatalf("unsupported err=%v document=%#v", err, unsupported)
+	}
+
+	if runtime.GOOS == "windows" {
+		return
+	}
+	assertBrokenPipe := func(wantExit int, args ...string) {
+		t.Helper()
+		readEnd, writeEnd, pipeErr := os.Pipe()
+		if pipeErr != nil {
+			t.Fatal(pipeErr)
+		}
+		if pipeErr := readEnd.Close(); pipeErr != nil {
+			t.Fatal(pipeErr)
+		}
+		command := exec.Command(binary, args...)
+		var stderr bytes.Buffer
+		command.Stdout = writeEnd
+		command.Stderr = &stderr
+		runErr := command.Run()
+		_ = writeEnd.Close()
+		var exitError *exec.ExitError
+		if !errors.As(runErr, &exitError) || exitError.ExitCode() != wantExit {
+			t.Fatalf("broken pipe %v err=%v stderr=%q", args, runErr, stderr.String())
+		}
+		if strings.Contains(stderr.String(), "owner-token") || strings.Contains(stderr.String(), credential["token"].(string)) {
+			t.Fatalf("broken pipe %v leaked sensitive text: %q", args, stderr.String())
+		}
+	}
+	assertBrokenPipe(10, "backup", "import", "--help")
+	assertBrokenPipe(6, "backup", "export", "--data-dir", aliasDir, "--stdout")
 }
 
 func availableAddress(t *testing.T) string {

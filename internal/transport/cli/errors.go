@@ -86,6 +86,103 @@ func invalidArgument(message, suggestion string) *CommandError {
 	return NewCommandError("INVALID_ARGUMENT", message, suggestion, ExitInvalidInput)
 }
 
+// canonicalPublicError maps one stable domain/API code to the same CLI exit
+// and remediation regardless of the selected transport. Message and details
+// remain the domain-owned values and are never normalized for parity.
+func canonicalPublicError(code, message string, details map[string]any, httpStatus int) *CommandError {
+	exit := ExitInternal
+	suggestion := "retry once; if it repeats, inspect the selected Moment instance"
+	switch code {
+	case "INVALID_ARGUMENT", "MODE_UNSUPPORTED":
+		exit = ExitInvalidInput
+		suggestion = "correct the named input or transport mode and retry"
+	case "POST_NOT_FOUND":
+		exit = ExitNotFound
+		suggestion = "run 'moment post list --json' to inspect available posts"
+	case "COMMENT_NOT_FOUND":
+		exit = ExitNotFound
+		suggestion = "run 'moment comment list <post-id> --json' to inspect available comments"
+	case "MEDIA_NOT_FOUND":
+		exit = ExitNotFound
+		suggestion = "run 'moment media list --data-dir <path> --json' on the instance host to inspect managed media"
+	case "CONTENT_EMPTY", "CONTENT_TOO_LARGE", "EXTERNAL_IMAGE_NOT_ALLOWED":
+		exit = ExitConflict
+		suggestion = "correct the content and retry"
+	case "IDEMPOTENCY_KEY_REUSED":
+		exit = ExitConflict
+		suggestion = "reuse the original payload or provide a new idempotency key"
+	case "COMMENT_DEPTH_EXCEEDED":
+		exit = ExitConflict
+		suggestion = "reply only to a top-level comment"
+	case "COMMENTS_DISABLED":
+		exit = ExitConflict
+		suggestion = "enable comments in site settings before retrying"
+	case "COMMENT_REJECTED", "RATE_LIMITED":
+		exit = ExitConflict
+		suggestion = "correct the comment input or retry after the reported limit"
+	case "MEDIA_TYPE_UNSUPPORTED", "MEDIA_TOO_LARGE", "MEDIA_DIMENSIONS_EXCEEDED":
+		exit = ExitConflict
+		suggestion = "provide an image within the documented media type and size limits"
+	case "MEDIA_CORRUPT":
+		exit = ExitIntegrity
+		suggestion = "run 'moment media verify --data-dir <path> --json' and restore the affected original"
+	case "MEDIA_PREVIEW_FAILED":
+		exit = ExitIO
+		suggestion = "verify originals, then rerun 'moment media rebuild-previews --data-dir <path> --yes --json'"
+	case "UNAUTHORIZED", "CSRF_INVALID", "OWNER_TOKEN_REQUIRED":
+		exit = ExitUnauthorized
+		suggestion = "update MOMENT_TOKEN or --token-file with the current owner token"
+	case "INSTANCE_IN_USE":
+		exit = ExitConflict
+		suggestion = "stop the running server or use the supported API operation"
+	case "OWNER_ALREADY_INITIALIZED":
+		exit = ExitConflict
+		suggestion = "run 'moment owner status --json' or rotate the token instead"
+	case "OWNER_NOT_INITIALIZED":
+		exit = ExitConflict
+		suggestion = "run 'moment init --data-dir <path> --json' while the server is stopped"
+	case "IMPORT_IN_PROGRESS", "IMPORT_STAGING_INVALID", "IMPORT_STAGING_EXPIRED":
+		exit = ExitConflict
+		suggestion = "inspect 'moment backup status --json' and finish or retry the current recovery operation"
+	case "MAINTENANCE_MODE":
+		exit = ExitUnavailable
+		suggestion = "wait for the active maintenance window to finish, then retry"
+	case "IMPORT_DISK_SPACE_INSUFFICIENT":
+		exit = ExitIO
+		suggestion = "free the reported additional bytes on the data filesystem, then retry"
+	case "DATA_INTEGRITY_FAILED", "EXPORT_INVALID", "EXPORT_CHECKSUM_MISMATCH", "EXPORT_VERSION_UNSUPPORTED":
+		exit = ExitIntegrity
+		suggestion = "run diagnostics and restore or recreate the invalid data before retrying"
+	case "CANCELLED", "TIMEOUT", "EXPORT_PREPARATION_TIMEOUT":
+		exit = ExitTimeout
+		suggestion = "retry when the caller can keep the operation context active"
+	case "EXPORT_UNAVAILABLE", "DOCTOR_UNAVAILABLE", "NOT_READY", "API_ROUTE_NOT_FOUND", "ROUTE_NOT_FOUND", "METHOD_NOT_ALLOWED", "WEB_ASSETS_UNAVAILABLE":
+		exit = ExitUnavailable
+		suggestion = "inspect the running Moment server and retry"
+	case "REQUEST_BODY_INVALID", "REQUEST_BODY_TOO_LARGE":
+		exit = ExitInvalidInput
+		suggestion = "correct or reduce the command input and retry"
+	case "DOCTOR_INVALID_REPORT":
+		exit = ExitInternal
+		suggestion = "retry once; if it repeats, report the DOCTOR_INVALID_REPORT code without including secrets"
+	case "INTERNAL":
+		exit = ExitInternal
+		suggestion = "retry once; if it repeats, report the INTERNAL code without including secrets"
+	default:
+		if httpStatus != 0 {
+			exit = ExitUnavailable
+			suggestion = "inspect the running Moment server and retry"
+			if httpStatus >= 400 && httpStatus < 500 {
+				exit = ExitConflict
+			}
+		}
+	}
+	if strings.TrimSpace(message) == "" {
+		message = "the Moment operation failed"
+	}
+	return NewCommandError(code, message, suggestion, exit).WithDetails(details)
+}
+
 func normalizeError(err error, commandStarted bool) *CommandError {
 	if err == nil {
 		return nil
@@ -97,6 +194,10 @@ func normalizeError(err error, commandStarted bool) *CommandError {
 			return commandError
 		}
 		return internalError(err)
+	}
+	var outputError *commandOutputError
+	if errors.As(err, &outputError) {
+		return internalError(outputError)
 	}
 
 	switch {

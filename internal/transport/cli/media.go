@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -333,17 +332,13 @@ func mediaAPIUpload(ctx context.Context, invocation Invocation, filename string,
 	if len(responseBody) > maxAPIResponse {
 		return nil, invalidAPIResponse()
 	}
+	if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(responseBody) != nil {
+		return nil, invalidAPIResponse()
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
 	}
-	var envelope struct {
-		Data json.RawMessage `json:"data"`
-		Meta map[string]any  `json:"meta"`
-	}
-	if err := json.Unmarshal(responseBody, &envelope); err != nil || json.Unmarshal(envelope.Data, destination) != nil {
-		return nil, invalidAPIResponse()
-	}
-	return envelope.Meta, nil
+	return decodeStrictAPISuccess(responseBody, destination)
 }
 
 type cliContextReader struct {
@@ -380,6 +375,9 @@ func mediaAPIDownload(ctx context.Context, invocation Invocation, id domain.ID) 
 		body, readErr := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
 		if readErr != nil {
 			return media.Asset{}, readErr
+		}
+		if !validAPIJSONContentType(response.Header.Get("Content-Type")) {
+			return media.Asset{}, invalidAPIResponse()
 		}
 		return media.Asset{}, decodeOwnerAPIFailure(response.StatusCode, body)
 	}
@@ -476,20 +474,5 @@ func mediaCLIError(err error) error {
 	if !errors.As(err, &domainErr) {
 		return NewCommandError("MEDIA_IO_FAILED", "the media operation could not access its input or storage", "check the selected paths and instance, then retry", ExitIO).WithCause(err)
 	}
-	exit := ExitConflict
-	suggestion := "correct the media input and retry"
-	switch domainErr.Code {
-	case domain.CodeInvalidArgument:
-		exit = ExitInvalidInput
-	case domain.CodeMediaNotFound:
-		exit = ExitNotFound
-		suggestion = "run 'moment media list --json' to inspect managed media"
-	case domain.CodeMediaCorrupt, domain.CodeDataIntegrityFailed:
-		exit = ExitIntegrity
-		suggestion = "run 'moment media verify --json' and restore the affected original if needed"
-	case domain.CodeMediaPreviewFailed:
-		exit = ExitIO
-		suggestion = "verify originals, then rerun 'moment media rebuild-previews --yes --json'"
-	}
-	return NewCommandError(string(domainErr.Code), domainErr.Message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+	return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
 }

@@ -249,15 +249,5 @@ func searchCLIError(err error) error {
 	if !errors.As(err, &domainErr) {
 		return err
 	}
-	exit := ExitInternal
-	suggestion := "retry once; if it repeats, inspect the selected Moment instance"
-	switch domainErr.Code {
-	case domain.CodeInvalidArgument:
-		exit = ExitInvalidInput
-		suggestion = "correct the search text, dates, limit, or cursor and retry"
-	case domain.CodeDataIntegrityFailed:
-		exit = ExitIntegrity
-		suggestion = "run 'moment search rebuild --dry-run --json' against the local instance"
-	}
-	return NewCommandError(string(domainErr.Code), domainErr.Message, suggestion, exit).WithDetails(domainErr.Details).WithCause(err)
+	return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
 }

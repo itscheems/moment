@@ -361,6 +361,8 @@ func TestPostMediaCLIStrictManifestFlagsAndPathSafety(t *testing.T) {
 		{name: "repeated convenience path", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media", imagePath, "--json"}},
 		{name: "manifest and convenience", stdin: "[]", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media-manifest", "-", "--json"}},
 		{name: "repeated manifest", stdin: "[]", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--media-manifest", "-", "--json"}},
+		{name: "manifest EOF", stdin: "", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "manifest malformed", stdin: "[", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
 		{name: "manifest null", stdin: "null", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
 		{name: "manifest trailing", stdin: "[] {}", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
 		{name: "missing alt", stdin: `[{"media_id":"` + mediaID + `"}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
@@ -369,6 +371,7 @@ func TestPostMediaCLIStrictManifestFlagsAndPathSafety(t *testing.T) {
 		{name: "duplicate field", stdin: `[{"media_id":"` + mediaID + `","media_id":"` + mediaID + `","alt_text":null}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
 		{name: "blank provided alt", stdin: `[{"media_id":"` + mediaID + `","alt_text":"   "}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
 		{name: "over limit", stdin: `[` + strings.Join(overLimit, ",") + `]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "over byte limit", stdin: strings.Repeat(" ", maxPostMediaManifestBytes+1), args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -400,6 +403,17 @@ func TestPostMediaCLIStrictManifestFlagsAndPathSafety(t *testing.T) {
 	}
 	if postCLITableCount(t, fixture.database, "entries") != 0 || postCLITableCount(t, fixture.database, "entry_media") != 0 {
 		t.Fatal("invalid flags or manifests mutated posts")
+	}
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	var stdout, stderr bytes.Buffer
+	exit := application.Execute(cancelled, []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}, Streams{
+		In: strings.NewReader(`[]`), Out: &stdout, Err: &stderr,
+	})
+	if exit != ExitTimeout || stderr.String() != "" || decodeOneDocument(t, stdout.String())["error"].(map[string]any)["code"] != "CANCELLED" ||
+		postCLITableCount(t, fixture.database, "entries") != 0 || postCLITableCount(t, fixture.database, "entry_media") != 0 {
+		t.Fatalf("cancelled manifest exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
 }
 
