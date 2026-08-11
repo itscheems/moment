@@ -94,7 +94,8 @@ done
 restart_port="$(docker port "$restart_container" 8080/tcp | sed -n 's/.*://p' | head -n 1)"
 curl --fail --silent --show-error "http://127.0.0.1:${restart_port}/api/v1/posts/${post_id}" | jq -e --arg id "$post_id" '.data.id == $id' >/dev/null
 docker stop --time 15 "$restart_container" >/dev/null
-docker logs "$restart_container" 2>&1 | grep -q '"event":"server_stopped"'
+docker logs "$restart_container" >"$scratch/restart-server.log" 2>&1
+grep -q '"event":"server_stopped"' "$scratch/restart-server.log"
 
 mkdir -p dist
 container_sbom="dist/container.spdx.json"
