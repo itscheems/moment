@@ -352,7 +352,7 @@ describe("public timeline", () => {
       new PublicApi(vi.fn(async () => page([], null)) as typeof fetch),
     );
     expect(
-      await screen.findByRole("heading", { name: "第一段记忆还没写下" }),
+      await screen.findByRole("heading", { name: "还没有 Moment" }),
     ).toBeInTheDocument();
   });
 });

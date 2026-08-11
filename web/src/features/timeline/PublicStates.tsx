@@ -25,11 +25,8 @@ export function TimelineLoading() {
 export function PublicEmpty() {
   return (
     <section className={styles.message}>
-      <span className={styles.timeMark}>今天</span>
       <div>
-        <p className={styles.eyebrow}>个人时间流</p>
-        <h2>第一段记忆还没写下</h2>
-        <p>这里暂时没有公开的 Moment，晚些时候再回来看看。</p>
+        <h2>还没有 Moment</h2>
       </div>
     </section>
   );

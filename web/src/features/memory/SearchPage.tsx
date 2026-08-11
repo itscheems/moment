@@ -313,11 +313,11 @@ export function SearchPage({
     <div className={styles.memoryPage}>
       <form className={styles.searchForm} onSubmit={submit}>
         <label className={styles.queryField} htmlFor="moment-search-input">
-          <span>找回哪段文字？</span>
+          <span>搜索 Moment</span>
           <input
             aria-describedby="search-shortcut search-form-error"
             aria-keyshortcuts="/"
-            aria-label="找回哪段文字？"
+            aria-label="搜索 Moment"
             autoComplete="off"
             autoFocus={!state.query}
             id="moment-search-input"
@@ -361,14 +361,6 @@ export function SearchPage({
           title="这些搜索条件无法还原"
         />
       ) : null}
-      {!state.error && !state.query ? (
-        <SearchMessage
-          action={<InternalLink href="/archive">也可以按年月回看</InternalLink>}
-          detail="输入记得的一两个字，或先圈定大致日期。搜索条件会留在链接里。"
-          marker="文字坐标"
-          title="从一句话找回过去"
-        />
-      ) : null}
       {loading ? (
         <section
           aria-busy="true"
@@ -406,7 +398,7 @@ export function SearchPage({
                   : "检查网络后重试；搜索词和日期仍保留在当前链接中。"
           }
           marker="没有完成"
-          title="这次没有找回结果"
+          title="没有找到结果"
         />
       ) : null}
 

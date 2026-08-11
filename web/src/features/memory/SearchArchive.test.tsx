@@ -255,7 +255,7 @@ describe("search and archive memory layer", () => {
     fail = true;
     render(<App />);
     expect(
-      await screen.findByRole("heading", { name: "这次没有找回结果" }),
+      await screen.findByRole("heading", { name: "没有找到结果" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("searchbox")).toHaveValue("a");
     expect(window.location.search).toBe("?q=a");
@@ -328,7 +328,7 @@ describe("search and archive memory layer", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: "这次没有找回结果" }),
+      await screen.findByRole("heading", { name: "没有找到结果" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "从第一页重新加载" }));
     await waitFor(() =>

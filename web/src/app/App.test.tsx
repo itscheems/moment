@@ -104,7 +104,7 @@ describe("App shell and public routes", () => {
       "/owner/compose",
     );
     expect(
-      await screen.findByRole("heading", { name: "第一段记忆还没写下" }),
+      await screen.findByRole("heading", { name: "还没有 Moment" }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("乔乔的 Moment").length).toBeGreaterThan(0);
     expect(document.title).toBe("乔乔的 Moment");

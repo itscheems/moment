@@ -46,10 +46,7 @@ function Brand({ site }: { site: SiteIdentity }) {
           <path d="M7 30V10l13 14 13-14v20" />
         </svg>
       )}
-      <span>
-        <strong>{title}</strong>
-        <small>{site.bio.trim() || "记下此刻，找回后来"}</small>
-      </span>
+      <span className={styles.brandLabel}>{title}</span>
     </InternalLink>
   );
 }
@@ -106,16 +103,25 @@ function LeftRail({
   );
 }
 
-function MemoryRail({ years }: { years: readonly number[] }) {
+function MemoryRail({
+  route,
+  years,
+}: {
+  route: AppRoute;
+  years: readonly number[];
+}) {
+  if (route.id === "search" && years.length === 0) return null;
   return (
     <aside aria-label="记忆导航" className={styles.rightRail}>
-      <InternalLink className={styles.searchPrompt} href="/search">
-        <Icon name="search" />
-        <span>
-          <strong>搜索 Moment</strong>
-          <small>按文字或日期查找</small>
-        </span>
-      </InternalLink>
+      {route.id !== "search" ? (
+        <InternalLink className={styles.searchPrompt} href="/search">
+          <Icon name="search" />
+          <span>
+            <strong>搜索 Moment</strong>
+            <small>按文字或日期查找</small>
+          </span>
+        </InternalLink>
+      ) : null}
       {years.length > 0 ? (
         <section
           aria-labelledby="memory-map-title"
@@ -140,7 +146,6 @@ function MemoryRail({ years }: { years: readonly number[] }) {
           </ol>
         </section>
       ) : null}
-      <p className={styles.rightFooter}>Moment · 私人的公开时间流</p>
     </aside>
   );
 }
@@ -230,7 +235,7 @@ export function AppShell({
           </header>
           {children ?? <ShellState route={route} state={state} />}
         </main>
-        <MemoryRail years={memoryYears} />
+        <MemoryRail route={route} years={memoryYears} />
       </div>
       <MobileNavigation
         ownerSettingsAvailable={ownerSettingsAvailable}

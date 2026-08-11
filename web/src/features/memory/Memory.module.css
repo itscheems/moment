@@ -341,45 +341,12 @@
   text-align: center;
 }
 
-.archiveIntro {
-  min-block-size: 8.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  border-block-end: 1px solid var(--border-subtle);
-  padding: var(--space-6);
-}
-
-.archiveIntro p,
-.archiveIntro h2 {
-  margin: 0;
-}
-
-.archiveIntro p,
 .calendarSection header p,
 .dayResults > header p {
   color: var(--accent);
   font-family: var(--font-utility);
   font-size: var(--text-xs);
   font-weight: 650;
-}
-
-.archiveIntro h2 {
-  margin-block-start: var(--space-2);
-  font-size: clamp(1.35rem, 4vw, 1.7rem);
-  font-weight: 800;
-  letter-spacing: -0.025em;
-}
-
-.archiveIntro > span {
-  border-block: 1px solid var(--border-strong);
-  padding-block: var(--space-3);
-  color: var(--text-tertiary);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
-  letter-spacing: 0.08em;
-  white-space: nowrap;
 }
 
 .breadcrumbs {
@@ -577,8 +544,7 @@
 }
 
 @media (max-width: 719px) {
-  .searchForm,
-  .archiveIntro {
+  .searchForm {
     padding: var(--space-4);
   }
 
@@ -612,14 +578,6 @@
 
   .yearTrack {
     padding-inline: var(--space-4);
-  }
-
-  .archiveIntro {
-    min-block-size: 7rem;
-  }
-
-  .archiveIntro > span {
-    display: none;
   }
 
   .breadcrumbs {

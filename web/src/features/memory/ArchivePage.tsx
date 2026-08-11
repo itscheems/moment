@@ -252,14 +252,6 @@ export function ArchivePage({
 
   return (
     <div className={styles.memoryPage}>
-      <section className={styles.archiveIntro}>
-        <div>
-          <p>记忆按 {site.timezone} 排列</p>
-          <h2>先找年份，再靠近日子</h2>
-        </div>
-        <span>年 → 月 → 日</span>
-      </section>
-
       {state.error ? (
         <ArchiveMessage
           action={<InternalLink href="/archive">返回全部年份</InternalLink>}

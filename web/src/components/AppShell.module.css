@@ -59,7 +59,7 @@
   background: var(--surface-hover);
 }
 
-.brand > span:last-child {
+.brandLabel {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -83,11 +83,6 @@
 .brand > span:first-child {
   inline-size: 2rem;
   block-size: 2rem;
-}
-
-.brand strong,
-.brand small {
-  display: block;
 }
 
 .desktopNav {
@@ -340,14 +335,6 @@
   font-size: var(--text-xs);
 }
 
-.rightFooter {
-  margin: 0;
-  padding-inline: var(--space-4);
-  color: var(--text-tertiary);
-  font-size: 0.75rem;
-  line-height: 1.45;
-}
-
 .mobileNav {
   display: none;
 }
@@ -366,7 +353,6 @@
     padding-inline-end: 0;
   }
 
-  .brand > span:last-child,
   .navLink span,
   .publishAction span {
     position: absolute;
