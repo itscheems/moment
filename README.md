@@ -16,7 +16,8 @@ mise exec -- task ci
 
 The stable entry points are:
 
-- `task run` — build the Web bundle, then run the local binary;
+- `task run` — build Moment, initialize local data when needed, and run the
+  server in the foreground until `Ctrl+C`;
 - `task fmt` — format Go and Web sources;
 - `task lint` — run static checks and Web type checking;
 - `task test` — run Go race tests and Web tests;
@@ -30,6 +31,23 @@ After building:
 
 ```sh
 ./dist/moment version --json
+```
+
+To start a local site:
+
+```sh
+mise exec -- task run
+```
+
+The first run initializes the ignored `moment-data/` directory and prints the
+one-time owner token. Later runs reuse that data. The server listens on
+`127.0.0.1:8080` and stops cleanly with `Ctrl+C`. Override the defaults when
+needed:
+
+```sh
+MOMENT_DATA_DIR=/absolute/path/to/data \
+MOMENT_LISTEN=127.0.0.1:18080 \
+mise exec -- task run
 ```
 
 Runtime data and secrets must stay outside source control. Copy `.env.example`

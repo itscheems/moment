@@ -7,10 +7,9 @@ tasks:
       - pnpm --dir web install --frozen-lockfile
 
   run:
-    desc: Build the Web bundle and run Moment
-    deps: [web:build]
+    desc: Build, initialize local data if needed, and serve until Ctrl+C
     cmds:
-      - go run ./cmd/moment {{.CLI_ARGS}}
+      - bash scripts/dev/serve.sh {{.CLI_ARGS}}
 
   fmt:
     desc: Format Go and Web sources
