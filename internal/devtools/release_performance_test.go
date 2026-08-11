@@ -49,6 +49,13 @@ type streamMetric struct {
 	ElapsedMS    int64  `json:"elapsed_ms"`
 }
 
+type importValidationMetric struct {
+	streamMetric
+	TargetState                  string `json:"target_state"`
+	TargetUnchanged              bool   `json:"target_unchanged"`
+	ValidationBeforeActualImport bool   `json:"validation_before_actual_import"`
+}
+
 type binaryIdentity struct {
 	Version   string `json:"version"`
 	Commit    string `json:"commit"`
@@ -95,12 +102,38 @@ type performanceEvidence struct {
 		Archive  performanceMetric `json:"archive"`
 	} `json:"latency"`
 	Streaming struct {
-		Export           streamMetric `json:"export"`
-		Import           streamMetric `json:"import"`
-		ImportValidation streamMetric `json:"import_validation"`
+		Export           streamMetric           `json:"export"`
+		Import           streamMetric           `json:"import"`
+		ImportValidation importValidationMetric `json:"import_validation"`
 	} `json:"streaming"`
 	ArchiveSHA256    string `json:"archive_sha256"`
 	FixtureElapsedMS int64  `json:"fixture_elapsed_ms"`
+}
+
+func TestImportValidationEvidenceContract(t *testing.T) {
+	evidence := performanceEvidence{}
+	evidence.Streaming.ImportValidation = importValidationMetric{
+		streamMetric:                 streamMetric{Bytes: 42, PeakRSSBytes: 7, LimitBytes: 9, ElapsedMS: 11},
+		TargetState:                  "initialized-empty",
+		TargetUnchanged:              true,
+		ValidationBeforeActualImport: true,
+	}
+	encoded, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document map[string]any
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		t.Fatal(err)
+	}
+	streaming := document["streaming"].(map[string]any)
+	validation := streaming["import_validation"].(map[string]any)
+	if validation["bytes"] != float64(42) || validation["peak_rss_bytes"] != float64(7) ||
+		validation["limit_bytes"] != float64(9) || validation["elapsed_ms"] != float64(11) ||
+		validation["target_state"] != "initialized-empty" || validation["target_unchanged"] != true ||
+		validation["validation_before_actual_import"] != true {
+		t.Fatalf("import validation evidence = %#v", validation)
+	}
 }
 
 func localCommit(t *testing.T) string {
@@ -155,6 +188,143 @@ func decodeCommandEnvelope[T any](t *testing.T, output []byte, destination *comm
 	}
 	if !destination.OK {
 		t.Fatal("release command returned a non-success JSON envelope")
+	}
+}
+
+type authorityTreeEntry struct {
+	Path       string
+	Type       string
+	Mode       os.FileMode
+	Size       int64
+	SHA256     string
+	LinkTarget string
+}
+
+func snapshotAuthorityTree(t *testing.T, root string) []authorityTreeEntry {
+	t.Helper()
+	entries := make([]authorityTreeEntry, 0, 32)
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		snapshot := authorityTreeEntry{Path: filepath.ToSlash(relative), Mode: info.Mode()}
+		switch {
+		case info.Mode().IsDir():
+			snapshot.Type = "directory"
+		case info.Mode().IsRegular():
+			snapshot.Type = "regular"
+			snapshot.Size = info.Size()
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			digest := sha256.New()
+			if _, err := io.Copy(digest, file); err != nil {
+				_ = file.Close()
+				return err
+			}
+			if err := file.Close(); err != nil {
+				return err
+			}
+			snapshot.SHA256 = hex.EncodeToString(digest.Sum(nil))
+		case info.Mode()&os.ModeSymlink != 0:
+			snapshot.Type = "symlink"
+			snapshot.LinkTarget, err = os.Readlink(path)
+			if err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("unsupported authority tree member %s with mode %s", relative, info.Mode())
+		}
+		entries = append(entries, snapshot)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("snapshot authority tree %s: %v", root, err)
+	}
+	return entries
+}
+
+func assertDryRunTargetUnchanged(t *testing.T, before, after []authorityTreeEntry) {
+	t.Helper()
+	if !authorityTreesEqual(before, after) {
+		t.Fatalf("dry-run changed initialized authority tree: before=%#v after=%#v", before, after)
+	}
+}
+
+func authorityTreesEqual(before, after []authorityTreeEntry) bool {
+	return reflect.DeepEqual(before, after)
+}
+
+func TestAuthorityTreeSnapshotIgnoresDirectorySizeAndDetectsRegularFileChanges(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "authority")
+	if err := os.Mkdir(child, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	name := filepath.Join(child, "CURRENT")
+	if err := os.WriteFile(name, []byte("generation-a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotAuthorityTree(t, root)
+	for _, entry := range before {
+		if entry.Type == "directory" && (entry.Size != 0 || entry.SHA256 != "") {
+			t.Fatalf("directory snapshot contains unstable metadata: %#v", entry)
+		}
+	}
+	transient := filepath.Join(child, "transient")
+	if err := os.WriteFile(transient, []byte("removed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(transient); err != nil {
+		t.Fatal(err)
+	}
+	if afterDirectoryChurn := snapshotAuthorityTree(t, root); !authorityTreesEqual(before, afterDirectoryChurn) {
+		t.Fatalf("directory inode size churn changed snapshot: before=%#v after=%#v", before, afterDirectoryChurn)
+	}
+	if err := os.WriteFile(name, []byte("generation-b\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	after := snapshotAuthorityTree(t, root)
+	if authorityTreesEqual(before, after) {
+		t.Fatal("regular authority file change was accepted")
+	}
+	if err := os.WriteFile(name, []byte("generation-a\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(name, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if authorityTreesEqual(before, snapshotAuthorityTree(t, root)) {
+		t.Fatal("regular authority mode change was accepted")
+	}
+	if err := os.WriteFile(filepath.Join(child, "added"), []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if authorityTreesEqual(before, snapshotAuthorityTree(t, root)) {
+		t.Fatal("added authority member was accepted")
+	}
+	if err := os.Remove(filepath.Join(child, "added")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(name); err != nil {
+		t.Fatal(err)
+	}
+	if authorityTreesEqual(before, snapshotAuthorityTree(t, root)) {
+		t.Fatal("removed authority member was accepted")
+	}
+	typeChanged := append([]authorityTreeEntry(nil), before...)
+	typeChanged[len(typeChanged)-1].Type = "symlink"
+	if authorityTreesEqual(before, typeChanged) {
+		t.Fatal("authority member type change was accepted")
 	}
 }
 
@@ -328,14 +498,36 @@ func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir strin
 		t.Fatalf("fixture backup export probe summary=%#v info=%v err=%v", exported.Data, archiveInfo, err)
 	}
 
-	restoreDir := filepath.Join(workDir, "fixture-probe-restore")
-	initializeOutput, err := exec.Command(binary, "owner", "init", "--data-dir", restoreDir, "--json").Output()
+	validationDir := filepath.Join(workDir, "fixture-probe-import-validation")
+	initializeOutput, err := exec.Command(binary, "owner", "init", "--data-dir", validationDir, "--json").Output()
 	if err != nil {
-		t.Fatalf("fixture backup restore init probe: %v", err)
+		t.Fatalf("fixture backup validation init probe: %v", err)
 	}
 	var initialized commandEnvelope[struct {
 		Initialized bool `json:"initialized"`
 	}]
+	decodeCommandEnvelope(t, initializeOutput, &initialized)
+	if !initialized.Data.Initialized {
+		t.Fatal("fixture backup validation probe was not initialized")
+	}
+	validationBefore := snapshotAuthorityTree(t, validationDir)
+	dryRunOutput, err := exec.Command(binary, "backup", "import", archivePath, "--data-dir", validationDir,
+		"--timeout", performanceStageTimeout, "--dry-run", "--json").Output()
+	if err != nil {
+		t.Fatalf("fixture backup dry-run probe: %v; stdout=%s", err, dryRunOutput)
+	}
+	var inspected commandEnvelope[archive.ImportPlan]
+	decodeCommandEnvelope(t, dryRunOutput, &inspected)
+	if inspected.Data.ArchiveSHA256 != exported.Data.ArchiveSHA256 {
+		t.Fatalf("fixture backup dry-run hash = %q, want %q", inspected.Data.ArchiveSHA256, exported.Data.ArchiveSHA256)
+	}
+	assertDryRunTargetUnchanged(t, validationBefore, snapshotAuthorityTree(t, validationDir))
+
+	restoreDir := filepath.Join(workDir, "fixture-probe-restore")
+	initializeOutput, err = exec.Command(binary, "owner", "init", "--data-dir", restoreDir, "--json").Output()
+	if err != nil {
+		t.Fatalf("fixture backup restore init probe: %v", err)
+	}
 	decodeCommandEnvelope(t, initializeOutput, &initialized)
 	if !initialized.Data.Initialized {
 		t.Fatal("fixture backup restore probe was not initialized")
@@ -349,16 +541,6 @@ func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir strin
 	decodeCommandEnvelope(t, importOutput, &imported)
 	if imported.Data.Status.Phase != archive.CommitSucceeded {
 		t.Fatalf("fixture backup import probe phase = %q", imported.Data.Status.Phase)
-	}
-	dryRunOutput, err := exec.Command(binary, "backup", "import", archivePath, "--data-dir", restoreDir,
-		"--timeout", performanceStageTimeout, "--dry-run", "--json").Output()
-	if err != nil {
-		t.Fatalf("fixture backup dry-run probe: %v; stdout=%s", err, dryRunOutput)
-	}
-	var inspected commandEnvelope[archive.ImportPlan]
-	decodeCommandEnvelope(t, dryRunOutput, &inspected)
-	if inspected.Data.ArchiveSHA256 != exported.Data.ArchiveSHA256 {
-		t.Fatalf("fixture backup dry-run hash = %q, want %q", inspected.Data.ArchiveSHA256, exported.Data.ArchiveSHA256)
 	}
 	doctorOutput, err := exec.Command(binary, "doctor", "--deep", "--data-dir", restoreDir,
 		"--timeout", performanceStageTimeout, "--json").Output()
@@ -471,6 +653,45 @@ type commandEnvelope[T any] struct {
 	Data T    `json:"data"`
 }
 
+func probeReleaseFixtureInvocation(t *testing.T, releaseBinary, workDir string) {
+	t.Helper()
+	probeDir := filepath.Join(workDir, "fixture-probe")
+	if err := os.Mkdir(probeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	probeOutput, err := exec.Command(releaseBinary,
+		"dev", "scenario", "timeline-empty", "--data-dir", probeDir, "--seed", "1", "--yes", "--no-input", "--json").Output()
+	if err != nil {
+		t.Fatalf("release fixture invocation probe: %v; stdout=%s", err, probeOutput)
+	}
+	var probe commandEnvelope[struct {
+		Plan struct {
+			RecipeVersion string `json:"recipe_version"`
+			Counts        Counts `json:"counts"`
+		} `json:"plan"`
+	}]
+	decodeCommandEnvelope(t, probeOutput, &probe)
+	if probe.Data.Plan.RecipeVersion != RecipeVersion || probe.Data.Plan.Counts != (Counts{}) {
+		t.Fatalf("release fixture invocation probe plan = %#v", probe.Data.Plan)
+	}
+	probeServerURL, stopProbeServer := startReleasePerformanceServer(t, releaseBinary, probeDir)
+	assertHTTPPerformanceFixture(t, &http.Client{Timeout: 5 * time.Second}, probeServerURL, 0)
+	stopProbeServer()
+	probeReleaseBackupInvocation(t, releaseBinary, workDir, probeDir)
+}
+
+func TestReleasePerformanceBinaryProbe(t *testing.T) {
+	releaseBinary := os.Getenv("MOMENT_PERFORMANCE_PROBE_BINARY")
+	if releaseBinary == "" {
+		t.Skip("set MOMENT_PERFORMANCE_PROBE_BINARY to an extracted native release binary")
+	}
+	if !filepath.IsAbs(releaseBinary) {
+		t.Fatal("MOMENT_PERFORMANCE_PROBE_BINARY must be absolute")
+	}
+	_ = releaseBinaryIdentity(t, releaseBinary, localCommit(t))
+	probeReleaseFixtureInvocation(t, releaseBinary, t.TempDir())
+}
+
 func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	t.Helper()
 	validationOnly := false
@@ -498,29 +719,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	if _, err := os.Stat(dataDir); !os.IsNotExist(err) {
 		t.Fatalf("performance data directory must not exist: %v", err)
 	}
-	probeDir := filepath.Join(workDir, "fixture-probe")
-	if err := os.Mkdir(probeDir, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	probeOutput, err := exec.Command(releaseBinary,
-		"dev", "scenario", "timeline-empty", "--data-dir", probeDir, "--seed", "1", "--yes", "--no-input", "--json").Output()
-	if err != nil {
-		t.Fatalf("release fixture invocation probe: %v; stdout=%s", err, probeOutput)
-	}
-	var probe commandEnvelope[struct {
-		Plan struct {
-			RecipeVersion string `json:"recipe_version"`
-			Counts        Counts `json:"counts"`
-		} `json:"plan"`
-	}]
-	decodeCommandEnvelope(t, probeOutput, &probe)
-	if probe.Data.Plan.RecipeVersion != RecipeVersion || probe.Data.Plan.Counts != (Counts{}) {
-		t.Fatalf("release fixture invocation probe plan = %#v", probe.Data.Plan)
-	}
-	probeServerURL, stopProbeServer := startReleasePerformanceServer(t, releaseBinary, probeDir)
-	assertHTTPPerformanceFixture(t, &http.Client{Timeout: 5 * time.Second}, probeServerURL, 0)
-	stopProbeServer()
-	probeReleaseBackupInvocation(t, releaseBinary, workDir, probeDir)
+	probeReleaseFixtureInvocation(t, releaseBinary, workDir)
 	if err := os.Mkdir(dataDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -572,14 +771,40 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 		t.Fatalf("export peak RSS = %d, limit %d", exportPeak, streamRSSLimit)
 	}
 
-	restoreDir := filepath.Join(workDir, "restore")
-	initializeOutput, err := exec.Command(releaseBinary, "owner", "init", "--data-dir", restoreDir, "--json").Output()
+	validationDir := filepath.Join(workDir, "import-validation")
+	initializeOutput, err := exec.Command(releaseBinary, "owner", "init", "--data-dir", validationDir, "--json").Output()
 	if err != nil {
-		t.Fatalf("initialize restore target: %v", err)
+		t.Fatalf("initialize import validation target: %v", err)
 	}
 	var initialized commandEnvelope[struct {
 		Initialized bool `json:"initialized"`
 	}]
+	decodeCommandEnvelope(t, initializeOutput, &initialized)
+	if !initialized.Data.Initialized {
+		t.Fatal("release binary did not initialize the import validation target")
+	}
+	validationBefore := snapshotAuthorityTree(t, validationDir)
+	dryRunOutput, validationPeak, validationMinimumDisk, validationElapsed := runMeasuredReleaseCommand(t, releaseBinary, workDir,
+		"backup", "import", archivePath, "--data-dir", validationDir, "--timeout", performanceStageTimeout, "--dry-run", "--json")
+	if validationPeak >= streamRSSLimit {
+		t.Fatalf("import validation peak RSS = %d, limit %d", validationPeak, streamRSSLimit)
+	}
+	var restored commandEnvelope[archive.ImportPlan]
+	decodeCommandEnvelope(t, dryRunOutput, &restored)
+	if restored.Data.ArchiveSHA256 != exported.Data.ArchiveSHA256 ||
+		restored.Data.Replacement.Counts.Entries != counts.Entries ||
+		restored.Data.Replacement.Counts.Comments != counts.Comments ||
+		restored.Data.Replacement.Counts.Media != counts.Media ||
+		restored.Data.Replacement.MediaBytes != counts.MediaBytes {
+		t.Fatalf("restored authority preview = %#v", restored.Data)
+	}
+	assertDryRunTargetUnchanged(t, validationBefore, snapshotAuthorityTree(t, validationDir))
+
+	restoreDir := filepath.Join(workDir, "restore")
+	initializeOutput, err = exec.Command(releaseBinary, "owner", "init", "--data-dir", restoreDir, "--json").Output()
+	if err != nil {
+		t.Fatalf("initialize restore target: %v", err)
+	}
 	decodeCommandEnvelope(t, initializeOutput, &initialized)
 	if !initialized.Data.Initialized {
 		t.Fatal("release binary did not initialize the restore target")
@@ -593,21 +818,6 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	}
 	if importPeak >= streamRSSLimit {
 		t.Fatalf("import peak RSS = %d, limit %d", importPeak, streamRSSLimit)
-	}
-
-	dryRunOutput, validationPeak, validationMinimumDisk, validationElapsed := runMeasuredReleaseCommand(t, releaseBinary, workDir,
-		"backup", "import", archivePath, "--data-dir", restoreDir, "--timeout", performanceStageTimeout, "--dry-run", "--json")
-	if validationPeak >= streamRSSLimit {
-		t.Fatalf("import validation peak RSS = %d, limit %d", validationPeak, streamRSSLimit)
-	}
-	var restored commandEnvelope[archive.ImportPlan]
-	decodeCommandEnvelope(t, dryRunOutput, &restored)
-	if restored.Data.ArchiveSHA256 != exported.Data.ArchiveSHA256 ||
-		restored.Data.Replacement.Counts.Entries != counts.Entries ||
-		restored.Data.Replacement.Counts.Comments != counts.Comments ||
-		restored.Data.Replacement.Counts.Media != counts.Media ||
-		restored.Data.Replacement.MediaBytes != counts.MediaBytes {
-		t.Fatalf("restored authority preview = %#v", restored.Data)
 	}
 	doctorOutput, err := exec.Command(releaseBinary, "doctor", "--deep", "--data-dir", restoreDir,
 		"--timeout", performanceStageTimeout, "--json").Output()
@@ -652,7 +862,12 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	evidence.Latency.Archive = archiveLatency
 	evidence.Streaming.Export = streamMetric{Bytes: archiveInfo.Size(), PeakRSSBytes: exportPeak, LimitBytes: streamRSSLimit, ElapsedMS: exportElapsed.Milliseconds()}
 	evidence.Streaming.Import = streamMetric{Bytes: archiveInfo.Size(), PeakRSSBytes: importPeak, LimitBytes: streamRSSLimit, ElapsedMS: importElapsed.Milliseconds()}
-	evidence.Streaming.ImportValidation = streamMetric{Bytes: archiveInfo.Size(), PeakRSSBytes: validationPeak, LimitBytes: streamRSSLimit, ElapsedMS: validationElapsed.Milliseconds()}
+	evidence.Streaming.ImportValidation = importValidationMetric{
+		streamMetric:                 streamMetric{Bytes: archiveInfo.Size(), PeakRSSBytes: validationPeak, LimitBytes: streamRSSLimit, ElapsedMS: validationElapsed.Milliseconds()},
+		TargetState:                  "initialized-empty",
+		TargetUnchanged:              true,
+		ValidationBeforeActualImport: true,
+	}
 	evidence.ArchiveSHA256 = exported.Data.ArchiveSHA256
 	encoded, err := json.MarshalIndent(evidence, "", "  ")
 	if err != nil {

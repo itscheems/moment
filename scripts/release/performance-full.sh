@@ -105,6 +105,9 @@ if (( validation_only == 1 )); then
     .streaming.import.peak_rss_bytes > 0 and .streaming.import.peak_rss_bytes < .streaming.import.limit_bytes and
     .streaming.import_validation.peak_rss_bytes > 0 and
     .streaming.import_validation.peak_rss_bytes < .streaming.import_validation.limit_bytes and
+    .streaming.import_validation.target_state == "initialized-empty" and
+    .streaming.import_validation.target_unchanged == true and
+    .streaming.import_validation.validation_before_actual_import == true and
     .streaming.export.elapsed_ms > 0 and .streaming.import.elapsed_ms > 0 and
     .streaming.import_validation.elapsed_ms > 0 and .fixture_elapsed_ms > 0 and .total_elapsed_ms > 0 and
     (.archive_sha256 | test("^[0-9a-f]{64}$")) and
@@ -117,6 +120,9 @@ else
   jq -e '
     .qualified == true and .validation_only == false and
     .environment.goos == "linux" and .environment.goarch == "amd64" and
-    .fixture.media_bytes == 21474836480
+    .fixture.media_bytes == 21474836480 and
+    .streaming.import_validation.target_state == "initialized-empty" and
+    .streaming.import_validation.target_unchanged == true and
+    .streaming.import_validation.validation_before_actual_import == true
   ' "$evidence" >/dev/null
 fi

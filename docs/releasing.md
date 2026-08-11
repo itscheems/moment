@@ -40,6 +40,13 @@ hashes, elapsed time, thresholds, 31 samples, and peak subprocess RSS sampled
 every 25 ms in `dist/performance-evidence.json`. A skipped or incomplete
 full-scale run is not release qualification. The tagged workflow publishes the
 same checksummed archives consumed by this gate; it does not rebuild them.
+The streaming sequence exports the complete archive, reads and stages all of it
+with a dry-run against an initialized empty target, and proves that target's
+members, modes, link targets, and regular-file bytes are unchanged. A separate
+initialized empty target then receives the actual import and must pass the
+exact deep-doctor and real-socket API checks. Keeping validation before the
+actual import avoids manufacturing a second rollback copy of an already
+restored 20 GiB authority while preserving both measured archive passes.
 
 On another native host, maintainers can exercise the identical real fixture,
 socket latency, export, import, validation, and deep-doctor flow without

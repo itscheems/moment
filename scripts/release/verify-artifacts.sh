@@ -205,6 +205,9 @@ verify_performance_evidence() {
     .streaming.export.peak_rss_bytes > 0 and .streaming.export.peak_rss_bytes < .streaming.export.limit_bytes and
     .streaming.import.peak_rss_bytes > 0 and .streaming.import.peak_rss_bytes < .streaming.import.limit_bytes and
     .streaming.import_validation.peak_rss_bytes > 0 and .streaming.import_validation.peak_rss_bytes < .streaming.import_validation.limit_bytes and
+    .streaming.import_validation.target_state == "initialized-empty" and
+    .streaming.import_validation.target_unchanged == true and
+    .streaming.import_validation.validation_before_actual_import == true and
     .streaming.export.elapsed_ms > 0 and .streaming.import.elapsed_ms > 0 and .streaming.import_validation.elapsed_ms > 0 and
     (.archive_sha256 | test("^[0-9a-f]{64}$")) and
     .environment.disk_available_before_bytes >= 118111600640 and
