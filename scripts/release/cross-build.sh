@@ -13,6 +13,6 @@ for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 wi
     suffix=".exe"
   fi
   output="dist/cross/moment-${goos}-${goarch}${suffix}"
-  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath -o "$output" ./cmd/moment
+  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -buildvcs=false -trimpath -o "$output" ./cmd/moment
   go version -m "$output" >/dev/null
 done

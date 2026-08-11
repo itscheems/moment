@@ -16,7 +16,7 @@ COPY --from=web /src/internal/webassets/dist ./internal/webassets/dist
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
-RUN CGO_ENABLED=0 go build -trimpath \
+RUN CGO_ENABLED=0 go build -buildvcs=false -trimpath \
     -ldflags "-s -w -X github.com/moment/moment/internal/buildinfo.Version=${VERSION} -X github.com/moment/moment/internal/buildinfo.Commit=${COMMIT} -X github.com/moment/moment/internal/buildinfo.BuildDate=${BUILD_DATE}" \
     -o /out/moment ./cmd/moment
 

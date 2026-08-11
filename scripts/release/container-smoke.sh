@@ -66,7 +66,7 @@ while IFS= read -r asset; do
   cmp "$asset" "$destination"
 done < <(find internal/webassets/dist -type f ! -name index.html -print | LC_ALL=C sort)
 docker exec "$container" wget --spider -q http://127.0.0.1:8080/readyz
-if docker exec "$container" wget --spider -q http://127.0.0.1:8080/not-ready; then
+if docker exec "$container" wget --spider -q http://127.0.0.1:8080/api/v1/__release_probe_missing; then
   echo "container health client accepted a non-success response" >&2
   exit 1
 fi
@@ -105,7 +105,8 @@ image_id="$(docker image inspect --format '{{.Id}}' "$image")"
 sbom_sha256="$(shasum -a 256 "$container_sbom" | awk '{print $1}')"
 base_images="$(awk '/^FROM / {print $2}' deploy/Dockerfile | jq -Rsc 'split("\n") | map(select(length > 0))')"
 syft_version="$(syft version -o json)"
-grype_database="$(grype db status -o json)"
+grype_version="$(grype version -o json)"
+grype_database="$(grype db status -o json | jq -c '{schemaVersion,from,built,valid}')"
 vulnerability_policy_sha256="$(shasum -a 256 release/vulnerability-exemptions.json | awk '{print $1}')"
 jq -n \
   --arg commit "$commit" \
@@ -116,6 +117,7 @@ jq -n \
   --arg vulnerability_policy_sha256 "$vulnerability_policy_sha256" \
   --argjson base_images "$base_images" \
   --argjson syft "$syft_version" \
+  --argjson grype "$grype_version" \
   --argjson grype_database "$grype_database" \
-  '{schema_version:1,commit:$commit,version:$version,build_date:$build_date,image_id:$image_id,base_images:$base_images,user:"65532:65532",data_dir:"/data",sbom:{format:"SPDX JSON",sha256:$sbom_sha256},scanners:{syft:$syft,grype_database:$grype_database},vulnerability_policy_sha256:$vulnerability_policy_sha256,verification:{anonymous_volume_init:true,named_volume_init:true,default_serve:true,readiness:true,persistence_restart:true,graceful_sigterm:true,high_or_critical_vulnerabilities_absent:true}}' \
+  '{schema_version:1,commit:$commit,version:$version,build_date:$build_date,image_id:$image_id,base_images:$base_images,user:"65532:65532",data_dir:"/data",sbom:{format:"SPDX JSON",sha256:$sbom_sha256},scanners:{syft:$syft,grype:$grype,grype_database:$grype_database},vulnerability_policy_sha256:$vulnerability_policy_sha256,verification:{anonymous_volume_init:true,named_volume_init:true,default_serve:true,readiness:true,persistence_restart:true,graceful_sigterm:true,high_or_critical_vulnerabilities_absent:true}}' \
   >dist/container-evidence.json

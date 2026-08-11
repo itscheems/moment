@@ -48,7 +48,7 @@ tasks:
       CGO_ENABLED: "0"
     cmds:
       - node -e "require('node:fs').mkdirSync('dist', {recursive:true})"
-      - go build -trimpath -o dist/moment{{exeExt}} ./cmd/moment
+      - go build -buildvcs=false -trimpath -o dist/moment{{exeExt}} ./cmd/moment
 
   ci:
     desc: Run the complete local CI gate

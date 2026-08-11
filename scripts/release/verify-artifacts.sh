@@ -83,9 +83,15 @@ for archive in "${archives[@]}"; do
   grep -F $'\tbuild\tCGO_ENABLED=0' "$build_info" >/dev/null
   grep -F $'\tbuild\tGOOS='"${target%/*}" "$build_info" >/dev/null
   grep -F $'\tbuild\tGOARCH='"${target#*/}" "$build_info" >/dev/null
-  grep -F $'\tbuild\tvcs.revision='"$commit" "$build_info" >/dev/null
-  grep -F $'\tbuild\tvcs.time='"$expected_build_date" "$build_info" >/dev/null
-  grep -F $'\tbuild\tvcs.modified=false' "$build_info" >/dev/null
+  if grep -F $'\tbuild\tvcs.' "$build_info" >/dev/null; then
+    echo "release binary contains non-authoritative automatic VCS metadata: $target" >&2
+    exit 1
+  fi
+  grep -aF "$commit" "$target_binary" >/dev/null
+  grep -aF "$expected_build_date" "$target_binary" >/dev/null
+  if [[ -n "$expected_version" ]]; then
+    grep -aF "$expected_version" "$target_binary" >/dev/null
+  fi
   while read -r module version; do
     jq -e --arg module "$module" --arg version "$version" '
       any(.components[]; .ecosystem == "Go" and .name == $module and .version == $version)
@@ -228,7 +234,15 @@ if [[ "${MOMENT_REQUIRE_QUALIFICATION:-0}" == "1" ]]; then
       .artifacts.archive_count == 6 and .artifacts.sbom_count == 6 and
       .artifacts.checksum_manifest == $checksums and .artifacts.hashes == $hashes and
       .vulnerability_policy.sha256 == $policy_sha256 and .vulnerability_policy.document == $policy and
-      (.scanners.syft != null) and (.scanners.grype_database != null) and (.scanners.govulncheck != null) and
+      .environment.go == "go version go1.25.12 linux/amd64" and
+      .environment.node == "v24.19.0" and .environment.pnpm == "10.34.5" and
+      .environment.goreleaser.git_version == "2.17.1" and
+      (.environment.goreleaser.git_commit | test("^[0-9a-f]{40}$")) and
+      .environment.goreleaser.git_tree_state == false and .environment.goreleaser.platform == "linux/amd64" and
+      .scanners.syft.version == "1.50.0" and .scanners.grype.version == "0.116.1" and
+      .scanners.grype_database.valid == true and (.scanners.grype_database | has("path") | not) and
+      (.scanners.govulncheck | contains("govulncheck@v1.6.0")) and
+      ([.. | strings | select(startswith("/") or test("^[A-Za-z]:[\\\\/]"))] | length == 0) and
       .verification.archive_members == true and .verification.native_metadata == true and
       .verification.embedded_web_and_migrations == true and .verification.checksums == true and
       .verification.govulncheck_reachable_and_imported_vulnerabilities_absent == true and
@@ -240,7 +254,10 @@ if [[ "${MOMENT_REQUIRE_QUALIFICATION:-0}" == "1" ]]; then
     .commit == $commit and .build_date == $build_date and (.image_id | test("^sha256:[0-9a-f]{64}$")) and .base_images == $base_images and
     all(.base_images[]; test("@sha256:[0-9a-f]{64}$")) and
     .user == "65532:65532" and .data_dir == "/data" and .sbom.sha256 == $sbom_sha256 and
-    (.scanners.syft != null) and (.scanners.grype_database != null) and .vulnerability_policy_sha256 == $policy_sha256 and
+    .scanners.syft.version == "1.50.0" and .scanners.grype.version == "0.116.1" and
+    .scanners.grype_database.valid == true and (.scanners.grype_database | has("path") | not) and
+    ([.. | strings | select(startswith("/") or test("^[A-Za-z]:[\\\\/]"))] | length == 0) and
+    .vulnerability_policy_sha256 == $policy_sha256 and
     .verification.anonymous_volume_init == true and .verification.named_volume_init == true and
     .verification.persistence_restart == true and .verification.graceful_sigterm == true and
     .verification.high_or_critical_vulnerabilities_absent == true
@@ -281,9 +298,24 @@ fi
 go_version="$(go version)"
 node_version="$(node --version)"
 pnpm_version="$(pnpm --version)"
-goreleaser_version="$(goreleaser --version | sed -n '1p')"
+goreleaser_output="$(goreleaser --version)"
+goreleaser_pin="$(awk -F '"' '$1 ~ /^goreleaser = / {print $2}' .mise.toml)"
+goreleaser_git_version="$(awk '$1 == "GitVersion:" {print $2}' <<<"$goreleaser_output")"
+[[ "$goreleaser_pin" == "2.17.1" && "$goreleaser_git_version" == "$goreleaser_pin" ]] || {
+  echo "GoReleaser version does not match the locked 2.17.1 toolchain" >&2
+  exit 1
+}
+goreleaser_metadata="$(jq -n \
+  --arg git_version "$goreleaser_git_version" \
+  --arg git_commit "$(awk '$1 == "GitCommit:" {print $2}' <<<"$goreleaser_output")" \
+  --arg git_tree_state "$(awk '$1 == "GitTreeState:" {print $2}' <<<"$goreleaser_output")" \
+  --arg build_date "$(awk '$1 == "BuildDate:" {print $2}' <<<"$goreleaser_output")" \
+  --arg go_version "$(awk '$1 == "GoVersion:" {print $2}' <<<"$goreleaser_output")" \
+  --arg platform "$(awk '$1 == "Platform:" {print $2}' <<<"$goreleaser_output")" \
+  '{git_version:$git_version,git_commit:$git_commit,git_tree_state:($git_tree_state == "true"),build_date:$build_date,go_version:$go_version,platform:$platform}')"
 syft_version="$(syft version -o json)"
-grype_db="$(grype db status -o json)"
+grype_version="$(grype version -o json)"
+grype_db="$(grype db status -o json | jq -c '{schemaVersion,from,built,valid}')"
 govulncheck_version="$(govulncheck -version)"
 jq -n \
   --arg commit "$commit" \
@@ -292,13 +324,14 @@ jq -n \
   --arg go "$go_version" \
   --arg node "$node_version" \
   --arg pnpm "$pnpm_version" \
-  --arg goreleaser "$goreleaser_version" \
+  --argjson goreleaser "$goreleaser_metadata" \
   --arg govulncheck "$govulncheck_version" \
   --argjson syft "$syft_version" \
+  --argjson grype "$grype_version" \
   --argjson grype_database "$grype_db" \
   --argjson vulnerability_policy "$vulnerability_policy" \
   --arg vulnerability_policy_sha256 "$vulnerability_policy_sha256" \
   --arg checksums "$checksums" \
   --argjson artifact_hashes "$artifact_hashes" \
-  '{schema_version:1, commit:$commit, version:$version, source_date_epoch:($source_date_epoch|tonumber), environment:{go:$go,node:$node,pnpm:$pnpm,goreleaser:$goreleaser}, scanners:{syft:$syft,grype_database:$grype_database,govulncheck:$govulncheck}, vulnerability_policy:{document:$vulnerability_policy,sha256:$vulnerability_policy_sha256}, artifacts:{archive_count:6,sbom_count:6,checksum_manifest:$checksums,hashes:$artifact_hashes}, verification:{archive_members:true,native_metadata:true,embedded_web_and_migrations:true,checksums:true,govulncheck_reachable_and_imported_vulnerabilities_absent:true,high_or_critical_vulnerabilities_absent:true}}' \
+  '{schema_version:1, commit:$commit, version:$version, source_date_epoch:($source_date_epoch|tonumber), environment:{go:$go,node:$node,pnpm:$pnpm,goreleaser:$goreleaser}, scanners:{syft:$syft,grype:$grype,grype_database:$grype_database,govulncheck:$govulncheck}, vulnerability_policy:{document:$vulnerability_policy,sha256:$vulnerability_policy_sha256}, artifacts:{archive_count:6,sbom_count:6,checksum_manifest:$checksums,hashes:$artifact_hashes}, verification:{archive_members:true,native_metadata:true,embedded_web_and_migrations:true,checksums:true,govulncheck_reachable_and_imported_vulnerabilities_absent:true,high_or_critical_vulnerabilities_absent:true}}' \
   >dist/release-evidence.json

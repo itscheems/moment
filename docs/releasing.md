@@ -51,6 +51,12 @@ GoReleaser writes six archives, SHA-256 `checksums.txt`, per-archive SBOMs, and
 initialize a clean instance from the native archive; that proves the same
 binary contains both production Web assets and all SQLite migrations.
 
+Release builds disable Go's automatic VCS stamping because checkout topology
+can make that field identify a different worktree. Moment's version, commit,
+and commit-time build date are injected from the clean source HEAD instead;
+the verifier requires those fields, the artifact manifest, and qualification
+evidence to agree exactly and rejects any automatic `vcs.*` build setting.
+
 The release workflow blocks on every high or critical vulnerability, including
 findings for which no fixed version is available.
 Exceptions are not implicit: an exemption must name the advisory, affected
