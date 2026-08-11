@@ -184,7 +184,7 @@ vulnerability_policy_sha256="$(shasum -a 256 release/vulnerability-exemptions.js
 
 verify_performance_evidence() {
   jq -e --arg commit "$commit" --arg binary_sha256 "$native_sha256" --arg version "$release_version" --arg build_date "$expected_build_date" '
-    .qualified == true and .commit == $commit and .binary.commit == $commit and
+    .qualified == true and .validation_only == false and .commit == $commit and .binary.commit == $commit and
     .binary.sha256 == $binary_sha256 and .binary.version == $version and .binary.build_date == $build_date and
     .binary.go_version == "go1.25.12" and
     .environment.goos == "linux" and .environment.goarch == "amd64" and .environment.go_version == "go1.25.12" and

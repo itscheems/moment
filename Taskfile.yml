@@ -113,6 +113,15 @@ tasks:
       - task: release:artifacts
       - bash scripts/release/performance-full.sh
 
+  release:performance:validation:
+    desc: Run the real 20 GiB flow locally without producing qualification evidence
+    deps: [web:build, release:reproducible]
+    env:
+      MOMENT_RUN_DEV_SCALE: "1"
+    cmds:
+      - task: release:artifacts
+      - bash scripts/release/performance-full.sh --validation-only
+
   release:preflight:
     desc: Run fast release gates before the dedicated 20 GiB qualification
     cmds:

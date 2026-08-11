@@ -56,6 +56,7 @@ type binaryIdentity struct {
 type performanceEvidence struct {
 	SchemaVersion  int    `json:"schema_version"`
 	Qualified      bool   `json:"qualified"`
+	ValidationOnly bool   `json:"validation_only"`
 	Commit         string `json:"commit"`
 	TotalElapsedMS int64  `json:"total_elapsed_ms"`
 	Environment    struct {
@@ -249,6 +250,17 @@ type commandEnvelope[T any] struct {
 
 func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	t.Helper()
+	validationOnly := false
+	switch os.Getenv("MOMENT_PERFORMANCE_VALIDATION_ONLY") {
+	case "0":
+		if runtime.GOOS != "linux" || runtime.GOARCH != "amd64" {
+			t.Fatalf("qualified performance evidence requires linux/amd64, got %s/%s", runtime.GOOS, runtime.GOARCH)
+		}
+	case "1":
+		validationOnly = true
+	default:
+		t.Fatal("MOMENT_PERFORMANCE_VALIDATION_ONLY must be explicitly set to 0 or 1")
+	}
 	qualificationStarted := time.Now()
 	releaseBinary := os.Getenv("MOMENT_PERFORMANCE_BINARY")
 	if releaseBinary == "" || !filepath.IsAbs(releaseBinary) {
@@ -366,7 +378,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	evidence := performanceEvidence{SchemaVersion: 1, Qualified: true, Commit: commit}
+	evidence := performanceEvidence{SchemaVersion: 1, Qualified: !validationOnly, ValidationOnly: validationOnly, Commit: commit}
 	evidence.TotalElapsedMS = time.Since(qualificationStarted).Milliseconds()
 	evidence.FixtureElapsedMS = fixtureElapsed.Milliseconds()
 	evidence.Environment.GOOS = runtime.GOOS

@@ -41,6 +41,20 @@ every 25 ms in `dist/performance-evidence.json`. A skipped or incomplete
 full-scale run is not release qualification. The tagged workflow publishes the
 same checksummed archives consumed by this gate; it does not rebuild them.
 
+On another native host, maintainers can exercise the identical real fixture,
+socket latency, export, import, validation, and deep-doctor flow without
+creating release qualification:
+
+```sh
+mise exec -- task release:performance:validation
+```
+
+This explicit mode keeps the same 110 GiB preflight and writes
+`dist/performance-validation-evidence.json` with `validation_only: true` and
+`qualified: false`. It records local measurements for diagnosis only. The
+publish gate never consumes this file and requires a separate Linux/amd64
+`performance-evidence.json` with `validation_only: false`.
+
 ## Release artifacts and evidence
 
 Set `SOURCE_DATE_EPOCH` to the source commit timestamp before a tagged build.
