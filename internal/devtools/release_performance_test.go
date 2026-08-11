@@ -7,6 +7,7 @@ import (
 	"debug/buildinfo"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -720,8 +721,8 @@ func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir strin
 	timeoutCommand := exec.Command(binary, "backup", "export", "--data-dir", sourceDir, "--output", timedOutArchive,
 		"--timeout", "1ns", "--no-input", "--json")
 	timeoutOutput, timeoutErr := timeoutCommand.Output()
-	exitError, ok := timeoutErr.(*exec.ExitError)
-	if !ok || exitError.ExitCode() != 9 {
+	var exitError *exec.ExitError
+	if !errors.As(timeoutErr, &exitError) || exitError.ExitCode() != 9 {
 		t.Fatalf("short backup timeout exit = %v, output=%s", timeoutErr, timeoutOutput)
 	}
 	var timeoutEnvelope struct {
