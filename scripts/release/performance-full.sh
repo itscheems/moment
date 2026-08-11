@@ -88,7 +88,7 @@ if (( validation_only == 1 )); then
     .environment.goos == $goos and .environment.goarch == $goarch and
     .environment.go_version == "go1.25.12" and .environment.gomaxprocs > 0 and
     .environment.rss_sample_interval_ms == 25 and
-    .fixture.recipe_version == "moment-dev-v1" and
+    .fixture.probe_scenario == "timeline-empty" and .fixture.recipe_version == "moment-dev-v1" and
     .fixture.entries == 10000 and .fixture.comments == 50000 and .fixture.media == 20000 and
     .fixture.media_bytes == 21474836480 and .fixture.peak_rss_bytes > 0 and
     .fixture.rss_limit_bytes == 805306368 and .fixture.peak_rss_bytes < .fixture.rss_limit_bytes and

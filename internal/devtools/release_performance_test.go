@@ -72,6 +72,7 @@ type performanceEvidence struct {
 	} `json:"environment"`
 	Binary  binaryIdentity `json:"binary"`
 	Fixture struct {
+		ProbeScenario string `json:"probe_scenario"`
 		RecipeVersion string `json:"recipe_version"`
 		Entries       int64  `json:"entries"`
 		Comments      int64  `json:"comments"`
@@ -200,11 +201,15 @@ func runMeasuredReleaseCommand(t *testing.T, binary, diskPath string, arguments 
 	close(done)
 	sampled := <-sampleResult
 	if err != nil {
+		stdoutMessage := strings.TrimSpace(stdout.String())
+		if len(stdoutMessage) > 4096 {
+			stdoutMessage = stdoutMessage[len(stdoutMessage)-4096:]
+		}
 		message := strings.TrimSpace(stderr.String())
 		if len(message) > 4096 {
 			message = message[len(message)-4096:]
 		}
-		t.Fatalf("release command %q failed after %s: %v; stderr=%s", arguments[:3], elapsed, err, message)
+		t.Fatalf("release command %q failed after %s: %v; stdout=%s; stderr=%s", arguments[:3], elapsed, err, stdoutMessage, message)
 	}
 	if sampled.peakRSS == 0 {
 		t.Fatalf("release command %q completed without an RSS sample", arguments[:3])
@@ -274,6 +279,28 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	archivePath := filepath.Join(workDir, "acceptance-scale.zip")
 	if _, err := os.Stat(dataDir); !os.IsNotExist(err) {
 		t.Fatalf("performance data directory must not exist: %v", err)
+	}
+	probeDir := filepath.Join(workDir, "fixture-probe")
+	if err := os.Mkdir(probeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	probeOutput, err := exec.Command(releaseBinary,
+		"dev", "scenario", "timeline-empty", "--data-dir", probeDir, "--seed", "1", "--yes", "--no-input", "--json").Output()
+	if err != nil {
+		t.Fatalf("release fixture invocation probe: %v; stdout=%s", err, probeOutput)
+	}
+	var probe commandEnvelope[struct {
+		Plan struct {
+			RecipeVersion string `json:"recipe_version"`
+			Counts        Counts `json:"counts"`
+		} `json:"plan"`
+	}]
+	decodeCommandEnvelope(t, probeOutput, &probe)
+	if probe.Data.Plan.RecipeVersion != RecipeVersion || probe.Data.Plan.Counts != (Counts{}) {
+		t.Fatalf("release fixture invocation probe plan = %#v", probe.Data.Plan)
+	}
+	if err := os.Mkdir(dataDir, 0o700); err != nil {
+		t.Fatal(err)
 	}
 	diskBefore, err := runtimefs.AvailableBytes(workDir)
 	if err != nil {
@@ -391,6 +418,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	evidence.Environment.MinimumDiskAvailableBytes = min(fixtureMinimumDisk, exportMinimumDisk, importMinimumDisk, validationMinimumDisk, diskAfter)
 	evidence.Environment.PeakDiskUsedBytes = diskBefore - evidence.Environment.MinimumDiskAvailableBytes
 	evidence.Binary = identity
+	evidence.Fixture.ProbeScenario = "timeline-empty"
 	evidence.Fixture.RecipeVersion = fixture.Data.Plan.RecipeVersion
 	evidence.Fixture.Entries = counts.Entries
 	evidence.Fixture.Comments = counts.Comments
