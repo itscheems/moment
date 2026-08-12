@@ -1223,14 +1223,18 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		return err
 	}
 
-	_, err = validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, _ map[string]json.RawMessage) error {
+	_, err = validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
 		created, err := parsePortableTimestamp(value.CreatedAt)
+		if err != nil {
+			return err
+		}
+		usages, err := portableCommentUsages(value, fields)
 		if err != nil {
 			return err
 		}
 		return importer.InsertComment(ctx, sqlitestore.ArchiveComment{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorKind: value.AuthorKind,
-			AuthorName: value.AuthorName, ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(),
+			AuthorName: value.AuthorName, ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(), Media: usages,
 		})
 	})
 	if err != nil {
@@ -1697,7 +1701,15 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		return errors.Join(errors.New("staged entries do not match the portable archive"), entriesErr)
 	}
 	expectedComments := make([]commentRecord, 0)
-	if _, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, _ map[string]json.RawMessage) error {
+	if _, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
+		usages, err := portableCommentUsages(value, fields)
+		if err != nil {
+			return err
+		}
+		value.Media = make([]usageRecord, len(usages))
+		for index, usage := range usages {
+			value.Media[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
+		}
 		expectedComments = append(expectedComments, value)
 		return nil
 	}); err != nil {
@@ -1706,9 +1718,13 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 	sort.Slice(expectedComments, func(i, j int) bool { return expectedComments[i].ID < expectedComments[j].ID })
 	actualComments := make([]commentRecord, 0, len(expectedComments))
 	commentsErr := snapshot.Comments(ctx, func(value sqlitestore.ArchiveComment) error {
+		usages := make([]usageRecord, len(value.Media))
+		for index, usage := range value.Media {
+			usages[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
+		}
 		actualComments = append(actualComments, commentRecord{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorKind: value.AuthorKind,
-			AuthorName: value.AuthorName, ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS),
+			AuthorName: value.AuthorName, ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS), Media: usages,
 		})
 		return nil
 	})

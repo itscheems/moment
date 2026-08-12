@@ -8,20 +8,25 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/transport/postdto"
 )
 
 // Comment is the canonical one-level comment wire representation.
 type Comment struct {
-	ID          string    `json:"id"`
-	PostID      string    `json:"post_id"`
-	ParentID    *string   `json:"parent_id"`
-	Depth       int       `json:"depth"`
-	AuthorKind  string    `json:"author_kind"`
-	AuthorName  string    `json:"author_name"`
-	ContentMD   string    `json:"content_md"`
-	ContentHTML string    `json:"content_html"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string       `json:"id"`
+	PostID      string       `json:"post_id"`
+	ParentID    *string      `json:"parent_id"`
+	Depth       int          `json:"depth"`
+	AuthorKind  string       `json:"author_kind"`
+	AuthorName  string       `json:"author_name"`
+	ContentMD   string       `json:"content_md"`
+	ContentHTML string       `json:"content_html"`
+	CreatedAt   time.Time    `json:"created_at"`
+	Media       []MediaUsage `json:"media"`
 }
+
+// MediaUsage is one ordered managed image attached to a comment.
+type MediaUsage = postdto.MediaUsage
 
 // Thread is a non-null flattened comment array.
 type Thread struct {
@@ -37,10 +42,14 @@ func FromComment(comment app.Comment) Comment {
 		parentID = &value
 		depth = 1
 	}
+	media := make([]MediaUsage, len(comment.Media))
+	for index, usage := range comment.Media {
+		media[index] = MediaUsage{MediaID: usage.MediaID.String(), Position: usage.Position, AltText: usage.AltText}
+	}
 	return Comment{
 		ID: comment.Comment.ID.String(), PostID: comment.Comment.EntryID.String(), ParentID: parentID, Depth: depth,
 		AuthorKind: string(comment.Comment.AuthorKind), AuthorName: comment.Comment.AuthorName,
-		ContentMD: comment.Comment.ContentMD, ContentHTML: comment.ContentHTML, CreatedAt: comment.Comment.CreatedAt.UTC(),
+		ContentMD: comment.Comment.ContentMD, ContentHTML: comment.ContentHTML, CreatedAt: comment.Comment.CreatedAt.UTC(), Media: media,
 	}
 }
 
@@ -76,6 +85,17 @@ func ValidateComment(comment Comment) error {
 	}
 	record := domain.Comment{ID: id, EntryID: postID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(comment.AuthorKind), AuthorName: comment.AuthorName, ContentMD: comment.ContentMD, CreatedAt: comment.CreatedAt}
 	if err := record.Validate(); err != nil {
+		return err
+	}
+	usages := make([]domain.EntryMediaUsage, len(comment.Media))
+	for index, usage := range comment.Media {
+		mediaID, parseErr := domain.ParseID(usage.MediaID)
+		if parseErr != nil {
+			return parseErr
+		}
+		usages[index] = domain.EntryMediaUsage{MediaID: mediaID, Position: usage.Position, AltText: usage.AltText}
+	}
+	if err := domain.ValidateCommentMediaUsages(usages); err != nil {
 		return err
 	}
 	html, err := domain.RenderCommentMarkdown(record.ContentMD)

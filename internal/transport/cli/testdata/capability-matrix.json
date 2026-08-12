@@ -40,7 +40,7 @@
     },
     {
       "command": "comment create",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
+      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
       "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
       "destructive": {"requires_yes": false, "supports_dry_run": false},
       "output_schema": "comment_v1",
@@ -49,7 +49,7 @@
     },
     {
       "command": "comment delete",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
+      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
       "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
       "destructive": {"requires_yes": true, "supports_dry_run": true},
       "output_schema": "comment_v1_with_delete_meta",
@@ -67,7 +67,7 @@
     },
     {
       "command": "comment reply",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
+      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
       "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
       "destructive": {"requires_yes": false, "supports_dry_run": false},
       "output_schema": "comment_v1",

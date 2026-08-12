@@ -23,6 +23,18 @@ import {
   SiteIdentityPreview,
 } from "../../components/TimelineInteractions";
 import { formatMomentDate } from "../posts/dates";
+import { ImageGrid } from "../media/ImageGrid";
+import { MediaComposer } from "../media/MediaComposer";
+import {
+  applyUpload,
+  fileValidation,
+  mediaInput,
+  mediaValidation,
+  newMediaItem,
+  readLocalPreview,
+  uploadMessage,
+  type ComposerMediaItem,
+} from "../media/mediaState";
 import { useOwner } from "../owner/OwnerProvider";
 import styles from "./Comments.module.css";
 
@@ -222,6 +234,10 @@ function CommentForm({
   const [retryUntil, setRetryUntil] = useState(0);
   const [remaining, setRemaining] = useState(0);
   const [focused, setFocused] = useState(parentId !== null);
+  const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>([]);
+  const mediaItemsRef = useRef(mediaItems);
+  const mediaUploadsRef = useRef(new Map<string, AbortController>());
+  const mountedRef = useRef(true);
   const pendingRef = useRef(false);
   const idempotencyRef = useRef("");
   const signatureRef = useRef("");
@@ -234,6 +250,7 @@ function CommentForm({
   const validName =
     mode === "owner" || (nameCount > 0 && nameCount <= MAX_AUTHOR_NAME);
   const validContent = content.trim().length > 0 && contentCount <= MAX_COMMENT;
+  const mediaError = mediaValidation(mediaItems, 4);
   const rateLimited = remaining > 0;
   const formId = parentId ? `reply-${parentId}` : "top-level-comment";
   const displayReauth =
@@ -248,10 +265,101 @@ function CommentForm({
     parentId !== null ||
     focused ||
     content.trim().length > 0 ||
+    mediaItems.length > 0 ||
     pending ||
     displayedError !== null ||
     rateLimited ||
     !commentsEnabled;
+
+  const replaceMedia = (next: ComposerMediaItem[]) => {
+    mediaItemsRef.current = next;
+    setMediaItems(next);
+  };
+
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+      for (const controller of mediaUploadsRef.current.values())
+        controller.abort();
+      for (const item of mediaItemsRef.current) {
+        if (item.localPreviewUrl?.startsWith("blob:"))
+          URL.revokeObjectURL(item.localPreviewUrl);
+      }
+    },
+    [],
+  );
+
+  const uploadOne = async (key: string) => {
+    const current = mediaItemsRef.current.find((item) => item.key === key);
+    if (!current || current.mediaId || !current.file) return;
+    const controller = new AbortController();
+    mediaUploadsRef.current.get(key)?.abort();
+    mediaUploadsRef.current.set(key, controller);
+    replaceMedia(
+      mediaItemsRef.current.map((item) =>
+        item.key === key
+          ? { ...item, state: "uploading", progress: 0, error: null }
+          : item,
+      ),
+    );
+    try {
+      const progress = (value: number) => {
+        if (
+          !mountedRef.current ||
+          mediaUploadsRef.current.get(key) !== controller
+        )
+          return;
+        replaceMedia(
+          mediaItemsRef.current.map((item) =>
+            item.key === key ? { ...item, progress: value } : item,
+          ),
+        );
+      };
+      const uploaded =
+        mode === "owner"
+          ? await owner.api.uploadMedia(
+              owner.session!.csrfToken,
+              current.file,
+              progress,
+              controller.signal,
+            )
+          : await api.uploadCommentMedia(
+              postId,
+              current.file,
+              progress,
+              controller.signal,
+            );
+      if (
+        !mountedRef.current ||
+        mediaUploadsRef.current.get(key) !== controller
+      )
+        return;
+      replaceMedia(
+        mediaItemsRef.current.map((item) =>
+          item.key === key ? applyUpload(item, uploaded) : item,
+        ),
+      );
+    } catch (nextError) {
+      if (
+        mountedRef.current &&
+        mediaUploadsRef.current.get(key) === controller
+      ) {
+        const message = uploadMessage(nextError);
+        replaceMedia(
+          mediaItemsRef.current.map((item) =>
+            item.key === key
+              ? { ...item, state: "failed", progress: 0, error: message }
+              : item,
+          ),
+        );
+        setError(message);
+      }
+      throw nextError;
+    } finally {
+      if (mediaUploadsRef.current.get(key) === controller)
+        mediaUploadsRef.current.delete(key);
+    }
+  };
 
   useEffect(() => {
     if (!retryUntil) {
@@ -279,7 +387,8 @@ function CommentForm({
       !validName ||
       !validContent ||
       !commentsEnabled ||
-      rateLimited
+      rateLimited ||
+      mediaError !== null
     ) {
       return;
     }
@@ -295,6 +404,12 @@ function CommentForm({
       parentId,
       mode === "guest" ? authorName : null,
       content,
+      mediaItems.map((item) => [
+        item.key,
+        item.altMode,
+        item.altText,
+        item.mediaId,
+      ]),
       mode === "guest" ? website : null,
     ]);
     if (signatureRef.current !== signature) {
@@ -305,6 +420,10 @@ function CommentForm({
     setPending(true);
     setError(null);
     try {
+      for (const item of [...mediaItemsRef.current]) {
+        if (!item.mediaId) await uploadOne(item.key);
+      }
+      const usages = mediaInput(mediaItemsRef.current);
       const result =
         mode === "owner"
           ? await owner.api.createComment(
@@ -313,10 +432,17 @@ function CommentForm({
               content,
               parentId,
               idempotencyRef.current,
+              usages,
             )
           : await api.createGuestComment(
               postId,
-              { authorName, contentMd: content, parentId, website },
+              {
+                authorName,
+                contentMd: content,
+                parentId,
+                website,
+                media: usages,
+              },
               idempotencyRef.current,
             );
       onCreated(result.comment);
@@ -325,6 +451,11 @@ function CommentForm({
       signatureRef.current = "";
       idempotencyRef.current = "";
       setRetryUntil(0);
+      for (const item of mediaItemsRef.current) {
+        if (item.localPreviewUrl?.startsWith("blob:"))
+          URL.revokeObjectURL(item.localPreviewUrl);
+      }
+      replaceMedia([]);
     } catch (nextError) {
       if (mode === "owner" && owner.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
@@ -359,6 +490,7 @@ function CommentForm({
           parentId === null &&
           !event.currentTarget.contains(event.relatedTarget as Node | null) &&
           content.trim().length === 0 &&
+          mediaItems.length === 0 &&
           !displayedError
         ) {
           setFocused(false);
@@ -430,7 +562,8 @@ function CommentForm({
                 validName &&
                 validContent &&
                 commentsEnabled &&
-                !rateLimited
+                !rateLimited &&
+                mediaError === null
               ) {
                 event.preventDefault();
                 event.currentTarget.form?.requestSubmit();
@@ -469,6 +602,55 @@ function CommentForm({
               {contentCount}/{MAX_COMMENT}
             </span>
           </div>
+          <MediaComposer
+            disabled={pending || !commentsEnabled}
+            items={mediaItems}
+            maximum={4}
+            maximumTotalBytes={40 * 1024 * 1024}
+            subject="回应"
+            onAdd={(files) => {
+              const next = [...mediaItemsRef.current];
+              for (const file of files) {
+                if (fileValidation(file, next, 40 * 1024 * 1024)) continue;
+                const item = newMediaItem(file);
+                next.push(item);
+                void readLocalPreview(file)
+                  .then((localPreviewUrl) => {
+                    if (
+                      !mountedRef.current ||
+                      !mediaItemsRef.current.some(
+                        (candidate) => candidate.key === item.key,
+                      )
+                    )
+                      return;
+                    replaceMedia(
+                      mediaItemsRef.current.map((candidate) =>
+                        candidate.key === item.key
+                          ? { ...candidate, localPreviewUrl }
+                          : candidate,
+                      ),
+                    );
+                  })
+                  .catch(() => undefined);
+              }
+              replaceMedia(next);
+              setFocused(true);
+            }}
+            onChange={(next) => replaceMedia(next)}
+            onRemove={(key) => {
+              mediaUploadsRef.current.get(key)?.abort();
+              mediaUploadsRef.current.delete(key);
+              replaceMedia(
+                mediaItemsRef.current.filter((item) => item.key !== key),
+              );
+            }}
+            onRetry={(key) => void uploadOne(key).catch(() => undefined)}
+          />
+          {mediaError ? (
+            <p className={styles.formError} role="alert">
+              {mediaError}
+            </p>
+          ) : null}
           {displayedError ? (
             <div
               className={styles.formError}
@@ -517,7 +699,8 @@ function CommentForm({
                 !validContent ||
                 !commentsEnabled ||
                 rateLimited ||
-                (mode === "owner" && !owner.session)
+                (mode === "owner" && !owner.session) ||
+                mediaError !== null
               }
               type="submit"
             >
@@ -756,6 +939,7 @@ function CommentItem({
           className={styles.commentMarkdown}
           dangerouslySetInnerHTML={{ __html: comment.contentHtml }}
         />
+        <ImageGrid media={comment.media} />
         <footer className={styles.commentActions}>
           {replyRoot ? (
             <button

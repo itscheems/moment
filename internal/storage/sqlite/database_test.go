@@ -49,13 +49,13 @@ func TestOpenMigratesCurrentGenerationAndProbesFTS(t *testing.T) {
 	}
 
 	expected := []string{
-		"comments", "entries", "entry_fts", "entry_media", "idempotency_keys",
+		"comment_media", "comments", "entries", "entry_fts", "entry_media", "idempotency_keys",
 		"media", "schema_migrations", "site_settings",
 	}
 	rows, err := db.read.QueryContext(ctx, `
 SELECT name
 FROM sqlite_schema
-WHERE name IN ('comments', 'entries', 'entry_fts', 'entry_media', 'idempotency_keys', 'media', 'schema_migrations', 'site_settings')
+WHERE name IN ('comment_media', 'comments', 'entries', 'entry_fts', 'entry_media', 'idempotency_keys', 'media', 'schema_migrations', 'site_settings')
 ORDER BY name`)
 	if err != nil {
 		t.Fatal(err)
@@ -436,6 +436,14 @@ INSERT INTO media VALUES (?, ?, ?, 'invalid.jpg', 'image/jpeg', 1, 1, 1, 1, NULL
 	mustWrite(t, db, `INSERT INTO comments VALUES (?, ?, ?, 'guest', 'Guest', 'reply', 2)`, commentLeaf, entryOne, commentRoot)
 	mustWrite(t, db, `INSERT INTO comments VALUES (?, ?, NULL, 'owner', 'Owner', 'peer', 3)`, commentPeer, entryOne)
 	mustWrite(t, db, `INSERT INTO comments VALUES (?, ?, NULL, 'guest', 'Else', 'other entry', 4)`, commentElse, entryTwo)
+	mustWrite(t, db, `INSERT INTO comment_media VALUES (?, ?, 0, NULL)`, commentRoot, mediaOne)
+	mustWrite(t, db, `INSERT INTO comment_media VALUES (?, ?, 1, '')`, commentRoot, mediaOne)
+	mustWrite(t, db, `INSERT INTO comment_media VALUES (?, ?, 2, 'shoreline')`, commentRoot, mediaOne)
+	assertWriteRejected(t, db, `INSERT INTO comment_media VALUES (?, ?, 3, ?)`, commentRoot, mediaOne, " \t\n ")
+	assertWriteRejected(t, db, `INSERT INTO comment_media VALUES (?, ?, 3, ?)`, commentRoot, mediaOne, strings.Repeat("界", 1001))
+	assertWriteRejected(t, db, `INSERT INTO comment_media VALUES (?, ?, 4, NULL)`, commentRoot, mediaOne)
+	assertWriteRejected(t, db, `INSERT INTO comment_media VALUES (?, ?, 3, NULL)`, commentBad, mediaOne)
+	assertWriteRejected(t, db, `INSERT INTO comment_media VALUES (?, ?, 3, NULL)`, commentRoot, entryThree)
 	assertWriteRejected(t, db, `INSERT INTO comments VALUES (?, ?, ?, 'guest', 'Deep', 'no', 5)`, commentBad, entryOne, commentLeaf)
 	assertWriteRejected(t, db, `INSERT INTO comments VALUES (?, ?, ?, 'guest', 'Cross', 'no', 5)`, commentBad, entryOne, commentElse)
 	assertWriteRejected(t, db, `UPDATE comments SET parent_id = ? WHERE id = ?`, commentPeer, commentRoot)
@@ -445,6 +453,7 @@ INSERT INTO media VALUES (?, ?, ?, 'invalid.jpg', 'image/jpeg', 1, 1, 1, 1, NULL
 
 	mustWrite(t, db, `DELETE FROM comments WHERE id = ?`, commentRoot)
 	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id IN (?, ?)`, 0, commentRoot, commentLeaf)
+	assertCount(t, db.read, `SELECT count(*) FROM comment_media WHERE comment_id IN (?, ?)`, 0, commentRoot, commentLeaf)
 	mustWrite(t, db, `DELETE FROM entries WHERE id = ?`, entryTwo)
 	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id = ?`, 0, commentElse)
 

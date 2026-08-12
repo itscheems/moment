@@ -51,21 +51,24 @@ func NewCommentRepository(transactions Transactor, locks *runtimefs.Locker) (*Co
 
 // NewCommentRepositoryWithinMaintenance reuses a caller-held authoritative
 // ordinary-write lease.
-func NewCommentRepositoryWithinMaintenance(transactions Transactor, maintenance *runtimefs.Lease) (*CommentRepository, error) {
+func NewCommentRepositoryWithinMaintenance(transactions Transactor, maintenance *runtimefs.Lease, locks *runtimefs.Locker) (*CommentRepository, error) {
 	if transactions == nil {
 		return nil, errors.New("SQLite transactions are required")
 	}
 	if !maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
 		return nil, errors.New("shared maintenance lease is required")
 	}
-	return &CommentRepository{transactions: transactions, maintenance: maintenance}, nil
+	if locks == nil {
+		return nil, errors.New("runtime locks are required")
+	}
+	return &CommentRepository{transactions: transactions, maintenance: maintenance, locks: locks}, nil
 }
 
 func (repository *CommentRepository) Read(ctx context.Context, operation func(app.CommentStore) error) error {
 	if operation == nil {
 		return errors.New("comment read operation is required")
 	}
-	return repository.transactions.ReadTx(ctx, func(queries Queries) error { return operation(commentStore{queries: queries}) })
+	return repository.transactions.ReadTx(ctx, func(queries Queries) error { return operation(newCommentStore(queries)) })
 }
 
 func (repository *CommentRepository) Write(ctx context.Context, operation func(app.CommentStore) error) error {
@@ -74,7 +77,8 @@ func (repository *CommentRepository) Write(ctx context.Context, operation func(a
 	}
 	if repository.development != nil {
 		if !repository.development.BelongsTo(repository.root) ||
-			!repository.development.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) {
+			!repository.development.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) ||
+			!repository.development.Holds(runtimefs.MediaLock, runtimefs.Exclusive) {
 			return runtimefs.ErrInsufficientLocks
 		}
 		return repository.write(ctx, operation)
@@ -83,21 +87,36 @@ func (repository *CommentRepository) Write(ctx context.Context, operation func(a
 		if !repository.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
 			return errors.New("comment maintenance lease is no longer held")
 		}
+		mediaLease, err := repository.locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+		if err != nil {
+			return fmt.Errorf("coordinate comment media references: %w", err)
+		}
+		defer func() { _ = mediaLease.Release() }()
 		return repository.write(ctx, operation)
 	}
-	lease, err := repository.locks.Acquire(ctx, runtimefs.MaintenanceLock, runtimefs.Shared)
+	leases, err := repository.locks.AcquireSet(ctx,
+		runtimefs.LockRequest{Name: runtimefs.MaintenanceLock, Mode: runtimefs.Shared},
+		runtimefs.LockRequest{Name: runtimefs.MediaLock, Mode: runtimefs.Shared},
+	)
 	if err != nil {
 		return fmt.Errorf("coordinate comment write: %w", err)
 	}
-	defer func() { _ = lease.Release() }()
+	defer func() { _ = leases.Release() }()
 	return repository.write(ctx, operation)
 }
 
 func (repository *CommentRepository) write(ctx context.Context, operation func(app.CommentStore) error) error {
-	return repository.transactions.WriteTx(ctx, func(queries Queries) error { return operation(commentStore{queries: queries}) })
+	return repository.transactions.WriteTx(ctx, func(queries Queries) error { return operation(newCommentStore(queries)) })
 }
 
-type commentStore struct{ queries Queries }
+type commentStore struct {
+	queries Queries
+	mediaReferenceStore
+}
+
+func newCommentStore(queries Queries) commentStore {
+	return commentStore{queries: queries, mediaReferenceStore: newMediaReferenceStore(queries)}
+}
 
 var _ app.CommentStore = commentStore{}
 
@@ -160,6 +179,108 @@ ORDER BY
 		return nil, fmt.Errorf("iterate comment thread: %w", err)
 	}
 	return records, nil
+}
+
+func (store commentStore) CommentMediaUsages(ctx context.Context, commentID domain.ID) ([]domain.EntryMediaUsage, error) {
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT media_id, position, alt_text
+FROM comment_media
+WHERE comment_id = ?
+ORDER BY position`, commentID.String())
+	if err != nil {
+		return nil, fmt.Errorf("query comment media usages: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	usages := make([]domain.EntryMediaUsage, 0, domain.MaxCommentMediaUsages)
+	for rows.Next() {
+		var rawID string
+		var position int
+		var alt sql.NullString
+		if err := rows.Scan(&rawID, &position, &alt); err != nil {
+			return nil, fmt.Errorf("scan comment media usage: %w", err)
+		}
+		id, err := domain.ParseID(rawID)
+		if err != nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media ID is invalid", map[string]any{"comment_id": commentID.String()})
+		}
+		usage := domain.EntryMediaUsage{MediaID: id, Position: position}
+		if alt.Valid {
+			value := alt.String
+			usage.AltText = &value
+		}
+		usages = append(usages, usage)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate comment media usages: %w", err)
+	}
+	if err := domain.ValidateCommentMediaUsages(usages); err != nil {
+		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media usages violate the ordered contract", map[string]any{"comment_id": commentID.String()})
+	}
+	return usages, nil
+}
+
+func (store commentStore) ReplaceCommentMediaUsages(ctx context.Context, commentID domain.ID, usages []domain.EntryMediaUsage) error {
+	if err := domain.ValidateCommentMediaUsages(usages); err != nil {
+		return err
+	}
+	var aggregateBytes int64
+	for _, usage := range usages {
+		var byteSize int64
+		if err := store.queries.QueryRowContext(ctx, `SELECT byte_size FROM media WHERE id = ?`, usage.MediaID.String()).Scan(&byteSize); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", usage.MediaID), map[string]any{"media_id": usage.MediaID.String()})
+			}
+			return fmt.Errorf("validate comment media usage: %w", err)
+		}
+		if byteSize > domain.MaxCommentMediaBytes-aggregateBytes {
+			return domain.NewError(domain.CodeMediaTooLarge, "comment media exceed the 40 MiB aggregate budget", map[string]any{"field": "media", "max_bytes": domain.MaxCommentMediaBytes})
+		}
+		aggregateBytes += byteSize
+	}
+	if _, err := store.queries.ExecContext(ctx, `DELETE FROM comment_media WHERE comment_id = ?`, commentID.String()); err != nil {
+		return fmt.Errorf("clear comment media usages: %w", err)
+	}
+	for _, usage := range usages {
+		var alt any
+		if usage.AltText != nil {
+			alt = *usage.AltText
+		}
+		if _, err := store.queries.ExecContext(ctx, `
+INSERT INTO comment_media (comment_id, media_id, position, alt_text)
+VALUES (?, ?, ?, ?)`, commentID.String(), usage.MediaID.String(), usage.Position, alt); err != nil {
+			return fmt.Errorf("insert comment media usage: %w", err)
+		}
+	}
+	return nil
+}
+
+func (store commentStore) CommentCascadeMediaIDs(ctx context.Context, commentID domain.ID) ([]domain.ID, error) {
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT DISTINCT usage.media_id
+FROM comment_media AS usage
+JOIN comments AS comment ON comment.id = usage.comment_id
+WHERE comment.id = ? OR comment.parent_id = ?
+ORDER BY usage.media_id`, commentID.String(), commentID.String())
+	if err != nil {
+		return nil, fmt.Errorf("query comment cascade media: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []domain.ID
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan comment cascade media: %w", err)
+		}
+		id, err := domain.ParseID(raw)
+		if err != nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media ID is invalid", nil)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate comment cascade media: %w", err)
+	}
+	return ids, nil
 }
 
 func (store commentStore) InsertComment(ctx context.Context, comment domain.Comment) error {

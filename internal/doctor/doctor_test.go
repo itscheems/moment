@@ -470,14 +470,17 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1
 			},
 		},
 		{
-			name: "missing referenced original", checkID: CheckMissingMedia, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
+			name: "missing comment media original", checkID: CheckMissingMedia, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
 			corrupt: func(t *testing.T, fixture doctorFixture) {
 				sha := strings.Repeat("a", 64)
 				mutateDatabase(t, fixture.current.DatabasePath, `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
 VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'moment', 'private body', 1, 1, 1, 'private body');
 INSERT INTO media (id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms, unreferenced_since_ms)
 VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAY', '`+sha+`', 'media/original/aa/`+sha+`.png', 'CANARY_SECRET_NAME.png', 'image/png', 1, 1, 1, 1, NULL);
-INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', '01ARZ3NDEKTSV4RRFFQ69G5FAY', 0, NULL)`)
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', '01ARZ3NDEKTSV4RRFFQ69G5FAV', NULL, 'guest', 'Guest', 'private reply', 1);
+INSERT INTO comment_media (comment_id, media_id, position, alt_text)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', '01ARZ3NDEKTSV4RRFFQ69G5FAY', 0, NULL)`)
 			},
 		},
 		{

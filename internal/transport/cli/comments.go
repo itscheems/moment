@@ -10,6 +10,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	"github.com/moment/moment/internal/transport/commentdto"
@@ -39,6 +40,7 @@ func registerComments(application *Application) {
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
+			registerPostMediaFlags(flags)
 		},
 		Run: runCommentReply,
 	})
@@ -66,6 +68,7 @@ func commentCreateSpec(verb, short, long, example string, run Handler) LeafSpec 
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
+			registerPostMediaFlags(flags)
 		},
 		Run: run,
 	}
@@ -133,6 +136,13 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 	if err != nil {
 		return Result{}, err
 	}
+	mediaInput, err := postMediaInputFromFlags(ctx, input)
+	if err != nil {
+		return Result{}, err
+	}
+	if len(mediaInput.Items) > domain.MaxCommentMediaUsages {
+		return Result{}, invalidArgument("comment media may contain at most 4 items", "remove media until positions fit 0 through 3")
+	}
 	var comment commentdto.Comment
 	var meta map[string]any
 	switch invocation.Mode() {
@@ -142,14 +152,26 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 			return Result{}, commentCLIError(err)
 		}
 		defer func() { _ = direct.Close() }()
-		result, err := direct.service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ContentMD: content, IdempotencyKey: idempotencyKey})
+		usages, err := resolveCommentMediaInput(mediaInput, func(path string) (domain.ID, error) {
+			return ingestDirectPostMedia(ctx, direct.media, path)
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		result, err := direct.service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ContentMD: content, Media: usages, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
 		comment = commentdto.FromComment(result.Comment)
 		meta = map[string]any{"replayed": result.Replayed}
 	case ModeAPI:
-		payload := map[string]any{"content_md": content}
+		usages, err := resolveCommentMediaInput(mediaInput, func(path string) (domain.ID, error) {
+			return ingestAPIPostMedia(ctx, invocation, path)
+		})
+		if err != nil {
+			return Result{}, err
+		}
+		payload := map[string]any{"content_md": content, "media": postMediaDTOs(usages)}
 		if parentID != nil {
 			payload["parent_id"] = parentID.String()
 		}
@@ -260,6 +282,7 @@ func openDirectCommentRead(ctx context.Context, invocation Invocation) (*app.Com
 
 type directCommentRuntime struct {
 	service     *app.CommentService
+	media       *media.Store
 	database    *sqlitestore.Database
 	maintenance *runtimefs.Lease
 }
@@ -282,7 +305,7 @@ func openDirectCommentWrite(ctx context.Context, invocation Invocation) (*direct
 		_ = maintenance.Release()
 		return nil, postDatabaseError(err)
 	}
-	repository, err := sqlitestore.NewCommentRepositoryWithinMaintenance(database, maintenance)
+	repository, err := sqlitestore.NewCommentRepositoryWithinMaintenance(database, maintenance, runtimeState.Locks)
 	if err != nil {
 		_ = database.Close()
 		_ = maintenance.Release()
@@ -294,7 +317,24 @@ func openDirectCommentWrite(ctx context.Context, invocation Invocation) (*direct
 		_ = maintenance.Release()
 		return nil, err
 	}
-	return &directCommentRuntime{service: service, database: database, maintenance: maintenance}, nil
+	mediaStore, err := media.NewStoreWithinMaintenance(runtimeState, database, media.Options{}, maintenance)
+	if err != nil {
+		_ = database.Close()
+		_ = maintenance.Release()
+		return nil, err
+	}
+	return &directCommentRuntime{service: service, media: mediaStore, database: database, maintenance: maintenance}, nil
+}
+
+func resolveCommentMediaInput(input postMediaInput, upload func(string) (domain.ID, error)) ([]domain.EntryMediaUsage, error) {
+	usages, err := resolvePostMediaInput(input, upload)
+	if err != nil {
+		return nil, err
+	}
+	if err := domain.ValidateCommentMediaUsages(usages); err != nil {
+		return nil, commentCLIError(err)
+	}
+	return usages, nil
 }
 
 func commentAPIRequest(ctx context.Context, invocation Invocation, method, endpoint string, query url.Values, payload any, idempotencyKey string, authenticate bool, destination any) (map[string]any, int, error) {

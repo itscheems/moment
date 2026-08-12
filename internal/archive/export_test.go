@@ -119,6 +119,11 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	if root.ID != rootCommentID || reply.ID != replyID || reply.ParentID == nil || *reply.ParentID != rootCommentID {
 		t.Fatalf("comment order = %#v then %#v", root, reply)
 	}
+	if len(root.Media) != 2 || root.Media[0].MediaID != mediaOneID || root.Media[0].AltText != nil ||
+		root.Media[1].MediaID != mediaTwoID || root.Media[1].AltText == nil || *root.Media[1].AltText != "街景" ||
+		len(reply.Media) != 1 || reply.Media[0].MediaID != mediaTwoID || reply.Media[0].AltText == nil || *reply.Media[0].AltText != "" {
+		t.Fatalf("comment media = root %#v reply %#v", root.Media, reply.Media)
+	}
 
 	var second bytes.Buffer
 	if _, err := fixture.exporter.Export(context.Background(), &second); err != nil {
@@ -377,6 +382,50 @@ func TestValidateFileRejectsCanonicalChecksumCoveredRecordCorruption(t *testing.
 			},
 		},
 		{
+			name: "comment media is null",
+			mutate: func(members map[string][]byte) {
+				lines := nonemptyLines(members["data/comments.jsonl"])
+				var root, reply map[string]any
+				_ = json.Unmarshal(lines[0], &root)
+				_ = json.Unmarshal(lines[1], &reply)
+				root["media"] = nil
+				members["data/comments.jsonl"] = append(append(append(mustMarshalTest(t, root), '\n'), mustMarshalTest(t, reply)...), '\n')
+			},
+		},
+		{
+			name: "comment media has a position gap",
+			mutate: func(members map[string][]byte) {
+				lines := nonemptyLines(members["data/comments.jsonl"])
+				var root, reply map[string]any
+				_ = json.Unmarshal(lines[0], &root)
+				_ = json.Unmarshal(lines[1], &reply)
+				root["media"].([]any)[0].(map[string]any)["position"] = float64(1)
+				members["data/comments.jsonl"] = append(append(append(mustMarshalTest(t, root), '\n'), mustMarshalTest(t, reply)...), '\n')
+			},
+		},
+		{
+			name: "comment media refers to absent media",
+			mutate: func(members map[string][]byte) {
+				lines := nonemptyLines(members["data/comments.jsonl"])
+				var root, reply map[string]any
+				_ = json.Unmarshal(lines[0], &root)
+				_ = json.Unmarshal(lines[1], &reply)
+				root["media"].([]any)[0].(map[string]any)["media_id"] = orphanMediaID
+				members["data/comments.jsonl"] = append(append(append(mustMarshalTest(t, root), '\n'), mustMarshalTest(t, reply)...), '\n')
+			},
+		},
+		{
+			name: "comment media omits alt state",
+			mutate: func(members map[string][]byte) {
+				lines := nonemptyLines(members["data/comments.jsonl"])
+				var root, reply map[string]any
+				_ = json.Unmarshal(lines[0], &root)
+				_ = json.Unmarshal(lines[1], &reply)
+				delete(root["media"].([]any)[0].(map[string]any), "alt_text")
+				members["data/comments.jsonl"] = append(append(append(mustMarshalTest(t, root), '\n'), mustMarshalTest(t, reply)...), '\n')
+			},
+		},
+		{
 			name: "media records out of hash order",
 			mutate: func(members map[string][]byte) {
 				lines := nonemptyLines(members["data/media.jsonl"])
@@ -583,6 +632,25 @@ func TestValidateFileIgnoresUnknownFieldsAndBoundsUntrustedCounts(t *testing.T) 
 		t.Fatalf("v1 archive without cover extension was rejected: %v", err)
 	}
 
+	legacyCommentMembers, legacyCommentOrder := readArchive(t, output.Bytes())
+	commentLines := nonemptyLines(legacyCommentMembers["data/comments.jsonl"])
+	legacyComments := make([]byte, 0, len(legacyCommentMembers["data/comments.jsonl"]))
+	for _, line := range commentLines {
+		var comment map[string]any
+		_ = json.Unmarshal(line, &comment)
+		delete(comment, "media")
+		legacyComments = append(legacyComments, mustMarshalTest(t, comment)...)
+		legacyComments = append(legacyComments, '\n')
+	}
+	legacyCommentMembers["data/comments.jsonl"] = legacyComments
+	rebuildManifestExpanded(t, legacyCommentMembers)
+	rebuildChecksums(legacyCommentMembers)
+	legacyCommentName := filepath.Join(t.TempDir(), "legacy-without-comment-media.zip")
+	writeArchive(t, legacyCommentName, legacyCommentMembers, legacyCommentOrder)
+	if err := ValidateFile(legacyCommentName); err != nil {
+		t.Fatalf("v1 archive without comment media extension was rejected: %v", err)
+	}
+
 	hugeMembers, hugeOrder := readArchive(t, output.Bytes())
 	for _, field := range []string{"entries", "comments", "media"} {
 		setManifestCount(t, hugeMembers, field, int64(^uint64(0)>>1))
@@ -784,6 +852,9 @@ func newExportFixture(t *testing.T, full bool) exportFixture {
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 2, '街景')`, []any{entryID, mediaTwoID}},
 			{`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'guest', '访客', 'root', ?)`, []any{rootCommentID, entryID, clock.UnixMilli()}},
 			{`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'owner', 'Owner', 'reply', ?)`, []any{replyID, entryID, rootCommentID, clock.UnixMilli()}},
+			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, []any{rootCommentID, mediaOneID}},
+			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 1, '街景')`, []any{rootCommentID, mediaTwoID}},
+			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, '')`, []any{replyID, mediaTwoID}},
 			{`UPDATE site_settings SET title = '我的 Moment', bio = 'portable', timezone = 'Asia/Shanghai', public_base_url = 'http://localhost:8080', avatar_media_id = ?, cover_media_id = ?, pinned_entry_id = ?, comments_enabled = 1 WHERE id = 1`, []any{mediaOneID, mediaTwoID, entryID}},
 			{`UPDATE media SET unreferenced_since_ms = NULL WHERE id IN (?, ?)`, []any{mediaOneID, mediaTwoID}},
 		}

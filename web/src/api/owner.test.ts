@@ -29,6 +29,7 @@ const comment = {
   content_md: "所有者回应",
   content_html: "<p>所有者回应</p>\n",
   created_at: "2026-08-10T01:03:00Z",
+  media: [],
 };
 
 class FakeUploadRequest extends EventTarget {
@@ -587,6 +588,7 @@ describe("owner API client", () => {
     expect(JSON.parse(String(createInit.body))).toEqual({
       content_md: "所有者回应",
       parent_id: null,
+      media: [],
     });
     expect(String(createInit.body)).not.toContain("author_name");
     expect(new Headers(createInit.headers).get("X-CSRF-Token")).toBe("csrf");

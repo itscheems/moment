@@ -17,6 +17,7 @@ import (
 // entry_media/avatar query.
 const mediaReferencedSQL = `(
     EXISTS (SELECT 1 FROM entry_media AS usage WHERE usage.media_id = media.id)
+    OR EXISTS (SELECT 1 FROM comment_media AS usage WHERE usage.media_id = media.id)
     OR EXISTS (
         SELECT 1 FROM site_settings AS site
         WHERE site.id = 1 AND site.avatar_media_id = media.id
@@ -161,9 +162,17 @@ WHERE media.id = ?`, nowMS, id.String())
 func (store mediaReferenceStore) EntryMediaIDs(ctx context.Context, entryID domain.ID) ([]domain.ID, error) {
 	rows, err := store.queries.QueryContext(ctx, `
 SELECT DISTINCT media_id
-FROM entry_media
-WHERE entry_id = ?
-ORDER BY media_id`, entryID.String())
+FROM (
+    SELECT media_id
+    FROM entry_media
+    WHERE entry_id = ?
+    UNION ALL
+    SELECT comment_media.media_id
+    FROM comment_media
+    INNER JOIN comments ON comments.id = comment_media.comment_id
+    WHERE comments.entry_id = ?
+)
+ORDER BY media_id`, entryID.String(), entryID.String())
 	if err != nil {
 		return nil, fmt.Errorf("read entry media references: %w", err)
 	}

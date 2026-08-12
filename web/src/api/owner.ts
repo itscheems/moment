@@ -2,12 +2,12 @@ import {
   decodeCommentResponse,
   decodeCreatedComment,
   decodeResponse,
-  isCanonicalUlid,
   parseComment,
   parseDeletedCommentMeta,
   parsePost,
   parseSiteIdentity,
   PublicApiError,
+  uploadMediaXHR,
   type CreatedComment,
   type PublicComment,
   type PublicPost,
@@ -966,43 +966,6 @@ function sitePayload(update: SiteSettingsUpdate): Record<string, unknown> {
   return payload;
 }
 
-function parseUpload(data: unknown): UploadedMedia {
-  const result = objectData(data);
-  if (
-    !hasExactKeys(result, ["media", "preview", "original_url", "preview_url"])
-  ) {
-    throw invalidResponse("upload result contains unsupported fields");
-  }
-  const media = objectData(result.media);
-  const preview = objectData(result.preview);
-  const id = stringField(media, "id");
-  if (!isCanonicalUlid(id)) {
-    throw invalidResponse("uploaded media id is invalid");
-  }
-  const originalUrl = stringField(result, "original_url");
-  const previewUrl = stringField(result, "preview_url");
-  const expectedOriginal = `/api/v1/media/${id}`;
-  if (
-    originalUrl !== expectedOriginal ||
-    previewUrl !== `${expectedOriginal}/preview`
-  ) {
-    throw invalidResponse("upload result contains an uncontrolled media URL");
-  }
-  const animatedOriginal = booleanField(media, "animated_original");
-  if (booleanField(preview, "animated_original") !== animatedOriginal) {
-    throw invalidResponse("upload preview animation metadata is inconsistent");
-  }
-  return {
-    id,
-    byteSize: positiveIntegerField(media, "byte_size"),
-    width: positiveIntegerField(media, "width"),
-    height: positiveIntegerField(media, "height"),
-    animatedOriginal,
-    previewUrl,
-    originalUrl,
-  };
-}
-
 function mediaPayload(media: PostMediaInput[]): Record<string, unknown>[] {
   return media.map((usage, position) => ({
     media_id: usage.mediaId,
@@ -1232,87 +1195,8 @@ export class OwnerApi {
     onProgress: (percent: number) => void = () => undefined,
     signal?: AbortSignal,
   ): Promise<UploadedMedia> {
-    return new Promise((resolve, reject) => {
-      const request = new XMLHttpRequest();
-      request.open("POST", "/api/v1/owner/media");
-      request.withCredentials = true;
-      request.setRequestHeader("Accept", "application/json");
-      request.setRequestHeader("X-CSRF-Token", csrfToken);
-      request.upload.addEventListener("progress", (event) => {
-        if (event.lengthComputable && event.total > 0) {
-          onProgress(
-            Math.min(99, Math.round((event.loaded / event.total) * 100)),
-          );
-        }
-      });
-      request.addEventListener("error", () =>
-        reject(
-          new PublicApiError("media upload failed", {
-            code: "NETWORK_ERROR",
-            status: 0,
-          }),
-        ),
-      );
-      request.addEventListener("abort", () =>
-        reject(
-          new PublicApiError("media upload was cancelled", {
-            code: "CANCELLED",
-            status: 0,
-          }),
-        ),
-      );
-      request.addEventListener("load", () => {
-        const headers = new Headers();
-        const contentType = request.getResponseHeader("Content-Type");
-        if (contentType) headers.set("Content-Type", contentType);
-        const response = new Response(request.responseText, {
-          status: request.status,
-          headers,
-        });
-        if (
-          request.status >= 200 &&
-          request.status < 300 &&
-          request.status !== 201
-        ) {
-          reject(invalidResponse("media upload success must return HTTP 201"));
-          return;
-        }
-        void decodeResponse(response, {
-          strictSuccessEnvelope: request.status === 201,
-          requireJsonSuccess: request.status === 201,
-        })
-          .then(({ data, meta }) => {
-            if (
-              request.status !== 201 ||
-              !hasExactKeys(meta, ["request_id"]) ||
-              !stringField(meta, "request_id")
-            ) {
-              throw invalidResponse("media upload metadata is invalid");
-            }
-            const uploaded = parseUpload(data);
-            onProgress(100);
-            resolve(uploaded);
-          })
-          .catch(reject);
-      });
-      const abort = () => request.abort();
-      if (signal?.aborted) {
-        reject(
-          new PublicApiError("media upload was cancelled", {
-            code: "CANCELLED",
-            status: 0,
-          }),
-        );
-        return;
-      }
-      signal?.addEventListener("abort", abort, { once: true });
-      request.addEventListener("loadend", () =>
-        signal?.removeEventListener("abort", abort),
-      );
-      const body = new FormData();
-      body.append("file", file, file.name);
-      onProgress(0);
-      request.send(body);
+    return uploadMediaXHR("/api/v1/owner/media", file, onProgress, signal, {
+      "X-CSRF-Token": csrfToken,
     });
   }
 
@@ -1361,10 +1245,12 @@ export class OwnerApi {
     contentMd: string,
     parentId: string | null,
     idempotencyKey: string,
+    media: PostMediaInput[] = [],
   ): Promise<CreatedComment> {
     const init = requestInit("POST", csrfToken, {
       content_md: contentMd,
       parent_id: parentId,
+      media: mediaPayload(media),
     });
     const headers = new Headers(init.headers);
     headers.set("Idempotency-Key", idempotencyKey);

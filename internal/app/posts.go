@@ -541,6 +541,10 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if mediaErr != nil {
 			return mediaErr
 		}
+		affectedMedia, mediaErr := store.EntryMediaIDs(ctx, id)
+		if mediaErr != nil {
+			return mediaErr
+		}
 		changed, deleteErr := store.DeleteEntry(ctx, id)
 		if deleteErr != nil {
 			return deleteErr
@@ -548,7 +552,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if !changed {
 			return postNotFound(id)
 		}
-		if err := store.ReconcileMediaReferences(ctx, mediaUsageIDs(mediaUsages), domain.NormalizeTime(service.clock())); err != nil {
+		if err := store.ReconcileMediaReferences(ctx, affectedMedia, domain.NormalizeTime(service.clock())); err != nil {
 			return err
 		}
 		deleted = Post{Entry: entry, Media: domain.CloneEntryMediaUsages(mediaUsages)}

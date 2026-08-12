@@ -100,7 +100,10 @@ func TestPostDeleteReconcilesCascadedMediaInSameTransaction(t *testing.T) {
 INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
 VALUES (?, 'moment', 'with media', ?, ?, ?)`, entryOne, created.UnixMilli(), created.UnixMilli(), created.UnixMilli())
 	mustWrite(t, database, `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, entryOne, mediaOne)
-	mustWrite(t, database, `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 1, '')`, entryOne, mediaTwo)
+	mustWrite(t, database, `
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
+VALUES (?, ?, NULL, 'guest', 'Guest', 'comment image', ?)`, commentRoot, entryOne, created.UnixMilli())
+	mustWrite(t, database, `INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, '')`, commentRoot, mediaTwo)
 	mustWrite(t, database, `UPDATE site_settings SET avatar_media_id = ? WHERE id = 1`, mediaOne)
 	mustWrite(t, database, `UPDATE media SET unreferenced_since_ms = NULL WHERE id IN (?, ?)`, mediaOne, mediaTwo)
 	repository, err := NewPostRepository(database, runtimeState.Locks)
@@ -116,10 +119,11 @@ VALUES (?, 'moment', 'with media', ?, ?, ?)`, entryOne, created.UnixMilli(), cre
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(deleted.Media) != 2 || deleted.Media[0].MediaID.String() != mediaOne || deleted.Media[1].MediaID.String() != mediaTwo {
+	if len(deleted.Media) != 1 || deleted.Media[0].MediaID.String() != mediaOne {
 		t.Fatalf("deleted post media snapshot = %#v", deleted.Media)
 	}
 	assertCount(t, database.read, `SELECT count(*) FROM entry_media WHERE entry_id = ?`, 0, entryOne)
+	assertCount(t, database.read, `SELECT count(*) FROM comment_media`, 0)
 	assertCount(t, database.read, `SELECT count(*) FROM media WHERE id IN (?, ?)`, 2, mediaOne, mediaTwo)
 	assertMediaClock(t, database, mediaOne, nil)
 	assertMediaClock(t, database, mediaTwo, &removed)

@@ -62,6 +62,7 @@ type ArchiveComment struct {
 	AuthorName  string
 	ContentMD   string
 	CreatedAtMS int64
+	Media       []ArchiveUsage
 }
 
 // ArchiveMedia contains portable metadata plus the private source path needed
@@ -296,32 +297,59 @@ func (snapshot *ArchiveSnapshot) Comments(ctx context.Context, yield func(Archiv
 		return errors.New("archive comment callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms
-FROM comments
-ORDER BY entry_id,
-         CASE WHEN parent_id IS NULL THEN id ELSE parent_id END,
-         CASE WHEN parent_id IS NULL THEN 0 ELSE 1 END,
-         created_at_ms,
-         id`)
+SELECT comment.id, comment.entry_id, comment.parent_id, comment.author_kind,
+       comment.author_name, comment.content_md, comment.created_at_ms,
+       usage.media_id, usage.position, usage.alt_text
+FROM comments AS comment
+LEFT JOIN comment_media AS usage ON usage.comment_id = comment.id
+ORDER BY comment.entry_id,
+         CASE WHEN comment.parent_id IS NULL THEN comment.id ELSE comment.parent_id END,
+         CASE WHEN comment.parent_id IS NULL THEN 0 ELSE 1 END,
+         comment.created_at_ms,
+         comment.id,
+         usage.position`)
 	if err != nil {
 		return fmt.Errorf("query archive comments: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
+	var current *ArchiveComment
 	for rows.Next() {
 		var value ArchiveComment
 		var parent sql.NullString
-		if err := rows.Scan(&value.ID, &value.EntryID, &parent, &value.AuthorKind, &value.AuthorName, &value.ContentMD, &value.CreatedAtMS); err != nil {
+		var mediaID, alt sql.NullString
+		var position sql.NullInt64
+		if err := rows.Scan(&value.ID, &value.EntryID, &parent, &value.AuthorKind, &value.AuthorName, &value.ContentMD, &value.CreatedAtMS, &mediaID, &position, &alt); err != nil {
 			return fmt.Errorf("scan archive comment: %w", err)
 		}
 		if parent.Valid {
 			value.ParentID = &parent.String
 		}
-		if err := yield(value); err != nil {
-			return err
+		if current == nil || current.ID != value.ID {
+			if current != nil {
+				if err := yield(*current); err != nil {
+					return err
+				}
+			}
+			value.Media = make([]ArchiveUsage, 0, 4)
+			current = &value
+		}
+		if mediaID.Valid {
+			if !position.Valid {
+				return errors.New("archive comment usage has no position")
+			}
+			usage := ArchiveUsage{MediaID: mediaID.String, Position: int(position.Int64)}
+			if alt.Valid {
+				value := alt.String
+				usage.AltText = &value
+			}
+			current.Media = append(current.Media, usage)
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate archive comments: %w", err)
+	}
+	if current != nil {
+		return yield(*current)
 	}
 	return nil
 }

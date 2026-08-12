@@ -9,11 +9,15 @@ const (
 	// MaxEntryMediaUsages is the product limit for one Moment. Positions are
 	// therefore the continuous range 0..8.
 	MaxEntryMediaUsages = 9
+	// MaxCommentMediaUsages keeps reply grids compact on desktop and mobile.
+	MaxCommentMediaUsages = 4
 	// MaxMediaAltCodePoints bounds one usage description without conflating
 	// bytes with Unicode code points.
 	MaxMediaAltCodePoints = 1_000
 	// MaxEntryMediaBytes is the aggregate logical usage budget for one post.
 	MaxEntryMediaBytes int64 = 50 << 20
+	// MaxCommentMediaBytes is the aggregate logical usage budget for one comment.
+	MaxCommentMediaBytes int64 = 40 << 20
 )
 
 // EntryMediaUsage is one ordered use of a managed media object. MediaID is
@@ -27,8 +31,18 @@ type EntryMediaUsage struct {
 
 // ValidateEntryMediaUsages enforces the canonical ordered usage contract.
 func ValidateEntryMediaUsages(usages []EntryMediaUsage) error {
-	if len(usages) > MaxEntryMediaUsages {
-		return NewError(CodeInvalidArgument, "a post may contain at most 9 media usages", map[string]any{"field": "media", "max": MaxEntryMediaUsages})
+	return validateMediaUsages(usages, MaxEntryMediaUsages, "a post may contain at most 9 media usages")
+}
+
+// ValidateCommentMediaUsages applies the same ordering and alt contract with
+// the reply-specific four-image limit.
+func ValidateCommentMediaUsages(usages []EntryMediaUsage) error {
+	return validateMediaUsages(usages, MaxCommentMediaUsages, "a comment may contain at most 4 media usages")
+}
+
+func validateMediaUsages(usages []EntryMediaUsage, maximum int, limitMessage string) error {
+	if len(usages) > maximum {
+		return NewError(CodeInvalidArgument, limitMessage, map[string]any{"field": "media", "max": maximum})
 	}
 	for index, usage := range usages {
 		if usage.Position != index {

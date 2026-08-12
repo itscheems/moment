@@ -245,13 +245,17 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			if err := validateArchiveComment(value); err != nil {
 				return err
 			}
+			media := make([]usageRecord, len(value.Media))
+			for index, usage := range value.Media {
+				media[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
+			}
 			if exporter.recordYield != nil {
 				exporter.recordYield("comment", 1)
 			}
 			return write(commentRecord{
 				ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
 				AuthorKind: value.AuthorKind, AuthorName: value.AuthorName,
-				ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS),
+				ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS), Media: media,
 			})
 		})
 	})
@@ -519,13 +523,14 @@ type entryRecord struct {
 }
 
 type commentRecord struct {
-	ID         string  `json:"id"`
-	EntryID    string  `json:"entry_id"`
-	ParentID   *string `json:"parent_id"`
-	AuthorKind string  `json:"author_kind"`
-	AuthorName string  `json:"author_name"`
-	ContentMD  string  `json:"content_md"`
-	CreatedAt  string  `json:"created_at"`
+	ID         string        `json:"id"`
+	EntryID    string        `json:"entry_id"`
+	ParentID   *string       `json:"parent_id"`
+	AuthorKind string        `json:"author_kind"`
+	AuthorName string        `json:"author_name"`
+	ContentMD  string        `json:"content_md"`
+	CreatedAt  string        `json:"created_at"`
+	Media      []usageRecord `json:"media"`
 }
 
 type mediaRecord struct {
@@ -743,11 +748,22 @@ func validateArchiveComment(value sqlitestore.ArchiveComment) error {
 	if value.CreatedAtMS <= 0 {
 		return errors.New("comment timestamp must be positive")
 	}
-	return (domain.Comment{
+	if err := (domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
 		AuthorKind: domain.CommentAuthorKind(value.AuthorKind), AuthorName: value.AuthorName,
 		ContentMD: value.ContentMD, CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
-	}).Validate()
+	}).Validate(); err != nil {
+		return err
+	}
+	usages := make([]domain.EntryMediaUsage, len(value.Media))
+	for index, usage := range value.Media {
+		mediaID, err := domain.ParseID(usage.MediaID)
+		if err != nil {
+			return err
+		}
+		usages[index] = domain.EntryMediaUsage{MediaID: mediaID, Position: usage.Position, AltText: usage.AltText}
+	}
+	return domain.ValidateCommentMediaUsages(usages)
 }
 
 func validateArchiveSite(value sqlitestore.ArchiveSite, development bool) error {
@@ -1246,6 +1262,13 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if _, exists := commentIDs[value.ID]; exists {
 			return errors.New("comment ID is duplicated")
 		}
+		usages, err := portableCommentUsages(value, fields)
+		if err != nil {
+			return err
+		}
+		for _, usage := range usages {
+			usageMediaIDs[usage.MediaID] = struct{}{}
+		}
 		group := value.ID
 		rank := 0
 		if value.ParentID != nil {
@@ -1263,7 +1286,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if err := validateArchiveComment(sqlitestore.ArchiveComment{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
 			AuthorKind: value.AuthorKind, AuthorName: value.AuthorName,
-			ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(),
+			ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(), Media: usages,
 		}); err != nil {
 			return err
 		}
@@ -1355,6 +1378,25 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 	}
 	return nil
+}
+
+func portableCommentUsages(value commentRecord, fields map[string]json.RawMessage) ([]sqlitestore.ArchiveUsage, error) {
+	raw, present := fields["media"]
+	if !present {
+		return []sqlitestore.ArchiveUsage{}, nil
+	}
+	var rawUsages []json.RawMessage
+	if err := json.Unmarshal(raw, &rawUsages); err != nil || rawUsages == nil || len(rawUsages) != len(value.Media) {
+		return nil, errors.New("comment media must be a complete array")
+	}
+	usages := make([]sqlitestore.ArchiveUsage, len(value.Media))
+	for index, usage := range value.Media {
+		if err := requireObjectFields(rawUsages[index], []string{"media_id", "position", "alt_text"}, []string{"media_id", "position"}); err != nil {
+			return nil, err
+		}
+		usages[index] = sqlitestore.ArchiveUsage{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
+	}
+	return usages, nil
 }
 
 type commentOrder struct {

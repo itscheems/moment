@@ -15,6 +15,9 @@ import {
   itemsFromPost,
   mediaInput,
   mediaValidation,
+  newMediaItem,
+  readLocalPreview,
+  uploadMessage,
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -42,65 +45,6 @@ import styles from "./Owner.module.css";
 
 const MAX_CONTENT = 20_000;
 const DRAFT_REMOVAL_REPAIR_DELAY_MS = 50;
-
-function createMediaKey(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  return Array.from(crypto.getRandomValues(new Uint8Array(12)), (value) =>
-    value.toString(16).padStart(2, "0"),
-  ).join("");
-}
-
-function newMediaItem(file: File): ComposerMediaItem {
-  return {
-    key: `local-${createMediaKey()}`,
-    file,
-    localPreviewUrl: null,
-    mediaId: null,
-    previewUrl: "",
-    originalUrl: "",
-    width: null,
-    height: null,
-    byteSize: null,
-    animatedOriginal: file.type === "image/gif",
-    altMode: "missing",
-    altText: "",
-    state: "queued",
-    progress: 0,
-    error: null,
-  };
-}
-
-function readLocalPreview(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") resolve(reader.result);
-      else reject(new Error("local media preview is not a data URL"));
-    });
-    reader.addEventListener("error", () =>
-      reject(reader.error ?? new Error("local media preview failed")),
-    );
-    reader.readAsDataURL(file);
-  });
-}
-
-function uploadMessage(error: unknown): string {
-  if (!(error instanceof PublicApiError)) {
-    return "图片没有上传完成。文字和已完成的图片都已保留，可以重试。";
-  }
-  switch (error.code) {
-    case "MEDIA_TYPE_UNSUPPORTED":
-      return "图片格式不受支持，请选择 JPEG、PNG、WebP 或 GIF。";
-    case "MEDIA_TOO_LARGE":
-      return "图片超过大小限制，请移除或压缩后重试。";
-    case "MEDIA_DIMENSIONS_EXCEEDED":
-      return "图片尺寸或 GIF 帧数超过安全限制。";
-    case "MEDIA_CORRUPT":
-      return "图片内容无效或与文件类型不一致，请重新选择。";
-    default:
-      return "图片没有上传完成。文字和已完成的图片都已保留，可以重试。";
-  }
-}
 
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {

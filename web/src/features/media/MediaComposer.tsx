@@ -33,6 +33,9 @@ export function MediaComposer({
   onRemove,
   onRetry,
   footerAction,
+  maximum = MAX_MEDIA_COUNT,
+  maximumTotalBytes,
+  subject = "Moment",
 }: {
   items: ComposerMediaItem[];
   disabled: boolean;
@@ -41,6 +44,9 @@ export function MediaComposer({
   onRemove: (key: string) => void;
   onRetry: (key: string) => void;
   footerAction?: ReactNode;
+  maximum?: number;
+  maximumTotalBytes?: number;
+  subject?: string;
 }) {
   const inputId = useId();
   const [selectionError, setSelectionError] = useState<string | null>(null);
@@ -113,8 +119,8 @@ export function MediaComposer({
     const nextItems = items;
     let error: string | null = null;
     for (const file of Array.from(event.currentTarget.files ?? [])) {
-      if (nextItems.length + accepted.length >= MAX_MEDIA_COUNT) {
-        error = "每条 Moment 最多附加 9 张图片；多出的文件没有加入。";
+      if (nextItems.length + accepted.length >= maximum) {
+        error = `每条${subject}最多附加 ${maximum} 张图片；多出的文件没有加入。`;
         break;
       }
       const candidateItems = [
@@ -123,7 +129,7 @@ export function MediaComposer({
           (selected) => ({ file: selected }) as ComposerMediaItem,
         ),
       ];
-      const invalid = fileValidation(file, candidateItems);
+      const invalid = fileValidation(file, candidateItems, maximumTotalBytes);
       if (invalid) {
         error = invalid;
         continue;
@@ -176,7 +182,7 @@ export function MediaComposer({
         accept="image/jpeg,image/png,image/webp,image/gif"
         aria-describedby={`${inputId}-guidance`}
         aria-label="图片文件"
-        disabled={disabled || items.length >= MAX_MEDIA_COUNT}
+        disabled={disabled || items.length >= maximum}
         id={inputId}
         multiple
         onChange={selectFiles}
@@ -395,7 +401,7 @@ export function MediaComposer({
         <div className={styles.mediaToolbar}>
           <button
             aria-label="选择图片"
-            disabled={disabled || items.length >= MAX_MEDIA_COUNT}
+            disabled={disabled || items.length >= maximum}
             onClick={() => fileInputRef.current?.click()}
             ref={pickerRef}
             title="添加图片"
@@ -405,14 +411,14 @@ export function MediaComposer({
           </button>
           {items.length > 0 ? (
             <span aria-live="polite">
-              {items.length} / {MAX_MEDIA_COUNT}
+              {items.length} / {maximum}
             </span>
           ) : null}
         </div>
         {footerAction}
       </div>
       <p className={styles.srOnly} id={`${inputId}-guidance`}>
-        支持 JPEG、PNG、WebP 或 GIF，单图最大 10 MiB，最多 9 张。
+        支持 JPEG、PNG、WebP 或 GIF，单图最大 10 MiB，最多 {maximum} 张。
         图片不会写入本地文字草稿。
       </p>
       {selectionError ? (

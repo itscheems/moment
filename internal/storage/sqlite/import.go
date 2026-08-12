@@ -148,10 +148,37 @@ func (importer *PortableImporter) InsertComment(ctx context.Context, value Archi
 	if err := comment.Validate(); err != nil {
 		return err
 	}
+	usages := make([]domain.EntryMediaUsage, len(value.Media))
+	for index, usage := range value.Media {
+		mediaID, err := domain.ParseID(usage.MediaID)
+		if err != nil {
+			return err
+		}
+		usages[index] = domain.EntryMediaUsage{MediaID: mediaID, Position: usage.Position, AltText: usage.AltText}
+	}
+	if err := domain.ValidateCommentMediaUsages(usages); err != nil {
+		return err
+	}
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?)`, value.ID, value.EntryID, value.ParentID, value.AuthorKind, value.AuthorName, value.ContentMD, value.CreatedAtMS); err != nil {
 		return fmt.Errorf("insert portable comment %s: %w", value.ID, err)
+	}
+	var aggregateBytes int64
+	for _, usage := range value.Media {
+		var byteSize int64
+		if err := importer.tx.QueryRowContext(ctx, `SELECT byte_size FROM media WHERE id = ?`, usage.MediaID).Scan(&byteSize); err != nil {
+			return fmt.Errorf("resolve portable comment media %s: %w", usage.MediaID, err)
+		}
+		if byteSize > domain.MaxCommentMediaBytes-aggregateBytes {
+			return domain.NewError(domain.CodeMediaTooLarge, "comment media exceed the 40 MiB aggregate budget", map[string]any{"field": "media", "max_bytes": domain.MaxCommentMediaBytes})
+		}
+		aggregateBytes += byteSize
+		if _, err := importer.tx.ExecContext(ctx, `
+INSERT INTO comment_media (comment_id, media_id, position, alt_text)
+VALUES (?, ?, ?, ?)`, value.ID, usage.MediaID, usage.Position, usage.AltText); err != nil {
+			return fmt.Errorf("insert portable comment media usage: %w", err)
+		}
 	}
 	importer.comments++
 	return nil

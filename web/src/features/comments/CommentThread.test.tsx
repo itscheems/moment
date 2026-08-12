@@ -41,6 +41,11 @@ function comment(
     owner?: boolean;
     authorName?: string;
     createdAt?: string;
+    media?: Array<{
+      media_id: string;
+      position: number;
+      alt_text: string | null;
+    }>;
   } = {},
 ) {
   const parentId = options.parentId ?? null;
@@ -54,7 +59,58 @@ function comment(
     content_md: content,
     content_html: `<p>${content}</p>\n`,
     created_at: options.createdAt ?? "2026-08-10T01:03:00Z",
+    media: options.media ?? [],
   };
+}
+
+class FakeCommentUploadRequest extends EventTarget {
+  static last: FakeCommentUploadRequest | null = null;
+
+  readonly upload = new EventTarget();
+  method = "";
+  url = "";
+  withCredentials = false;
+  status = 0;
+  responseText = "";
+  responseType: XMLHttpRequestResponseType = "";
+  sent: Document | XMLHttpRequestBodyInit | null = null;
+
+  constructor() {
+    super();
+    FakeCommentUploadRequest.last = this;
+  }
+
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+
+  setRequestHeader() {}
+
+  getResponseHeader(name: string) {
+    return name.toLowerCase() === "content-type" ? "application/json" : null;
+  }
+
+  send(body: Document | XMLHttpRequestBodyInit | null) {
+    this.sent = body;
+  }
+
+  abort() {
+    this.dispatchEvent(new Event("abort"));
+    this.dispatchEvent(new Event("loadend"));
+  }
+
+  fail() {
+    this.dispatchEvent(new Event("error"));
+    this.dispatchEvent(new Event("loadend"));
+  }
+
+  respond(body: unknown) {
+    this.status = 201;
+    this.responseText = JSON.stringify(body);
+    this.dispatchEvent(new Event("load"));
+    this.dispatchEvent(new Event("loadend"));
+  }
 }
 
 const root = comment(rootId, "顶级回应");
@@ -247,6 +303,173 @@ describe("public comment thread", () => {
       [replyId, "1"],
       [createdId, "1"],
     ]);
+  });
+
+  it("uploads, previews, and publishes an ordered image from the guest reply composer", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeCommentUploadRequest);
+    const mediaId = "01K2ABCDEF0123456789ABCDE4";
+    const usage = { media_id: mediaId, position: 0, alt_text: "night sky" };
+    const fetcher = installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+      if (url.endsWith("/comments") && init?.method === "POST") {
+        return success(
+          comment(createdId, "带图回应", {
+            authorName: "访客",
+            media: [usage],
+          }),
+          { replayed: false },
+          201,
+        );
+      }
+    });
+    renderThread();
+
+    await screen.findByRole("form", { name: "发表顶级回应" });
+    fireEvent.change(screen.getByLabelText("显示名"), {
+      target: { value: "访客" },
+    });
+    fireEvent.change(screen.getByLabelText("回应内容"), {
+      target: { value: "带图回应" },
+    });
+    const file = new File(["image"], "night.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("图片文件"), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByText("添加描述"));
+    fireEvent.click(screen.getByLabelText("填写描述"));
+    fireEvent.change(screen.getByPlaceholderText("简要描述图片内容"), {
+      target: { value: "night sky" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+
+    await waitFor(() => expect(FakeCommentUploadRequest.last).not.toBeNull());
+    const upload = FakeCommentUploadRequest.last;
+    expect(upload?.method).toBe("POST");
+    expect(upload?.url).toBe(`/api/v1/posts/${postId}/comment-media`);
+    expect(upload?.sent).toBeInstanceOf(FormData);
+    upload?.respond({
+      data: {
+        media: {
+          id: mediaId,
+          sha256: "a".repeat(64),
+          original_name: "night.png",
+          mime_type: "image/png",
+          byte_size: 5,
+          width: 10,
+          height: 10,
+          created_at: "2026-08-10T01:02:03.000Z",
+          unreferenced_since: "2026-08-10T01:02:03.000Z",
+          animated_original: false,
+        },
+        preview: {
+          recipe_version: "preview-v1",
+          sha256: "b".repeat(64),
+          mime_type: "image/jpeg",
+          width: 10,
+          height: 10,
+          animated_original: false,
+        },
+        original_url: `/api/v1/media/${mediaId}`,
+        preview_url: `/api/v1/media/${mediaId}/preview`,
+      },
+      meta: { request_id: "req_upload" },
+    });
+
+    await screen.findByText("带图回应");
+    const mutation = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith("/comments") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(mutation?.[1]?.body)).media).toEqual([usage]);
+    expect(
+      screen.getByRole("button", {
+        name: "打开第 1 张图片，共 1 张：night sky",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps reply text and selected media through upload failure and retry", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeCommentUploadRequest);
+    const mediaId = "01K2ABCDEF0123456789ABCDE4";
+    const fetcher = installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+      if (url.endsWith("/comments") && init?.method === "POST") {
+        return success(
+          comment(createdId, "失败后重试", {
+            media: [{ media_id: mediaId, position: 0, alt_text: null }],
+          }),
+          { replayed: false },
+          201,
+        );
+      }
+    });
+    renderThread();
+
+    await screen.findByRole("form", { name: "发表顶级回应" });
+    fireEvent.change(screen.getByLabelText("显示名"), {
+      target: { value: "访客" },
+    });
+    fireEvent.change(screen.getByLabelText("回应内容"), {
+      target: { value: "失败后重试" },
+    });
+    fireEvent.change(screen.getByLabelText("图片文件"), {
+      target: {
+        files: [new File(["image"], "retry.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    await waitFor(() => expect(FakeCommentUploadRequest.last).not.toBeNull());
+    const failedUpload = FakeCommentUploadRequest.last;
+    failedUpload?.fail();
+
+    expect(await screen.findByText("重试上传", { exact: false })).toBeVisible();
+    expect(screen.getByLabelText("回应内容")).toHaveValue("失败后重试");
+    expect(
+      fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
+    ).toHaveLength(0);
+
+    fireEvent.click(screen.getByText("重试上传", { exact: false }));
+    await waitFor(() =>
+      expect(FakeCommentUploadRequest.last).not.toBe(failedUpload),
+    );
+    const retriedUpload = FakeCommentUploadRequest.last;
+    expect(retriedUpload?.sent).toBeInstanceOf(FormData);
+    retriedUpload?.respond({
+      data: {
+        media: {
+          id: mediaId,
+          sha256: "a".repeat(64),
+          original_name: "retry.png",
+          mime_type: "image/png",
+          byte_size: 5,
+          width: 10,
+          height: 10,
+          created_at: "2026-08-10T01:02:03.000Z",
+          unreferenced_since: "2026-08-10T01:02:03.000Z",
+          animated_original: false,
+        },
+        preview: {
+          recipe_version: "preview-v1",
+          sha256: "b".repeat(64),
+          mime_type: "image/jpeg",
+          width: 10,
+          height: 10,
+          animated_original: false,
+        },
+        original_url: `/api/v1/media/${mediaId}`,
+        preview_url: `/api/v1/media/${mediaId}/preview`,
+      },
+      meta: { request_id: "req_upload_retry" },
+    });
+    await waitFor(() =>
+      expect(screen.getByText("已就绪", { exact: false })).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    expect(await screen.findByText("失败后重试")).toBeInTheDocument();
   });
 
   it("sends a script-filled honeypot and never reconciles its rejected comment", async () => {
@@ -561,7 +784,7 @@ describe("public comment thread", () => {
       expect(await screen.findByText(content)).toBeInTheDocument();
       expect(createTokens).toEqual(["csrf-new"]);
       expect(createBodies).toEqual([
-        { content_md: content, parent_id: parentId },
+        { content_md: content, parent_id: parentId, media: [] },
       ]);
     },
   );

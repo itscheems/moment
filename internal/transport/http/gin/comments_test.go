@@ -1,8 +1,11 @@
 package ginhttp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -14,6 +17,7 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
@@ -24,6 +28,7 @@ type commentHTTPFixture struct {
 	site     *app.SiteService
 	postID   domain.ID
 	clock    *time.Time
+	media    *media.Store
 }
 
 type recordingCommentLimiter struct{ identities chan string }
@@ -75,15 +80,22 @@ func newCommentHTTPFixture(t *testing.T, limit int, log LogFunc) commentHTTPFixt
 	if err != nil {
 		t.Fatal(err)
 	}
+	mediaStore, err := media.NewStore(runtimeState, database, media.Options{
+		Clock:   func() time.Time { return now },
+		Entropy: bytes.NewReader(bytes.Repeat([]byte{0x37}, 256)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	limiter, err := NewCommentRateLimiter(limit, time.Minute, func() time.Time { return now })
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, SiteSettings: site, Posts: posts, Comments: comments, CommentLimiter: limiter, Log: log, RequestID: func() string { return "req_comments" }})
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, SiteSettings: site, Posts: posts, Comments: comments, CommentLimiter: limiter, Media: mediaStore, Log: log, RequestID: func() string { return "req_comments" }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return commentHTTPFixture{ownerTestFixture: ownerTestFixture{manager: manager, token: credential.Token, engine: engine, now: &now}, comments: comments, site: site, postID: postID, clock: &now}
+	return commentHTTPFixture{ownerTestFixture: ownerTestFixture{manager: manager, token: credential.Token, engine: engine, now: &now}, comments: comments, site: site, postID: postID, clock: &now, media: mediaStore}
 }
 
 func commentRequest(method, path, body string) *http.Request {
@@ -98,6 +110,53 @@ func commentData(t *testing.T, response *httptest.ResponseRecorder) map[string]a
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 	return decodeDataMap(t, response)
+}
+
+func guestCommentMediaRequest(t *testing.T, postID domain.ID, contents []byte) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "reply.gif")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(part, bytes.NewReader(contents)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	request := commentRequest(http.MethodPost, "/api/v1/posts/"+postID.String()+"/comment-media", "")
+	request.Body = io.NopCloser(bytes.NewReader(body.Bytes()))
+	request.ContentLength = int64(body.Len())
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	return request
+}
+
+func TestCommentHTTPGuestMediaUploadCreateAndReadContract(t *testing.T) {
+	fixture := newCommentHTTPFixture(t, 5, nil)
+	upload := performRequest(fixture.engine, guestCommentMediaRequest(t, fixture.postID, testGIF(t)))
+	if upload.Code != http.StatusCreated {
+		t.Fatalf("upload = %d %s", upload.Code, upload.Body.String())
+	}
+	uploadData := decodeDataMap(t, upload)
+	mediaID := uploadData["media"].(map[string]any)["id"].(string)
+	path := "/api/v1/posts/" + fixture.postID.String() + "/comments"
+	created := performRequest(fixture.engine, commentRequest(http.MethodPost, path,
+		`{"author_name":"Guest","content_md":"image reply","media":[{"media_id":"`+mediaID+`","position":0,"alt_text":"night sky"}]}`))
+	data := commentData(t, created)
+	mediaItems, ok := data["media"].([]any)
+	if created.Code != http.StatusCreated || !ok || len(mediaItems) != 1 {
+		t.Fatalf("created = %d %s", created.Code, created.Body.String())
+	}
+	usage := mediaItems[0].(map[string]any)
+	if usage["media_id"] != mediaID || usage["position"] != float64(0) || usage["alt_text"] != "night sky" {
+		t.Fatalf("usage = %#v", usage)
+	}
+	listed := performRequest(fixture.engine, commentRequest(http.MethodGet, path, ""))
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"media_id":"`+mediaID+`"`) {
+		t.Fatalf("list = %d %s", listed.Code, listed.Body.String())
+	}
 }
 
 func TestCommentHTTPGuestOwnerThreadAndModerationContract(t *testing.T) {
@@ -187,6 +246,18 @@ func TestCommentHTTPAbuseSafetyStrictJSONAndClosedComments(t *testing.T) {
 		response := performRequest(fixture.engine, commentRequest(http.MethodPost, path, body))
 		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 			t.Fatalf("strict %q = %d %s", body, response.Code, response.Body.String())
+		}
+	}
+	mediaID := "01ARZ3NDEKTSV4RRFFQ69G5FAY"
+	for _, body := range []string{
+		`{"author_name":"A","content_md":"x","media":null}`,
+		`{"author_name":"A","content_md":"x","media":[{"media_id":"` + mediaID + `","position":1,"alt_text":null}]}`,
+		`{"author_name":"A","content_md":"x","media":[{"media_id":"` + mediaID + `","position":0,"alt_text":null,"extra":true}]}`,
+		`{"author_name":"A","content_md":"x","media":[` + strings.TrimSuffix(strings.Repeat(`{"media_id":"`+mediaID+`","position":0,"alt_text":null},`, domain.MaxCommentMediaUsages+1), ",") + `]}`,
+	} {
+		response := performRequest(fixture.engine, commentRequest(http.MethodPost, path, body))
+		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
+			t.Fatalf("strict media %q = %d %s", body, response.Code, response.Body.String())
 		}
 	}
 	for _, test := range []struct {

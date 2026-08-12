@@ -151,7 +151,7 @@ func (builder *fixtureBuilder) build(ctx context.Context) (Counts, error) {
 		actual.Entries++
 		builder.emit("entry", actual.Entries, builder.recipe.Counts.Entries)
 		commentsForPost := allocation(builder.recipe.Counts.Comments, builder.recipe.Counts.Entries, entryIndex)
-		createdComments, err := builder.createComments(ctx, created.Post.Entry.ID, actual.Comments, commentsForPost)
+		createdComments, err := builder.createComments(ctx, created.Post.Entry.ID, actual.Comments, commentsForPost, usages)
 		if err != nil {
 			return Counts{}, err
 		}
@@ -169,7 +169,7 @@ func (builder *fixtureBuilder) build(ctx context.Context) (Counts, error) {
 	return actual, nil
 }
 
-func (builder *fixtureBuilder) createComments(ctx context.Context, entryID domain.ID, offset, count int64) (int64, error) {
+func (builder *fixtureBuilder) createComments(ctx context.Context, entryID domain.ID, offset, count int64, postMedia []domain.EntryMediaUsage) (int64, error) {
 	if count == 0 {
 		return 0, nil
 	}
@@ -181,6 +181,16 @@ func (builder *fixtureBuilder) createComments(ctx context.Context, entryID domai
 		input := app.CreateCommentInput{
 			EntryID: entryID, ContentMD: fmt.Sprintf("fixture comment %d for %s", offset+index, builder.recipe.Name),
 			IdempotencyKey: fmt.Sprintf("dev-%s-%d-comment-%d", builder.recipe.Name, builder.seed, offset+index),
+		}
+		if builder.recipe.Name == "archive-roundtrip" && len(postMedia) != 0 {
+			limit := 1
+			if index%3 == 0 && len(postMedia) > 1 {
+				limit = 2
+			}
+			input.Media = domain.CloneEntryMediaUsages(postMedia[:limit])
+			for position := range input.Media {
+				input.Media[position].Position = position
+			}
 		}
 		var result app.CreateCommentResult
 		var err error

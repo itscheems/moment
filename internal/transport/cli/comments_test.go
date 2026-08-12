@@ -14,6 +14,7 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	ginhttp "github.com/moment/moment/internal/transport/http/gin"
@@ -62,7 +63,11 @@ func newCommentCLIFixture(t *testing.T) commentCLIFixture {
 	site, _ := app.NewSiteService(siteRepository, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
 	commentRepository, _ := sqlitestore.NewCommentRepository(database, runtimeState.Locks)
 	comments, _ := app.NewCommentService(commentRepository)
-	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager, SiteSettings: site, Posts: posts, Comments: comments})
+	mediaStore, err := media.NewStore(runtimeState, database, media.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +126,71 @@ func TestCommentCLIDirectAPIParityOwnerIdentityIdempotencyAndSafety(t *testing.T
 	missing := execute(application, "", "--url", fixture.server.URL, "comment", "delete", created["id"].(string), "--yes", "--json")
 	if missing.exit != ExitNotFound || decodeOneDocument(t, missing.stdout)["error"].(map[string]any)["code"] != "COMMENT_NOT_FOUND" {
 		t.Fatalf("missing = %#v", missing)
+	}
+}
+
+func TestCommentMediaCLIManifestAndAPIUploadParity(t *testing.T) {
+	fixture := newCommentCLIFixture(t)
+	application := momentTestApplication()
+	imagePath := writeCLIImage(t)
+	manifest := writePostManifest(t, `[
+  {"path":`+jsonString(imagePath)+`,"alt_text":"night sky"},
+  {"path":`+jsonString(imagePath)+`,"alt_text":""}
+]`)
+
+	directOutput := execute(application, "", "comment", "create", fixture.postID,
+		"--data-dir", fixture.dataDir, "--content", "direct media comment",
+		"--media-manifest", manifest, "--json")
+	if directOutput.exit != ExitSuccess || directOutput.stderr != "" {
+		t.Fatalf("direct media comment = %#v", directOutput)
+	}
+	direct := commandData(t, directOutput)
+	assertCLICommentMedia(t, direct, []any{"night sky", ""})
+
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	apiOutput := execute(application, "", "--url", fixture.server.URL, "comment", "reply",
+		fixture.postID, direct["id"].(string), "--content", "API media reply",
+		"--media", imagePath, "--media-decorative", "--json")
+	if apiOutput.exit != ExitSuccess || apiOutput.stderr != "" {
+		t.Fatalf("API media reply = %#v", apiOutput)
+	}
+	apiReply := commandData(t, apiOutput)
+	assertCLICommentMedia(t, apiReply, []any{""})
+
+	apiList := commandData(t, execute(application, "", "--url", fixture.server.URL,
+		"comment", "list", fixture.postID, "--json"))
+	directList := commandData(t, execute(application, "", "comment", "list", fixture.postID,
+		"--data-dir", fixture.dataDir, "--json"))
+	if !reflect.DeepEqual(apiList, directList) {
+		t.Fatalf("comment media parity: api=%#v direct=%#v", apiList, directList)
+	}
+
+	overLimit := make([]string, domain.MaxCommentMediaUsages+1)
+	for index := range overLimit {
+		overLimit[index] = `{"path":` + jsonString(imagePath) + `,"alt_text":null}`
+	}
+	invalid := execute(application, "["+strings.Join(overLimit, ",")+"]",
+		"comment", "create", fixture.postID, "--data-dir", fixture.dataDir,
+		"--content", "too many", "--media-manifest", "-", "--json")
+	if invalid.exit != ExitInvalidInput || decodeOneDocument(t, invalid.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
+		t.Fatalf("over-limit media = %#v", invalid)
+	}
+}
+
+func assertCLICommentMedia(t *testing.T, comment map[string]any, expectedAlts []any) {
+	t.Helper()
+	raw, ok := comment["media"].([]any)
+	if !ok || raw == nil || len(raw) != len(expectedAlts) {
+		t.Fatalf("comment media = %#v", comment["media"])
+	}
+	for index, value := range raw {
+		item, ok := value.(map[string]any)
+		if !ok || len(item) != 3 || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) {
+			t.Fatalf("comment media[%d] = %#v", index, value)
+		}
+		if _, err := domain.ParseID(item["media_id"].(string)); err != nil {
+			t.Fatalf("comment media[%d] id = %v", index, err)
+		}
 	}
 }
 

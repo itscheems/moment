@@ -29,6 +29,7 @@ const rootComment = {
   content_md: "第一条 **回应**",
   content_html: "<p>第一条 <strong>回应</strong></p>\n",
   created_at: "2026-08-10T01:03:00Z",
+  media: [],
 };
 
 const replyComment = {
@@ -574,6 +575,7 @@ describe("public API client", () => {
       content_md: "一级回复",
       parent_id: rootComment.id,
       website: "",
+      media: [],
     });
     expect(new Headers(mutation.headers).get("Idempotency-Key")).toBe(
       "web-comment-retry",
@@ -610,6 +612,25 @@ describe("public API client", () => {
     const api = new PublicApi(
       vi.fn(async () =>
         json({ data: { items }, meta: { request_id: "req_bad" } }),
+      ) as typeof fetch,
+    );
+    await expect(api.comments(post.id)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+  });
+
+  it("rejects more than four media usages in a comment response", async () => {
+    const media = Array.from({ length: 5 }, (_, position) => ({
+      media_id: "01K2ABCDEF0123456789ABCDE4",
+      position,
+      alt_text: null,
+    }));
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: { items: [{ ...rootComment, media }] },
+          meta: { request_id: "req_bad_media" },
+        }),
       ) as typeof fetch,
     );
     await expect(api.comments(post.id)).rejects.toMatchObject({

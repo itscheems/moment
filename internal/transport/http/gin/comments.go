@@ -17,7 +17,9 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/transport/commentdto"
+	"github.com/moment/moment/internal/transport/postdto"
 )
 
 var errInvalidCommentRateLimit = errors.New("comment rate limit and window must be greater than zero")
@@ -29,12 +31,15 @@ const (
 
 // RegisterCommentRoutes installs public guest reads/writes and distinct
 // authenticated owner mutation routes.
-func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, manager *auth.Manager, limiter CommentRateLimiter) {
+func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, mediaStore *media.Store, manager *auth.Manager, limiter CommentRateLimiter) {
 	if limiter == nil {
 		limiter, _ = NewCommentRateLimiter(defaultGuestCommentLimit, defaultGuestCommentWindow, nil)
 	}
 	engine.GET("/api/v1/posts/:id/comments", listComments(service))
 	engine.POST("/api/v1/posts/:id/comments", createGuestComment(service, limiter))
+	if mediaStore != nil {
+		engine.POST("/api/v1/posts/:id/comment-media", uploadGuestCommentMedia(service, mediaStore, limiter))
+	}
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
 	owner.POST("/posts/:id/comments", createOwnerComment(service))
@@ -89,7 +94,7 @@ func createGuestComment(service *app.CommentService, limiter CommentRateLimiter)
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.CreateGuest(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, AuthorName: request.AuthorName, ContentMD: request.ContentMD, IdempotencyKey: key})
+		result, err := service.CreateGuest(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, AuthorName: request.AuthorName, ContentMD: request.ContentMD, Media: request.Media, IdempotencyKey: key})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -115,7 +120,7 @@ func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ContentMD: request.ContentMD, IdempotencyKey: key})
+		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ContentMD: request.ContentMD, Media: request.Media, IdempotencyKey: key})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -158,6 +163,7 @@ type commentWriteRequest struct {
 	ContentMD  string
 	ParentID   *domain.ID
 	Honeypot   string
+	Media      []domain.EntryMediaUsage
 }
 
 func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, error) {
@@ -178,7 +184,7 @@ func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, erro
 	if err != nil || token != json.Delim('{') {
 		return commentWriteRequest{}, invalidCommentArgument("request must be one JSON object", "body")
 	}
-	request := commentWriteRequest{}
+	request := commentWriteRequest{Media: []domain.EntryMediaUsage{}}
 	seen := make(map[string]bool)
 	for decoder.More() {
 		keyToken, keyErr := decoder.Token()
@@ -210,6 +216,12 @@ func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, erro
 				return commentWriteRequest{}, parseErr
 			}
 			request.ParentID = &id
+		case "media":
+			media, decodeErr := decodeCommentMedia(raw)
+			if decodeErr != nil {
+				return commentWriteRequest{}, decodeErr
+			}
+			request.Media = media
 		case "author_name":
 			if owner || decodeRequiredString(raw, &request.AuthorName) != nil {
 				return commentWriteRequest{}, invalidCommentArgument("author_name is not accepted for owner writes", key)
@@ -235,6 +247,61 @@ func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, erro
 		return commentWriteRequest{}, invalidCommentArgument("request must contain author_name", "author_name")
 	}
 	return request, nil
+}
+
+func decodeCommentMedia(raw json.RawMessage) ([]domain.EntryMediaUsage, error) {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, invalidCommentArgument("media must be an array, not null", "media")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('[') {
+		return nil, invalidCommentArgument("media must be an array", "media")
+	}
+	usages := make([]domain.EntryMediaUsage, 0, domain.MaxCommentMediaUsages)
+	for decoder.More() {
+		var wire postdto.MediaUsage
+		if err := decoder.Decode(&wire); err != nil {
+			return nil, invalidCommentArgument("each media usage requires exactly media_id, position, and alt_text", "media")
+		}
+		id, err := domain.ParseID(wire.MediaID)
+		if err != nil {
+			return nil, invalidCommentArgument("media_id must be a canonical ULID", "media")
+		}
+		usages = append(usages, domain.EntryMediaUsage{MediaID: id, Position: wire.Position, AltText: wire.AltText})
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim(']') {
+		return nil, invalidCommentArgument("media must be one JSON array", "media")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, invalidCommentArgument("media must contain exactly one JSON array", "media")
+	}
+	if err := domain.ValidateCommentMediaUsages(usages); err != nil {
+		return nil, err
+	}
+	return usages, nil
+}
+
+func uploadGuestCommentMedia(service *app.CommentService, store *media.Store, limiter CommentRateLimiter) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		postID, err := domain.ParseID(ctx.Param("id"))
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		if err := service.ValidateCreateTarget(ctx.Request.Context(), postID); err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		allowed, retry := limiter.Allow(ctx.ClientIP())
+		if !allowed {
+			seconds := max(1, int((retry+time.Second-1)/time.Second))
+			ctx.Header("Retry-After", strconv.Itoa(seconds))
+			writeCommentError(ctx, domain.NewError(domain.CodeRateLimited, "comment rate limit exceeded", map[string]any{"retry_after_seconds": seconds}))
+			return
+		}
+		uploadMedia(store)(ctx)
+	}
 }
 
 func decodeRequiredString(raw []byte, destination *string) error {
@@ -285,7 +352,9 @@ func writeCommentError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeContentEmpty, domain.CodeContentTooLarge, domain.CodeExternalImageNotAllowed, domain.CodeCommentRejected:
 		Failure(ctx, http.StatusUnprocessableEntity, string(domainErr.Code), domainErr.Message, domainErr.Details)
-	case domain.CodePostNotFound, domain.CodeCommentNotFound:
+	case domain.CodeMediaTypeUnsupported, domain.CodeMediaTooLarge, domain.CodeMediaDimensionsExceeded:
+		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodePostNotFound, domain.CodeCommentNotFound, domain.CodeMediaNotFound:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeCommentDepthExceeded, domain.CodeIdempotencyKeyReused:
 		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)

@@ -68,6 +68,7 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 		t.Fatal(err)
 	}
 	var stagedEntries []sqlitestore.ArchiveEntry
+	var stagedComments []sqlitestore.ArchiveComment
 	if err := stagedSnapshot.Entries(context.Background(), func(value sqlitestore.ArchiveEntry) error {
 		stagedEntries = append(stagedEntries, value)
 		return nil
@@ -78,6 +79,19 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 		stagedEntries[0].Media[1].AltText == nil || *stagedEntries[0].Media[1].AltText != "" ||
 		stagedEntries[0].Media[2].AltText == nil || *stagedEntries[0].Media[2].AltText != "街景" {
 		t.Fatalf("staged entries = %#v", stagedEntries)
+	}
+	if err := stagedSnapshot.Comments(context.Background(), func(value sqlitestore.ArchiveComment) error {
+		stagedComments = append(stagedComments, value)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(stagedComments) != 2 || len(stagedComments[0].Media) != 2 ||
+		stagedComments[0].Media[0].MediaID != mediaOneID || stagedComments[0].Media[0].AltText != nil ||
+		stagedComments[0].Media[1].MediaID != mediaTwoID || stagedComments[0].Media[1].AltText == nil || *stagedComments[0].Media[1].AltText != "街景" ||
+		len(stagedComments[1].Media) != 1 || stagedComments[1].Media[0].MediaID != mediaTwoID ||
+		stagedComments[1].Media[0].AltText == nil || *stagedComments[1].Media[0].AltText != "" {
+		t.Fatalf("staged comments = %#v", stagedComments)
 	}
 	if err := stagedSnapshot.Close(); err != nil {
 		t.Fatal(err)
@@ -162,6 +176,18 @@ func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) 
 		entries = append(entries, '\n')
 	}
 	members["data/entries.jsonl"] = entries
+	commentLines := nonemptyLines(members["data/comments.jsonl"])
+	var comments []byte
+	for _, line := range commentLines {
+		var value map[string]any
+		if err := json.Unmarshal(line, &value); err != nil {
+			t.Fatal(err)
+		}
+		value["media"] = []any{}
+		comments = append(comments, mustMarshalTest(t, value)...)
+		comments = append(comments, '\n')
+	}
+	members["data/comments.jsonl"] = comments
 	var site map[string]any
 	if err := json.Unmarshal(members["data/site.json"], &site); err != nil {
 		t.Fatal(err)

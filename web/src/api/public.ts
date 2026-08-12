@@ -84,6 +84,7 @@ export interface PublicComment {
   contentMd: string;
   contentHtml: string;
   createdAt: string;
+  media: PublicMediaUsage[];
 }
 
 export interface CommentThread {
@@ -95,6 +96,17 @@ export interface CreateGuestCommentInput {
   contentMd: string;
   parentId: string | null;
   website?: string;
+  media?: PublicMediaUsage[];
+}
+
+export interface UploadedMedia {
+  id: string;
+  byteSize: number;
+  width: number;
+  height: number;
+  animatedOriginal: boolean;
+  previewUrl: string;
+  originalUrl: string;
 }
 
 export interface CreatedComment {
@@ -396,6 +408,7 @@ export function parseComment(
       "content_md",
       "content_html",
       "created_at",
+      "media",
     ])
   ) {
     throw invalidResponse("comment contains an unsupported or missing field");
@@ -434,6 +447,7 @@ export function parseComment(
   ) {
     throw invalidResponse("comment author_name is not normalized");
   }
+  const media = parseMediaUsages(value.media, 4, "comment");
   return {
     id,
     postId,
@@ -444,7 +458,37 @@ export function parseComment(
     contentMd: commentTextField(value, "content_md", 2_000),
     contentHtml: safeCommentHtmlField(value, "content_html"),
     createdAt: instantField(value, "created_at"),
+    media,
   };
+}
+
+function parseMediaUsages(
+  value: unknown,
+  maximum: number,
+  subject: string,
+): PublicMediaUsage[] {
+  if (!Array.isArray(value) || value.length > maximum) {
+    throw invalidResponse(`${subject} media must be a bounded array`);
+  }
+  return value.map((item, index): PublicMediaUsage => {
+    if (
+      !isRecord(item) ||
+      !hasExactKeys(item, ["media_id", "position", "alt_text"]) ||
+      !isCanonicalUlid(stringField(item, "media_id")) ||
+      item.position !== index
+    ) {
+      throw invalidResponse(`${subject} media usage is not canonical`);
+    }
+    const altText = nullableStringField(item, "alt_text");
+    if (
+      altText !== null &&
+      ((altText !== "" && !altText.trim()) ||
+        Array.from(altText).length > 1_000)
+    ) {
+      throw invalidResponse(`${subject} media alt_text is not canonical`);
+    }
+    return { mediaId: stringField(item, "media_id"), position: index, altText };
+  });
 }
 
 function commentOrder(left: PublicComment, right: PublicComment): number {
@@ -507,29 +551,7 @@ export function parsePost(value: unknown): PublicPost {
   ) {
     throw invalidResponse("post contains an unsupported or missing field");
   }
-  const media = value.media.map((item, index): PublicMediaUsage => {
-    if (
-      !isRecord(item) ||
-      !hasExactKeys(item, ["media_id", "position", "alt_text"]) ||
-      !isCanonicalUlid(stringField(item, "media_id")) ||
-      item.position !== index
-    ) {
-      throw invalidResponse("post media usage is not canonical");
-    }
-    const altText = nullableStringField(item, "alt_text");
-    if (
-      altText !== null &&
-      ((altText !== "" && !altText.trim()) ||
-        Array.from(altText).length > 1_000)
-    ) {
-      throw invalidResponse("post media alt_text is not canonical");
-    }
-    return {
-      mediaId: stringField(item, "media_id"),
-      position: index,
-      altText,
-    };
-  });
+  const media = parseMediaUsages(value.media, 9, "post");
   return {
     id: stringField(value, "id"),
     contentMd: stringField(value, "content_md"),
@@ -1011,6 +1033,11 @@ export class PublicApi {
           content_md: input.contentMd,
           parent_id: input.parentId,
           website: input.website ?? "",
+          media: (input.media ?? []).map((usage, position) => ({
+            media_id: usage.mediaId,
+            position,
+            alt_text: usage.altText,
+          })),
         }),
       },
     );
@@ -1020,6 +1047,147 @@ export class PublicApi {
       authorName: input.authorName.trim(),
     });
   }
+
+  async uploadCommentMedia(
+    postId: string,
+    file: File,
+    onProgress: (percent: number) => void = () => undefined,
+    signal?: AbortSignal,
+  ): Promise<UploadedMedia> {
+    return uploadMediaXHR(
+      `/api/v1/posts/${encodeURIComponent(postId)}/comment-media`,
+      file,
+      onProgress,
+      signal,
+    );
+  }
+}
+
+export function uploadMediaXHR(
+  endpoint: string,
+  file: File,
+  onProgress: (percent: number) => void = () => undefined,
+  signal?: AbortSignal,
+  headers: Record<string, string> = {},
+): Promise<UploadedMedia> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const resolveOnce = (value: UploadedMedia) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const rejectOnce = (reason: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(reason);
+    };
+    const request = new XMLHttpRequest();
+    request.open("POST", endpoint);
+    request.withCredentials = true;
+    request.setRequestHeader("Accept", "application/json");
+    for (const [name, value] of Object.entries(headers))
+      request.setRequestHeader(name, value);
+    request.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0)
+        onProgress(
+          Math.min(99, Math.round((event.loaded / event.total) * 100)),
+        );
+    });
+    request.addEventListener("error", () =>
+      rejectOnce(
+        new PublicApiError("media upload failed", {
+          code: "NETWORK_ERROR",
+          status: 0,
+        }),
+      ),
+    );
+    request.addEventListener("abort", () =>
+      rejectOnce(
+        new PublicApiError("media upload was cancelled", {
+          code: "CANCELLED",
+          status: 0,
+        }),
+      ),
+    );
+    request.addEventListener("load", () => {
+      const responseHeaders = new Headers();
+      const contentType = request.getResponseHeader("Content-Type");
+      if (contentType) responseHeaders.set("Content-Type", contentType);
+      const response = new Response(request.responseText, {
+        status: request.status,
+        headers: responseHeaders,
+      });
+      void decodeResponse(response, {
+        strictSuccessEnvelope: request.status === 201,
+        requireJsonSuccess: request.status === 201,
+      })
+        .then(({ data, meta }) => {
+          if (
+            request.status !== 201 ||
+            !hasExactKeys(meta, ["request_id"]) ||
+            !stringField(meta, "request_id")
+          ) {
+            throw invalidResponse("media upload metadata is invalid");
+          }
+          const uploaded = parseUploadedMedia(data);
+          onProgress(100);
+          resolveOnce(uploaded);
+        })
+        .catch(rejectOnce);
+    });
+    const abort = () => request.abort();
+    if (signal?.aborted) {
+      rejectOnce(
+        new PublicApiError("media upload was cancelled", {
+          code: "CANCELLED",
+          status: 0,
+        }),
+      );
+      return;
+    }
+    signal?.addEventListener("abort", abort, { once: true });
+    request.addEventListener("loadend", () =>
+      signal?.removeEventListener("abort", abort),
+    );
+    const body = new FormData();
+    body.append("file", file, file.name);
+    onProgress(0);
+    request.send(body);
+  });
+}
+
+function parseUploadedMedia(data: unknown): UploadedMedia {
+  if (
+    !isRecord(data) ||
+    !hasExactKeys(data, ["media", "preview", "original_url", "preview_url"]) ||
+    !isRecord(data.media) ||
+    !isRecord(data.preview)
+  ) {
+    throw invalidResponse("upload result contains unsupported fields");
+  }
+  const id = stringField(data.media, "id");
+  if (!isCanonicalUlid(id))
+    throw invalidResponse("uploaded media id is invalid");
+  const originalUrl = stringField(data, "original_url");
+  const previewUrl = stringField(data, "preview_url");
+  if (
+    originalUrl !== `/api/v1/media/${id}` ||
+    previewUrl !== `${originalUrl}/preview`
+  )
+    throw invalidResponse("upload result contains an uncontrolled media URL");
+  const animatedOriginal = booleanField(data.media, "animated_original");
+  if (booleanField(data.preview, "animated_original") !== animatedOriginal)
+    throw invalidResponse("upload preview animation metadata is inconsistent");
+  return {
+    id,
+    byteSize: positiveIntegerField(data.media, "byte_size"),
+    width: positiveIntegerField(data.media, "width"),
+    height: positiveIntegerField(data.media, "height"),
+    animatedOriginal,
+    previewUrl,
+    originalUrl,
+  };
 }
 
 export async function decodeCreatedComment(

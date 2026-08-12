@@ -14,6 +14,7 @@ import (
 	"github.com/moment/moment/internal/doctor"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
+	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
 
 func TestExecuteScenarioPublishesDoctorHealthyFixture(t *testing.T) {
@@ -51,6 +52,24 @@ func TestExecuteArchiveRoundTripUsesFormalPortableContract(t *testing.T) {
 	}
 	if !result.Applied || !result.DoctorHealthy || !result.ArchiveRoundTripPassed || result.OwnerToken == "" {
 		t.Fatalf("roundtrip result = %#v", result)
+	}
+	currentRuntime, err := runtimefs.OpenContext(context.Background(), runtimeState.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := sqlitestore.Open(context.Background(), currentRuntime, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = database.Close() }()
+	var usages int
+	if err := database.ReadTx(context.Background(), func(queries sqlitestore.Queries) error {
+		return queries.QueryRowContext(context.Background(), `SELECT count(*) FROM comment_media`).Scan(&usages)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if usages == 0 {
+		t.Fatal("archive roundtrip fixture omitted comment media")
 	}
 }
 

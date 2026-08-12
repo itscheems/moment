@@ -142,7 +142,7 @@ func New(config Config) (*gin.Engine, error) {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("comment routes require owner authentication")
 		}
-		RegisterCommentRoutes(engine, config.Comments, config.OwnerAuth, config.CommentLimiter)
+		RegisterCommentRoutes(engine, config.Comments, config.Media, config.OwnerAuth, config.CommentLimiter)
 	}
 	if config.Search != nil {
 		RegisterSearchRoutes(engine, config.Search)
