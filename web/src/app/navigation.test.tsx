@@ -34,11 +34,20 @@ function NavigationHarness({
   return (
     <div>
       <output data-testid="location">{navigation.pathname}</output>
+      <output data-testid="overlay">
+        {navigation.overlayFrom?.pathname ?? "none"}
+      </output>
       <button onClick={() => navigation.navigate("/current")} type="button">
         Navigate
       </button>
       <button onClick={() => navigation.goBack("/fallback")} type="button">
         Go back
+      </button>
+      <button
+        onClick={() => navigation.navigateOverlay("/overlay")}
+        type="button"
+      >
+        Overlay
       </button>
     </div>
   );
@@ -75,6 +84,27 @@ describe("guarded navigation history", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/current");
     expect(newest).toHaveBeenCalledTimes(2);
     expect(first).toHaveBeenCalledOnce();
+  });
+
+  it("tracks an internal overlay without treating a refreshed URL as layered", () => {
+    const { unmount } = render(
+      <NavigationProvider>
+        <NavigationHarness blockers={[]} />
+      </NavigationProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Overlay" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/overlay");
+    expect(screen.getByTestId("overlay")).toHaveTextContent("/previous");
+
+    unmount();
+    render(
+      <NavigationProvider>
+        <NavigationHarness blockers={[]} />
+      </NavigationProvider>,
+    );
+    expect(screen.getByTestId("location")).toHaveTextContent("/overlay");
+    expect(screen.getByTestId("overlay")).toHaveTextContent("none");
   });
 
   it("rejects browser back once and restores the current entry", async () => {

@@ -1,7 +1,7 @@
 .post {
   position: relative;
   display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-columns: 3rem minmax(0, 1fr);
   gap: var(--space-3);
   border-block-end: 1px solid var(--border-subtle);
   padding: 0.75rem var(--space-4);
@@ -54,8 +54,8 @@
 
 .avatar,
 .avatarFallback {
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: 3rem;
+  block-size: 3rem;
   display: block;
   flex: 0 0 auto;
   overflow: hidden;
@@ -262,7 +262,7 @@
 
 .postActions {
   max-inline-size: 18rem;
-  min-block-size: 2.25rem;
+  min-block-size: 2.75rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -272,8 +272,8 @@
 }
 
 .postAction {
-  min-inline-size: 2.25rem;
-  min-block-size: 2.25rem;
+  min-inline-size: 2.75rem;
+  min-block-size: 2.75rem;
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -299,27 +299,35 @@
 }
 
 .detail {
-  grid-template-columns: 3rem minmax(0, 1fr);
-  gap: var(--space-3);
+  display: block;
   padding-block: var(--space-4);
   cursor: default;
 }
 
-.detail .avatar,
-.detail .avatarFallback {
-  inline-size: 3rem;
-  block-size: 3rem;
+.detailIdentity {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: var(--space-3);
 }
 
-.detail .markdown {
+.detailHeading {
+  min-inline-size: 0;
+  align-self: center;
+}
+
+.detailBody {
+  min-inline-size: 0;
+}
+
+.detailBody .markdown {
   margin-block-start: var(--space-4);
   font-size: 1.0625rem;
   line-height: 1.55;
 }
 
 .detail .postActions {
-  max-inline-size: none;
-  justify-content: flex-start;
+  max-inline-size: 18rem;
+  justify-content: space-between;
   border-block-start: 1px solid var(--border-subtle);
   margin-block-start: var(--space-4);
   padding-block-start: var(--space-2);
@@ -344,6 +352,7 @@
 
 @media (max-width: 719px) {
   .post {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
     gap: 0.7rem;
     padding-inline: var(--space-3);
   }
@@ -352,14 +361,15 @@
     font-size: 0.9375rem;
   }
 
-  .detail {
-    grid-template-columns: 2.5rem minmax(0, 1fr);
-  }
-
-  .detail .avatar,
-  .detail .avatarFallback {
+  .avatar,
+  .avatarFallback {
     inline-size: 2.5rem;
     block-size: 2.5rem;
+  }
+
+  .detailIdentity {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    gap: 0.7rem;
   }
 
   .detail .markdown {

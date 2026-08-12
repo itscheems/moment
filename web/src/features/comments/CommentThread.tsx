@@ -569,7 +569,7 @@ function CommentForm({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder={parentId ? "发布回复" : "发布你的回应"}
+            placeholder={parentId ? "回复这条回应" : "写下回应"}
             ref={textareaRef}
             required
             rows={parentId ? 1 : 2}
@@ -604,6 +604,43 @@ function CommentForm({
           </div>
           <MediaComposer
             disabled={pending || !commentsEnabled}
+            footerAction={
+              <div className={styles.commentSubmitActions}>
+                {onCancel ? (
+                  <button
+                    className={styles.secondaryAction}
+                    onClick={onCancel}
+                    type="button"
+                  >
+                    取消回复
+                  </button>
+                ) : null}
+                <button
+                  aria-label={parentId ? "发表回复" : "发表回应"}
+                  className={styles.primaryAction}
+                  disabled={
+                    pending ||
+                    !validName ||
+                    !validContent ||
+                    !commentsEnabled ||
+                    rateLimited ||
+                    (mode === "owner" && !owner.session) ||
+                    mediaError !== null
+                  }
+                  type="submit"
+                >
+                  <span aria-hidden="true">
+                    {pending
+                      ? "正在发表…"
+                      : rateLimited
+                        ? `${remaining} 秒后重试`
+                        : parentId
+                          ? "回复"
+                          : "回应"}
+                  </span>
+                </button>
+              </div>
+            }
             items={mediaItems}
             maximum={4}
             maximumTotalBytes={40 * 1024 * 1024}
@@ -678,41 +715,6 @@ function CommentForm({
               回应已关闭。文字仍保留在当前页面，便于复制。
             </p>
           ) : null}
-          <footer>
-            {onCancel ? (
-              <button
-                className={styles.secondaryAction}
-                onClick={onCancel}
-                type="button"
-              >
-                取消回复
-              </button>
-            ) : (
-              <span />
-            )}
-            <button
-              aria-label={parentId ? "发表回复" : "发表回应"}
-              className={styles.primaryAction}
-              disabled={
-                pending ||
-                !validName ||
-                !validContent ||
-                !commentsEnabled ||
-                rateLimited ||
-                (mode === "owner" && !owner.session) ||
-                mediaError !== null
-              }
-              type="submit"
-            >
-              <span aria-hidden="true">
-                {pending
-                  ? "正在发表…"
-                  : rateLimited
-                    ? `${remaining} 秒后重试`
-                    : "回复"}
-              </span>
-            </button>
-          </footer>
         </form>
         {displayReauth ? (
           <Reauthenticate
@@ -928,7 +930,7 @@ function CommentItem({
             <strong>{authorName}</strong>
           )}
           {comment.authorKind === "owner" ? (
-            <span className={styles.ownerBadge}>Owner</span>
+            <span className={styles.ownerBadge}>所有者</span>
           ) : null}
           <span aria-hidden="true">·</span>
           <ExactTimeTooltip exact={created.absolute}>
@@ -1069,19 +1071,14 @@ export function CommentThread({
       className={styles.thread}
       id="comments"
     >
-      <header className={styles.threadHeader}>
-        <span aria-hidden="true" className={styles.threadMark}>
-          回应
-        </span>
-        <div>
-          <h2 id="comments-heading" ref={headingRef} tabIndex={-1}>
-            回应
-          </h2>
-          <span>
-            {items ? `${items.length} 条，最多一级回复` : "最多一级回复"}
-          </span>
-        </div>
-      </header>
+      <h2
+        className={styles.srOnly}
+        id="comments-heading"
+        ref={headingRef}
+        tabIndex={-1}
+      >
+        回应
+      </h2>
 
       <p aria-live="polite" className={styles.srOnly} role="status">
         {announcement}

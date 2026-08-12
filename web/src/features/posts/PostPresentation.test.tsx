@@ -89,6 +89,13 @@ describe("shared post presentation", () => {
     expect(screen.getByText("完整正文")).toBeInTheDocument();
     expect(screen.getByText("发布于").parentElement).toHaveTextContent("2026");
     expect(
+      screen.getByRole("link", { name: "回应这条 Moment" }),
+    ).toHaveAttribute("href", "#top-level-comment-content");
+    const article = screen.getByText("完整正文").closest("article");
+    expect(article?.querySelector("[class*='detailBody']")).toContainElement(
+      screen.getByText("完整正文"),
+    );
+    expect(
       screen.queryByRole("link", { name: "阅读全文" }),
     ).not.toBeInTheDocument();
   });

@@ -813,7 +813,7 @@ describe("public comment thread", () => {
     renderThread();
 
     await screen.findByText("已有一级回复");
-    expect(screen.getByText("Owner")).toBeInTheDocument();
+    expect(screen.getAllByText("所有者")).toHaveLength(2);
     expect(screen.getByText("乔乔的 Moment")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "删除" })[0]);
     expect(await screen.findByRole("dialog")).toHaveTextContent(

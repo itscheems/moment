@@ -1,3 +1,4 @@
+import { Dialog } from "@base-ui/react/dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PublicApi, type SiteIdentity } from "../api/public";
@@ -70,13 +71,17 @@ function routeSearchKey(search: string): string {
 
 function PublicApp() {
   const location = useNavigation();
-  const route = resolveRoute(location.pathname);
+  const requestedRoute = resolveRoute(location.pathname);
+  const overlayCompose =
+    requestedRoute.id === "owner-compose" && location.overlayFrom !== null;
+  const displayLocation = overlayCompose ? location.overlayFrom! : location;
+  const route = resolveRoute(displayLocation.pathname);
   const state =
     route.id === "search" ||
     route.id === "archive" ||
-    !hasValidRawQueryEncoding(location.search)
+    !hasValidRawQueryEncoding(displayLocation.search)
       ? null
-      : new URLSearchParams(location.search).get("state");
+      : new URLSearchParams(displayLocation.search).get("state");
   const api = useMemo(() => new PublicApi(), []);
   const owner = useOwner();
   const [site, setSite] = useState(fallbackSite);
@@ -86,7 +91,9 @@ function PublicApp() {
   const [memoryYears, setMemoryYears] = useState<number[]>([]);
   const [discoveryYears, setDiscoveryYears] = useState<number[]>([]);
   const [homeVisited, setHomeVisited] = useState(route.id === "home");
-  const initialHomeSearch = useRef(route.id === "home" ? location.search : "");
+  const initialHomeSearch = useRef(
+    route.id === "home" ? displayLocation.search : "",
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -107,15 +114,18 @@ function PublicApp() {
   useEffect(() => {
     if (route.id === "home") {
       setHomeVisited(true);
-      if (!homeVisited) initialHomeSearch.current = location.search;
+      if (!homeVisited) initialHomeSearch.current = displayLocation.search;
     }
-  }, [homeVisited, location.search, route.id]);
+  }, [displayLocation.search, homeVisited, route.id]);
 
   useEffect(() => {
     const siteTitle = site.title.trim() || "Moment";
+    const titleRoute = overlayCompose ? requestedRoute : route;
     document.title =
-      route.id === "home" ? siteTitle : `${route.title} · ${siteTitle}`;
-  }, [route.id, route.title, site.title]);
+      titleRoute.id === "home"
+        ? siteTitle
+        : `${titleRoute.title} · ${siteTitle}`;
+  }, [overlayCompose, requestedRoute, route, site.title]);
 
   useEffect(() => {
     let composing = false;
@@ -142,7 +152,11 @@ function PublicApp() {
         return;
       }
       event.preventDefault();
-      location.navigate("/owner/compose");
+      if (window.matchMedia("(min-width: 720px)").matches) {
+        location.navigateOverlay("/owner/compose");
+      } else {
+        location.navigate("/owner/compose");
+      }
     };
     document.addEventListener("compositionstart", startComposition);
     document.addEventListener("compositionend", endComposition);
@@ -213,107 +227,143 @@ function PublicApp() {
       : memoryYears;
 
   return (
-    <AppShell
-      memoryYears={shellYears}
-      ownerSettingsAvailable={
-        owner.state === "owner" || owner.state === "expired"
-      }
-      route={route}
-      site={site}
-      state={state}
-    >
-      {siteError ? (
-        <div className={styles.siteError} role="alert">
-          <span>站点资料没有加载完成，暂时使用默认身份。</span>
-          <button
-            onClick={() => setSiteAttempt((value) => value + 1)}
-            type="button"
-          >
-            重试资料
-          </button>
-        </div>
-      ) : null}
-      {siteLoading ? <TimelineLoading /> : null}
-      {!siteLoading && hasTimeline ? (
-        <div hidden={route.id !== "home"}>
-          {owner.state === "owner" || owner.state === "expired" ? (
-            <Composer
-              active={route.id === "home"}
+    <>
+      <AppShell
+        memoryYears={shellYears}
+        ownerSettingsAvailable={
+          owner.state === "owner" || owner.state === "expired"
+        }
+        route={route}
+        site={site}
+        state={state}
+      >
+        {siteError ? (
+          <div className={styles.siteError} role="alert">
+            <span>站点资料没有加载完成，暂时使用默认身份。</span>
+            <button
+              onClick={() => setSiteAttempt((value) => value + 1)}
+              type="button"
+            >
+              重试资料
+            </button>
+          </div>
+        ) : null}
+        {siteLoading ? <TimelineLoading /> : null}
+        {!siteLoading && hasTimeline ? (
+          <div hidden={route.id !== "home"}>
+            {owner.state === "owner" || owner.state === "expired" ? (
+              <Composer
+                active={route.id === "home"}
+                site={site}
+                variant="inline"
+              />
+            ) : null}
+            <TimelinePage
+              api={api}
+              initialSearch={initialHomeSearch.current}
+              onYearsChange={setMemoryYears}
+              onSiteChanged={setSite}
               site={site}
-              variant="inline"
+              owner={owner.state === "owner"}
             />
-          ) : null}
-          <TimelinePage
+          </div>
+        ) : null}
+        {!siteLoading && route.id === "detail" ? (
+          <DetailPage
             api={api}
-            initialSearch={initialHomeSearch.current}
-            onYearsChange={setMemoryYears}
+            id={detailId(displayLocation.pathname)}
+            owner={owner.state === "owner"}
             onSiteChanged={setSite}
             site={site}
-            owner={owner.state === "owner"}
           />
-        </div>
+        ) : null}
+        {!siteLoading && route.id === "search" ? (
+          <SearchPage
+            api={api}
+            key={routeSearchKey(displayLocation.search)}
+            onYearsChange={setDiscoveryYears}
+            onSiteChanged={setSite}
+            owner={owner.state === "owner"}
+            search={displayLocation.search}
+            site={site}
+          />
+        ) : null}
+        {!siteLoading && route.id === "archive" ? (
+          <ArchivePage
+            api={api}
+            key={routeSearchKey(displayLocation.search)}
+            onYearsChange={setDiscoveryYears}
+            owner={owner.state === "owner"}
+            search={displayLocation.search}
+            site={site}
+          />
+        ) : null}
+        {!siteLoading && route.id === "profile" ? (
+          <ProfilePage api={api} onSiteSaved={setSite} site={site} />
+        ) : null}
+        {!siteLoading && route.id === "owner-login" ? (
+          <OwnerLogin site={site} />
+        ) : null}
+        {!siteLoading && route.id === "owner-compose" ? (
+          owner.state === "owner" || owner.state === "expired" ? (
+            <Composer site={site} variant="page" />
+          ) : (
+            <OwnerLogin embedded site={site} />
+          )
+        ) : null}
+        {!siteLoading && route.id === "owner-edit" ? (
+          owner.state === "owner" || owner.state === "expired" ? (
+            <EditPage
+              api={api}
+              id={editId(displayLocation.pathname)}
+              site={site}
+            />
+          ) : (
+            <OwnerLogin embedded site={site} />
+          )
+        ) : null}
+        {!siteLoading && route.id === "owner-settings" ? (
+          owner.state === "owner" || owner.state === "expired" ? (
+            <SettingsPage onSaved={setSite} site={site} />
+          ) : (
+            <OwnerLogin embedded site={site} />
+          )
+        ) : null}
+        {!siteLoading && placeholderRoute ? (
+          <ShellState route={route} state={state} />
+        ) : null}
+      </AppShell>
+      {overlayCompose ? (
+        <Dialog.Root
+          onOpenChange={(open) => {
+            if (!open) {
+              location.goBack(
+                `${displayLocation.pathname}${displayLocation.search}`,
+              );
+            }
+          }}
+          open
+        >
+          <Dialog.Portal>
+            <Dialog.Backdrop className={styles.composeBackdrop} />
+            <Dialog.Viewport className={styles.composeViewport}>
+              <Dialog.Popup className={styles.composeDialog}>
+                <header className={styles.composeDialogHeader}>
+                  <Dialog.Close aria-label="关闭发布窗口">×</Dialog.Close>
+                  <Dialog.Title>发布 Moment</Dialog.Title>
+                  <span />
+                </header>
+                {owner.state === "owner" || owner.state === "expired" ? (
+                  <Composer site={site} variant="page" />
+                ) : (
+                  <OwnerLogin embedded site={site} />
+                )}
+              </Dialog.Popup>
+            </Dialog.Viewport>
+          </Dialog.Portal>
+        </Dialog.Root>
       ) : null}
-      {!siteLoading && route.id === "detail" ? (
-        <DetailPage
-          api={api}
-          id={detailId(location.pathname)}
-          owner={owner.state === "owner"}
-          onSiteChanged={setSite}
-          site={site}
-        />
-      ) : null}
-      {!siteLoading && route.id === "search" ? (
-        <SearchPage
-          api={api}
-          key={routeSearchKey(location.search)}
-          onYearsChange={setDiscoveryYears}
-          onSiteChanged={setSite}
-          owner={owner.state === "owner"}
-          search={location.search}
-          site={site}
-        />
-      ) : null}
-      {!siteLoading && route.id === "archive" ? (
-        <ArchivePage
-          api={api}
-          key={routeSearchKey(location.search)}
-          onYearsChange={setDiscoveryYears}
-          owner={owner.state === "owner"}
-          search={location.search}
-          site={site}
-        />
-      ) : null}
-      {!siteLoading && route.id === "profile" ? (
-        <ProfilePage api={api} onSiteSaved={setSite} site={site} />
-      ) : null}
-      {!siteLoading && route.id === "owner-login" ? (
-        <OwnerLogin site={site} />
-      ) : null}
-      {!siteLoading && route.id === "owner-compose" ? (
-        owner.state === "owner" || owner.state === "expired" ? (
-          <Composer site={site} variant="page" />
-        ) : (
-          <OwnerLogin embedded site={site} />
-        )
-      ) : null}
-      {!siteLoading && route.id === "owner-edit" ? (
-        owner.state === "owner" || owner.state === "expired" ? (
-          <EditPage api={api} id={editId(location.pathname)} site={site} />
-        ) : (
-          <OwnerLogin embedded site={site} />
-        )
-      ) : null}
-      {!siteLoading && route.id === "owner-settings" ? (
-        owner.state === "owner" || owner.state === "expired" ? (
-          <SettingsPage onSaved={setSite} site={site} />
-        ) : (
-          <OwnerLogin embedded site={site} />
-        )
-      ) : null}
-      {!siteLoading && placeholderRoute ? (
-        <ShellState route={route} state={state} />
-      ) : null}
-    </AppShell>
+    </>
   );
 }
 

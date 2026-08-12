@@ -90,6 +90,7 @@ function LeftRail({
   site: SiteIdentity;
   ownerSettingsAvailable: boolean;
 }) {
+  const { navigateOverlay } = useNavigation();
   return (
     <aside aria-label="站点导航" className={styles.leftRail}>
       <Brand site={site} />
@@ -102,7 +103,13 @@ function LeftRail({
       <InternalLink
         className={styles.publishAction}
         data-compact-label="发布 Moment"
+        data-focus-key="shell:compose"
         href="/owner/compose"
+        onClick={(event) => {
+          if (!window.matchMedia("(min-width: 720px)").matches) return;
+          event.preventDefault();
+          navigateOverlay("/owner/compose");
+        }}
       >
         <Icon name="compose" />
         <span>发布 Moment</span>
@@ -249,7 +256,9 @@ export function AppShell({
         />
         <main className={styles.timeline} id="main-content" tabIndex={-1}>
           <header className={styles.timelineHeader}>
-            {route.id === "detail" || route.id === "owner-edit" ? (
+            {route.id === "detail" ||
+            route.id === "owner-edit" ||
+            route.id === "owner-compose" ? (
               <InternalLink
                 aria-label="返回时间流"
                 className={styles.backLink}
@@ -271,9 +280,11 @@ export function AppShell({
               <p>{route.eyebrow}</p>
               <h1>{route.title}</h1>
             </div>
-            <span className={styles.headerTheme}>
-              <ThemeMenu />
-            </span>
+            {route.id !== "detail" && route.id !== "owner-edit" ? (
+              <span className={styles.headerTheme}>
+                <ThemeMenu />
+              </span>
+            ) : null}
           </header>
           {children ?? <ShellState route={route} state={state} />}
         </main>

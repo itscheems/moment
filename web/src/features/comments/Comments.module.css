@@ -89,13 +89,14 @@
 }
 
 .commentCollapsed {
-  padding-block: var(--space-2);
+  padding-block: 0.75rem;
 }
 
 .commentCollapsed .commentComposerHeader,
 .commentCollapsed .nameField,
 .commentCollapsed .formMeta,
-.commentCollapsed .commentForm > footer {
+.commentCollapsed .commentForm > footer,
+.commentCollapsed .commentForm > section {
   display: none;
 }
 
@@ -262,12 +263,23 @@
 .commentAction,
 .reauth button,
 .threadError button {
-  min-block-size: 2.25rem;
+  min-block-size: var(--target-size);
   border: 0;
   border-radius: 999px;
   padding-inline: var(--space-4);
   font-weight: 700;
   cursor: pointer;
+}
+
+.commentSubmitActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.commentSubmitActions .secondaryAction {
+  padding-inline: var(--space-3);
 }
 
 .primaryAction {
@@ -578,13 +590,13 @@
 
 .commentActions {
   grid-column: 2;
-  min-block-size: 2rem;
+  min-block-size: var(--target-size);
   justify-content: flex-start;
   margin-block-start: 0.2rem;
 }
 
 .commentAction {
-  min-block-size: 2rem;
+  min-block-size: var(--target-size);
   padding-inline: var(--space-3);
 }
 
@@ -593,6 +605,7 @@
   z-index: var(--layer-popover);
   inset: 0;
   background: rgb(0 0 0 / 45%);
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .dialogViewport {
@@ -612,6 +625,22 @@
   color: var(--text-primary);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-popover);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.dialogBackdrop[data-starting-style],
+.dialogBackdrop[data-ending-style],
+.dialogPopup[data-starting-style],
+.dialogPopup[data-ending-style] {
+  opacity: 0;
+}
+
+.dialogPopup[data-starting-style],
+.dialogPopup[data-ending-style] {
+  transform: scale(0.96);
 }
 
 .dialogTitle {
@@ -689,5 +718,10 @@
 @media (prefers-reduced-motion: reduce) {
   .loadingDot {
     animation: none;
+  }
+
+  .dialogBackdrop,
+  .dialogPopup {
+    transition: none;
   }
 }

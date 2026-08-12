@@ -15,8 +15,13 @@ interface LocationSnapshot {
   search: string;
 }
 
-interface NavigationContextValue extends LocationSnapshot {
+interface NavigationLocation extends LocationSnapshot {
+  overlayFrom: LocationSnapshot | null;
+}
+
+interface NavigationContextValue extends NavigationLocation {
   navigate: (href: string) => void;
+  navigateOverlay: (href: string) => void;
   goBack: (fallback: string) => void;
   replaceTimelineProgress: (cursor: string) => void;
   restoreCurrentEntry: () => void;
@@ -29,6 +34,7 @@ interface NavigationContextValue extends LocationSnapshot {
 interface MomentHistoryState {
   momentFocusKey?: string;
   momentInternal?: boolean;
+  momentOverlayFrom?: LocationSnapshot;
   momentScrollY?: number;
 }
 
@@ -38,6 +44,26 @@ function currentLocation(): LocationSnapshot {
   return {
     pathname: window.location.pathname,
     search: window.location.search,
+  };
+}
+
+function locationSnapshot(
+  state: unknown,
+  includeOverlay = true,
+): NavigationLocation {
+  const history =
+    typeof state === "object" && state !== null
+      ? (state as MomentHistoryState)
+      : null;
+  const overlay = history?.momentOverlayFrom;
+  return {
+    ...currentLocation(),
+    overlayFrom:
+      includeOverlay &&
+      typeof overlay?.pathname === "string" &&
+      typeof overlay.search === "string"
+        ? overlay
+        : null,
   };
 }
 
@@ -66,7 +92,9 @@ function restoreEntry(state: unknown) {
 }
 
 export function NavigationProvider({ children }: { children: ReactNode }) {
-  const [location, setLocation] = useState(currentLocation);
+  const [location, setLocation] = useState(() =>
+    locationSnapshot(window.history.state, false),
+  );
   const navigationBlockers = useRef(new Map<symbol, () => boolean>());
   const suppressNextPopGuard = useRef(false);
 
@@ -86,34 +114,49 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const commitNavigation = useCallback((href: string) => {
-    const activeFocusKey =
-      document.activeElement instanceof HTMLElement
-        ? document.activeElement.closest<HTMLElement>("[data-focus-key]")
-            ?.dataset.focusKey
-        : undefined;
-    window.history.replaceState(
-      {
-        ...historyState(),
-        momentFocusKey: activeFocusKey,
-        momentScrollY: window.scrollY,
-      },
-      "",
-      window.location.href,
-    );
-    window.history.pushState(
-      { momentInternal: true, momentScrollY: 0 },
-      "",
-      href,
-    );
-    setLocation(currentLocation());
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }, []);
+  const commitNavigation = useCallback(
+    (href: string, overlayFrom: LocationSnapshot | null = null) => {
+      const activeFocusKey =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement.closest<HTMLElement>("[data-focus-key]")
+              ?.dataset.focusKey
+          : undefined;
+      window.history.replaceState(
+        {
+          ...historyState(),
+          momentFocusKey: activeFocusKey,
+          momentScrollY: window.scrollY,
+        },
+        "",
+        window.location.href,
+      );
+      window.history.pushState(
+        {
+          momentInternal: true,
+          momentOverlayFrom: overlayFrom ?? undefined,
+          momentScrollY: 0,
+        },
+        "",
+        href,
+      );
+      setLocation(locationSnapshot(window.history.state));
+      if (!overlayFrom) window.scrollTo({ top: 0, behavior: "auto" });
+    },
+    [],
+  );
 
   const navigate = useCallback(
     (href: string) => {
       if (!canLeave()) return;
       commitNavigation(href);
+    },
+    [canLeave, commitNavigation],
+  );
+
+  const navigateOverlay = useCallback(
+    (href: string) => {
+      if (!canLeave()) return;
+      commitNavigation(href, currentLocation());
     },
     [canLeave, commitNavigation],
   );
@@ -126,7 +169,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       "",
       `${url.pathname}${url.search}${url.hash}`,
     );
-    setLocation(currentLocation());
+    setLocation(locationSnapshot(window.history.state));
   }, []);
 
   const restoreCurrentEntry = useCallback(() => {
@@ -151,7 +194,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     const onPopState = (event: PopStateEvent) => {
       if (suppressNextPopGuard.current) {
         suppressNextPopGuard.current = false;
-        setLocation(currentLocation());
+        setLocation(locationSnapshot(event.state));
         restoreEntry(event.state);
         return;
       }
@@ -160,7 +203,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         window.history.go(1);
         return;
       }
-      setLocation(currentLocation());
+      setLocation(locationSnapshot(event.state));
       restoreEntry(event.state);
     };
     window.addEventListener("popstate", onPopState);
@@ -202,6 +245,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     () => ({
       ...location,
       navigate,
+      navigateOverlay,
       goBack,
       replaceTimelineProgress,
       restoreCurrentEntry,
@@ -210,6 +254,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [
       location,
       navigate,
+      navigateOverlay,
       goBack,
       replaceTimelineProgress,
       restoreCurrentEntry,

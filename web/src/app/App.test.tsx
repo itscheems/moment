@@ -97,7 +97,7 @@ describe("App shell and public routes", () => {
       'nav[aria-label="移动导航"]',
     );
     expect(mobileNavigation).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "时间流" })).toBeInTheDocument();
+    expect(document.querySelector("main h1")).toHaveTextContent("时间流");
     expect(
       mobileNavigation?.querySelector('a[aria-label="发布"]'),
     ).toHaveAttribute("href", "/owner/compose");
@@ -151,6 +151,36 @@ describe("App shell and public routes", () => {
       await screen.findByRole("menuitem", { name: "所有者登录" }),
     );
     await waitFor(() => expect(window.location.pathname).toBe("/owner/login"));
+  });
+
+  it("opens desktop Publish as a route-backed dialog and restores shell focus", async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(min-width: 720px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    render(<App />);
+    const publish = screen.getByRole("link", { name: "发布 Moment" });
+
+    publish.focus();
+    fireEvent.click(publish);
+    expect(window.location.pathname).toBe("/owner/compose");
+    expect(
+      await screen.findByRole("dialog", { name: "发布 Moment" }),
+    ).toBeInTheDocument();
+    expect(document.querySelector("main h1")).toHaveTextContent("时间流");
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭发布窗口" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    await new Promise<void>((resolve) =>
+      window.requestAnimationFrame(() => resolve()),
+    );
+    expect(publish).toHaveFocus();
   });
 
   it("replaces discovery placeholders with recoverable URL-state errors", async () => {
