@@ -105,6 +105,15 @@ describe("App shell and public routes", () => {
       "href",
       "/owner/compose",
     );
+    const desktopNavigation = screen.getByRole("navigation", {
+      name: "主要导航",
+    });
+    const more = screen.getAllByRole("button", { name: "更多" })[0]!;
+    const publish = screen.getByRole("link", { name: "发布 Moment" });
+    expect(desktopNavigation).toContainElement(more);
+    expect(
+      more.compareDocumentPosition(publish) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       await screen.findByRole("heading", { name: "还没有 Moment" }),
     ).toBeInTheDocument();

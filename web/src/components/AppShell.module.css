@@ -149,8 +149,7 @@
   margin-block-start: auto;
 }
 
-.railBottom .navLink,
-.railBottom :global(button) {
+.railBottom .navLink {
   inline-size: fit-content;
   max-inline-size: 100%;
 }
@@ -359,8 +358,8 @@
 
   .navLink,
   .publishAction,
-  .railBottom .navLink,
-  .railBottom :global(button) {
+  .desktopNav :global(button),
+  .railBottom .navLink {
     inline-size: 3.25rem;
     justify-content: center;
     margin-inline: auto;

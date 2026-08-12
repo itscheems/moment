@@ -88,6 +88,7 @@ function LeftRail({
         {primaryNav.map((item) => (
           <NavLink item={item} key={item.href} route={route} />
         ))}
+        <ThemeMenu />
       </nav>
       <InternalLink className={styles.publishAction} href="/owner/compose">
         <Icon name="publish" />
@@ -95,7 +96,6 @@ function LeftRail({
       </InternalLink>
       <div className={styles.railBottom}>
         <NavLink item={ownerNav(ownerSettingsAvailable)} route={route} />
-        <ThemeMenu />
       </div>
     </aside>
   );
