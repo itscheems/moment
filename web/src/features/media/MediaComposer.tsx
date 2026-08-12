@@ -1,5 +1,6 @@
 import {
   type ChangeEvent,
+  forwardRef,
   type ReactNode,
   useEffect,
   useId,
@@ -24,30 +25,22 @@ import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import styles from "./Media.module.css";
 
 const MEDIA_SPRING = {
-  layout: {
-    type: "spring" as const,
-    stiffness: 430,
-    damping: 27,
-    mass: 0.72,
-  },
-  opacity: { duration: 0.18 },
-  scale: {
-    type: "spring" as const,
-    stiffness: 520,
-    damping: 23,
-    mass: 0.66,
-  },
+  type: "spring" as const,
+  duration: 0.5,
+  bounce: 0.3,
 };
 
-function MediaPresenceItem({
-  children,
-  itemKey,
-  reduceMotion,
-}: {
-  children: (present: boolean) => ReactNode;
-  itemKey: string;
-  reduceMotion: boolean;
-}) {
+const MediaPresenceItem = forwardRef<
+  HTMLLIElement,
+  {
+    children: (present: boolean) => ReactNode;
+    itemKey: string;
+    reduceMotion: boolean;
+  }
+>(function MediaPresenceItem(
+  { children, itemKey, reduceMotion },
+  forwardedRef,
+) {
   const present = useIsPresent();
   return (
     <motion.li
@@ -56,24 +49,17 @@ function MediaPresenceItem({
       className={styles.mediaEditorItem}
       data-media-slot={itemKey}
       data-media-state={present ? undefined : "departing"}
-      exit={
-        reduceMotion
-          ? undefined
-          : {
-              opacity: 0,
-              scale: 0.55,
-              transition: { duration: 0.2, ease: "easeIn" },
-            }
-      }
-      initial={reduceMotion ? false : { opacity: 0, scale: 0.55 }}
+      exit={reduceMotion ? undefined : { opacity: 0, scale: 0.5 }}
+      initial={reduceMotion ? false : { opacity: 0, scale: 0.5 }}
       layout={!reduceMotion}
+      ref={forwardedRef}
       style={present ? undefined : { pointerEvents: "none" }}
       transition={MEDIA_SPRING}
     >
       {children(present)}
     </motion.li>
   );
-}
+});
 
 export function MediaComposer({
   items,
@@ -209,12 +195,10 @@ export function MediaComposer({
         tabIndex={-1}
         type="file"
       />
-      <motion.ol
+      <ol
         aria-label="待发布图片，按发布顺序"
         className={styles.mediaEditorList}
         data-media-count={items.length}
-        layout={!reduceMotion}
-        transition={MEDIA_SPRING}
       >
         <AnimatePresence initial={false} mode="popLayout">
           {items.map((item, index) => {
@@ -271,7 +255,7 @@ export function MediaComposer({
             );
           })}
         </AnimatePresence>
-      </motion.ol>
+      </ol>
       {items.some((item) => item.state === "failed") ? (
         <div className={styles.mediaFailures}>
           {items.map((item, index) =>

@@ -34,6 +34,8 @@ export function MediaLightbox({
 
   const source = item?.previewSrc;
   const canViewOriginal = Boolean(item?.originalSrc);
+  const portalContainer =
+    typeof document === "undefined" ? null : document.body;
 
   return (
     <Dialog.Root
@@ -42,7 +44,10 @@ export function MediaLightbox({
       }}
       open={selected !== null && item !== null}
     >
-      <Dialog.Portal>
+      <Dialog.Portal
+        className={styles.lightboxPortal}
+        container={portalContainer}
+      >
         <Dialog.Backdrop className={styles.lightboxBackdrop} />
         <Dialog.Viewport className={styles.lightboxViewport}>
           <Dialog.Popup
@@ -78,6 +83,7 @@ export function MediaLightbox({
                 <img
                   alt={item.alt}
                   decoding="async"
+                  key={item.key}
                   onError={() => setFailed(true)}
                   src={source}
                 />

@@ -123,9 +123,16 @@ describe("media editor", () => {
     fireEvent.click(trigger);
 
     const dialog = await screen.findByRole("dialog");
+    expect(dialog.closest("[data-base-ui-portal]")?.parentElement).toBe(
+      document.body,
+    );
     expect(dialog.querySelector("img")).toHaveAttribute(
       "src",
       "/api/v1/media/00/preview",
+    );
+    expect(screen.getByRole("link", { name: "打开原图" })).toHaveAttribute(
+      "href",
+      "/api/v1/media/00",
     );
     fireEvent.keyDown(dialog, { key: "ArrowRight" });
     await waitFor(() =>
@@ -165,7 +172,7 @@ describe("media editor", () => {
     );
   });
 
-  it("reflows the remaining items immediately after a removal", () => {
+  it("keeps the departing item mounted while the remaining items reflow", () => {
     const { container } = render(
       <FocusHarness initial={[item("00"), item("01"), item("02")]} />,
     );
@@ -178,12 +185,9 @@ describe("media editor", () => {
         ),
       ).map((node) => node.getAttribute("data-media-slot")),
     ).toEqual(["00", "02"]);
-    expect(
-      container.querySelector('[data-media-state="departing"]'),
-    ).toHaveAttribute("data-media-slot", "01");
-    expect(
-      container.querySelector('[data-media-state="departing"]'),
-    ).toHaveAttribute("aria-hidden", "true");
+    const departing = container.querySelector('[data-media-state="departing"]');
+    expect(departing).toHaveAttribute("data-media-slot", "01");
+    expect(departing).toHaveAttribute("aria-hidden", "true");
     expect(
       container.querySelector('[aria-label="待发布图片，按发布顺序"]'),
     ).toHaveAttribute("data-media-count", "2");

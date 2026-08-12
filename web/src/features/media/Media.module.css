@@ -626,9 +626,15 @@
   font-size: var(--text-2xl);
 }
 
-.lightboxBackdrop {
+.lightboxPortal {
   position: fixed;
   z-index: var(--layer-lightbox);
+  inset: 0;
+}
+
+.lightboxBackdrop {
+  position: fixed;
+  z-index: 0;
   inset: 0;
   background: rgb(0 0 0 / 94%);
   transition: opacity 180ms var(--ease-out);
@@ -641,7 +647,7 @@
 
 .lightboxViewport {
   position: fixed;
-  z-index: calc(var(--layer-lightbox) + 1);
+  z-index: 1;
   inset: 0;
   background: rgb(0 0 0 / 94%);
   display: grid;
