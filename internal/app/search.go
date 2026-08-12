@@ -61,6 +61,7 @@ type SearchSource struct {
 type SearchStore interface {
 	Timezone(context.Context) (string, error)
 	SearchEntries(context.Context, SearchRepositoryQuery, int) ([]SearchRecord, error)
+	CommentCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
 	EntryMediaUsages(context.Context, domain.ID) ([]domain.EntryMediaUsage, error)
 	SearchPublishedMillis(context.Context, SearchRepositoryQuery) ([]int64, error)
 	ArchivePublishedMillis(context.Context, *int64, *int64) ([]int64, error)
@@ -196,6 +197,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 	var timezone string
 	var revision int64
 	var fromMS, toMS *int64
+	commentCounts := make(map[domain.ID]int)
 	err = service.transactions.Read(ctx, func(store SearchStore) error {
 		var storeErr error
 		version, storeErr := store.SearchNormalizerVersion(ctx)
@@ -236,6 +238,14 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 				return storeErr
 			}
 		}
+		ids := make([]domain.ID, 0, len(records))
+		for _, record := range records {
+			ids = append(ids, record.Entry.ID)
+		}
+		commentCounts, storeErr = store.CommentCounts(ctx, ids)
+		if storeErr != nil {
+			return storeErr
+		}
 		countQuery := prepared
 		countQuery.Position = nil
 		instants, storeErr = store.SearchPublishedMillis(ctx, countQuery)
@@ -254,7 +264,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		YearCounts: aggregateYears(instants, location),
 	}
 	for _, record := range records {
-		post, renderErr := renderPost(record.Entry, record.Media)
+		post, renderErr := renderPost(record.Entry, record.Media, commentCounts[record.Entry.ID])
 		if renderErr != nil {
 			return SearchPage{}, renderErr
 		}

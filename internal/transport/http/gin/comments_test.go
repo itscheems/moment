@@ -188,6 +188,10 @@ func TestCommentHTTPGuestOwnerThreadAndModerationContract(t *testing.T) {
 	if err := json.Unmarshal(list.Body.Bytes(), &envelope); err != nil || len(envelope.Data.Items) != 2 || envelope.Data.Items[0]["id"] != rootID || envelope.Data.Items[1]["id"] != ownerData["id"] {
 		t.Fatalf("thread err=%v body=%s", err, list.Body.String())
 	}
+	postResponse := performRequest(fixture.engine, commentRequest(http.MethodGet, "/api/v1/posts/"+fixture.postID.String(), ""))
+	if count := decodeDataMap(t, postResponse)["comment_count"]; count != float64(2) {
+		t.Fatalf("post comment_count = %#v", count)
+	}
 
 	unauthorized := performRequest(fixture.engine, commentRequest(http.MethodDelete, "/api/v1/owner/comments/"+rootID, ""))
 	if unauthorized.Code != http.StatusUnauthorized || decodeError(t, unauthorized.Body).Error.Code != "UNAUTHORIZED" {
@@ -220,6 +224,10 @@ func TestCommentHTTPGuestOwnerThreadAndModerationContract(t *testing.T) {
 	empty := performRequest(fixture.engine, commentRequest(http.MethodGet, publicPath, ""))
 	if !strings.Contains(empty.Body.String(), `"items":[]`) {
 		t.Fatalf("cascade = %s", empty.Body.String())
+	}
+	emptyPost := performRequest(fixture.engine, commentRequest(http.MethodGet, "/api/v1/posts/"+fixture.postID.String(), ""))
+	if count := decodeDataMap(t, emptyPost)["comment_count"]; count != float64(0) {
+		t.Fatalf("empty post comment_count = %#v", count)
 	}
 }
 

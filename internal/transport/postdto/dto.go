@@ -16,13 +16,14 @@ import (
 
 // Post is the stable plain-text post representation used by HTTP and CLI.
 type Post struct {
-	ID          string       `json:"id"`
-	ContentMD   string       `json:"content_md"`
-	ContentHTML string       `json:"content_html"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
-	PublishedAt time.Time    `json:"published_at"`
-	Media       []MediaUsage `json:"media"`
+	ID           string       `json:"id"`
+	ContentMD    string       `json:"content_md"`
+	ContentHTML  string       `json:"content_html"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
+	PublishedAt  time.Time    `json:"published_at"`
+	CommentCount int          `json:"comment_count"`
+	Media        []MediaUsage `json:"media"`
 }
 
 // MediaUsage is the exact public ordered usage shape. AltText is always
@@ -102,13 +103,14 @@ func FromPost(post app.Post) Post {
 		media = append(media, mapped)
 	}
 	return Post{
-		ID:          post.Entry.ID.String(),
-		ContentMD:   post.Entry.ContentMD,
-		ContentHTML: post.ContentHTML,
-		CreatedAt:   post.Entry.CreatedAt.UTC(),
-		UpdatedAt:   post.Entry.UpdatedAt.UTC(),
-		PublishedAt: post.Entry.PublishedAt.UTC(),
-		Media:       media,
+		ID:           post.Entry.ID.String(),
+		ContentMD:    post.Entry.ContentMD,
+		ContentHTML:  post.ContentHTML,
+		CreatedAt:    post.Entry.CreatedAt.UTC(),
+		UpdatedAt:    post.Entry.UpdatedAt.UTC(),
+		PublishedAt:  post.Entry.PublishedAt.UTC(),
+		CommentCount: post.CommentCount,
+		Media:        media,
 	}
 }
 
@@ -142,6 +144,9 @@ func ValidatePost(post Post) error {
 	}
 	if post.UpdatedAt.Before(post.CreatedAt) {
 		return errors.New("post updated_at precedes created_at")
+	}
+	if post.CommentCount < 0 {
+		return errors.New("post comment_count must be non-negative")
 	}
 	html, err := domain.RenderMarkdown(post.ContentMD)
 	if err != nil {

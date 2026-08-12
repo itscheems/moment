@@ -135,6 +135,10 @@ LIMIT ?`
 	return records, nil
 }
 
+func (store searchStore) CommentCounts(ctx context.Context, ids []domain.ID) (map[domain.ID]int, error) {
+	return queryCommentCounts(ctx, store.queries, ids)
+}
+
 func (store searchStore) SearchPublishedMillis(ctx context.Context, query app.SearchRepositoryQuery) ([]int64, error) {
 	statement, arguments, err := searchSelect(query, `published_at_ms`)
 	if err != nil {

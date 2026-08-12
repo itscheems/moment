@@ -39,6 +39,7 @@ function post(id: string, content: string, html = `<p>${content}</p>`) {
     created_at: "2026-08-10T01:00:00.000Z",
     updated_at: "2026-08-10T01:00:00.000Z",
     published_at: "2026-08-10T01:00:00.000Z",
+    comment_count: 0,
     media: [],
   };
 }

@@ -201,6 +201,10 @@ WHERE kind = ?`
 	return entries, nil
 }
 
+func (store postStore) CommentCounts(ctx context.Context, ids []domain.ID) (map[domain.ID]int, error) {
+	return queryCommentCounts(ctx, store.queries, ids)
+}
+
 func (store postStore) EntryMediaUsages(ctx context.Context, entryID domain.ID) ([]domain.EntryMediaUsage, error) {
 	rows, err := store.queries.QueryContext(ctx, `
 SELECT media_id, position, alt_text

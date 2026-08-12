@@ -1063,7 +1063,7 @@ func validPostAPIRawData(data json.RawMessage, destination any) bool {
 }
 
 func validRawAPIPost(data json.RawMessage, post postdto.Post) bool {
-	if !hasRequiredNonNullAPIDataFields(data, "id", "content_md", "content_html", "created_at", "updated_at", "published_at", "media") ||
+	if !hasRequiredNonNullAPIDataFields(data, "id", "content_md", "content_html", "created_at", "updated_at", "published_at", "comment_count", "media") ||
 		!validCanonicalAPIInstantField(data, "created_at", post.CreatedAt) ||
 		!validCanonicalAPIInstantField(data, "updated_at", post.UpdatedAt) ||
 		!validCanonicalAPIInstantField(data, "published_at", post.PublishedAt) {

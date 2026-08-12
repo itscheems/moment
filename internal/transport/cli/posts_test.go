@@ -540,7 +540,7 @@ func TestDirectPostWriteHoldsAuthoritativeMaintenanceLease(t *testing.T) {
 }
 
 func TestPostAPIRejectsNonCanonicalSuccessEnvelopes(t *testing.T) {
-	validData := `{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","content_md":"valid","content_html":"<p>valid</p>\n","created_at":"2026-08-10T12:00:00Z","updated_at":"2026-08-10T12:00:00Z","published_at":"2026-08-10T12:00:00Z","media":[]}`
+	validData := `{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","content_md":"valid","content_html":"<p>valid</p>\n","created_at":"2026-08-10T12:00:00Z","updated_at":"2026-08-10T12:00:00Z","published_at":"2026-08-10T12:00:00Z","comment_count":0,"media":[]}`
 	responses := map[string]string{
 		"null data":            `{"data":null,"meta":{"request_id":"req_fake"}}`,
 		"zero post":            `{"data":{"id":"","content_md":"","content_html":"","created_at":"0001-01-01T00:00:00Z","updated_at":"0001-01-01T00:00:00Z","published_at":"0001-01-01T00:00:00Z"},"meta":{"request_id":"req_fake"}}`,

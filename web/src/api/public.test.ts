@@ -16,6 +16,7 @@ const post = {
   created_at: "2026-08-10T01:02:03.000Z",
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
+  comment_count: 0,
   media: [],
 };
 
@@ -45,6 +46,26 @@ const replyComment = {
 };
 
 describe("public API client", () => {
+  it("requires a non-negative canonical comment count", async () => {
+    const missing = { ...post } as Record<string, unknown>;
+    delete missing.comment_count;
+    const missingApi = new PublicApi(
+      vi.fn(async () => json({ data: missing, meta: {} })) as typeof fetch,
+    );
+    await expect(missingApi.post(post.id)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+
+    const negativeApi = new PublicApi(
+      vi.fn(async () =>
+        json({ data: { ...post, comment_count: -1 }, meta: {} }),
+      ) as typeof fetch,
+    );
+    await expect(negativeApi.post(post.id)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+  });
+
   it("preserves canonical ordered media and all nullable alt states", async () => {
     const usages = [
       {
@@ -185,6 +206,7 @@ describe("public API client", () => {
           createdAt: post.created_at,
           updatedAt: post.updated_at,
           publishedAt: post.published_at,
+          commentCount: post.comment_count,
           media: [],
         },
       ],
