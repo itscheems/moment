@@ -139,6 +139,25 @@ describe("shared post presentation", () => {
     expect(screen.getByRole("dialog", { name: "链接已复制" })).toBeVisible();
   });
 
+  it("keeps a detail share menu on the content side of its trigger", async () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          detail
+          post={makePost("分享详情", "<p>分享详情</p>")}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "分享这条 Moment" });
+    expect(trigger.querySelector('svg[data-icon="share"]')).toBeInTheDocument();
+    fireEvent.click(trigger);
+
+    const menu = await screen.findByRole("menu", { hidden: true });
+    expect(menu.parentElement).toHaveAttribute("data-align", "start");
+  });
+
   it("opens the site profile preview from the author identity", async () => {
     render(
       <NavigationProvider>

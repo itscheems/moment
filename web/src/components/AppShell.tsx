@@ -1,3 +1,4 @@
+import { Menu } from "@base-ui/react/menu";
 import type { ReactNode } from "react";
 
 import type { SiteIdentity } from "../api/public";
@@ -27,6 +28,13 @@ const primaryNav: NavItem[] = [
     active: ["profile"],
   },
 ];
+
+const publishNav: NavItem = {
+  label: "发布",
+  href: "/owner/compose",
+  icon: "compose",
+  active: ["owner-compose"],
+};
 
 function ownerNav(settingsAvailable: boolean): NavItem {
   return {
@@ -64,6 +72,7 @@ function NavLink({
       aria-current={current ? "page" : undefined}
       aria-label={compact ? item.label : undefined}
       className={styles.navLink}
+      data-compact-label={item.label}
       href={item.href}
     >
       <Icon name={item.icon} />
@@ -90,8 +99,12 @@ function LeftRail({
         ))}
         <ThemeMenu />
       </nav>
-      <InternalLink className={styles.publishAction} href="/owner/compose">
-        <Icon name="publish" />
+      <InternalLink
+        className={styles.publishAction}
+        data-compact-label="发布 Moment"
+        href="/owner/compose"
+      >
+        <Icon name="compose" />
         <span>发布 Moment</span>
       </InternalLink>
       <div className={styles.railBottom}>
@@ -148,16 +161,56 @@ function MemoryRail({
   );
 }
 
+function MobileAccountMenu({
+  ownerSettingsAvailable,
+  site,
+}: {
+  ownerSettingsAvailable: boolean;
+  site: SiteIdentity;
+}) {
+  const { navigate } = useNavigation();
+  const ownerItem = ownerNav(ownerSettingsAvailable);
+
+  return (
+    <Menu.Root>
+      <Menu.Trigger aria-label="打开账户菜单" className={styles.mobileAvatar}>
+        <SiteAvatar eager site={site} />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner
+          align="start"
+          className={styles.mobileAccountPositioner}
+          collisionAvoidance={{ side: "flip", align: "shift" }}
+          collisionPadding={8}
+          side="bottom"
+          sideOffset={6}
+        >
+          <Menu.Popup aria-label="账户" className={styles.mobileAccountPopup}>
+            <Menu.Item
+              className={styles.mobileAccountItem}
+              onClick={() => navigate("/profile")}
+            >
+              <Icon name="owner" />
+              <span>个人资料</span>
+            </Menu.Item>
+            <Menu.Item
+              className={styles.mobileAccountItem}
+              onClick={() => navigate(ownerItem.href)}
+            >
+              <Icon name="settings" />
+              <span>
+                {ownerSettingsAvailable ? "所有者设置" : "所有者登录"}
+              </span>
+            </Menu.Item>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
+
 function MobileNavigation({ route }: { route: AppRoute }) {
-  const items: NavItem[] = [
-    ...primaryNav,
-    {
-      label: "发布",
-      href: "/owner/compose",
-      icon: "publish",
-      active: ["owner-compose"],
-    },
-  ];
+  const items: NavItem[] = [...primaryNav, publishNav];
   return (
     <nav aria-label="移动导航" className={styles.mobileNav}>
       {items.map((item) => (
@@ -209,9 +262,10 @@ export function AppShell({
                 <Icon name="back" />
               </InternalLink>
             ) : (
-              <span className={styles.mobileAvatar}>
-                <SiteAvatar eager site={site} />
-              </span>
+              <MobileAccountMenu
+                ownerSettingsAvailable={ownerSettingsAvailable}
+                site={site}
+              />
             )}
             <div>
               <p>{route.eyebrow}</p>

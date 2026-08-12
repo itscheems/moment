@@ -158,6 +158,7 @@ export function PostPresentation({
             </InternalLink>
           ) : null}
           <ShareMenu
+            align={detail ? "start" : "end"}
             baseUrl={site.publicBaseUrl}
             href={detailHref}
             title={`${title} 的 Moment`}

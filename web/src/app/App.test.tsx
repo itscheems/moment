@@ -105,6 +105,11 @@ describe("App shell and public routes", () => {
       "href",
       "/owner/compose",
     );
+    expect(
+      screen
+        .getByRole("link", { name: "发布 Moment" })
+        .querySelector('svg[data-icon="compose"]'),
+    ).toBeInTheDocument();
     const desktopNavigation = screen.getByRole("navigation", {
       name: "主要导航",
     });
@@ -119,6 +124,33 @@ describe("App shell and public routes", () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText("乔乔的 Moment").length).toBeGreaterThan(0);
     expect(document.title).toBe("乔乔的 Moment");
+  });
+
+  it("keeps Owner access in the mobile account menu and restores trigger focus", async () => {
+    render(<App />);
+    const trigger = document.querySelector<HTMLButtonElement>(
+      'button[aria-label="打开账户菜单"]',
+    );
+    expect(trigger).not.toBeNull();
+
+    trigger!.focus();
+    fireEvent.click(trigger!);
+    const menu = await screen.findByRole("menu", { hidden: true });
+    expect(
+      screen.getByRole("menuitem", { name: "个人资料" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "所有者登录" }),
+    ).toBeInTheDocument();
+
+    fireEvent.keyDown(menu, { key: "Escape" });
+    await waitFor(() => expect(trigger).toHaveFocus());
+
+    fireEvent.click(trigger!);
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "所有者登录" }),
+    );
+    await waitFor(() => expect(window.location.pathname).toBe("/owner/login"));
   });
 
   it("replaces discovery placeholders with recoverable URL-state errors", async () => {

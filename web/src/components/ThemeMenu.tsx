@@ -37,7 +37,11 @@ export function ThemeMenu() {
   return (
     <>
       <Menu.Root>
-        <Menu.Trigger aria-label="更多" className={styles.trigger}>
+        <Menu.Trigger
+          aria-label="更多"
+          className={styles.trigger}
+          data-compact-label="更多"
+        >
           <Icon name="more" />
           <span className={styles.triggerLabel}>更多</span>
         </Menu.Trigger>

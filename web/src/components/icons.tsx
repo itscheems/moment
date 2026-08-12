@@ -4,8 +4,10 @@ export type IconName =
   | "home"
   | "search"
   | "archive"
+  | "compose"
   | "publish"
   | "owner"
+  | "settings"
   | "theme"
   | "back"
   | "reply"
@@ -37,6 +39,12 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M8 2.5v4M16 2.5v4M5 9h14M8.5 13h2M13.5 13h2M8.5 16.5h2" />
     </>
   ),
+  compose: (
+    <>
+      <path d="m5 19 1.2-5.1L16.8 3.3l3.9 3.9L10.1 17.8z" />
+      <path d="m14.8 5.3 3.9 3.9M5 19l5.1-1.2M4 21h16" />
+    </>
+  ),
   publish: (
     <>
       <path d="M12 19V5M6.5 10.5 12 5l5.5 5.5" />
@@ -47,6 +55,12 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <circle cx="12" cy="8.5" r="3.5" />
       <path d="M5.5 20c.7-3.5 2.87-5.5 6.5-5.5s5.8 2 6.5 5.5" />
+    </>
+  ),
+  settings: (
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.8 1.8 0 0 0 .36 2l.06.06-2.76 2.76-.06-.06a1.8 1.8 0 0 0-2-.36 1.8 1.8 0 0 0-1.1 1.64V21H10v-.08A1.8 1.8 0 0 0 8.9 19.3a1.8 1.8 0 0 0-2 .36l-.06.06-2.76-2.76.06-.06a1.8 1.8 0 0 0 .36-2A1.8 1.8 0 0 0 2.86 14H2v-4h.86A1.8 1.8 0 0 0 4.5 8.9a1.8 1.8 0 0 0-.36-2l-.06-.06 2.76-2.76.06.06a1.8 1.8 0 0 0 2 .36A1.8 1.8 0 0 0 10 2.86V2h4v.86a1.8 1.8 0 0 0 1.1 1.64 1.8 1.8 0 0 0 2-.36l.06-.06 2.76 2.76-.06.06a1.8 1.8 0 0 0-.36 2A1.8 1.8 0 0 0 21.14 10H22v4h-.86A1.8 1.8 0 0 0 19.4 15Z" />
     </>
   ),
   theme: (
@@ -143,6 +157,7 @@ export function Icon({
   return (
     <svg
       aria-hidden="true"
+      data-icon={name}
       fill="none"
       height="24"
       viewBox="0 0 24 24"

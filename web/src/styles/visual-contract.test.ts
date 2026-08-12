@@ -30,8 +30,10 @@ function contrast(foreground: string, background: string): number {
 
 describe("visual foundation contract", () => {
   it("locks the wide, tablet, and mobile shell boundaries", () => {
+    expect(shellCss).toContain("grid-template-columns: 15.5rem 40rem 20rem");
+    expect(shellCss).toContain("inline-size: min(100%, 75.5rem)");
     expect(shellCss).toContain(
-      "minmax(13rem, 17.25rem) 37.5rem minmax(19rem, 22rem)",
+      "grid-template-columns: 5.5rem minmax(0, 40rem)",
     );
     expect(shellCss).toContain(
       "@media (min-width: 720px) and (max-width: 1279px)",

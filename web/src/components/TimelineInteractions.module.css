@@ -4,6 +4,10 @@
   z-index: var(--layer-popover);
 }
 
+.sharePositioner {
+  max-inline-size: calc(100vw - 1rem);
+}
+
 .tooltip {
   border-radius: 0.25rem;
   padding: 0.3rem 0.5rem;

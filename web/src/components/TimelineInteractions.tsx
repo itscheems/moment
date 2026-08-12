@@ -78,11 +78,13 @@ export function SiteIdentityPreview({
 }
 
 export function ShareMenu({
+  align = "end",
   baseUrl,
   href,
   title,
   trigger,
 }: {
+  align?: "start" | "center" | "end";
   baseUrl: string | null;
   href: string;
   title: string;
@@ -116,8 +118,10 @@ export function ShareMenu({
       <Menu.Trigger render={trigger} />
       <Menu.Portal>
         <Menu.Positioner
-          align="end"
+          align={align}
           className={styles.sharePositioner}
+          collisionAvoidance={{ side: "flip", align: "shift" }}
+          collisionPadding={8}
           side="bottom"
           sideOffset={4}
         >

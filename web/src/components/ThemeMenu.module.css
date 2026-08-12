@@ -292,8 +292,38 @@
 
 @media (min-width: 720px) and (max-width: 1279px) {
   .trigger {
+    position: relative;
     justify-content: center;
     padding: 0;
+  }
+
+  .trigger[data-compact-label]::after {
+    content: attr(data-compact-label);
+    position: absolute;
+    z-index: var(--layer-popover);
+    inset-block-start: 50%;
+    inset-inline-start: calc(100% + 0.45rem);
+    border-radius: 0.3rem;
+    padding: 0.35rem 0.55rem;
+    color: #ffffff;
+    background: rgb(83 100 113 / 96%);
+    box-shadow: 0 0.1rem 0.4rem rgb(15 20 25 / 15%);
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1;
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(0.2rem, -50%);
+    transition:
+      opacity var(--motion-fast) var(--ease-out),
+      transform var(--motion-fast) var(--ease-out);
+    white-space: nowrap;
+  }
+
+  .trigger[data-compact-label]:hover::after,
+  .trigger[data-compact-label]:focus-visible::after {
+    opacity: 1;
+    transform: translate(0, -50%);
   }
 
   .triggerLabel {
@@ -334,6 +364,10 @@
   .backdrop,
   .appearanceDialog,
   .accentChoice {
+    transition: none;
+  }
+
+  .trigger[data-compact-label]::after {
     transition: none;
   }
 }
