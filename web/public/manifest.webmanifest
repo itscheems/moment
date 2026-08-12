@@ -1,13 +1,14 @@
 {
-  "name": "Moment personal timeline",
+  "name": "Moment",
   "short_name": "Moment",
-  "description": "Capture now. Find later.",
+  "description": "记录此刻，随时找回。",
   "lang": "zh-CN",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#f3f6f3",
-  "theme_color": "#2e6b4d",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
   "icons": [
     {
       "src": "/moment-mark.svg",

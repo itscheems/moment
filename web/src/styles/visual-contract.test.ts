@@ -10,6 +10,8 @@ import ownerCss from "../features/owner/Owner.module.css?inline";
 import postCss from "../features/posts/PostPresentation.module.css?inline";
 import profileEditorCss from "../features/profile/ProfileEditor.module.css?inline";
 import profileCss from "../features/profile/ProfilePage.module.css?inline";
+import manifestSource from "../../public/manifest.webmanifest?raw";
+import markSource from "../../public/moment-mark.svg?raw";
 import globalCss from "./global.css?inline";
 
 function channel(value: number): number {
@@ -34,6 +36,31 @@ function contrast(foreground: string, background: string): number {
 }
 
 describe("visual foundation contract", () => {
+  it("keeps the installed app aligned with the current Moment identity", () => {
+    const manifest = JSON.parse(manifestSource) as {
+      id: string;
+      start_url: string;
+      scope: string;
+      display: string;
+      background_color: string;
+      theme_color: string;
+      icons: Array<{ sizes: string; purpose: string }>;
+    };
+    expect(manifest).toMatchObject({
+      id: "/",
+      start_url: "/",
+      scope: "/",
+      display: "standalone",
+      background_color: "#ffffff",
+      theme_color: "#ffffff",
+    });
+    expect(manifest.icons).toContainEqual(
+      expect.objectContaining({ sizes: "any", purpose: "any maskable" }),
+    );
+    expect(markSource).toContain('stroke="#0f1419"');
+    expect(markSource).not.toContain("#2e6b4d");
+  });
+
   it("locks the wide, tablet, and mobile shell boundaries", () => {
     expect(shellCss).toContain("grid-template-columns: 15.5rem 40rem 20rem");
     expect(shellCss).toContain("inline-size: min(100%, 75.5rem)");
