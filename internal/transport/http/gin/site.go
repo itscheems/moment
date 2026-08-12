@@ -115,6 +115,7 @@ type siteUpdateRequest struct {
 	Timezone        requiredStringField `json:"timezone"`
 	PublicBaseURL   optionalStringField `json:"public_base_url"`
 	AvatarMediaID   optionalStringField `json:"avatar_media_id"`
+	CoverMediaID    optionalStringField `json:"cover_media_id"`
 	CommentsEnabled requiredBoolField   `json:"comments_enabled"`
 }
 
@@ -143,6 +144,9 @@ func decodeSiteUpdate(body []byte) (app.SiteUpdate, error) {
 	}
 	if request.AvatarMediaID.set {
 		update.AvatarMediaID = &app.NullableString{Value: request.AvatarMediaID.value}
+	}
+	if request.CoverMediaID.set {
+		update.CoverMediaID = &app.NullableString{Value: request.CoverMediaID.value}
 	}
 	if request.CommentsEnabled.set {
 		update.CommentsEnabled = &request.CommentsEnabled.value

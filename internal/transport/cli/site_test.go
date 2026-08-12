@@ -45,7 +45,7 @@ func TestSiteDirectCommandsJSONFlagsAndStableErrors(t *testing.T) {
 
 	initialOutput := execute(application, "", "site", "get", "--data-dir", dataDir, "--json")
 	initial := commandData(t, initialOutput)
-	if initial["title"] != "Moment" || initial["timezone"] == "" || initial["comments_enabled"] != true || initial["public_base_url"] != nil || initial["avatar_media_id"] != nil {
+	if initial["title"] != "Moment" || initial["timezone"] == "" || initial["comments_enabled"] != true || initial["public_base_url"] != nil || initial["avatar_media_id"] != nil || initial["cover_media_id"] != nil {
 		t.Fatalf("initial = %#v", initial)
 	}
 	if initialOutput.stderr != "" {
@@ -78,6 +78,7 @@ func TestSiteDirectCommandsJSONFlagsAndStableErrors(t *testing.T) {
 		"no flags":        {"site", "update", "--data-dir", dataDir, "--json"},
 		"URL conflict":    {"site", "update", "--data-dir", dataDir, "--public-base-url", "https://example.test", "--clear-public-base-url", "--json"},
 		"avatar conflict": {"site", "update", "--data-dir", dataDir, "--avatar-media-id", "01ARZ3NDEKTSV4RRFFQ69G5FAY", "--clear-avatar", "--json"},
+		"cover conflict":  {"site", "update", "--data-dir", dataDir, "--cover-media-id", "01ARZ3NDEKTSV4RRFFQ69G5FAY", "--clear-cover", "--json"},
 		"bad timezone":    {"site", "update", "--data-dir", dataDir, "--timezone", "UTC+08:00", "--json"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -91,6 +92,10 @@ func TestSiteDirectCommandsJSONFlagsAndStableErrors(t *testing.T) {
 	missingAvatar := execute(application, "", "site", "update", "--data-dir", dataDir, "--avatar-media-id", "01ARZ3NDEKTSV4RRFFQ69G5FAY", "--json")
 	if missingAvatar.exit != ExitNotFound || decodeOneDocument(t, missingAvatar.stdout)["error"].(map[string]any)["code"] != "MEDIA_NOT_FOUND" {
 		t.Fatalf("missing avatar = %#v", missingAvatar)
+	}
+	missingCover := execute(application, "", "site", "update", "--data-dir", dataDir, "--cover-media-id", "01ARZ3NDEKTSV4RRFFQ69G5FAY", "--json")
+	if missingCover.exit != ExitNotFound || decodeOneDocument(t, missingCover.stdout)["error"].(map[string]any)["code"] != "MEDIA_NOT_FOUND" {
+		t.Fatalf("missing cover = %#v", missingCover)
 	}
 }
 
@@ -222,10 +227,10 @@ func TestSiteAPIRejectsMissingRequiredSuccessData(t *testing.T) {
 func TestSiteAPIRejectsNullRequiredSuccessScalars(t *testing.T) {
 	t.Setenv("MOMENT_TOKEN", "test-token")
 	tests := []string{
-		`{"data":{"title":null,"bio":"","timezone":"UTC","public_base_url":null,"avatar_media_id":null,"comments_enabled":false},"meta":{"request_id":"req_site"}}`,
-		`{"data":{"title":"Moment","bio":null,"timezone":"UTC","public_base_url":null,"avatar_media_id":null,"comments_enabled":false},"meta":{"request_id":"req_site"}}`,
-		`{"data":{"title":"Moment","bio":"","timezone":null,"public_base_url":null,"avatar_media_id":null,"comments_enabled":false},"meta":{"request_id":"req_site"}}`,
-		`{"data":{"title":"Moment","bio":"","timezone":"UTC","public_base_url":null,"avatar_media_id":null,"comments_enabled":null},"meta":{"request_id":"req_site"}}`,
+		`{"data":{"title":null,"bio":"","timezone":"UTC","public_base_url":null,"avatar_media_id":null,"cover_media_id":null,"comments_enabled":false},"meta":{"request_id":"req_site"}}`,
+		`{"data":{"title":"Moment","bio":null,"timezone":"UTC","public_base_url":null,"avatar_media_id":null,"cover_media_id":null,"comments_enabled":false},"meta":{"request_id":"req_site"}}`,
+		`{"data":{"title":"Moment","bio":"","timezone":null,"public_base_url":null,"avatar_media_id":null,"cover_media_id":null,"comments_enabled":false},"meta":{"request_id":"req_site"}}`,
+		`{"data":{"title":"Moment","bio":"","timezone":"UTC","public_base_url":null,"avatar_media_id":null,"cover_media_id":null,"comments_enabled":null},"meta":{"request_id":"req_site"}}`,
 	}
 	for _, body := range tests {
 		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {

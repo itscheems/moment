@@ -137,7 +137,7 @@ func TestSitePublicReadAndOwnerPatchTriState(t *testing.T) {
 		t.Fatalf("unauthorized status = %d", unauthorized.Code)
 	}
 
-	requestBody := `{"title":"","bio":"personal log","timezone":"Asia/Shanghai","public_base_url":"http://localhost:80/journal/","avatar_media_id":"` + httpAvatarID + `","comments_enabled":false}`
+	requestBody := `{"title":"Personal Moment","bio":"personal log","timezone":"Asia/Shanghai","public_base_url":"http://localhost:80/journal/","avatar_media_id":"` + httpAvatarID + `","cover_media_id":"` + httpAvatarID + `","comments_enabled":false}`
 	request := ownerRequest(http.MethodPatch, "/api/v1/owner/site", requestBody)
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
 	updated := performRequest(fixture.engine, request)
@@ -145,21 +145,21 @@ func TestSitePublicReadAndOwnerPatchTriState(t *testing.T) {
 		t.Fatalf("updated status = %d, body = %s", updated.Code, updated.Body.String())
 	}
 	data = decodeDataMap(t, updated)
-	if data["title"] != "" || data["comments_enabled"] != false || data["public_base_url"] != "http://localhost/journal" || data["avatar_media_id"] != httpAvatarID {
+	if data["title"] != "Personal Moment" || data["comments_enabled"] != false || data["public_base_url"] != "http://localhost/journal" || data["avatar_media_id"] != httpAvatarID || data["cover_media_id"] != httpAvatarID {
 		t.Fatalf("updated data = %#v", data)
 	}
 
-	clearRequest := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"public_base_url":null,"avatar_media_id":null}`)
+	clearRequest := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"public_base_url":null,"avatar_media_id":null,"cover_media_id":null}`)
 	clearRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	cleared := performRequest(fixture.engine, clearRequest)
 	if cleared.Code != http.StatusOK {
 		t.Fatalf("clear status = %d, body = %s", cleared.Code, cleared.Body.String())
 	}
 	data = decodeDataMap(t, cleared)
-	if data["public_base_url"] != nil || data["avatar_media_id"] != nil || data["bio"] != "personal log" || data["comments_enabled"] != false {
+	if data["public_base_url"] != nil || data["avatar_media_id"] != nil || data["cover_media_id"] != nil || data["bio"] != "personal log" || data["comments_enabled"] != false {
 		t.Fatalf("cleared data = %#v", data)
 	}
-	if transactions.settings.PublicBaseURL != nil || transactions.settings.AvatarMediaID != nil {
+	if transactions.settings.PublicBaseURL != nil || transactions.settings.AvatarMediaID != nil || transactions.settings.CoverMediaID != nil {
 		t.Fatalf("clear did not persist: %#v", transactions.settings)
 	}
 }
@@ -232,7 +232,7 @@ func TestSitePublicJSONContainsOnlyStableDTOFields(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Data) != 6 {
+	if len(envelope.Data) != 7 {
 		t.Fatalf("public DTO fields = %v", envelope.Data)
 	}
 }

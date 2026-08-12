@@ -212,7 +212,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 	}
 	if err := protocol.jsonMember("data/site.json", siteRecord{
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone,
-		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID,
+		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID,
 		CommentsEnabled: site.CommentsEnabled,
 	}); err != nil {
 		return Summary{}, err
@@ -497,6 +497,7 @@ type siteRecord struct {
 	Timezone        string  `json:"timezone"`
 	PublicBaseURL   *string `json:"public_base_url"`
 	AvatarMediaID   *string `json:"avatar_media_id"`
+	CoverMediaID    *string `json:"cover_media_id"`
 	CommentsEnabled bool    `json:"comments_enabled"`
 }
 
@@ -754,8 +755,11 @@ func validateArchiveSite(value sqlitestore.ArchiveSite, development bool) error 
 			return errors.New("site text is not canonical UTF-8")
 		}
 	}
-	if strings.TrimSpace(value.Title) == "" {
+	if strings.TrimSpace(value.Title) == "" || len([]rune(value.Title)) > 120 {
 		return errors.New("site title is empty")
+	}
+	if len([]rune(value.Bio)) > 500 {
+		return errors.New("site bio exceeds the portable limit")
 	}
 	if value.Timezone == "" || value.Timezone == "Local" || strings.HasPrefix(value.Timezone, "/") || strings.Contains(value.Timezone, "..") {
 		return errors.New("site timezone is not an IANA location")
@@ -765,6 +769,11 @@ func validateArchiveSite(value sqlitestore.ArchiveSite, development bool) error 
 	}
 	if value.AvatarMediaID != nil {
 		if _, err := domain.ParseID(*value.AvatarMediaID); err != nil {
+			return err
+		}
+	}
+	if value.CoverMediaID != nil {
+		if _, err := domain.ParseID(*value.CoverMediaID); err != nil {
 			return err
 		}
 	}
@@ -1146,7 +1155,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	}
 	if err := validateArchiveSite(sqlitestore.ArchiveSite{
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone,
-		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID,
+		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID,
 		CommentsEnabled: site.CommentsEnabled,
 	}, true); err != nil {
 		return err
@@ -1327,6 +1336,11 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	if site.AvatarMediaID != nil {
 		if _, exists := mediaIDs[*site.AvatarMediaID]; !exists {
 			return errors.New("site avatar refers to media absent from the archive")
+		}
+	}
+	if site.CoverMediaID != nil {
+		if _, exists := mediaIDs[*site.CoverMediaID]; !exists {
+			return errors.New("site cover refers to media absent from the archive")
 		}
 	}
 	return nil

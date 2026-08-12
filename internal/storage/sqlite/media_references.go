@@ -21,6 +21,10 @@ const mediaReferencedSQL = `(
         SELECT 1 FROM site_settings AS site
         WHERE site.id = 1 AND site.avatar_media_id = media.id
     )
+    OR EXISTS (
+        SELECT 1 FROM site_settings AS site
+        WHERE site.id = 1 AND site.cover_media_id = media.id
+    )
 )`
 
 // MediaReferenceRepository exposes the central resolver through transaction-

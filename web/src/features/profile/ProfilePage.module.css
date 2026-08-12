@@ -4,6 +4,7 @@
 
 .cover {
   block-size: 12.5rem;
+  overflow: hidden;
   background: var(--surface-muted);
 }
 

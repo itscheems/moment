@@ -8,19 +8,22 @@ import {
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
 import { Icon } from "../../components/icons";
-import { SiteAvatar } from "../../components/SiteIdentity";
+import { SiteAvatar, SiteCover } from "../../components/SiteIdentity";
 import { ShareMenu } from "../../components/TimelineInteractions";
 import { useOwner } from "../owner/OwnerProvider";
 import { PostPresentation } from "../posts/PostPresentation";
 import { PublicError, TimelineLoading } from "../timeline/PublicStates";
 import styles from "./ProfilePage.module.css";
+import { ProfileEditor } from "./ProfileEditor";
 
 export function ProfilePage({
   api,
   site,
+  onSiteSaved,
 }: {
   api: PublicApi;
   site: SiteIdentity;
+  onSiteSaved: (site: SiteIdentity) => void;
 }) {
   const owner = useOwner();
   const [posts, setPosts] = useState<PublicPost[]>([]);
@@ -71,7 +74,9 @@ export function ProfilePage({
 
   return (
     <section aria-label={`${title} 的个人资料`} className={styles.profile}>
-      <div aria-hidden="true" className={styles.cover} />
+      <div className={styles.cover}>
+        <SiteCover eager site={site} />
+      </div>
       <div className={styles.identity}>
         <div className={styles.avatar}>
           <SiteAvatar eager site={site} />
@@ -87,8 +92,8 @@ export function ProfilePage({
               </button>
             }
           />
-          {owner.state === "owner" || owner.state === "expired" ? (
-            <InternalLink href="/owner/settings">编辑个人资料</InternalLink>
+          {owner.state === "owner" ? (
+            <ProfileEditor onSaved={onSiteSaved} site={site} />
           ) : null}
         </div>
         <h2>{title}</h2>

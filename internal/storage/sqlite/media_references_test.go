@@ -64,6 +64,31 @@ func TestAvatarReferenceClockIsContinuousAndTransactional(t *testing.T) {
 	assertMediaClock(t, database, mediaOne, &clock)
 }
 
+func TestCoverReferenceUsesCentralResolver(t *testing.T) {
+	ctx := context.Background()
+	database, runtimeState := openTestDatabase(t, Options{})
+	created := time.UnixMilli(1_700_000_000_000)
+	removed := created.Add(time.Hour)
+	insertReferenceMedia(t, database, mediaOne, "d", created)
+	repository, err := NewSiteRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := app.NewSiteService(repository, app.SiteOptions{Clock: func() time.Time { return removed }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cover := mediaOne
+	if _, err := service.Update(ctx, app.SiteUpdate{CoverMediaID: &app.NullableString{Value: &cover}}); err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClock(t, database, mediaOne, nil)
+	if _, err := service.Update(ctx, app.SiteUpdate{CoverMediaID: &app.NullableString{}}); err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClock(t, database, mediaOne, &removed)
+}
+
 func TestPostDeleteReconcilesCascadedMediaInSameTransaction(t *testing.T) {
 	ctx := context.Background()
 	database, runtimeState := openTestDatabase(t, Options{})

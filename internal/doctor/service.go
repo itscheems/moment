@@ -561,7 +561,7 @@ func (service *Service) inspectSite(ctx context.Context, builder *reportBuilder,
 		}
 	}
 	if err != nil {
-		builder.set(failed(CheckSiteConfiguration, "stored site settings violate the application contract", "repair timezone, public URL, singleton, or managed avatar configuration", map[string]any{"valid": false}, failureIntegrity))
+		builder.set(failed(CheckSiteConfiguration, "stored site settings violate the application contract", "repair site identity, timezone, public URL, singleton, or managed profile media configuration", map[string]any{"valid": false}, failureIntegrity))
 	} else {
 		builder.set(pass(CheckSiteConfiguration, "stored site settings satisfy the application contract", "no action is required", map[string]any{"valid": true}))
 	}

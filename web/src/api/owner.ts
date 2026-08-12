@@ -40,6 +40,7 @@ export interface SiteSettingsUpdate {
   timezone?: string;
   publicBaseUrl?: string | null;
   avatarMediaId?: string | null;
+  coverMediaId?: string | null;
   commentsEnabled?: boolean;
 }
 
@@ -956,6 +957,9 @@ function sitePayload(update: SiteSettingsUpdate): Record<string, unknown> {
   if (update.avatarMediaId !== undefined) {
     payload.avatar_media_id = update.avatarMediaId;
   }
+  if (update.coverMediaId !== undefined) {
+    payload.cover_media_id = update.coverMediaId;
+  }
   if (update.commentsEnabled !== undefined) {
     payload.comments_enabled = update.commentsEnabled;
   }
@@ -1081,6 +1085,7 @@ export class OwnerApi {
       "timezone",
       "public_base_url",
       "avatar_media_id",
+      "cover_media_id",
       "comments_enabled",
     ]);
     return parseSiteIdentity(data);

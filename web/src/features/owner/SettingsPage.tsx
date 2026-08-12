@@ -760,6 +760,7 @@ export function SettingsPage({
                   <span>站点标题</span>
                   <input
                     disabled={dataRestoreBusy}
+                    maxLength={120}
                     onChange={(event) =>
                       updateForm("title", event.target.value)
                     }
@@ -771,6 +772,7 @@ export function SettingsPage({
                   <span>简介</span>
                   <textarea
                     disabled={dataRestoreBusy}
+                    maxLength={500}
                     onChange={(event) => updateForm("bio", event.target.value)}
                     rows={3}
                     value={form.bio}

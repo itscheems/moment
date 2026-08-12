@@ -156,13 +156,14 @@ func (store siteStore) SiteSettings(ctx context.Context) (app.SiteSettings, erro
 		settings  app.SiteSettings
 		publicURL sql.NullString
 		avatarID  sql.NullString
+		coverID   sql.NullString
 		comments  int
 	)
 	err := store.queries.QueryRowContext(ctx, `
-SELECT title, bio, timezone, public_base_url, avatar_media_id, comments_enabled
+SELECT title, bio, timezone, public_base_url, avatar_media_id, cover_media_id, comments_enabled
 FROM site_settings
 WHERE id = 1`).Scan(
-		&settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &comments,
+		&settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &coverID, &comments,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return app.SiteSettings{}, domain.NewError(domain.CodeDataIntegrityFailed, "site settings singleton is missing", nil)
@@ -175,6 +176,9 @@ WHERE id = 1`).Scan(
 	}
 	if avatarID.Valid {
 		settings.AvatarMediaID = &avatarID.String
+	}
+	if coverID.Valid {
+		settings.CoverMediaID = &coverID.String
 	}
 	settings.CommentsEnabled = comments == 1
 	return settings, nil
@@ -192,9 +196,9 @@ func (store siteStore) MediaExists(ctx context.Context, id domain.ID) (bool, err
 func (store siteStore) UpdateSiteSettings(ctx context.Context, settings app.SiteSettings) error {
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE site_settings
-SET title = ?, bio = ?, timezone = ?, public_base_url = ?, avatar_media_id = ?, comments_enabled = ?
+SET title = ?, bio = ?, timezone = ?, public_base_url = ?, avatar_media_id = ?, cover_media_id = ?, comments_enabled = ?
 WHERE id = 1`,
-		settings.Title, settings.Bio, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.AvatarMediaID), boolInteger(settings.CommentsEnabled),
+		settings.Title, settings.Bio, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID), boolInteger(settings.CommentsEnabled),
 	)
 	if err != nil {
 		return fmt.Errorf("update site settings: %w", err)

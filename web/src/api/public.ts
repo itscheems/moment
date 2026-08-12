@@ -4,6 +4,7 @@ export interface SiteIdentity {
   timezone: string;
   publicBaseUrl: string | null;
   avatarMediaId: string | null;
+  coverMediaId: string | null;
   commentsEnabled: boolean;
   instanceId: string | null;
 }
@@ -799,6 +800,19 @@ export function parseSiteIdentity(
   instanceId: string | null = null,
 ): SiteIdentity {
   if (!isRecord(data)) throw invalidResponse("site data must be an object");
+  if (
+    !hasExactKeys(data, [
+      "title",
+      "bio",
+      "timezone",
+      "public_base_url",
+      "avatar_media_id",
+      "cover_media_id",
+      "comments_enabled",
+    ])
+  ) {
+    throw invalidResponse("site data contains unsupported fields");
+  }
   const commentsEnabled = data.comments_enabled;
   if (typeof commentsEnabled !== "boolean") {
     throw invalidResponse("response field comments_enabled must be a boolean");
@@ -813,12 +827,17 @@ export function parseSiteIdentity(
   if (avatarMediaId !== null && !isCanonicalUlid(avatarMediaId)) {
     throw invalidResponse("response field avatar_media_id must be a media ID");
   }
+  const coverMediaId = nullableStringField(data, "cover_media_id");
+  if (coverMediaId !== null && !isCanonicalUlid(coverMediaId)) {
+    throw invalidResponse("response field cover_media_id must be a media ID");
+  }
   return {
     title: stringField(data, "title"),
     bio: stringField(data, "bio"),
     timezone,
     publicBaseUrl: nullableStringField(data, "public_base_url"),
     avatarMediaId,
+    coverMediaId,
     commentsEnabled,
     instanceId,
   };

@@ -10,6 +10,18 @@
   background: var(--accent-soft);
 }
 
+.cover,
+.coverFallback {
+  inline-size: 100%;
+  block-size: 100%;
+  display: block;
+  background: var(--surface-muted);
+}
+
+.cover {
+  object-fit: cover;
+}
+
 .avatar {
   object-fit: cover;
 }

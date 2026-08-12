@@ -168,8 +168,8 @@ func (importer *PortableImporter) SetSite(ctx context.Context, value ArchiveSite
 	}
 	result, err := importer.tx.ExecContext(ctx, `
 UPDATE site_settings
-SET title = ?, bio = ?, timezone = ?, public_base_url = ?, avatar_media_id = ?, comments_enabled = ?
-WHERE id = 1`, value.Title, value.Bio, value.Timezone, value.PublicBaseURL, value.AvatarMediaID, commentsEnabled)
+SET title = ?, bio = ?, timezone = ?, public_base_url = ?, avatar_media_id = ?, cover_media_id = ?, comments_enabled = ?
+WHERE id = 1`, value.Title, value.Bio, value.Timezone, value.PublicBaseURL, value.AvatarMediaID, value.CoverMediaID, commentsEnabled)
 	if err != nil {
 		return fmt.Errorf("replace portable site settings: %w", err)
 	}

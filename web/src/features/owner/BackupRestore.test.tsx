@@ -46,6 +46,7 @@ function siteEnvelope() {
       timezone: "Asia/Shanghai",
       public_base_url: "https://moment.example.com",
       avatar_media_id: null,
+      cover_media_id: null,
       comments_enabled: true,
     },
     meta: {

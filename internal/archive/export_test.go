@@ -79,6 +79,13 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	if document.Counts != (countManifest{Entries: 1, Comments: 2, Media: 2}) {
 		t.Fatalf("counts = %#v", document.Counts)
 	}
+	var exportedSite siteRecord
+	if err := json.Unmarshal(members["data/site.json"], &exportedSite); err != nil {
+		t.Fatal(err)
+	}
+	if exportedSite.CoverMediaID == nil || *exportedSite.CoverMediaID != mediaTwoID {
+		t.Fatalf("portable cover = %#v", exportedSite.CoverMediaID)
+	}
 	checksums, expanded := parseChecksums(t, members)
 	if document.Limits.ExpandedBytes != expanded {
 		t.Fatalf("expanded_bytes=%d want %d", document.Limits.ExpandedBytes, expanded)
@@ -383,6 +390,15 @@ func TestValidateFileRejectsCanonicalChecksumCoveredRecordCorruption(t *testing.
 			},
 		},
 		{
+			name: "site cover absent",
+			mutate: func(members map[string][]byte) {
+				var site map[string]any
+				_ = json.Unmarshal(members["data/site.json"], &site)
+				site["cover_media_id"] = orphanMediaID
+				members["data/site.json"] = append(mustMarshalTest(t, site), '\n')
+			},
+		},
+		{
 			name: "duplicate JSON field",
 			mutate: func(members map[string][]byte) {
 				members["data/site.json"] = bytes.Replace(members["data/site.json"], []byte(`"title":`), []byte(`"title":"duplicate","title":`), 1)
@@ -539,6 +555,19 @@ func TestValidateFileIgnoresUnknownFieldsAndBoundsUntrustedCounts(t *testing.T) 
 	writeArchive(t, name, members, order)
 	if err := ValidateFile(name); err != nil {
 		t.Fatalf("unknown v1 extensions were not ignored: %v", err)
+	}
+
+	legacyMembers, legacyOrder := readArchive(t, output.Bytes())
+	var legacySite map[string]any
+	_ = json.Unmarshal(legacyMembers["data/site.json"], &legacySite)
+	delete(legacySite, "cover_media_id")
+	legacyMembers["data/site.json"] = append(mustMarshalTest(t, legacySite), '\n')
+	rebuildManifestExpanded(t, legacyMembers)
+	rebuildChecksums(legacyMembers)
+	legacyName := filepath.Join(t.TempDir(), "legacy-without-cover.zip")
+	writeArchive(t, legacyName, legacyMembers, legacyOrder)
+	if err := ValidateFile(legacyName); err != nil {
+		t.Fatalf("v1 archive without cover extension was rejected: %v", err)
 	}
 
 	hugeMembers, hugeOrder := readArchive(t, output.Bytes())
@@ -742,7 +771,7 @@ func newExportFixture(t *testing.T, full bool) exportFixture {
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 2, '街景')`, []any{entryID, mediaTwoID}},
 			{`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'guest', '访客', 'root', ?)`, []any{rootCommentID, entryID, clock.UnixMilli()}},
 			{`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'owner', 'Owner', 'reply', ?)`, []any{replyID, entryID, rootCommentID, clock.UnixMilli()}},
-			{`UPDATE site_settings SET title = '我的 Moment', bio = 'portable', timezone = 'Asia/Shanghai', public_base_url = 'http://localhost:8080', avatar_media_id = ?, comments_enabled = 1 WHERE id = 1`, []any{mediaOneID}},
+			{`UPDATE site_settings SET title = '我的 Moment', bio = 'portable', timezone = 'Asia/Shanghai', public_base_url = 'http://localhost:8080', avatar_media_id = ?, cover_media_id = ?, comments_enabled = 1 WHERE id = 1`, []any{mediaOneID, mediaTwoID}},
 			{`UPDATE media SET unreferenced_since_ms = NULL WHERE id IN (?, ?)`, []any{mediaOneID, mediaTwoID}},
 		}
 		for _, statement := range statements {

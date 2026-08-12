@@ -167,6 +167,7 @@ func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) 
 		t.Fatal(err)
 	}
 	site["avatar_media_id"] = nil
+	site["cover_media_id"] = nil
 	members["data/site.json"] = append(mustMarshalTest(t, site), '\n')
 	rebuildManifestExpanded(t, members)
 	rebuildChecksums(members)

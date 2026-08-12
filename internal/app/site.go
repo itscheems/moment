@@ -24,6 +24,7 @@ type SiteSettings struct {
 	Timezone        string  `json:"timezone"`
 	PublicBaseURL   *string `json:"public_base_url"`
 	AvatarMediaID   *string `json:"avatar_media_id"`
+	CoverMediaID    *string `json:"cover_media_id"`
 	CommentsEnabled bool    `json:"comments_enabled"`
 }
 
@@ -39,13 +40,14 @@ type SiteUpdate struct {
 	Timezone        *string
 	PublicBaseURL   *NullableString
 	AvatarMediaID   *NullableString
+	CoverMediaID    *NullableString
 	CommentsEnabled *bool
 }
 
 // Empty reports whether an update carries no fields.
 func (update SiteUpdate) Empty() bool {
 	return update.Title == nil && update.Bio == nil && update.Timezone == nil &&
-		update.PublicBaseURL == nil && update.AvatarMediaID == nil && update.CommentsEnabled == nil
+		update.PublicBaseURL == nil && update.AvatarMediaID == nil && update.CoverMediaID == nil && update.CommentsEnabled == nil
 }
 
 // SiteStore is the transaction-bound settings persistence surface.
@@ -195,10 +197,19 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 			return err
 		}
 		next := applySiteUpdate(current, prepared)
-		if next.AvatarMediaID != nil {
-			id, parseErr := domain.ParseID(*next.AvatarMediaID)
+		for _, media := range []struct {
+			field string
+			id    *string
+		}{
+			{field: "avatar_media_id", id: next.AvatarMediaID},
+			{field: "cover_media_id", id: next.CoverMediaID},
+		} {
+			if media.id == nil {
+				continue
+			}
+			id, parseErr := domain.ParseID(*media.id)
 			if parseErr != nil {
-				return domain.NewError(domain.CodeInvalidArgument, "avatar_media_id must be a valid managed media ID", map[string]any{"field": "avatar_media_id"})
+				return domain.NewError(domain.CodeInvalidArgument, media.field+" must be a valid managed media ID", map[string]any{"field": media.field})
 			}
 			exists, lookupErr := store.MediaExists(ctx, id)
 			if lookupErr != nil {
@@ -211,10 +222,10 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 		if err := store.UpdateSiteSettings(ctx, next); err != nil {
 			return err
 		}
-		if update.AvatarMediaID != nil {
-			affected, affectedErr := uniqueMediaIDs(current.AvatarMediaID, next.AvatarMediaID)
+		if update.AvatarMediaID != nil || update.CoverMediaID != nil {
+			affected, affectedErr := uniqueMediaIDs(current.AvatarMediaID, next.AvatarMediaID, current.CoverMediaID, next.CoverMediaID)
 			if affectedErr != nil {
-				return domain.NewError(domain.CodeDataIntegrityFailed, "stored avatar media ID is invalid", nil)
+				return domain.NewError(domain.CodeDataIntegrityFailed, "stored profile media ID is invalid", nil)
 			}
 			if err := store.ReconcileMediaReferences(ctx, affected, domain.NormalizeTime(service.clock())); err != nil {
 				return err
@@ -231,6 +242,12 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 
 func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 	prepared := update
+	if update.Title != nil && (strings.TrimSpace(*update.Title) == "" || len([]rune(*update.Title)) > 120) {
+		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "title must contain 1 to 120 characters", map[string]any{"field": "title"})
+	}
+	if update.Bio != nil && len([]rune(*update.Bio)) > 500 {
+		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "bio must not exceed 500 characters", map[string]any{"field": "bio"})
+	}
 	if update.Timezone != nil {
 		if err := validateTimezone(*update.Timezone); err != nil {
 			return SiteUpdate{}, err
@@ -250,10 +267,20 @@ func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 		}
 		prepared.AvatarMediaID = &NullableString{Value: &value}
 	}
+	if update.CoverMediaID != nil && update.CoverMediaID.Value != nil {
+		value := strings.TrimSpace(*update.CoverMediaID.Value)
+		if _, err := domain.ParseID(value); err != nil {
+			return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "cover_media_id must be a valid managed media ID", map[string]any{"field": "cover_media_id"})
+		}
+		prepared.CoverMediaID = &NullableString{Value: &value}
+	}
 	return prepared, nil
 }
 
 func (service *SiteService) validateStored(ctx context.Context, store SiteStore, settings SiteSettings) error {
+	if strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > 500 {
+		return domain.NewError(domain.CodeDataIntegrityFailed, "stored site identity text is invalid", nil)
+	}
 	if err := validateTimezone(settings.Timezone); err != nil {
 		return domain.NewError(domain.CodeDataIntegrityFailed, "stored site timezone is invalid", map[string]any{"field": "timezone"})
 	}
@@ -276,6 +303,19 @@ func (service *SiteService) validateStored(ctx context.Context, store SiteStore,
 			return domain.NewError(domain.CodeDataIntegrityFailed, "stored avatar media reference is missing", map[string]any{"media_id": id.String()})
 		}
 	}
+	if settings.CoverMediaID != nil {
+		id, err := domain.ParseID(*settings.CoverMediaID)
+		if err != nil {
+			return domain.NewError(domain.CodeDataIntegrityFailed, "stored cover media ID is invalid", map[string]any{"field": "cover_media_id"})
+		}
+		exists, err := store.MediaExists(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return domain.NewError(domain.CodeDataIntegrityFailed, "stored cover media reference is missing", map[string]any{"media_id": id.String()})
+		}
+	}
 	return nil
 }
 
@@ -295,6 +335,9 @@ func applySiteUpdate(current SiteSettings, update SiteUpdate) SiteSettings {
 	}
 	if update.AvatarMediaID != nil {
 		next.AvatarMediaID = cloneString(update.AvatarMediaID.Value)
+	}
+	if update.CoverMediaID != nil {
+		next.CoverMediaID = cloneString(update.CoverMediaID.Value)
 	}
 	if update.CommentsEnabled != nil {
 		next.CommentsEnabled = *update.CommentsEnabled
@@ -395,6 +438,7 @@ func validURLHost(hostname string) bool {
 func cloneSiteSettings(settings SiteSettings) SiteSettings {
 	settings.PublicBaseURL = cloneString(settings.PublicBaseURL)
 	settings.AvatarMediaID = cloneString(settings.AvatarMediaID)
+	settings.CoverMediaID = cloneString(settings.CoverMediaID)
 	return settings
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 )
 
 const testAvatarID = "01ARZ3NDEKTSV4RRFFQ69G5FAY"
+const testCoverID = "01ARZ3NDEKTSV4RRFFQ69G5FAX"
 
 type memorySiteTransactions struct {
 	mu       sync.Mutex
@@ -84,7 +86,7 @@ func newTestSiteService(t *testing.T, transactions *memorySiteTransactions, deve
 
 func TestSiteDefaultsAndPartialNullableUpdates(t *testing.T) {
 	initial := SiteSettings{Title: "Moment", Timezone: "Asia/Shanghai", CommentsEnabled: true}
-	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{testAvatarID: true}}
+	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{testAvatarID: true, testCoverID: true}}
 	service := newTestSiteService(t, transactions, true)
 
 	defaults, err := service.Get(context.Background())
@@ -98,29 +100,32 @@ func TestSiteDefaultsAndPartialNullableUpdates(t *testing.T) {
 	title := "Jojo's moments"
 	publicURL := "HTTP://LOCALHOST:80/journal/"
 	avatar := testAvatarID
+	cover := testCoverID
 	comments := false
 	updated, err := service.Update(context.Background(), SiteUpdate{
 		Title:           &title,
 		PublicBaseURL:   &NullableString{Value: &publicURL},
 		AvatarMediaID:   &NullableString{Value: &avatar},
+		CoverMediaID:    &NullableString{Value: &cover},
 		CommentsEnabled: &comments,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.Title != title || updated.PublicBaseURL == nil || *updated.PublicBaseURL != "http://localhost/journal" ||
-		updated.AvatarMediaID == nil || *updated.AvatarMediaID != avatar || updated.CommentsEnabled {
+		updated.AvatarMediaID == nil || *updated.AvatarMediaID != avatar || updated.CoverMediaID == nil || *updated.CoverMediaID != cover || updated.CommentsEnabled {
 		t.Fatalf("updated = %#v", updated)
 	}
 
 	cleared, err := service.Update(context.Background(), SiteUpdate{
 		PublicBaseURL: &NullableString{Value: nil},
 		AvatarMediaID: &NullableString{Value: nil},
+		CoverMediaID:  &NullableString{Value: nil},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cleared.PublicBaseURL != nil || cleared.AvatarMediaID != nil || cleared.Title != title || cleared.CommentsEnabled {
+	if cleared.PublicBaseURL != nil || cleared.AvatarMediaID != nil || cleared.CoverMediaID != nil || cleared.Title != title || cleared.CommentsEnabled {
 		t.Fatalf("cleared = %#v", cleared)
 	}
 	wildcardLocalhost := "http://journal.localhost"
@@ -165,6 +170,15 @@ func TestSiteUpdateValidationAndAtomicRollback(t *testing.T) {
 		"empty query": {
 			PublicBaseURL: &NullableString{Value: ptr("https://example.com?")},
 		},
+		"empty title": {
+			Title: ptr("   "),
+		},
+		"long title": {
+			Title: ptr(strings.Repeat("界", 121)),
+		},
+		"long bio": {
+			Bio: ptr(strings.Repeat("界", 501)),
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := service.Update(context.Background(), update); !domain.HasCode(err, domain.CodeInvalidArgument) {
@@ -186,6 +200,15 @@ func TestSiteUpdateValidationAndAtomicRollback(t *testing.T) {
 	}
 	if !reflect.DeepEqual(*transactions.settings, initial) {
 		t.Fatalf("missing avatar partially committed: %#v", transactions.settings)
+	}
+	if _, err := service.Update(context.Background(), SiteUpdate{
+		Title:        &changedTitle,
+		CoverMediaID: &NullableString{Value: &missingAvatar},
+	}); !domain.HasCode(err, domain.CodeMediaNotFound) {
+		t.Fatalf("missing cover error = %v", err)
+	}
+	if !reflect.DeepEqual(*transactions.settings, initial) {
+		t.Fatalf("missing cover partially committed: %#v", transactions.settings)
 	}
 
 	transactions.failPut = true

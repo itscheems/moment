@@ -44,6 +44,7 @@ function siteEnvelope(avatarMediaId: string | null = null) {
       timezone: "Asia/Shanghai",
       public_base_url: "https://moment.example.com",
       avatar_media_id: avatarMediaId,
+      cover_media_id: null,
       comments_enabled: true,
     },
     meta: {

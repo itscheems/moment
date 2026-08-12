@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 
 import type { SiteIdentity } from "../api/public";
 import { InternalLink } from "../app/navigation";
-import { SiteAvatar } from "./SiteIdentity";
+import { SiteAvatar, SiteCover } from "./SiteIdentity";
 import { notify } from "./Feedback";
 import { Icon } from "./icons";
 import styles from "./TimelineInteractions.module.css";
@@ -54,7 +54,9 @@ export function SiteIdentityPreview({
           sideOffset={6}
         >
           <PreviewCard.Popup className={styles.identityCard}>
-            <div aria-hidden="true" className={styles.identityCover} />
+            <div className={styles.identityCover}>
+              <SiteCover eager site={site} />
+            </div>
             <div className={styles.identityBody}>
               <div className={styles.identityAvatar}>
                 <SiteAvatar eager site={site} />

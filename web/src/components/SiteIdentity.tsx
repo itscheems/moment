@@ -29,3 +29,23 @@ export function SiteAvatar({
     </span>
   );
 }
+
+export function SiteCover({
+  site,
+  eager = false,
+}: {
+  site: SiteIdentity;
+  eager?: boolean;
+}) {
+  if (!site.coverMediaId)
+    return <span aria-hidden="true" className={styles.coverFallback} />;
+  return (
+    <img
+      alt=""
+      className={styles.cover}
+      decoding="async"
+      loading={eager ? "eager" : "lazy"}
+      src={`/api/v1/media/${encodeURIComponent(site.coverMediaId)}/preview`}
+    />
+  );
+}

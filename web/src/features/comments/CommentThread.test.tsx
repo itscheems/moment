@@ -27,6 +27,7 @@ const site: SiteIdentity = {
   timezone: "Asia/Shanghai",
   publicBaseUrl: null,
   avatarMediaId: null,
+  coverMediaId: null,
   commentsEnabled: true,
   instanceId: null,
 };

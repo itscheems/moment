@@ -27,6 +27,7 @@ const fallbackSite: SiteIdentity = {
   timezone: "UTC",
   publicBaseUrl: null,
   avatarMediaId: null,
+  coverMediaId: null,
   commentsEnabled: true,
   instanceId: null,
 };
@@ -279,7 +280,7 @@ function PublicApp() {
         />
       ) : null}
       {!siteLoading && route.id === "profile" ? (
-        <ProfilePage api={api} site={site} />
+        <ProfilePage api={api} onSiteSaved={setSite} site={site} />
       ) : null}
       {!siteLoading && route.id === "owner-login" ? (
         <OwnerLogin site={site} />

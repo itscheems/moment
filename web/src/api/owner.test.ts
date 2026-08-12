@@ -126,6 +126,7 @@ describe("owner API client", () => {
               timezone: "Asia/Shanghai",
               public_base_url: "https://moment.example.com",
               avatar_media_id: null,
+              cover_media_id: null,
               comments_enabled: false,
             },
             meta: { request_id: "req_site" },
@@ -198,6 +199,7 @@ describe("owner API client", () => {
       timezone: "Asia/Shanghai",
       public_base_url: "https://moment.example.com",
       avatar_media_id: null,
+      cover_media_id: null,
       comments_enabled: false,
     };
     const statusData = {

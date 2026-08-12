@@ -45,6 +45,7 @@
 
 .identityCover {
   block-size: 4.5rem;
+  overflow: hidden;
   background: var(--surface-muted);
 }
 

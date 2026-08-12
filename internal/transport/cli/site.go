@@ -25,7 +25,7 @@ func registerSite(application *Application) {
 		Short:      "Read portable public site settings",
 		Long:       "Read the public site identity from the selected local instance or HTTP API without deriving values from request headers.",
 		Inputs:     "Direct mode reads --data-dir. API mode reads the public endpoint and does not require an owner token.",
-		Output:     "Title, bio, IANA timezone, normalized public base URL, nullable managed avatar ID, and comments state.",
+		Output:     "Title, bio, IANA timezone, normalized public base URL, nullable managed avatar and cover IDs, and comments state.",
 		Errors:     "Missing or invalid authority data returns DATA_INTEGRITY_FAILED; unavailable APIs use dependency exit codes.",
 		Example:    "moment site get --data-dir ./moment-data --json",
 		Capability: CapabilityBoth,
@@ -35,7 +35,7 @@ func registerSite(application *Application) {
 		Path:       []string{"site", "update"},
 		Short:      "Partially update portable site settings",
 		Long:       "Atomically validate and update only the explicitly supplied site identity fields through the selected transport.",
-		Inputs:     "Set fields with --title, --bio, --timezone, --public-base-url, --avatar-media-id, and --comments-enabled. Clear nullable fields with --clear-public-base-url or --clear-avatar. API mode authenticates through MOMENT_TOKEN or --token-file.",
+		Inputs:     "Set fields with --title, --bio, --timezone, --public-base-url, --avatar-media-id, --cover-media-id, and --comments-enabled. Clear nullable fields with --clear-public-base-url, --clear-avatar, or --clear-cover. API mode authenticates through MOMENT_TOKEN or --token-file.",
 		Output:     "The complete updated public settings DTO, equivalent in direct and API modes.",
 		Errors:     "Invalid IANA zones or URLs return INVALID_ARGUMENT; missing managed media returns MEDIA_NOT_FOUND; API authentication failures return UNAUTHORIZED.",
 		Example:    "moment site update --data-dir ./moment-data --title 'Jojo moments' --timezone Asia/Shanghai --comments-enabled=false --json",
@@ -48,6 +48,8 @@ func registerSite(application *Application) {
 			flags.Bool("clear-public-base-url", false, "clear the configured public base URL")
 			flags.String("avatar-media-id", "", "set the managed media ID used as the site avatar")
 			flags.Bool("clear-avatar", false, "clear the site avatar")
+			flags.String("cover-media-id", "", "set the managed media ID used as the profile cover")
+			flags.Bool("clear-cover", false, "clear the profile cover")
 			flags.Bool("comments-enabled", true, "enable or disable new public comments")
 		},
 		Run: runSiteUpdate,
@@ -157,6 +159,25 @@ func siteUpdateInput(input CommandInput) (app.SiteUpdate, map[string]any, error)
 	} else if clearAvatar {
 		update.AvatarMediaID = &app.NullableString{}
 		payload["avatar_media_id"] = nil
+	}
+	coverChanged := input.Changed("cover-media-id")
+	clearCover, err := input.Bool("clear-cover")
+	if err != nil {
+		return app.SiteUpdate{}, nil, err
+	}
+	if coverChanged && clearCover {
+		return app.SiteUpdate{}, nil, invalidArgument("--cover-media-id and --clear-cover are mutually exclusive", "choose either a managed media ID or an explicit clear")
+	}
+	if coverChanged {
+		value, err := input.String("cover-media-id")
+		if err != nil {
+			return app.SiteUpdate{}, nil, err
+		}
+		update.CoverMediaID = &app.NullableString{Value: &value}
+		payload["cover_media_id"] = value
+	} else if clearCover {
+		update.CoverMediaID = &app.NullableString{}
+		payload["cover_media_id"] = nil
 	}
 	if input.Changed("comments-enabled") {
 		value, err := input.Bool("comments-enabled")
@@ -307,7 +328,7 @@ func siteAPIRequest(
 }
 
 func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
-	if !hasRequiredAPIDataFields(data, "title", "bio", "timezone", "public_base_url", "avatar_media_id", "comments_enabled") ||
+	if !hasRequiredAPIDataFields(data, "title", "bio", "timezone", "public_base_url", "avatar_media_id", "cover_media_id", "comments_enabled") ||
 		!hasRequiredNonNullAPIDataFields(data, "title", "bio", "timezone", "comments_enabled") ||
 		settings.Timezone == "" || settings.Timezone == "Local" || strings.HasPrefix(settings.Timezone, "/") || strings.Contains(settings.Timezone, "..") {
 		return false
@@ -327,6 +348,12 @@ func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
 			return false
 		}
 	}
+	if settings.CoverMediaID != nil {
+		id, err := domain.ParseID(*settings.CoverMediaID)
+		if err != nil || id.String() != *settings.CoverMediaID {
+			return false
+		}
+	}
 	return true
 }
 
@@ -339,13 +366,17 @@ func siteResult(action string, settings app.SiteSettings) Result {
 	if settings.AvatarMediaID != nil {
 		avatar = *settings.AvatarMediaID
 	}
+	cover := "not configured"
+	if settings.CoverMediaID != nil {
+		cover = *settings.CoverMediaID
+	}
 	comments := "disabled"
 	if settings.CommentsEnabled {
 		comments = "enabled"
 	}
 	return Result{
 		Data: settings,
-		Text: fmt.Sprintf("%s.\nTitle: %s\nTimezone: %s\nPublic URL: %s\nAvatar: %s\nComments: %s", action, settings.Title, settings.Timezone, publicURL, avatar, comments),
+		Text: fmt.Sprintf("%s.\nTitle: %s\nTimezone: %s\nPublic URL: %s\nAvatar: %s\nCover: %s\nComments: %s", action, settings.Title, settings.Timezone, publicURL, avatar, cover, comments),
 	}
 }
 
