@@ -90,7 +90,7 @@ function LeftRail({
         {primaryNav.map((item) => (
           <NavLink item={item} key={item.href} route={route} />
         ))}
-        <ThemeMenu />
+        <ThemeMenu site={site} />
       </nav>
       <InternalLink
         aria-label="发布 Moment"
@@ -279,7 +279,7 @@ export function AppShell({
             </div>
             {route.id !== "detail" && route.id !== "owner-edit" ? (
               <span className={styles.headerTheme}>
-                <ThemeMenu />
+                <ThemeMenu site={site} />
               </span>
             ) : null}
           </header>

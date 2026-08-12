@@ -2,12 +2,14 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Menu } from "@base-ui/react/menu";
 import { useState } from "react";
 
+import type { SiteIdentity } from "../api/public";
 import {
   useTheme,
   type AccentPreference,
   type ThemePreference,
 } from "../theme/ThemeProvider";
 import { Icon } from "./icons";
+import { SiteAvatar } from "./SiteIdentity";
 import styles from "./ThemeMenu.module.css";
 
 const backgrounds: Array<{
@@ -30,9 +32,11 @@ const accents: Array<{ value: AccentPreference; label: string }> = [
   { value: "green", label: "绿色" },
 ];
 
-export function ThemeMenu() {
+export function ThemeMenu({ site }: { site: SiteIdentity }) {
   const { accent, preference, setAccent, setPreference } = useTheme();
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const title = site.title.trim() || "Moment";
+  const previewHandle = `@${title.replace(/\s+/g, "").slice(0, 24) || "moment"}`;
 
   return (
     <>
@@ -81,6 +85,23 @@ export function ThemeMenu() {
               <Dialog.Description className={styles.description}>
                 这些设置只保存在当前浏览器，会立即应用到所有页面。
               </Dialog.Description>
+
+              <div aria-label="显示效果预览" className={styles.previewCard}>
+                <SiteAvatar site={site} />
+                <div className={styles.previewContent}>
+                  <p className={styles.previewMeta}>
+                    <strong>{title}</strong>
+                    <span>{previewHandle} · 刚刚</span>
+                  </p>
+                  <p>
+                    Moment 会用当前显示设置呈现文字、链接和提及，比如{" "}
+                    <span className={styles.previewMention}>
+                      {previewHandle}
+                    </span>
+                    。
+                  </p>
+                </div>
+              </div>
 
               <section aria-labelledby="appearance-color-title">
                 <h3 id="appearance-color-title">颜色</h3>
