@@ -222,11 +222,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     useEffect(() => {
       const textarea = textareaRef.current;
       if (!textarea) return;
+      if (mediaItems.length > 0) {
+        textarea.style.height = "";
+        return;
+      }
       textarea.style.height = "auto";
       if (expanded) {
         textarea.style.height = `${Math.min(textarea.scrollHeight, 288)}px`;
       }
-    }, [content, expanded]);
+    }, [content, expanded, mediaItems.length]);
 
     useEffect(
       () => () => {
@@ -681,7 +685,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               }}
               placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
               ref={textareaRef}
-              rows={variant === "inline" ? (expanded ? 3 : 1) : 4}
+              rows={
+                mediaItems.length > 0
+                  ? 1
+                  : variant === "inline"
+                    ? expanded
+                      ? 3
+                      : 1
+                    : 4
+              }
               value={content}
             />
             <p

@@ -1,6 +1,5 @@
 import "@testing-library/jest-dom/vitest";
 import {
-  act,
   cleanup,
   fireEvent,
   render,
@@ -14,8 +13,6 @@ import { MediaComposer } from "./MediaComposer";
 import type { ComposerMediaItem } from "./mediaState";
 
 afterEach(cleanup);
-
-afterEach(() => vi.useRealTimers());
 
 function item(key: string): ComposerMediaItem {
   return {
@@ -168,31 +165,28 @@ describe("media editor", () => {
     );
   });
 
-  it("reflows live items while the removed item finishes its soft exit", () => {
-    vi.useFakeTimers();
+  it("reflows the remaining items immediately after a removal", () => {
     const { container } = render(
       <FocusHarness initial={[item("00"), item("01"), item("02")]} />,
     );
 
     fireEvent.click(screen.getAllByRole("button", { name: /移除/ })[1]);
-    const slots = () =>
-      Array.from(container.querySelectorAll("[data-media-slot]")).map(
-        (node) => [
-          node.getAttribute("data-media-slot"),
-          node.getAttribute("data-media-state"),
-        ],
-      );
-    expect(slots()).toEqual([
-      ["00", null],
-      ["02", null],
-      ["01", "departing"],
-    ]);
-
-    act(() => vi.advanceTimersByTime(170));
-    expect(slots()).toEqual([
-      ["00", null],
-      ["02", null],
-    ]);
+    expect(
+      Array.from(
+        container.querySelectorAll(
+          '[data-media-slot]:not([data-media-state="departing"])',
+        ),
+      ).map((node) => node.getAttribute("data-media-slot")),
+    ).toEqual(["00", "02"]);
+    expect(
+      container.querySelector('[data-media-state="departing"]'),
+    ).toHaveAttribute("data-media-slot", "01");
+    expect(
+      container.querySelector('[data-media-state="departing"]'),
+    ).toHaveAttribute("aria-hidden", "true");
+    expect(
+      container.querySelector('[aria-label="待发布图片，按发布顺序"]'),
+    ).toHaveAttribute("data-media-count", "2");
   });
 
   it("keeps focus with the moved usage after keyboard reordering", async () => {

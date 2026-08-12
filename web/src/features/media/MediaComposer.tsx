@@ -3,10 +3,15 @@ import {
   type ReactNode,
   useEffect,
   useId,
-  useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import {
+  AnimatePresence,
+  motion,
+  useIsPresent,
+  useReducedMotion,
+} from "motion/react";
 
 import { Icon } from "../../components/icons";
 import type { ComposerMediaItem } from "./mediaState";
@@ -18,21 +23,55 @@ import {
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import styles from "./Media.module.css";
 
-const MEDIA_EXIT_MS = 170;
+const MEDIA_SPRING = {
+  layout: {
+    type: "spring" as const,
+    stiffness: 430,
+    damping: 27,
+    mass: 0.72,
+  },
+  opacity: { duration: 0.18 },
+  scale: {
+    type: "spring" as const,
+    stiffness: 520,
+    damping: 23,
+    mass: 0.66,
+  },
+};
 
-interface DepartingMediaItem {
-  key: string;
-  previewSrc: string | null;
-  index: number;
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
-
-function reducedMotionPreferred(): boolean {
-  return Boolean(
-    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+function MediaPresenceItem({
+  children,
+  itemKey,
+  reduceMotion,
+}: {
+  children: (present: boolean) => ReactNode;
+  itemKey: string;
+  reduceMotion: boolean;
+}) {
+  const present = useIsPresent();
+  return (
+    <motion.li
+      animate={{ opacity: 1, scale: 1 }}
+      aria-hidden={present ? undefined : true}
+      className={styles.mediaEditorItem}
+      data-media-slot={itemKey}
+      data-media-state={present ? undefined : "departing"}
+      exit={
+        reduceMotion
+          ? undefined
+          : {
+              opacity: 0,
+              scale: 0.55,
+              transition: { duration: 0.2, ease: "easeIn" },
+            }
+      }
+      initial={reduceMotion ? false : { opacity: 0, scale: 0.55 }}
+      layout={!reduceMotion}
+      style={present ? undefined : { pointerEvents: "none" }}
+      transition={MEDIA_SPRING}
+    >
+      {children(present)}
+    </motion.li>
   );
 }
 
@@ -60,27 +99,17 @@ export function MediaComposer({
   subject?: string;
 }) {
   const inputId = useId();
+  const reduceMotion = useReducedMotion();
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [departingItems, setDepartingItems] = useState<DepartingMediaItem[]>(
-    [],
-  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
-  const mediaListRef = useRef<HTMLOListElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
-  const itemRefs = useRef(new Map<string, HTMLLIElement>());
-  const previousRects = useRef(new Map<string, DOMRect>());
   const focusAfterChange = useRef<string | null | undefined>(undefined);
-  const removalTimers = useRef(new Map<string, number>());
 
   const selectedItemIndex = items.findIndex((item) => item.key === selectedKey);
   const selectedIndex =
     selectedKey === null || selectedItemIndex < 0 ? null : selectedItemIndex;
-  const departingBlockSize = departingItems.reduce(
-    (size, item) => Math.max(size, item.top + item.height),
-    0,
-  );
   const lightboxItems: MediaLightboxItem[] = items.map((item, index) => {
     const previewSrc = item.localPreviewUrl || item.previewUrl || "";
     return {
@@ -103,16 +132,6 @@ export function MediaComposer({
     };
   });
 
-  useEffect(
-    () => () => {
-      for (const timer of removalTimers.current.values()) {
-        window.clearTimeout(timer);
-      }
-      removalTimers.current.clear();
-    },
-    [],
-  );
-
   useEffect(() => {
     if (
       selectedKey !== null &&
@@ -131,30 +150,6 @@ export function MediaComposer({
       else pickerRef.current?.focus();
     });
   }, [items]);
-
-  useLayoutEffect(() => {
-    const nextRects = new Map<string, DOMRect>();
-    for (const [key, node] of itemRefs.current) {
-      const current = node.getBoundingClientRect();
-      nextRects.set(key, current);
-      const previous = previousRects.current.get(key);
-      if (!previous || reducedMotionPreferred() || !node.animate) continue;
-      const deltaX = previous.left - current.left;
-      const deltaY = previous.top - current.top;
-      if (deltaX === 0 && deltaY === 0) continue;
-      node.animate(
-        [
-          { transform: `translate(${deltaX}px, ${deltaY}px)` },
-          { transform: "translate(0, 0)" },
-        ],
-        {
-          duration: 220,
-          easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-        },
-      );
-    }
-    previousRects.current = nextRects;
-  }, [departingItems, items]);
 
   const selectFiles = (event: ChangeEvent<HTMLInputElement>) => {
     const accepted: File[] = [];
@@ -197,37 +192,6 @@ export function MediaComposer({
     focusAfterChange.current =
       items[index + 1]?.key ?? items[index - 1]?.key ?? null;
     if (selectedKey === item.key) setSelectedKey(null);
-    if (!reducedMotionPreferred()) {
-      const itemRect = itemRefs.current.get(item.key)?.getBoundingClientRect();
-      const listRect = mediaListRef.current?.getBoundingClientRect();
-      const layout =
-        itemRect && listRect
-          ? {
-              top: itemRect.top - listRect.top,
-              left: itemRect.left - listRect.left,
-              width: itemRect.width,
-              height: itemRect.height,
-            }
-          : { top: 0, left: 0, width: 0, height: 0 };
-      setDepartingItems((current) => [
-        ...current,
-        {
-          key: item.key,
-          previewSrc: item.localPreviewUrl || item.previewUrl || null,
-          index,
-          ...layout,
-        },
-      ]);
-      removalTimers.current.set(
-        item.key,
-        window.setTimeout(() => {
-          removalTimers.current.delete(item.key);
-          setDepartingItems((current) =>
-            current.filter((candidate) => candidate.key !== item.key),
-          );
-        }, MEDIA_EXIT_MS),
-      );
-    }
     onRemove(item.key);
   };
 
@@ -245,98 +209,69 @@ export function MediaComposer({
         tabIndex={-1}
         type="file"
       />
-      {items.length > 0 || departingItems.length > 0 ? (
-        <ol
-          aria-label="待发布图片，按发布顺序"
-          className={styles.mediaEditorList}
-          data-media-count={items.length}
-          ref={mediaListRef}
-          style={
-            items.length === 0 && departingBlockSize > 0
-              ? { blockSize: departingBlockSize }
-              : undefined
-          }
-        >
+      <motion.ol
+        aria-label="待发布图片，按发布顺序"
+        className={styles.mediaEditorList}
+        data-media-count={items.length}
+        layout={!reduceMotion}
+        transition={MEDIA_SPRING}
+      >
+        <AnimatePresence initial={false} mode="popLayout">
           {items.map((item, index) => {
             const editorPreviewUrl =
               item.localPreviewUrl || item.previewUrl || null;
             return (
-              <li
-                className={styles.mediaEditorItem}
-                data-media-slot={item.key}
+              <MediaPresenceItem
+                itemKey={item.key}
                 key={item.key}
-                ref={(node) => {
-                  if (node) itemRefs.current.set(item.key, node);
-                  else itemRefs.current.delete(item.key);
-                }}
+                reduceMotion={Boolean(reduceMotion)}
               >
-                <div className={styles.editorPreview}>
-                  <button
-                    aria-label={`预览第 ${index + 1} 张图片，共 ${items.length} 张`}
-                    className={styles.editorPreviewButton}
-                    disabled={!editorPreviewUrl}
-                    onClick={() => setSelectedKey(item.key)}
-                    type="button"
-                  >
-                    {editorPreviewUrl ? (
-                      <img alt="" decoding="async" src={editorPreviewUrl} />
-                    ) : (
-                      <span className={styles.editorPreviewPending}>
-                        正在准备预览
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    aria-label={`移除第 ${index + 1} 张图片`}
-                    className={styles.editorRemove}
-                    data-media-key={item.key}
-                    disabled={disabled}
-                    onClick={() => remove(index)}
-                    ref={(node) => {
-                      const refKey = `${item.key}:remove`;
-                      if (node) actionRefs.current.set(refKey, node);
-                      else actionRefs.current.delete(refKey);
-                    }}
-                    type="button"
-                  >
-                    <span aria-hidden="true">×</span>
-                  </button>
-                  {item.state === "uploading" ? (
-                    <progress
-                      aria-label={`第 ${index + 1} 张上传进度`}
-                      max="100"
-                      value={item.progress}
-                    />
-                  ) : null}
-                </div>
-              </li>
+                {(present) => (
+                  <div className={styles.editorPreview}>
+                    <button
+                      aria-label={`预览第 ${index + 1} 张图片，共 ${items.length} 张`}
+                      className={styles.editorPreviewButton}
+                      disabled={!editorPreviewUrl || !present}
+                      onClick={() => setSelectedKey(item.key)}
+                      type="button"
+                    >
+                      {editorPreviewUrl ? (
+                        <img alt="" decoding="async" src={editorPreviewUrl} />
+                      ) : (
+                        <span className={styles.editorPreviewPending}>
+                          正在准备预览
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      aria-label={`移除第 ${index + 1} 张图片`}
+                      className={styles.editorRemove}
+                      data-media-key={item.key}
+                      disabled={disabled || !present}
+                      onClick={() => remove(index)}
+                      ref={(node) => {
+                        const refKey = `${item.key}:remove`;
+                        if (node) actionRefs.current.set(refKey, node);
+                        else actionRefs.current.delete(refKey);
+                      }}
+                      type="button"
+                    >
+                      <span aria-hidden="true">×</span>
+                    </button>
+                    {item.state === "uploading" ? (
+                      <progress
+                        aria-label={`第 ${index + 1} 张上传进度`}
+                        max="100"
+                        value={item.progress}
+                      />
+                    ) : null}
+                  </div>
+                )}
+              </MediaPresenceItem>
             );
           })}
-          {departingItems.map((item) => (
-            <li
-              aria-hidden="true"
-              className={`${styles.mediaEditorItem} ${styles.mediaItemRemoving}`}
-              data-media-slot={item.key}
-              data-media-state="departing"
-              key={`departing-${item.key}`}
-              style={{
-                blockSize: item.height || undefined,
-                inlineSize: item.width || undefined,
-                insetBlockStart: item.top,
-                insetInlineStart: item.left,
-              }}
-            >
-              <div className={styles.editorPreview}>
-                {item.previewSrc ? (
-                  <img alt="" decoding="async" src={item.previewSrc} />
-                ) : (
-                  <span className={styles.editorPreviewPending} />
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
-      ) : null}
+        </AnimatePresence>
+      </motion.ol>
       {items.some((item) => item.state === "failed") ? (
         <div className={styles.mediaFailures}>
           {items.map((item, index) =>

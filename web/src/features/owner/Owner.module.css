@@ -237,6 +237,7 @@
 
 .pageComposer.composerHasMedia .composerForm textarea {
   min-block-size: 2.75rem;
+  padding-block: var(--space-1) var(--space-2);
 }
 
 .inlineComposer.composerExpanded .composerForm textarea {
