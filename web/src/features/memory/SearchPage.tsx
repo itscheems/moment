@@ -15,12 +15,13 @@ import {
 } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
-import { formatMomentDate } from "../posts/dates";
 import { PostPresentation } from "../posts/PostPresentation";
 import { DatePicker } from "./DatePicker";
 import {
   activeSearchYear,
+  nextDate,
   parseSearchLocation,
+  previousDate,
   searchHref,
 } from "./memoryState";
 import styles from "./Memory.module.css";
@@ -72,37 +73,51 @@ function validateCursorPage(
   }
 }
 
-function highlightedSnippet(snippet: string, query: string): ReactNode {
+function highlightedContentHtml(contentHtml: string, query: string): string {
   const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (!escaped) return snippet;
-  const matcher = new RegExp(escaped, "giu");
-  const parts: ReactNode[] = [];
-  let cursor = 0;
-  for (const match of snippet.matchAll(matcher)) {
-    const index = match.index ?? 0;
-    if (index > cursor) parts.push(snippet.slice(cursor, index));
-    parts.push(<mark key={`${index}:${match[0]}`}>{match[0]}</mark>);
-    cursor = index + match[0].length;
+  if (!escaped) return contentHtml;
+  const template = document.createElement("template");
+  template.innerHTML = contentHtml;
+  const walker = document.createTreeWalker(template.content, 4);
+  const textNodes: Text[] = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
+  for (const node of textNodes) {
+    const value = node.data;
+    const matches = Array.from(value.matchAll(new RegExp(escaped, "giu")));
+    if (matches.length === 0) continue;
+    const fragment = document.createDocumentFragment();
+    let cursor = 0;
+    for (const match of matches) {
+      const index = match.index ?? 0;
+      if (index > cursor) fragment.append(value.slice(cursor, index));
+      const mark = document.createElement("mark");
+      mark.textContent = match[0];
+      fragment.append(mark);
+      cursor = index + match[0].length;
+    }
+    if (cursor < value.length) fragment.append(value.slice(cursor));
+    node.replaceWith(fragment);
   }
-  if (cursor === 0) return snippet;
-  if (cursor < snippet.length) parts.push(snippet.slice(cursor));
-  return parts;
+  return template.innerHTML;
+}
+
+function naturalDate(value: string | null, fallback: string): string {
+  if (!value) return fallback;
+  const [year, month, day] = value.split("-").map(Number);
+  return `${year}年${month}月${day}日`;
 }
 
 function SearchMessage({
-  marker,
   title,
   detail,
   action,
 }: {
-  marker: string;
   title: string;
   detail: string;
   action?: ReactNode;
 }) {
   return (
     <section className={styles.message} role="status">
-      <span>{marker}</span>
       <div>
         <h2>{title}</h2>
         <p>{detail}</p>
@@ -132,7 +147,12 @@ export function SearchPage({
   const state = stateRef.current;
   const [queryInput, setQueryInput] = useState(state.query ?? "");
   const [fromInput, setFromInput] = useState(state.from ?? "");
-  const [toInput, setToInput] = useState(state.to ?? "");
+  const [toInput, setToInput] = useState(
+    state.to ? previousDate(state.to) : "",
+  );
+  const [filtersOpen, setFiltersOpen] = useState(
+    Boolean(state.from || state.to),
+  );
   const [formError, setFormError] = useState<string | null>(null);
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [yearCounts, setYearCounts] = useState<
@@ -241,13 +261,17 @@ export function SearchPage({
       setFormError("搜索词不能超过 1,000 个字符。");
       return;
     }
-    if (fromInput && toInput && fromInput >= toInput) {
-      setFormError("结束日需要晚于起始日。");
+    if (fromInput && toInput && fromInput > toInput) {
+      setFormError("结束日期不能早于开始日期。");
       return;
     }
     setFormError(null);
     location.navigate(
-      searchHref({ query, from: fromInput || null, to: toInput || null }),
+      searchHref({
+        query,
+        from: fromInput || null,
+        to: toInput ? nextDate(toInput) : null,
+      }),
     );
   };
 
@@ -312,57 +336,102 @@ export function SearchPage({
     moreError instanceof PublicApiError &&
     (moreError.code === "INVALID_ARGUMENT" ||
       moreError.code === "API_RESPONSE_INVALID");
+  const filterLabel =
+    fromInput || toInput
+      ? `${naturalDate(fromInput || null, "最早")} 至 ${naturalDate(toInput || null, "现在")}`
+      : "日期";
 
   return (
     <div className={styles.memoryPage}>
       <form className={styles.searchForm} onSubmit={submit}>
-        <label className={styles.queryField} htmlFor="moment-search-input">
-          <span>搜索 Moment</span>
-          <div className={styles.queryControl}>
-            <Icon name="search" />
-            <input
-              aria-describedby="search-shortcut search-form-error"
-              aria-keyshortcuts="/"
-              aria-label="搜索 Moment"
-              autoComplete="off"
-              autoFocus={!state.query}
-              id="moment-search-input"
-              maxLength={1_000}
-              onChange={(event) => setQueryInput(event.target.value)}
-              placeholder="搜索"
-              type="search"
-              value={queryInput}
-            />
-          </div>
-          <small id="search-shortcut">在页面空白处按 / 可立即搜索</small>
-        </label>
-        <div className={styles.dateFields}>
+        <div className={styles.searchPrimary}>
+          <label className={styles.queryField} htmlFor="moment-search-input">
+            <span>搜索 Moment</span>
+            <div className={styles.queryControl}>
+              <Icon name="search" />
+              <input
+                aria-describedby={
+                  formError
+                    ? "search-shortcut search-form-error"
+                    : "search-shortcut"
+                }
+                aria-keyshortcuts="/"
+                aria-label="搜索 Moment"
+                autoComplete="off"
+                autoFocus={!state.query}
+                id="moment-search-input"
+                maxLength={1_000}
+                onChange={(event) => setQueryInput(event.target.value)}
+                placeholder="搜索 Moment"
+                type="search"
+                value={queryInput}
+              />
+            </div>
+            <small id="search-shortcut">按 / 聚焦搜索</small>
+          </label>
+          <button className={styles.searchSubmit} type="submit">
+            搜索
+          </button>
+        </div>
+        <div className={styles.filterBar}>
+          <button
+            aria-controls="search-date-filters"
+            aria-expanded={filtersOpen}
+            className={styles.filterToggle}
+            onClick={() => setFiltersOpen((current) => !current)}
+            type="button"
+          >
+            <Icon name="archive" />
+            <span>{filterLabel}</span>
+          </button>
+          {fromInput || toInput ? (
+            <button
+              className={styles.clearFilter}
+              onClick={() => {
+                setFromInput("");
+                setToInput("");
+                if (state.query) {
+                  location.navigate(searchHref({ query: state.query }));
+                }
+              }}
+              type="button"
+            >
+              清除日期
+            </button>
+          ) : null}
+        </div>
+        <div
+          className={styles.dateFields}
+          hidden={!filtersOpen}
+          id="search-date-filters"
+        >
           <DatePicker
             id="moment-search-from"
-            label="起始日（含）"
+            label="开始日期"
             onChange={setFromInput}
             value={fromInput}
           />
           <DatePicker
             align="end"
             id="moment-search-to"
-            label="结束日（不含）"
+            label="结束日期"
             onChange={setToInput}
             value={toInput}
           />
-          <button type="submit">搜索</button>
+          <button type="submit">应用</button>
         </div>
-        <p className={styles.formError} id="search-form-error" role="alert">
-          {formError}
-        </p>
+        {formError ? (
+          <p className={styles.formError} id="search-form-error" role="alert">
+            {formError}
+          </p>
+        ) : null}
       </form>
 
       {state.error ? (
         <SearchMessage
           action={<InternalLink href="/search">重新设置搜索</InternalLink>}
-          detail={state.error}
-          marker="链接无效"
-          title="这些搜索条件无法还原"
+          detail="请重新输入搜索条件。"
+          title="搜索链接无效"
         />
       ) : null}
       {loading ? (
@@ -371,7 +440,7 @@ export function SearchPage({
           aria-label="正在搜索"
           className={styles.loading}
         >
-          <span>正在沿时间流查找“{state.query}”…</span>
+          <span>正在搜索…</span>
         </section>
       ) : null}
       {!loading && error ? (
@@ -392,18 +461,21 @@ export function SearchPage({
             error instanceof PublicApiError &&
             error.code === "INVALID_ARGUMENT" &&
             state.loadedThrough
-              ? "保存的分页位置已经失效；搜索词和日期仍保留，可以从第一页重新加载。"
+              ? "已保留搜索条件，可以从第一页重新加载。"
               : error instanceof PublicApiError &&
                   error.code === "INVALID_ARGUMENT"
-                ? "搜索词或日期范围不被服务器接受；条件仍保留在上方，可以直接修改。"
+                ? "请修改搜索词或日期后重试。"
                 : error instanceof PublicApiError &&
                     error.code === "API_RESPONSE_INVALID"
-                  ? "服务器返回的数据不完整，没有显示可能错序的结果。"
-                  : "检查网络后重试；搜索词和日期仍保留在当前链接中。"
+                  ? "返回的结果不完整，请重试。"
+                  : "请检查网络后重试。"
           }
-          marker="没有完成"
-          title="没有找到结果"
+          title="搜索失败"
         />
+      ) : null}
+
+      {!state.query && !state.error ? (
+        <p className={styles.searchHint}>按文字或日期查找 Moment</p>
       ) : null}
 
       {!loading && !error && state.query ? (
@@ -413,12 +485,6 @@ export function SearchPage({
               <p aria-live="polite" role="status">
                 找到 <strong>{total}</strong> 条与“{state.query}”有关的 Moment
               </p>
-              {state.from || state.to ? (
-                <p className={styles.activeContext}>
-                  日期：{state.from ?? "最早"} 至 {state.to ?? "现在"}
-                  （结束日不含）
-                </p>
-              ) : null}
             </div>
             {state.from || state.to ? (
               <InternalLink href={searchHref({ query: state.query })}>
@@ -427,7 +493,11 @@ export function SearchPage({
             ) : null}
           </section>
           {yearCounts.length > 0 ? (
-            <nav aria-label="按年份筛选搜索结果" className={styles.yearTrack}>
+            <nav
+              aria-label="按年份筛选搜索结果"
+              className={styles.yearTrack}
+              data-compact={yearCounts.length <= 2 ? "true" : undefined}
+            >
               <InternalLink
                 aria-current={
                   activeYear === null && !state.from && !state.to
@@ -476,31 +546,18 @@ export function SearchPage({
                   <InternalLink href="/archive">按年月浏览</InternalLink>
                 </div>
               }
-              detail="换一个更短的词，或清除日期范围后再试。当前条件不会被静默删除。"
-              marker="0 条"
-              title="这段时间里没有匹配"
+              detail="换一个词，或清除日期后再试。"
+              title="没有找到 Moment"
             />
           ) : (
             <section aria-label="搜索结果" className={styles.resultList}>
               {hits.map((hit) => (
                 <PostPresentation
+                  contentHtml={highlightedContentHtml(
+                    hit.post.contentHtml,
+                    state.query!,
+                  )}
                   onSiteChanged={onSiteChanged}
-                  context={
-                    <p className={styles.snippet}>
-                      <span>
-                        匹配片段 ·{" "}
-                        <time dateTime={hit.post.publishedAt}>
-                          {
-                            formatMomentDate(
-                              hit.post.publishedAt,
-                              site.timezone,
-                            ).absolute
-                          }
-                        </time>
-                      </span>
-                      {highlightedSnippet(hit.snippet, state.query!)}
-                    </p>
-                  }
                   key={hit.post.id}
                   owner={owner}
                   post={hit.post}
@@ -509,7 +566,7 @@ export function SearchPage({
               ))}
               {moreError ? (
                 <div className={styles.moreError} role="alert">
-                  <span>更早的结果没有加载完成，已显示的内容保持不变。</span>
+                  <span>加载失败。</span>
                   {continuedPageInvalid ? (
                     <button onClick={resetFromFirstPage} type="button">
                       从第一页重新加载
@@ -532,7 +589,7 @@ export function SearchPage({
                   </button>
                 </div>
               ) : hits.length > 0 ? (
-                <p className={styles.endMark}>已经看完这些搜索结果</p>
+                <p className={styles.endMark}>已显示全部 Moment</p>
               ) : null}
             </section>
           )}

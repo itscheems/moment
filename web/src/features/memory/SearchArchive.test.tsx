@@ -48,6 +48,11 @@ function post(id: string, content: string) {
 const first = post("01K2ABCDEF0123456789ABCDE0", "旧城雨落在街口");
 const second = post("01K2ABCDEF0123456789ABCDE1", "旧城雨后的第二页");
 
+function paragraphText(text: string) {
+  return (_content: string, element: Element | null) =>
+    element?.tagName === "P" && element.textContent === text;
+}
+
 function install(handler: (url: string) => Response | Promise<Response>) {
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -101,7 +106,7 @@ describe("search and archive memory layer", () => {
     expect(window.location.pathname).toBe("/");
     fireEvent.keyDown(window, { key: "/" });
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
-    const input = await screen.findByPlaceholderText("搜索");
+    const input = await screen.findByPlaceholderText("搜索 Moment");
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => resolve()),
     );
@@ -110,6 +115,64 @@ describe("search and archive memory layer", () => {
     fireEvent.keyDown(input, { key: "/" });
     expect(input).toHaveValue("a");
     expect(window.location.pathname).toBe("/search");
+  });
+
+  it("treats the selected end date as an inclusive natural day", async () => {
+    window.history.replaceState({}, "", "/search");
+    let requestedSearch = "";
+    install((url) => {
+      if (url.startsWith("/api/v1/search?")) {
+        requestedSearch = url;
+        return json({
+          data: { items: [], year_counts: [] },
+          meta: { next_cursor: null, request_id: "req_search" },
+        });
+      }
+      return json({}, 404);
+    });
+    render(<App />);
+
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const day = now.getDate();
+    const selected = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const next = new Date(Date.UTC(year, month - 1, day + 1));
+    const exclusiveEnd = [
+      next.getUTCFullYear(),
+      String(next.getUTCMonth() + 1).padStart(2, "0"),
+      String(next.getUTCDate()).padStart(2, "0"),
+    ].join("-");
+    const dateLabel = `${year}年${month}月${day}日`;
+
+    fireEvent.change(await screen.findByRole("searchbox"), {
+      target: { value: "雨" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "日期" }));
+    fireEvent.click(screen.getByRole("button", { name: "开始日期：选择日期" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "开始日期" })).getByRole(
+        "button",
+        { name: dateLabel },
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "结束日期：选择日期" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "结束日期" })).getByRole(
+        "button",
+        { name: dateLabel },
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "应用" }));
+
+    await waitFor(() => expect(requestedSearch).not.toBe(""));
+    expect(window.location.search).toContain(`from=${selected}`);
+    expect(window.location.search).toContain(`to=${exclusiveEnd}`);
+    expect(requestedSearch).toContain(`from=${selected}`);
+    expect(requestedSearch).toContain(`to=${exclusiveEnd}`);
+    expect(
+      screen.getByText(`${dateLabel} 至 ${dateLabel}`),
+    ).toBeInTheDocument();
   });
 
   it("keeps Unicode query/date state, renders safe snippets, and restores cursor pages", async () => {
@@ -152,16 +215,20 @@ describe("search and archive memory layer", () => {
     const view = render(<App />);
 
     await waitFor(() =>
-      expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument(),
+      expect(
+        screen.getByText(paragraphText("旧城雨落在街口")),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getAllByText(paragraphText("旧城雨落在街口"))).toHaveLength(
+      1,
     );
     expect(
-      screen.getByText('<img src="x" onerror="alert(1)">', { exact: false }),
-    ).toBeInTheDocument();
+      screen.queryByText('<img src="x" onerror="alert(1)">', { exact: false }),
+    ).not.toBeInTheDocument();
     expect(view.container.querySelector('img[src="x"]')).toBeNull();
     expect(
       screen.getByText("旧城雨", { selector: "mark" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/2026年8月10日/).length).toBeGreaterThan(0);
     expect(screen.getByRole("status")).toHaveTextContent("找到 3 条");
 
     const yearNavigation = screen.getByRole("navigation", {
@@ -177,20 +244,24 @@ describe("search and archive memory layer", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
-    expect(await screen.findByText("旧城雨后的第二页")).toBeInTheDocument();
+    expect(
+      await screen.findByText(paragraphText("旧城雨后的第二页")),
+    ).toBeInTheDocument();
     expect(window.location.search).toContain("loaded_through=cursor-one");
     const requestsBeforeRefresh = searchRequests;
 
     view.unmount();
     render(<App />);
     await waitFor(() =>
-      expect(screen.getByText("旧城雨后的第二页")).toBeInTheDocument(),
+      expect(
+        screen.getByText(paragraphText("旧城雨后的第二页")),
+      ).toBeInTheDocument(),
     );
     expect(searchRequests).toBe(requestsBeforeRefresh + 2);
 
     vi.spyOn(window, "scrollY", "get").mockReturnValue(880);
     const secondPost = screen
-      .getByText("旧城雨后的第二页")
+      .getByText(paragraphText("旧城雨后的第二页"))
       .closest<HTMLElement>("[data-post-id]");
     const trigger = secondPost?.querySelector<HTMLAnchorElement>(
       '[data-focus-key$=":open-post"]',
@@ -205,14 +276,16 @@ describe("search and archive memory layer", () => {
     fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
     await waitFor(() =>
-      expect(screen.getByText("旧城雨后的第二页")).toBeInTheDocument(),
+      expect(
+        screen.getByText(paragraphText("旧城雨后的第二页")),
+      ).toBeInTheDocument(),
     );
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => resolve()),
     );
     expect(window.location.search).toContain("loaded_through=cursor-one");
     const restoredTrigger = screen
-      .getByText("旧城雨后的第二页")
+      .getByText(paragraphText("旧城雨后的第二页"))
       .closest<HTMLElement>("[data-post-id]")
       ?.querySelector<HTMLAnchorElement>('[data-focus-key$=":open-post"]');
     expect(restoredTrigger).toHaveFocus();
@@ -249,7 +322,7 @@ describe("search and archive memory layer", () => {
     });
     const view = render(<App />);
     expect(
-      await screen.findByRole("heading", { name: "这段时间里没有匹配" }),
+      await screen.findByRole("heading", { name: "没有找到 Moment" }),
     ).toBeInTheDocument();
     expect(window.location.search).toBe("?q=a");
 
@@ -257,7 +330,7 @@ describe("search and archive memory layer", () => {
     fail = true;
     render(<App />);
     expect(
-      await screen.findByRole("heading", { name: "没有找到结果" }),
+      await screen.findByRole("heading", { name: "搜索失败" }),
     ).toBeInTheDocument();
     expect(screen.getByRole("searchbox")).toHaveValue("a");
     expect(window.location.search).toBe("?q=a");
@@ -296,7 +369,7 @@ describe("search and archive memory layer", () => {
     });
     render(<App />);
 
-    await screen.findByText("旧城雨落在街口");
+    await screen.findByText(paragraphText("旧城雨落在街口"));
     fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
     const reset = await screen.findByRole("button", {
       name: "从第一页重新加载",
@@ -330,11 +403,13 @@ describe("search and archive memory layer", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("heading", { name: "没有找到结果" }),
+      await screen.findByRole("heading", { name: "搜索失败" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "从第一页重新加载" }));
     await waitFor(() =>
-      expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument(),
+      expect(
+        screen.getByText(paragraphText("旧城雨落在街口")),
+      ).toBeInTheDocument(),
     );
     expect(window.location.search).not.toContain("loaded_through");
     expect(window.location.search).toContain("from=2026-01-01");
@@ -367,13 +442,15 @@ describe("search and archive memory layer", () => {
         });
       });
       render(<App />);
-      await screen.findByText("旧城雨落在街口");
+      await screen.findByText(paragraphText("旧城雨落在街口"));
       fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
 
       expect(
         await screen.findByRole("button", { name: "从第一页重新加载" }),
       ).toBeInTheDocument();
-      expect(screen.queryByText("旧城雨后的第二页")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(paragraphText("旧城雨后的第二页")),
+      ).not.toBeInTheDocument();
       expect(window.location.search).not.toContain("loaded_through");
     },
   );
@@ -404,15 +481,17 @@ describe("search and archive memory layer", () => {
       });
     });
     render(<App />);
-    await screen.findByText("旧城雨落在街口");
+    await screen.findByText(paragraphText("旧城雨落在街口"));
     fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
-    await screen.findByText("旧城雨后的第二页");
+    await screen.findByText(paragraphText("旧城雨后的第二页"));
     fireEvent.click(screen.getByRole("button", { name: "加载更早的结果" }));
 
     expect(
       await screen.findByRole("button", { name: "从第一页重新加载" }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("不应追加的循环页")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(paragraphText("不应追加的循环页")),
+    ).not.toBeInTheDocument();
     expect(window.location.search).toContain("loaded_through=cursor-one");
   });
 
@@ -421,7 +500,7 @@ describe("search and archive memory layer", () => {
     window.history.replaceState({}, "", "/search?q=%E0%A4%A");
     const view = render(<App />);
     expect(
-      await screen.findByRole("heading", { name: "这些搜索条件无法还原" }),
+      await screen.findByRole("heading", { name: "搜索链接无效" }),
     ).toBeInTheDocument();
     expect(window.location.search).toBe("?q=%E0%A4%A");
 
@@ -429,7 +508,7 @@ describe("search and archive memory layer", () => {
     window.history.replaceState({}, "", "/archive?month=%ED%A0%80");
     render(<App />);
     expect(
-      await screen.findByRole("heading", { name: "这些归档条件无法还原" }),
+      await screen.findByRole("heading", { name: "归档链接无效" }),
     ).toBeInTheDocument();
     expect(window.location.search).toBe("?month=%ED%A0%80");
   });

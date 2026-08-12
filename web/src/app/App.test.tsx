@@ -188,14 +188,14 @@ describe("App shell and public routes", () => {
     const { unmount } = render(<App />);
     expect(screen.getByRole("heading", { name: "搜索" })).toBeInTheDocument();
     expect(
-      await screen.findByRole("heading", { name: "这些搜索条件无法还原" }),
+      await screen.findByRole("heading", { name: "搜索链接无效" }),
     ).toBeInTheDocument();
 
     unmount();
     window.history.replaceState({}, "", "/archive?state=error");
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "这些归档条件无法还原",
+      "归档链接无效",
     );
   });
 

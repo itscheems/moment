@@ -27,13 +27,11 @@ import styles from "./Memory.module.css";
 const weekDays = ["一", "二", "三", "四", "五", "六", "日"];
 
 function ArchiveMessage({
-  marker,
   title,
   detail,
   action,
   alert = false,
 }: {
-  marker: string;
   title: string;
   detail: string;
   action?: ReactNode;
@@ -41,7 +39,6 @@ function ArchiveMessage({
 }) {
   return (
     <section className={styles.message} role={alert ? "alert" : "status"}>
-      <span>{marker}</span>
       <div>
         <h2>{title}</h2>
         <p>{detail}</p>
@@ -51,6 +48,23 @@ function ArchiveMessage({
   );
 }
 
+function todayInTimezone(timezone: string, now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = (type: "year" | "month" | "day") =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+function archiveDayLabel(value: string): string {
+  const [, month, day] = value.split("-").map(Number);
+  return `${month} 月 ${day} 日`;
+}
+
 function monthKey(item: Pick<ArchiveMonthCount, "year" | "month">): string {
   return `${String(item.year).padStart(4, "0")}-${String(item.month).padStart(2, "0")}`;
 }
@@ -58,10 +72,12 @@ function monthKey(item: Pick<ArchiveMonthCount, "year" | "month">): string {
 function Calendar({
   calendar,
   selectedDay,
+  today,
   year,
 }: {
   calendar: ArchiveMonth;
   selectedDay: string | null;
+  today: string;
   year: number;
 }) {
   const [yearText, monthText] = calendar.month.split("-");
@@ -86,6 +102,8 @@ function Calendar({
   for (let day = 1; day <= daysInMonth; day += 1) {
     const count = counts.get(day);
     const date = dateForMonthDay(calendar.month, day);
+    const isToday = date === today;
+    const isSelected = selectedDay === date;
     cells.push(
       <li
         className={count ? styles.calendarDay : styles.calendarEmptyDay}
@@ -93,9 +111,13 @@ function Calendar({
       >
         {count ? (
           <InternalLink
-            aria-current={selectedDay === date ? "date" : undefined}
-            aria-label={`${date}，${count} 条 Moment`}
+            aria-current={
+              isSelected || (isToday && !selectedDay) ? "date" : undefined
+            }
+            aria-label={`${date}${isToday ? "，今天" : ""}，${count} 条 Moment${isSelected ? "，已选择" : ""}`}
             data-focus-key={`archive-day-${date}`}
+            data-selected={isSelected ? "true" : undefined}
+            data-today={isToday ? "true" : undefined}
             href={archiveHref({
               year,
               month: calendar.month,
@@ -107,7 +129,12 @@ function Calendar({
             <span>{count}</span>
           </InternalLink>
         ) : (
-          <span aria-label={`${date}，没有 Moment`}>{day}</span>
+          <span
+            aria-label={`${date}${isToday ? "，今天" : ""}，没有 Moment`}
+            data-today={isToday ? "true" : undefined}
+          >
+            {day}
+          </span>
         )}
       </li>,
     );
@@ -118,13 +145,10 @@ function Calendar({
       className={styles.calendarSection}
     >
       <header>
-        <div>
-          <p>站点时区中的日期</p>
-          <h2 id="archive-calendar-title">
-            {Number(yearText)} 年 {Number(monthText)} 月
-          </h2>
-        </div>
-        <InternalLink href={archiveHref({ year })}>返回月份</InternalLink>
+        <h2 id="archive-calendar-title">
+          {Number(yearText)} 年 {Number(monthText)} 月
+        </h2>
+        <InternalLink href={archiveHref({ year })}>返回 {year} 年</InternalLink>
       </header>
       <ol aria-hidden="true" className={styles.weekHeader}>
         {weekDays.map((day) => (
@@ -249,6 +273,7 @@ export function ArchivePage({
   const invalidResponse =
     monthsError instanceof PublicApiError &&
     monthsError.code === "API_RESPONSE_INVALID";
+  const today = todayInTimezone(site.timezone);
 
   return (
     <div className={styles.memoryPage}>
@@ -256,9 +281,8 @@ export function ArchivePage({
         <ArchiveMessage
           action={<InternalLink href="/archive">返回全部年份</InternalLink>}
           alert
-          detail={state.error}
-          marker="链接无效"
-          title="这些归档条件无法还原"
+          detail="请从归档首页重新选择。"
+          title="归档链接无效"
         />
       ) : null}
       {monthsLoading ? (
@@ -267,7 +291,7 @@ export function ArchivePage({
           aria-label="正在加载归档"
           className={styles.loading}
         >
-          <span>正在整理年份与月份…</span>
+          <span>正在加载归档…</span>
         </section>
       ) : null}
       {!monthsLoading && monthsError ? (
@@ -280,52 +304,22 @@ export function ArchivePage({
           alert
           detail={
             invalidResponse
-              ? "服务器返回的年月顺序不完整，没有展示可能错位的日期。"
-              : "检查网络后重试；当前选择仍保留在链接中。"
+              ? "返回的归档不完整，请重试。"
+              : "请检查网络后重试。"
           }
-          marker="没有完成"
-          title="年份与月份没有加载完成"
+          title="归档加载失败"
         />
       ) : null}
       {!monthsLoading && !monthsError && months.length === 0 ? (
         <ArchiveMessage
           action={<InternalLink href="/">回到时间流</InternalLink>}
-          detail="发布第一条公开 Moment 后，它会按站点时区出现在这里。"
-          marker="空归档"
-          title="还没有可以回看的日期"
+          detail="发布第一条 Moment 后，可以在这里按日期查找。"
+          title="还没有 Moment"
         />
       ) : null}
 
       {!monthsLoading && !monthsError && months.length > 0 ? (
         <>
-          <nav aria-label="归档层级" className={styles.breadcrumbs}>
-            <InternalLink
-              aria-current={state.year === null ? "page" : undefined}
-              href="/archive"
-            >
-              全部年份
-            </InternalLink>
-            {state.year ? (
-              <>
-                <span aria-hidden="true">/</span>
-                <InternalLink
-                  aria-current={!state.month ? "page" : undefined}
-                  href={archiveHref({ year: state.year })}
-                >
-                  {state.year}
-                </InternalLink>
-              </>
-            ) : null}
-            {state.month ? (
-              <>
-                <span aria-hidden="true">/</span>
-                <span aria-current="page">
-                  {Number(state.month.slice(5))} 月
-                </span>
-              </>
-            ) : null}
-          </nav>
-
           {!state.month ? (
             grouped.length > 0 ? (
               <section
@@ -371,9 +365,8 @@ export function ArchivePage({
                 action={
                   <InternalLink href="/archive">查看全部年份</InternalLink>
                 }
-                detail={`${state.year} 年没有公开 Moment，可以返回上层选择其他年份。`}
-                marker="空年份"
-                title="这一年没有留下坐标"
+                detail="返回全部年份继续查找。"
+                title={`${state.year} 年没有 Moment`}
               />
             )
           ) : null}
@@ -384,7 +377,7 @@ export function ArchivePage({
               aria-label="正在加载月历"
               className={styles.loading}
             >
-              <span>正在展开 {state.month} 的日期…</span>
+              <span>正在加载日历…</span>
             </section>
           ) : null}
           {state.month && !calendarLoading && calendarError ? (
@@ -395,15 +388,15 @@ export function ArchivePage({
                 </button>
               }
               alert
-              detail="年份与月份仍保留在链接中，可以重试或返回月份列表。"
-              marker="月历中断"
-              title="这个月没有展开完成"
+              detail="请重试或返回年份列表。"
+              title="日历加载失败"
             />
           ) : null}
           {state.month && !calendarLoading && !calendarError && calendar ? (
             <Calendar
               calendar={calendar}
               selectedDay={selectedDay}
+              today={today}
               year={state.year!}
             />
           ) : null}
@@ -414,13 +407,9 @@ export function ArchivePage({
               className={styles.dayResults}
             >
               <header>
-                <div>
-                  <p>当天时间流</p>
-                  <h2 id="archive-day-results">
-                    {selectedDay ??
-                      `${state.from ?? "最早"} 至 ${state.to ?? "现在"}`}
-                  </h2>
-                </div>
+                <h2 id="archive-day-results">
+                  {selectedDay ? archiveDayLabel(selectedDay) : "所选日期"}
+                </h2>
                 <InternalLink
                   href={archiveHref({ year: state.year, month: state.month })}
                 >

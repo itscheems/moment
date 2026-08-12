@@ -204,6 +204,13 @@
   text-underline-offset: 0.18em;
 }
 
+.markdown mark {
+  border-radius: 0.2rem;
+  color: inherit;
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  font-weight: 700;
+}
+
 .markdown blockquote {
   border-inline-start: 3px solid var(--border-strong);
   margin-inline: 0;

@@ -140,7 +140,7 @@ function MemoryRail({
           </span>
         </InternalLink>
       ) : null}
-      {years.length > 0 ? (
+      {years.length > 0 && route.id !== "archive" ? (
         <section
           aria-labelledby="memory-map-title"
           className={styles.memoryMap}

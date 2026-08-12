@@ -19,7 +19,7 @@ describe("DatePicker", () => {
     render(
       <DatePicker
         id="from"
-        label="起始日（含）"
+        label="开始日期"
         now={now}
         onChange={onChange}
         value="2026-08-11"
@@ -27,9 +27,9 @@ describe("DatePicker", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "起始日（含）：2026年8月11日" }),
+      screen.getByRole("button", { name: "开始日期：2026年8月11日" }),
     );
-    const dialog = screen.getByRole("dialog", { name: "起始日（含）" });
+    const dialog = screen.getByRole("dialog", { name: "开始日期" });
     expect(dialog).not.toBeNull();
     expect(
       within(dialog)
@@ -49,7 +49,7 @@ describe("DatePicker", () => {
     render(
       <DatePicker
         id="to"
-        label="结束日（不含）"
+        label="结束日期"
         now={now}
         onChange={onChange}
         value="2026-08-11"
@@ -57,7 +57,7 @@ describe("DatePicker", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "结束日（不含）：2026年8月11日" }),
+      screen.getByRole("button", { name: "结束日期：2026年8月11日" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "下个月" }));
     expect(screen.getByText("2026年9月")).not.toBeNull();

@@ -1,4 +1,4 @@
-import { type MouseEvent, type ReactNode } from "react";
+import { type MouseEvent } from "react";
 
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
@@ -33,7 +33,7 @@ export function PostPresentation({
   onDeleted,
   onSiteChanged,
   pinned = false,
-  context,
+  contentHtml,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -44,7 +44,7 @@ export function PostPresentation({
   onDeleted?: (post: PublicPost) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
   pinned?: boolean;
-  context?: ReactNode;
+  contentHtml?: string;
 }) {
   const { navigate } = useNavigation();
   const title = site.title.trim() || "Moment";
@@ -152,10 +152,11 @@ export function PostPresentation({
           </div>
         </div>
         <div className={styles.detailBody}>
-          {context}
           <div
             className={styles.markdown}
-            dangerouslySetInnerHTML={{ __html: post.contentHtml }}
+            dangerouslySetInnerHTML={{
+              __html: contentHtml ?? post.contentHtml,
+            }}
           />
           <ImageGrid media={post.media} />
           <p className={styles.publishedLine}>
@@ -190,10 +191,9 @@ export function PostPresentation({
       <div className={styles.postMain}>
         {pinLabel}
         {byline}
-        {context}
         <div
           className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
-          dangerouslySetInnerHTML={{ __html: post.contentHtml }}
+          dangerouslySetInnerHTML={{ __html: contentHtml ?? post.contentHtml }}
         />
         <ImageGrid media={post.media} />
         {collapsed ? (

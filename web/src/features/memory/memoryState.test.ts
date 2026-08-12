@@ -6,6 +6,7 @@ import {
   nextDate,
   parseArchiveLocation,
   parseSearchLocation,
+  previousDate,
   searchHref,
 } from "./memoryState";
 
@@ -74,6 +75,7 @@ describe("memory-layer URL state", () => {
       error: null,
     });
     expect(nextDate("2026-12-31")).toBe("2027-01-01");
+    expect(previousDate("2027-01-01")).toBe("2026-12-31");
   });
 
   it("rejects mismatched months, non-day ranges, and invalid archive pages", () => {

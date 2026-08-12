@@ -179,6 +179,16 @@ export function nextDate(value: string): string {
   ].join("-");
 }
 
+export function previousDate(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+  const previous = new Date(Date.UTC(year, month - 1, day - 1));
+  return [
+    String(previous.getUTCFullYear()).padStart(4, "0"),
+    String(previous.getUTCMonth() + 1).padStart(2, "0"),
+    String(previous.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 export function dateForMonthDay(month: string, day: number): string {
   return `${month}-${String(day).padStart(2, "0")}`;
 }
