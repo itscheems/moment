@@ -116,6 +116,42 @@ func registerPosts(application *Application) {
 		},
 		Run: runPostDelete,
 	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:       []string{"post", "pin"},
+		ArgsUsage:  "<post-id>",
+		Short:      "Pin one Moment post to the public profile",
+		Long:       "Atomically select one published Moment for profile emphasis without changing its chronological timeline position.",
+		Inputs:     "Provide one canonical post ULID. Pinning replaces the prior selection after explicit confirmation.",
+		Output:     "The complete site settings DTO with pinned_post_id set to the selected post.",
+		Errors:     "Invalid or absent posts, declined confirmation, and authentication failures use stable codes and exit statuses.",
+		Safety:     "Destructive profile presentation change. --yes confirms replacement; no post content or timestamp is changed.",
+		Example:    "moment post pin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
+		Args:       cobra.ExactArgs(1),
+		Capability: CapabilityBoth,
+		Policy: SafetyPolicy{
+			Destructive:  true,
+			Confirmation: "Pin this Moment post to the public profile?",
+		},
+		Run: runPostPin,
+	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:       []string{"post", "unpin"},
+		ArgsUsage:  "<post-id>",
+		Short:      "Remove a pinned Moment from the public profile",
+		Long:       "Atomically clear the singleton profile pin while preserving the post and its chronological timeline position.",
+		Inputs:     "Provide the canonical ULID of the currently pinned post. Repeating the same clear is an idempotent success.",
+		Output:     "The complete site settings DTO with pinned_post_id cleared.",
+		Errors:     "Invalid IDs, declined confirmation, and authentication failures use stable codes and exit statuses.",
+		Safety:     "Destructive profile presentation change. --yes confirms removal; no post content is deleted.",
+		Example:    "moment post unpin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
+		Args:       cobra.ExactArgs(1),
+		Capability: CapabilityBoth,
+		Policy: SafetyPolicy{
+			Destructive:  true,
+			Confirmation: "Remove this pinned Moment from the public profile?",
+		},
+		Run: runPostUnpin,
+	})
 }
 
 func runPostList(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -374,6 +410,52 @@ func runPostDelete(ctx context.Context, invocation Invocation, input CommandInpu
 		return Result{}, errors.New("unsupported post delete transport")
 	}
 	return postResult("Post deleted", post, meta), nil
+}
+
+func runPostPin(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	return runPostPinChange(ctx, invocation, input, true)
+}
+
+func runPostUnpin(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	return runPostPinChange(ctx, invocation, input, false)
+}
+
+func runPostPinChange(ctx context.Context, invocation Invocation, input CommandInput, pin bool) (Result, error) {
+	id, err := postID(input.Args()[0])
+	if err != nil {
+		return Result{}, postCLIError(err)
+	}
+	var (
+		settings app.SiteSettings
+		meta     map[string]any
+	)
+	switch invocation.Mode() {
+	case ModeDirect:
+		settings, err = directSitePinChange(ctx, invocation, id, pin)
+	case ModeAPI:
+		method := http.MethodPut
+		if !pin {
+			method = http.MethodDelete
+		}
+		meta, err = siteAPIRequest(ctx, invocation, method, "/api/v1/owner/posts/"+id.String()+"/pin", http.StatusOK, nil, true, &settings)
+		if err == nil {
+			if (pin && (settings.PinnedPostID == nil || *settings.PinnedPostID != id.String())) || (!pin && settings.PinnedPostID != nil) {
+				return Result{}, invalidAPIResponse()
+			}
+		}
+	default:
+		err = errors.New("unsupported post pin transport")
+	}
+	if err != nil {
+		return Result{}, siteCLIError(err)
+	}
+	action := "Post unpinned"
+	if pin {
+		action = "Post pinned"
+	}
+	result := siteResult(action, settings)
+	result.Meta = meta
+	return result, nil
 }
 
 type postWritePayload struct {

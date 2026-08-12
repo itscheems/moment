@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
+import { OwnerProvider } from "../owner/OwnerProvider";
 import { PostPresentation } from "./PostPresentation";
 
 afterEach(() => {
@@ -26,6 +27,7 @@ const site: SiteIdentity = {
   publicBaseUrl: null,
   avatarMediaId: null,
   coverMediaId: null,
+  pinnedPostId: null,
   commentsEnabled: true,
   instanceId: null,
 };
@@ -161,5 +163,93 @@ describe("shared post presentation", () => {
       "href",
       "/profile",
     );
+  });
+
+  it("confirms and publishes a singleton profile pin from the owner menu", async () => {
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-pin",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    const requests: Array<{ url: string; method: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        requests.push({ url, method: init?.method ?? "GET" });
+        if (url === "/api/v1/owner/status") {
+          return new Response(
+            JSON.stringify({
+              data: {
+                initialized: true,
+                session_epoch: 1,
+                initialized_at: "2026-08-01T00:00:00Z",
+              },
+              meta: { request_id: "req_status" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (
+          url === "/api/v1/owner/posts/01K2ABCDEF0123456789ABCDE0/pin" &&
+          init?.method === "PUT"
+        ) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                title: site.title,
+                bio: site.bio,
+                timezone: site.timezone,
+                public_base_url: null,
+                avatar_media_id: null,
+                cover_media_id: null,
+                pinned_post_id: "01K2ABCDEF0123456789ABCDE0",
+                comments_enabled: true,
+              },
+              meta: { request_id: "req_pin" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response("{}", { status: 404 });
+      }),
+    );
+    const onSiteChanged = vi.fn();
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <PostPresentation
+              onSiteChanged={onSiteChanged}
+              owner
+              post={makePost("可置顶", "<p>可置顶</p>")}
+              site={site}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "置顶到个人资料" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "置顶这段 Moment？" }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "置顶" }));
+
+    await waitFor(() => expect(onSiteChanged).toHaveBeenCalledTimes(1));
+    expect(onSiteChanged.mock.calls[0]?.[0]).toMatchObject({
+      pinnedPostId: "01K2ABCDEF0123456789ABCDE0",
+    });
+    expect(requests).toContainEqual({
+      url: "/api/v1/owner/posts/01K2ABCDEF0123456789ABCDE0/pin",
+      method: "PUT",
+    });
+    expect(screen.getByText("已置顶到个人资料")).toBeInTheDocument();
+    window.sessionStorage.removeItem("moment.owner.session.v1");
   });
 });

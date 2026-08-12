@@ -2,8 +2,9 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Menu } from "@base-ui/react/menu";
 import { useRef, useState } from "react";
 
-import type { PublicPost } from "../../api/public";
+import type { PublicPost, SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
 import { useOwner } from "./OwnerProvider";
 import { announceOwnerPost } from "./postEvents";
@@ -11,19 +12,25 @@ import styles from "./Owner.module.css";
 
 export function OwnerPostActions({
   post,
+  site,
   onDeleted,
+  onSiteChanged,
 }: {
   post: PublicPost;
+  site: SiteIdentity;
   onDeleted?: (post: PublicPost) => void;
+  onSiteChanged?: (site: SiteIdentity) => void;
 }) {
   const { navigate } = useNavigation();
   const { api, session, expireIfInvalidSession } = useOwner();
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pinOpen, setPinOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const pinned = site.pinnedPostId === post.id;
 
   if (!session) return null;
 
@@ -40,6 +47,7 @@ export function OwnerPostActions({
       const deleted = await api.delete(session.csrfToken, post.id);
       announceOwnerPost({ kind: "deleted", post: deleted });
       onDeleted?.(deleted);
+      if (pinned) onSiteChanged?.({ ...site, pinnedPostId: null });
       setDeleteOpen(false);
     } catch (nextError) {
       setError(
@@ -48,6 +56,31 @@ export function OwnerPostActions({
           : "没有删除这个 Moment，可以安全重试。",
       );
       setDeleteOpen(false);
+    } finally {
+      pendingRef.current = false;
+      setPending(false);
+    }
+  };
+
+  const changePin = async () => {
+    if (pendingRef.current) return;
+    pendingRef.current = true;
+    setPending(true);
+    setError(null);
+    try {
+      const updated = pinned
+        ? await api.unpinPost(session.csrfToken, post.id)
+        : await api.pinPost(session.csrfToken, post.id);
+      onSiteChanged?.({ ...updated, instanceId: site.instanceId });
+      setPinOpen(false);
+      notify(pinned ? "已取消置顶" : "已置顶到个人资料");
+    } catch (nextError) {
+      setError(
+        expireIfInvalidSession(nextError)
+          ? "登录已过期，重新登录后再操作。"
+          : "置顶状态没有改变，可以安全重试。",
+      );
+      setPinOpen(false);
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -87,6 +120,16 @@ export function OwnerPostActions({
               >
                 <Icon name="edit" />
                 <span>编辑</span>
+              </Menu.Item>
+              <Menu.Item
+                className={styles.ownerMenuItem}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setPinOpen(true);
+                }}
+              >
+                <Icon name="pin" />
+                <span>{pinned ? "取消置顶" : "置顶到个人资料"}</span>
               </Menu.Item>
               <Menu.Item
                 className={`${styles.ownerMenuItem} ${styles.ownerMenuDanger}`}
@@ -134,6 +177,48 @@ export function OwnerPostActions({
                   type="button"
                 >
                   {pending ? "正在处理…" : "删除 Moment"}
+                </button>
+              </div>
+            </Dialog.Popup>
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        onOpenChange={(open) => {
+          setPinOpen(open);
+          if (!open) restoreMenuFocus();
+        }}
+        open={pinOpen}
+      >
+        <Dialog.Portal>
+          <Dialog.Backdrop className={styles.dialogBackdrop} />
+          <Dialog.Viewport className={styles.dialogViewport}>
+            <Dialog.Popup className={styles.dialogPopup}>
+              <Dialog.Title className={styles.dialogTitle}>
+                {pinned ? "取消置顶这段 Moment？" : "置顶这段 Moment？"}
+              </Dialog.Title>
+              <Dialog.Description className={styles.dialogDescription}>
+                {pinned
+                  ? "它会回到个人资料中的原始时间位置。"
+                  : site.pinnedPostId
+                    ? "它会显示在个人资料顶部，并替换当前置顶的 Moment。"
+                    : "它会显示在个人资料顶部，时间流顺序不会改变。"}
+              </Dialog.Description>
+              <div className={styles.dialogActions}>
+                <Dialog.Close
+                  className={styles.secondaryButton}
+                  disabled={pending}
+                >
+                  取消
+                </Dialog.Close>
+                <button
+                  className={styles.primaryButton}
+                  disabled={pending}
+                  onClick={() => void changePin()}
+                  type="button"
+                >
+                  {pending ? "正在处理…" : pinned ? "取消置顶" : "置顶"}
                 </button>
               </div>
             </Dialog.Popup>

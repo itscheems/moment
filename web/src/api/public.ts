@@ -5,6 +5,7 @@ export interface SiteIdentity {
   publicBaseUrl: string | null;
   avatarMediaId: string | null;
   coverMediaId: string | null;
+  pinnedPostId: string | null;
   commentsEnabled: boolean;
   instanceId: string | null;
 }
@@ -808,6 +809,7 @@ export function parseSiteIdentity(
       "public_base_url",
       "avatar_media_id",
       "cover_media_id",
+      "pinned_post_id",
       "comments_enabled",
     ])
   ) {
@@ -831,6 +833,10 @@ export function parseSiteIdentity(
   if (coverMediaId !== null && !isCanonicalUlid(coverMediaId)) {
     throw invalidResponse("response field cover_media_id must be a media ID");
   }
+  const pinnedPostId = nullableStringField(data, "pinned_post_id");
+  if (pinnedPostId !== null && !isCanonicalUlid(pinnedPostId)) {
+    throw invalidResponse("response field pinned_post_id must be a post ID");
+  }
   return {
     title: stringField(data, "title"),
     bio: stringField(data, "bio"),
@@ -838,6 +844,7 @@ export function parseSiteIdentity(
     publicBaseUrl: nullableStringField(data, "public_base_url"),
     avatarMediaId,
     coverMediaId,
+    pinnedPostId,
     commentsEnabled,
     instanceId,
   };

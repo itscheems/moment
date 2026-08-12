@@ -31,6 +31,8 @@ export function PostPresentation({
   owner = false,
   fresh = false,
   onDeleted,
+  onSiteChanged,
+  pinned = false,
   context,
 }: {
   post: PublicPost;
@@ -40,6 +42,8 @@ export function PostPresentation({
   owner?: boolean;
   fresh?: boolean;
   onDeleted?: (post: PublicPost) => void;
+  onSiteChanged?: (site: SiteIdentity) => void;
+  pinned?: boolean;
   context?: ReactNode;
 }) {
   const { navigate } = useNavigation();
@@ -82,6 +86,12 @@ export function PostPresentation({
         />
       </div>
       <div className={styles.postMain}>
+        {pinned ? (
+          <div className={styles.pinnedLabel}>
+            <Icon name="pin" />
+            <span>已置顶</span>
+          </div>
+        ) : null}
         <header className={styles.byline}>
           <div className={styles.bylineIdentity}>
             <SiteIdentityPreview
@@ -106,7 +116,12 @@ export function PostPresentation({
             />
           </div>
           {owner ? (
-            <OwnerPostActions onDeleted={onDeleted} post={post} />
+            <OwnerPostActions
+              onDeleted={onDeleted}
+              onSiteChanged={onSiteChanged}
+              post={post}
+              site={site}
+            />
           ) : null}
         </header>
         {context}

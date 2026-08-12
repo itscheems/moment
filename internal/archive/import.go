@@ -1247,13 +1247,13 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 	}
 	if err := validateArchiveSite(sqlitestore.ArchiveSite{
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone, PublicBaseURL: site.PublicBaseURL,
-		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, CommentsEnabled: site.CommentsEnabled,
+		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID, CommentsEnabled: site.CommentsEnabled,
 	}, parent.IsDevelopment()); err != nil {
 		return err
 	}
 	if err := importer.SetSite(ctx, sqlitestore.ArchiveSite{
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone, PublicBaseURL: site.PublicBaseURL,
-		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, CommentsEnabled: site.CommentsEnabled,
+		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID, CommentsEnabled: site.CommentsEnabled,
 	}); err != nil {
 		return err
 	}
@@ -1668,7 +1668,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 	}
 	if !reflect.DeepEqual(expectedSite, siteRecord{
 		Title: actualSite.Title, Bio: actualSite.Bio, Timezone: actualSite.Timezone,
-		PublicBaseURL: actualSite.PublicBaseURL, AvatarMediaID: actualSite.AvatarMediaID, CoverMediaID: actualSite.CoverMediaID, CommentsEnabled: actualSite.CommentsEnabled,
+		PublicBaseURL: actualSite.PublicBaseURL, AvatarMediaID: actualSite.AvatarMediaID, CoverMediaID: actualSite.CoverMediaID, PinnedPostID: actualSite.PinnedPostID, CommentsEnabled: actualSite.CommentsEnabled,
 	}) {
 		return errors.New("staged site settings do not match the portable archive")
 	}

@@ -28,6 +28,7 @@ const fallbackSite: SiteIdentity = {
   publicBaseUrl: null,
   avatarMediaId: null,
   coverMediaId: null,
+  pinnedPostId: null,
   commentsEnabled: true,
   instanceId: null,
 };
@@ -246,6 +247,7 @@ function PublicApp() {
             api={api}
             initialSearch={initialHomeSearch.current}
             onYearsChange={setMemoryYears}
+            onSiteChanged={setSite}
             site={site}
             owner={owner.state === "owner"}
           />
@@ -256,6 +258,7 @@ function PublicApp() {
           api={api}
           id={detailId(location.pathname)}
           owner={owner.state === "owner"}
+          onSiteChanged={setSite}
           site={site}
         />
       ) : null}
@@ -264,6 +267,7 @@ function PublicApp() {
           api={api}
           key={routeSearchKey(location.search)}
           onYearsChange={setDiscoveryYears}
+          onSiteChanged={setSite}
           owner={owner.state === "owner"}
           search={location.search}
           site={site}

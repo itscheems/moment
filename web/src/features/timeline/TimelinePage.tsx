@@ -117,12 +117,14 @@ export function TimelinePage({
   site,
   initialSearch,
   onYearsChange,
+  onSiteChanged,
   owner = false,
 }: {
   api: PublicApi;
   site: SiteIdentity;
   initialSearch: string;
   onYearsChange?: (years: number[]) => void;
+  onSiteChanged?: (site: SiteIdentity) => void;
   owner?: boolean;
 }) {
   const { navigate, pathname, replaceTimelineProgress, restoreCurrentEntry } =
@@ -348,6 +350,7 @@ export function TimelinePage({
           fresh={post.id === freshId}
           key={post.id}
           owner={owner}
+          onSiteChanged={onSiteChanged}
           post={post}
           site={site}
         />

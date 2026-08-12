@@ -25,11 +25,13 @@ export function DetailPage({
   id,
   site,
   owner = false,
+  onSiteChanged,
 }: {
   api: PublicApi;
   id: string;
   site: SiteIdentity;
   owner?: boolean;
+  onSiteChanged?: (site: SiteIdentity) => void;
 }) {
   const { navigate } = useNavigation();
   const [post, setPost] = useState<PublicPost | null>(null);
@@ -66,6 +68,7 @@ export function DetailPage({
       <PostPresentation
         detail
         onDeleted={() => navigate("/")}
+        onSiteChanged={onSiteChanged}
         owner={owner}
         post={post}
         site={site}

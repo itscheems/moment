@@ -212,7 +212,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 	}
 	if err := protocol.jsonMember("data/site.json", siteRecord{
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone,
-		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID,
+		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID,
 		CommentsEnabled: site.CommentsEnabled,
 	}); err != nil {
 		return Summary{}, err
@@ -498,6 +498,7 @@ type siteRecord struct {
 	PublicBaseURL   *string `json:"public_base_url"`
 	AvatarMediaID   *string `json:"avatar_media_id"`
 	CoverMediaID    *string `json:"cover_media_id"`
+	PinnedPostID    *string `json:"pinned_post_id"`
 	CommentsEnabled bool    `json:"comments_enabled"`
 }
 
@@ -774,6 +775,11 @@ func validateArchiveSite(value sqlitestore.ArchiveSite, development bool) error 
 	}
 	if value.CoverMediaID != nil {
 		if _, err := domain.ParseID(*value.CoverMediaID); err != nil {
+			return err
+		}
+	}
+	if value.PinnedPostID != nil {
+		if _, err := domain.ParseID(*value.PinnedPostID); err != nil {
 			return err
 		}
 	}
@@ -1155,7 +1161,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	}
 	if err := validateArchiveSite(sqlitestore.ArchiveSite{
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone,
-		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID,
+		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID,
 		CommentsEnabled: site.CommentsEnabled,
 	}, true); err != nil {
 		return err
@@ -1341,6 +1347,11 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	if site.CoverMediaID != nil {
 		if _, exists := mediaIDs[*site.CoverMediaID]; !exists {
 			return errors.New("site cover refers to media absent from the archive")
+		}
+	}
+	if site.PinnedPostID != nil {
+		if _, exists := entryIDs[*site.PinnedPostID]; !exists {
+			return errors.New("site pin refers to an entry absent from the archive")
 		}
 	}
 	return nil

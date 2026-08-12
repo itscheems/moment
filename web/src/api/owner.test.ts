@@ -127,6 +127,7 @@ describe("owner API client", () => {
               public_base_url: "https://moment.example.com",
               avatar_media_id: null,
               cover_media_id: null,
+              pinned_post_id: null,
               comments_enabled: false,
             },
             meta: { request_id: "req_site" },
@@ -200,6 +201,7 @@ describe("owner API client", () => {
       public_base_url: "https://moment.example.com",
       avatar_media_id: null,
       cover_media_id: null,
+      pinned_post_id: null,
       comments_enabled: false,
     };
     const statusData = {

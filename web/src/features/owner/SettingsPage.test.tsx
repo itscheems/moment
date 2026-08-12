@@ -45,6 +45,7 @@ function siteEnvelope(avatarMediaId: string | null = null) {
       public_base_url: "https://moment.example.com",
       avatar_media_id: avatarMediaId,
       cover_media_id: null,
+      pinned_post_id: null,
       comments_enabled: true,
     },
     meta: {

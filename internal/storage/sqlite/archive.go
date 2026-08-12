@@ -31,6 +31,7 @@ type ArchiveSite struct {
 	PublicBaseURL   *string
 	AvatarMediaID   *string
 	CoverMediaID    *string
+	PinnedPostID    *string
 	CommentsEnabled bool
 }
 
@@ -203,12 +204,12 @@ func (snapshot *ArchiveSnapshot) Site(ctx context.Context) (ArchiveSite, error) 
 		return ArchiveSite{}, err
 	}
 	var value ArchiveSite
-	var publicURL, avatar, cover sql.NullString
+	var publicURL, avatar, cover, pinned sql.NullString
 	var comments int
 	err := snapshot.tx.QueryRowContext(ctx, `
-SELECT title, bio, timezone, public_base_url, avatar_media_id, cover_media_id, comments_enabled
+SELECT title, bio, timezone, public_base_url, avatar_media_id, cover_media_id, pinned_entry_id, comments_enabled
 FROM site_settings
-WHERE id = 1`).Scan(&value.Title, &value.Bio, &value.Timezone, &publicURL, &avatar, &cover, &comments)
+WHERE id = 1`).Scan(&value.Title, &value.Bio, &value.Timezone, &publicURL, &avatar, &cover, &pinned, &comments)
 	if err != nil {
 		return ArchiveSite{}, fmt.Errorf("read archive site settings: %w", err)
 	}
@@ -220,6 +221,9 @@ WHERE id = 1`).Scan(&value.Title, &value.Bio, &value.Timezone, &publicURL, &avat
 	}
 	if cover.Valid {
 		value.CoverMediaID = &cover.String
+	}
+	if pinned.Valid {
+		value.PinnedPostID = &pinned.String
 	}
 	value.CommentsEnabled = comments == 1
 	return value, nil

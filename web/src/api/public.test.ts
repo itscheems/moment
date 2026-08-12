@@ -152,6 +152,7 @@ describe("public API client", () => {
             public_base_url: null,
             avatar_media_id: null,
             cover_media_id: null,
+            pinned_post_id: null,
             comments_enabled: true,
           },
           meta: {
@@ -402,6 +403,7 @@ describe("public API client", () => {
             public_base_url: null,
             avatar_media_id: null,
             cover_media_id: null,
+            pinned_post_id: null,
             comments_enabled: true,
           },
           meta: { request_id: "req_site" },
@@ -422,6 +424,7 @@ describe("public API client", () => {
             public_base_url: null,
             avatar_media_id: null,
             cover_media_id: null,
+            pinned_post_id: null,
             comments_enabled: true,
           },
           meta: { instance_id: "from-host-header" },

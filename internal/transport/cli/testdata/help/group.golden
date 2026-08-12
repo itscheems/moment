@@ -1,4 +1,4 @@
-Create, inspect, update, and delete Moment posts.
+Create, inspect, update, pin, and delete Moment posts.
 
 Usage:
   moment post [flags]
@@ -9,6 +9,8 @@ Available Commands:
   delete      Delete a Moment post
   get         Get one Moment post
   list        List the public Moment timeline
+  pin         Pin one Moment post to the public profile
+  unpin       Remove a pinned Moment from the public profile
   update      Update a Moment post
 
 Flags:

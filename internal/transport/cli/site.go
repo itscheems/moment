@@ -203,6 +203,21 @@ func directSiteGet(ctx context.Context, invocation Invocation) (app.SiteSettings
 }
 
 func directSiteUpdate(ctx context.Context, invocation Invocation, update app.SiteUpdate) (app.SiteSettings, error) {
+	return directSiteWrite(ctx, invocation, func(service *app.SiteService) (app.SiteSettings, error) {
+		return service.Update(ctx, update)
+	})
+}
+
+func directSitePinChange(ctx context.Context, invocation Invocation, id domain.ID, pin bool) (app.SiteSettings, error) {
+	return directSiteWrite(ctx, invocation, func(service *app.SiteService) (app.SiteSettings, error) {
+		if pin {
+			return service.Pin(ctx, id)
+		}
+		return service.Unpin(ctx, id)
+	})
+}
+
+func directSiteWrite(ctx context.Context, invocation Invocation, mutate func(*app.SiteService) (app.SiteSettings, error)) (app.SiteSettings, error) {
 	target, err := invocation.DirectTransport()
 	if err != nil {
 		return app.SiteSettings{}, err
@@ -225,7 +240,7 @@ func directSiteUpdate(ctx context.Context, invocation Invocation, update app.Sit
 	if err != nil {
 		return app.SiteSettings{}, err
 	}
-	return service.Update(ctx, update)
+	return mutate(service)
 }
 
 func openDirectSite(ctx context.Context, invocation Invocation) (*app.SiteService, *sqlitestore.Database, error) {
@@ -328,7 +343,7 @@ func siteAPIRequest(
 }
 
 func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
-	if !hasRequiredAPIDataFields(data, "title", "bio", "timezone", "public_base_url", "avatar_media_id", "cover_media_id", "comments_enabled") ||
+	if !hasRequiredAPIDataFields(data, "title", "bio", "timezone", "public_base_url", "avatar_media_id", "cover_media_id", "pinned_post_id", "comments_enabled") ||
 		!hasRequiredNonNullAPIDataFields(data, "title", "bio", "timezone", "comments_enabled") ||
 		settings.Timezone == "" || settings.Timezone == "Local" || strings.HasPrefix(settings.Timezone, "/") || strings.Contains(settings.Timezone, "..") {
 		return false
@@ -354,6 +369,12 @@ func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
 			return false
 		}
 	}
+	if settings.PinnedPostID != nil {
+		id, err := domain.ParseID(*settings.PinnedPostID)
+		if err != nil || id.String() != *settings.PinnedPostID {
+			return false
+		}
+	}
 	return true
 }
 
@@ -370,13 +391,17 @@ func siteResult(action string, settings app.SiteSettings) Result {
 	if settings.CoverMediaID != nil {
 		cover = *settings.CoverMediaID
 	}
+	pinned := "not configured"
+	if settings.PinnedPostID != nil {
+		pinned = *settings.PinnedPostID
+	}
 	comments := "disabled"
 	if settings.CommentsEnabled {
 		comments = "enabled"
 	}
 	return Result{
 		Data: settings,
-		Text: fmt.Sprintf("%s.\nTitle: %s\nTimezone: %s\nPublic URL: %s\nAvatar: %s\nCover: %s\nComments: %s", action, settings.Title, settings.Timezone, publicURL, avatar, cover, comments),
+		Text: fmt.Sprintf("%s.\nTitle: %s\nTimezone: %s\nPublic URL: %s\nAvatar: %s\nCover: %s\nPinned post: %s\nComments: %s", action, settings.Title, settings.Timezone, publicURL, avatar, cover, pinned, comments),
 	}
 }
 

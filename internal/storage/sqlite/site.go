@@ -157,13 +157,14 @@ func (store siteStore) SiteSettings(ctx context.Context) (app.SiteSettings, erro
 		publicURL sql.NullString
 		avatarID  sql.NullString
 		coverID   sql.NullString
+		pinnedID  sql.NullString
 		comments  int
 	)
 	err := store.queries.QueryRowContext(ctx, `
-SELECT title, bio, timezone, public_base_url, avatar_media_id, cover_media_id, comments_enabled
+SELECT title, bio, timezone, public_base_url, avatar_media_id, cover_media_id, pinned_entry_id, comments_enabled
 FROM site_settings
 WHERE id = 1`).Scan(
-		&settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &coverID, &comments,
+		&settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &coverID, &pinnedID, &comments,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return app.SiteSettings{}, domain.NewError(domain.CodeDataIntegrityFailed, "site settings singleton is missing", nil)
@@ -180,6 +181,9 @@ WHERE id = 1`).Scan(
 	if coverID.Valid {
 		settings.CoverMediaID = &coverID.String
 	}
+	if pinnedID.Valid {
+		settings.PinnedPostID = &pinnedID.String
+	}
 	settings.CommentsEnabled = comments == 1
 	return settings, nil
 }
@@ -193,12 +197,21 @@ func (store siteStore) MediaExists(ctx context.Context, id domain.ID) (bool, err
 	return exists == 1, nil
 }
 
+func (store siteStore) EntryExists(ctx context.Context, id domain.ID) (bool, error) {
+	var exists int
+	err := store.queries.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM entries WHERE id = ? AND kind = ?)`, id.String(), string(domain.KindMoment)).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check pinned post: %w", err)
+	}
+	return exists == 1, nil
+}
+
 func (store siteStore) UpdateSiteSettings(ctx context.Context, settings app.SiteSettings) error {
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE site_settings
-SET title = ?, bio = ?, timezone = ?, public_base_url = ?, avatar_media_id = ?, cover_media_id = ?, comments_enabled = ?
+SET title = ?, bio = ?, timezone = ?, public_base_url = ?, avatar_media_id = ?, cover_media_id = ?, pinned_entry_id = ?, comments_enabled = ?
 WHERE id = 1`,
-		settings.Title, settings.Bio, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID), boolInteger(settings.CommentsEnabled),
+		settings.Title, settings.Bio, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID), optionalString(settings.PinnedPostID), boolInteger(settings.CommentsEnabled),
 	)
 	if err != nil {
 		return fmt.Errorf("update site settings: %w", err)

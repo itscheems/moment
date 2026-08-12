@@ -20,6 +20,7 @@ type httpSiteTransactions struct {
 	mu       sync.Mutex
 	settings app.SiteSettings
 	media    map[string]bool
+	entries  map[string]bool
 }
 
 func (transactions *httpSiteTransactions) Read(ctx context.Context, operation func(app.SiteStore) error) error {
@@ -28,7 +29,7 @@ func (transactions *httpSiteTransactions) Read(ctx context.Context, operation fu
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return operation(&httpSiteStore{settings: &transactions.settings, media: transactions.media})
+	return operation(&httpSiteStore{settings: &transactions.settings, media: transactions.media, entries: transactions.entries})
 }
 
 func (transactions *httpSiteTransactions) Write(ctx context.Context, operation func(app.SiteStore) error) error {
@@ -38,7 +39,7 @@ func (transactions *httpSiteTransactions) Write(ctx context.Context, operation f
 		return err
 	}
 	cloned := transactions.settings
-	store := &httpSiteStore{settings: &cloned, media: transactions.media}
+	store := &httpSiteStore{settings: &cloned, media: transactions.media, entries: transactions.entries}
 	if err := operation(store); err != nil {
 		return err
 	}
@@ -49,6 +50,7 @@ func (transactions *httpSiteTransactions) Write(ctx context.Context, operation f
 type httpSiteStore struct {
 	settings *app.SiteSettings
 	media    map[string]bool
+	entries  map[string]bool
 }
 
 func (store *httpSiteStore) SiteSettings(context.Context) (app.SiteSettings, error) {
@@ -57,6 +59,10 @@ func (store *httpSiteStore) SiteSettings(context.Context) (app.SiteSettings, err
 
 func (store *httpSiteStore) MediaExists(_ context.Context, id domain.ID) (bool, error) {
 	return store.media[id.String()], nil
+}
+
+func (store *httpSiteStore) EntryExists(_ context.Context, id domain.ID) (bool, error) {
+	return store.entries[id.String()], nil
 }
 
 func (store *httpSiteStore) UpdateSiteSettings(_ context.Context, settings app.SiteSettings) error {
@@ -232,7 +238,7 @@ func TestSitePublicJSONContainsOnlyStableDTOFields(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Data) != 7 {
+	if len(envelope.Data) != 8 {
 		t.Fatalf("public DTO fields = %v", envelope.Data)
 	}
 }

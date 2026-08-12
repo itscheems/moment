@@ -14,18 +14,21 @@ import (
 
 const testAvatarID = "01ARZ3NDEKTSV4RRFFQ69G5FAY"
 const testCoverID = "01ARZ3NDEKTSV4RRFFQ69G5FAX"
+const testPinnedPostID = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
+const testReplacementPostID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 
 type memorySiteTransactions struct {
 	mu       sync.Mutex
 	settings *SiteSettings
 	media    map[string]bool
+	entries  map[string]bool
 	failPut  bool
 }
 
 func (transactions *memorySiteTransactions) Read(_ context.Context, operation func(SiteStore) error) error {
 	transactions.mu.Lock()
 	defer transactions.mu.Unlock()
-	return operation(&memorySiteStore{settings: cloneSettingsPointer(transactions.settings), media: transactions.media})
+	return operation(&memorySiteStore{settings: cloneSettingsPointer(transactions.settings), media: transactions.media, entries: transactions.entries})
 }
 
 func (transactions *memorySiteTransactions) Write(_ context.Context, operation func(SiteStore) error) error {
@@ -34,6 +37,7 @@ func (transactions *memorySiteTransactions) Write(_ context.Context, operation f
 	store := &memorySiteStore{
 		settings: cloneSettingsPointer(transactions.settings),
 		media:    transactions.media,
+		entries:  transactions.entries,
 		failPut:  transactions.failPut,
 	}
 	if err := operation(store); err != nil {
@@ -46,6 +50,7 @@ func (transactions *memorySiteTransactions) Write(_ context.Context, operation f
 type memorySiteStore struct {
 	settings *SiteSettings
 	media    map[string]bool
+	entries  map[string]bool
 	failPut  bool
 }
 
@@ -58,6 +63,10 @@ func (store *memorySiteStore) SiteSettings(context.Context) (SiteSettings, error
 
 func (store *memorySiteStore) MediaExists(_ context.Context, id domain.ID) (bool, error) {
 	return store.media[id.String()], nil
+}
+
+func (store *memorySiteStore) EntryExists(_ context.Context, id domain.ID) (bool, error) {
+	return store.entries[id.String()], nil
 }
 
 func (store *memorySiteStore) UpdateSiteSettings(_ context.Context, settings SiteSettings) error {
@@ -293,6 +302,44 @@ func TestSiteConcurrentPartialUpdatesMergeInsideSerializedWrite(t *testing.T) {
 	}
 	if settings.Title != title || settings.Bio != bio {
 		t.Fatalf("lost partial update: %#v", settings)
+	}
+}
+
+func TestSitePinReplaceAndUnpinAreAtomicAndIdempotent(t *testing.T) {
+	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	transactions := &memorySiteTransactions{
+		settings: &initial,
+		media:    map[string]bool{},
+		entries:  map[string]bool{testPinnedPostID: true, testReplacementPostID: true},
+	}
+	service := newTestSiteService(t, transactions, false)
+
+	first, err := service.Pin(context.Background(), domain.ID(testPinnedPostID))
+	if err != nil || first.PinnedPostID == nil || *first.PinnedPostID != testPinnedPostID {
+		t.Fatalf("first pin = %#v, err=%v", first, err)
+	}
+	replayed, err := service.Pin(context.Background(), domain.ID(testPinnedPostID))
+	if err != nil || !reflect.DeepEqual(first, replayed) {
+		t.Fatalf("idempotent pin = %#v, err=%v", replayed, err)
+	}
+	replaced, err := service.Pin(context.Background(), domain.ID(testReplacementPostID))
+	if err != nil || replaced.PinnedPostID == nil || *replaced.PinnedPostID != testReplacementPostID {
+		t.Fatalf("replacement pin = %#v, err=%v", replaced, err)
+	}
+	if _, err := service.Pin(context.Background(), domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAX")); !domain.HasCode(err, domain.CodePostNotFound) {
+		t.Fatalf("missing pin error = %v", err)
+	}
+	stored, err := service.Get(context.Background())
+	if err != nil || stored.PinnedPostID == nil || *stored.PinnedPostID != testReplacementPostID {
+		t.Fatalf("failed pin changed state = %#v, err=%v", stored, err)
+	}
+	cleared, err := service.Unpin(context.Background())
+	if err != nil || cleared.PinnedPostID != nil {
+		t.Fatalf("unpin = %#v, err=%v", cleared, err)
+	}
+	repeated, err := service.Unpin(context.Background())
+	if err != nil || repeated.PinnedPostID != nil {
+		t.Fatalf("idempotent unpin = %#v, err=%v", repeated, err)
 	}
 }
 

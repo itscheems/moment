@@ -23,6 +23,7 @@ const site: SiteIdentity = {
   publicBaseUrl: null,
   avatarMediaId: mediaId,
   coverMediaId: mediaId,
+  pinnedPostId: null,
   commentsEnabled: true,
   instanceId: null,
 };
@@ -43,6 +44,7 @@ function siteEnvelope(coverMediaId: string | null) {
       public_base_url: null,
       avatar_media_id: mediaId,
       cover_media_id: coverMediaId,
+      pinned_post_id: null,
       comments_enabled: true,
     },
     meta: { request_id: "req_profile" },

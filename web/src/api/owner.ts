@@ -1086,6 +1086,7 @@ export class OwnerApi {
       "public_base_url",
       "avatar_media_id",
       "cover_media_id",
+      "pinned_post_id",
       "comments_enabled",
     ]);
     return parseSiteIdentity(data);
@@ -1322,6 +1323,36 @@ export class OwnerApi {
     );
     const { data } = await decodeResponse(response);
     return parsePost(data);
+  }
+
+  async pinPost(csrfToken: string, id: string): Promise<SiteIdentity> {
+    return this.pinPostChange(csrfToken, id, "PUT");
+  }
+
+  async unpinPost(csrfToken: string, id: string): Promise<SiteIdentity> {
+    return this.pinPostChange(csrfToken, id, "DELETE");
+  }
+
+  private async pinPostChange(
+    csrfToken: string,
+    id: string,
+    method: "PUT" | "DELETE",
+  ): Promise<SiteIdentity> {
+    const response = await this.fetcher(
+      `/api/v1/owner/posts/${encodeURIComponent(id)}/pin`,
+      requestInit(method, csrfToken),
+    );
+    const data = await decodeExactOwnerSuccess(response, [
+      "title",
+      "bio",
+      "timezone",
+      "public_base_url",
+      "avatar_media_id",
+      "cover_media_id",
+      "pinned_post_id",
+      "comments_enabled",
+    ]);
+    return parseSiteIdentity(data);
   }
 
   async createComment(

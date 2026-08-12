@@ -25,6 +25,7 @@ type SiteSettings struct {
 	PublicBaseURL   *string `json:"public_base_url"`
 	AvatarMediaID   *string `json:"avatar_media_id"`
 	CoverMediaID    *string `json:"cover_media_id"`
+	PinnedPostID    *string `json:"pinned_post_id"`
 	CommentsEnabled bool    `json:"comments_enabled"`
 }
 
@@ -55,6 +56,7 @@ type SiteStore interface {
 	MediaReferenceReconciler
 	SiteSettings(context.Context) (SiteSettings, error)
 	MediaExists(context.Context, domain.ID) (bool, error)
+	EntryExists(context.Context, domain.ID) (bool, error)
 	UpdateSiteSettings(context.Context, SiteSettings) error
 }
 
@@ -171,6 +173,81 @@ func (service *SiteService) Get(ctx context.Context) (SiteSettings, error) {
 func (service *SiteService) Ready(ctx context.Context) error {
 	_, err := service.Get(ctx)
 	return err
+}
+
+// Pin atomically selects one published Moment for public profile emphasis.
+// Assigning the current value is an idempotent success and never changes the
+// Moment's chronological fields.
+func (service *SiteService) Pin(ctx context.Context, id domain.ID) (SiteSettings, error) {
+	if err := contextError(ctx); err != nil {
+		return SiteSettings{}, err
+	}
+	if _, err := domain.ParseID(id.String()); err != nil {
+		return SiteSettings{}, err
+	}
+	var result SiteSettings
+	err := service.transactions.Write(ctx, func(store SiteStore) error {
+		current, err := store.SiteSettings(ctx)
+		if err != nil {
+			return err
+		}
+		if err := service.validateStored(ctx, store, current); err != nil {
+			return err
+		}
+		exists, err := store.EntryExists(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return postNotFound(id)
+		}
+		value := id.String()
+		current.PinnedPostID = &value
+		if err := store.UpdateSiteSettings(ctx, current); err != nil {
+			return err
+		}
+		result = current
+		return nil
+	})
+	if err != nil {
+		return SiteSettings{}, normalizeSiteRepositoryError(err)
+	}
+	return cloneSiteSettings(result), nil
+}
+
+// Unpin clears the singleton selection. Repeated clears are safe successes.
+func (service *SiteService) Unpin(ctx context.Context, expected ...domain.ID) (SiteSettings, error) {
+	if err := contextError(ctx); err != nil {
+		return SiteSettings{}, err
+	}
+	var result SiteSettings
+	err := service.transactions.Write(ctx, func(store SiteStore) error {
+		current, err := store.SiteSettings(ctx)
+		if err != nil {
+			return err
+		}
+		if err := service.validateStored(ctx, store, current); err != nil {
+			return err
+		}
+		if len(expected) > 1 {
+			return domain.NewError(domain.CodeInvalidArgument, "at most one pinned post may be selected for removal", nil)
+		}
+		if len(expected) == 1 && current.PinnedPostID != nil && *current.PinnedPostID != expected[0].String() {
+			return postNotFound(expected[0])
+		}
+		if current.PinnedPostID != nil {
+			current.PinnedPostID = nil
+			if err := store.UpdateSiteSettings(ctx, current); err != nil {
+				return err
+			}
+		}
+		result = current
+		return nil
+	})
+	if err != nil {
+		return SiteSettings{}, normalizeSiteRepositoryError(err)
+	}
+	return cloneSiteSettings(result), nil
 }
 
 // Update validates every supplied field before committing one complete row.
@@ -316,6 +393,19 @@ func (service *SiteService) validateStored(ctx context.Context, store SiteStore,
 			return domain.NewError(domain.CodeDataIntegrityFailed, "stored cover media reference is missing", map[string]any{"media_id": id.String()})
 		}
 	}
+	if settings.PinnedPostID != nil {
+		id, err := domain.ParseID(*settings.PinnedPostID)
+		if err != nil {
+			return domain.NewError(domain.CodeDataIntegrityFailed, "stored pinned post ID is invalid", map[string]any{"field": "pinned_post_id"})
+		}
+		exists, err := store.EntryExists(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return domain.NewError(domain.CodeDataIntegrityFailed, "stored pinned post reference is missing", map[string]any{"post_id": id.String()})
+		}
+	}
 	return nil
 }
 
@@ -439,6 +529,7 @@ func cloneSiteSettings(settings SiteSettings) SiteSettings {
 	settings.PublicBaseURL = cloneString(settings.PublicBaseURL)
 	settings.AvatarMediaID = cloneString(settings.AvatarMediaID)
 	settings.CoverMediaID = cloneString(settings.CoverMediaID)
+	settings.PinnedPostID = cloneString(settings.PinnedPostID)
 	return settings
 }
 

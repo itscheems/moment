@@ -174,6 +174,16 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 		t.Fatalf("update = %d %s", updated.Code, updated.Body.String())
 	}
 
+	pinRequest := ownerRequest(http.MethodPut, "/api/v1/owner/posts/"+id+"/pin", "")
+	pinRequest.Header.Set("Authorization", "Bearer "+fixture.token)
+	pinned := performRequest(fixture.engine, pinRequest)
+	if pinned.Code != http.StatusOK || decodeDataMap(t, pinned)["pinned_post_id"] != id {
+		t.Fatalf("pin = %d %s", pinned.Code, pinned.Body.String())
+	}
+	if settings, err := fixture.site.Get(context.Background()); err != nil || settings.PinnedPostID == nil || *settings.PinnedPostID != id {
+		t.Fatalf("stored pin = %#v, err=%v", settings.PinnedPostID, err)
+	}
+
 	replay := ownerRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"first **post**"}`)
 	replay.Header.Set("Authorization", "Bearer "+fixture.token)
 	replay.Header.Set("Idempotency-Key", "post-http-001")
@@ -195,6 +205,9 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	deleted := performRequest(fixture.engine, deletedRequest)
 	if deleted.Code != http.StatusOK || decodeDataMap(t, deleted)["content_md"] != "edited" {
 		t.Fatalf("delete = %d %s", deleted.Code, deleted.Body.String())
+	}
+	if settings, err := fixture.site.Get(context.Background()); err != nil || settings.PinnedPostID != nil {
+		t.Fatalf("delete did not clear pin = %#v, err=%v", settings.PinnedPostID, err)
 	}
 	replayAfterDeleteRequest := ownerRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"first **post**"}`)
 	replayAfterDeleteRequest.Header.Set("Authorization", "Bearer "+fixture.token)

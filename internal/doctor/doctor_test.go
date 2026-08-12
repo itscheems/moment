@@ -456,6 +456,13 @@ INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES ('01ARZ3
 			},
 		},
 		{
+			name: "dangling pinned post", checkID: CheckSiteConfiguration, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				mutateDatabase(t, fixture.current.DatabasePath, `PRAGMA foreign_keys = OFF;
+UPDATE site_settings SET pinned_entry_id = '01ARZ3NDEKTSV4RRFFQ69G5FAV' WHERE id = 1`)
+			},
+		},
+		{
 			name: "FTS source drift", checkID: CheckFTSConsistency, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
 			corrupt: func(t *testing.T, fixture doctorFixture) {
 				mutateDatabase(t, fixture.current.DatabasePath, `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)

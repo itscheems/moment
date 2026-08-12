@@ -14,6 +14,7 @@ export type IconName =
   | "more"
   | "edit"
   | "delete"
+  | "pin"
   | "link"
   | "open";
 
@@ -90,6 +91,12 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M5 7h14M9 7V4.5h6V7M7.5 7l.8 13h7.4l.8-13" />
       <path d="M10 10.5v6M14 10.5v6" />
+    </>
+  ),
+  pin: (
+    <>
+      <path d="M8 4.5h8M9 4.5v5l-2.5 3h11L15 9.5v-5" />
+      <path d="M12 12.5V21" />
     </>
   ),
   link: (

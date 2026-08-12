@@ -27,6 +27,7 @@ export function ProfilePage({
 }) {
   const owner = useOwner();
   const [posts, setPosts] = useState<PublicPost[]>([]);
+  const [pinnedPost, setPinnedPost] = useState<PublicPost | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -41,9 +42,25 @@ export function ProfilePage({
     setLoading(true);
     setError(null);
     try {
-      const page = await api.timeline({ signal: controller.signal });
+      const [page, pinned] = await Promise.all([
+        api.timeline({ signal: controller.signal }),
+        site.pinnedPostId
+          ? api
+              .post(site.pinnedPostId, controller.signal)
+              .catch((nextError) => {
+                if (
+                  nextError instanceof PublicApiError &&
+                  nextError.code === "POST_NOT_FOUND"
+                ) {
+                  return null;
+                }
+                throw nextError;
+              })
+          : Promise.resolve(null),
+      ]);
       if (!controller.signal.aborted) {
         setPosts(page.items);
+        setPinnedPost(pinned);
         setNextCursor(page.nextCursor);
       }
     } catch (nextError) {
@@ -51,7 +68,7 @@ export function ProfilePage({
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [api]);
+  }, [api, site.pinnedPostId]);
 
   useEffect(() => {
     void load();
@@ -123,16 +140,29 @@ export function ProfilePage({
         />
       ) : null}
       {!loading && !error ? (
-        posts.length > 0 ? (
+        posts.length > 0 || pinnedPost ? (
           <div>
-            {posts.map((post) => (
+            {pinnedPost ? (
               <PostPresentation
-                key={post.id}
+                onDeleted={() => setPinnedPost(null)}
+                onSiteChanged={onSiteSaved}
                 owner={owner.state === "owner"}
-                post={post}
+                pinned
+                post={pinnedPost}
                 site={site}
               />
-            ))}
+            ) : null}
+            {posts
+              .filter((post) => post.id !== pinnedPost?.id)
+              .map((post) => (
+                <PostPresentation
+                  key={post.id}
+                  onSiteChanged={onSiteSaved}
+                  owner={owner.state === "owner"}
+                  post={post}
+                  site={site}
+                />
+              ))}
             {nextCursor ? (
               <div className={styles.moreRow}>
                 <button disabled={loadingMore} onClick={() => void more()}>

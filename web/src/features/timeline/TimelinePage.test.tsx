@@ -19,6 +19,7 @@ const site: SiteIdentity = {
   publicBaseUrl: null,
   avatarMediaId: null,
   coverMediaId: null,
+  pinnedPostId: null,
   commentsEnabled: true,
   instanceId: null,
 };

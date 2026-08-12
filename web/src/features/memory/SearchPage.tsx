@@ -118,12 +118,14 @@ export function SearchPage({
   search,
   site,
   onYearsChange,
+  onSiteChanged,
 }: {
   api: PublicApi;
   owner: boolean;
   search: string;
   site: SiteIdentity;
   onYearsChange?: (years: number[]) => void;
+  onSiteChanged?: (site: SiteIdentity) => void;
 }) {
   const location = useNavigation();
   const stateRef = useRef(parseSearchLocation(search));
@@ -482,6 +484,7 @@ export function SearchPage({
             <section aria-label="搜索结果" className={styles.resultList}>
               {hits.map((hit) => (
                 <PostPresentation
+                  onSiteChanged={onSiteChanged}
                   context={
                     <p className={styles.snippet}>
                       <span>

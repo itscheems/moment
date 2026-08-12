@@ -30,6 +30,40 @@ func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.Si
 	owner.POST("/posts", createPost(posts))
 	owner.PATCH("/posts/:id", updatePost(posts))
 	owner.DELETE("/posts/:id", deletePost(posts))
+	owner.PUT("/posts/:id/pin", pinPost(site))
+	owner.DELETE("/posts/:id/pin", unpinPost(site))
+}
+
+func pinPost(site *app.SiteService) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		id, err := domain.ParseID(ctx.Param("id"))
+		if err != nil {
+			writePostError(ctx, err)
+			return
+		}
+		settings, err := site.Pin(ctx.Request.Context(), id)
+		if err != nil {
+			writeSiteError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, settings, nil)
+	}
+}
+
+func unpinPost(site *app.SiteService) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		id, err := domain.ParseID(ctx.Param("id"))
+		if err != nil {
+			writePostError(ctx, err)
+			return
+		}
+		settings, err := site.Unpin(ctx.Request.Context(), id)
+		if err != nil {
+			writeSiteError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, settings, nil)
+	}
 }
 
 func listPosts(posts *app.PostService, site *app.SiteService) gin.HandlerFunc {

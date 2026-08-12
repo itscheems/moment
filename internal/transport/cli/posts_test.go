@@ -177,6 +177,22 @@ func TestPostDirectAPIParityAndPublicReadsDoNotRequireToken(t *testing.T) {
 	if !reflect.DeepEqual(apiUpdated, directGet) {
 		t.Fatalf("API update = %#v, direct get = %#v", apiUpdated, directGet)
 	}
+	pinned := commandData(t, execute(application, "", "post", "pin", id, "--data-dir", fixture.dataDir, "--yes", "--json"))
+	if pinned["pinned_post_id"] != id {
+		t.Fatalf("direct pin = %#v", pinned)
+	}
+	apiSite := commandData(t, execute(application, "", "--url", fixture.server.URL, "site", "get", "--json"))
+	if !reflect.DeepEqual(pinned, apiSite) {
+		t.Fatalf("direct pin = %#v, API site = %#v", pinned, apiSite)
+	}
+	unpinned := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "unpin", id, "--yes", "--json"))
+	if unpinned["pinned_post_id"] != nil {
+		t.Fatalf("API unpin = %#v", unpinned)
+	}
+	directSite := commandData(t, execute(application, "", "site", "get", "--data-dir", fixture.dataDir, "--json"))
+	if !reflect.DeepEqual(unpinned, directSite) {
+		t.Fatalf("API unpin = %#v, direct site = %#v", unpinned, directSite)
+	}
 	directList := commandData(t, execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--limit", "1", "--json"))
 	apiList := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "list", "--limit", "1", "--json"))
 	if !reflect.DeepEqual(directList, apiList) {

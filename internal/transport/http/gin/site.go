@@ -169,6 +169,8 @@ func writeSiteError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeMediaNotFound:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodePostNotFound:
+		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeDataIntegrityFailed:
 		Failure(ctx, http.StatusInternalServerError, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	default:

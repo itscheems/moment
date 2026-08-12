@@ -9,7 +9,7 @@ import (
 
 var momentGroups = []GroupSpec{
 	{Name: "owner", Short: "Manage the single site owner", Long: "Inspect and manage the single Moment owner."},
-	{Name: "post", Short: "Create and manage Moments", Long: "Create, inspect, update, and delete Moment posts."},
+	{Name: "post", Short: "Create and manage Moments", Long: "Create, inspect, update, pin, and delete Moment posts."},
 	{Name: "comment", Short: "Inspect and manage comments", Long: "Inspect comments and perform owner comment actions."},
 	{Name: "media", Short: "Inspect and maintain managed media", Long: "Add, inspect, verify, and maintain managed Moment media."},
 	{Name: "search", Short: "Search and rebuild the memory index", Long: "Query Moment history and maintain its derived search index."},
