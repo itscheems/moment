@@ -24,6 +24,7 @@ import {
   SiteIdentityPreview,
 } from "../../components/TimelineInteractions";
 import { Icon } from "../../components/icons";
+import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatMomentDate } from "../posts/dates";
 import { ImageGrid } from "../media/ImageGrid";
 import { MediaComposer } from "../media/MediaComposer";
@@ -515,9 +516,7 @@ function CommentForm({
         </span>
         <form
           aria-label={
-            parentId
-              ? `回复 ${replyTargetAuthor ?? "这条回复"}`
-              : "发表回复"
+            parentId ? `回复 ${replyTargetAuthor ?? "这条回复"}` : "发表回复"
           }
           className={styles.commentForm}
           onSubmit={(event) => void submit(event)}
@@ -955,9 +954,9 @@ function CommentItem({
             <time dateTime={comment.createdAt}>{created.relative}</time>
           </ExactTimeTooltip>
         </header>
-        <div
+        <MarkdownContent
           className={styles.commentMarkdown}
-          dangerouslySetInnerHTML={{ __html: comment.contentHtml }}
+          html={comment.contentHtml}
         />
         <ImageGrid media={comment.media} />
         <footer className={styles.commentActions}>

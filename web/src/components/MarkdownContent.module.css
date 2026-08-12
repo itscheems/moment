@@ -1,0 +1,75 @@
+.root :global(.hljs) {
+  color: var(--text-primary);
+}
+
+.root :global(.hljs-comment),
+.root :global(.hljs-quote) {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.root :global(.hljs-keyword),
+.root :global(.hljs-selector-tag),
+.root :global(.hljs-literal),
+.root :global(.hljs-section),
+.root :global(.hljs-link) {
+  color: color-mix(in srgb, var(--accent) 88%, var(--text-primary));
+}
+
+.root :global(.hljs-string),
+.root :global(.hljs-title),
+.root :global(.hljs-name),
+.root :global(.hljs-type),
+.root :global(.hljs-attribute),
+.root :global(.hljs-symbol),
+.root :global(.hljs-bullet),
+.root :global(.hljs-addition),
+.root :global(.hljs-variable),
+.root :global(.hljs-template-tag),
+.root :global(.hljs-template-variable) {
+  color: #008060;
+}
+
+.root :global(.hljs-number),
+.root :global(.hljs-regexp),
+.root :global(.hljs-meta),
+.root :global(.hljs-built_in),
+.root :global(.hljs-builtin-name),
+.root :global(.hljs-params) {
+  color: #9c36b5;
+}
+
+.root :global(.hljs-deletion),
+.root :global(.hljs-doctag) {
+  color: var(--danger);
+}
+
+.root :global(.hljs-strong) {
+  font-weight: 750;
+}
+
+.root :global(.hljs-emphasis) {
+  font-style: italic;
+}
+
+:global([data-theme="dim"]) .root :global(.hljs-string),
+:global([data-theme="dim"]) .root :global(.hljs-title),
+:global([data-theme="dim"]) .root :global(.hljs-name),
+:global([data-theme="dim"]) .root :global(.hljs-type),
+:global([data-theme="lights-out"]) .root :global(.hljs-string),
+:global([data-theme="lights-out"]) .root :global(.hljs-title),
+:global([data-theme="lights-out"]) .root :global(.hljs-name),
+:global([data-theme="lights-out"]) .root :global(.hljs-type) {
+  color: #65d6ad;
+}
+
+:global([data-theme="dim"]) .root :global(.hljs-number),
+:global([data-theme="dim"]) .root :global(.hljs-regexp),
+:global([data-theme="dim"]) .root :global(.hljs-meta),
+:global([data-theme="dim"]) .root :global(.hljs-built_in),
+:global([data-theme="lights-out"]) .root :global(.hljs-number),
+:global([data-theme="lights-out"]) .root :global(.hljs-regexp),
+:global([data-theme="lights-out"]) .root :global(.hljs-meta),
+:global([data-theme="lights-out"]) .root :global(.hljs-built_in) {
+  color: #d2a8ff;
+}

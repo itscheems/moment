@@ -4,6 +4,7 @@ import type { PublicPost, SiteIdentity } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import { SiteAvatar } from "../../components/SiteIdentity";
+import { MarkdownContent } from "../../components/MarkdownContent";
 import {
   ActionTooltip,
   ExactTimeTooltip,
@@ -152,11 +153,9 @@ export function PostPresentation({
           </div>
         </div>
         <div className={styles.detailBody}>
-          <div
+          <MarkdownContent
             className={styles.markdown}
-            dangerouslySetInnerHTML={{
-              __html: contentHtml ?? post.contentHtml,
-            }}
+            html={contentHtml ?? post.contentHtml}
           />
           <ImageGrid media={post.media} />
           <p className={styles.publishedLine}>
@@ -198,9 +197,9 @@ export function PostPresentation({
       <div className={styles.postMain}>
         {pinLabel}
         {byline}
-        <div
+        <MarkdownContent
           className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
-          dangerouslySetInnerHTML={{ __html: contentHtml ?? post.contentHtml }}
+          html={contentHtml ?? post.contentHtml}
         />
         <ImageGrid media={post.media} />
         {collapsed ? (

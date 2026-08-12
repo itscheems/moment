@@ -849,9 +849,7 @@ describe("public comment thread", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent(
       "下面的 1 条回复",
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "删除回复及其对话" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "删除回复及其对话" }));
 
     await waitFor(() =>
       expect(screen.queryByText("已有一级回复")).not.toBeInTheDocument(),
