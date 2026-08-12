@@ -17,6 +17,16 @@ export function ExactTimeTooltip({
   children: ReactElement;
   exact: string;
 }) {
+  return <ActionTooltip label={exact}>{children}</ActionTooltip>;
+}
+
+export function ActionTooltip({
+  children,
+  label,
+}: {
+  children: ReactElement;
+  label: string;
+}) {
   return (
     <Tooltip.Root>
       <Tooltip.Trigger closeDelay={80} delay={350} render={children} />
@@ -27,7 +37,7 @@ export function ExactTimeTooltip({
           sideOffset={5}
         >
           <Tooltip.Popup className={styles.tooltip} role="tooltip">
-            {exact}
+            {label}
           </Tooltip.Popup>
         </Tooltip.Positioner>
       </Tooltip.Portal>
@@ -115,7 +125,24 @@ export function ShareMenu({
 
   return (
     <Menu.Root>
-      <Menu.Trigger render={trigger} />
+      <Tooltip.Root>
+        <Tooltip.Trigger
+          closeDelay={80}
+          delay={350}
+          render={<Menu.Trigger render={trigger} />}
+        />
+        <Tooltip.Portal>
+          <Tooltip.Positioner
+            className={styles.tooltipPositioner}
+            side="bottom"
+            sideOffset={5}
+          >
+            <Tooltip.Popup className={styles.tooltip} role="tooltip">
+              分享
+            </Tooltip.Popup>
+          </Tooltip.Positioner>
+        </Tooltip.Portal>
+      </Tooltip.Root>
       <Menu.Portal>
         <Menu.Positioner
           align={align}

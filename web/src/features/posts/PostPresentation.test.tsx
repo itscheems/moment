@@ -32,7 +32,11 @@ const site: SiteIdentity = {
   instanceId: null,
 };
 
-function makePost(contentMd: string, contentHtml: string): PublicPost {
+function makePost(
+  contentMd: string,
+  contentHtml: string,
+  commentCount = 0,
+): PublicPost {
   return {
     id: "01K2ABCDEF0123456789ABCDE0",
     contentMd,
@@ -40,7 +44,7 @@ function makePost(contentMd: string, contentHtml: string): PublicPost {
     createdAt: "2026-08-10T01:00:00.000Z",
     updatedAt: "2026-08-10T01:00:00.000Z",
     publishedAt: "2026-08-10T01:00:00.000Z",
-    commentCount: 0,
+    commentCount,
     media: [],
   };
 }
@@ -73,7 +77,7 @@ describe("shared post presentation", () => {
     expect(await screen.findByText("2026年8月10日 09:00")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "打开完整 Moment" }),
-    ).toHaveTextContent("回应");
+    ).toContainElement(document.querySelector('svg[data-icon="reply"]'));
   });
 
   it("shows the full body and explicit absolute publication time in detail", () => {
@@ -90,7 +94,7 @@ describe("shared post presentation", () => {
     expect(screen.getByText("完整正文")).toBeInTheDocument();
     expect(screen.getByText("发布于").parentElement).toHaveTextContent("2026");
     expect(
-      screen.getByRole("link", { name: "回应这条 Moment" }),
+      screen.getByRole("link", { name: "回复这条 Moment" }),
     ).toHaveAttribute("href", "#top-level-comment-content");
     const article = screen.getByText("完整正文").closest("article");
     expect(article?.querySelector("[class*='detailBody']")).toContainElement(
@@ -99,6 +103,36 @@ describe("shared post presentation", () => {
     expect(
       screen.queryByRole("link", { name: "阅读全文" }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("条回复")).not.toBeInTheDocument();
+  });
+
+  it("shows reply counts only when they are non-zero", () => {
+    const { rerender } = render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost("有回复", "<p>有回复</p>", 3)}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    const timelineAction = screen.getByRole("link", {
+      name: "打开完整 Moment，3 条回复",
+    });
+    expect(timelineAction).toHaveTextContent("3");
+
+    rerender(
+      <NavigationProvider>
+        <PostPresentation
+          detail
+          post={makePost("有回复", "<p>有回复</p>", 3)}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    expect(screen.getByRole("link", { name: "3条回复" })).toHaveAttribute(
+      "href",
+      "#comments",
+    );
   });
 
   it("opens the detail from the post surface without hijacking post actions", () => {

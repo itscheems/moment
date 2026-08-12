@@ -416,7 +416,7 @@ export function SettingsPage({
       <div className={styles.settingsLayout}>
         <nav aria-label="设置分区" className={styles.settingsNav}>
           <a href="#identity">网站</a>
-          <a href="#conversation">回应</a>
+          <a href="#conversation">回复</a>
           <a href="#access">登录与安全</a>
           <a href="#data">备份</a>
         </nav>
@@ -494,7 +494,7 @@ export function SettingsPage({
 
             <section aria-labelledby="conversation-title" id="conversation">
               <header className={styles.sectionHeader}>
-                <h2 id="conversation-title">回应</h2>
+                <h2 id="conversation-title">回复</h2>
               </header>
               <label className={styles.toggleRow}>
                 <span>

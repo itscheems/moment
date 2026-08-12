@@ -699,7 +699,7 @@ export function BackupRestore({
       <div className={styles.portableStep}>
         <div>
           <h3>导出完整站点</h3>
-          <p>包含资料、Moment、回应和图片，不包含登录密钥与浏览器草稿。</p>
+          <p>包含资料、Moment、回复和图片，不包含登录密钥与浏览器草稿。</p>
           <button
             aria-busy={exportState === "running"}
             className={styles.secondaryButton}

@@ -201,13 +201,18 @@ function ExpireOwnerControl() {
   );
 }
 
-function renderThread(currentSite = site, withExpireControl = false) {
+function renderThread(
+  currentSite = site,
+  withExpireControl = false,
+  onCountChange?: (count: number) => void,
+) {
   return render(
     <NavigationProvider>
       <OwnerProvider>
         {withExpireControl ? <ExpireOwnerControl /> : null}
         <CommentThread
           api={new PublicApi()}
+          onCountChange={onCountChange}
           postId={postId}
           site={currentSite}
         />
@@ -236,6 +241,20 @@ describe("public comment thread", () => {
     vi.unstubAllGlobals();
   });
 
+  it("reports the loaded count without rendering an empty-state row", async () => {
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+    });
+    const onCountChange = vi.fn();
+    renderThread(site, false, onCountChange);
+
+    await screen.findByRole("form", { name: "发表回复" });
+    await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(0));
+    expect(screen.queryByText("暂无回复")).not.toBeInTheDocument();
+  });
+
   it("keeps a flat one-level presentation and places reply composition after its root", async () => {
     const fetcher = installApi((url, init) => {
       if (url.endsWith("/comments") && init?.method !== "POST") {
@@ -257,25 +276,36 @@ describe("public comment thread", () => {
 
     const existingReply = await screen.findByText("已有一级回复");
     expect(existingReply.closest("li")).toHaveAttribute("data-depth", "1");
-    expect(screen.getAllByRole("button", { name: "回复" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: /^回复 / })).toHaveLength(2);
 
     const replyArticle = screen.getByRole("article", {
-      name: "乔乔的 Moment的一级回复",
+      name: "乔乔的 Moment的回复",
     });
-    fireEvent.click(within(replyArticle).getByRole("button", { name: "回复" }));
-    const replyForm = screen.getByRole("form", { name: "回复 访客" });
-    expect(screen.getAllByRole("form", { name: "回复 访客" })).toHaveLength(1);
+    fireEvent.click(
+      within(replyArticle).getByRole("button", {
+        name: "回复 乔乔的 Moment",
+      }),
+    );
+    const replyForm = screen.getByRole("form", {
+      name: "回复 乔乔的 Moment",
+    });
+    expect(
+      screen.getAllByRole("form", { name: "回复 乔乔的 Moment" }),
+    ).toHaveLength(1);
     expect(replyForm.closest("li")?.previousElementSibling).toHaveAttribute(
       "data-comment-id",
-      rootId,
+      replyId,
     );
-    fireEvent.change(screen.getAllByLabelText("显示名")[1], {
+    expect(replyForm).toHaveTextContent("正在回复 @乔乔的 Moment");
+    fireEvent.change(within(replyForm).getByLabelText("显示名"), {
       target: { value: "后来的人" },
     });
-    fireEvent.change(screen.getByLabelText("回复内容"), {
+    fireEvent.change(within(replyForm).getByLabelText("回复内容"), {
       target: { value: "新一级回复" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
+    fireEvent.click(
+      within(replyForm).getByRole("button", { name: "发表回复" }),
+    );
 
     await waitFor(() =>
       expect(
@@ -326,11 +356,11 @@ describe("public comment thread", () => {
     });
     renderThread();
 
-    await screen.findByRole("form", { name: "发表顶级回应" });
+    await screen.findByRole("form", { name: "发表回复" });
     fireEvent.change(screen.getByLabelText("显示名"), {
       target: { value: "访客" },
     });
-    fireEvent.change(screen.getByLabelText("回应内容"), {
+    fireEvent.change(screen.getByLabelText("回复内容"), {
       target: { value: "带图回应" },
     });
     const file = new File(["image"], "night.png", { type: "image/png" });
@@ -342,7 +372,7 @@ describe("public comment thread", () => {
     fireEvent.change(screen.getByPlaceholderText("简要描述图片内容"), {
       target: { value: "night sky" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
 
     await waitFor(() => expect(FakeCommentUploadRequest.last).not.toBeNull());
     const upload = FakeCommentUploadRequest.last;
@@ -409,11 +439,11 @@ describe("public comment thread", () => {
     });
     renderThread();
 
-    await screen.findByRole("form", { name: "发表顶级回应" });
+    await screen.findByRole("form", { name: "发表回复" });
     fireEvent.change(screen.getByLabelText("显示名"), {
       target: { value: "访客" },
     });
-    fireEvent.change(screen.getByLabelText("回应内容"), {
+    fireEvent.change(screen.getByLabelText("回复内容"), {
       target: { value: "失败后重试" },
     });
     fireEvent.change(screen.getByLabelText("图片文件"), {
@@ -421,13 +451,13 @@ describe("public comment thread", () => {
         files: [new File(["image"], "retry.png", { type: "image/png" })],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
     await waitFor(() => expect(FakeCommentUploadRequest.last).not.toBeNull());
     const failedUpload = FakeCommentUploadRequest.last;
     failedUpload?.fail();
 
     expect(await screen.findByText("重试上传", { exact: false })).toBeVisible();
-    expect(screen.getByLabelText("回应内容")).toHaveValue("失败后重试");
+    expect(screen.getByLabelText("回复内容")).toHaveValue("失败后重试");
     expect(
       fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
     ).toHaveLength(0);
@@ -468,7 +498,7 @@ describe("public comment thread", () => {
     await waitFor(() =>
       expect(screen.getByText("已就绪", { exact: false })).toBeInTheDocument(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
     expect(await screen.findByText("失败后重试")).toBeInTheDocument();
   });
 
@@ -491,11 +521,11 @@ describe("public comment thread", () => {
     });
     renderThread();
 
-    await screen.findByText("暂无回应");
+    await screen.findByRole("form", { name: "发表回复" });
     fireEvent.change(screen.getByLabelText("显示名"), {
       target: { value: "访客" },
     });
-    fireEvent.change(screen.getByLabelText("回应内容"), {
+    fireEvent.change(screen.getByLabelText("回复内容"), {
       target: { value: "真实回应" },
     });
     const honeypot = document.querySelector<HTMLInputElement>(
@@ -504,7 +534,7 @@ describe("public comment thread", () => {
     expect(honeypot).toHaveAttribute("aria-hidden", "true");
     expect(honeypot).toHaveAttribute("tabindex", "-1");
     fireEvent.change(honeypot!, { target: { value: "bot.example" } });
-    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("防滥用检查");
     expect(
@@ -528,9 +558,9 @@ describe("public comment thread", () => {
 
     expect(await screen.findByText("顶级回应")).toBeInTheDocument();
     expect(screen.getByText("已有一级回复")).toBeInTheDocument();
-    expect(screen.getByText("回应已关闭")).toBeInTheDocument();
+    expect(screen.getByText("回复已关闭")).toBeInTheDocument();
     expect(
-      screen.queryByRole("form", { name: "发表顶级回应" }),
+      screen.queryByRole("form", { name: "发表回复" }),
     ).not.toBeInTheDocument();
   });
 
@@ -571,16 +601,16 @@ describe("public comment thread", () => {
     fireEvent.change(screen.getByLabelText("显示名"), {
       target: { value: "耐心访客" },
     });
-    fireEvent.change(screen.getByLabelText("回应内容"), {
+    fireEvent.change(screen.getByLabelText("回复内容"), {
       target: { value: "稍后重试" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
     await act(async () => undefined);
     expect(screen.getByText(/请在 1 秒后重试/)).toBeInTheDocument();
-    expect(screen.getByLabelText("回应内容")).toHaveValue("稍后重试");
+    expect(screen.getByLabelText("回复内容")).toHaveValue("稍后重试");
 
     await act(async () => vi.advanceTimersByTime(1_100));
-    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
     await act(async () => undefined);
     expect(keys).toHaveLength(2);
     expect(keys[1]).toBe(keys[0]);
@@ -601,14 +631,14 @@ describe("public comment thread", () => {
     });
     renderThread();
 
-    await screen.findByText("暂无回应");
+    await screen.findByRole("form", { name: "发表回复" });
     fireEvent.change(screen.getByLabelText("显示名"), {
       target: { value: "访客" },
     });
-    fireEvent.change(screen.getByLabelText("回应内容"), {
+    fireEvent.change(screen.getByLabelText("回复内容"), {
       target: { value: "只发表一次" },
     });
-    const submit = screen.getByRole("button", { name: "发表回应" });
+    const submit = screen.getByRole("button", { name: "发表回复" });
     fireEvent.click(submit);
     fireEvent.click(submit);
     expect(
@@ -636,17 +666,17 @@ describe("public comment thread", () => {
     fireEvent.change(screen.getByLabelText("显示名"), {
       target: { value: "访客" },
     });
-    fireEvent.change(screen.getByLabelText("回应内容"), {
+    fireEvent.change(screen.getByLabelText("回复内容"), {
       target: { value: "关闭前写下" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "回应刚刚被关闭",
+      "回复刚刚被关闭",
     );
-    expect(screen.getByLabelText("回应内容")).toHaveValue("关闭前写下");
+    expect(screen.getByLabelText("回复内容")).toHaveValue("关闭前写下");
     expect(screen.getByText("顶级回应")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "发表回应" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "发表回复" })).toBeDisabled();
   });
 
   it("reuses an owner idempotency key after a network failure", async () => {
@@ -677,14 +707,14 @@ describe("public comment thread", () => {
     });
     renderThread();
 
-    await screen.findByText("暂无回应");
+    await screen.findByRole("form", { name: "发表回复" });
     expect(screen.queryByLabelText("显示名")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("回应内容"), {
+    fireEvent.change(screen.getByLabelText("回复内容"), {
       target: { value: "Owner 重试" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("文字已保留");
-    fireEvent.click(screen.getByRole("button", { name: "发表回应" }));
+    fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
 
     expect(await screen.findByText("Owner 重试")).toBeInTheDocument();
     expect(keys).toHaveLength(2);
@@ -694,9 +724,9 @@ describe("public comment thread", () => {
   it.each([
     {
       name: "top-level comment",
-      formName: "发表顶级回应",
-      fieldName: "回应内容",
-      submitName: "发表回应",
+      formName: "发表回复",
+      fieldName: "回复内容",
+      submitName: "发表回复",
       content: "过期前写好的顶级回应",
       parentId: null,
       openReply: false,
@@ -754,7 +784,7 @@ describe("public comment thread", () => {
 
       await screen.findByText("顶级回应");
       if (openReply) {
-        fireEvent.click(screen.getByRole("button", { name: "回复" }));
+        fireEvent.click(screen.getByRole("button", { name: "回复 访客" }));
       }
       const form = screen.getByRole("form", { name: formName });
       const field = within(form).getByRole("textbox", { name: fieldName });
@@ -817,16 +847,18 @@ describe("public comment thread", () => {
     expect(screen.getByText("乔乔的 Moment")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "删除" })[0]);
     expect(await screen.findByRole("dialog")).toHaveTextContent(
-      "下面的 1 条一级回复",
+      "下面的 1 条回复",
     );
-    fireEvent.click(screen.getByRole("button", { name: "删除回应和回复" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "删除回复及其对话" }),
+    );
 
     await waitFor(() =>
       expect(screen.queryByText("已有一级回复")).not.toBeInTheDocument(),
     );
     expect(screen.queryByText("顶级回应")).not.toBeInTheDocument();
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "回应" })).toHaveFocus(),
+      expect(screen.getByRole("heading", { name: "回复" })).toHaveFocus(),
     );
   });
 
@@ -867,7 +899,7 @@ describe("public comment thread", () => {
 
     await screen.findByText("顶级回应");
     fireEvent.click(screen.getByRole("button", { name: "删除" }));
-    fireEvent.click(await screen.findByRole("button", { name: "删除回应" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除回复" }));
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
     fireEvent.change(within(dialog).getByLabelText("所有者令牌"), {
@@ -876,10 +908,10 @@ describe("public comment thread", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));
     await waitFor(() =>
       expect(
-        within(dialog).getByRole("button", { name: "删除回应" }),
+        within(dialog).getByRole("button", { name: "删除回复" }),
       ).toBeEnabled(),
     );
-    fireEvent.click(within(dialog).getByRole("button", { name: "删除回应" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除回复" }));
     await waitFor(() =>
       expect(screen.queryByText("顶级回应")).not.toBeInTheDocument(),
     );
@@ -923,7 +955,7 @@ describe("public comment thread", () => {
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
     expect(
-      within(dialog).getByRole("button", { name: "删除回应" }),
+      within(dialog).getByRole("button", { name: "删除回复" }),
     ).toBeDisabled();
     fireEvent.change(within(dialog).getByLabelText("所有者令牌"), {
       target: { value: "new-owner-token" },
@@ -931,18 +963,18 @@ describe("public comment thread", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));
     await waitFor(() =>
       expect(
-        within(dialog).getByRole("button", { name: "删除回应" }),
+        within(dialog).getByRole("button", { name: "删除回复" }),
       ).toBeEnabled(),
     );
     expect(dialog).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: "删除回应" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "删除回复" }));
 
     await waitFor(() =>
       expect(screen.queryByText("顶级回应")).not.toBeInTheDocument(),
     );
     expect(deleteTokens).toEqual(["csrf-new"]);
     await waitFor(() =>
-      expect(screen.getByRole("heading", { name: "回应" })).toHaveFocus(),
+      expect(screen.getByRole("heading", { name: "回复" })).toHaveFocus(),
     );
   });
 });

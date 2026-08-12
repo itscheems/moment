@@ -301,6 +301,11 @@
   block-size: 1.15rem;
 }
 
+.actionCount {
+  min-inline-size: 1ch;
+  font-variant-numeric: tabular-nums;
+}
+
 .postAction:hover,
 .postAction:focus-visible {
   color: var(--accent);
@@ -349,6 +354,34 @@
   margin: var(--space-5) 0 0;
   color: var(--text-secondary);
   font-size: 0.9375rem;
+}
+
+.detailStats {
+  min-block-size: 2.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-block: 1px solid var(--border-subtle);
+  margin-block-start: var(--space-4);
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  text-decoration: none;
+}
+
+.detailStats strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.detailStats:hover span,
+.detailStats:focus-visible span {
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.detailStats + .postActions {
+  border-block-start: 0;
+  margin-block-start: 0;
 }
 
 .srOnly {

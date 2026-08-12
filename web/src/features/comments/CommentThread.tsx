@@ -19,9 +19,11 @@ import {
 import { InternalLink } from "../../app/navigation";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import {
+  ActionTooltip,
   ExactTimeTooltip,
   SiteIdentityPreview,
 } from "../../components/TimelineInteractions";
+import { Icon } from "../../components/icons";
 import { formatMomentDate } from "../posts/dates";
 import { ImageGrid } from "../media/ImageGrid";
 import { MediaComposer } from "../media/MediaComposer";
@@ -45,7 +47,8 @@ type CommentMode = "guest" | "owner";
 
 interface ReplyDraft {
   rootId: string;
-  rootAuthor: string;
+  targetId: string;
+  targetAuthor: string;
   content: string;
 }
 
@@ -109,31 +112,31 @@ export function reconcileDeletedComment(
 
 function messageFor(error: unknown, replying: boolean): string {
   if (!(error instanceof PublicApiError)) {
-    return "回应没有发出，文字已保留。检查连接后可以安全重试。";
+    return "回复没有发出，文字已保留。检查连接后可以安全重试。";
   }
   switch (error.code) {
     case "CONTENT_EMPTY":
       return "写下一些内容后再发表。";
     case "CONTENT_TOO_LARGE":
-      return "回应超过 2,000 个字符，请缩短后重试。";
+      return "回复超过 2,000 个字符，请缩短后重试。";
     case "EXTERNAL_IMAGE_NOT_ALLOWED":
-      return "回应不能引用 Markdown 图片；普通链接仍然可以使用。";
+      return "回复不能引用 Markdown 图片；普通链接仍然可以使用。";
     case "INVALID_ARGUMENT":
-      return "请检查显示名和回应内容后重试。";
+      return "请检查显示名和回复内容后重试。";
     case "COMMENT_NOT_FOUND":
       return replying
-        ? "上级回应已被删除。这段文字仍保留，可以改为顶级回应。"
-        : "这条回应已不存在。文字仍保留，可以重新加载后再试。";
+        ? "上级回复已被删除。这段文字仍保留，可以改为直接回复 Moment。"
+        : "这条回复已不存在。文字仍保留，可以重新加载后再试。";
     case "COMMENTS_DISABLED":
-      return "回应刚刚被关闭；这段文字仍保留在当前页面。";
+      return "回复刚刚被关闭；这段文字仍保留在当前页面。";
     case "COMMENT_REJECTED":
-      return "这次回应没有通过防滥用检查，文字仍保留。";
+      return "这次回复没有通过防滥用检查，文字仍保留。";
     case "IDEMPOTENCY_KEY_REUSED":
       return "这次重试与最初内容不一致。再编辑一个字符即可重新发表。";
     case "API_RESPONSE_INVALID":
-      return "服务器返回了不完整的回应数据。文字已保留，请稍后重试。";
+      return "服务器返回了不完整的回复数据。文字已保留，请稍后重试。";
     default:
-      return "回应没有发出，文字已保留。可以安全重试。";
+      return "回复没有发出，文字已保留。可以安全重试。";
   }
 }
 
@@ -172,7 +175,7 @@ function Reauthenticate({
     <form className={styles.reauth} onSubmit={(event) => void submit(event)}>
       <div>
         <strong>重新确认所有者身份</strong>
-        <span>回应文字不会离开当前页面。</span>
+        <span>回复文字不会离开当前页面。</span>
       </div>
       <label htmlFor={inputId}>所有者令牌</label>
       <input
@@ -199,7 +202,8 @@ function CommentForm({
   postId,
   mode,
   parentId,
-  rootAuthor,
+  replyTargetId,
+  replyTargetAuthor,
   content,
   setContent,
   guestName,
@@ -215,7 +219,8 @@ function CommentForm({
   postId: string;
   mode: CommentMode;
   parentId: string | null;
-  rootAuthor?: string;
+  replyTargetId?: string;
+  replyTargetAuthor?: string;
   content: string;
   setContent: (value: string) => void;
   guestName: string;
@@ -252,7 +257,9 @@ function CommentForm({
   const validContent = content.trim().length > 0 && contentCount <= MAX_COMMENT;
   const mediaError = mediaValidation(mediaItems, 4);
   const rateLimited = remaining > 0;
-  const formId = parentId ? `reply-${parentId}` : "top-level-comment";
+  const formId = parentId
+    ? `reply-${replyTargetId ?? parentId}`
+    : "top-level-comment";
   const displayReauth =
     mode === "owner" &&
     (authExpired || (owner.state === "expired" && !owner.session));
@@ -508,7 +515,9 @@ function CommentForm({
         </span>
         <form
           aria-label={
-            parentId ? `回复 ${rootAuthor ?? "顶级回应"}` : "发表顶级回应"
+            parentId
+              ? `回复 ${replyTargetAuthor ?? "这条回复"}`
+              : "发表回复"
           }
           className={styles.commentForm}
           onSubmit={(event) => void submit(event)}
@@ -517,11 +526,20 @@ function CommentForm({
             <div className={styles.srOnly}>
               <p>{parentId ? "一级回复" : "加入这段对话"}</p>
               <h3>
-                {parentId ? `回复 ${rootAuthor ?? "这条回应"}` : "写下回应"}
+                {parentId
+                  ? `回复 ${replyTargetAuthor ?? "这条回复"}`
+                  : "写下回复"}
               </h3>
             </div>
-            <span>{mode === "owner" ? "所有者" : "访客"}</span>
+            <span className={styles.srOnly}>
+              {mode === "owner" ? "所有者" : "访客"}
+            </span>
           </header>
+          {parentId && replyTargetAuthor ? (
+            <p className={styles.replyTarget}>
+              正在回复 <span>@{replyTargetAuthor}</span>
+            </p>
+          ) : null}
           {mode === "guest" ? (
             <div className={styles.nameField}>
               <label htmlFor={`${formId}-name`}>显示名</label>
@@ -544,7 +562,7 @@ function CommentForm({
             </div>
           ) : null}
           <label className={styles.srOnly} htmlFor={`${formId}-content`}>
-            {parentId ? "回复内容" : "回应内容"}
+            回复内容
           </label>
           <textarea
             aria-describedby={`${formId}-guidance ${formId}-error`}
@@ -569,7 +587,7 @@ function CommentForm({
                 event.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder={parentId ? "回复这条回应" : "写下回应"}
+            placeholder={parentId ? "发布你的回复" : "发布你的回复"}
             ref={textareaRef}
             required
             rows={parentId ? 1 : 2}
@@ -597,7 +615,7 @@ function CommentForm({
                     ? ""
                     : styles.srOnly
               }
-              aria-label={`回应 ${contentCount} / ${MAX_COMMENT} 字`}
+              aria-label={`回复 ${contentCount} / ${MAX_COMMENT} 字`}
             >
               {contentCount}/{MAX_COMMENT}
             </span>
@@ -616,7 +634,7 @@ function CommentForm({
                   </button>
                 ) : null}
                 <button
-                  aria-label={parentId ? "发表回复" : "发表回应"}
+                  aria-label="发表回复"
                   className={styles.primaryAction}
                   disabled={
                     pending ||
@@ -636,7 +654,7 @@ function CommentForm({
                         ? `${remaining} 秒后重试`
                         : parentId
                           ? "回复"
-                          : "回应"}
+                          : "回复"}
                   </span>
                 </button>
               </div>
@@ -644,7 +662,7 @@ function CommentForm({
             items={mediaItems}
             maximum={4}
             maximumTotalBytes={40 * 1024 * 1024}
-            subject="回应"
+            subject="回复"
             onAdd={(files) => {
               const next = [...mediaItemsRef.current];
               for (const file of files) {
@@ -696,10 +714,10 @@ function CommentForm({
             >
               <span>{displayedError}</span>
               {parentId &&
-              displayedError.includes("改为顶级回应") &&
+              displayedError.includes("改为直接回复 Moment") &&
               onPromote ? (
                 <button onClick={onPromote} type="button">
-                  改为顶级回应
+                  直接回复 Moment
                 </button>
               ) : null}
             </div>
@@ -712,7 +730,7 @@ function CommentForm({
           ) : null}
           {!commentsEnabled ? (
             <p className={styles.closedInline} role="status">
-              回应已关闭。文字仍保留在当前页面，便于复制。
+              回复已关闭。文字仍保留在当前页面，便于复制。
             </p>
           ) : null}
         </form>
@@ -788,8 +806,8 @@ function DeleteCommentDialog({
         setError(
           nextError instanceof PublicApiError &&
             nextError.code === "COMMENT_NOT_FOUND"
-            ? "这条回应已经不存在。关闭后重新加载列表。"
-            : "没有删除这条回应。列表保持不变，可以安全重试。",
+            ? "这条回复已经不存在。关闭后重新加载列表。"
+            : "没有删除这条回复。列表保持不变，可以安全重试。",
         );
       }
     } finally {
@@ -821,12 +839,12 @@ function DeleteCommentDialog({
             }
           >
             <Dialog.Title className={styles.dialogTitle}>
-              {root ? "删除这条顶级回应？" : "删除这条回复？"}
+              {root ? "删除这条回复？" : "删除这条回复？"}
             </Dialog.Title>
             <Dialog.Description className={styles.dialogDescription}>
               {root && replyCount > 0
-                ? `这条回应和它下面的 ${replyCount} 条一级回复都会永久删除。`
-                : "这条回应会从公开对话中永久删除。"}
+                ? `这条回复和它下面的 ${replyCount} 条回复都会永久删除。`
+                : "这条回复会从公开对话中永久删除。"}
             </Dialog.Description>
             {displayedError ? (
               <p className={styles.dialogError} role="alert">
@@ -858,9 +876,9 @@ function DeleteCommentDialog({
                 {pending
                   ? "正在删除…"
                   : root && replyCount > 0
-                    ? "删除回应和回复"
+                    ? "删除回复及其对话"
                     : root
-                      ? "删除回应"
+                      ? "删除回复"
                       : "删除回复"}
               </button>
             </div>
@@ -887,7 +905,7 @@ function CommentItem({
   replyRoot: PublicComment | null;
   replyCount: number;
   focusTarget: RefObject<HTMLElement | null>;
-  onReply: (comment: PublicComment) => void;
+  onReply: (root: PublicComment, target: PublicComment) => void;
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
 }) {
   const created = formatMomentDate(comment.createdAt, site.timezone);
@@ -903,7 +921,7 @@ function CommentItem({
       data-depth={comment.depth}
       tabIndex={-1}
     >
-      <article aria-label={`${authorName}的${root ? "回应" : "一级回复"}`}>
+      <article aria-label={`${authorName}的回复`}>
         {comment.authorKind === "owner" ? (
           <SiteIdentityPreview site={site}>
             <InternalLink
@@ -944,13 +962,16 @@ function CommentItem({
         <ImageGrid media={comment.media} />
         <footer className={styles.commentActions}>
           {replyRoot ? (
-            <button
-              className={styles.commentAction}
-              onClick={() => onReply(replyRoot)}
-              type="button"
-            >
-              回复
-            </button>
+            <ActionTooltip label="回复">
+              <button
+                aria-label={`回复 ${authorName}`}
+                className={styles.commentAction}
+                onClick={() => onReply(replyRoot, comment)}
+                type="button"
+              >
+                <Icon name="reply" />
+              </button>
+            </ActionTooltip>
           ) : (
             <span />
           )}
@@ -973,10 +994,12 @@ export function CommentThread({
   api,
   postId,
   site,
+  onCountChange,
 }: {
   api: PublicApi;
   postId: string;
   site: SiteIdentity;
+  onCountChange?: (count: number) => void;
 }) {
   const owner = useOwner();
   const [items, setItems] = useState<PublicComment[] | null>(null);
@@ -1012,6 +1035,10 @@ export function CommentThread({
   }, [api, attempt, postId]);
 
   useEffect(() => {
+    if (items) onCountChange?.(items.length);
+  }, [items, onCountChange]);
+
+  useEffect(() => {
     const id = focusCommentRef.current;
     if (!id || !items?.some((comment) => comment.id === id)) return;
     focusCommentRef.current = null;
@@ -1030,18 +1057,19 @@ export function CommentThread({
       }
     });
     setReply(null);
-    setAnnouncement(comment.parentId ? "回复已发表" : "回应已发表");
+    setAnnouncement("回复已发表");
   };
 
   const deleted = (comment: PublicComment, repliesAffected: number) => {
     setItems((current) =>
       current ? reconcileDeletedComment(current, comment) : current,
     );
-    if (reply?.rootId === comment.id) setReply(null);
+    if (reply?.rootId === comment.id || reply?.targetId === comment.id)
+      setReply(null);
     setAnnouncement(
       repliesAffected > 0
-        ? `回应和 ${repliesAffected} 条一级回复已删除`
-        : "回应已删除",
+        ? `回复和 ${repliesAffected} 条后续回复已删除`
+        : "回复已删除",
     );
   };
 
@@ -1077,7 +1105,7 @@ export function CommentThread({
         ref={headingRef}
         tabIndex={-1}
       >
-        回应
+        回复
       </h2>
 
       <p aria-live="polite" className={styles.srOnly} role="status">
@@ -1087,7 +1115,7 @@ export function CommentThread({
       {items === null && !loadError ? (
         <div aria-busy="true" className={styles.threadState}>
           <span className={styles.loadingDot} />
-          <span>正在读取回应…</span>
+          <span>正在读取回复…</span>
         </div>
       ) : null}
 
@@ -1096,12 +1124,12 @@ export function CommentThread({
           <strong>
             {loadError instanceof PublicApiError &&
             loadError.code === "API_RESPONSE_INVALID"
-              ? "回应数据无法安全显示"
-              : "这次没有取回应答"}
+              ? "回复数据无法安全显示"
+              : "这次没有取到回复"}
           </strong>
           <span>Moment 正文仍可阅读；重试不会重复发表任何内容。</span>
           <button onClick={load} type="button">
-            重新加载回应
+            重新加载回复
           </button>
         </div>
       ) : null}
@@ -1110,8 +1138,8 @@ export function CommentThread({
         <>
           {!site.commentsEnabled && !closedByServer ? (
             <div className={styles.closedNotice} role="status">
-              <strong>回应已关闭</strong>
-              <span>过往回应继续公开可读，现在不能发表新内容。</span>
+              <strong>回复已关闭</strong>
+              <span>过往回复继续公开可读，现在不能发表新内容。</span>
             </div>
           ) : (
             <CommentForm
@@ -1130,11 +1158,7 @@ export function CommentThread({
             />
           )}
 
-          {items.length === 0 ? (
-            <div className={styles.emptyThread}>
-              <strong>暂无回应</strong>
-            </div>
-          ) : (
+          {items.length > 0 ? (
             <ol className={styles.commentList}>
               {items.map((comment) => (
                 <Fragment key={comment.id}>
@@ -1142,18 +1166,20 @@ export function CommentThread({
                     comment={comment}
                     focusTarget={headingRef}
                     onDeleted={deleted}
-                    onReply={(root) => {
+                    onReply={(root, target) => {
+                      const targetAuthor =
+                        target.authorKind === "owner"
+                          ? site.title.trim() || target.authorName
+                          : target.authorName;
                       setReply({
                         rootId: root.id,
-                        rootAuthor:
-                          root.authorKind === "owner"
-                            ? site.title.trim() || root.authorName
-                            : root.authorName,
+                        targetId: target.id,
+                        targetAuthor,
                         content: "",
                       });
                       window.requestAnimationFrame(() =>
                         document
-                          .getElementById(`reply-${root.id}-content`)
+                          .getElementById(`reply-${target.id}-content`)
                           ?.focus(),
                       );
                     }}
@@ -1166,7 +1192,7 @@ export function CommentThread({
                     replyCount={replyCounts.get(comment.id) ?? 0}
                     site={site}
                   />
-                  {reply?.rootId === comment.id ? (
+                  {reply?.targetId === comment.id ? (
                     <li className={styles.replyComposerRow}>
                       <CommentForm
                         api={api}
@@ -1188,7 +1214,8 @@ export function CommentThread({
                         }}
                         parentId={reply.rootId}
                         postId={postId}
-                        rootAuthor={reply.rootAuthor}
+                        replyTargetAuthor={reply.targetAuthor}
+                        replyTargetId={reply.targetId}
                         setContent={(content) =>
                           setReply((current) =>
                             current ? { ...current, content } : current,
@@ -1202,7 +1229,7 @@ export function CommentThread({
                 </Fragment>
               ))}
             </ol>
-          )}
+          ) : null}
         </>
       ) : null}
     </section>

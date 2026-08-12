@@ -59,6 +59,14 @@ export function DetailPage({
     return () => activeRequest.current?.abort();
   }, [load]);
 
+  const handleCommentCountChange = useCallback((commentCount: number) => {
+    setPost((current) =>
+      current && current.commentCount !== commentCount
+        ? { ...current, commentCount }
+        : current,
+    );
+  }, []);
+
   if (loading) return <TimelineLoading />;
   if (error) {
     return <PublicError kind={detailErrorKind(error)} onRetry={load} />;
@@ -73,7 +81,12 @@ export function DetailPage({
         post={post}
         site={site}
       />
-      <CommentThread api={api} postId={post.id} site={site} />
+      <CommentThread
+        api={api}
+        onCountChange={handleCommentCountChange}
+        postId={post.id}
+        site={site}
+      />
     </>
   ) : null;
 }

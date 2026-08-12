@@ -5,6 +5,7 @@ import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import {
+  ActionTooltip,
   ExactTimeTooltip,
   ShareMenu,
   SiteIdentityPreview,
@@ -130,7 +131,6 @@ export function PostPresentation({
           type="button"
         >
           <Icon name="share" />
-          <span>分享</span>
         </button>
       }
     />
@@ -163,15 +163,22 @@ export function PostPresentation({
             <span>发布于</span>
             <time dateTime={post.publishedAt}>{published.absolute}</time>
           </p>
-          <div className={styles.postActions}>
-            <a
-              aria-label="回应这条 Moment"
-              className={styles.postAction}
-              href="#top-level-comment-content"
-            >
-              <Icon name="reply" />
-              <span>回应</span>
+          {post.commentCount > 0 ? (
+            <a className={styles.detailStats} href="#comments">
+              <strong>{post.commentCount}</strong>
+              <span>条回复</span>
             </a>
+          ) : null}
+          <div className={styles.postActions}>
+            <ActionTooltip label="回复">
+              <a
+                aria-label="回复这条 Moment"
+                className={styles.postAction}
+                href="#top-level-comment-content"
+              >
+                <Icon name="reply" />
+              </a>
+            </ActionTooltip>
             {share("start")}
           </div>
         </div>
@@ -206,15 +213,19 @@ export function PostPresentation({
           </InternalLink>
         ) : null}
         <div className={styles.postActions}>
-          <InternalLink
-            aria-label="打开完整 Moment"
-            className={styles.postAction}
-            data-focus-key={`${post.id}:open-post`}
-            href={detailHref}
-          >
-            <Icon name="reply" />
-            <span>回应</span>
-          </InternalLink>
+          <ActionTooltip label="回复">
+            <InternalLink
+              aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
+              className={styles.postAction}
+              data-focus-key={`${post.id}:open-post`}
+              href={detailHref}
+            >
+              <Icon name="reply" />
+              {post.commentCount > 0 ? (
+                <span className={styles.actionCount}>{post.commentCount}</span>
+              ) : null}
+            </InternalLink>
+          </ActionTooltip>
           {share("end")}
         </div>
       </div>
