@@ -34,6 +34,12 @@ const emptyCopy: Record<
     title: "还没有归档",
     detail: "发布内容后会按年份、月份和日期归档。",
   },
+  profile: {
+    marker: "资料",
+    title: "还没有公开 Moment",
+    detail: "发布后的 Moment 会显示在个人资料页。",
+    action: { label: "发布 Moment", href: "/owner/compose" },
+  },
   "owner-login": {
     marker: "所有者",
     title: "输入所有者令牌",

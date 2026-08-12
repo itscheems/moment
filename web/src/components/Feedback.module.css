@@ -1,0 +1,53 @@
+.viewport {
+  position: fixed;
+  z-index: 120;
+  inset-inline: 0;
+  inset-block-end: 1.5rem;
+  inline-size: min(22rem, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-inline: auto;
+  outline: 0;
+}
+
+.toast {
+  border-radius: 999px;
+  padding: 0.72rem 1rem;
+  color: #ffffff;
+  background: #0f1419;
+  box-shadow: var(--shadow-popover);
+  text-align: center;
+  transition:
+    transform var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
+}
+
+.toast[data-starting-style],
+.toast[data-ending-style] {
+  opacity: 0;
+  transform: translateY(0.5rem);
+}
+
+.title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.description {
+  margin-block-start: 0.1rem;
+  color: #d7dbdc;
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 719px) {
+  .viewport {
+    inset-block-end: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: none;
+  }
+}

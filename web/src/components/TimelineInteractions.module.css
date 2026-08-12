@@ -1,0 +1,158 @@
+.tooltipPositioner,
+.identityPositioner,
+.sharePositioner {
+  z-index: var(--layer-popover);
+}
+
+.tooltip {
+  border-radius: 0.25rem;
+  padding: 0.3rem 0.5rem;
+  color: #ffffff;
+  background: rgb(83 100 113 / 94%);
+  box-shadow: 0 0.1rem 0.4rem rgb(15 20 25 / 15%);
+  font-size: 0.7rem;
+  white-space: nowrap;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.tooltip[data-starting-style],
+.tooltip[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-0.2rem);
+}
+
+.identityCard {
+  inline-size: min(18rem, calc(100vw - 2rem));
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.identityCard[data-starting-style],
+.identityCard[data-ending-style] {
+  opacity: 0;
+  transform: translateY(0.25rem) scale(0.98);
+}
+
+.identityCover {
+  block-size: 4.5rem;
+  background: var(--surface-muted);
+}
+
+.identityBody {
+  position: relative;
+  padding: 2.4rem var(--space-4) var(--space-4);
+}
+
+.identityAvatar {
+  position: absolute;
+  inset-block-start: -2.25rem;
+  inset-inline-start: var(--space-4);
+  inline-size: 4.5rem;
+  block-size: 4.5rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 4px solid var(--surface-elevated);
+  border-radius: 50%;
+  background: var(--surface-elevated);
+}
+
+.identityAvatar > img,
+.identityAvatar > span {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.identityBody h2,
+.identityBody p {
+  margin: 0;
+}
+
+.identityBody h2 {
+  font-size: 1.15rem;
+  line-height: 1.2;
+}
+
+.identityBody p {
+  margin-block-start: var(--space-2);
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.identityProfileLink {
+  min-block-size: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  margin-block-start: var(--space-3);
+  padding-inline: var(--space-3);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.sharePopup {
+  min-inline-size: 13rem;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.sharePopup[data-starting-style],
+.sharePopup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-0.25rem) scale(0.98);
+}
+
+.shareItem {
+  min-block-size: 3rem;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-inline: var(--space-4);
+  outline: 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.shareItem[data-highlighted] {
+  background: var(--surface-hover);
+}
+
+.shareItem svg {
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+}
+
+@media (max-width: 719px), (hover: none) {
+  .identityPositioner {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip,
+  .identityCard,
+  .sharePopup {
+    transition: none;
+  }
+}

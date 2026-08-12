@@ -1,0 +1,23 @@
+.avatar,
+.avatarFallback {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  display: block;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  background: var(--accent-soft);
+}
+
+.avatar {
+  object-fit: cover;
+}
+
+.avatarFallback {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  font-size: 1rem;
+  font-weight: 750;
+}

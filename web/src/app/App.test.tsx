@@ -126,18 +126,23 @@ describe("App shell and public routes", () => {
     );
   });
 
-  it("opens the accessible Base UI theme menu and persists an override", async () => {
+  it("opens display controls from More and persists color and background", async () => {
     render(<App />);
-    const triggers = screen.getAllByRole("button", { name: "选择主题" });
+    const triggers = screen.getAllByRole("button", { name: "更多" });
     fireEvent.click(triggers[0]);
 
-    const dark = await screen.findByRole("menuitemradio", { name: "深色" });
-    fireEvent.click(dark);
+    fireEvent.click(await screen.findByRole("menuitem", { name: /显示/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "粉色" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^纯黑/ }));
     await waitFor(() =>
-      expect(document.documentElement).toHaveAttribute("data-theme", "dark"),
+      expect(document.documentElement).toHaveAttribute(
+        "data-theme",
+        "lights-out",
+      ),
     );
-    expect(window.localStorage.getItem("moment.theme.v1")).toBe("dark");
-    await waitFor(() => expect(triggers[0]).toHaveFocus());
+    expect(document.documentElement).toHaveAttribute("data-accent", "pink");
+    expect(window.localStorage.getItem("moment.theme.v1")).toBe("lights-out");
+    expect(window.localStorage.getItem("moment.accent.v1")).toBe("pink");
   });
 
   it("gives active navigation a semantic current-page state", () => {
@@ -147,6 +152,31 @@ describe("App shell and public routes", () => {
       "aria-current",
       "page",
     );
+  });
+
+  it("renders the public profile as a first-class route", async () => {
+    const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
+    window.history.replaceState({}, "", "/profile");
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url.startsWith("/api/v1/posts?")) {
+        return json(timelineEnvelope([item]));
+      }
+      return json({}, 404);
+    });
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("region", {
+        name: "乔乔的 Moment 的个人资料",
+      }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("个人资料里的 Moment")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("link", { name: "个人资料" })[0],
+    ).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByText("私人的公开时间流")).not.toBeInTheDocument();
   });
 
   it("opens detail and returns to the preserved timeline without refetching it", async () => {

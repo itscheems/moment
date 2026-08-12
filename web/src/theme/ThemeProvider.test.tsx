@@ -11,7 +11,7 @@ function Probe() {
       <output>{`${preference}:${resolvedTheme}`}</output>
       <button
         type="button"
-        onClick={() => setPreference("dark" satisfies ThemePreference)}
+        onClick={() => setPreference("lights-out" satisfies ThemePreference)}
       >
         Dark
       </button>
@@ -41,8 +41,11 @@ describe("ThemeProvider", () => {
 
     expect(screen.getByText("system:light")).toBeInTheDocument();
     act(() => screen.getByRole("button", { name: "Dark" }).click());
-    expect(screen.getByText("dark:dark")).toBeInTheDocument();
-    expect(window.localStorage.getItem("moment.theme.v1")).toBe("dark");
-    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
+    expect(screen.getByText("lights-out:lights-out")).toBeInTheDocument();
+    expect(window.localStorage.getItem("moment.theme.v1")).toBe("lights-out");
+    expect(document.documentElement).toHaveAttribute(
+      "data-theme",
+      "lights-out",
+    );
   });
 });

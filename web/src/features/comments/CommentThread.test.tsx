@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PublicApi, PublicApiError, type SiteIdentity } from "../../api/public";
+import { NavigationProvider } from "../../app/navigation";
 import { OwnerProvider, useOwner } from "../owner/OwnerProvider";
 import { CommentThread } from "./CommentThread";
 
@@ -144,10 +145,16 @@ function ExpireOwnerControl() {
 
 function renderThread(currentSite = site, withExpireControl = false) {
   return render(
-    <OwnerProvider>
-      {withExpireControl ? <ExpireOwnerControl /> : null}
-      <CommentThread api={new PublicApi()} postId={postId} site={currentSite} />
-    </OwnerProvider>,
+    <NavigationProvider>
+      <OwnerProvider>
+        {withExpireControl ? <ExpireOwnerControl /> : null}
+        <CommentThread
+          api={new PublicApi()}
+          postId={postId}
+          site={currentSite}
+        />
+      </OwnerProvider>
+    </NavigationProvider>,
   );
 }
 

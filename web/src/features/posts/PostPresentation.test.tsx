@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
+import { FeedbackProvider } from "../../components/Feedback";
 import { PostPresentation } from "./PostPresentation";
 
 afterEach(() => {
@@ -41,7 +42,7 @@ function makePost(contentMd: string, contentHtml: string): PublicPost {
 }
 
 describe("shared post presentation", () => {
-  it("renders accepted HTML, absolute time, and a long-form timeline affordance", () => {
+  it("renders accepted HTML, absolute time, and a long-form timeline affordance", async () => {
     const longText = "一段很长的记忆。".repeat(70);
     render(
       <NavigationProvider>
@@ -62,10 +63,10 @@ describe("shared post presentation", () => {
       "data-focus-key",
       "01K2ABCDEF0123456789ABCDE0:read-more",
     );
-    expect(screen.getByRole("link", { name: "1小时前" })).toHaveAttribute(
-      "title",
-      expect.stringContaining("2026"),
-    );
+    const time = screen.getByRole("link", { name: "1小时前" });
+    expect(time).not.toHaveAttribute("title");
+    fireEvent.focus(time);
+    expect(await screen.findByText("2026年8月10日 09:00")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "打开完整 Moment" }),
     ).toHaveTextContent("回应");
@@ -114,21 +115,50 @@ describe("shared post presentation", () => {
       }),
     );
     render(
-      <NavigationProvider>
-        <PostPresentation
-          post={makePost("可分享", "<p>可分享</p>")}
-          site={{ ...site, publicBaseUrl: "https://moment.example" }}
-        />
-      </NavigationProvider>,
+      <FeedbackProvider>
+        <NavigationProvider>
+          <PostPresentation
+            post={makePost("可分享", "<p>可分享</p>")}
+            site={{ ...site, publicBaseUrl: "https://moment.example" }}
+          />
+        </NavigationProvider>
+      </FeedbackProvider>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: "分享这条 Moment" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "复制链接" }));
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith(
         "https://moment.example/m/01K2ABCDEF0123456789ABCDE0",
       );
     });
-    expect(screen.getByRole("status")).toHaveTextContent("链接已复制");
+    expect(screen.getByRole("dialog", { name: "链接已复制" })).toBeVisible();
+  });
+
+  it("opens the site profile preview from the author identity", async () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost("查看作者", "<p>查看作者</p>")}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    fireEvent.focus(
+      screen.getByRole("link", {
+        name: "查看 乔乔的 Moment 的个人资料",
+      }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "乔乔的 Moment" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("一些正在发生的事")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "查看个人资料" })).toHaveAttribute(
+      "href",
+      "/profile",
+    );
   });
 });

@@ -3,6 +3,7 @@ export type RouteId =
   | "detail"
   | "search"
   | "archive"
+  | "profile"
   | "owner-login"
   | "owner-compose"
   | "owner-edit"
@@ -21,35 +22,42 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   {
     id: "home",
     title: "时间流",
-    eyebrow: "现在",
+    eyebrow: "",
     href: "/",
     match: (pathname) => pathname === "/",
   },
   {
     id: "detail",
     title: "Moment",
-    eyebrow: "一段记忆",
+    eyebrow: "",
     href: "/",
     match: (pathname) => /^\/m\/[^/]+\/?$/.test(pathname),
   },
   {
     id: "search",
     title: "搜索",
-    eyebrow: "按文字找回",
+    eyebrow: "",
     href: "/search",
     match: (pathname) => pathname === "/search" || pathname === "/search/",
   },
   {
     id: "archive",
     title: "归档",
-    eyebrow: "按时间找回",
+    eyebrow: "",
     href: "/archive",
     match: (pathname) => pathname === "/archive" || pathname === "/archive/",
   },
   {
+    id: "profile",
+    title: "个人资料",
+    eyebrow: "",
+    href: "/profile",
+    match: (pathname) => pathname === "/profile" || pathname === "/profile/",
+  },
+  {
     id: "owner-login",
     title: "所有者登录",
-    eyebrow: "私人入口",
+    eyebrow: "",
     href: "/owner/login",
     match: (pathname) =>
       pathname === "/owner/login" || pathname === "/owner/login/",
@@ -57,7 +65,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   {
     id: "owner-compose",
     title: "发布 Moment",
-    eyebrow: "记下现在",
+    eyebrow: "",
     href: "/owner/compose",
     ownerOnly: true,
     match: (pathname) =>
@@ -66,7 +74,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   {
     id: "owner-edit",
     title: "编辑 Moment",
-    eyebrow: "补充记忆",
+    eyebrow: "",
     href: "/",
     ownerOnly: true,
     match: (pathname) => /^\/owner\/m\/[^/]+\/edit\/?$/.test(pathname),
@@ -74,7 +82,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   {
     id: "owner-settings",
     title: "站点设置",
-    eyebrow: "所有者空间",
+    eyebrow: "",
     href: "/owner/settings",
     ownerOnly: true,
     match: (pathname) =>
@@ -85,7 +93,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
 const notFound: AppRoute = {
   id: "not-found",
   title: "没有这个页面",
-  eyebrow: "走远了一点",
+  eyebrow: "",
   href: "/",
 };
 

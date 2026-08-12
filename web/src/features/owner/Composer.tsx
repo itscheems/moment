@@ -7,7 +7,7 @@ import {
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { MediaComposer } from "../media/MediaComposer";
-import { SiteAvatar } from "../posts/PostPresentation";
+import { SiteAvatar } from "../../components/SiteIdentity";
 import {
   altValue,
   applyUpload,

@@ -45,7 +45,9 @@ describe("visual foundation contract", () => {
   });
 
   it("defines explicit light and dark theme surfaces and a visible focus token", () => {
-    expect(globalCss).toContain(':root[data-theme="dark"]');
+    expect(globalCss).toContain(':root[data-theme="dim"]');
+    expect(globalCss).toContain(':root[data-theme="lights-out"]');
+    expect(globalCss).toContain(':root[data-accent="blue"]');
     expect(globalCss).toContain(":focus-visible");
     expect(globalCss).toContain("--focus-ring:");
   });

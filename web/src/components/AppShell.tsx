@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import type { SiteIdentity } from "../api/public";
 import { InternalLink, useNavigation } from "../app/navigation";
 import type { AppRoute, RouteId } from "../app/routes";
-import { SiteAvatar } from "../features/posts/PostPresentation";
+import { SiteAvatar } from "./SiteIdentity";
 import { Icon, type IconName } from "./icons";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
@@ -20,6 +20,12 @@ const primaryNav: NavItem[] = [
   { label: "时间流", href: "/", icon: "home", active: ["home", "detail"] },
   { label: "搜索", href: "/search", icon: "search", active: ["search"] },
   { label: "归档", href: "/archive", icon: "archive", active: ["archive"] },
+  {
+    label: "个人资料",
+    href: "/profile",
+    icon: "owner",
+    active: ["profile"],
+  },
 ];
 
 function ownerNav(settingsAvailable: boolean): NavItem {
@@ -142,13 +148,7 @@ function MemoryRail({
   );
 }
 
-function MobileNavigation({
-  route,
-  ownerSettingsAvailable,
-}: {
-  route: AppRoute;
-  ownerSettingsAvailable: boolean;
-}) {
+function MobileNavigation({ route }: { route: AppRoute }) {
   const items: NavItem[] = [
     ...primaryNav,
     {
@@ -157,7 +157,6 @@ function MobileNavigation({
       icon: "publish",
       active: ["owner-compose"],
     },
-    ownerNav(ownerSettingsAvailable),
   ];
   return (
     <nav aria-label="移动导航" className={styles.mobileNav}>
@@ -226,10 +225,7 @@ export function AppShell({
         </main>
         <MemoryRail route={route} years={memoryYears} />
       </div>
-      <MobileNavigation
-        ownerSettingsAvailable={ownerSettingsAvailable}
-        route={route}
-      />
+      <MobileNavigation route={route} />
     </div>
   );
 }

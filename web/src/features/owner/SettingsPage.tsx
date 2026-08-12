@@ -775,7 +775,7 @@ export function SettingsPage({
                     rows={3}
                     value={form.bio}
                   />
-                  <small>用一两句话说明这段个人时间流。</small>
+                  <small>显示在个人资料页和头像资料卡中。</small>
                 </label>
                 <label>
                   <span>站点时区</span>

@@ -13,7 +13,9 @@ export type IconName =
   | "media"
   | "more"
   | "edit"
-  | "delete";
+  | "delete"
+  | "link"
+  | "open";
 
 const paths: Record<IconName, React.ReactNode> = {
   home: (
@@ -88,6 +90,25 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M5 7h14M9 7V4.5h6V7M7.5 7l.8 13h7.4l.8-13" />
       <path d="M10 10.5v6M14 10.5v6" />
+    </>
+  ),
+  link: (
+    <>
+      <path d="M9.5 14.5 14.5 9.5" />
+      <path
+        d="M7.5 17.5 5.8 19.2a3.5 3.5 0 0 1-5-5l4-4a3.5 3.5 0 0 1 5 0"
+        transform="translate(2 -2)"
+      />
+      <path
+        d="m16.5 6.5 1.7-1.7a3.5 3.5 0 0 1 5 5l-4 4a3.5 3.5 0 0 1-5 0"
+        transform="translate(-2 2)"
+      />
+    </>
+  ),
+  open: (
+    <>
+      <path d="M14 4h6v6M20 4l-9 9" />
+      <path d="M19 14v5H5V5h5" />
     </>
   ),
 };

@@ -62,6 +62,47 @@
   display: grid;
 }
 
+.commentComposerLayout {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.composerAvatar {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  font-weight: 700;
+}
+
+.composerAvatar > img,
+.composerAvatar > span {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.commentCollapsed {
+  padding-block: var(--space-2);
+}
+
+.commentCollapsed .commentComposerHeader,
+.commentCollapsed .nameField,
+.commentCollapsed .formMeta,
+.commentCollapsed .commentForm > footer {
+  display: none;
+}
+
+.commentExpanded .commentForm textarea {
+  min-block-size: 5.5rem;
+}
+
 .commentForm > header {
   display: flex;
   align-items: center;
@@ -274,6 +315,7 @@
 }
 
 .reauth {
+  grid-column: 2;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--space-3);
@@ -396,6 +438,26 @@
   color: var(--accent);
   background: var(--accent-soft);
   font-weight: 750;
+  text-decoration: none;
+}
+
+.commentAvatar > img,
+.commentAvatar > span {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.commentAuthor {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.commentAuthor:hover,
+.commentAuthor:focus-visible {
+  text-decoration: underline;
 }
 
 .replyComment {

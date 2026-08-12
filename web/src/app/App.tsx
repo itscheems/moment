@@ -14,7 +14,9 @@ import { SettingsPage } from "../features/owner/SettingsPage";
 import { ArchivePage } from "../features/memory/ArchivePage";
 import { hasValidRawQueryEncoding } from "../features/memory/memoryState";
 import { SearchPage } from "../features/memory/SearchPage";
+import { ProfilePage } from "../features/profile/ProfilePage";
 import { ThemeProvider } from "../theme/ThemeProvider";
+import { FeedbackProvider } from "../components/Feedback";
 import { NavigationProvider, useNavigation } from "./navigation";
 import { resolveRoute } from "./routes";
 import styles from "./App.module.css";
@@ -133,7 +135,7 @@ function PublicApp() {
         event.isComposing ||
         composing ||
         editableTarget(event.target) ||
-        document.querySelector('[role="dialog"]')
+        document.querySelector('[role="dialog"]:not([aria-modal="false"])')
       ) {
         return;
       }
@@ -169,7 +171,7 @@ function PublicApp() {
         event.isComposing ||
         composing ||
         editableTarget(event.target) ||
-        document.querySelector('[role="dialog"]')
+        document.querySelector('[role="dialog"]:not([aria-modal="false"])')
       ) {
         return;
       }
@@ -200,7 +202,8 @@ function PublicApp() {
     route.id !== "owner-edit" &&
     route.id !== "owner-settings" &&
     route.id !== "search" &&
-    route.id !== "archive";
+    route.id !== "archive" &&
+    route.id !== "profile";
 
   const shellYears =
     route.id === "search" || route.id === "archive"
@@ -275,6 +278,9 @@ function PublicApp() {
           site={site}
         />
       ) : null}
+      {!siteLoading && route.id === "profile" ? (
+        <ProfilePage api={api} site={site} />
+      ) : null}
       {!siteLoading && route.id === "owner-login" ? (
         <OwnerLogin site={site} />
       ) : null}
@@ -309,11 +315,13 @@ function PublicApp() {
 export function App() {
   return (
     <ThemeProvider>
-      <NavigationProvider>
-        <OwnerProvider>
-          <PublicApp />
-        </OwnerProvider>
-      </NavigationProvider>
+      <FeedbackProvider>
+        <NavigationProvider>
+          <OwnerProvider>
+            <PublicApp />
+          </OwnerProvider>
+        </NavigationProvider>
+      </FeedbackProvider>
     </ThemeProvider>
   );
 }

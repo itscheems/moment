@@ -16,6 +16,12 @@ import {
   type PublicComment,
   type SiteIdentity,
 } from "../../api/public";
+import { InternalLink } from "../../app/navigation";
+import { SiteAvatar } from "../../components/SiteIdentity";
+import {
+  ExactTimeTooltip,
+  SiteIdentityPreview,
+} from "../../components/TimelineInteractions";
 import { formatMomentDate } from "../posts/dates";
 import { useOwner } from "../owner/OwnerProvider";
 import styles from "./Comments.module.css";
@@ -177,6 +183,7 @@ function Reauthenticate({
 
 function CommentForm({
   api,
+  site,
   postId,
   mode,
   parentId,
@@ -192,6 +199,7 @@ function CommentForm({
   onCancel,
 }: {
   api: PublicApi;
+  site: SiteIdentity;
   postId: string;
   mode: CommentMode;
   parentId: string | null;
@@ -213,6 +221,7 @@ function CommentForm({
   const [website, setWebsite] = useState("");
   const [retryUntil, setRetryUntil] = useState(0);
   const [remaining, setRemaining] = useState(0);
+  const [focused, setFocused] = useState(parentId !== null);
   const pendingRef = useRef(false);
   const idempotencyRef = useRef("");
   const signatureRef = useRef("");
@@ -235,6 +244,14 @@ function CommentForm({
     (displayReauth
       ? "当前写入会话已失效。文字已保留，刷新身份后可以重试。"
       : null);
+  const expanded =
+    parentId !== null ||
+    focused ||
+    content.trim().length > 0 ||
+    pending ||
+    displayedError !== null ||
+    rateLimited ||
+    !commentsEnabled;
 
   useEffect(() => {
     if (!retryUntil) {
@@ -336,171 +353,195 @@ function CommentForm({
 
   return (
     <div
-      className={`${styles.formSurface} ${parentId ? styles.replyForm : ""}`}
-    >
-      <form
-        aria-label={
-          parentId ? `回复 ${rootAuthor ?? "顶级回应"}` : "发表顶级回应"
+      className={`${styles.formSurface} ${parentId ? styles.replyForm : ""} ${expanded ? styles.commentExpanded : styles.commentCollapsed}`}
+      onBlurCapture={(event) => {
+        if (
+          parentId === null &&
+          !event.currentTarget.contains(event.relatedTarget as Node | null) &&
+          content.trim().length === 0 &&
+          !displayedError
+        ) {
+          setFocused(false);
         }
-        className={styles.commentForm}
-        onSubmit={(event) => void submit(event)}
-      >
-        <header className={styles.commentComposerHeader}>
-          <div className={styles.srOnly}>
-            <p>{parentId ? "一级回复" : "加入这段对话"}</p>
-            <h3>
-              {parentId ? `回复 ${rootAuthor ?? "这条回应"}` : "写下回应"}
-            </h3>
-          </div>
-          <span>{mode === "owner" ? "所有者" : "访客"}</span>
-        </header>
-        {mode === "guest" ? (
-          <div className={styles.nameField}>
-            <label htmlFor={`${formId}-name`}>显示名</label>
-            <input
-              autoComplete="name"
-              disabled={pending}
-              id={`${formId}-name`}
-              maxLength={MAX_AUTHOR_NAME}
-              onChange={(event) => {
-                setGuestName(event.target.value);
-                setError(null);
-              }}
-              placeholder="怎么称呼你"
-              required
-              value={guestName}
-            />
-            <span aria-label={`显示名 ${nameCount} / ${MAX_AUTHOR_NAME} 字`}>
-              {nameCount}/{MAX_AUTHOR_NAME}
-            </span>
-          </div>
-        ) : null}
-        <label className={styles.srOnly} htmlFor={`${formId}-content`}>
-          {parentId ? "回复内容" : "回应内容"}
-        </label>
-        <textarea
-          aria-describedby={`${formId}-guidance ${formId}-error`}
-          disabled={pending}
-          id={`${formId}-content`}
-          onChange={(event) => {
-            setContent(event.target.value);
-            setError(null);
-          }}
-          onKeyDown={(event) => {
-            if (
-              event.key === "Enter" &&
-              (event.metaKey || event.ctrlKey) &&
-              !event.nativeEvent.isComposing &&
-              validName &&
-              validContent &&
-              commentsEnabled &&
-              !rateLimited
-            ) {
-              event.preventDefault();
-              event.currentTarget.form?.requestSubmit();
-            }
-          }}
-          placeholder={parentId ? "发布回复" : "发布你的回应"}
-          ref={textareaRef}
-          required
-          rows={parentId ? 1 : 2}
-          value={content}
-        />
-        <input
-          aria-hidden="true"
-          autoComplete="off"
-          className={styles.honeypot}
-          name="website"
-          onChange={(event) => setWebsite(event.target.value)}
-          tabIndex={-1}
-          type="text"
-          value={website}
-        />
-        <div className={styles.formMeta} id={`${formId}-guidance`}>
-          <span className={styles.srOnly}>
-            支持 Markdown；请勿粘贴图片语法。Ctrl/⌘ + Enter 发表
-          </span>
-          <span
-            className={
-              contentCount > MAX_COMMENT
-                ? styles.countInvalid
-                : contentCount > MAX_COMMENT * 0.9
-                  ? ""
-                  : styles.srOnly
-            }
-            aria-label={`回应 ${contentCount} / ${MAX_COMMENT} 字`}
-          >
-            {contentCount}/{MAX_COMMENT}
-          </span>
-        </div>
-        {displayedError ? (
-          <div className={styles.formError} id={`${formId}-error`} role="alert">
-            <span>{displayedError}</span>
-            {parentId &&
-            displayedError.includes("改为顶级回应") &&
-            onPromote ? (
-              <button onClick={onPromote} type="button">
-                改为顶级回应
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        {rateLimited ? (
-          <p className={styles.rateNotice} role="status">
-            发表得有点快，请在 {remaining}{" "}
-            秒后重试。文字和本次重试凭据都已保留。
-          </p>
-        ) : null}
-        {!commentsEnabled ? (
-          <p className={styles.closedInline} role="status">
-            回应已关闭。文字仍保留在当前页面，便于复制。
-          </p>
-        ) : null}
-        <footer>
-          {onCancel ? (
-            <button
-              className={styles.secondaryAction}
-              onClick={onCancel}
-              type="button"
-            >
-              取消回复
-            </button>
+      }}
+      onFocusCapture={() => setFocused(true)}
+    >
+      <div className={styles.commentComposerLayout}>
+        <span aria-hidden="true" className={styles.composerAvatar}>
+          {mode === "owner" ? (
+            <SiteAvatar site={site} />
           ) : (
-            <span />
+            (Array.from(guestName.trim())[0]?.toLocaleUpperCase() ?? "?")
           )}
-          <button
-            aria-label={parentId ? "发表回复" : "发表回应"}
-            className={styles.primaryAction}
-            disabled={
-              pending ||
-              !validName ||
-              !validContent ||
-              !commentsEnabled ||
-              rateLimited ||
-              (mode === "owner" && !owner.session)
-            }
-            type="submit"
-          >
-            <span aria-hidden="true">
-              {pending
-                ? "正在发表…"
-                : rateLimited
-                  ? `${remaining} 秒后重试`
-                  : "回复"}
+        </span>
+        <form
+          aria-label={
+            parentId ? `回复 ${rootAuthor ?? "顶级回应"}` : "发表顶级回应"
+          }
+          className={styles.commentForm}
+          onSubmit={(event) => void submit(event)}
+        >
+          <header className={styles.commentComposerHeader}>
+            <div className={styles.srOnly}>
+              <p>{parentId ? "一级回复" : "加入这段对话"}</p>
+              <h3>
+                {parentId ? `回复 ${rootAuthor ?? "这条回应"}` : "写下回应"}
+              </h3>
+            </div>
+            <span>{mode === "owner" ? "所有者" : "访客"}</span>
+          </header>
+          {mode === "guest" ? (
+            <div className={styles.nameField}>
+              <label htmlFor={`${formId}-name`}>显示名</label>
+              <input
+                autoComplete="name"
+                disabled={pending}
+                id={`${formId}-name`}
+                maxLength={MAX_AUTHOR_NAME}
+                onChange={(event) => {
+                  setGuestName(event.target.value);
+                  setError(null);
+                }}
+                placeholder="怎么称呼你"
+                required
+                value={guestName}
+              />
+              <span aria-label={`显示名 ${nameCount} / ${MAX_AUTHOR_NAME} 字`}>
+                {nameCount}/{MAX_AUTHOR_NAME}
+              </span>
+            </div>
+          ) : null}
+          <label className={styles.srOnly} htmlFor={`${formId}-content`}>
+            {parentId ? "回复内容" : "回应内容"}
+          </label>
+          <textarea
+            aria-describedby={`${formId}-guidance ${formId}-error`}
+            disabled={pending}
+            id={`${formId}-content`}
+            onChange={(event) => {
+              setContent(event.target.value);
+              setError(null);
+            }}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                (event.metaKey || event.ctrlKey) &&
+                !event.nativeEvent.isComposing &&
+                validName &&
+                validContent &&
+                commentsEnabled &&
+                !rateLimited
+              ) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder={parentId ? "发布回复" : "发布你的回应"}
+            ref={textareaRef}
+            required
+            rows={parentId ? 1 : 2}
+            value={content}
+          />
+          <input
+            aria-hidden="true"
+            autoComplete="off"
+            className={styles.honeypot}
+            name="website"
+            onChange={(event) => setWebsite(event.target.value)}
+            tabIndex={-1}
+            type="text"
+            value={website}
+          />
+          <div className={styles.formMeta} id={`${formId}-guidance`}>
+            <span className={styles.srOnly}>
+              支持 Markdown；请勿粘贴图片语法。Ctrl/⌘ + Enter 发表
             </span>
-          </button>
-        </footer>
-      </form>
-      {displayReauth ? (
-        <Reauthenticate
-          inputId={`${formId}-owner-token`}
-          onReady={() => {
-            setAuthExpired(false);
-            setError(null);
-            window.requestAnimationFrame(() => textareaRef.current?.focus());
-          }}
-        />
-      ) : null}
+            <span
+              className={
+                contentCount > MAX_COMMENT
+                  ? styles.countInvalid
+                  : contentCount > MAX_COMMENT * 0.9
+                    ? ""
+                    : styles.srOnly
+              }
+              aria-label={`回应 ${contentCount} / ${MAX_COMMENT} 字`}
+            >
+              {contentCount}/{MAX_COMMENT}
+            </span>
+          </div>
+          {displayedError ? (
+            <div
+              className={styles.formError}
+              id={`${formId}-error`}
+              role="alert"
+            >
+              <span>{displayedError}</span>
+              {parentId &&
+              displayedError.includes("改为顶级回应") &&
+              onPromote ? (
+                <button onClick={onPromote} type="button">
+                  改为顶级回应
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          {rateLimited ? (
+            <p className={styles.rateNotice} role="status">
+              发表得有点快，请在 {remaining}{" "}
+              秒后重试。文字和本次重试凭据都已保留。
+            </p>
+          ) : null}
+          {!commentsEnabled ? (
+            <p className={styles.closedInline} role="status">
+              回应已关闭。文字仍保留在当前页面，便于复制。
+            </p>
+          ) : null}
+          <footer>
+            {onCancel ? (
+              <button
+                className={styles.secondaryAction}
+                onClick={onCancel}
+                type="button"
+              >
+                取消回复
+              </button>
+            ) : (
+              <span />
+            )}
+            <button
+              aria-label={parentId ? "发表回复" : "发表回应"}
+              className={styles.primaryAction}
+              disabled={
+                pending ||
+                !validName ||
+                !validContent ||
+                !commentsEnabled ||
+                rateLimited ||
+                (mode === "owner" && !owner.session)
+              }
+              type="submit"
+            >
+              <span aria-hidden="true">
+                {pending
+                  ? "正在发表…"
+                  : rateLimited
+                    ? `${remaining} 秒后重试`
+                    : "回复"}
+              </span>
+            </button>
+          </footer>
+        </form>
+        {displayReauth ? (
+          <Reauthenticate
+            inputId={`${formId}-owner-token`}
+            onReady={() => {
+              setAuthExpired(false);
+              setError(null);
+              window.requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -678,18 +719,38 @@ function CommentItem({
       tabIndex={-1}
     >
       <article aria-label={`${authorName}的${root ? "回应" : "一级回复"}`}>
-        <span aria-hidden="true" className={styles.commentAvatar}>
-          {Array.from(authorName)[0]?.toLocaleUpperCase() ?? "M"}
-        </span>
+        {comment.authorKind === "owner" ? (
+          <SiteIdentityPreview site={site}>
+            <InternalLink
+              aria-label={`查看 ${authorName} 的个人资料`}
+              className={styles.commentAvatar}
+              href="/profile"
+            >
+              <SiteAvatar site={site} />
+            </InternalLink>
+          </SiteIdentityPreview>
+        ) : (
+          <span aria-hidden="true" className={styles.commentAvatar}>
+            {Array.from(authorName)[0]?.toLocaleUpperCase() ?? "M"}
+          </span>
+        )}
         <header className={styles.commentByline}>
-          <strong>{authorName}</strong>
+          {comment.authorKind === "owner" ? (
+            <SiteIdentityPreview site={site}>
+              <InternalLink className={styles.commentAuthor} href="/profile">
+                {authorName}
+              </InternalLink>
+            </SiteIdentityPreview>
+          ) : (
+            <strong>{authorName}</strong>
+          )}
           {comment.authorKind === "owner" ? (
             <span className={styles.ownerBadge}>Owner</span>
           ) : null}
           <span aria-hidden="true">·</span>
-          <time dateTime={comment.createdAt} title={created.absolute}>
-            {created.relative}
-          </time>
+          <ExactTimeTooltip exact={created.absolute}>
+            <time dateTime={comment.createdAt}>{created.relative}</time>
+          </ExactTimeTooltip>
         </header>
         <div
           className={styles.commentMarkdown}
@@ -884,6 +945,7 @@ export function CommentThread({
               postId={postId}
               setContent={setTopContent}
               setGuestName={setGuestName}
+              site={site}
             />
           )}
 
@@ -952,6 +1014,7 @@ export function CommentThread({
                           )
                         }
                         setGuestName={setGuestName}
+                        site={site}
                       />
                     </li>
                   ) : null}

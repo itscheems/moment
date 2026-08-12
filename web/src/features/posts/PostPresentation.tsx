@@ -1,100 +1,25 @@
-import { type MouseEvent, type ReactNode, useState } from "react";
+import { type MouseEvent, type ReactNode } from "react";
 
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
+import { SiteAvatar } from "../../components/SiteIdentity";
+import {
+  ExactTimeTooltip,
+  ShareMenu,
+  SiteIdentityPreview,
+} from "../../components/TimelineInteractions";
 import { formatMomentDate } from "./dates";
 import { OwnerPostActions } from "../owner/OwnerPostActions";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
 
-export function SiteAvatar({
-  site,
-  eager = false,
-}: {
-  site: SiteIdentity;
-  eager?: boolean;
-}) {
-  const title = site.title.trim() || "Moment";
-  if (site.avatarMediaId) {
-    return (
-      <img
-        alt=""
-        className={styles.avatar}
-        decoding="async"
-        height="44"
-        loading={eager ? "eager" : "lazy"}
-        src={`/api/v1/media/${encodeURIComponent(site.avatarMediaId)}/preview`}
-        width="44"
-      />
-    );
-  }
-  return (
-    <span aria-hidden="true" className={styles.avatarFallback}>
-      {Array.from(title)[0]?.toLocaleUpperCase() ?? "M"}
-    </span>
-  );
-}
+export { SiteAvatar } from "../../components/SiteIdentity";
 
 function longInTimeline(post: PublicPost): boolean {
   return (
     Array.from(post.contentMd).length > 480 ||
     post.contentMd.split(/\r?\n/).length > 9
-  );
-}
-
-function ShareMoment({
-  baseUrl,
-  href,
-  title,
-}: {
-  baseUrl: string | null;
-  href: string;
-  title: string;
-}) {
-  const [status, setStatus] = useState("");
-
-  const share = async () => {
-    const url = new URL(
-      href,
-      baseUrl?.trim() || window.location.origin,
-    ).toString();
-    try {
-      if (typeof navigator.share === "function") {
-        await navigator.share({ title, url });
-        setStatus("已分享");
-      } else if (navigator.clipboard) {
-        await navigator.clipboard.writeText(url);
-        setStatus("链接已复制");
-      } else {
-        setStatus("可从地址栏复制链接");
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      setStatus("暂时无法分享");
-    }
-    window.setTimeout(() => setStatus(""), 2_000);
-  };
-
-  return (
-    <>
-      <button
-        aria-label="分享这条 Moment"
-        className={styles.postAction}
-        onClick={() => void share()}
-        type="button"
-      >
-        <Icon name="share" />
-        <span>分享</span>
-      </button>
-      {status ? (
-        <span className={styles.shareStatus} role="status">
-          {status}
-        </span>
-      ) : (
-        <span aria-live="polite" className={styles.srOnly} />
-      )}
-    </>
   );
 }
 
@@ -143,20 +68,42 @@ export function PostPresentation({
       tabIndex={-1}
     >
       <div className={styles.avatarColumn}>
-        <SiteAvatar eager={detail} site={site} />
+        <SiteIdentityPreview
+          site={site}
+          children={
+            <InternalLink
+              aria-label={`查看 ${title} 的个人资料`}
+              className={styles.identityLink}
+              href="/profile"
+            >
+              <SiteAvatar eager={detail} site={site} />
+            </InternalLink>
+          }
+        />
       </div>
       <div className={styles.postMain}>
         <header className={styles.byline}>
           <div className={styles.bylineIdentity}>
-            <strong>{title}</strong>
+            <SiteIdentityPreview
+              site={site}
+              children={
+                <InternalLink className={styles.nameLink} href="/profile">
+                  <strong>{title}</strong>
+                </InternalLink>
+              }
+            />
             <span aria-hidden="true">·</span>
-            <InternalLink
-              data-focus-key={`${post.id}:relative-time`}
-              href={detailHref}
-              title={published.absolute}
-            >
-              <time dateTime={post.publishedAt}>{published.relative}</time>
-            </InternalLink>
+            <ExactTimeTooltip
+              exact={published.absolute}
+              children={
+                <InternalLink
+                  data-focus-key={`${post.id}:relative-time`}
+                  href={detailHref}
+                >
+                  <time dateTime={post.publishedAt}>{published.relative}</time>
+                </InternalLink>
+              }
+            />
           </div>
           {owner ? (
             <OwnerPostActions onDeleted={onDeleted} post={post} />
@@ -195,10 +142,20 @@ export function PostPresentation({
               <span>回应</span>
             </InternalLink>
           ) : null}
-          <ShareMoment
+          <ShareMenu
             baseUrl={site.publicBaseUrl}
             href={detailHref}
             title={`${title} 的 Moment`}
+            trigger={
+              <button
+                aria-label="分享这条 Moment"
+                className={styles.postAction}
+                type="button"
+              >
+                <Icon name="share" />
+                <span>分享</span>
+              </button>
+            }
           />
         </div>
       </div>
