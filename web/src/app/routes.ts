@@ -81,7 +81,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   },
   {
     id: "owner-settings",
-    title: "站点设置",
+    title: "设置",
     eyebrow: "",
     href: "/owner/settings",
     ownerOnly: true,

@@ -13,7 +13,6 @@ import { App } from "../../app/App";
 
 const sessionKey = "moment.owner.session.v1";
 const avatarID = "01K2ABCDEF0123456789ABCDE7";
-const newAvatarID = "01K2ABCDEF0123456789ABCDE8";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -100,127 +99,7 @@ function installFetch(
 }
 
 async function waitForRestoreStatus() {
-  await waitFor(() => expect(screen.getByLabelText(/站点标题/)).toBeEnabled());
-}
-
-class FakeUploadRequest extends EventTarget {
-  static requests: FakeUploadRequest[] = [];
-
-  readonly upload = new EventTarget();
-  readonly headers = new Map<string, string>();
-  method = "";
-  url = "";
-  withCredentials = false;
-  status = 0;
-  responseText = "";
-  sent: Document | XMLHttpRequestBodyInit | null = null;
-  aborted = false;
-
-  constructor() {
-    super();
-    FakeUploadRequest.requests.push(this);
-  }
-
-  open(method: string, url: string) {
-    this.method = method;
-    this.url = url;
-  }
-
-  setRequestHeader(name: string, value: string) {
-    this.headers.set(name, value);
-  }
-
-  getResponseHeader(name: string) {
-    return name.toLowerCase() === "content-type" ? "application/json" : null;
-  }
-
-  send(body: Document | XMLHttpRequestBodyInit | null) {
-    this.sent = body;
-  }
-
-  abort() {
-    this.aborted = true;
-    this.dispatchEvent(new Event("abort"));
-    this.dispatchEvent(new Event("loadend"));
-  }
-
-  fail() {
-    this.dispatchEvent(new Event("error"));
-    this.dispatchEvent(new Event("loadend"));
-  }
-
-  succeed() {
-    this.status = 201;
-    this.responseText = JSON.stringify({
-      data: {
-        media: {
-          id: newAvatarID,
-          sha256: "a".repeat(64),
-          original_name: "avatar.png",
-          mime_type: "image/png",
-          byte_size: 4,
-          width: 600,
-          height: 600,
-          created_at: "2026-08-11T00:00:00Z",
-          unreferenced_since: "2026-08-11T00:00:00Z",
-          animated_original: false,
-        },
-        preview: {
-          recipe_version: "preview-v1",
-          sha256: "b".repeat(64),
-          mime_type: "image/png",
-          width: 600,
-          height: 600,
-          animated_original: false,
-        },
-        original_url: `/api/v1/media/${newAvatarID}`,
-        preview_url: `/api/v1/media/${newAvatarID}/preview`,
-      },
-      meta: { request_id: "req_upload" },
-    });
-    this.dispatchEvent(new Event("load"));
-    this.dispatchEvent(new Event("loadend"));
-  }
-}
-
-class ControlledFileReader extends EventTarget {
-  static readonly EMPTY = 0;
-  static readonly LOADING = 1;
-  static readonly DONE = 2;
-  static readers: ControlledFileReader[] = [];
-
-  error: DOMException | null = null;
-  readyState = ControlledFileReader.EMPTY;
-  result: string | ArrayBuffer | null = null;
-
-  constructor() {
-    super();
-    ControlledFileReader.readers.push(this);
-  }
-
-  readAsDataURL() {
-    this.readyState = ControlledFileReader.LOADING;
-  }
-
-  abort() {
-    this.readyState = ControlledFileReader.DONE;
-    this.dispatchEvent(new ProgressEvent("abort"));
-    this.dispatchEvent(new ProgressEvent("loadend"));
-  }
-
-  fail() {
-    this.readyState = ControlledFileReader.DONE;
-    this.error = new DOMException("preview failed", "NotReadableError");
-    this.dispatchEvent(new ProgressEvent("error"));
-    this.dispatchEvent(new ProgressEvent("loadend"));
-  }
-
-  succeed(value = "data:image/png;base64,cG5n") {
-    this.readyState = ControlledFileReader.DONE;
-    this.result = value;
-    this.dispatchEvent(new ProgressEvent("load"));
-    this.dispatchEvent(new ProgressEvent("loadend"));
-  }
+  await waitFor(() => expect(screen.getByLabelText(/^时区/)).toBeEnabled());
 }
 
 describe("owner site settings", () => {
@@ -228,8 +107,6 @@ describe("owner site settings", () => {
     window.history.replaceState({}, "", "/owner/settings");
     window.sessionStorage.clear();
     installSession();
-    FakeUploadRequest.requests = [];
-    ControlledFileReader.readers = [];
     vi.stubGlobal(
       "matchMedia",
       vi.fn().mockReturnValue({
@@ -245,10 +122,6 @@ describe("owner site settings", () => {
         return window.setTimeout(() => callback(0), 0);
       }),
     );
-    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
-    vi.stubGlobal("URL", URL);
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:avatar-preview");
-    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -262,16 +135,18 @@ describe("owner site settings", () => {
     installFetch();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<App />);
-    await screen.findByRole("heading", { name: "站点身份" });
+    await screen.findByRole("heading", { name: "网站" });
     await waitForRestoreStatus();
+    expect(screen.queryByLabelText(/站点标题/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/选择站点头像/)).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText(/站点时区/), {
+    fireEvent.change(screen.getByLabelText(/^时区/), {
       target: { value: "Mars/Olympus" },
     });
     fireEvent.change(screen.getByLabelText(/公开站点地址/), {
       target: { value: "https://owner@example.com/path?secret=1" },
     });
-    expect(screen.getByText(/请输入有效的 IANA 时区/)).toBeInTheDocument();
+    expect(screen.getByText(/请输入有效的时区/)).toBeInTheDocument();
     expect(screen.getByText(/不要包含账号、查询或片段/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存设置" })).toBeDisabled();
 
@@ -303,28 +178,36 @@ describe("owner site settings", () => {
       return json({}, 404);
     });
     render(<App />);
-    await screen.findByRole("heading", { name: "站点身份" });
+    await screen.findByRole("heading", { name: "网站" });
     await waitForRestoreStatus();
 
-    fireEvent.change(screen.getByLabelText(/站点标题/), {
-      target: { value: "雨天手记" },
+    fireEvent.change(screen.getByLabelText(/公开站点地址/), {
+      target: { value: "https://diary.example.com" },
     });
     fireEvent.click(screen.getByRole("switch", { name: /允许新评论/ }));
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
     expect(
       await screen.findByText(/当前更改仍保留，可以安全重试/),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/站点标题/)).toHaveValue("雨天手记");
+    expect(screen.getByLabelText(/公开站点地址/)).toHaveValue(
+      "https://diary.example.com",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
-    expect(
-      await screen.findByText("设置已保存，公开站点身份已更新。"),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("设置已保存。")).toBeInTheDocument();
     expect(bodies).toEqual([
-      { title: "雨天手记", comments_enabled: false },
-      { title: "雨天手记", comments_enabled: false },
+      {
+        public_base_url: "https://diary.example.com",
+        comments_enabled: false,
+      },
+      {
+        public_base_url: "https://diary.example.com",
+        comments_enabled: false,
+      },
     ]);
-    expect(screen.getAllByText("雨天手记").length).toBeGreaterThan(1);
+    expect(screen.getByLabelText(/公开站点地址/)).toHaveValue(
+      "https://diary.example.com",
+    );
   });
 
   it("rebases edits made during a pending save and accepts IPv6 loopback URLs", async () => {
@@ -351,12 +234,9 @@ describe("owner site settings", () => {
       return json({}, 404);
     });
     render(<App />);
-    await screen.findByRole("heading", { name: "站点身份" });
+    await screen.findByRole("heading", { name: "网站" });
     await waitForRestoreStatus();
 
-    fireEvent.change(screen.getByLabelText(/站点标题/), {
-      target: { value: "提交中的标题" },
-    });
     fireEvent.change(screen.getByLabelText(/公开站点地址/), {
       target: { value: "http://[::1]:8080/memory" },
     });
@@ -364,15 +244,14 @@ describe("owner site settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
     await screen.findByText("正在保存站点设置…");
 
-    fireEvent.change(screen.getByLabelText(/站点标题/), {
-      target: { value: "保存期间继续写的标题" },
+    fireEvent.change(screen.getByLabelText(/^时区/), {
+      target: { value: "Asia/Tokyo" },
     });
     await act(async () => {
       resolveFirstPatch?.(
         json({
           data: {
             ...siteEnvelope().data,
-            title: "提交中的标题",
             public_base_url: "http://[::1]:8080/memory",
           },
           meta: { request_id: "req_saved_first" },
@@ -383,102 +262,16 @@ describe("owner site settings", () => {
     expect(
       await screen.findByText("之前提交的设置已保存；新的更改仍待保存。"),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/站点标题/)).toHaveValue(
-      "保存期间继续写的标题",
-    );
+    expect(screen.getByLabelText(/^时区/)).toHaveValue("Asia/Tokyo");
     expect(screen.getByRole("button", { name: "保存设置" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
-    await screen.findByText("设置已保存，公开站点身份已更新。");
+    await screen.findByText("设置已保存。");
     expect(bodies).toEqual([
       {
-        title: "提交中的标题",
         public_base_url: "http://[::1]:8080/memory",
       },
-      { title: "保存期间继续写的标题" },
+      { timezone: "Asia/Tokyo" },
     ]);
-  });
-
-  it("keeps a failed avatar separate, then saves a managed avatar or explicit removal", async () => {
-    const bodies: Record<string, unknown>[] = [];
-    installFetch(async (url, init) => {
-      if (url === "/api/v1/site") return json(siteEnvelope());
-      if (url === "/api/v1/owner/status") return json(statusEnvelope());
-      if (url === "/api/v1/owner/site" && init?.method === "PATCH") {
-        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-        bodies.push(body);
-        return json({
-          data: { ...siteEnvelope().data, ...body },
-          meta: { request_id: "req_saved" },
-        });
-      }
-      return json({}, 404);
-    });
-    render(<App />);
-    await screen.findByRole("heading", { name: "站点身份" });
-    await waitForRestoreStatus();
-
-    const file = new File(["png"], "avatar.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("选择站点头像"), {
-      target: { files: [file] },
-    });
-    expect(FakeUploadRequest.requests).toHaveLength(1);
-    FakeUploadRequest.requests[0].fail();
-    expect(await screen.findByText(/其他资料仍可单独保存/)).toBeInTheDocument();
-
-    fireEvent.change(screen.getByLabelText(/简介/), {
-      target: { value: "头像稍后再试" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
-    await screen.findByText("资料已保存；头像仍待重试或移除。");
-    expect(bodies[0]).toEqual({ bio: "头像稍后再试" });
-
-    fireEvent.click(screen.getByRole("button", { name: "重试头像" }));
-    FakeUploadRequest.requests[1].succeed();
-    await screen.findByText("头像已上传，保存设置后才会公开使用。");
-    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
-    await waitFor(() =>
-      expect(bodies.at(-1)).toEqual({ avatar_media_id: newAvatarID }),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "移除头像" }));
-    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
-    await waitFor(() =>
-      expect(bodies.at(-1)).toEqual({ avatar_media_id: null }),
-    );
-  });
-
-  it("uses CSP-safe data previews and cancels an upload without losing other edits", async () => {
-    vi.stubGlobal("FileReader", ControlledFileReader);
-    const createObjectURL = vi.spyOn(URL, "createObjectURL");
-    installFetch();
-    render(<App />);
-    await screen.findByRole("heading", { name: "站点身份" });
-    await waitForRestoreStatus();
-
-    fireEvent.change(screen.getByLabelText(/简介/), {
-      target: { value: "这段简介仍需保存" },
-    });
-    const file = new File(["png"], "avatar.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("选择站点头像"), {
-      target: { files: [file] },
-    });
-    expect(
-      screen.getByText("正在读取本地预览；头像上传已同时开始。"),
-    ).toBeInTheDocument();
-    expect(createObjectURL).not.toHaveBeenCalled();
-    expect(FakeUploadRequest.requests).toHaveLength(1);
-
-    act(() => ControlledFileReader.readers[0].fail());
-    expect(screen.getByText(/本地预览无法显示/)).toBeInTheDocument();
-    const picker = screen.getByRole("button", { name: "正在上传…" });
-    fireEvent.click(screen.getByRole("button", { name: "取消上传" }));
-    expect(FakeUploadRequest.requests[0].aborted).toBe(true);
-    await waitFor(() => expect(picker).toHaveFocus());
-    expect(screen.getByLabelText(/简介/)).toHaveValue("这段简介仍需保存");
-    expect(
-      screen.getByText("头像上传已取消，其他更改仍保留。"),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "保存设置" })).toBeEnabled();
   });
 
   it("keeps unsaved values visible when the owner session expires", async () => {
@@ -491,17 +284,17 @@ describe("owner site settings", () => {
       return json({}, 404);
     });
     render(<App />);
-    await screen.findByRole("heading", { name: "站点身份" });
+    await screen.findByRole("heading", { name: "网站" });
     await waitForRestoreStatus();
-    fireEvent.change(screen.getByLabelText(/站点标题/), {
-      target: { value: "仍在输入中的标题" },
+    fireEvent.change(screen.getByLabelText(/^时区/), {
+      target: { value: "Asia/Tokyo" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
 
     expect(
       await screen.findByText(/会话已过期。更改仍保留/),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText(/站点标题/)).toHaveValue("仍在输入中的标题");
+    expect(screen.getByLabelText(/^时区/)).toHaveValue("Asia/Tokyo");
     expect(
       screen.getByRole("heading", { name: "重新登录" }),
     ).toBeInTheDocument();
@@ -531,23 +324,23 @@ describe("owner site settings", () => {
       return json({}, 404);
     });
     render(<App />);
-    await screen.findByRole("heading", { name: "访问凭据" });
+    await screen.findByRole("heading", { name: "登录与安全" });
     await waitForRestoreStatus();
 
-    const trigger = screen.getByRole("button", { name: "轮换凭据" });
+    const trigger = screen.getByRole("button", { name: "更换密钥" });
     trigger.focus();
     fireEvent.click(trigger);
     fireEvent.click(await screen.findByRole("button", { name: "保留" }));
     await waitFor(() => expect(trigger).toHaveFocus());
 
     fireEvent.click(trigger);
-    fireEvent.click(await screen.findByRole("button", { name: "确认轮换" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认更换" }));
     expect(await screen.findByText("one-time-owner-token")).toBeInTheDocument();
     expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
     expect(window.localStorage.getItem("one-time-owner-token")).toBeNull();
     expect(window.location.href).not.toContain("one-time-owner-token");
 
-    fireEvent.click(screen.getByRole("button", { name: "复制新凭据" }));
+    fireEvent.click(screen.getByRole("button", { name: "复制登录密钥" }));
     await waitFor(() =>
       expect(clipboard.writeText).toHaveBeenCalledWith("one-time-owner-token"),
     );
@@ -576,11 +369,11 @@ describe("owner site settings", () => {
         return json({}, 404);
       });
       render(<App />);
-      await screen.findByRole("heading", { name: "访问凭据" });
+      await screen.findByRole("heading", { name: "登录与安全" });
       await waitForRestoreStatus();
 
-      fireEvent.click(screen.getByRole("button", { name: "轮换凭据" }));
-      fireEvent.click(await screen.findByRole("button", { name: "确认轮换" }));
+      fireEvent.click(screen.getByRole("button", { name: "更换密钥" }));
+      fireEvent.click(await screen.findByRole("button", { name: "确认更换" }));
 
       expect(
         await screen.findByRole("heading", { name: "不要再次从浏览器轮换" }),
@@ -591,7 +384,7 @@ describe("owner site settings", () => {
         ),
       ).toBeInTheDocument();
       expect(
-        screen.queryByRole("button", { name: "轮换凭据" }),
+        screen.queryByRole("button", { name: "更换密钥" }),
       ).not.toBeInTheDocument();
       expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
       expect(
@@ -615,10 +408,10 @@ describe("owner site settings", () => {
         return json({}, 404);
       });
       render(<App />);
-      await screen.findByRole("heading", { name: "访问凭据" });
+      await screen.findByRole("heading", { name: "登录与安全" });
       await waitForRestoreStatus();
-      fireEvent.click(screen.getByRole("button", { name: "轮换凭据" }));
-      fireEvent.click(await screen.findByRole("button", { name: "确认轮换" }));
+      fireEvent.click(screen.getByRole("button", { name: "更换密钥" }));
+      fireEvent.click(await screen.findByRole("button", { name: "确认更换" }));
 
       expect(await screen.findByText(message)).toBeInTheDocument();
       expect(

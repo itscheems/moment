@@ -194,9 +194,7 @@ describe("App shell and public routes", () => {
     unmount();
     window.history.replaceState({}, "", "/archive?state=error");
     render(<App />);
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "归档链接无效",
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("归档链接无效");
   });
 
   it("opens display controls from More and persists color and background", async () => {
@@ -246,6 +244,9 @@ describe("App shell and public routes", () => {
       }),
     ).toBeInTheDocument();
     expect(await screen.findByText("个人资料里的 Moment")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "乔乔的 Moment" }),
+    ).toBeInTheDocument();
     expect(
       screen.getAllByRole("link", { name: "个人资料" })[0],
     ).toHaveAttribute("aria-current", "page");

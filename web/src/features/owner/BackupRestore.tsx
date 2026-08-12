@@ -71,7 +71,7 @@ function importError(error: unknown, operation: "plan" | "restore"): string {
     case "CANCELLED":
       return "预检上传已取消，当前站点没有改变。";
     case "API_RESPONSE_INVALID":
-      return "服务器响应无法安全确认。不要重复恢复，请查询权威状态。";
+      return "服务器响应无法确认。不要再次恢复，请检查恢复状态。";
     default:
       return operation === "plan"
         ? "预检没有完成。当前站点没有改变，可以安全重试。"
@@ -88,71 +88,70 @@ function statusCopy(status: ImportStatus): {
   switch (status.phase) {
     case "claimed":
       return {
-        eyebrow: "Restore claimed",
+        eyebrow: "准备恢复",
         title: "服务器已接管恢复",
         detail: "正在重新校验预检绑定，当前站点尚未切换。",
         tone: "working",
       };
     case "backing_up":
       return {
-        eyebrow: "Automatic backup",
+        eyebrow: "自动备份",
         title: "正在备份当前站点",
         detail: "只有自动备份验证完成，恢复才会继续。",
         tone: "working",
       };
     case "finalizing":
       return {
-        eyebrow: "Staging verified",
-        title: "正在准备新一代数据",
+        eyebrow: "准备数据",
+        title: "正在准备恢复数据",
         detail: "预检内容已经重新验证，当前站点仍在使用。",
         tone: "working",
       };
     case "switching":
       return {
-        eyebrow: "Maintenance",
+        eyebrow: "切换数据",
         title: "正在切换活动数据",
         detail: "短暂维护期间不要提交其他写操作，本页会查询服务器状态。",
         tone: "working",
       };
     case "verifying":
       return {
-        eyebrow: "Readiness check",
+        eyebrow: "验证数据",
         title: "正在验证恢复后的站点",
         detail: "只有新数据通过就绪检查，本页才会报告成功。",
         tone: "working",
       };
     case "rolling_back":
       return {
-        eyebrow: "Automatic recovery",
+        eyebrow: "自动回退",
         title: "正在尝试恢复原站点",
-        detail: "新数据没有通过验证，服务器正在核对并恢复先前一代。",
+        detail: "新数据没有通过验证，服务器正在核对并恢复先前数据。",
         tone: "warning",
       };
     case "succeeded":
       return {
-        eyebrow: "Restore complete",
+        eyebrow: "恢复完成",
         title: "备份已恢复并通过就绪检查",
-        detail:
-          "自动 pre-import 备份已验证。重新载入页面可读取恢复后的站点身份与内容。",
+        detail: "恢复前自动备份已验证。重新加载页面即可查看恢复后的内容。",
         tone: "success",
       };
     case "failed":
       return {
-        eyebrow: "Stopped before switch",
+        eyebrow: "恢复停止",
         title: "恢复在切换前停止",
         detail: "旧数据仍是活动数据。修复错误后，从预检重新开始。",
         tone: "warning",
       };
     case "rolled_back":
       return {
-        eyebrow: "Rollback verified",
+        eyebrow: "已恢复原数据",
         title: "已自动恢复原站点",
         detail: "新数据未通过就绪检查，原数据已经重新启用并验证。",
         tone: "warning",
       };
     case "needs_attention":
       return {
-        eyebrow: "Operator action required",
+        eyebrow: "需要人工处理",
         title: "恢复状态需要人工处理",
         detail:
           "服务器无法证明旧数据或新数据处于安全终态。停止写入并运行 moment doctor --deep --json。",
@@ -275,7 +274,7 @@ export function BackupRestore({
               );
             } else {
               setRestoreError(
-                "服务器记录已经切换到另一项恢复。本页不会把它归为本次提交；正在跟随当前权威操作。",
+                "服务器记录已经切换到另一项恢复。本页不会把它归为本次提交；正在跟随当前恢复。",
               );
             }
             if (activePhases.has(next.phase)) {
@@ -456,7 +455,7 @@ export function BackupRestore({
       anchor.remove();
       setExportState("complete");
       setExportNotice(
-        "已请求下载。大备份由浏览器流式处理；请在浏览器下载列表确认进度、完成状态与保存位置。",
+        "已请求下载。请在浏览器下载列表确认进度、完成状态与保存位置。",
       );
     } catch {
       setExportState("failed");
@@ -619,7 +618,7 @@ export function BackupRestore({
         setRestoreError(
           baseline.phase === "needs_attention"
             ? "服务器仍有需要人工处理的恢复状态，本文件尚未上传。先完成主机侧恢复处置。"
-            : "检测到另一项恢复正在进行，本文件尚未上传。正在跟随该操作的权威状态。",
+            : "检测到另一项恢复正在进行，本文件尚未上传。正在跟随当前恢复状态。",
         );
         if (activePhases.has(baseline.phase)) {
           void queryStatus(revision, baseline.operationId);
@@ -667,7 +666,7 @@ export function BackupRestore({
       expireIfInvalidSession(error);
       setRestoreState("running");
       setRestoreError(
-        "恢复响应没有确认权威终态。不会重新提交文件；正在查询服务器保存的权威状态。",
+        "恢复结果尚未确认。不会重新提交文件；正在查询服务器保存的恢复状态。",
       );
       void queryStatus(revision, null, restoreBaselineRef.current);
     }
@@ -698,14 +697,9 @@ export function BackupRestore({
   return (
     <div className={styles.portableFlow}>
       <div className={styles.portableStep}>
-        <div className={styles.stepMarker} aria-hidden="true">
-          01
-        </div>
         <div>
           <h3>导出完整站点</h3>
-          <p>
-            包含站点资料、Moment、访客评论与受引用原图；不包含认证凭据、浏览器草稿和预览缓存。
-          </p>
+          <p>包含资料、Moment、回应和图片，不包含登录密钥与浏览器草稿。</p>
           <button
             aria-busy={exportState === "running"}
             className={styles.secondaryButton}
@@ -729,14 +723,9 @@ export function BackupRestore({
       </div>
 
       <div className={styles.portableStep}>
-        <div className={styles.stepMarker} aria-hidden="true">
-          02
-        </div>
         <div>
-          <h3>先做非破坏预检</h3>
-          <p>
-            选择文件只会上传并验证内容，不会替换当前站点。文件名与本地路径不会写入地址或状态记录。
-          </p>
+          <h3>检查备份</h3>
+          <p>选择文件会先检查内容，不会立即替换当前网站。</p>
           <div className={styles.inlineActions}>
             <button
               className={styles.secondaryButton}
@@ -796,10 +785,10 @@ export function BackupRestore({
               />
               <p aria-live="polite" className={styles.dataNotice}>
                 {planProgress === null
-                  ? "正在流式上传并预检…"
+                  ? "正在上传并检查…"
                   : planProgress < 100
-                    ? `正在上传并预检… ${planProgress}%`
-                    : "上传完成，正在校验内容与磁盘估算…"}
+                    ? `正在上传并检查… ${planProgress}%`
+                    : "上传完成，正在检查内容与所需空间…"}
               </p>
             </>
           ) : null}
@@ -815,14 +804,17 @@ export function BackupRestore({
         <div className={styles.restorePreview}>
           <header>
             <div>
-              <p>已验证的替换预览</p>
+              <p>备份检查完成</p>
               <h3>恢复前影响清单</h3>
             </div>
-            <span>格式 v{plan.formatVersion}</span>
           </header>
-          <p className={styles.archiveHash}>
-            SHA-256 <code>{plan.archiveSHA256}</code>
-          </p>
+          <details className={styles.technicalDetails}>
+            <summary>技术信息</summary>
+            <p className={styles.archiveHash}>
+              格式 v{plan.formatVersion} · SHA-256{" "}
+              <code>{plan.archiveSHA256}</code>
+            </p>
+          </details>
           <div className={styles.impactColumns}>
             <section aria-labelledby="incoming-impact">
               <h4 id="incoming-impact">将导入</h4>
@@ -880,7 +872,7 @@ export function BackupRestore({
             </section>
           </div>
           <section aria-labelledby="disk-impact" className={styles.diskLedger}>
-            <h4 id="disk-impact">峰值磁盘预算</h4>
+            <h4 id="disk-impact">恢复所需空间</h4>
             <dl>
               <div>
                 <dt>上传包</dt>
@@ -895,7 +887,7 @@ export function BackupRestore({
                 <dd>{formatBytes(plan.disk.stagingBytes)}</dd>
               </div>
               <div>
-                <dt>自动 pre-import 备份</dt>
+                <dt>自动恢复前备份</dt>
                 <dd>{formatBytes(plan.disk.preImportBackupBytes)}</dd>
               </div>
               <div>
@@ -937,7 +929,7 @@ export function BackupRestore({
           <div className={styles.backupPromise}>
             <strong>提交前会自动备份当前数据</strong>
             <p>
-              自动备份验证失败时不会切换站点；切换后仍需通过新一代就绪检查。
+              自动备份验证失败时不会替换当前站点；恢复后的数据也必须通过检查。
             </p>
           </div>
           {settingsBlocked ? (
@@ -973,10 +965,6 @@ export function BackupRestore({
                     {plan.replacement.counts.media}{" "}
                     个媒体记录。服务器会先自动备份当前数据。
                   </Dialog.Description>
-                  <div className={styles.dialogImpact}>
-                    <span>预检 SHA-256</span>
-                    <code>{plan.archiveSHA256}</code>
-                  </div>
                   <div className={styles.dialogActions}>
                     <Dialog.Close className={styles.secondaryButton}>
                       返回检查
@@ -1013,7 +1001,7 @@ export function BackupRestore({
           ref={statusRef}
           tabIndex={-1}
         >
-          <p>{currentStatus?.eyebrow ?? "Authoritative status"}</p>
+          <p>{currentStatus?.eyebrow ?? "恢复状态"}</p>
           <h3>{currentStatus?.title ?? "正在确认服务器状态"}</h3>
           <span>
             {currentStatus?.detail ??
@@ -1040,20 +1028,23 @@ export function BackupRestore({
             </p>
           ) : null}
           {status?.phase === "needs_attention" ? (
-            <dl className={styles.operatorFacts}>
-              <div>
-                <dt>操作</dt>
-                <dd>{status.operationId}</dd>
-              </div>
-              <div>
-                <dt>错误码</dt>
-                <dd>{status.errorCode}</dd>
-              </div>
-              <div>
-                <dt>当前 generation</dt>
-                <dd>{status.activeGeneration}</dd>
-              </div>
-            </dl>
+            <details className={styles.technicalDetails}>
+              <summary>技术信息</summary>
+              <dl className={styles.operatorFacts}>
+                <div>
+                  <dt>操作</dt>
+                  <dd>{status.operationId}</dd>
+                </div>
+                <div>
+                  <dt>错误码</dt>
+                  <dd>{status.errorCode}</dd>
+                </div>
+                <div>
+                  <dt>当前数据版本</dt>
+                  <dd>{status.activeGeneration}</dd>
+                </div>
+              </dl>
+            </details>
           ) : null}
           <div className={styles.inlineActions}>
             {restoreState === "running" ||

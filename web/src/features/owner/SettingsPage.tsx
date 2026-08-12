@@ -1,11 +1,4 @@
-import {
-  type ChangeEvent,
-  type FormEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   OwnerStatus,
@@ -14,7 +7,6 @@ import type {
 } from "../../api/owner";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
-import { fileValidation } from "../media/mediaState";
 import { BackupRestore } from "./BackupRestore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { OwnerLogin } from "./OwnerLogin";
@@ -33,8 +25,6 @@ const commonTimezones = [
 ];
 
 interface SettingsForm {
-  title: string;
-  bio: string;
   timezone: string;
   publicBaseUrl: string;
   commentsEnabled: boolean;
@@ -45,13 +35,8 @@ interface FieldErrors {
   publicBaseUrl?: string;
 }
 
-type AvatarState = "idle" | "uploading" | "ready" | "failed";
-type AvatarPreviewState = "idle" | "reading" | "ready" | "failed";
-
 function formFromSite(site: SiteIdentity): SettingsForm {
   return {
-    title: site.title,
-    bio: site.bio,
     timezone: site.timezone,
     publicBaseUrl: site.publicBaseUrl ?? "",
     commentsEnabled: site.commentsEnabled,
@@ -77,7 +62,7 @@ function validateForm(form: SettingsForm): FieldErrors {
     }
     new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format();
   } catch {
-    errors.timezone = "请输入有效的 IANA 时区，例如 Asia/Shanghai。";
+    errors.timezone = "请输入有效的时区，例如 Asia/Shanghai。";
   }
 
   const publicBaseUrl = normalizedPublicBaseUrl(form.publicBaseUrl);
@@ -110,12 +95,8 @@ function validateForm(form: SettingsForm): FieldErrors {
 function changedSiteFields(
   form: SettingsForm,
   baseline: SiteIdentity,
-  avatarMediaId: string | null,
-  includeAvatar: boolean,
 ): SiteSettingsUpdate {
   const update: SiteSettingsUpdate = {};
-  if (form.title !== baseline.title) update.title = form.title;
-  if (form.bio !== baseline.bio) update.bio = form.bio;
   if (form.timezone.trim() !== baseline.timezone) {
     update.timezone = form.timezone.trim();
   }
@@ -125,9 +106,6 @@ function changedSiteFields(
   }
   if (form.commentsEnabled !== baseline.commentsEnabled) {
     update.commentsEnabled = form.commentsEnabled;
-  }
-  if (includeAvatar && avatarMediaId !== baseline.avatarMediaId) {
-    update.avatarMediaId = avatarMediaId;
   }
   return update;
 }
@@ -143,8 +121,6 @@ function rebaseEditedForm(
 ): SettingsForm {
   const confirmed = formFromSite(saved);
   return {
-    title: latest.title === submitted.title ? confirmed.title : latest.title,
-    bio: latest.bio === submitted.bio ? confirmed.bio : latest.bio,
     timezone:
       latest.timezone === submitted.timezone
         ? confirmed.timezone
@@ -193,12 +169,6 @@ function formatInstant(value: string | null, timezone: string): string {
   }
 }
 
-function avatarURL(mediaId: string | null): string | null {
-  return mediaId
-    ? `/api/v1/media/${encodeURIComponent(mediaId)}/preview`
-    : null;
-}
-
 export function SettingsPage({
   site,
   onSaved,
@@ -226,22 +196,7 @@ export function SettingsPage({
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
-  const [avatarMediaId, setAvatarMediaId] = useState(site.avatarMediaId);
-  const [avatarPreview, setAvatarPreview] = useState(
-    avatarURL(site.avatarMediaId),
-  );
-  const [avatarFile, setAvatarFile] = useState<File | null>(null);
-  const [avatarState, setAvatarState] = useState<AvatarState>("idle");
-  const [avatarPreviewState, setAvatarPreviewState] =
-    useState<AvatarPreviewState>("idle");
-  const [avatarProgress, setAvatarProgress] = useState(0);
-  const [avatarError, setAvatarError] = useState<string | null>(null);
   const [dataRestoreBusy, setDataRestoreBusy] = useState(true);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const pickerButtonRef = useRef<HTMLButtonElement>(null);
-  const previewReaderRef = useRef<FileReader | null>(null);
-  const avatarUploadRef = useRef<AbortController | null>(null);
-  const avatarRevisionRef = useRef(0);
   const formRef = useRef(form);
   const formRevisionRef = useRef(0);
   const mountedRef = useRef(true);
@@ -249,33 +204,18 @@ export function SettingsPage({
   const allowLeaveRef = useRef(false);
 
   const validation = useMemo(() => validateForm(form), [form]);
-  const avatarAttemptPending = avatarFile !== null && avatarState !== "ready";
-  const update = changedSiteFields(
-    form,
-    baseline,
-    avatarMediaId,
-    !avatarAttemptPending,
-  );
-  const dirty = hasFields(update) || avatarAttemptPending;
+  const update = changedSiteFields(form, baseline);
+  const dirty = hasFields(update);
   const canSave =
     hasFields(update) &&
     Object.keys(validation).length === 0 &&
     !savePending &&
-    avatarState !== "uploading" &&
     !dataRestoreBusy &&
     session !== null;
-
-  const cancelPreviewRead = () => {
-    const reader = previewReaderRef.current;
-    previewReaderRef.current = null;
-    if (reader?.readyState === FileReader.LOADING) reader.abort();
-  };
 
   useEffect(
     () => () => {
       mountedRef.current = false;
-      avatarUploadRef.current?.abort();
-      cancelPreviewRead();
     },
     [],
   );
@@ -344,136 +284,16 @@ export function SettingsPage({
     setSaveNotice("有尚未保存的更改。");
   };
 
-  const uploadAvatar = async (file: File) => {
-    if (!session || dataRestoreBusy) return;
-    avatarUploadRef.current?.abort();
-    const controller = new AbortController();
-    avatarUploadRef.current = controller;
-    setAvatarState("uploading");
-    setAvatarProgress(0);
-    setAvatarError(null);
-    setSaveNotice("正在准备受管头像…");
-    try {
-      const uploaded = await api.uploadMedia(
-        session.csrfToken,
-        file,
-        (progress) => {
-          if (mountedRef.current && avatarUploadRef.current === controller) {
-            setAvatarProgress(progress);
-          }
-        },
-        controller.signal,
-      );
-      if (!mountedRef.current || avatarUploadRef.current !== controller) return;
-      cancelPreviewRead();
-      setAvatarMediaId(uploaded.id);
-      setAvatarPreview(uploaded.previewUrl);
-      setAvatarState("ready");
-      setAvatarPreviewState("idle");
-      setAvatarProgress(100);
-      setSaveNotice("头像已上传，保存设置后才会公开使用。");
-    } catch (error) {
-      if (!mountedRef.current || controller.signal.aborted) return;
-      expireIfInvalidSession(error);
-      setAvatarState("failed");
-      setAvatarError(
-        error instanceof PublicApiError &&
-          error.code === "MEDIA_TYPE_UNSUPPORTED"
-          ? "服务器不支持这张图片的格式，请换一张。"
-          : "头像没有上传完成。其他资料仍可单独保存，也可以重试头像。",
-      );
-      setSaveNotice("头像仍待处理。");
-    }
-  };
-
-  const selectAvatar = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0] ?? null;
-    event.currentTarget.value = "";
-    if (!file || dataRestoreBusy) return;
-    const error = fileValidation(file, []);
-    if (error) {
-      setAvatarError(error);
-      setAvatarState("failed");
-      return;
-    }
-    avatarRevisionRef.current += 1;
-    cancelPreviewRead();
-    const reader = new FileReader();
-    previewReaderRef.current = reader;
-    setAvatarFile(file);
-    setAvatarPreviewState("reading");
-    setAvatarError(null);
-    reader.addEventListener("load", () => {
-      if (!mountedRef.current || previewReaderRef.current !== reader) return;
-      previewReaderRef.current = null;
-      if (
-        typeof reader.result === "string" &&
-        reader.result.startsWith("data:image/")
-      ) {
-        setAvatarPreview(reader.result);
-        setAvatarPreviewState("ready");
-      } else {
-        setAvatarPreviewState("failed");
-      }
-    });
-    reader.addEventListener("error", () => {
-      if (!mountedRef.current || previewReaderRef.current !== reader) return;
-      previewReaderRef.current = null;
-      setAvatarPreviewState("failed");
-    });
-    reader.readAsDataURL(file);
-    void uploadAvatar(file);
-  };
-
-  const cancelAvatarUpload = () => {
-    avatarRevisionRef.current += 1;
-    avatarUploadRef.current?.abort();
-    avatarUploadRef.current = null;
-    cancelPreviewRead();
-    setAvatarFile(null);
-    setAvatarMediaId(baseline.avatarMediaId);
-    setAvatarPreview(avatarURL(baseline.avatarMediaId));
-    setAvatarState("idle");
-    setAvatarPreviewState("idle");
-    setAvatarProgress(0);
-    setAvatarError(null);
-    setSaveNotice("头像上传已取消，其他更改仍保留。");
-    window.requestAnimationFrame(() => pickerButtonRef.current?.focus());
-  };
-
-  const removeAvatar = () => {
-    if (dataRestoreBusy) return;
-    avatarRevisionRef.current += 1;
-    avatarUploadRef.current?.abort();
-    avatarUploadRef.current = null;
-    cancelPreviewRead();
-    setAvatarFile(null);
-    setAvatarMediaId(null);
-    setAvatarPreview(null);
-    setAvatarState("idle");
-    setAvatarPreviewState("idle");
-    setAvatarProgress(0);
-    setAvatarError(null);
-    setSaveError(null);
-    setSaveNotice("头像将在保存后移除。");
-  };
-
   const save = async (event: FormEvent) => {
     event.preventDefault();
     if (dataRestoreBusy) return;
     const errors = validateForm(form);
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0 || !canSave || !session) return;
-    const submitted = changedSiteFields(
-      form,
-      baseline,
-      avatarMediaId,
-      !avatarAttemptPending,
-    );
+    const submitted = changedSiteFields(form, baseline);
     if (!hasFields(submitted)) return;
     const submittedForm = formRef.current;
     const submittedFormRevision = formRevisionRef.current;
-    const submittedAvatarRevision = avatarRevisionRef.current;
     setSavePending(true);
     setSaveError(null);
     setSaveNotice("正在保存站点设置…");
@@ -489,27 +309,11 @@ export function SettingsPage({
       setBaseline(next);
       formRef.current = nextForm;
       setForm(nextForm);
-      if (
-        submitted.avatarMediaId !== undefined &&
-        avatarRevisionRef.current === submittedAvatarRevision
-      ) {
-        cancelPreviewRead();
-        setAvatarFile(null);
-        setAvatarMediaId(next.avatarMediaId);
-        setAvatarPreview(avatarURL(next.avatarMediaId));
-        setAvatarState("idle");
-        setAvatarPreviewState("idle");
-        setAvatarProgress(0);
-        setAvatarError(null);
-      }
       setFieldErrors({});
       setSaveNotice(
-        editedWhileSaving ||
-          avatarRevisionRef.current !== submittedAvatarRevision
+        editedWhileSaving
           ? "之前提交的设置已保存；新的更改仍待保存。"
-          : avatarAttemptPending
-            ? "资料已保存；头像仍待重试或移除。"
-            : "设置已保存，公开站点身份已更新。",
+          : "设置已保存。",
       );
       onSaved(next);
     } catch (error) {
@@ -524,7 +328,7 @@ export function SettingsPage({
         if (field === "timezone") {
           setFieldErrors((current) => ({
             ...current,
-            timezone: "这个时区未被服务器接受，请使用有效的 IANA 名称。",
+            timezone: "这个时区不可用，请选择其他时区。",
           }));
         }
         if (field === "public_base_url") {
@@ -602,8 +406,6 @@ export function SettingsPage({
     navigation.navigate("/owner/login?return=/owner/settings");
   };
 
-  const title = form.title.trim() || "Moment";
-  const avatarFallback = Array.from(title)[0]?.toLocaleUpperCase() ?? "M";
   const effectiveErrors: FieldErrors = {
     timezone: validation.timezone ?? fieldErrors.timezone,
     publicBaseUrl: validation.publicBaseUrl ?? fieldErrors.publicBaseUrl,
@@ -611,37 +413,12 @@ export function SettingsPage({
 
   return (
     <div className={styles.settingsPage}>
-      <section aria-label="当前身份预览" className={styles.identityProof}>
-        <div className={styles.identityMark}>
-          {avatarPreview ? (
-            <img alt="" decoding="async" src={avatarPreview} />
-          ) : (
-            <span aria-hidden="true">{avatarFallback}</span>
-          )}
-        </div>
-        <div className={styles.identityCopy}>
-          <p>公开身份预览</p>
-          <h2>{title}</h2>
-          <span>{form.bio.trim() || "未填写简介"}</span>
-        </div>
-        <dl className={styles.identityCoordinates}>
-          <div>
-            <dt>时区</dt>
-            <dd>{form.timezone.trim() || "UTC"}</dd>
-          </div>
-          <div>
-            <dt>公开地址</dt>
-            <dd>{form.publicBaseUrl.trim() || "尚未设置"}</dd>
-          </div>
-        </dl>
-      </section>
-
       <div className={styles.settingsLayout}>
         <nav aria-label="设置分区" className={styles.settingsNav}>
-          <a href="#identity">站点身份</a>
-          <a href="#conversation">访客互动</a>
-          <a href="#access">访问凭据</a>
-          <a href="#data">备份与恢复</a>
+          <a href="#identity">网站</a>
+          <a href="#conversation">回应</a>
+          <a href="#access">登录与安全</a>
+          <a href="#data">备份</a>
         </nav>
 
         <div className={styles.settingsContent}>
@@ -653,134 +430,12 @@ export function SettingsPage({
           >
             <section aria-labelledby="identity-title" id="identity">
               <header className={styles.sectionHeader}>
-                <div>
-                  <p>公开资料</p>
-                  <h2 id="identity-title">站点身份</h2>
-                </div>
-                <span>公开可见</span>
+                <h2 id="identity-title">网站</h2>
               </header>
 
-              <div className={styles.avatarEditor}>
-                <div className={styles.avatarPreview}>
-                  {avatarPreview ? (
-                    <img alt="当前头像预览" src={avatarPreview} />
-                  ) : (
-                    <span aria-hidden="true">{avatarFallback}</span>
-                  )}
-                </div>
-                <div>
-                  <strong>头像</strong>
-                  <p>上传后由 Moment 管理原图与预览，不接受远程图片地址。</p>
-                  <div className={styles.inlineActions}>
-                    <button
-                      className={styles.secondaryButton}
-                      disabled={
-                        !session ||
-                        avatarState === "uploading" ||
-                        dataRestoreBusy
-                      }
-                      onClick={() => fileInputRef.current?.click()}
-                      ref={pickerButtonRef}
-                      type="button"
-                    >
-                      {avatarState === "uploading" ? "正在上传…" : "选择图片"}
-                    </button>
-                    {avatarPreview || baseline.avatarMediaId ? (
-                      <button
-                        className={styles.quietButton}
-                        disabled={
-                          !session ||
-                          avatarState === "uploading" ||
-                          dataRestoreBusy
-                        }
-                        onClick={removeAvatar}
-                        type="button"
-                      >
-                        移除头像
-                      </button>
-                    ) : null}
-                    {avatarState === "failed" && avatarFile ? (
-                      <button
-                        className={styles.quietButton}
-                        disabled={!session || dataRestoreBusy}
-                        onClick={() => void uploadAvatar(avatarFile)}
-                        type="button"
-                      >
-                        重试头像
-                      </button>
-                    ) : null}
-                    {avatarState === "uploading" ? (
-                      <button
-                        className={styles.quietButton}
-                        disabled={dataRestoreBusy}
-                        onClick={cancelAvatarUpload}
-                        type="button"
-                      >
-                        取消上传
-                      </button>
-                    ) : null}
-                  </div>
-                  <input
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    aria-label="选择站点头像"
-                    disabled={
-                      !session || avatarState === "uploading" || dataRestoreBusy
-                    }
-                    onChange={selectAvatar}
-                    ref={fileInputRef}
-                    tabIndex={-1}
-                    type="file"
-                  />
-                  {avatarState === "uploading" ? (
-                    <progress
-                      aria-label="头像上传进度"
-                      max="100"
-                      value={avatarProgress}
-                    />
-                  ) : null}
-                  {avatarPreviewState === "reading" ? (
-                    <p aria-live="polite" className={styles.previewNotice}>
-                      正在读取本地预览；头像上传已同时开始。
-                    </p>
-                  ) : avatarPreviewState === "failed" ? (
-                    <p className={styles.fieldError} role="alert">
-                      本地预览无法显示；上传仍会继续，完成后将使用受管预览。
-                    </p>
-                  ) : null}
-                  {avatarError ? (
-                    <p className={styles.fieldError} role="alert">
-                      {avatarError}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-
               <div className={styles.fieldGrid}>
-                <label className={styles.fullField}>
-                  <span>站点标题</span>
-                  <input
-                    disabled={dataRestoreBusy}
-                    maxLength={120}
-                    onChange={(event) =>
-                      updateForm("title", event.target.value)
-                    }
-                    value={form.title}
-                  />
-                  <small>显示在站点导航、时间流署名与浏览器标题中。</small>
-                </label>
-                <label className={styles.fullField}>
-                  <span>简介</span>
-                  <textarea
-                    disabled={dataRestoreBusy}
-                    maxLength={500}
-                    onChange={(event) => updateForm("bio", event.target.value)}
-                    rows={3}
-                    value={form.bio}
-                  />
-                  <small>显示在个人资料页和头像资料卡中。</small>
-                </label>
                 <label>
-                  <span>站点时区</span>
+                  <span>时区</span>
                   <input
                     aria-describedby={
                       effectiveErrors.timezone ? "timezone-error" : undefined
@@ -804,7 +459,7 @@ export function SettingsPage({
                       {effectiveErrors.timezone}
                     </small>
                   ) : (
-                    <small>日期归档与公开时间会按此 IANA 时区解释。</small>
+                    <small>用于显示时间和归档日期。</small>
                   )}
                 </label>
                 <label>
@@ -831,9 +486,7 @@ export function SettingsPage({
                       {effectiveErrors.publicBaseUrl}
                     </small>
                   ) : (
-                    <small>
-                      用于规范链接与分享卡片；留空会安全省略绝对地址。
-                    </small>
+                    <small>用于分享链接；留空时使用当前网站地址。</small>
                   )}
                 </label>
               </div>
@@ -841,10 +494,7 @@ export function SettingsPage({
 
             <section aria-labelledby="conversation-title" id="conversation">
               <header className={styles.sectionHeader}>
-                <div>
-                  <p>评论设置</p>
-                  <h2 id="conversation-title">访客互动</h2>
-                </div>
+                <h2 id="conversation-title">回应</h2>
               </header>
               <label className={styles.toggleRow}>
                 <span>
@@ -892,11 +542,7 @@ export function SettingsPage({
 
           <section aria-labelledby="access-title" id="access">
             <header className={styles.sectionHeader}>
-              <div>
-                <p>所有者访问</p>
-                <h2 id="access-title">访问凭据</h2>
-              </div>
-              <span>私密</span>
+              <h2 id="access-title">登录与安全</h2>
             </header>
             {statusPending ? (
               <p aria-busy="true">正在读取认证状态…</p>
@@ -912,36 +558,37 @@ export function SettingsPage({
                 </button>
               </div>
             ) : status ? (
-              <dl className={styles.authFacts}>
-                <div>
-                  <dt>所有者认证</dt>
-                  <dd>{status.initialized ? "已初始化" : "未初始化"}</dd>
-                </div>
-                <div>
-                  <dt>会话代次</dt>
-                  <dd>{status.sessionEpoch}</dd>
-                </div>
-                <div>
-                  <dt>当前会话到期</dt>
-                  <dd>
-                    {formatInstant(session?.expiresAt ?? null, form.timezone)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>最近轮换</dt>
-                  <dd>{formatInstant(status.rotatedAt, form.timezone)}</dd>
-                </div>
-              </dl>
+              <>
+                <dl className={styles.authFacts}>
+                  <div>
+                    <dt>登录状态</dt>
+                    <dd>{status.initialized ? "已初始化" : "未初始化"}</dd>
+                  </div>
+                  <div>
+                    <dt>当前登录到期</dt>
+                    <dd>
+                      {formatInstant(session?.expiresAt ?? null, form.timezone)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>最近轮换</dt>
+                    <dd>{formatInstant(status.rotatedAt, form.timezone)}</dd>
+                  </div>
+                </dl>
+                <details className={styles.technicalDetails}>
+                  <summary>技术信息</summary>
+                  <p>登录版本 {status.sessionEpoch}</p>
+                </details>
+              </>
             ) : null}
 
             {rotated ? (
               <div className={styles.oneTimeCredential} role="status">
                 <p>只显示这一次</p>
-                <h3>新的所有者凭据已经生成</h3>
+                <h3>新的登录密钥已经生成</h3>
                 <code>{rotated.token}</code>
                 <p>
-                  立即复制到密码管理器或安全文件。旧凭据和所有旧 Web
-                  会话已经撤销，包括当前页面的会话。
+                  立即复制到密码管理器或安全文件。旧登录密钥和全部已登录浏览器已经失效，包括当前页面。
                 </p>
                 <div className={styles.inlineActions}>
                   <button
@@ -949,7 +596,7 @@ export function SettingsPage({
                     onClick={() => void copyToken()}
                     type="button"
                   >
-                    复制新凭据
+                    复制登录密钥
                   </button>
                   <button
                     className={styles.secondaryButton}
@@ -963,8 +610,8 @@ export function SettingsPage({
                   {copyState === "copied"
                     ? "已复制。请确认密码管理器或安全文件中能够找回。"
                     : copyState === "failed"
-                      ? "浏览器未允许复制。请手动选择上方凭据并保存。"
-                      : "离开本页后，Moment 不会再次显示这段凭据。"}
+                      ? "浏览器未允许复制。请手动选择上方密钥并保存。"
+                      : "离开本页后，Moment 不会再次显示这段密钥。"}
                 </p>
               </div>
             ) : rotationOutcomeUnknown ? (
@@ -972,11 +619,11 @@ export function SettingsPage({
                 <p>结果无法确认</p>
                 <h3>不要再次从浏览器轮换</h3>
                 <p>
-                  请求可能已在服务器完成，但响应没有被完整确认。当前页面已清除可能失效的会话，也不会提供重复轮换入口。
+                  请求可能已在服务器完成，但结果尚未确认。当前页面已退出登录，也不会重复更换密钥。
                 </p>
                 <p>
                   先停止 Moment
-                  服务，在实例主机离线运行以下命令；立即保存它只显示一次的新凭据，再回来重新登录。
+                  服务，在实例主机离线运行以下命令；立即保存只显示一次的新密钥，再回来重新登录。
                 </p>
                 <code>
                   {"moment owner rotate-token --data-dir <数据目录> --json"}
@@ -992,19 +639,18 @@ export function SettingsPage({
             ) : (
               <div className={styles.rotationRow}>
                 <div>
-                  <strong>轮换所有者凭据</strong>
+                  <strong>更换登录密钥</strong>
                   <p>
-                    轮换会立即撤销旧 bearer 凭据和全部 Web
-                    会话。新凭据只返回一次，必须先安全保存再重新登录。
+                    更换后，旧密钥和全部已登录浏览器会立即失效。新密钥只显示一次，请保存后再重新登录。
                   </p>
                 </div>
                 <ConfirmDialog
-                  confirmLabel="确认轮换"
+                  confirmLabel="确认更换"
                   danger
-                  description="继续后，旧凭据与所有已登录浏览器会立即失效，当前页面也需要使用新凭据重新登录。新凭据只显示一次。"
+                  description="继续后，旧密钥与所有已登录浏览器会立即失效，当前页面也需要使用新密钥重新登录。新密钥只显示一次。"
                   onConfirm={rotate}
                   pending={rotationPending}
-                  title="轮换所有者凭据？"
+                  title="更换登录密钥？"
                   trigger={
                     <button
                       className={styles.dangerButton}
@@ -1013,7 +659,7 @@ export function SettingsPage({
                       }
                       type="button"
                     >
-                      轮换凭据
+                      更换密钥
                     </button>
                   }
                 />
@@ -1031,21 +677,12 @@ export function SettingsPage({
 
           <section aria-labelledby="data-title" id="data">
             <header className={styles.sectionHeader}>
-              <div>
-                <p>站点数据</p>
-                <h2 id="data-title">备份与恢复</h2>
-              </div>
-              <span>仅所有者</span>
+              <h2 id="data-title">备份与恢复</h2>
             </header>
             <BackupRestore
               onRestoreBusyChange={setDataRestoreBusy}
               settingsBlocked={
-                dirty ||
-                savePending ||
-                avatarAttemptPending ||
-                avatarPreviewState === "reading" ||
-                rotationPending ||
-                rotated !== null
+                dirty || savePending || rotationPending || rotated !== null
               }
             />
           </section>

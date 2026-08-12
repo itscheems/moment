@@ -278,7 +278,11 @@ export function AppShell({
             )}
             <div>
               <p>{route.eyebrow}</p>
-              <h1>{route.title}</h1>
+              <h1>
+                {route.id === "profile"
+                  ? site.title.trim() || "Moment"
+                  : route.title}
+              </h1>
             </div>
             {route.id !== "detail" && route.id !== "owner-edit" ? (
               <span className={styles.headerTheme}>

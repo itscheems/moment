@@ -303,17 +303,13 @@ describe("owner backup and restore", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "备份与恢复" });
     await waitFor(() => expect(resolveInitial).toBeTypeOf("function"));
-    expect(screen.getByLabelText(/站点标题/)).toBeDisabled();
-    expect(screen.getByRole("button", { name: "选择图片" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "轮换凭据" })).toBeDisabled();
+    expect(screen.getByLabelText(/^时区/)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "更换密钥" })).toBeDisabled();
     await act(async () => {
       resolveInitial(failure("IMPORT_STAGING_INVALID", 409));
     });
-    await waitFor(() =>
-      expect(screen.getByLabelText(/站点标题/)).toBeEnabled(),
-    );
-    expect(screen.getByRole("button", { name: "选择图片" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "轮换凭据" })).toBeEnabled();
+    await waitFor(() => expect(screen.getByLabelText(/^时区/)).toBeEnabled());
+    expect(screen.getByRole("button", { name: "更换密钥" })).toBeEnabled();
   });
 
   it("uses native same-origin streaming download once without buffering", async () => {
@@ -359,17 +355,14 @@ describe("owner backup and restore", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "备份与恢复" });
     await screen.findByRole("button", { name: "立即重试状态" });
-    expect(screen.getByLabelText(/站点标题/)).toBeDisabled();
-    expect(screen.getByRole("button", { name: "选择图片" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "轮换凭据" })).toBeDisabled();
+    expect(screen.getByLabelText(/^时区/)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "更换密钥" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "选择备份文件" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "下载整站备份" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "立即重试状态" }),
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText(/站点标题/)).toBeEnabled(),
-    );
+    await waitFor(() => expect(screen.getByLabelText(/^时区/)).toBeEnabled());
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
@@ -385,33 +378,18 @@ describe("owner backup and restore", () => {
     });
     await createPlan(file);
 
-    expect(screen.getByText("格式 v1")).toBeInTheDocument();
-    expect(screen.getByText(/自动 pre-import 备份/)).toBeInTheDocument();
-    expect(screen.getByText("峰值磁盘预算")).toBeInTheDocument();
+    expect(screen.getByText(/格式 v1/)).toBeInTheDocument();
+    expect(screen.getByText(/自动恢复前备份/)).toBeInTheDocument();
+    expect(screen.getByText("恢复所需空间")).toBeInTheDocument();
     expect(screen.getByText(/1 media usages/)).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/站点标题/), {
-      target: { value: "尚未保存的标题" },
+    fireEvent.change(screen.getByLabelText(/^时区/), {
+      target: { value: "Asia/Tokyo" },
     });
     expect(
       screen.getByRole("button", { name: "确认替换当前站点" }),
     ).toBeDisabled();
     expect(screen.getByText(/先保存或放弃当前站点设置/)).toBeInTheDocument();
     expect(ArchiveRequest.requests).toHaveLength(1);
-  });
-
-  it("keeps restore unavailable while an avatar candidate is still pending", async () => {
-    installFetch();
-    await renderSettings();
-    await createPlan(new File(["portable archive"], "backup.zip"));
-    fireEvent.change(screen.getByLabelText("选择站点头像"), {
-      target: {
-        files: [new File(["png"], "avatar.png", { type: "image/png" })],
-      },
-    });
-    expect(
-      screen.getByRole("button", { name: "确认替换当前站点" }),
-    ).toBeDisabled();
-    expect(screen.getByText(/先保存或放弃当前站点设置/)).toBeInTheDocument();
   });
 
   it("blocks restore while a newly rotated credential is visible", async () => {
@@ -434,8 +412,8 @@ describe("owner backup and restore", () => {
     });
     await renderSettings();
     await createPlan(new File(["portable archive"], "backup.zip"));
-    fireEvent.click(screen.getByRole("button", { name: "轮换凭据" }));
-    fireEvent.click(await screen.findByRole("button", { name: "确认轮换" }));
+    fireEvent.click(screen.getByRole("button", { name: "更换密钥" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认更换" }));
     expect(await screen.findByText("one-time-owner-token")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "确认替换当前站点" }),
@@ -511,13 +489,12 @@ describe("owner backup and restore", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认并开始恢复" }));
     await waitFor(() => expect(ArchiveRequest.requests).toHaveLength(2));
     expect(screen.getByText("正在确认服务器状态").closest("div")).toHaveFocus();
-    expect(screen.getByLabelText(/站点标题/)).toBeDisabled();
-    expect(screen.getByRole("button", { name: "选择图片" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "轮换凭据" })).toBeDisabled();
-    fireEvent.change(screen.getByLabelText(/站点标题/), {
-      target: { value: "不能在恢复期间写入" },
+    expect(screen.getByLabelText(/^时区/)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "更换密钥" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/^时区/), {
+      target: { value: "Asia/Tokyo" },
     });
-    expect(screen.getByLabelText(/站点标题/)).toHaveValue("乔乔的 Moment");
+    expect(screen.getByLabelText(/^时区/)).toHaveValue("Asia/Shanghai");
     expect(
       fetcher.mock.calls.some(
         ([url, init]) =>
@@ -543,7 +520,7 @@ describe("owner backup and restore", () => {
     expect(ArchiveRequest.requests).toHaveLength(2);
     expect(window.localStorage.getItem(draftKey)).toBe("draft stays local");
     expect(window.sessionStorage.getItem(sessionKey)).not.toBeNull();
-    expect(screen.getByLabelText(/站点标题/)).toBeDisabled();
+    expect(screen.getByLabelText(/^时区/)).toBeDisabled();
   });
 
   it("refreshes the baseline and ignores it after an ambiguous restore", async () => {
@@ -579,7 +556,7 @@ describe("owner backup and restore", () => {
     await waitFor(() => expect(statusCalls).toBe(2));
     await waitFor(() => expect(ArchiveRequest.requests).toHaveLength(2));
     ArchiveRequest.requests[1].fail();
-    expect(await screen.findByText(/没有确认权威终态/)).toBeInTheDocument();
+    expect(await screen.findByText(/恢复结果尚未确认/)).toBeInTheDocument();
     expect(
       screen.queryByText("备份已恢复并通过就绪检查"),
     ).not.toBeInTheDocument();
@@ -705,9 +682,8 @@ describe("owner backup and restore", () => {
     });
     expect(await screen.findByText(/自动关联已经停止/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "立即重试状态" })).toBeEnabled();
-    expect(screen.getByLabelText(/站点标题/)).toBeDisabled();
-    expect(screen.getByRole("button", { name: "选择图片" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "轮换凭据" })).toBeDisabled();
+    expect(screen.getByLabelText(/^时区/)).toBeDisabled();
+    expect(screen.getByRole("button", { name: "更换密钥" })).toBeDisabled();
     expect(statusCalls).toBe(7);
     expect(ArchiveRequest.requests).toHaveLength(2);
   });

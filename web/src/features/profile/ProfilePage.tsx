@@ -125,7 +125,6 @@ export function ProfilePage({
         </div>
         <nav aria-label="个人资料内容" className={styles.tabs}>
           <span aria-current="page">Moment</span>
-          <InternalLink href="/archive">媒体与归档</InternalLink>
         </nav>
       </div>
 

@@ -46,7 +46,7 @@
 
 .profileActions > button,
 .profileActions > a {
-  min-block-size: 2.25rem;
+  min-block-size: var(--target-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -60,7 +60,7 @@
 }
 
 .profileActions > button {
-  inline-size: 2.25rem;
+  inline-size: var(--target-size);
   padding: 0;
 }
 
@@ -129,8 +129,7 @@
 }
 
 .tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
   margin: var(--space-4) calc(var(--space-4) * -1) 0;
 }
 
@@ -138,6 +137,7 @@
   position: relative;
   min-block-size: 3.25rem;
   display: grid;
+  flex: 1;
   place-items: center;
   color: var(--text-secondary);
   text-decoration: none;

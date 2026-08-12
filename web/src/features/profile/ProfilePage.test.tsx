@@ -93,6 +93,14 @@ describe("profile page", () => {
     await waitFor(() =>
       expect(screen.getAllByText("置顶内容")).toHaveLength(1),
     );
+    expect(
+      screen.getByRole("navigation", { name: "个人资料内容" }),
+    ).toHaveTextContent("Moment");
+    expect(screen.queryByText("媒体与归档")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "查看归档" })).toHaveAttribute(
+      "href",
+      "/archive",
+    );
     expect(screen.getByText("已置顶")).toBeInTheDocument();
     const pinned = screen.getByText("置顶内容").closest("article");
     const normal = screen.getByText("普通内容").closest("article");
