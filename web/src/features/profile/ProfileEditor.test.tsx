@@ -26,6 +26,7 @@ const site: SiteIdentity = {
   pinnedPostId: null,
   commentsEnabled: true,
   instanceId: null,
+  instanceInitializedAt: null,
 };
 
 function json(body: unknown, status = 200): Response {

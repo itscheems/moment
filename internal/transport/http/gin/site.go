@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"time"
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
@@ -16,14 +17,14 @@ import (
 
 // RegisterSiteRoutes installs the public settings read and owner-only partial
 // mutation over one application service.
-func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, manager *auth.Manager, instanceID string) {
-	engine.GET("/api/v1/site", getSiteSettings(service, instanceID))
+func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, manager *auth.Manager, instanceID string, instanceInitializedAt time.Time) {
+	engine.GET("/api/v1/site", getSiteSettings(service, instanceID, instanceInitializedAt))
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
 	owner.PATCH("/site", updateSiteSettings(service))
 }
 
-func getSiteSettings(service *app.SiteService, instanceID string) gin.HandlerFunc {
+func getSiteSettings(service *app.SiteService, instanceID string, instanceInitializedAt time.Time) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		settings, err := service.Get(ctx.Request.Context())
 		if err != nil {
@@ -33,6 +34,9 @@ func getSiteSettings(service *app.SiteService, instanceID string) gin.HandlerFun
 		meta := map[string]any{}
 		if instanceID != "" {
 			meta["instance_id"] = instanceID
+			if !instanceInitializedAt.IsZero() {
+				meta["instance_initialized_at"] = instanceInitializedAt.UTC().Format(time.RFC3339Nano)
+			}
 		}
 		Success(ctx, http.StatusOK, settings, meta)
 	}

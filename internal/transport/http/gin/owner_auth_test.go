@@ -16,11 +16,12 @@ import (
 )
 
 type ownerTestFixture struct {
-	manager    *auth.Manager
-	token      string
-	engine     http.Handler
-	now        *time.Time
-	instanceID string
+	manager               *auth.Manager
+	token                 string
+	engine                http.Handler
+	now                   *time.Time
+	instanceID            string
+	instanceInitializedAt string
 }
 
 func newOwnerTestFixture(t *testing.T, secure bool) ownerTestFixture {

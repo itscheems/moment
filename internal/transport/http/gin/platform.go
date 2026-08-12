@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
@@ -38,27 +39,28 @@ type BodyLimits struct {
 // Config composes the reusable HTTP platform. Register is transport-only and
 // may add feature handlers without exposing Gin to application/domain code.
 type Config struct {
-	Assets          fs.FS
-	Readiness       ReadinessFunc
-	OwnerAuth       *auth.Manager
-	SiteSettings    *app.SiteService
-	InstanceID      string
-	Posts           *app.PostService
-	Comments        *app.CommentService
-	Search          *app.SearchService
-	ShareMetadata   *app.ShareMetadataService
-	CommentLimiter  CommentRateLimiter
-	Media           *media.Store
-	Archive         ArchiveExporter
-	ImportInspector ImportInspector
-	ImportCommitter ImportCommitter
-	Doctor          DoctorReporter
-	SecureCookies   bool
-	TrustedProxies  []string
-	RequestID       func() string
-	Log             LogFunc
-	Limits          BodyLimits
-	Register        func(*gin.Engine)
+	Assets                fs.FS
+	Readiness             ReadinessFunc
+	OwnerAuth             *auth.Manager
+	SiteSettings          *app.SiteService
+	InstanceID            string
+	InstanceInitializedAt time.Time
+	Posts                 *app.PostService
+	Comments              *app.CommentService
+	Search                *app.SearchService
+	ShareMetadata         *app.ShareMetadataService
+	CommentLimiter        CommentRateLimiter
+	Media                 *media.Store
+	Archive               ArchiveExporter
+	ImportInspector       ImportInspector
+	ImportCommitter       ImportCommitter
+	Doctor                DoctorReporter
+	SecureCookies         bool
+	TrustedProxies        []string
+	RequestID             func() string
+	Log                   LogFunc
+	Limits                BodyLimits
+	Register              func(*gin.Engine)
 }
 
 const (
@@ -124,7 +126,7 @@ func New(config Config) (*gin.Engine, error) {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("site settings routes require owner authentication")
 		}
-		RegisterSiteRoutes(engine, config.SiteSettings, config.OwnerAuth, config.InstanceID)
+		RegisterSiteRoutes(engine, config.SiteSettings, config.OwnerAuth, config.InstanceID, config.InstanceInitializedAt)
 	}
 	if config.Media != nil {
 		if config.OwnerAuth == nil {

@@ -32,6 +32,7 @@ const fallbackSite: SiteIdentity = {
   pinnedPostId: null,
   commentsEnabled: true,
   instanceId: null,
+  instanceInitializedAt: null,
 };
 
 function detailId(pathname: string): string {

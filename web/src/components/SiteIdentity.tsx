@@ -2,6 +2,12 @@ import type { SiteIdentity } from "../api/public";
 
 import styles from "./SiteIdentity.module.css";
 
+export function siteHandle(site: SiteIdentity): string {
+  const title = site.title.trim() || "Moment";
+  const compact = title.normalize("NFKC").replace(/\s+/g, "").slice(0, 24);
+  return `@${compact.toLowerCase() || "moment"}`;
+}
+
 export function SiteAvatar({
   site,
   eager = false,

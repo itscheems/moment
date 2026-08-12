@@ -71,7 +71,11 @@ export function OwnerPostActions({
       const updated = pinned
         ? await api.unpinPost(session.csrfToken, post.id)
         : await api.pinPost(session.csrfToken, post.id);
-      onSiteChanged?.({ ...updated, instanceId: site.instanceId });
+      onSiteChanged?.({
+        ...updated,
+        instanceId: site.instanceId,
+        instanceInitializedAt: site.instanceInitializedAt,
+      });
       setPinOpen(false);
       notify(pinned ? "已取消置顶" : "已置顶到个人资料");
     } catch (nextError) {

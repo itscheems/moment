@@ -8,10 +8,18 @@ import {
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
 import { Icon } from "../../components/icons";
-import { SiteAvatar, SiteCover } from "../../components/SiteIdentity";
-import { ShareMenu } from "../../components/TimelineInteractions";
+import {
+  SiteAvatar,
+  SiteCover,
+  siteHandle,
+} from "../../components/SiteIdentity";
+import {
+  ExactTimeTooltip,
+  ShareMenu,
+} from "../../components/TimelineInteractions";
 import { useOwner } from "../owner/OwnerProvider";
 import { PostPresentation } from "../posts/PostPresentation";
+import { formatMomentDate } from "../posts/dates";
 import { PublicError, TimelineLoading } from "../timeline/PublicStates";
 import styles from "./ProfilePage.module.css";
 import { ProfileEditor } from "./ProfileEditor";
@@ -34,6 +42,17 @@ export function ProfilePage({
   const [error, setError] = useState<unknown>(null);
   const active = useRef<AbortController | null>(null);
   const title = site.title.trim() || "Moment";
+  const handle = siteHandle(site);
+  const initialized = site.instanceInitializedAt
+    ? formatMomentDate(site.instanceInitializedAt, site.timezone)
+    : null;
+  const joined = site.instanceInitializedAt
+    ? new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "long",
+        timeZone: site.timezone,
+      }).format(new Date(site.instanceInitializedAt))
+    : null;
 
   const load = useCallback(async () => {
     active.current?.abort();
@@ -120,11 +139,20 @@ export function ProfilePage({
           ) : null}
         </div>
         <h2>{title}</h2>
+        <p className={styles.handle}>{handle}</p>
         {site.bio.trim() ? <p>{site.bio.trim()}</p> : null}
         <div className={styles.profileMeta}>
-          <span>
-            <Icon name="archive" /> {site.timezone}
-          </span>
+          {initialized && joined && site.instanceInitializedAt ? (
+            <ExactTimeTooltip
+              exact={initialized.absolute}
+              children={
+                <time dateTime={site.instanceInitializedAt}>
+                  <Icon name="archive" /> {joined}加入
+                </time>
+              }
+            />
+          ) : null}
+          <span>{site.timezone}</span>
           <InternalLink href="/archive">查看归档</InternalLink>
         </div>
         <nav aria-label="个人资料内容" className={styles.tabs}>

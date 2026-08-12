@@ -101,17 +101,21 @@ func newSiteHTTPFixture(t *testing.T) (ownerTestFixture, *httpSiteTransactions) 
 		t.Fatal(err)
 	}
 	engine, err := New(Config{
-		Assets:       testAssets(),
-		OwnerAuth:    manager,
-		SiteSettings: service,
-		InstanceID:   runtimeState.Instance.ID,
-		Readiness:    service.Ready,
-		RequestID:    func() string { return "req_site" },
+		Assets:                testAssets(),
+		OwnerAuth:             manager,
+		SiteSettings:          service,
+		InstanceID:            runtimeState.Instance.ID,
+		InstanceInitializedAt: runtimeState.Instance.InitializedAt,
+		Readiness:             service.Ready,
+		RequestID:             func() string { return "req_site" },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ownerTestFixture{manager: manager, token: credential.Token, engine: engine, now: &now, instanceID: runtimeState.Instance.ID}, transactions
+	return ownerTestFixture{
+		manager: manager, token: credential.Token, engine: engine, now: &now,
+		instanceID: runtimeState.Instance.ID, instanceInitializedAt: runtimeState.Instance.InitializedAt.UTC().Format(time.RFC3339Nano),
+	}, transactions
 }
 
 func TestSitePublicReadAndOwnerPatchTriState(t *testing.T) {
@@ -134,7 +138,7 @@ func TestSitePublicReadAndOwnerPatchTriState(t *testing.T) {
 	if data["title"] != "Moment" || data["timezone"] != "UTC" || data["sha256"] != nil || data["storage_path"] != nil {
 		t.Fatalf("public data = %#v", data)
 	}
-	if publicEnvelope.Meta["instance_id"] != fixture.instanceID || publicEnvelope.Meta["request_id"] != "req_site" {
+	if publicEnvelope.Meta["instance_id"] != fixture.instanceID || publicEnvelope.Meta["instance_initialized_at"] != fixture.instanceInitializedAt || publicEnvelope.Meta["request_id"] != "req_site" {
 		t.Fatalf("public meta = %#v", publicEnvelope.Meta)
 	}
 

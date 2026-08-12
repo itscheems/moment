@@ -97,6 +97,11 @@
   line-height: 1.2;
 }
 
+.identity .handle {
+  margin-block-start: var(--space-1);
+  color: var(--text-secondary);
+}
+
 .identity > p {
   margin-block-start: var(--space-3);
   line-height: 1.5;
@@ -113,6 +118,7 @@
 }
 
 .profileMeta span,
+.profileMeta time,
 .profileMeta a {
   display: inline-flex;
   align-items: center;
@@ -126,6 +132,10 @@
 
 .profileMeta a {
   color: var(--accent);
+}
+
+.profileMeta time {
+  cursor: default;
 }
 
 .tabs {

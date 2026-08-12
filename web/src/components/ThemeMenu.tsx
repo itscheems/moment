@@ -9,18 +9,16 @@ import {
   type ThemePreference,
 } from "../theme/ThemeProvider";
 import { Icon } from "./icons";
-import { SiteAvatar } from "./SiteIdentity";
+import { SiteAvatar, siteHandle } from "./SiteIdentity";
 import styles from "./ThemeMenu.module.css";
 
 const backgrounds: Array<{
   value: ThemePreference;
   label: string;
-  preview: string;
 }> = [
-  { value: "system", label: "跟随系统", preview: "系统" },
-  { value: "light", label: "浅色", preview: "Aa" },
-  { value: "dim", label: "柔和深色", preview: "Aa" },
-  { value: "lights-out", label: "纯黑", preview: "Aa" },
+  { value: "system", label: "默认" },
+  { value: "dim", label: "柔和深色" },
+  { value: "lights-out", label: "纯黑" },
 ];
 
 const accents: Array<{ value: AccentPreference; label: string }> = [
@@ -32,11 +30,20 @@ const accents: Array<{ value: AccentPreference; label: string }> = [
   { value: "green", label: "绿色" },
 ];
 
+function backgroundSelected(
+  preference: ThemePreference,
+  option: ThemePreference,
+): boolean {
+  return option === "system"
+    ? preference === "system" || preference === "light"
+    : preference === option;
+}
+
 export function ThemeMenu({ site }: { site: SiteIdentity }) {
   const { accent, preference, setAccent, setPreference } = useTheme();
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const title = site.title.trim() || "Moment";
-  const previewHandle = `@${title.replace(/\s+/g, "").slice(0, 24) || "moment"}`;
+  const previewHandle = siteHandle(site);
 
   return (
     <>
@@ -128,7 +135,11 @@ export function ThemeMenu({ site }: { site: SiteIdentity }) {
                 <div className={styles.backgroundGrid}>
                   {backgrounds.map((option) => (
                     <button
-                      aria-pressed={preference === option.value}
+                      aria-label={option.label}
+                      aria-pressed={backgroundSelected(
+                        preference,
+                        option.value,
+                      )}
                       className={styles.backgroundChoice}
                       data-background-choice={option.value}
                       key={option.value}
@@ -136,12 +147,11 @@ export function ThemeMenu({ site }: { site: SiteIdentity }) {
                       type="button"
                     >
                       <span className={styles.radioMark}>
-                        {preference === option.value ? "●" : ""}
+                        {backgroundSelected(preference, option.value)
+                          ? "✓"
+                          : ""}
                       </span>
-                      <span>
-                        <strong>{option.label}</strong>
-                        <small aria-hidden="true">{option.preview}</small>
-                      </span>
+                      <strong>{option.label}</strong>
                     </button>
                   ))}
                 </div>

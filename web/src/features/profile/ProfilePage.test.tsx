@@ -21,6 +21,7 @@ const site: SiteIdentity = {
   pinnedPostId: pinnedId,
   commentsEnabled: true,
   instanceId: null,
+  instanceInitializedAt: "2026-08-01T09:08:00Z",
 };
 
 function post(id: string, text: string) {
@@ -98,6 +99,11 @@ describe("profile page", () => {
       screen.getByRole("navigation", { name: "个人资料内容" }),
     ).toHaveTextContent("Moment");
     expect(screen.queryByText("媒体与归档")).not.toBeInTheDocument();
+    expect(screen.getByText("@moment")).toBeInTheDocument();
+    expect(screen.getByText("2026年8月加入")).toHaveAttribute(
+      "datetime",
+      site.instanceInitializedAt,
+    );
     expect(screen.getByRole("link", { name: "查看归档" })).toHaveAttribute(
       "href",
       "/archive",

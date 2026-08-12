@@ -300,7 +300,11 @@ export function SettingsPage({
     try {
       const saved = await api.updateSite(session.csrfToken, submitted);
       if (!mountedRef.current) return;
-      const next = { ...saved, instanceId: baseline.instanceId };
+      const next = {
+        ...saved,
+        instanceId: baseline.instanceId,
+        instanceInitializedAt: baseline.instanceInitializedAt,
+      };
       const editedWhileSaving =
         formRevisionRef.current !== submittedFormRevision;
       const nextForm = editedWhileSaving

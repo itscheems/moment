@@ -135,7 +135,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 		return fail(err)
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
-		Assets: host.assets, OwnerAuth: host.auth, SiteSettings: siteService, InstanceID: runtimeState.Instance.ID,
+		Assets: host.assets, OwnerAuth: host.auth, SiteSettings: siteService, InstanceID: runtimeState.Instance.ID, InstanceInitializedAt: runtimeState.Instance.InitializedAt,
 		Media: mediaStore, Posts: postService, Comments: commentService, Search: searchService,
 		ShareMetadata: shareMetadata, Archive: host.exporter, ImportInspector: inspector, ImportCommitter: host.committer, Doctor: doctorService,
 		SecureCookies: host.secureCookies, TrustedProxies: host.trustedProxies, Log: host.log,

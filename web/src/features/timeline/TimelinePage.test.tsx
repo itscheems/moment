@@ -22,6 +22,7 @@ const site: SiteIdentity = {
   pinnedPostId: null,
   commentsEnabled: true,
   instanceId: null,
+  instanceInitializedAt: null,
 };
 
 function post(id: string, content: string) {

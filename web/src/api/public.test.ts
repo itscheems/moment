@@ -179,6 +179,7 @@ describe("public API client", () => {
           },
           meta: {
             instance_id: "0123456789abcdef0123456789abcdef",
+            instance_initialized_at: "2026-08-01T09:08:00Z",
             request_id: "req_site",
           },
         });
@@ -194,6 +195,7 @@ describe("public API client", () => {
       title: "乔乔的 Moment",
       timezone: "Asia/Shanghai",
       instanceId: "0123456789abcdef0123456789abcdef",
+      instanceInitializedAt: "2026-08-01T09:08:00Z",
     });
     await expect(
       api.timeline({ cursor: "opaque+/=cursor", from: "2026-08-01" }),
@@ -433,7 +435,10 @@ describe("public API client", () => {
         }),
       ) as typeof fetch,
     );
-    await expect(api.site()).resolves.toMatchObject({ instanceId: null });
+    await expect(api.site()).resolves.toMatchObject({
+      instanceId: null,
+      instanceInitializedAt: null,
+    });
   });
 
   it("rejects a forged or malformed runtime instance ID", async () => {
@@ -451,6 +456,35 @@ describe("public API client", () => {
             comments_enabled: true,
           },
           meta: { instance_id: "from-host-header" },
+        }),
+      ) as typeof fetch,
+    );
+    await expect(api.site()).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+  });
+
+  it.each([
+    {
+      instance_id: "0123456789abcdef0123456789abcdef",
+      instance_initialized_at: "2026-08-01T09:08:00+00:00",
+    },
+    { instance_initialized_at: "2026-08-01T09:08:00Z" },
+  ])("rejects invalid instance initialization metadata", async (meta) => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            title: "Moment",
+            bio: "",
+            timezone: "UTC",
+            public_base_url: null,
+            avatar_media_id: null,
+            cover_media_id: null,
+            pinned_post_id: null,
+            comments_enabled: true,
+          },
+          meta,
         }),
       ) as typeof fetch,
     );

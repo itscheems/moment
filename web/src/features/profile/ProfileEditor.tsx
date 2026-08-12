@@ -149,7 +149,11 @@ export function ProfileEditor({
     setError(null);
     try {
       const saved = await api.updateSite(session.csrfToken, update);
-      onSaved(saved);
+      onSaved({
+        ...saved,
+        instanceId: site.instanceId,
+        instanceInitializedAt: site.instanceInitializedAt,
+      });
       notify("个人资料已更新");
       setOpen(false);
     } catch (nextError) {

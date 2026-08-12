@@ -1,20 +1,22 @@
 .trigger {
-  min-block-size: var(--target-size);
+  min-block-size: 3.25rem;
   inline-size: 100%;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: 1.15rem;
   border: 0;
   border-radius: 999px;
-  padding: 0 var(--space-3);
+  padding-inline: var(--space-3) var(--space-5);
   color: var(--text-primary);
   background: transparent;
   cursor: pointer;
-  font-size: 1.15rem;
+  font-size: 1.25rem;
+  font-weight: 400;
   transition: background var(--motion-fast) var(--ease-out);
 }
 
 .trigger:hover,
+.trigger:focus-visible,
 .trigger[data-popup-open] {
   background: var(--surface-hover);
 }
@@ -261,15 +263,15 @@
 
 .backgroundGrid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
 .backgroundChoice {
   min-block-size: 4rem;
-  display: grid;
-  grid-template-columns: 1.25rem minmax(0, 1fr);
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: var(--space-2);
   border: 2px solid transparent;
   border-radius: 0.75rem;
@@ -277,22 +279,11 @@
   color: var(--choice-text);
   background: var(--choice-background);
   cursor: pointer;
-  text-align: start;
+  text-align: center;
 }
 
 .backgroundChoice[aria-pressed="true"] {
   border-color: var(--accent);
-}
-
-.backgroundChoice > span:last-child {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-}
-
-.backgroundChoice small {
-  font-size: 1.25rem;
 }
 
 .backgroundChoice[data-background-choice="system"],
@@ -312,8 +303,23 @@
 }
 
 .radioMark {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  display: grid;
+  place-items: center;
+  flex: 0 0 1.25rem;
+  border: 2px solid color-mix(in srgb, currentColor 42%, transparent);
+  border-radius: 50%;
   color: var(--accent);
-  font-size: 0.8rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.backgroundChoice[aria-pressed="true"] .radioMark {
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+  background: var(--accent);
 }
 
 .doneButton {
@@ -405,8 +411,11 @@
     block-size: var(--target-size);
   }
 
-  .backgroundGrid {
-    grid-template-columns: 1fr;
+  .backgroundChoice {
+    min-block-size: 3.75rem;
+    gap: var(--space-1);
+    padding-inline: var(--space-1);
+    font-size: 0.875rem;
   }
 }
 

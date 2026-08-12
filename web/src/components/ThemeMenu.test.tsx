@@ -22,6 +22,7 @@ const site: SiteIdentity = {
   pinnedPostId: null,
   commentsEnabled: true,
   instanceId: null,
+  instanceInitializedAt: null,
 };
 
 afterEach(cleanup);
@@ -53,9 +54,9 @@ describe("ThemeMenu", () => {
     const preview = within(dialog).getByLabelText("显示效果预览");
     expect(within(preview).getByText("Cheems Notes")).toBeInTheDocument();
     expect(
-      within(preview).getByText("@CheemsNotes · 刚刚"),
+      within(preview).getByText("@cheemsnotes · 刚刚"),
     ).toBeInTheDocument();
-    expect(within(preview).getByText("@CheemsNotes")).toBeInTheDocument();
+    expect(within(preview).getByText("@cheemsnotes")).toBeInTheDocument();
     expect(preview.querySelector("img")).toHaveAttribute(
       "src",
       "/api/v1/media/01K2ABCDEF0123456789ABCDEFG/preview",
@@ -67,6 +68,16 @@ describe("ThemeMenu", () => {
       "aria-pressed",
       "true",
     );
+
+    expect(
+      within(dialog).getByRole("button", { name: "默认" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: "柔和深色" }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", { name: /浅色|跟随系统/ }),
+    ).not.toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: /纯黑/ }));
     expect(document.documentElement).toHaveAttribute(

@@ -31,6 +31,7 @@ const site: SiteIdentity = {
   pinnedPostId: null,
   commentsEnabled: true,
   instanceId: null,
+  instanceInitializedAt: null,
 };
 
 function comment(

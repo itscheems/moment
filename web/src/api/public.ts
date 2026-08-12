@@ -8,6 +8,7 @@ export interface SiteIdentity {
   pinnedPostId: string | null;
   commentsEnabled: boolean;
   instanceId: string | null;
+  instanceInitializedAt: string | null;
 }
 
 export interface PublicPost {
@@ -825,6 +826,7 @@ export async function decodeCommentResponse(
 export function parseSiteIdentity(
   data: unknown,
   instanceId: string | null = null,
+  instanceInitializedAt: string | null = null,
 ): SiteIdentity {
   if (!isRecord(data)) throw invalidResponse("site data must be an object");
   if (
@@ -873,6 +875,7 @@ export function parseSiteIdentity(
     pinnedPostId,
     commentsEnabled,
     instanceId,
+    instanceInitializedAt,
   };
 }
 
@@ -890,13 +893,35 @@ export class PublicApi {
     });
     const { data, meta } = await decodeResponse(response);
     const instanceId = meta.instance_id;
+    const instanceInitializedAt = meta.instance_initialized_at;
     if (
       instanceId !== undefined &&
       (typeof instanceId !== "string" || !/^[0-9a-f]{32}$/.test(instanceId))
     ) {
       throw invalidResponse("meta instance_id must be a runtime instance ID");
     }
-    return parseSiteIdentity(data, instanceId ?? null);
+    if (
+      instanceInitializedAt !== undefined &&
+      (typeof instanceInitializedAt !== "string" ||
+        instantField(
+          { instance_initialized_at: instanceInitializedAt },
+          "instance_initialized_at",
+        ) !== instanceInitializedAt)
+    ) {
+      throw invalidResponse(
+        "meta instance_initialized_at must be a UTC instant",
+      );
+    }
+    if (instanceInitializedAt !== undefined && instanceId === undefined) {
+      throw invalidResponse(
+        "meta instance_initialized_at requires instance_id",
+      );
+    }
+    return parseSiteIdentity(
+      data,
+      instanceId ?? null,
+      instanceInitializedAt ?? null,
+    );
   }
 
   async timeline(request: TimelineRequest = {}): Promise<TimelinePage> {
