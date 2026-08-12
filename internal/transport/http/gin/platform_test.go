@@ -64,7 +64,7 @@ func TestHealthReadinessHeadersAndRequestIDs(t *testing.T) {
 	}
 	csp := health.Header().Get("Content-Security-Policy")
 	for _, directive := range []string{
-		"default-src 'self'", "img-src 'self' data:", "script-src 'self'", "connect-src 'self'",
+		"default-src 'self'", "img-src 'self' data: blob:", "script-src 'self'", "connect-src 'self'",
 		"object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "form-action 'self'",
 	} {
 		if !strings.Contains(csp, directive) {

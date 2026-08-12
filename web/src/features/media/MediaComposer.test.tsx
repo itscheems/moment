@@ -146,6 +146,34 @@ describe("media editor", () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
+  it("opens a selected local file through its browser object URL", async () => {
+    render(
+      <FocusHarness
+        initial={[
+          {
+            ...item("00"),
+            file: new File(["image"], "local.png", { type: "image/png" }),
+            localPreviewUrl: "blob:http://localhost/local-original",
+            mediaId: null,
+            previewUrl: "",
+            originalUrl: "",
+            state: "queued",
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "预览第 1 张图片，共 1 张",
+      }),
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "打开原图" }),
+    ).toHaveAttribute("href", "blob:http://localhost/local-original");
+  });
+
   it.each([
     { name: "first", remove: 0, expected: "01" },
     { name: "middle", remove: 1, expected: "02" },

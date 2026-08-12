@@ -26,6 +26,8 @@ import {
   mediaValidation,
   newMediaItem,
   readLocalPreview,
+  releaseDiscardedLocalPreviews,
+  releaseLocalPreview,
   uploadMessage,
   type ComposerMediaItem,
 } from "../media/mediaState";
@@ -161,6 +163,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       !allowLeaveRef.current;
 
     const replaceMedia = (next: ComposerMediaItem[]) => {
+      releaseDiscardedLocalPreviews(mediaItemsRef.current, next);
       mediaItemsRef.current = next;
       setMediaItems(next);
     };
@@ -169,6 +172,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       for (const controller of mediaUploadsRef.current.values())
         controller.abort();
       mediaUploadsRef.current.clear();
+      releaseDiscardedLocalPreviews(mediaItemsRef.current, []);
       mediaItemsRef.current = [];
       setMediaItems([]);
     }, []);
@@ -238,6 +242,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         for (const controller of mediaUploadsRef.current.values())
           controller.abort();
         mediaUploadsRef.current.clear();
+        releaseDiscardedLocalPreviews(mediaItemsRef.current, []);
         mediaItemsRef.current = [];
       },
       [],
@@ -745,6 +750,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                             candidate.file === file,
                         )
                       ) {
+                        releaseLocalPreview(localPreviewUrl);
                         return;
                       }
                       replaceMedia(

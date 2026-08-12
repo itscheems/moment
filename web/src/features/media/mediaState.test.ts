@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ComposerMediaItem } from "./mediaState";
 import {
@@ -9,7 +9,11 @@ import {
   MAX_TOTAL_BYTES,
   mediaInput,
   mediaValidation,
+  readLocalPreview,
+  releaseDiscardedLocalPreviews,
 } from "./mediaState";
+
+afterEach(() => vi.restoreAllMocks());
 
 function item(overrides: Partial<ComposerMediaItem> = {}): ComposerMediaItem {
   return {
@@ -39,6 +43,23 @@ function sizedFile(name: string, type: string, size: number): File {
 }
 
 describe("media composer contract", () => {
+  it("uses a browser object URL for a local original and releases it when discarded", async () => {
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:http://localhost/local-original");
+    const revokeObjectURL = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => undefined);
+    const file = new File(["image"], "local.png", { type: "image/png" });
+
+    const localPreviewUrl = await readLocalPreview(file);
+    expect(createObjectURL).toHaveBeenCalledWith(file);
+    expect(localPreviewUrl).toBe("blob:http://localhost/local-original");
+
+    releaseDiscardedLocalPreviews([item({ file, localPreviewUrl })], []);
+    expect(revokeObjectURL).toHaveBeenCalledWith(localPreviewUrl);
+  });
+
   it("preserves missing, decorative, and provided alt values without trimming", () => {
     const missing = item({ altMode: "missing" });
     const decorative = item({ key: "media-2", altMode: "decorative" });

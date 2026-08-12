@@ -35,6 +35,8 @@ import {
   mediaValidation,
   newMediaItem,
   readLocalPreview,
+  releaseDiscardedLocalPreviews,
+  releaseLocalPreview,
   uploadMessage,
   type ComposerMediaItem,
 } from "../media/mediaState";
@@ -280,6 +282,7 @@ function CommentForm({
     !commentsEnabled;
 
   const replaceMedia = (next: ComposerMediaItem[]) => {
+    releaseDiscardedLocalPreviews(mediaItemsRef.current, next);
     mediaItemsRef.current = next;
     setMediaItems(next);
   };
@@ -289,10 +292,7 @@ function CommentForm({
       mountedRef.current = false;
       for (const controller of mediaUploadsRef.current.values())
         controller.abort();
-      for (const item of mediaItemsRef.current) {
-        if (item.localPreviewUrl?.startsWith("blob:"))
-          URL.revokeObjectURL(item.localPreviewUrl);
-      }
+      releaseDiscardedLocalPreviews(mediaItemsRef.current, []);
     },
     [],
   );
@@ -459,10 +459,6 @@ function CommentForm({
       signatureRef.current = "";
       idempotencyRef.current = "";
       setRetryUntil(0);
-      for (const item of mediaItemsRef.current) {
-        if (item.localPreviewUrl?.startsWith("blob:"))
-          URL.revokeObjectURL(item.localPreviewUrl);
-      }
       replaceMedia([]);
     } catch (nextError) {
       if (mode === "owner" && owner.expireIfInvalidSession(nextError)) {
@@ -675,8 +671,10 @@ function CommentForm({
                       !mediaItemsRef.current.some(
                         (candidate) => candidate.key === item.key,
                       )
-                    )
+                    ) {
+                      releaseLocalPreview(localPreviewUrl);
                       return;
+                    }
                     replaceMedia(
                       mediaItemsRef.current.map((candidate) =>
                         candidate.key === item.key

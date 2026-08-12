@@ -578,7 +578,7 @@ describe("owner composing flow", () => {
     });
   });
 
-  it("renders a CSP-compatible local preview without extending the text draft", async () => {
+  it("renders an openable local preview without extending the text draft", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");
     installApi();
@@ -597,7 +597,7 @@ describe("owner composing flow", () => {
         document.querySelector<HTMLImageElement>(
           'ol[aria-label="待发布图片，按发布顺序"] img',
         )?.src,
-      ).toMatch(/^data:image\/png;base64,/),
+      ).toMatch(/^blob:/),
     );
     await new Promise((resolve) => window.setTimeout(resolve, 550));
     expect(

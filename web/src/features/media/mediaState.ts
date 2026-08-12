@@ -63,16 +63,36 @@ export function newMediaItem(file: File): ComposerMediaItem {
 
 export function readLocalPreview(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") resolve(reader.result);
-      else reject(new Error("local media preview is not a data URL"));
-    });
-    reader.addEventListener("error", () =>
-      reject(reader.error ?? new Error("local media preview failed")),
-    );
-    reader.readAsDataURL(file);
+    try {
+      resolve(URL.createObjectURL(file));
+    } catch (error) {
+      reject(
+        error instanceof Error
+          ? error
+          : new Error("local media preview failed"),
+      );
+    }
   });
+}
+
+export function releaseLocalPreview(url: string | null): void {
+  if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+}
+
+export function releaseDiscardedLocalPreviews(
+  current: ComposerMediaItem[],
+  next: ComposerMediaItem[],
+): void {
+  const retained = new Set(
+    next
+      .map((item) => item.localPreviewUrl)
+      .filter((url): url is string => Boolean(url)),
+  );
+  for (const item of current) {
+    if (item.localPreviewUrl && !retained.has(item.localPreviewUrl)) {
+      releaseLocalPreview(item.localPreviewUrl);
+    }
+  }
 }
 
 export function uploadMessage(error: unknown): string {
