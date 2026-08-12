@@ -114,6 +114,31 @@ describe("media editor", () => {
     expect(screen.getAllByRole("button", { name: /移除/ })[1]).toBeEnabled();
   });
 
+  it("opens attached images in a keyboard-navigable preview and restores focus", async () => {
+    render(<FocusHarness initial={[item("00"), item("01")]} />);
+    const trigger = screen.getByRole("button", {
+      name: "预览第 1 张图片，共 2 张",
+    });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.querySelector("img")).toHaveAttribute(
+      "src",
+      "/api/v1/media/00/preview",
+    );
+    fireEvent.keyDown(dialog, { key: "ArrowRight" });
+    await waitFor(() =>
+      expect(dialog.querySelector("img")).toHaveAttribute(
+        "src",
+        "/api/v1/media/01/preview",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "关闭图片预览" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
   it.each([
     { name: "first", remove: 0, expected: "01" },
     { name: "middle", remove: 1, expected: "02" },

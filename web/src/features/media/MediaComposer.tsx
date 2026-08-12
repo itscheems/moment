@@ -14,7 +14,16 @@ import {
   MAX_MEDIA_COUNT,
   MAX_ALT_CODE_POINTS,
 } from "./mediaState";
+import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import styles from "./Media.module.css";
+
+const MEDIA_EXIT_MS = 170;
+
+function reducedMotionPreferred(): boolean {
+  return Boolean(
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+  );
+}
 
 export function MediaComposer({
   items,
@@ -35,10 +44,59 @@ export function MediaComposer({
 }) {
   const inputId = useId();
   const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [departingItems, setDepartingItems] = useState<
+    { key: string; previewSrc: string | null }[]
+  >([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
   const focusAfterChange = useRef<string | null | undefined>(undefined);
+  const removalTimers = useRef(new Map<string, number>());
+
+  const selectedItemIndex = items.findIndex((item) => item.key === selectedKey);
+  const selectedIndex =
+    selectedKey === null || selectedItemIndex < 0 ? null : selectedItemIndex;
+  const lightboxItems: MediaLightboxItem[] = items.map((item, index) => {
+    const previewSrc = item.localPreviewUrl || item.previewUrl || "";
+    return {
+      key: item.key,
+      previewSrc,
+      originalSrc:
+        item.localPreviewUrl || item.originalUrl || item.previewUrl || null,
+      alt:
+        item.altMode === "provided"
+          ? item.altText
+          : item.altMode === "decorative"
+            ? ""
+            : `未提供图片描述，第 ${index + 1} 张，共 ${items.length} 张`,
+      description:
+        item.altMode === "provided"
+          ? item.altText
+          : item.altMode === "decorative"
+            ? "这是一张明确标记为装饰用途的图片。"
+            : "这张图片尚未填写描述。",
+    };
+  });
+
+  useEffect(
+    () => () => {
+      for (const timer of removalTimers.current.values()) {
+        window.clearTimeout(timer);
+      }
+      removalTimers.current.clear();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (
+      selectedKey !== null &&
+      !items.some((item) => item.key === selectedKey)
+    ) {
+      setSelectedKey(null);
+    }
+  }, [items, selectedKey]);
 
   useEffect(() => {
     if (focusAfterChange.current === undefined) return;
@@ -86,9 +144,30 @@ export function MediaComposer({
   };
 
   const remove = (index: number) => {
+    const item = items[index];
+    if (!item) return;
     focusAfterChange.current =
       items[index + 1]?.key ?? items[index - 1]?.key ?? null;
-    onRemove(items[index].key);
+    if (selectedKey === item.key) setSelectedKey(null);
+    if (!reducedMotionPreferred()) {
+      setDepartingItems((current) => [
+        ...current,
+        {
+          key: item.key,
+          previewSrc: item.localPreviewUrl || item.previewUrl || null,
+        },
+      ]);
+      removalTimers.current.set(
+        item.key,
+        window.setTimeout(() => {
+          removalTimers.current.delete(item.key);
+          setDepartingItems((current) =>
+            current.filter((candidate) => candidate.key !== item.key),
+          );
+        }, MEDIA_EXIT_MS),
+      );
+    }
+    onRemove(item.key);
   };
 
   return (
@@ -105,10 +184,11 @@ export function MediaComposer({
         tabIndex={-1}
         type="file"
       />
-      {items.length > 0 ? (
+      {items.length + departingItems.length > 0 ? (
         <ol
           aria-label="待发布图片，按发布顺序"
           className={styles.mediaEditorList}
+          data-media-count={items.length + departingItems.length}
         >
           {items.map((item, index) => {
             const editorPreviewUrl =
@@ -118,20 +198,23 @@ export function MediaComposer({
               (!item.altText.trim() ||
                 Array.from(item.altText).length > MAX_ALT_CODE_POINTS);
             return (
-              <li key={item.key}>
+              <li className={styles.mediaEditorItem} key={item.key}>
                 <div className={styles.editorPreview}>
-                  {editorPreviewUrl ? (
-                    <img alt="" decoding="async" src={editorPreviewUrl} />
-                  ) : (
-                    <span className={styles.editorPreviewPending}>
-                      正在准备预览
-                    </span>
-                  )}
-                  {items.length > 1 ? (
-                    <span aria-hidden="true" className={styles.editorOrder}>
-                      {index + 1}
-                    </span>
-                  ) : null}
+                  <button
+                    aria-label={`预览第 ${index + 1} 张图片，共 ${items.length} 张`}
+                    className={styles.editorPreviewButton}
+                    disabled={!editorPreviewUrl}
+                    onClick={() => setSelectedKey(item.key)}
+                    type="button"
+                  >
+                    {editorPreviewUrl ? (
+                      <img alt="" decoding="async" src={editorPreviewUrl} />
+                    ) : (
+                      <span className={styles.editorPreviewPending}>
+                        正在准备预览
+                      </span>
+                    )}
+                  </button>
                   <button
                     aria-label={`移除第 ${index + 1} 张图片`}
                     className={styles.editorRemove}
@@ -291,6 +374,21 @@ export function MediaComposer({
               </li>
             );
           })}
+          {departingItems.map((item) => (
+            <li
+              aria-hidden="true"
+              className={`${styles.mediaEditorItem} ${styles.mediaItemRemoving}`}
+              key={`departing-${item.key}`}
+            >
+              <div className={styles.editorPreview}>
+                {item.previewSrc ? (
+                  <img alt="" decoding="async" src={item.previewSrc} />
+                ) : (
+                  <span className={styles.editorPreviewPending} />
+                )}
+              </div>
+            </li>
+          ))}
         </ol>
       ) : null}
       <div className={styles.mediaControls}>
@@ -322,6 +420,13 @@ export function MediaComposer({
           {selectionError}
         </p>
       ) : null}
+      <MediaLightbox
+        items={lightboxItems}
+        onSelectedChange={(index) =>
+          setSelectedKey(index === null ? null : (items[index]?.key ?? null))
+        }
+        selected={selectedIndex}
+      />
     </section>
   );
 }

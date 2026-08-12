@@ -1,0 +1,137 @@
+import { Dialog } from "@base-ui/react/dialog";
+import { useEffect, useState } from "react";
+
+import styles from "./Media.module.css";
+
+export interface MediaLightboxItem {
+  key: string;
+  previewSrc: string;
+  originalSrc?: string | null;
+  alt: string;
+  description: string;
+}
+
+export function MediaLightbox({
+  items,
+  selected,
+  onSelectedChange,
+}: {
+  items: MediaLightboxItem[];
+  selected: number | null;
+  onSelectedChange: (selected: number | null) => void;
+}) {
+  const [original, setOriginal] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const item = selected === null ? null : (items[selected] ?? null);
+
+  useEffect(() => {
+    setOriginal(false);
+    setFailed(false);
+  }, [selected]);
+
+  const select = (next: number) => {
+    if (items.length === 0) return;
+    onSelectedChange((next + items.length) % items.length);
+  };
+
+  const source =
+    original && item?.originalSrc ? item.originalSrc : item?.previewSrc;
+  const canViewOriginal = Boolean(
+    item?.originalSrc && item.originalSrc !== item.previewSrc,
+  );
+
+  return (
+    <Dialog.Root
+      onOpenChange={(open) => {
+        if (!open) onSelectedChange(null);
+      }}
+      open={selected !== null && item !== null}
+    >
+      <Dialog.Portal>
+        <Dialog.Backdrop className={styles.lightboxBackdrop} />
+        <Dialog.Viewport className={styles.lightboxViewport}>
+          <Dialog.Popup
+            className={styles.lightboxPopup}
+            onKeyDown={(event) => {
+              if (items.length < 2) return;
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                select((selected ?? 0) - 1);
+              }
+              if (event.key === "ArrowRight") {
+                event.preventDefault();
+                select((selected ?? 0) + 1);
+              }
+            }}
+          >
+            <Dialog.Title className={styles.srOnly}>
+              图片 {selected === null ? "" : selected + 1} / {items.length}
+            </Dialog.Title>
+            <Dialog.Close
+              aria-label="关闭图片预览"
+              className={styles.lightboxClose}
+            >
+              <span aria-hidden="true">×</span>
+            </Dialog.Close>
+            {items.length > 1 ? (
+              <span aria-live="polite" className={styles.lightboxCounter}>
+                {(selected ?? 0) + 1} / {items.length}
+              </span>
+            ) : null}
+            <div className={styles.lightboxStage}>
+              {item && source && !failed ? (
+                <img
+                  alt={item.alt}
+                  decoding="async"
+                  onError={() => setFailed(true)}
+                  src={source}
+                />
+              ) : (
+                <div className={styles.lightboxFallback} role="alert">
+                  图片暂时无法显示。
+                </div>
+              )}
+              {items.length > 1 ? (
+                <>
+                  <button
+                    aria-label="上一张图片"
+                    className={`${styles.lightboxNav} ${styles.lightboxPrevious}`}
+                    onClick={() => select((selected ?? 0) - 1)}
+                    type="button"
+                  >
+                    <span aria-hidden="true">‹</span>
+                  </button>
+                  <button
+                    aria-label="下一张图片"
+                    className={`${styles.lightboxNav} ${styles.lightboxNext}`}
+                    onClick={() => select((selected ?? 0) + 1)}
+                    type="button"
+                  >
+                    <span aria-hidden="true">›</span>
+                  </button>
+                </>
+              ) : null}
+            </div>
+            <div className={styles.lightboxFooter}>
+              <Dialog.Description className={styles.lightboxDescription}>
+                {item?.description}
+              </Dialog.Description>
+              {canViewOriginal ? (
+                <button
+                  className={styles.lightboxOriginal}
+                  onClick={() => {
+                    setOriginal((value) => !value);
+                    setFailed(false);
+                  }}
+                  type="button"
+                >
+                  {original ? "返回预览" : "查看原图 / 播放 GIF"}
+                </button>
+              ) : null}
+            </div>
+          </Dialog.Popup>
+        </Dialog.Viewport>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}

@@ -23,20 +23,23 @@ function media(count: number): PublicMediaUsage[] {
 }
 
 describe("public image grid", () => {
-  it.each([0, 1, 4, 9])("renders the deliberate %i-image layout", (count) => {
-    const { container } = render(<ImageGrid media={media(count)} />);
-    if (count === 0) {
-      expect(container).toBeEmptyDOMElement();
-      return;
-    }
-    const group = screen.getByRole("group", { name: `${count} 张图片` });
-    expect(group).toHaveAttribute("data-media-count", String(count));
-    expect(group.querySelectorAll("img")).toHaveLength(count);
-    for (const image of group.querySelectorAll("img")) {
-      expect(image).toHaveAttribute("loading", "lazy");
-      expect(image.getAttribute("src")).toMatch(/\/preview$/);
-    }
-  });
+  it.each([0, 1, 2, 3, 4, 9])(
+    "renders the deliberate %i-image layout",
+    (count) => {
+      const { container } = render(<ImageGrid media={media(count)} />);
+      if (count === 0) {
+        expect(container).toBeEmptyDOMElement();
+        return;
+      }
+      const group = screen.getByRole("group", { name: `${count} 张图片` });
+      expect(group).toHaveAttribute("data-media-count", String(count));
+      expect(group.querySelectorAll("img")).toHaveLength(count);
+      for (const image of group.querySelectorAll("img")) {
+        expect(image).toHaveAttribute("loading", "lazy");
+        expect(image.getAttribute("src")).toMatch(/\/preview$/);
+      }
+    },
+  );
 
   it("renders all nullable alt states without disguising missing as decorative", () => {
     render(<ImageGrid media={media(3)} />);

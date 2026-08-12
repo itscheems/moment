@@ -1,7 +1,7 @@
-import { Dialog } from "@base-ui/react/dialog";
 import { useState } from "react";
 
 import type { PublicMediaUsage } from "../../api/public";
+import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import styles from "./Media.module.css";
 
 function mediaAlt(
@@ -67,10 +67,19 @@ function MediaImage({
 export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [failed, setFailed] = useState(() => new Set<string>());
-  const [original, setOriginal] = useState(false);
-  const [lightboxFailed, setLightboxFailed] = useState(false);
   if (media.length === 0) return null;
-  const selectedUsage = selected === null ? null : media[selected];
+  const lightboxItems: MediaLightboxItem[] = media.map((usage, index) => ({
+    key: usageKey(usage),
+    previewSrc: previewUrl(usage.mediaId),
+    originalSrc: originalUrl(usage.mediaId),
+    alt: mediaAlt(usage, index, media.length),
+    description:
+      usage.altText === null
+        ? "这张图片尚未填写描述。"
+        : usage.altText === ""
+          ? "这是一张明确标记为装饰用途的图片。"
+          : usage.altText,
+  }));
 
   const markFailed = (usage: PublicMediaUsage) => {
     setFailed((current) => new Set(current).add(usageKey(usage)));
@@ -89,11 +98,7 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
             aria-label={tileName(usage, index, media.length)}
             className={styles.imageTile}
             key={`${usage.position}-${usage.mediaId}`}
-            onClick={() => {
-              setSelected(index);
-              setOriginal(false);
-              setLightboxFailed(false);
-            }}
+            onClick={() => setSelected(index)}
             type="button"
           >
             {failed.has(usageKey(usage)) ? (
@@ -122,103 +127,11 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
           </button>
         ))}
       </div>
-      <Dialog.Root
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelected(null);
-            setOriginal(false);
-            setLightboxFailed(false);
-          }
-        }}
-        open={selected !== null}
-      >
-        <Dialog.Portal>
-          <Dialog.Backdrop className={styles.lightboxBackdrop} />
-          <Dialog.Viewport className={styles.lightboxViewport}>
-            <Dialog.Popup className={styles.lightboxPopup}>
-              <Dialog.Title className={styles.srOnly}>
-                图片 {selected === null ? "" : selected + 1} / {media.length}
-              </Dialog.Title>
-              <Dialog.Description className={styles.lightboxDescription}>
-                {selectedUsage?.altText === null
-                  ? "这张图片尚未填写描述。"
-                  : selectedUsage?.altText === ""
-                    ? "这是一张明确标记为装饰用途的图片。"
-                    : selectedUsage?.altText}
-              </Dialog.Description>
-              <Dialog.Close className={styles.lightboxClose}>关闭</Dialog.Close>
-              <div className={styles.lightboxStage}>
-                {selectedUsage && !lightboxFailed ? (
-                  <MediaImage
-                    index={selected ?? 0}
-                    onError={() => setLightboxFailed(true)}
-                    original={original}
-                    total={media.length}
-                    usage={selectedUsage}
-                  />
-                ) : (
-                  <div className={styles.lightboxFallback} role="alert">
-                    {original
-                      ? "原图没有加载完成；仍可返回预览。"
-                      : "预览暂不可用；Moment 正文仍保留在页面中。"}
-                  </div>
-                )}
-              </div>
-              <div className={styles.lightboxActions}>
-                <button
-                  disabled={(selected ?? 0) <= 0}
-                  onClick={() => {
-                    setSelected((value) =>
-                      value === null ? null : Math.max(0, value - 1),
-                    );
-                    setOriginal(false);
-                    setLightboxFailed(false);
-                  }}
-                  type="button"
-                >
-                  上一张
-                </button>
-                {original ? (
-                  <button
-                    onClick={() => {
-                      setOriginal(false);
-                      setLightboxFailed(false);
-                    }}
-                    type="button"
-                  >
-                    返回预览
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setOriginal(true);
-                      setLightboxFailed(false);
-                    }}
-                    type="button"
-                  >
-                    查看原图 / 播放 GIF
-                  </button>
-                )}
-                <button
-                  disabled={(selected ?? 0) >= media.length - 1}
-                  onClick={() => {
-                    setSelected((value) =>
-                      value === null
-                        ? null
-                        : Math.min(media.length - 1, value + 1),
-                    );
-                    setOriginal(false);
-                    setLightboxFailed(false);
-                  }}
-                  type="button"
-                >
-                  下一张
-                </button>
-              </div>
-            </Dialog.Popup>
-          </Dialog.Viewport>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <MediaLightbox
+        items={lightboxItems}
+        onSelectedChange={setSelected}
+        selected={selected}
+      />
     </>
   );
 }
