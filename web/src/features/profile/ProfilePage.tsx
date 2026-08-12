@@ -110,7 +110,9 @@ export function ProfilePage({
             }
           />
           {owner.state === "owner" ? (
-            <ProfileEditor onSaved={onSiteSaved} site={site} />
+            <div className={styles.profileEditorSlot}>
+              <ProfileEditor onSaved={onSiteSaved} site={site} />
+            </div>
           ) : null}
         </div>
         <h2>{title}</h2>

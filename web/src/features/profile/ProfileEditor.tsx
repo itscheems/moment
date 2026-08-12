@@ -4,6 +4,7 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import type { SiteSettingsUpdate } from "../../api/owner";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { notify } from "../../components/Feedback";
+import { Icon } from "../../components/icons";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { fileValidation } from "../media/mediaState";
 import { useOwner } from "../owner/OwnerProvider";
@@ -179,125 +180,164 @@ export function ProfileEditor({
         <Dialog.Backdrop className={styles.backdrop} />
         <Dialog.Viewport className={styles.viewport}>
           <Dialog.Popup className={styles.popup} initialFocus={titleInput}>
-            <header className={styles.header}>
-              <Dialog.Close aria-label="关闭编辑个人资料">×</Dialog.Close>
-              <Dialog.Title>编辑个人资料</Dialog.Title>
-              <button
-                disabled={
-                  !changed || invalid || pending || uploadFailed || saving
+            <form
+              className={styles.form}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  (event.metaKey || event.ctrlKey) &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault();
+                  void save();
                 }
-                onClick={() => void save()}
-                type="button"
-              >
-                {saving ? "保存中" : "保存"}
-              </button>
-            </header>
-
-            <div className={styles.coverEditor}>
-              {coverPreview ? (
-                <img alt="封面预览" src={coverPreview} />
-              ) : (
-                <span />
-              )}
-              <div className={styles.mediaActions}>
-                <button
-                  aria-label="选择封面图片"
-                  onClick={() => coverInput.current?.click()}
-                  type="button"
+              }}
+            >
+              <header className={styles.header}>
+                <Dialog.Close
+                  aria-label="关闭编辑个人资料"
+                  className={styles.iconButton}
+                  title="关闭"
                 >
-                  相机
-                </button>
+                  <Icon name="close" />
+                </Dialog.Close>
+                <Dialog.Title>编辑个人资料</Dialog.Title>
+                <div className={styles.headerActions}>
+                  <button
+                    aria-label="重置个人资料更改"
+                    className={styles.iconButton}
+                    disabled={saving || (!changed && !pending && !uploadFailed)}
+                    onClick={reset}
+                    title="重置"
+                    type="button"
+                  >
+                    <Icon name="reset" />
+                  </button>
+                  <button
+                    className={styles.saveButton}
+                    disabled={
+                      !changed || invalid || pending || uploadFailed || saving
+                    }
+                    onClick={() => void save()}
+                    type="button"
+                  >
+                    {saving ? "保存中" : "保存"}
+                  </button>
+                </div>
+              </header>
+
+              <div className={styles.coverEditor}>
                 {coverPreview ? (
+                  <img alt="封面预览" src={coverPreview} />
+                ) : (
+                  <span />
+                )}
+                <div className={styles.mediaActions}>
                   <button
-                    aria-label="移除封面图片"
-                    onClick={() => {
-                      setCoverId(null);
-                      setCoverPreview(null);
-                      setCoverState("idle");
-                    }}
+                    aria-label="选择封面图片"
+                    onClick={() => coverInput.current?.click()}
+                    title="添加封面图片"
                     type="button"
                   >
-                    ×
+                    <Icon name="camera" />
                   </button>
+                  {coverPreview ? (
+                    <button
+                      aria-label="移除封面图片"
+                      onClick={() => {
+                        setCoverId(null);
+                        setCoverPreview(null);
+                        setCoverState("idle");
+                      }}
+                      title="移除封面图片"
+                      type="button"
+                    >
+                      <Icon name="close" />
+                    </button>
+                  ) : null}
+                </div>
+                {coverState === "uploading" ? (
+                  <small>正在上传封面…</small>
                 ) : null}
               </div>
-              {coverState === "uploading" ? <small>正在上传封面…</small> : null}
-            </div>
 
-            <div className={styles.avatarEditor}>
-              {avatarPreview ? (
-                <img alt="头像预览" src={avatarPreview} />
-              ) : (
-                <SiteAvatar site={{ ...site, avatarMediaId: null }} />
-              )}
-              <div className={styles.mediaActions}>
-                <button
-                  aria-label="选择头像图片"
-                  onClick={() => avatarInput.current?.click()}
-                  type="button"
-                >
-                  相机
-                </button>
+              <div className={styles.avatarEditor}>
                 {avatarPreview ? (
+                  <img alt="头像预览" src={avatarPreview} />
+                ) : (
+                  <SiteAvatar site={{ ...site, avatarMediaId: null }} />
+                )}
+                <div className={styles.mediaActions}>
                   <button
-                    aria-label="移除头像图片"
-                    onClick={() => {
-                      setAvatarId(null);
-                      setAvatarPreview(null);
-                      setAvatarState("idle");
-                    }}
+                    aria-label="选择头像图片"
+                    onClick={() => avatarInput.current?.click()}
+                    title="添加头像图片"
                     type="button"
                   >
-                    ×
+                    <Icon name="camera" />
                   </button>
+                  {avatarPreview ? (
+                    <button
+                      aria-label="移除头像图片"
+                      onClick={() => {
+                        setAvatarId(null);
+                        setAvatarPreview(null);
+                        setAvatarState("idle");
+                      }}
+                      title="移除头像图片"
+                      type="button"
+                    >
+                      <Icon name="close" />
+                    </button>
+                  ) : null}
+                </div>
+                {avatarState === "uploading" ? (
+                  <small>正在上传头像…</small>
                 ) : null}
               </div>
-              {avatarState === "uploading" ? (
-                <small>正在上传头像…</small>
-              ) : null}
-            </div>
 
-            <input
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className={styles.fileInput}
-              onChange={(event) => pick("cover", event)}
-              ref={coverInput}
-              type="file"
-            />
-            <input
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              className={styles.fileInput}
-              onChange={(event) => pick("avatar", event)}
-              ref={avatarInput}
-              type="file"
-            />
+              <input
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className={styles.fileInput}
+                onChange={(event) => pick("cover", event)}
+                ref={coverInput}
+                type="file"
+              />
+              <input
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className={styles.fileInput}
+                onChange={(event) => pick("avatar", event)}
+                ref={avatarInput}
+                type="file"
+              />
 
-            <div className={styles.fields}>
-              <label>
-                <span>名称</span>
-                <input
-                  maxLength={120}
-                  onChange={(event) => setTitle(event.currentTarget.value)}
-                  ref={titleInput}
-                  value={title}
-                />
-              </label>
-              <label>
-                <span>简介</span>
-                <textarea
-                  maxLength={500}
-                  onChange={(event) => setBio(event.currentTarget.value)}
-                  rows={4}
-                  value={bio}
-                />
-              </label>
-              <p className={styles.counter}>{Array.from(bio).length} / 500</p>
-              {error ? (
-                <p className={styles.error} role="alert">
-                  {error}
-                </p>
-              ) : null}
-            </div>
+              <div className={styles.fields}>
+                <label>
+                  <span>名称</span>
+                  <input
+                    maxLength={120}
+                    onChange={(event) => setTitle(event.currentTarget.value)}
+                    ref={titleInput}
+                    value={title}
+                  />
+                </label>
+                <label>
+                  <span>简介</span>
+                  <textarea
+                    maxLength={500}
+                    onChange={(event) => setBio(event.currentTarget.value)}
+                    rows={4}
+                    value={bio}
+                  />
+                </label>
+                <p className={styles.counter}>{Array.from(bio).length} / 500</p>
+                {error ? (
+                  <p className={styles.error} role="alert">
+                    {error}
+                  </p>
+                ) : null}
+              </div>
+            </form>
           </Dialog.Popup>
         </Dialog.Viewport>
       </Dialog.Portal>

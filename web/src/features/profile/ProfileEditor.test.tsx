@@ -120,4 +120,51 @@ describe("profile editor", () => {
     ]);
     expect(await screen.findByText("个人资料已更新")).toBeInTheDocument();
   });
+
+  it("uses icon media controls and can reset unsaved profile changes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/v1/owner/status") {
+          return json({
+            data: {
+              initialized: true,
+              session_epoch: 1,
+              initialized_at: "2026-08-01T00:00:00Z",
+            },
+            meta: { request_id: "req_status" },
+          });
+        }
+        return json({}, 404);
+      }),
+    );
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <ProfileEditor onSaved={vi.fn()} site={site} />
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "编辑个人资料" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "编辑个人资料" }));
+
+    expect(
+      screen.getByRole("button", { name: "选择封面图片" }),
+    ).not.toHaveTextContent("相机");
+    const reset = screen.getByRole("button", { name: "重置个人资料更改" });
+    expect(reset).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("名称"), {
+      target: { value: "尚未保存的名称" },
+    });
+    expect(reset).toBeEnabled();
+    fireEvent.click(reset);
+
+    expect(screen.getByLabelText("名称")).toHaveValue("Moment");
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+  });
 });

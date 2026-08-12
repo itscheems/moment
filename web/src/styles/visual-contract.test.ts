@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import shellCss from "../components/AppShell.module.css?inline";
 import stateCss from "../components/ShellState.module.css?inline";
 import themeMenuCss from "../components/ThemeMenu.module.css?inline";
+import profileEditorCss from "../features/profile/ProfileEditor.module.css?inline";
+import profileCss from "../features/profile/ProfilePage.module.css?inline";
 import globalCss from "./global.css?inline";
 
 function channel(value: number): number {
@@ -42,6 +44,15 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(stateCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(themeMenuCss).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(profileEditorCss).toContain(
+      "@media (prefers-reduced-motion: reduce)",
+    );
+  });
+
+  it("keeps the profile edit pill independent from circular icon actions", () => {
+    expect(profileCss).toMatch(/\._profileActions_[\w-]+ > button/);
+    expect(profileCss).toMatch(/\._profileEditorSlot_[\w-]+/);
+    expect(profileCss).not.toMatch(/\._profileActions_[\w-]+ button,/);
   });
 
   it("defines explicit light and dark theme surfaces and a visible focus token", () => {

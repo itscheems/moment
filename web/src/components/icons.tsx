@@ -16,7 +16,10 @@ export type IconName =
   | "delete"
   | "pin"
   | "link"
-  | "open";
+  | "open"
+  | "close"
+  | "reset"
+  | "camera";
 
 const paths: Record<IconName, React.ReactNode> = {
   home: (
@@ -116,6 +119,19 @@ const paths: Record<IconName, React.ReactNode> = {
     <>
       <path d="M14 4h6v6M20 4l-9 9" />
       <path d="M19 14v5H5V5h5" />
+    </>
+  ),
+  close: <path d="m6 6 12 12M18 6 6 18" />,
+  reset: (
+    <>
+      <path d="M5.2 8.5A8 8 0 1 1 4 15" />
+      <path d="M5.2 4.5v4h4" />
+    </>
+  ),
+  camera: (
+    <>
+      <path d="M4 8.5h3l1.5-2h7l1.5 2h3v10H4z" />
+      <circle cx="12" cy="13.5" r="3" />
     </>
   ),
 };

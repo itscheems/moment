@@ -44,7 +44,7 @@
   gap: var(--space-2);
 }
 
-.profileActions button,
+.profileActions > button,
 .profileActions > a {
   min-block-size: 2.25rem;
   display: inline-flex;
@@ -59,7 +59,7 @@
   cursor: pointer;
 }
 
-.profileActions button {
+.profileActions > button {
   inline-size: 2.25rem;
   padding: 0;
 }
@@ -68,16 +68,22 @@
   padding-inline: var(--space-4);
 }
 
-.profileActions button:hover,
-.profileActions button:focus-visible,
+.profileActions > button:hover,
+.profileActions > button:focus-visible,
 .profileActions > a:hover,
 .profileActions > a:focus-visible {
   background: var(--surface-hover);
 }
 
-.profileActions svg {
+.profileActions > button svg,
+.profileActions > a svg {
   inline-size: 1.2rem;
   block-size: 1.2rem;
+}
+
+.profileEditorSlot {
+  display: flex;
+  align-items: center;
 }
 
 .identity h2,
