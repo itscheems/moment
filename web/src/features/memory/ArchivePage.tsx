@@ -148,7 +148,7 @@ function Calendar({
         <h2 id="archive-calendar-title">
           {Number(yearText)} 年 {Number(monthText)} 月
         </h2>
-        <InternalLink href={archiveHref({ year })}>返回 {year} 年</InternalLink>
+        <InternalLink href={archiveHref({ year })}>← {year} 年</InternalLink>
       </header>
       <ol aria-hidden="true" className={styles.weekHeader}>
         {weekDays.map((day) => (

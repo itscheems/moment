@@ -408,15 +408,21 @@
   text-align: center;
 }
 
+.archiveYears {
+  padding: 0 var(--space-4) var(--space-6);
+}
+
 .archiveYears > section {
-  display: grid;
-  grid-template-columns: 8rem minmax(0, 1fr);
   border-block-end: 1px solid var(--border-subtle);
+  padding-block: var(--space-5);
 }
 
 .archiveYears header {
-  border-inline-end: 1px solid var(--border-subtle);
-  padding: var(--space-6);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-inline: var(--space-2);
 }
 
 .archiveYears h2,
@@ -432,36 +438,51 @@
 }
 
 .archiveYears header span {
-  display: block;
-  margin-block-start: var(--space-2);
   color: var(--text-tertiary);
   font-family: var(--font-utility);
   font-size: var(--text-xs);
 }
 
 .archiveYears ol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
   margin: 0;
-  padding: 0;
+  padding: var(--space-3) 0 0;
   list-style: none;
 }
 
 .archiveYears li + li {
-  border-block-start: 1px solid var(--border-subtle);
+  border-block-start: 0;
+}
+
+.archiveYears li:only-child {
+  grid-column: 1 / -1;
 }
 
 .archiveYears li a {
-  min-block-size: 4.5rem;
+  min-block-size: 4.25rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  padding-inline: var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-panel);
+  padding-inline: var(--space-4);
   color: var(--text-primary);
+  background: var(--surface-muted);
   text-decoration: none;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
-.archiveYears li a:hover {
+.archiveYears li a:hover,
+.archiveYears li a:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
   background: var(--surface-hover);
+  transform: translateY(-1px);
 }
 
 .archiveYears li strong {
@@ -477,13 +498,36 @@
 
 .calendarSection > header,
 .dayResults > header {
-  min-block-size: 4rem;
+  min-block-size: 4.5rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  border-block-end: 1px solid var(--border-subtle);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-4) var(--space-5);
+}
+
+.calendarSection > header {
+  border-block-end: 0;
+}
+
+.calendarSection > header a {
+  min-block-size: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding-inline: var(--space-3);
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.calendarSection > header a:hover,
+.calendarSection > header a:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .calendarSection header h2,
@@ -494,8 +538,9 @@
 .calendarSection header h2,
 .dayResults > header h2 {
   font-family: var(--font-display);
-  font-size: var(--text-lg);
-  font-weight: 700;
+  font-size: var(--text-xl);
+  font-weight: 750;
+  letter-spacing: -0.025em;
 }
 
 .weekHeader,
@@ -515,33 +560,44 @@
 }
 
 .weekHeader li {
-  padding-block: var(--space-2);
+  padding-block: var(--space-3) var(--space-2);
 }
 
 .calendarGrid {
-  gap: 2px;
+  row-gap: var(--space-2);
   border-block-end: 1px solid var(--border-subtle);
-  padding: 0 var(--space-3) var(--space-4);
+  padding: 0 var(--space-4) var(--space-6);
 }
 
 .calendarGrid li {
-  min-block-size: 3.5rem;
+  min-block-size: 3.75rem;
+  display: grid;
+  place-items: center;
 }
 
 .calendarDay a,
 .calendarEmptyDay > span {
-  min-block-size: 100%;
+  position: relative;
+  inline-size: 3rem;
+  block-size: 3rem;
   display: grid;
   place-content: center;
-  gap: 2px;
-  border-radius: var(--radius-control);
-  padding: var(--space-1);
+  border: 1px solid transparent;
+  border-radius: 50%;
+  padding: 0;
   color: var(--text-primary);
   text-decoration: none;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
-.calendarDay a:hover {
-  background: var(--surface-hover);
+.calendarDay a:hover,
+.calendarDay a:focus-visible {
+  color: var(--accent);
+  background: var(--accent-soft);
+  transform: scale(1.05);
 }
 
 .calendarDay a[data-selected="true"] {
@@ -551,7 +607,7 @@
 
 .calendarDay a[data-today="true"]:not([data-selected="true"]),
 .calendarEmptyDay > span[data-today="true"] {
-  box-shadow: inset 0 0 0 1px var(--accent);
+  border-color: var(--accent);
   color: var(--accent);
   font-weight: 750;
 }
@@ -564,8 +620,11 @@
 }
 
 .calendarDay span {
-  min-inline-size: 1rem;
-  block-size: 1rem;
+  position: absolute;
+  inset-block-end: -0.2rem;
+  inset-inline-end: -0.2rem;
+  min-inline-size: 1.05rem;
+  block-size: 1.05rem;
   display: grid;
   place-items: center;
   justify-self: center;
@@ -584,7 +643,7 @@
 
 .calendarEmptyDay > span {
   color: var(--text-tertiary);
-  opacity: 0.78;
+  opacity: 0.66;
 }
 
 .calendarBlank {
@@ -631,16 +690,16 @@
     padding-inline: var(--space-4);
   }
 
-  .archiveYears > section {
-    grid-template-columns: 5.25rem minmax(0, 1fr);
-  }
-
-  .archiveYears header {
-    padding: var(--space-5) var(--space-3);
+  .archiveYears {
+    padding-inline: var(--space-3);
   }
 
   .archiveYears h2 {
     font-size: var(--text-xl);
+  }
+
+  .archiveYears ol {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .calendarGrid li {
@@ -649,7 +708,8 @@
 
   .calendarDay a,
   .calendarEmptyDay > span {
-    padding: var(--space-2);
+    inline-size: 2.75rem;
+    block-size: 2.75rem;
   }
 
   .moreError {
