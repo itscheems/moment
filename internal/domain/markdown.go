@@ -24,21 +24,35 @@ var markdownEngine = goldmark.New(
 	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
 )
 
-// ValidateMarkdown applies the one authoritative save/import Markdown policy.
+// ValidateMarkdown applies the authoritative Entry Markdown grammar. An Entry
+// body may be empty because the Post aggregate can be media-only; callers that
+// own the media usages must additionally call ValidatePostMarkdown.
 func ValidateMarkdown(source string) error {
-	return validateMarkdown(source, MaxContentCodePoints)
+	return validateMarkdown(source, MaxContentCodePoints, true)
+}
+
+// ValidatePostMarkdown enforces the aggregate rule that a Moment contains
+// visible Markdown or at least one managed media usage.
+func ValidatePostMarkdown(source string, mediaCount int) error {
+	if err := ValidateMarkdown(source); err != nil {
+		return err
+	}
+	if strings.TrimSpace(source) == "" && mediaCount <= 0 {
+		return NewError(CodeContentEmpty, "post must contain Markdown or managed media", nil)
+	}
+	return nil
 }
 
 // ValidateCommentMarkdown applies the authoritative comment Markdown policy.
 func ValidateCommentMarkdown(source string) error {
-	return validateMarkdown(source, MaxCommentContentCodePoints)
+	return validateMarkdown(source, MaxCommentContentCodePoints, false)
 }
 
-func validateMarkdown(source string, limit int) error {
+func validateMarkdown(source string, limit int, allowEmpty bool) error {
 	if !utf8.ValidString(source) {
 		return NewError(CodeInvalidArgument, "content must be valid UTF-8", map[string]any{"field": "content"})
 	}
-	if strings.TrimSpace(source) == "" {
+	if !allowEmpty && strings.TrimSpace(source) == "" {
 		return NewError(CodeContentEmpty, "content must contain a non-whitespace character", nil)
 	}
 	if count := utf8.RuneCountInString(source); count > limit {

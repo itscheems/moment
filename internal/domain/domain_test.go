@@ -16,7 +16,6 @@ func TestMarkdownContentBoundaries(t *testing.T) {
 		content string
 		code    Code
 	}{
-		{name: "empty", content: " \n\t", code: CodeContentEmpty},
 		{name: "invalid UTF-8", content: string([]byte{0xff}), code: CodeInvalidArgument},
 		{name: "unicode over limit", content: strings.Repeat("瞬", MaxContentCodePoints+1), code: CodeContentTooLarge},
 		{name: "raw inline html", content: "hello <b>world</b>", code: CodeInvalidArgument},
@@ -24,6 +23,15 @@ func TestMarkdownContentBoundaries(t *testing.T) {
 		{name: "javascript link", content: "[bad](javascript:alert(1))", code: CodeInvalidArgument},
 		{name: "data link", content: "[bad](data:text/html,hello)", code: CodeInvalidArgument},
 		{name: "scheme relative", content: "[bad](//example.com/path)", code: CodeInvalidArgument},
+	}
+	if err := ValidateMarkdown(" \n\t"); err != nil {
+		t.Fatalf("empty entry Markdown is valid before aggregate media validation: %v", err)
+	}
+	if err := ValidatePostMarkdown(" \n\t", 0); !HasCode(err, CodeContentEmpty) {
+		t.Fatalf("textless post without media should be CONTENT_EMPTY, got %v", err)
+	}
+	if err := ValidatePostMarkdown(" \n\t", 1); err != nil {
+		t.Fatalf("textless post with managed media should pass: %v", err)
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

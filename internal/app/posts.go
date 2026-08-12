@@ -188,10 +188,13 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 			return replayed, nil
 		}
 	}
-	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
+	if err := domain.ValidateEntryMediaUsages(input.Media); err != nil {
 		return CreatePostResult{}, err
 	}
-	if err := domain.ValidateEntryMediaUsages(input.Media); err != nil {
+	if err := domain.ValidatePostMarkdown(input.ContentMD, len(input.Media)); err != nil {
+		return CreatePostResult{}, err
+	}
+	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
 		return CreatePostResult{}, err
 	}
 	contentText, err := domain.NormalizeContentV2(input.ContentMD)
@@ -308,14 +311,17 @@ func reconstructCreateReplay(input CreatePostInput, requestHash string, record I
 		domain.TimeToMillis(record.CreatedAt) <= 0 || record.CreatedAt != domain.NormalizeTime(record.CreatedAt) {
 		return Post{}, idempotencySnapshotError()
 	}
+	if err := domain.ValidateEntryMediaUsages(input.Media); err != nil {
+		return Post{}, idempotencySnapshotError()
+	}
+	if err := domain.ValidatePostMarkdown(input.ContentMD, len(input.Media)); err != nil {
+		return Post{}, idempotencySnapshotError()
+	}
 	entry, err := domain.NewEntry(record.ResponseResourceID, input.ContentMD, record.CreatedAt)
 	if err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
 	if err := entry.Validate(); err != nil {
-		return Post{}, idempotencySnapshotError()
-	}
-	if err := domain.ValidateEntryMediaUsages(input.Media); err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
 	return Post{Entry: entry, Media: domain.CloneEntryMediaUsages(input.Media)}, nil
@@ -476,18 +482,6 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			return Post{}, err
 		}
 	}
-	contentText := ""
-	if !input.PreserveContent {
-		if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
-			return Post{}, err
-		}
-		var err error
-		contentText, err = domain.NormalizeContentV2(input.ContentMD)
-		if err != nil {
-			return Post{}, err
-		}
-	}
-
 	var updated domain.Entry
 	var updatedMedia []domain.EntryMediaUsage
 	var commentCount int
@@ -511,10 +505,20 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		content := input.ContentMD
 		if input.PreserveContent {
 			content = entry.ContentMD
-			contentText, mediaErr = domain.NormalizeContentV2(content)
-			if mediaErr != nil {
-				return mediaErr
-			}
+		}
+		updatedMedia = currentMedia
+		if input.Media != nil {
+			updatedMedia = domain.CloneEntryMediaUsages(*input.Media)
+		}
+		if mediaErr := domain.ValidatePostMarkdown(content, len(updatedMedia)); mediaErr != nil {
+			return mediaErr
+		}
+		if _, mediaErr := domain.RenderMarkdown(content); mediaErr != nil {
+			return mediaErr
+		}
+		contentText, mediaErr := domain.NormalizeContentV2(content)
+		if mediaErr != nil {
+			return mediaErr
 		}
 		now := domain.NormalizeTime(service.clock())
 		if !now.After(entry.UpdatedAt) {
@@ -530,7 +534,6 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if !changed {
 			return postNotFound(input.ID)
 		}
-		updatedMedia = currentMedia
 		if input.Media != nil {
 			if mediaErr := store.ReplaceEntryMediaUsages(ctx, input.ID, *input.Media); mediaErr != nil {
 				return mediaErr
@@ -539,7 +542,6 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			if mediaErr := store.ReconcileMediaReferences(ctx, affected, now); mediaErr != nil {
 				return mediaErr
 			}
-			updatedMedia = domain.CloneEntryMediaUsages(*input.Media)
 		}
 		updated = entry
 		return nil
@@ -643,11 +645,14 @@ func validRequestHash(value string) bool {
 }
 
 func renderPost(entry domain.Entry, media []domain.EntryMediaUsage, commentCount int) (Post, error) {
-	html, err := domain.RenderMarkdown(entry.ContentMD)
-	if err != nil {
+	if err := domain.ValidateEntryMediaUsages(media); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	if err := domain.ValidateEntryMediaUsages(media); err != nil {
+	if err := domain.ValidatePostMarkdown(entry.ContentMD, len(media)); err != nil {
+		return Post{}, storedEntryError(entry.ID)
+	}
+	html, err := domain.RenderMarkdown(entry.ContentMD)
+	if err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
 	if commentCount < 0 {

@@ -148,13 +148,6 @@ func ValidatePost(post Post) error {
 	if post.CommentCount < 0 {
 		return errors.New("post comment_count must be non-negative")
 	}
-	html, err := domain.RenderMarkdown(post.ContentMD)
-	if err != nil {
-		return err
-	}
-	if html != post.ContentHTML {
-		return errors.New("post content_html does not match content_md")
-	}
 	if post.Media == nil {
 		return errors.New("post media must be an array")
 	}
@@ -168,6 +161,16 @@ func ValidatePost(post Post) error {
 	}
 	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
+	}
+	if err := domain.ValidatePostMarkdown(post.ContentMD, len(usages)); err != nil {
+		return err
+	}
+	html, err := domain.RenderMarkdown(post.ContentMD)
+	if err != nil {
+		return err
+	}
+	if html != post.ContentHTML {
+		return errors.New("post content_html does not match content_md")
 	}
 	return nil
 }

@@ -66,11 +66,11 @@ func registerPosts(application *Application) {
 		Path:   []string{"post", "create"},
 		Short:  "Publish a Moment post",
 		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated owner HTTP API.",
-		Inputs: "Provide --content. Use one --media path with optional --media-alt or --media-decorative, or an ordered --media-manifest path|-; the forms are mutually exclusive.",
+		Inputs: "Provide --content, managed media, or both. Use one --media path with optional --media-alt or --media-decorative, or an ordered --media-manifest path|-; the forms are mutually exclusive.",
 		Output: "The canonical created post and replay metadata.",
 		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
 		Example: "moment post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
-			"moment post create --data-dir ./moment-data --content 'several images' --media-manifest ./post-media.json --idempotency-key demo-002 --json",
+			"moment post create --data-dir ./moment-data --media ./photo.jpg --idempotency-key demo-002 --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
@@ -228,9 +228,16 @@ func runPostGet(ctx context.Context, invocation Invocation, input CommandInput) 
 }
 
 func runPostCreate(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
-	content, err := requiredContentFlag(input)
+	mediaInput, err := postMediaInputFromFlags(ctx, input)
 	if err != nil {
 		return Result{}, err
+	}
+	content, err := input.String("content")
+	if err != nil {
+		return Result{}, err
+	}
+	if !input.Changed("content") && !mediaInput.Present {
+		return Result{}, invalidArgument("post create requires --content or a media input", "provide --content, --media, or --media-manifest")
 	}
 	idempotencyKey, err := input.String("idempotency-key")
 	if err != nil {
@@ -240,10 +247,6 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		post postdto.Post
 		meta map[string]any
 	)
-	mediaInput, err := postMediaInputFromFlags(ctx, input)
-	if err != nil {
-		return Result{}, err
-	}
 	switch invocation.Mode() {
 	case ModeDirect:
 		direct, err := openDirectPostWrite(ctx, invocation)
@@ -825,13 +828,6 @@ func postListFlags(input CommandInput) (app.ListPostsInput, error) {
 		return app.ListPostsInput{}, invalidArgument("--to cannot be empty", "provide an exclusive date in YYYY-MM-DD format or remove --to")
 	}
 	return app.ListPostsInput{Cursor: cursor, Limit: limit, FromDate: fromDate, ToDate: toDate}, nil
-}
-
-func requiredContentFlag(input CommandInput) (string, error) {
-	if !input.Changed("content") {
-		return "", invalidArgument("--content is required", "provide the post Markdown with --content")
-	}
-	return input.String("content")
 }
 
 func postID(value string) (domain.ID, error) { return domain.ParseID(value) }

@@ -20,12 +20,10 @@ export function MediaLightbox({
   selected: number | null;
   onSelectedChange: (selected: number | null) => void;
 }) {
-  const [original, setOriginal] = useState(false);
   const [failed, setFailed] = useState(false);
   const item = selected === null ? null : (items[selected] ?? null);
 
   useEffect(() => {
-    setOriginal(false);
     setFailed(false);
   }, [selected]);
 
@@ -34,11 +32,8 @@ export function MediaLightbox({
     onSelectedChange((next + items.length) % items.length);
   };
 
-  const source =
-    original && item?.originalSrc ? item.originalSrc : item?.previewSrc;
-  const canViewOriginal = Boolean(
-    item?.originalSrc && item.originalSrc !== item.previewSrc,
-  );
+  const source = item?.previewSrc;
+  const canViewOriginal = Boolean(item?.originalSrc);
 
   return (
     <Dialog.Root
@@ -116,17 +111,15 @@ export function MediaLightbox({
               <Dialog.Description className={styles.lightboxDescription}>
                 {item?.description}
               </Dialog.Description>
-              {canViewOriginal ? (
-                <button
+              {canViewOriginal && item?.originalSrc ? (
+                <a
                   className={styles.lightboxOriginal}
-                  onClick={() => {
-                    setOriginal((value) => !value);
-                    setFailed(false);
-                  }}
-                  type="button"
+                  href={item.originalSrc}
+                  rel="noreferrer"
+                  target="_blank"
                 >
-                  {original ? "返回预览" : "查看原图 / 播放 GIF"}
-                </button>
+                  打开原图
+                </a>
               ) : null}
             </div>
           </Dialog.Popup>

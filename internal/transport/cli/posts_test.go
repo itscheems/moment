@@ -294,7 +294,7 @@ func TestPostMediaCLIAPIPathReplayAndFailureLeavesOnlyGCCandidate(t *testing.T) 
 	imagePath := writeCLIImage(t)
 	t.Setenv("MOMENT_TOKEN", fixture.token)
 
-	args := []string{"--url", fixture.server.URL, "post", "create", "--content", "API upload replay", "--media", imagePath, "--idempotency-key", "api-media-replay", "--json"}
+	args := []string{"--url", fixture.server.URL, "post", "create", "--media", imagePath, "--idempotency-key", "api-media-replay", "--json"}
 	createdOutput := execute(application, "", args...)
 	created := commandData(t, createdOutput)
 	if createdOutput.exit != ExitSuccess {
@@ -308,7 +308,7 @@ func TestPostMediaCLIAPIPathReplayAndFailureLeavesOnlyGCCandidate(t *testing.T) 
 		t.Fatal("content-addressed replay duplicated media or usages")
 	}
 	id := created["id"].(string)
-	if output := execute(application, "[]", "--url", fixture.server.URL, "post", "update", id, "--media-manifest", "-", "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "[]", "--url", fixture.server.URL, "post", "update", id, "--content", "kept before delete", "--media-manifest", "-", "--json"); output.exit != ExitSuccess {
 		t.Fatalf("API clear before delete = %#v", output)
 	}
 	if output := execute(application, "", "--url", fixture.server.URL, "post", "delete", id, "--yes", "--json"); output.exit != ExitSuccess {
@@ -322,7 +322,7 @@ func TestPostMediaCLIAPIPathReplayAndFailureLeavesOnlyGCCandidate(t *testing.T) 
 	secondFixture := newPostCLIFixture(t)
 	t.Setenv("MOMENT_TOKEN", secondFixture.token)
 	postFailed := execute(application, "", "--url", secondFixture.server.URL, "post", "create",
-		"--content", "   ", "--media", imagePath, "--json")
+		"--content", "![remote](https://example.com/image.png)", "--media", imagePath, "--json")
 	if postFailed.exit != ExitConflict || postCLITableCount(t, secondFixture.database, "entries") != 0 ||
 		postCLITableCount(t, secondFixture.database, "entry_media") != 0 || postCLITableCount(t, secondFixture.database, "media") != 1 {
 		t.Fatalf("post failure after upload = %#v", postFailed)

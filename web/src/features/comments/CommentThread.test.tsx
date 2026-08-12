@@ -368,7 +368,7 @@ describe("public comment thread", () => {
     fireEvent.change(screen.getByLabelText("图片文件"), {
       target: { files: [file] },
     });
-    fireEvent.click(screen.getByText("添加描述"));
+    fireEvent.click(screen.getByText("图片选项"));
     fireEvent.click(screen.getByLabelText("填写描述"));
     fireEvent.change(screen.getByPlaceholderText("简要描述图片内容"), {
       target: { value: "night sky" },

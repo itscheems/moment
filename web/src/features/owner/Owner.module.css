@@ -235,6 +235,10 @@
   min-block-size: 8rem;
 }
 
+.pageComposer.composerHasMedia .composerForm textarea {
+  min-block-size: 2.75rem;
+}
+
 .inlineComposer.composerExpanded .composerForm textarea {
   min-block-size: 6rem;
 }

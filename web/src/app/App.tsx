@@ -7,7 +7,7 @@ import { ShellState } from "../components/ShellState";
 import { DetailPage } from "../features/timeline/DetailPage";
 import { TimelineLoading } from "../features/timeline/PublicStates";
 import { TimelinePage } from "../features/timeline/TimelinePage";
-import { Composer } from "../features/owner/Composer";
+import { Composer, type ComposerHandle } from "../features/owner/Composer";
 import { EditPage } from "../features/owner/EditPage";
 import { OwnerLogin } from "../features/owner/OwnerLogin";
 import { OwnerProvider, useOwner } from "../features/owner/OwnerProvider";
@@ -95,6 +95,20 @@ function PublicApp() {
   const initialHomeSearch = useRef(
     route.id === "home" ? displayLocation.search : "",
   );
+  const overlayComposer = useRef<ComposerHandle>(null);
+  const [composeExitOpen, setComposeExitOpen] = useState(false);
+
+  const closeOverlayComposer = () => {
+    location.goBack(`${displayLocation.pathname}${displayLocation.search}`);
+  };
+
+  const requestOverlayComposerClose = () => {
+    if (overlayComposer.current?.hasUnpublishedChanges()) {
+      setComposeExitOpen(true);
+      return;
+    }
+    closeOverlayComposer();
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -337,11 +351,7 @@ function PublicApp() {
       {overlayCompose ? (
         <Dialog.Root
           onOpenChange={(open) => {
-            if (!open) {
-              location.goBack(
-                `${displayLocation.pathname}${displayLocation.search}`,
-              );
-            }
+            if (!open) requestOverlayComposerClose();
           }}
           open
         >
@@ -349,13 +359,11 @@ function PublicApp() {
             <Dialog.Backdrop className={styles.composeBackdrop} />
             <Dialog.Viewport className={styles.composeViewport}>
               <Dialog.Popup className={styles.composeDialog}>
-                <header className={styles.composeDialogHeader}>
-                  <Dialog.Close aria-label="关闭发布窗口">×</Dialog.Close>
-                  <Dialog.Title>发布 Moment</Dialog.Title>
-                  <span />
-                </header>
+                <Dialog.Title className={styles.srOnly}>
+                  发布 Moment
+                </Dialog.Title>
                 {owner.state === "owner" || owner.state === "expired" ? (
-                  <Composer site={site} variant="page" />
+                  <Composer ref={overlayComposer} site={site} variant="page" />
                 ) : (
                   <OwnerLogin embedded site={site} />
                 )}
@@ -364,6 +372,46 @@ function PublicApp() {
           </Dialog.Portal>
         </Dialog.Root>
       ) : null}
+      <Dialog.Root onOpenChange={setComposeExitOpen} open={composeExitOpen}>
+        <Dialog.Portal>
+          <Dialog.Backdrop className={styles.exitBackdrop} />
+          <Dialog.Viewport className={styles.exitViewport}>
+            <Dialog.Popup className={styles.exitDialog}>
+              <Dialog.Title>退出发布？</Dialog.Title>
+              <Dialog.Description>
+                文字可以保留为这台浏览器里的草稿；已添加的图片不会保存。
+              </Dialog.Description>
+              <div className={styles.exitActions}>
+                <Dialog.Close className={styles.exitSecondary}>
+                  继续编辑
+                </Dialog.Close>
+                <button
+                  className={styles.exitSecondary}
+                  onClick={() => {
+                    overlayComposer.current?.leaveAndKeepDraft();
+                    setComposeExitOpen(false);
+                    closeOverlayComposer();
+                  }}
+                  type="button"
+                >
+                  保留草稿并退出
+                </button>
+                <button
+                  className={styles.exitDanger}
+                  onClick={() => {
+                    overlayComposer.current?.leaveAndDiscard();
+                    setComposeExitOpen(false);
+                    closeOverlayComposer();
+                  }}
+                  type="button"
+                >
+                  丢弃并退出
+                </button>
+              </div>
+            </Dialog.Popup>
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
     </>
   );
 }

@@ -88,6 +88,9 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
 	}
+	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil {
+		return err
+	}
 	contentText, err := domain.NormalizeContentV2(value.ContentMD)
 	if err != nil {
 		return err

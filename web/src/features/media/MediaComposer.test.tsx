@@ -168,7 +168,7 @@ describe("media editor", () => {
     );
   });
 
-  it("keeps a removed item in its grid slot until the soft exit finishes", () => {
+  it("reflows live items while the removed item finishes its soft exit", () => {
     vi.useFakeTimers();
     const { container } = render(
       <FocusHarness initial={[item("00"), item("01"), item("02")]} />,
@@ -184,8 +184,8 @@ describe("media editor", () => {
       );
     expect(slots()).toEqual([
       ["00", null],
-      ["01", "departing"],
       ["02", null],
+      ["01", "departing"],
     ]);
 
     act(() => vi.advanceTimersByTime(170));

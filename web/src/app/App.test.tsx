@@ -102,20 +102,20 @@ describe("App shell and public routes", () => {
     expect(
       mobileNavigation?.querySelector('a[aria-label="发布"]'),
     ).toHaveAttribute("href", "/owner/compose");
-    expect(screen.getByRole("link", { name: "发布 Moment" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "发布" })).toHaveAttribute(
       "href",
       "/owner/compose",
     );
     expect(
       screen
-        .getByRole("link", { name: "发布 Moment" })
+        .getByRole("link", { name: "发布" })
         .querySelector('svg[data-icon="compose"]'),
     ).toBeInTheDocument();
     const desktopNavigation = screen.getByRole("navigation", {
       name: "主要导航",
     });
     const more = screen.getAllByRole("button", { name: "更多" })[0]!;
-    const publish = screen.getByRole("link", { name: "发布 Moment" });
+    const publish = screen.getByRole("link", { name: "发布" });
     expect(desktopNavigation).toContainElement(more);
     expect(
       more.compareDocumentPosition(publish) & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -166,7 +166,7 @@ describe("App shell and public routes", () => {
       dispatchEvent: vi.fn(),
     }));
     render(<App />);
-    const publish = screen.getByRole("link", { name: "发布 Moment" });
+    const publish = screen.getByRole("link", { name: "发布" });
 
     publish.focus();
     fireEvent.click(publish);
@@ -176,7 +176,9 @@ describe("App shell and public routes", () => {
     ).toBeInTheDocument();
     expect(document.querySelector("main h1")).toHaveTextContent("时间流");
 
-    fireEvent.click(screen.getByRole("button", { name: "关闭发布窗口" }));
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "发布 Moment" }), {
+      key: "Escape",
+    });
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     await new Promise<void>((resolve) =>
       window.requestAnimationFrame(() => resolve()),

@@ -287,7 +287,7 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"owner rotate-token":     "3e34b359dcfd5ced8c32ea28d9160947ab67a314d327fe9a3d213142bced6e0c",
 		"owner status":           "ca4e6635f78403f88e14f77f225d3aad619123cf25c0e73b57f3daa61eb39d34",
 		"post":                   "4bd118c37e440d609c4e4acdc09d9dfe4c8f1affb513d262cb7e4e38d52d5307",
-		"post create":            "a720b47adeeea603c918683b8e40c70c19df2632d48b965177a382429e1c8f47",
+		"post create":            "a29630bec2a888298233a0b638625818936eae50ce740ebf13ebfd306745a182",
 		"post delete":            "f053d4498c17f292e84b660b8b8abcb9dcb00daa9291433c0f5eb643233226e6",
 		"post get":               "48690ea66ae796353be0b4cdd94f1fc0b4352abc9e2c834f7964ad2f79104a8e",
 		"post list":              "6afa5e64cd9dee4cafd2f868cb9745ec45e45ee1845dbc81ff9d19ab35fb8739",

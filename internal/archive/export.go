@@ -725,7 +725,10 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 		}
 		usages[index] = domain.EntryMediaUsage{MediaID: mediaID, Position: usage.Position, AltText: usage.AltText}
 	}
-	return domain.ValidateEntryMediaUsages(usages)
+	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
+		return err
+	}
+	return domain.ValidatePostMarkdown(value.ContentMD, len(usages))
 }
 
 func validateArchiveComment(value sqlitestore.ArchiveComment) error {

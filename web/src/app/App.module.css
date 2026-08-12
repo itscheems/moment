@@ -23,6 +23,14 @@
   cursor: pointer;
 }
 
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
 .composeBackdrop {
   position: fixed;
   z-index: 90;
@@ -66,6 +74,100 @@
   transform: translateY(-0.5rem) scale(0.98);
 }
 
+.exitBackdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  background: rgb(15 20 25 / 48%);
+  transition: opacity var(--motion-dialog) var(--ease-out);
+}
+
+.exitViewport {
+  position: fixed;
+  z-index: 101;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.exitDialog {
+  inline-size: min(100%, 30rem);
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  padding: var(--space-6);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transition:
+    opacity var(--motion-dialog) var(--ease-out),
+    transform var(--motion-dialog) var(--ease-out);
+}
+
+.exitBackdrop[data-starting-style],
+.exitBackdrop[data-ending-style],
+.exitDialog[data-starting-style],
+.exitDialog[data-ending-style] {
+  opacity: 0;
+}
+
+.exitDialog[data-starting-style],
+.exitDialog[data-ending-style] {
+  transform: translateY(0.4rem) scale(0.97);
+}
+
+.exitDialog h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  letter-spacing: -0.025em;
+}
+
+.exitDialog p {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.exitActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-block-start: var(--space-6);
+}
+
+.exitActions button {
+  min-block-size: var(--target-size);
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.exitSecondary {
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.exitSecondary:hover,
+.exitSecondary:focus-visible {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.exitDanger {
+  border: 1px solid var(--danger);
+  color: #fff;
+  background: var(--danger);
+}
+
+.exitDanger:hover,
+.exitDanger:focus-visible {
+  filter: brightness(0.94);
+}
+
 .composeDialogHeader {
   min-block-size: 3.3125rem;
   display: grid;
@@ -102,11 +204,18 @@
   .siteError {
     padding-inline: var(--space-4);
   }
+
+  .exitActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .composeBackdrop,
-  .composeDialog {
+  .composeDialog,
+  .exitBackdrop,
+  .exitDialog {
     transition: none;
   }
 }

@@ -93,9 +93,9 @@ function LeftRail({
         <ThemeMenu site={site} />
       </nav>
       <InternalLink
-        aria-label="发布 Moment"
+        aria-label="发布"
         className={styles.publishAction}
-        data-compact-label="发布 Moment"
+        data-compact-label="发布"
         data-focus-key="shell:compose"
         href="/owner/compose"
         onClick={(event) => {
@@ -105,7 +105,7 @@ function LeftRail({
         }}
       >
         <Icon name="compose" />
-        <span>发布 Moment</span>
+        <span>发布</span>
       </InternalLink>
       <div className={styles.railBottom}>
         <NavLink item={ownerNav(ownerSettingsAvailable)} route={route} />

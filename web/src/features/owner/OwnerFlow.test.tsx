@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -523,6 +524,60 @@ describe("owner composing flow", () => {
     }
   });
 
+  it("publishes a Moment that contains only an image", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
+    const fetcher = installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        return json(
+          {
+            data: post("", "01K2ABCDEF0123456789ABCDE8", [
+              {
+                media_id: uploadEnvelope.data.media.id,
+                position: 0,
+                alt_text: null,
+              },
+            ]),
+            meta: { request_id: "req_image_only", replayed: false },
+          },
+          201,
+        );
+      }
+    });
+    render(<App />);
+
+    await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(screen.getByLabelText("图片文件"), {
+      target: {
+        files: [new File(["image"], "only.png", { type: "image/png" })],
+      },
+    });
+    const publish = screen.getByRole("button", { name: "发布" });
+    expect(publish).toBeEnabled();
+    fireEvent.click(publish);
+    await waitFor(() =>
+      expect(ControlledUploadRequest.requests).toHaveLength(1),
+    );
+    ControlledUploadRequest.requests[0].succeed(uploadEnvelope);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    const create = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url) === "/api/v1/owner/posts" && init?.method === "POST",
+    );
+    expect(JSON.parse(String(create?.[1]?.body))).toEqual({
+      content_md: "",
+      media: [
+        {
+          media_id: uploadEnvelope.data.media.id,
+          position: 0,
+          alt_text: null,
+        },
+      ],
+    });
+  });
+
   it("renders a CSP-compatible local preview without extending the text draft", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");
@@ -800,6 +855,40 @@ describe("owner composing flow", () => {
     expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
       "还没有发布",
     );
+  });
+
+  it("uses the in-app discard dialog when closing the desktop composer", async () => {
+    preauthenticate();
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(min-width: 720px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    installApi();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("link", { name: "发布" }));
+    const composer = await screen.findByRole("dialog", {
+      name: "发布 Moment",
+    });
+    fireEvent.change(within(composer).getByLabelText("图片文件"), {
+      target: {
+        files: [new File(["image"], "draft.png", { type: "image/png" })],
+      },
+    });
+    fireEvent.keyDown(composer, { key: "Escape" });
+
+    expect(
+      await screen.findByRole("dialog", { name: "退出发布？" }),
+    ).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "丢弃并退出" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
   });
 
   it("clears the hidden inline surface after a recovered page draft publishes", async () => {

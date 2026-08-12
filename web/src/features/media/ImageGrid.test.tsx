@@ -104,7 +104,7 @@ describe("public image grid", () => {
     );
   });
 
-  it("opens on preview, loads original only after explicit intent, and restores focus", async () => {
+  it("opens on preview, links to the original, and restores focus", async () => {
     render(<ImageGrid media={media(1)} />);
     const trigger = screen.getByRole("button", {
       name: "打开第 1 张图片，共 1 张：尚未提供图片描述",
@@ -122,12 +122,17 @@ describe("public image grid", () => {
         'img[src="/api/v1/media/01K2ABCDEF0123456789ABCD00"]',
       ),
     ).toBeNull();
-    fireEvent.click(
-      screen.getByRole("button", { name: "查看原图 / 播放 GIF" }),
+    expect(screen.getByRole("link", { name: "打开原图" })).toHaveAttribute(
+      "href",
+      "/api/v1/media/01K2ABCDEF0123456789ABCD00",
+    );
+    expect(screen.getByRole("link", { name: "打开原图" })).toHaveAttribute(
+      "target",
+      "_blank",
     );
     expect(dialog.querySelector("img")).toHaveAttribute(
       "src",
-      "/api/v1/media/01K2ABCDEF0123456789ABCD00",
+      "/api/v1/media/01K2ABCDEF0123456789ABCD00/preview",
     );
 
     fireEvent.keyDown(dialog, { key: "Escape" });

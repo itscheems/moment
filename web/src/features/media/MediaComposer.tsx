@@ -20,6 +20,16 @@ import styles from "./Media.module.css";
 
 const MEDIA_EXIT_MS = 170;
 
+interface DepartingMediaItem {
+  key: string;
+  previewSrc: string | null;
+  index: number;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 function reducedMotionPreferred(): boolean {
   return Boolean(
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
@@ -52,11 +62,12 @@ export function MediaComposer({
   const inputId = useId();
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [departingItems, setDepartingItems] = useState<
-    { key: string; previewSrc: string | null; index: number }[]
-  >([]);
+  const [departingItems, setDepartingItems] = useState<DepartingMediaItem[]>(
+    [],
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
+  const mediaListRef = useRef<HTMLOListElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
   const itemRefs = useRef(new Map<string, HTMLLIElement>());
   const previousRects = useRef(new Map<string, DOMRect>());
@@ -66,6 +77,10 @@ export function MediaComposer({
   const selectedItemIndex = items.findIndex((item) => item.key === selectedKey);
   const selectedIndex =
     selectedKey === null || selectedItemIndex < 0 ? null : selectedItemIndex;
+  const departingBlockSize = departingItems.reduce(
+    (size, item) => Math.max(size, item.top + item.height),
+    0,
+  );
   const lightboxItems: MediaLightboxItem[] = items.map((item, index) => {
     const previewSrc = item.localPreviewUrl || item.previewUrl || "";
     return {
@@ -183,12 +198,24 @@ export function MediaComposer({
       items[index + 1]?.key ?? items[index - 1]?.key ?? null;
     if (selectedKey === item.key) setSelectedKey(null);
     if (!reducedMotionPreferred()) {
+      const itemRect = itemRefs.current.get(item.key)?.getBoundingClientRect();
+      const listRect = mediaListRef.current?.getBoundingClientRect();
+      const layout =
+        itemRect && listRect
+          ? {
+              top: itemRect.top - listRect.top,
+              left: itemRect.left - listRect.left,
+              width: itemRect.width,
+              height: itemRect.height,
+            }
+          : { top: 0, left: 0, width: 0, height: 0 };
       setDepartingItems((current) => [
         ...current,
         {
           key: item.key,
           previewSrc: item.localPreviewUrl || item.previewUrl || null,
           index,
+          ...layout,
         },
       ]);
       removalTimers.current.set(
@@ -204,24 +231,6 @@ export function MediaComposer({
     onRemove(item.key);
   };
 
-  const mediaSlots: (
-    | { type: "item"; item: ComposerMediaItem; index: number }
-    | {
-        type: "departing";
-        key: string;
-        previewSrc: string | null;
-        index: number;
-      }
-  )[] = items.map((item, index) => ({ type: "item", item, index }));
-  for (const departing of [...departingItems].sort(
-    (left, right) => right.index - left.index,
-  )) {
-    mediaSlots.splice(Math.min(departing.index, mediaSlots.length), 0, {
-      type: "departing",
-      ...departing,
-    });
-  }
-
   return (
     <section aria-label="图片" className={styles.composerMedia}>
       <input
@@ -236,39 +245,21 @@ export function MediaComposer({
         tabIndex={-1}
         type="file"
       />
-      {mediaSlots.length > 0 ? (
+      {items.length > 0 || departingItems.length > 0 ? (
         <ol
           aria-label="待发布图片，按发布顺序"
           className={styles.mediaEditorList}
-          data-media-count={mediaSlots.length}
+          data-media-count={items.length}
+          ref={mediaListRef}
+          style={
+            items.length === 0 && departingBlockSize > 0
+              ? { blockSize: departingBlockSize }
+              : undefined
+          }
         >
-          {mediaSlots.map((slot) => {
-            if (slot.type === "departing") {
-              return (
-                <li
-                  aria-hidden="true"
-                  className={`${styles.mediaEditorItem} ${styles.mediaItemRemoving}`}
-                  data-media-slot={slot.key}
-                  data-media-state="departing"
-                  key={`departing-${slot.key}`}
-                >
-                  <div className={styles.editorPreview}>
-                    {slot.previewSrc ? (
-                      <img alt="" decoding="async" src={slot.previewSrc} />
-                    ) : (
-                      <span className={styles.editorPreviewPending} />
-                    )}
-                  </div>
-                </li>
-              );
-            }
-            const { item, index } = slot;
+          {items.map((item, index) => {
             const editorPreviewUrl =
               item.localPreviewUrl || item.previewUrl || null;
-            const providedInvalid =
-              item.altMode === "provided" &&
-              (!item.altText.trim() ||
-                Array.from(item.altText).length > MAX_ALT_CODE_POINTS);
             return (
               <li
                 className={styles.mediaEditorItem}
@@ -310,19 +301,6 @@ export function MediaComposer({
                   >
                     <span aria-hidden="true">×</span>
                   </button>
-                </div>
-                <div className={styles.editorMain}>
-                  <div className={styles.srOnly}>
-                    <strong>第 {index + 1} 张</strong>
-                    <span>
-                      {item.state === "queued" ? "等待上传" : null}
-                      {item.state === "uploading"
-                        ? `上传与生成预览 ${item.progress}%`
-                        : null}
-                      {item.state === "ready" ? "已就绪" : null}
-                      {item.state === "failed" ? "上传失败" : null}
-                    </span>
-                  </div>
                   {item.state === "uploading" ? (
                     <progress
                       aria-label={`第 ${index + 1} 张上传进度`}
@@ -330,131 +308,180 @@ export function MediaComposer({
                       value={item.progress}
                     />
                   ) : null}
-                  {item.error ? (
-                    <p className={styles.mediaError} role="alert">
-                      {item.error}
-                    </p>
-                  ) : null}
-                  <div className={styles.editorActions}>
-                    {items.length > 1 ? (
-                      <>
-                        <button
-                          disabled={disabled || index === 0}
-                          onClick={() => move(index, index - 1)}
-                          type="button"
-                        >
-                          上移
-                          <span className={styles.srOnly}>
-                            第 {index + 1} 张图片
-                          </span>
-                        </button>
-                        <button
-                          disabled={disabled || index === items.length - 1}
-                          onClick={() => move(index, index + 1)}
-                          type="button"
-                        >
-                          下移
-                          <span className={styles.srOnly}>
-                            第 {index + 1} 张图片
-                          </span>
-                        </button>
-                      </>
-                    ) : null}
-                    {item.state === "failed" ? (
-                      <button
-                        disabled={disabled}
-                        onClick={() => onRetry(item.key)}
-                        type="button"
-                      >
-                        重试上传
-                        <span className={styles.srOnly}>
-                          第 {index + 1} 张图片
-                        </span>
-                      </button>
-                    ) : null}
-                  </div>
-                  <details className={styles.altDisclosure}>
-                    <summary>
-                      {item.altMode === "provided"
-                        ? "编辑描述"
-                        : item.altMode === "decorative"
-                          ? "纯装饰"
-                          : "添加描述"}
-                    </summary>
-                    <fieldset
-                      className={styles.altFieldset}
-                      disabled={disabled}
-                    >
-                      <legend>图片描述（可选）</legend>
-                      <div className={styles.altModes}>
-                        {(
-                          [
-                            ["missing", "暂未描述"],
-                            ["decorative", "纯装饰"],
-                            ["provided", "填写描述"],
-                          ] as const
-                        ).map(([mode, label]) => (
-                          <label key={mode}>
-                            <input
-                              checked={item.altMode === mode}
-                              name={`${item.key}-alt-mode`}
-                              onChange={() => {
-                                const next = items.map((candidate) =>
-                                  candidate.key === item.key
-                                    ? {
-                                        ...candidate,
-                                        altMode: mode,
-                                        error: null,
-                                      }
-                                    : candidate,
-                                );
-                                onChange(
-                                  next,
-                                  `第 ${index + 1} 张已设为${label}。`,
-                                );
-                              }}
-                              type="radio"
-                            />
-                            {label}
-                          </label>
-                        ))}
-                      </div>
-                      {item.altMode === "provided" ? (
-                        <label className={styles.altInput}>
-                          <span>描述图片内容</span>
-                          <textarea
-                            aria-invalid={providedInvalid}
-                            onChange={(event) =>
-                              onChange(
-                                items.map((candidate) =>
-                                  candidate.key === item.key
-                                    ? {
-                                        ...candidate,
-                                        altText: event.target.value,
-                                        error: null,
-                                      }
-                                    : candidate,
-                                ),
-                                `已更新第 ${index + 1} 张图片描述。`,
-                              )
-                            }
-                            placeholder="简要描述图片内容"
-                            rows={2}
-                            value={item.altText}
-                          />
-                          <small>
-                            {Array.from(item.altText).length} /{" "}
-                            {MAX_ALT_CODE_POINTS}
-                          </small>
-                        </label>
-                      ) : null}
-                    </fieldset>
-                  </details>
                 </div>
               </li>
             );
           })}
+          {departingItems.map((item) => (
+            <li
+              aria-hidden="true"
+              className={`${styles.mediaEditorItem} ${styles.mediaItemRemoving}`}
+              data-media-slot={item.key}
+              data-media-state="departing"
+              key={`departing-${item.key}`}
+              style={{
+                blockSize: item.height || undefined,
+                inlineSize: item.width || undefined,
+                insetBlockStart: item.top,
+                insetInlineStart: item.left,
+              }}
+            >
+              <div className={styles.editorPreview}>
+                {item.previewSrc ? (
+                  <img alt="" decoding="async" src={item.previewSrc} />
+                ) : (
+                  <span className={styles.editorPreviewPending} />
+                )}
+              </div>
+            </li>
+          ))}
         </ol>
+      ) : null}
+      {items.some((item) => item.state === "failed") ? (
+        <div className={styles.mediaFailures}>
+          {items.map((item, index) =>
+            item.state === "failed" ? (
+              <div key={item.key}>
+                <p role="alert">
+                  第 {index + 1} 张上传失败
+                  {item.error ? `：${item.error}` : ""}
+                </p>
+                <button
+                  disabled={disabled}
+                  onClick={() => onRetry(item.key)}
+                  type="button"
+                >
+                  重试上传
+                  <span className={styles.srOnly}>第 {index + 1} 张图片</span>
+                </button>
+              </div>
+            ) : null,
+          )}
+        </div>
+      ) : null}
+      {items.length > 0 ? (
+        <details className={styles.mediaOptions}>
+          <summary>
+            图片选项
+            <span>
+              {items.filter((item) => item.altMode === "missing").length > 0
+                ? `${items.filter((item) => item.altMode === "missing").length} 张未描述`
+                : "描述已处理"}
+            </span>
+          </summary>
+          <ol className={styles.mediaOptionList}>
+            {items.map((item, index) => {
+              const providedInvalid =
+                item.altMode === "provided" &&
+                (!item.altText.trim() ||
+                  Array.from(item.altText).length > MAX_ALT_CODE_POINTS);
+              return (
+                <li className={styles.mediaOptionItem} key={item.key}>
+                  <header>
+                    <div>
+                      <strong>第 {index + 1} 张</strong>
+                      <span>
+                        {item.state === "queued" ? "等待上传" : null}
+                        {item.state === "uploading"
+                          ? `处理中 ${item.progress}%`
+                          : null}
+                        {item.state === "ready" ? "已就绪" : null}
+                        {item.state === "failed" ? "上传失败" : null}
+                      </span>
+                    </div>
+                    <div className={styles.editorActions}>
+                      {items.length > 1 ? (
+                        <>
+                          <button
+                            disabled={disabled || index === 0}
+                            onClick={() => move(index, index - 1)}
+                            type="button"
+                          >
+                            上移
+                            <span className={styles.srOnly}>
+                              第 {index + 1} 张图片
+                            </span>
+                          </button>
+                          <button
+                            disabled={disabled || index === items.length - 1}
+                            onClick={() => move(index, index + 1)}
+                            type="button"
+                          >
+                            下移
+                            <span className={styles.srOnly}>
+                              第 {index + 1} 张图片
+                            </span>
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </header>
+                  <fieldset className={styles.altFieldset} disabled={disabled}>
+                    <legend>第 {index + 1} 张图片描述（可选）</legend>
+                    <div className={styles.altModes}>
+                      {(
+                        [
+                          ["missing", "暂未描述"],
+                          ["decorative", "纯装饰"],
+                          ["provided", "填写描述"],
+                        ] as const
+                      ).map(([mode, label]) => (
+                        <label key={mode}>
+                          <input
+                            checked={item.altMode === mode}
+                            name={`${item.key}-alt-mode`}
+                            onChange={() => {
+                              const next = items.map((candidate) =>
+                                candidate.key === item.key
+                                  ? { ...candidate, altMode: mode, error: null }
+                                  : candidate,
+                              );
+                              onChange(
+                                next,
+                                `第 ${index + 1} 张已设为${label}。`,
+                              );
+                            }}
+                            type="radio"
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    {item.altMode === "provided" ? (
+                      <label className={styles.altInput}>
+                        <span>描述图片内容</span>
+                        <textarea
+                          aria-invalid={providedInvalid}
+                          onChange={(event) =>
+                            onChange(
+                              items.map((candidate) =>
+                                candidate.key === item.key
+                                  ? {
+                                      ...candidate,
+                                      altText: event.target.value,
+                                      error: null,
+                                    }
+                                  : candidate,
+                              ),
+                              `已更新第 ${index + 1} 张图片描述。`,
+                            )
+                          }
+                          placeholder="简要描述图片内容"
+                          rows={2}
+                          value={item.altText}
+                        />
+                        <small>
+                          {Array.from(item.altText).length} /{" "}
+                          {MAX_ALT_CODE_POINTS}
+                        </small>
+                      </label>
+                    ) : null}
+                  </fieldset>
+                </li>
+              );
+            })}
+          </ol>
+        </details>
       ) : null}
       <div className={styles.mediaControls}>
         <div className={styles.mediaToolbar}>
