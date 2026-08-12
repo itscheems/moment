@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -13,6 +14,8 @@ import { MediaComposer } from "./MediaComposer";
 import type { ComposerMediaItem } from "./mediaState";
 
 afterEach(cleanup);
+
+afterEach(() => vi.useRealTimers());
 
 function item(key: string): ComposerMediaItem {
   return {
@@ -163,6 +166,33 @@ describe("media editor", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "选择图片" })).toHaveFocus(),
     );
+  });
+
+  it("keeps a removed item in its grid slot until the soft exit finishes", () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <FocusHarness initial={[item("00"), item("01"), item("02")]} />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /移除/ })[1]);
+    const slots = () =>
+      Array.from(container.querySelectorAll("[data-media-slot]")).map(
+        (node) => [
+          node.getAttribute("data-media-slot"),
+          node.getAttribute("data-media-state"),
+        ],
+      );
+    expect(slots()).toEqual([
+      ["00", null],
+      ["01", "departing"],
+      ["02", null],
+    ]);
+
+    act(() => vi.advanceTimersByTime(170));
+    expect(slots()).toEqual([
+      ["00", null],
+      ["02", null],
+    ]);
   });
 
   it("keeps focus with the moved usage after keyboard reordering", async () => {

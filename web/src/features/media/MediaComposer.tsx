@@ -3,6 +3,7 @@ import {
   type ReactNode,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -52,11 +53,13 @@ export function MediaComposer({
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [departingItems, setDepartingItems] = useState<
-    { key: string; previewSrc: string | null }[]
+    { key: string; previewSrc: string | null; index: number }[]
   >([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
+  const itemRefs = useRef(new Map<string, HTMLLIElement>());
+  const previousRects = useRef(new Map<string, DOMRect>());
   const focusAfterChange = useRef<string | null | undefined>(undefined);
   const removalTimers = useRef(new Map<string, number>());
 
@@ -114,6 +117,30 @@ export function MediaComposer({
     });
   }, [items]);
 
+  useLayoutEffect(() => {
+    const nextRects = new Map<string, DOMRect>();
+    for (const [key, node] of itemRefs.current) {
+      const current = node.getBoundingClientRect();
+      nextRects.set(key, current);
+      const previous = previousRects.current.get(key);
+      if (!previous || reducedMotionPreferred() || !node.animate) continue;
+      const deltaX = previous.left - current.left;
+      const deltaY = previous.top - current.top;
+      if (deltaX === 0 && deltaY === 0) continue;
+      node.animate(
+        [
+          { transform: `translate(${deltaX}px, ${deltaY}px)` },
+          { transform: "translate(0, 0)" },
+        ],
+        {
+          duration: 220,
+          easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+        },
+      );
+    }
+    previousRects.current = nextRects;
+  }, [departingItems, items]);
+
   const selectFiles = (event: ChangeEvent<HTMLInputElement>) => {
     const accepted: File[] = [];
     const nextItems = items;
@@ -161,6 +188,7 @@ export function MediaComposer({
         {
           key: item.key,
           previewSrc: item.localPreviewUrl || item.previewUrl || null,
+          index,
         },
       ]);
       removalTimers.current.set(
@@ -176,6 +204,24 @@ export function MediaComposer({
     onRemove(item.key);
   };
 
+  const mediaSlots: (
+    | { type: "item"; item: ComposerMediaItem; index: number }
+    | {
+        type: "departing";
+        key: string;
+        previewSrc: string | null;
+        index: number;
+      }
+  )[] = items.map((item, index) => ({ type: "item", item, index }));
+  for (const departing of [...departingItems].sort(
+    (left, right) => right.index - left.index,
+  )) {
+    mediaSlots.splice(Math.min(departing.index, mediaSlots.length), 0, {
+      type: "departing",
+      ...departing,
+    });
+  }
+
   return (
     <section aria-label="图片" className={styles.composerMedia}>
       <input
@@ -190,13 +236,33 @@ export function MediaComposer({
         tabIndex={-1}
         type="file"
       />
-      {items.length + departingItems.length > 0 ? (
+      {mediaSlots.length > 0 ? (
         <ol
           aria-label="待发布图片，按发布顺序"
           className={styles.mediaEditorList}
-          data-media-count={items.length + departingItems.length}
+          data-media-count={mediaSlots.length}
         >
-          {items.map((item, index) => {
+          {mediaSlots.map((slot) => {
+            if (slot.type === "departing") {
+              return (
+                <li
+                  aria-hidden="true"
+                  className={`${styles.mediaEditorItem} ${styles.mediaItemRemoving}`}
+                  data-media-slot={slot.key}
+                  data-media-state="departing"
+                  key={`departing-${slot.key}`}
+                >
+                  <div className={styles.editorPreview}>
+                    {slot.previewSrc ? (
+                      <img alt="" decoding="async" src={slot.previewSrc} />
+                    ) : (
+                      <span className={styles.editorPreviewPending} />
+                    )}
+                  </div>
+                </li>
+              );
+            }
+            const { item, index } = slot;
             const editorPreviewUrl =
               item.localPreviewUrl || item.previewUrl || null;
             const providedInvalid =
@@ -204,7 +270,15 @@ export function MediaComposer({
               (!item.altText.trim() ||
                 Array.from(item.altText).length > MAX_ALT_CODE_POINTS);
             return (
-              <li className={styles.mediaEditorItem} key={item.key}>
+              <li
+                className={styles.mediaEditorItem}
+                data-media-slot={item.key}
+                key={item.key}
+                ref={(node) => {
+                  if (node) itemRefs.current.set(item.key, node);
+                  else itemRefs.current.delete(item.key);
+                }}
+              >
                 <div className={styles.editorPreview}>
                   <button
                     aria-label={`预览第 ${index + 1} 张图片，共 ${items.length} 张`}
@@ -380,21 +454,6 @@ export function MediaComposer({
               </li>
             );
           })}
-          {departingItems.map((item) => (
-            <li
-              aria-hidden="true"
-              className={`${styles.mediaEditorItem} ${styles.mediaItemRemoving}`}
-              key={`departing-${item.key}`}
-            >
-              <div className={styles.editorPreview}>
-                {item.previewSrc ? (
-                  <img alt="" decoding="async" src={item.previewSrc} />
-                ) : (
-                  <span className={styles.editorPreviewPending} />
-                )}
-              </div>
-            </li>
-          ))}
         </ol>
       ) : null}
       <div className={styles.mediaControls}>
