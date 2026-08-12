@@ -35,8 +35,8 @@
   box-shadow: var(--shadow-popover);
   transform-origin: var(--transform-origin);
   transition:
-    transform var(--motion-fast) var(--ease-out),
-    opacity var(--motion-fast) var(--ease-out);
+    transform var(--motion-menu) var(--ease-out),
+    opacity var(--motion-menu) var(--ease-out);
 }
 
 .popup[data-starting-style],
@@ -74,7 +74,7 @@
   z-index: 90;
   inset: 0;
   background: rgb(91 112 131 / 40%);
-  transition: opacity var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-dialog) var(--ease-out);
 }
 
 .backdrop[data-starting-style],
@@ -102,8 +102,8 @@
   box-shadow: var(--shadow-popover);
   transform-origin: center;
   transition:
-    transform var(--motion-fast) var(--ease-out),
-    opacity var(--motion-fast) var(--ease-out);
+    transform var(--motion-dialog) var(--ease-out),
+    opacity var(--motion-dialog) var(--ease-out);
 }
 
 .appearanceDialog[data-starting-style],
@@ -119,8 +119,8 @@
 }
 
 .dialogHeader button {
-  inline-size: 2.25rem;
-  block-size: 2.25rem;
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
   border: 0;
   border-radius: 50%;
   color: var(--text-primary);
@@ -270,7 +270,7 @@
 }
 
 .doneButton {
-  min-block-size: 2.5rem;
+  min-block-size: var(--target-size);
   display: block;
   border: 0;
   border-radius: 999px;
@@ -350,8 +350,8 @@
   }
 
   .accentChoice {
-    inline-size: 2.5rem;
-    block-size: 2.5rem;
+    inline-size: var(--target-size);
+    block-size: var(--target-size);
   }
 
   .backgroundGrid {

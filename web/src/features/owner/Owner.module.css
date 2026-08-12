@@ -280,7 +280,7 @@
 }
 
 .composerPublishButton {
-  min-block-size: 2.25rem;
+  min-block-size: var(--target-size);
   border-radius: 999px;
   padding-inline: var(--space-4);
   color: #fff;
@@ -394,8 +394,8 @@
   box-shadow: var(--shadow-popover);
   transform-origin: var(--transform-origin);
   transition:
-    transform var(--motion-fast) var(--ease-out),
-    opacity var(--motion-fast) var(--ease-out);
+    transform var(--motion-menu) var(--ease-out),
+    opacity var(--motion-menu) var(--ease-out);
 }
 
 .ownerMenuPopup[data-starting-style],
@@ -462,6 +462,7 @@
   z-index: var(--layer-popover);
   inset: 0;
   background: rgb(0 0 0 / 40%);
+  transition: opacity var(--motion-dialog) var(--ease-out);
 }
 
 .dialogViewport {
@@ -481,6 +482,22 @@
   color: var(--text-primary);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-popover);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-dialog) var(--ease-out),
+    transform var(--motion-dialog) var(--ease-out);
+}
+
+.dialogBackdrop[data-starting-style],
+.dialogBackdrop[data-ending-style],
+.dialogPopup[data-starting-style],
+.dialogPopup[data-ending-style] {
+  opacity: 0;
+}
+
+.dialogPopup[data-starting-style],
+.dialogPopup[data-ending-style] {
+  transform: scale(0.96);
 }
 
 .dialogTitle {
@@ -542,5 +559,13 @@
 
   .dialogActions button {
     inline-size: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ownerMenuPopup,
+  .dialogBackdrop,
+  .dialogPopup {
+    transition: none;
   }
 }

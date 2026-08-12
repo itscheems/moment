@@ -104,7 +104,11 @@ export function ProfilePage({
             href="/profile"
             title={`${title} 的个人资料`}
             trigger={
-              <button aria-label="分享个人资料" type="button">
+              <button
+                aria-label="分享个人资料"
+                title="分享个人资料"
+                type="button"
+              >
                 <Icon name="share" />
               </button>
             }

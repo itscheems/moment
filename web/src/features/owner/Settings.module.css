@@ -354,6 +354,7 @@
   z-index: var(--layer-popover);
   inset: 0;
   background: rgb(8 15 11 / 62%);
+  transition: opacity var(--motion-dialog) var(--ease-out);
 }
 
 .dialogViewport {
@@ -374,6 +375,22 @@
   color: var(--text-primary);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-popover);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-dialog) var(--ease-out),
+    transform var(--motion-dialog) var(--ease-out);
+}
+
+.dialogBackdrop[data-starting-style],
+.dialogBackdrop[data-ending-style],
+.restoreDialog[data-starting-style],
+.restoreDialog[data-ending-style] {
+  opacity: 0;
+}
+
+.restoreDialog[data-starting-style],
+.restoreDialog[data-ending-style] {
+  transform: scale(0.96);
 }
 
 .restoreDialog h2 {
@@ -825,5 +842,12 @@
 
   .dialogActions {
     flex-direction: column-reverse;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dialogBackdrop,
+  .restoreDialog {
+    transition: none;
   }
 }

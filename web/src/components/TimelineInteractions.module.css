@@ -17,8 +17,8 @@
   font-size: 0.7rem;
   white-space: nowrap;
   transition:
-    opacity var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+    opacity var(--motion-menu) var(--ease-out),
+    transform var(--motion-menu) var(--ease-out);
 }
 
 .tooltip[data-starting-style],
@@ -37,8 +37,8 @@
   box-shadow: var(--shadow-popover);
   transform-origin: var(--transform-origin);
   transition:
-    opacity var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+    opacity var(--motion-popover) var(--ease-out),
+    transform var(--motion-popover) var(--ease-out);
 }
 
 .identityCard[data-starting-style],
@@ -95,7 +95,7 @@
 }
 
 .identityProfileLink {
-  min-block-size: 2.25rem;
+  min-block-size: var(--target-size);
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
@@ -118,8 +118,8 @@
   box-shadow: var(--shadow-popover);
   transform-origin: var(--transform-origin);
   transition:
-    opacity var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+    opacity var(--motion-menu) var(--ease-out),
+    transform var(--motion-menu) var(--ease-out);
 }
 
 .sharePopup[data-starting-style],

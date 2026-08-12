@@ -21,7 +21,7 @@
   z-index: 100;
   inset: 0;
   background: rgb(91 112 131 / 40%);
-  transition: opacity var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-dialog) var(--ease-out);
 }
 
 .backdrop[data-starting-style],
@@ -49,8 +49,8 @@
   box-shadow: var(--shadow-popover);
   transform-origin: center;
   transition:
-    transform var(--motion-fast) var(--ease-out),
-    opacity var(--motion-fast) var(--ease-out);
+    transform var(--motion-dialog) var(--ease-out),
+    opacity var(--motion-dialog) var(--ease-out);
 }
 
 .form {

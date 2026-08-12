@@ -64,14 +64,14 @@
 
 .commentComposerLayout {
   display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-columns: var(--target-size) minmax(0, 1fr);
   align-items: start;
   gap: var(--space-3);
 }
 
 .composerAvatar {
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -228,7 +228,7 @@
 }
 
 .formError button {
-  min-block-size: 2.25rem;
+  min-block-size: var(--target-size);
   border: 0;
   border-radius: 999px;
   padding-inline: var(--space-3);
@@ -435,14 +435,14 @@
 
 .commentItem > article {
   display: grid;
-  grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-columns: var(--target-size) minmax(0, 1fr);
   column-gap: var(--space-3);
 }
 
 .commentAvatar {
   grid-row: 1 / span 3;
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
   display: grid;
   place-items: center;
   border: 1px solid var(--border-subtle);
@@ -486,8 +486,8 @@
 }
 
 .replyComment .commentAvatar {
-  inline-size: 2.25rem;
-  block-size: 2.25rem;
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
   font-size: var(--text-sm);
 }
 
@@ -605,7 +605,7 @@
   z-index: var(--layer-popover);
   inset: 0;
   background: rgb(0 0 0 / 45%);
-  transition: opacity var(--motion-fast) var(--ease-out);
+  transition: opacity var(--motion-dialog) var(--ease-out);
 }
 
 .dialogViewport {
@@ -627,8 +627,8 @@
   box-shadow: var(--shadow-popover);
   transform-origin: center;
   transition:
-    opacity var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+    opacity var(--motion-dialog) var(--ease-out),
+    transform var(--motion-dialog) var(--ease-out);
 }
 
 .dialogBackdrop[data-starting-style],

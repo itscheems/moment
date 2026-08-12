@@ -5,11 +5,19 @@
   text-rendering: optimizeLegibility;
 
   --font-body:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-    "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-display: var(--font-body);
-  --font-utility: var(--font-body);
+    "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei",
+    sans-serif;
+  --font-display:
+    "SF Pro Display", -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-utility:
+    "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --tracking-display: -0.022em;
+  --tracking-body: -0.006em;
+  --tracking-utility: 0.006em;
 
   --canvas: #ffffff;
   --surface: #ffffff;
@@ -49,6 +57,10 @@
   --radius-panel: 1rem;
   --target-size: 2.75rem;
   --motion-fast: 140ms;
+  --motion-menu: 120ms;
+  --motion-popover: 140ms;
+  --motion-dialog: 160ms;
+  --motion-content: 240ms;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --shadow-popover:
     0 0 15px rgb(101 119 134 / 20%), 0 0 3px 1px rgb(101 119 134 / 15%);
@@ -85,10 +97,10 @@
   --canvas: #000000;
   --surface: #000000;
   --surface-elevated: #16181c;
-  --surface-hover: #080808;
+  --surface-hover: #181818;
   --surface-muted: #202327;
   --text-primary: #e7e9ea;
-  --text-secondary: #71767b;
+  --text-secondary: #8b98a5;
   --text-tertiary: #71767b;
   --border-subtle: #2f3336;
   --border-strong: #536471;
@@ -174,6 +186,7 @@ body {
   background: var(--canvas);
   color: var(--text-primary);
   font-size: var(--text-md);
+  letter-spacing: var(--tracking-body);
   line-height: 1.4;
   -webkit-font-smoothing: antialiased;
 }
@@ -184,6 +197,16 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+:where(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-display);
+  letter-spacing: var(--tracking-display);
+}
+
+:where(button, input, select, small, time) {
+  font-family: var(--font-utility);
+  letter-spacing: var(--tracking-utility);
 }
 
 button,
@@ -207,10 +230,10 @@ a {
     --canvas: #000000;
     --surface: #000000;
     --surface-elevated: #16181c;
-    --surface-hover: #080808;
+    --surface-hover: #181818;
     --surface-muted: #202327;
     --text-primary: #e7e9ea;
-    --text-secondary: #71767b;
+    --text-secondary: #8b98a5;
     --text-tertiary: #71767b;
     --border-subtle: #2f3336;
     --border-strong: #536471;

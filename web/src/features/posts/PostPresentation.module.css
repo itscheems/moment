@@ -18,17 +18,19 @@
 }
 
 .fresh {
-  animation: settle-new-tick 420ms var(--ease-out) both;
+  animation: settle-new-tick var(--motion-content) var(--ease-out) both;
 }
 
 @keyframes settle-new-tick {
   from {
-    opacity: 0;
-    transform: translateY(-0.75rem);
+    opacity: 0.72;
+    box-shadow: inset 0.2rem 0 var(--accent);
+    transform: translateY(-0.25rem);
   }
 
   to {
     opacity: 1;
+    box-shadow: inset 0 0 transparent;
     transform: translateY(0);
   }
 }
@@ -253,7 +255,7 @@
 }
 
 .readMore {
-  min-block-size: 2.25rem;
+  min-block-size: var(--target-size);
   inline-size: fit-content;
   display: flex;
   align-items: center;

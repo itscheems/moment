@@ -262,9 +262,11 @@ describe("shared post presentation", () => {
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "置顶到个人资料" }),
     );
-    expect(
-      screen.getByRole("heading", { name: "置顶这段 Moment？" }),
-    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "置顶这段 Moment？" }),
+      ).toBeVisible(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "置顶" }));
 
     await waitFor(() => expect(onSiteChanged).toHaveBeenCalledTimes(1));

@@ -356,7 +356,7 @@
 }
 
 .altModes label {
-  min-block-size: 2.25rem;
+  min-block-size: var(--target-size);
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -400,7 +400,7 @@
 }
 
 .editorActions button {
-  min-block-size: 2rem;
+  min-block-size: var(--target-size);
   padding-inline: var(--space-2);
   font-size: var(--text-xs);
 }
@@ -701,7 +701,7 @@
 
 .lightboxOriginal {
   flex: 0 0 auto;
-  min-block-size: 2.25rem;
+  min-block-size: var(--target-size);
   border: 1px solid rgb(255 255 255 / 36%);
   border-radius: 999px;
   padding-inline: var(--space-3);

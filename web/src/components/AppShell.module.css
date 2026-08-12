@@ -229,8 +229,8 @@
   box-shadow: var(--shadow-popover);
   transform-origin: var(--transform-origin);
   transition:
-    opacity var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+    opacity var(--motion-menu) var(--ease-out),
+    transform var(--motion-menu) var(--ease-out);
 }
 
 .mobileAccountPopup[data-starting-style],
@@ -296,7 +296,7 @@
 
 .memoryMap {
   overflow: hidden;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-subtle);
   border-radius: 1rem;
   padding: var(--space-3) var(--space-4) var(--space-2);
   background: var(--surface-hover);
@@ -324,7 +324,7 @@
 }
 
 .memoryMap header > a {
-  min-block-size: 2rem;
+  min-block-size: var(--target-size);
   display: flex;
   align-items: center;
   color: var(--accent);

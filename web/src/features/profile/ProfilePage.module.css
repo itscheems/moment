@@ -170,7 +170,7 @@
 }
 
 .moreRow button {
-  min-block-size: 2.5rem;
+  min-block-size: var(--target-size);
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding-inline: var(--space-4);

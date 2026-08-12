@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import shellCss from "../components/AppShell.module.css?inline";
 import stateCss from "../components/ShellState.module.css?inline";
 import themeMenuCss from "../components/ThemeMenu.module.css?inline";
+import interactionsCss from "../components/TimelineInteractions.module.css?inline";
+import commentsCss from "../features/comments/Comments.module.css?inline";
+import mediaCss from "../features/media/Media.module.css?inline";
+import ownerCss from "../features/owner/Owner.module.css?inline";
+import postCss from "../features/posts/PostPresentation.module.css?inline";
 import profileEditorCss from "../features/profile/ProfileEditor.module.css?inline";
 import profileCss from "../features/profile/ProfilePage.module.css?inline";
 import globalCss from "./global.css?inline";
@@ -63,6 +68,43 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain(':root[data-accent="blue"]');
     expect(globalCss).toContain(":focus-visible");
     expect(globalCss).toContain("--focus-ring:");
+  });
+
+  it("gives body, display, and utility type distinct CJK-safe roles", () => {
+    expect(globalCss).toContain('"SF Pro Text"');
+    expect(globalCss).toContain('"SF Pro Display"');
+    expect(globalCss).toContain('"PingFang SC"');
+    expect(globalCss).toContain('"Noto Sans CJK SC"');
+    expect(globalCss).toContain("--tracking-display: -0.022em");
+    expect(globalCss).toContain("--tracking-body: -0.006em");
+    expect(globalCss).toContain("--tracking-utility: 0.006em");
+  });
+
+  it("keeps lights-out elevated surfaces and secondary actions visible", () => {
+    expect(globalCss).toContain("--surface-elevated: #16181c");
+    expect(globalCss).toContain("--surface-hover: #181818");
+    expect(globalCss).toContain("--text-secondary: #8b98a5");
+    expect(contrast("#8b98a5", "#000000")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("coordinates menu, popover, dialog, and content motion", () => {
+    expect(globalCss).toContain("--motion-menu: 120ms");
+    expect(globalCss).toContain("--motion-popover: 140ms");
+    expect(globalCss).toContain("--motion-dialog: 160ms");
+    expect(globalCss).toContain("--motion-content: 240ms");
+    expect(themeMenuCss).toContain("var(--motion-menu)");
+    expect(interactionsCss).toContain("var(--motion-popover)");
+    expect(ownerCss).toContain("var(--motion-dialog)");
+    expect(postCss).toContain("var(--motion-content)");
+  });
+
+  it("keeps high-frequency action boxes on the shared 44px target", () => {
+    expect(globalCss).toContain("--target-size: 2.75rem");
+    expect(themeMenuCss).toContain("inline-size: var(--target-size)");
+    expect(interactionsCss).toContain("min-block-size: var(--target-size)");
+    expect(mediaCss).toContain("min-block-size: var(--target-size)");
+    expect(commentsCss).toContain("min-block-size: var(--target-size)");
+    expect(ownerCss).toContain("min-block-size: var(--target-size)");
   });
 
   it("uses blue emphasis with black and white primary controls", () => {

@@ -57,20 +57,12 @@ function Brand({ site }: { site: SiteIdentity }) {
   );
 }
 
-function NavLink({
-  item,
-  route,
-  compact = false,
-}: {
-  item: NavItem;
-  route: AppRoute;
-  compact?: boolean;
-}) {
+function NavLink({ item, route }: { item: NavItem; route: AppRoute }) {
   const current = item.active.includes(route.id);
   return (
     <InternalLink
       aria-current={current ? "page" : undefined}
-      aria-label={compact ? item.label : undefined}
+      aria-label={item.label}
       className={styles.navLink}
       data-compact-label={item.label}
       href={item.href}
@@ -101,6 +93,7 @@ function LeftRail({
         <ThemeMenu />
       </nav>
       <InternalLink
+        aria-label="发布 Moment"
         className={styles.publishAction}
         data-compact-label="发布 Moment"
         data-focus-key="shell:compose"
@@ -221,7 +214,7 @@ function MobileNavigation({ route }: { route: AppRoute }) {
   return (
     <nav aria-label="移动导航" className={styles.mobileNav}>
       {items.map((item) => (
-        <NavLink compact item={item} key={item.href} route={route} />
+        <NavLink item={item} key={item.href} route={route} />
       ))}
     </nav>
   );
