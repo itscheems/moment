@@ -9,6 +9,53 @@ export interface MentionSegment {
   mention: boolean;
 }
 
+export interface MentionPanelGeometry {
+  anchorLeft: number;
+  anchorTop: number;
+  editorLeft: number;
+  editorTop: number;
+  editorWidth: number;
+  itemCount: number;
+  lineHeight: number;
+  scrollLeft: number;
+  scrollTop: number;
+  viewportHeight: number;
+}
+
+export function mentionPanelPosition({
+  anchorLeft,
+  anchorTop,
+  editorLeft,
+  editorTop,
+  editorWidth,
+  itemCount,
+  lineHeight,
+  scrollLeft,
+  scrollTop,
+  viewportHeight,
+}: MentionPanelGeometry) {
+  const width = Math.min(352, editorWidth);
+  const left = Math.max(
+    0,
+    Math.min(anchorLeft - editorLeft - scrollLeft, editorWidth - width),
+  );
+  const visibleAnchorTop = anchorTop - scrollTop;
+  const below = viewportHeight - visibleAnchorTop - lineHeight - 6;
+  const panelHeight = Math.min(
+    itemCount * 68 + 2,
+    Math.min(288, viewportHeight * 0.42),
+  );
+  const placeAbove = below < panelHeight && visibleAnchorTop - 6 > below;
+  const top = Math.max(
+    0,
+    anchorTop -
+      editorTop -
+      scrollTop +
+      (placeAbove ? -panelHeight - 6 : lineHeight + 6),
+  );
+  return { left, top, width };
+}
+
 export function activeMention(
   value: string,
   caret: number,

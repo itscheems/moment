@@ -397,6 +397,11 @@ describe("owner composing flow", () => {
       target: { value: "今天想起 @ow", selectionStart: 9 },
     });
     const option = await screen.findByRole("option", { name: /乔乔.*@owner/ });
+    const suggestions = screen.getByRole("listbox", {
+      name: "提及用户建议",
+    });
+    expect(suggestions).toHaveAttribute("data-placement", "caret");
+    expect(suggestions.parentElement).toContainElement(editor);
     expect(
       fetcher.mock.calls.some(([url]) => String(url).includes("q=ow")),
     ).toBe(true);

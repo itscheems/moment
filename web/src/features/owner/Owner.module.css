@@ -223,6 +223,22 @@
   box-shadow: var(--shadow-popover);
 }
 
+.mentionSuggestionsCaret {
+  inset-inline: auto;
+  inset-block-start: auto;
+  max-block-size: min(18rem, 42vh);
+  overflow-y: auto;
+  transform-origin: top left;
+  animation: mentionSuggestionsIn var(--motion-fast) var(--ease-out);
+}
+
+@keyframes mentionSuggestionsIn {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem) scale(0.985);
+  }
+}
+
 .mentionSuggestion {
   inline-size: 100%;
   min-block-size: 4.25rem;
@@ -293,6 +309,28 @@
   white-space: pre-wrap;
 }
 
+.composerMentionMeasure {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: visible;
+  padding: var(--space-2) 0 var(--space-3);
+  color: transparent;
+  font-size: 1.25rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  visibility: hidden;
+  white-space: pre-wrap;
+}
+
+.composerMentionMeasure span {
+  display: inline-block;
+  inline-size: 1px;
+  block-size: 1em;
+  vertical-align: text-bottom;
+}
+
 .composerMention {
   color: var(--accent);
 }
@@ -337,7 +375,8 @@
   padding-block: var(--space-1) var(--space-2);
 }
 
-.pageComposer.composerHasMedia .composerHighlight {
+.pageComposer.composerHasMedia .composerHighlight,
+.pageComposer.composerHasMedia .composerMentionMeasure {
   padding-block: var(--space-1) var(--space-2);
 }
 
@@ -1003,6 +1042,10 @@
     font-size: 1.125rem;
   }
 
+  .composerMentionMeasure {
+    font-size: 1.125rem;
+  }
+
   .pageComposer .composerForm textarea {
     min-block-size: 7rem;
   }
@@ -1057,8 +1100,10 @@
 @media (prefers-reduced-motion: reduce) {
   .ownerMenuPopup,
   .dialogBackdrop,
-  .dialogPopup {
+  .dialogPopup,
+  .mentionSuggestionsCaret {
     transition: none;
+    animation: none;
   }
 
   .locationPopup {

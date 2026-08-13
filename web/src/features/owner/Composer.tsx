@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -39,7 +40,11 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { LocationPicker } from "./LocationPicker";
 import { MentionSuggestions } from "./MentionSuggestions";
-import { activeMention, mentionSegments } from "./mentions";
+import {
+  activeMention,
+  mentionPanelPosition,
+  mentionSegments,
+} from "./mentions";
 import {
   COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
@@ -173,6 +178,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const navigationBlockerId = useRef(Symbol("composer-navigation-blocker"));
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const highlightRef = useRef<HTMLDivElement>(null);
+    const mentionAnchorRef = useRef<HTMLSpanElement>(null);
+    const editorRef = useRef<HTMLDivElement>(null);
+    const [mentionPosition, setMentionPosition] = useState({
+      left: 0,
+      top: 48,
+      width: 320,
+    });
     const idempotencyKey = useRef(createIdempotencyKey());
     const count = useMemo(() => Array.from(content).length, [content]);
     const mediaError = mediaValidation(mediaItems);
@@ -230,6 +242,50 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         controller.abort();
       };
     }, [mention?.query, mention?.start, publicApi]);
+
+    const updateMentionPosition = useCallback(() => {
+      const anchor = mentionAnchorRef.current;
+      const editor = editorRef.current;
+      const textarea = textareaRef.current;
+      if (!anchor || !editor || !textarea) return;
+
+      const anchorRect = anchor.getBoundingClientRect();
+      const editorRect = editor.getBoundingClientRect();
+      if (editorRect.width <= 0) return;
+      const lineHeight = Number.parseFloat(
+        window.getComputedStyle(textarea).lineHeight,
+      );
+      const effectiveLineHeight = Number.isFinite(lineHeight) ? lineHeight : 28;
+      const next = mentionPanelPosition({
+        anchorLeft: anchorRect.left,
+        anchorTop: anchorRect.top,
+        editorLeft: editorRect.left,
+        editorTop: editorRect.top,
+        editorWidth: editorRect.width,
+        itemCount: mentionItems.length,
+        lineHeight: effectiveLineHeight,
+        scrollLeft: textarea.scrollLeft,
+        scrollTop: textarea.scrollTop,
+        viewportHeight: window.innerHeight,
+      });
+      setMentionPosition((current) =>
+        current.left === next.left &&
+        current.top === next.top &&
+        current.width === next.width
+          ? current
+          : next,
+      );
+    }, [mentionItems.length]);
+
+    useLayoutEffect(() => {
+      if (!mention || mentionItems.length === 0) return;
+      updateMentionPosition();
+      const editor = editorRef.current;
+      if (!editor || typeof ResizeObserver === "undefined") return;
+      const observer = new ResizeObserver(updateMentionPosition);
+      observer.observe(editor);
+      return () => observer.disconnect();
+    }, [content, mention, mentionItems.length, updateMentionPosition]);
 
     const pickMention = (item: MentionSuggestion) => {
       if (!mention) return;
@@ -797,7 +853,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             <label htmlFor={`${variant}-composer-content`}>
               {post ? "Moment 正文" : "此刻想到什么？"}
             </label>
-            <div className={styles.composerEditor}>
+            <div className={styles.composerEditor} ref={editorRef}>
               <div
                 aria-hidden="true"
                 className={styles.composerHighlight}
@@ -893,6 +949,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     event.currentTarget.scrollTop;
                   highlightRef.current.scrollLeft =
                     event.currentTarget.scrollLeft;
+                  updateMentionPosition();
                 }}
                 placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
                 ref={textareaRef}
@@ -907,12 +964,22 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 }
                 value={content}
               />
+              {mention ? (
+                <div
+                  aria-hidden="true"
+                  className={styles.composerMentionMeasure}
+                >
+                  {content.slice(0, mention.end)}
+                  <span ref={mentionAnchorRef}>{"\u200b"}</span>
+                </div>
+              ) : null}
+              <MentionSuggestions
+                active={mentionActive}
+                items={mentionItems}
+                onPick={pickMention}
+                position={mentionPosition}
+              />
             </div>
-            <MentionSuggestions
-              active={mentionActive}
-              items={mentionItems}
-              onPick={pickMention}
-            />
             <p
               className={styles.composerGuidance}
               id={`${variant}-composer-guidance`}
