@@ -21,6 +21,7 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	"github.com/moment/moment/internal/transport/commentdto"
+	"github.com/moment/moment/internal/transport/locationdto"
 	"github.com/moment/moment/internal/transport/postdto"
 	"github.com/moment/moment/internal/transport/searchdto"
 	"github.com/spf13/cobra"
@@ -30,6 +31,8 @@ import (
 const maxPostAPIResponse = 64 << 20
 
 const maxPostMediaManifestBytes = 1 << 20
+
+const maxPostLocationBytes = 64 << 10
 
 func registerPosts(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
@@ -66,7 +69,7 @@ func registerPosts(application *Application) {
 		Path:   []string{"post", "create"},
 		Short:  "Publish a Moment post",
 		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated owner HTTP API.",
-		Inputs: "Provide --content, managed media, or both. Use one --media path with optional --media-alt or --media-decorative, or an ordered --media-manifest path|-; the forms are mutually exclusive.",
+		Inputs: "Provide --content, managed media, or both. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin.",
 		Output: "The canonical created post and replay metadata.",
 		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
 		Example: "moment post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
@@ -76,6 +79,7 @@ func registerPosts(application *Application) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
 			registerPostMediaFlags(flags)
+			registerPostLocationFlags(flags, false)
 		},
 		Run: runPostCreate,
 	})
@@ -84,7 +88,7 @@ func registerPosts(application *Application) {
 		ArgsUsage: "<post-id>",
 		Short:     "Update a Moment post",
 		Long:      "Replace one post's authoritative Markdown while preserving its creation and publication position.",
-		Inputs:    "Provide one post ULID and at least one of --content or a media input. Omitted media preserves usages; an empty manifest clears them.",
+		Inputs:    "Provide one post ULID and at least one content, media, or location change. Omitted location preserves it; --clear-location removes it.",
 		Output:    "The complete updated canonical post DTO.",
 		Errors:    "Invalid content, missing posts, and authentication failures use stable codes and exit statuses.",
 		Example: "moment post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'updated' --json\n" +
@@ -94,6 +98,7 @@ func registerPosts(application *Application) {
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "replacement UTF-8 Markdown content")
 			registerPostMediaFlags(flags)
+			registerPostLocationFlags(flags, true)
 		},
 		Run: runPostUpdate,
 	})
@@ -228,6 +233,10 @@ func runPostGet(ctx context.Context, invocation Invocation, input CommandInput) 
 }
 
 func runPostCreate(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	locationInput, err := postLocationInputFromFlags(ctx, input, false)
+	if err != nil {
+		return Result{}, err
+	}
 	mediaInput, err := postMediaInputFromFlags(ctx, input)
 	if err != nil {
 		return Result{}, err
@@ -260,7 +269,7 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		if err != nil {
 			return Result{}, err
 		}
-		created, err := direct.service.Create(ctx, app.CreatePostInput{ContentMD: content, Media: usages, IdempotencyKey: idempotencyKey})
+		created, err := direct.service.Create(ctx, app.CreatePostInput{ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -277,6 +286,11 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		if mediaInput.Present {
 			wire := postMediaDTOs(usages)
 			payload.Media = &wire
+		}
+		if locationInput.Present {
+			wire := locationdto.FromDomain(*locationInput.Location)
+			pointer := &wire
+			payload.Location = &pointer
 		}
 		var status int
 		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/posts", nil, payload, idempotencyKey, true, &post)
@@ -308,8 +322,12 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 	if err != nil {
 		return Result{}, err
 	}
-	if !contentPresent && !mediaInput.Present {
-		return Result{}, invalidArgument("post update requires --content or a media input", "provide --content, --media, or --media-manifest")
+	locationInput, err := postLocationInputFromFlags(ctx, input, true)
+	if err != nil {
+		return Result{}, err
+	}
+	if !contentPresent && !mediaInput.Present && !locationInput.Present {
+		return Result{}, invalidArgument("post update requires a content, media, or location change", "provide --content, media input, --location-name, --location-json, or --clear-location")
 	}
 	var (
 		post postdto.Post
@@ -332,6 +350,10 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 		if mediaInput.Present {
 			update.Media = &usages
 		}
+		if locationInput.Present {
+			location := domain.CloneLocation(locationInput.Location)
+			update.Location = &location
+		}
 		updated, err := direct.service.Update(ctx, update)
 		if err != nil {
 			return Result{}, postCLIError(err)
@@ -351,6 +373,16 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 		if mediaInput.Present {
 			wire := postMediaDTOs(usages)
 			payload.Media = &wire
+		}
+		if locationInput.Present {
+			if locationInput.Location == nil {
+				var cleared *locationdto.Location
+				payload.Location = &cleared
+			} else {
+				wire := locationdto.FromDomain(*locationInput.Location)
+				pointer := &wire
+				payload.Location = &pointer
+			}
 		}
 		var status int
 		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/posts/"+id.String(), nil, payload, "", true, &post)
@@ -462,8 +494,14 @@ func runPostPinChange(ctx context.Context, invocation Invocation, input CommandI
 }
 
 type postWritePayload struct {
-	ContentMD *string               `json:"content_md,omitempty"`
-	Media     *[]postdto.MediaUsage `json:"media,omitempty"`
+	ContentMD *string                `json:"content_md,omitempty"`
+	Media     *[]postdto.MediaUsage  `json:"media,omitempty"`
+	Location  **locationdto.Location `json:"location,omitempty"`
+}
+
+type postLocationInput struct {
+	Present  bool
+	Location *domain.Location
 }
 
 type postMediaInput struct {
@@ -482,6 +520,118 @@ func registerPostMediaFlags(flags *pflag.FlagSet) {
 	flags.Var(&onceStringFlag{name: "--media-alt"}, "media-alt", "non-empty provided alt text for --media")
 	flags.Bool("media-decorative", false, "encode --media with explicit decorative alt text")
 	flags.Var(&onceStringFlag{name: "--media-manifest"}, "media-manifest", "ordered JSON manifest path or - for stdin")
+}
+
+func registerPostLocationFlags(flags *pflag.FlagSet, allowClear bool) {
+	flags.Var(&onceStringFlag{name: "--location-name"}, "location-name", "manual place label (mutually exclusive with --location-json)")
+	flags.Var(&onceStringFlag{name: "--location-json"}, "location-json", "canonical location object path or - for stdin")
+	if allowClear {
+		flags.Bool("clear-location", false, "remove the post location")
+	}
+}
+
+func postLocationInputFromFlags(ctx context.Context, input CommandInput, allowClear bool) (postLocationInput, error) {
+	name, err := input.String("location-name")
+	if err != nil {
+		return postLocationInput{}, err
+	}
+	path, err := input.String("location-json")
+	if err != nil {
+		return postLocationInput{}, err
+	}
+	nameChanged, pathChanged := input.Changed("location-name"), input.Changed("location-json")
+	clear := false
+	if allowClear {
+		clear, err = input.Bool("clear-location")
+		if err != nil {
+			return postLocationInput{}, err
+		}
+	}
+	selected := 0
+	for _, value := range []bool{nameChanged, pathChanged, clear} {
+		if value {
+			selected++
+		}
+	}
+	if selected > 1 {
+		return postLocationInput{}, invalidArgument("location flags are mutually exclusive", "choose --location-name, --location-json, or --clear-location")
+	}
+	if selected == 0 {
+		return postLocationInput{}, nil
+	}
+	if clear {
+		return postLocationInput{Present: true}, nil
+	}
+	if nameChanged {
+		name = strings.TrimSpace(name)
+		location := &domain.Location{Name: name, DisplayName: name, Provider: "manual"}
+		if err := location.Validate(); err != nil {
+			return postLocationInput{}, postCLIError(err)
+		}
+		return postLocationInput{Present: true, Location: location}, nil
+	}
+	if strings.TrimSpace(path) == "" {
+		return postLocationInput{}, invalidArgument("--location-json cannot be empty", "provide a canonical JSON object path or - for stdin")
+	}
+	if path == "-" && input.Changed("media-manifest") {
+		mediaManifest, _ := input.String("media-manifest")
+		if mediaManifest == "-" {
+			return postLocationInput{}, invalidArgument("location and media JSON cannot both read stdin", "put one input in a regular file")
+		}
+	}
+	data, err := readBoundedPostLocation(ctx, input.In(), path)
+	if err != nil {
+		return postLocationInput{}, err
+	}
+	var wire locationdto.Location
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&wire); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return postLocationInput{}, invalidArgument("--location-json must contain one canonical location object", "use one item returned by 'moment location search --json'")
+	}
+	location, err := wire.Domain()
+	if err != nil {
+		return postLocationInput{}, postCLIError(err)
+	}
+	return postLocationInput{Present: true, Location: &location}, nil
+}
+
+func readBoundedPostLocation(ctx context.Context, stdin io.Reader, path string) ([]byte, error) {
+	var reader io.Reader
+	var file *os.File
+	if path == "-" {
+		if stdin == nil {
+			return nil, invalidArgument("stdin is unavailable for --location-json -", "pipe one canonical location object to stdin")
+		}
+		reader = stdin
+	} else {
+		clean := filepath.Clean(path)
+		info, err := os.Lstat(clean)
+		if err != nil {
+			return nil, postCLIError(err)
+		}
+		if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() > maxPostLocationBytes {
+			return nil, invalidArgument("--location-json must be a regular file no larger than 64 KiB", "provide a stable canonical JSON file or use - for stdin")
+		}
+		file, err = os.Open(clean)
+		if err != nil {
+			return nil, postCLIError(err)
+		}
+		opened, err := file.Stat()
+		if err != nil || !opened.Mode().IsRegular() || !os.SameFile(info, opened) {
+			_ = file.Close()
+			return nil, invalidArgument("--location-json changed while it was opened", "retry with a stable regular file")
+		}
+		defer func() { _ = file.Close() }()
+		reader = file
+	}
+	data, err := io.ReadAll(io.LimitReader(cliContextReader{ctx: ctx, source: reader}, maxPostLocationBytes+1))
+	if err != nil {
+		return nil, postCLIError(err)
+	}
+	if len(data) > maxPostLocationBytes || !utf8.Valid(data) {
+		return nil, invalidArgument("--location-json must be valid UTF-8 JSON no larger than 64 KiB", "provide one canonical location object")
+	}
+	return data, nil
 }
 
 type onceStringFlag struct {
@@ -1060,6 +1210,7 @@ func validPostAPIRawData(data json.RawMessage, destination any) bool {
 
 func validRawAPIPost(data json.RawMessage, post postdto.Post) bool {
 	if !hasRequiredNonNullAPIDataFields(data, "id", "content_md", "content_html", "created_at", "updated_at", "published_at", "comment_count", "media") ||
+		!hasRequiredAPIDataFields(data, "location") ||
 		!validCanonicalAPIInstantField(data, "created_at", post.CreatedAt) ||
 		!validCanonicalAPIInstantField(data, "updated_at", post.UpdatedAt) ||
 		!validCanonicalAPIInstantField(data, "published_at", post.PublishedAt) {
@@ -1076,6 +1227,11 @@ func validRawAPIPost(data json.RawMessage, post postdto.Post) bool {
 	for _, usage := range mediaItems {
 		if !hasRequiredAPIDataFields(usage, "media_id", "position", "alt_text") ||
 			!hasRequiredNonNullAPIDataFields(usage, "media_id", "position") {
+			return false
+		}
+	}
+	if post.Location != nil {
+		if !hasRequiredNonNullAPIDataFields(fields["location"], "name", "display_name") {
 			return false
 		}
 	}

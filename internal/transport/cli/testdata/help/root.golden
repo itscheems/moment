@@ -11,6 +11,7 @@ Available Commands:
   doctor      Diagnose runtime and data health
   help        Help about any command
   init        Initialize the Moment instance and owner
+  location    Resolve post locations
   media       Inspect and maintain managed media
   owner       Manage the single site owner
   post        Create and manage Moments

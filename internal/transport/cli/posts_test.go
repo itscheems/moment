@@ -231,6 +231,48 @@ func TestPostDirectAPIParityAndPublicReadsDoNotRequireToken(t *testing.T) {
 	}
 }
 
+func TestPostLocationCLIDirectAPIParityAndStrictInputs(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	application := momentTestApplication()
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	location := `{"name":"静安寺","display_name":"上海市静安区南京西路1686号","country_code":"CN","country":"中国","region":"上海市","city":"上海市","district":"静安区","category":"风景名胜","provider":"amap","provider_place_id":"B0FFF","latitude":31.223186,"longitude":121.44526,"coordinate_system":"gcj02"}`
+	manifest := filepath.Join(t.TempDir(), "location.json")
+	if err := os.WriteFile(manifest, []byte(location), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	created := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir,
+		"--content", "带位置", "--location-json", manifest, "--json"))
+	id := created["id"].(string)
+	if got := created["location"].(map[string]any); got["name"] != "静安寺" || len(got) != 2 {
+		t.Fatalf("public location = %#v", got)
+	}
+	apiGet := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "get", id, "--json"))
+	if !reflect.DeepEqual(created, apiGet) {
+		t.Fatalf("direct/API location drift: direct=%#v api=%#v", created, apiGet)
+	}
+	manual := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "update", id,
+		"--location-name", "书房", "--json"))
+	if manual["location"].(map[string]any)["name"] != "书房" {
+		t.Fatalf("manual location = %#v", manual)
+	}
+	cleared := commandData(t, execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir,
+		"--clear-location", "--json"))
+	if cleared["location"] != nil {
+		t.Fatalf("location not cleared: %#v", cleared)
+	}
+
+	for _, output := range []commandOutput{
+		execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--location-name", "书房", "--location-json", manifest, "--json"),
+		execute(application, location, "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--location-json", "-", "--media-manifest", "-", "--json"),
+		execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir, "--clear-location", "--location-name", "书房", "--json"),
+	} {
+		if output.exit != ExitInvalidInput || decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
+			t.Fatalf("invalid location flags = %#v", output)
+		}
+	}
+}
+
 func TestPostMediaCLISingleManifestAndTransportParity(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()

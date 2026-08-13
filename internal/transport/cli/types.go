@@ -171,6 +171,11 @@ func (input CommandInput) Int64(name string) (int64, error) {
 	return input.flags.GetInt64(name)
 }
 
+// Float64 returns a parsed floating-point flag.
+func (input CommandInput) Float64(name string) (float64, error) {
+	return input.flags.GetFloat64(name)
+}
+
 // Duration returns a parsed duration flag.
 func (input CommandInput) Duration(name string) (time.Duration, error) {
 	return input.flags.GetDuration(name)

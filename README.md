@@ -90,6 +90,10 @@ Moment prefers AMap for mainland China and Geoapify for searches biased outside
 mainland China, with automatic fallback when both are configured. Either key can
 be omitted; manual labels remain available when no provider is configured. The
 Moment binary itself intentionally does not parse `.env` files; this convenience
-belongs only to the local development launcher.
+belongs only to the local development launcher. The
+same workflow is agent-operable through `moment location search`, `moment
+location nearby`, `moment post create --location-name`, and `moment post create
+--location-json`. Use `moment post update --clear-location` to remove a stored
+place.
 
 No open-source license is granted by this repository at this time.
