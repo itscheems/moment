@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 
 import {
   PublicApi,
@@ -38,7 +39,7 @@ import {
 import { ConfirmDialog } from "./ConfirmDialog";
 import { LocationPicker } from "./LocationPicker";
 import { MentionSuggestions } from "./MentionSuggestions";
-import { activeMention } from "./mentions";
+import { activeMention, mentionSegments } from "./mentions";
 import {
   COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
@@ -159,7 +160,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     } | null>(null);
     const [mentionItems, setMentionItems] = useState<MentionSuggestion[]>([]);
     const [mentionActive, setMentionActive] = useState(0);
+    const [leavePromptOpen, setLeavePromptOpen] = useState(false);
     const pendingRef = useRef(false);
+    const pendingNavigationRef = useRef<(() => void) | null>(null);
     const allowLeaveRef = useRef(false);
     const dirtyRef = useRef(false);
     const activeDraftRef = useRef(activeDraft);
@@ -169,6 +172,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const draftRemovalRepairRef = useRef<number | null>(null);
     const navigationBlockerId = useRef(Symbol("composer-navigation-blocker"));
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const highlightRef = useRef<HTMLDivElement>(null);
     const idempotencyKey = useRef(createIdempotencyKey());
     const count = useMemo(() => Array.from(content).length, [content]);
     const mediaError = mediaValidation(mediaItems);
@@ -242,6 +246,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       }
       setMention(null);
       setMentionItems([]);
+      allowLeaveRef.current = false;
       dirtyRef.current = true;
       setDirty(true);
       setError(null);
@@ -469,22 +474,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     }, [activeDraft, dirty, draft, site.instanceId, variant]);
 
     useEffect(() => {
-      const confirmLeave = () => {
+      const requestLeave = (resume: () => void) => {
         if (allowLeaveRef.current) return true;
-        const confirmed = window.confirm(
-          variant === "edit"
-            ? "编辑还没有保存。确定离开吗？"
-            : "这段内容还没有发布。离开后仍会保留本地草稿。",
-        );
-        if (confirmed && variant !== "edit") {
-          const currentDraft = activeDraftRef.current;
-          if (currentDraft) saveComposeDraft(site.instanceId, currentDraft);
-        }
-        return confirmed;
+        pendingNavigationRef.current = resume;
+        setLeavePromptOpen(true);
+        return false;
       };
       setNavigationBlocker(
         navigationBlockerId.current,
-        hasUnpublishedChange ? confirmLeave : null,
+        hasUnpublishedChange ? requestLeave : null,
       );
       const beforeUnload = (event: BeforeUnloadEvent) => {
         if (!hasUnpublishedChange || allowLeaveRef.current) return;
@@ -508,6 +506,38 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       site.instanceId,
       variant,
     ]);
+
+    const finishPendingNavigation = (discard: boolean) => {
+      const resume = pendingNavigationRef.current;
+      pendingNavigationRef.current = null;
+      allowLeaveRef.current = true;
+
+      if (variant !== "edit") {
+        const currentDraft = activeDraftRef.current;
+        if (discard) {
+          if (currentDraft) {
+            clearComposeDraft(site.instanceId, {
+              reason: "discarded",
+              draft: currentDraft,
+            });
+          }
+          activeDraftRef.current = null;
+          setActiveDraft(null);
+          setDraft(null);
+          setContent("");
+          clearMedia();
+          setLocation(null);
+          setLocationChanged(false);
+          dirtyRef.current = false;
+          setDirty(false);
+        } else if (currentDraft) {
+          saveComposeDraft(site.instanceId, currentDraft);
+        }
+      }
+
+      setLeavePromptOpen(false);
+      window.queueMicrotask(() => resume?.());
+    };
 
     const uploadOne = async (key: string, csrfToken: string) => {
       const current = mediaItemsRef.current.find((item) => item.key === key);
@@ -767,87 +797,117 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             <label htmlFor={`${variant}-composer-content`}>
               {post ? "Moment 正文" : "此刻想到什么？"}
             </label>
-            <textarea
-              aria-describedby={`${variant}-composer-guidance ${variant}-composer-error`}
-              disabled={pending}
-              id={`${variant}-composer-content`}
-              onChange={(event) => {
-                allowLeaveRef.current = false;
-                if (variant !== "edit") {
-                  const nextDraft = createComposeDraft(
-                    event.target.value,
-                    activeDraftRef.current?.savedAt,
-                  );
-                  activeDraftRef.current = nextDraft;
-                  setActiveDraft(nextDraft);
-                }
-                if (draft) setDraft(null);
-                setContent(event.target.value);
-                setMention(
-                  activeMention(
-                    event.target.value,
-                    event.target.selectionStart ?? event.target.value.length,
-                  ),
-                );
-                dirtyRef.current = true;
-                setDirty(true);
-                setError(null);
-                idempotencyKey.current = createIdempotencyKey();
-              }}
-              onCompositionEnd={() => undefined}
-              onKeyDown={(event) => {
-                if (mentionItems.length > 0 && mention) {
-                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                    event.preventDefault();
-                    setMentionActive(
-                      (current) =>
-                        (current +
-                          (event.key === "ArrowDown" ? 1 : -1) +
-                          mentionItems.length) %
-                        mentionItems.length,
+            <div className={styles.composerEditor}>
+              <div
+                aria-hidden="true"
+                className={styles.composerHighlight}
+                ref={highlightRef}
+              >
+                {mentionSegments(content, site.username).map(
+                  (segment, index) =>
+                    segment.mention ? (
+                      <span
+                        className={styles.composerMention}
+                        data-mention-highlight={segment.text}
+                        key={`${index}-${segment.text}`}
+                      >
+                        {segment.text}
+                      </span>
+                    ) : (
+                      segment.text
+                    ),
+                )}
+                {"\u200b"}
+              </div>
+              <textarea
+                aria-describedby={`${variant}-composer-guidance ${variant}-composer-error`}
+                disabled={pending}
+                id={`${variant}-composer-content`}
+                onChange={(event) => {
+                  allowLeaveRef.current = false;
+                  if (variant !== "edit") {
+                    const nextDraft = createComposeDraft(
+                      event.target.value,
+                      activeDraftRef.current?.savedAt,
                     );
-                    return;
+                    activeDraftRef.current = nextDraft;
+                    setActiveDraft(nextDraft);
                   }
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setMention(null);
-                    setMentionItems([]);
-                    return;
+                  if (draft) setDraft(null);
+                  setContent(event.target.value);
+                  setMention(
+                    activeMention(
+                      event.target.value,
+                      event.target.selectionStart ?? event.target.value.length,
+                    ),
+                  );
+                  dirtyRef.current = true;
+                  setDirty(true);
+                  setError(null);
+                  idempotencyKey.current = createIdempotencyKey();
+                }}
+                onCompositionEnd={() => undefined}
+                onKeyDown={(event) => {
+                  if (mentionItems.length > 0 && mention) {
+                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setMentionActive(
+                        (current) =>
+                          (current +
+                            (event.key === "ArrowDown" ? 1 : -1) +
+                            mentionItems.length) %
+                          mentionItems.length,
+                      );
+                      return;
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setMention(null);
+                      setMentionItems([]);
+                      return;
+                    }
+                    if (
+                      (event.key === "Enter" || event.key === "Tab") &&
+                      !event.metaKey &&
+                      !event.ctrlKey
+                    ) {
+                      event.preventDefault();
+                      pickMention(mentionItems[mentionActive]);
+                      return;
+                    }
                   }
                   if (
-                    (event.key === "Enter" || event.key === "Tab") &&
-                    !event.metaKey &&
-                    !event.ctrlKey
+                    event.key === "Enter" &&
+                    (event.metaKey || event.ctrlKey) &&
+                    !event.nativeEvent.isComposing &&
+                    valid &&
+                    !pendingRef.current
                   ) {
                     event.preventDefault();
-                    pickMention(mentionItems[mentionActive]);
-                    return;
+                    event.currentTarget.form?.requestSubmit();
                   }
+                }}
+                onScroll={(event) => {
+                  if (!highlightRef.current) return;
+                  highlightRef.current.scrollTop =
+                    event.currentTarget.scrollTop;
+                  highlightRef.current.scrollLeft =
+                    event.currentTarget.scrollLeft;
+                }}
+                placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
+                ref={textareaRef}
+                rows={
+                  mediaItems.length > 0
+                    ? 1
+                    : variant === "inline"
+                      ? expanded
+                        ? 3
+                        : 1
+                      : 4
                 }
-                if (
-                  event.key === "Enter" &&
-                  (event.metaKey || event.ctrlKey) &&
-                  !event.nativeEvent.isComposing &&
-                  valid &&
-                  !pendingRef.current
-                ) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-              placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
-              ref={textareaRef}
-              rows={
-                mediaItems.length > 0
-                  ? 1
-                  : variant === "inline"
-                    ? expanded
-                      ? 3
-                      : 1
-                    : 4
-              }
-              value={content}
-            />
+                value={content}
+              />
+            </div>
             <MentionSuggestions
               active={mentionActive}
               items={mentionItems}
@@ -1035,6 +1095,50 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           </form>
           {!session ? <OwnerLogin embedded site={site} /> : null}
         </div>
+        <Dialog.Root
+          onOpenChange={(open) => {
+            setLeavePromptOpen(open);
+            if (!open) pendingNavigationRef.current = null;
+          }}
+          open={leavePromptOpen}
+        >
+          <Dialog.Portal>
+            <Dialog.Backdrop className={styles.dialogBackdrop} />
+            <Dialog.Viewport className={styles.dialogViewport}>
+              <Dialog.Popup className={styles.dialogPopup}>
+                <Dialog.Title className={styles.dialogTitle}>
+                  {variant === "edit" ? "放弃未保存的更改？" : "退出发布？"}
+                </Dialog.Title>
+                <Dialog.Description className={styles.dialogDescription}>
+                  {variant === "edit"
+                    ? "离开后，本次编辑不会保存。"
+                    : "文字可以保留为这台浏览器里的草稿；已添加的图片不会保存。"}
+                </Dialog.Description>
+                <div className={styles.dialogActions}>
+                  <Dialog.Close className={styles.secondaryButton}>
+                    继续编辑
+                  </Dialog.Close>
+                  {variant !== "edit" ? (
+                    <button
+                      className={styles.secondaryButton}
+                      onClick={() => finishPendingNavigation(false)}
+                      type="button"
+                    >
+                      保留草稿并退出
+                    </button>
+                  ) : null}
+                  <button
+                    className={styles.dangerButton}
+                    onClick={() => finishPendingNavigation(true)}
+                    type="button"
+                  >
+                    {variant === "edit" ? "放弃更改并离开" : "丢弃并退出"}
+                  </button>
+                </div>
+              </Dialog.Popup>
+            </Dialog.Viewport>
+          </Dialog.Portal>
+        </Dialog.Root>
       </section>
     );
   },

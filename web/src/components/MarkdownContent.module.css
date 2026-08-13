@@ -2,6 +2,18 @@
   color: var(--text-primary);
 }
 
+.root :global(a[data-moment-mention]) {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.root :global(a[data-moment-mention]:hover),
+.root :global(a[data-moment-mention]:focus-visible) {
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.18em;
+}
+
 .root :global(.hljs-comment),
 .root :global(.hljs-quote) {
   color: var(--text-tertiary);

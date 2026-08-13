@@ -10,12 +10,16 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect, useRef } from "react";
 
-import { NavigationProvider, useNavigation } from "./navigation";
+import {
+  NavigationProvider,
+  type NavigationBlocker,
+  useNavigation,
+} from "./navigation";
 
 function NavigationHarness({
   blockers,
 }: {
-  blockers: ReadonlyArray<() => boolean>;
+  blockers: ReadonlyArray<NavigationBlocker>;
 }) {
   const navigation = useNavigation();
   const blockerIds = useRef(blockers.map(() => Symbol("navigation-test")));
@@ -84,6 +88,29 @@ describe("guarded navigation history", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/current");
     expect(newest).toHaveBeenCalledTimes(2);
     expect(first).toHaveBeenCalledOnce();
+  });
+
+  it("resumes the original destination after asynchronous approval", () => {
+    let allow = false;
+    let resume: (() => void) | null = null;
+    const blocker = vi.fn((next: () => void) => {
+      resume = next;
+      return allow;
+    });
+    render(
+      <NavigationProvider>
+        <NavigationHarness blockers={[blocker]} />
+      </NavigationProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/previous");
+    expect(resume).not.toBeNull();
+
+    allow = true;
+    act(() => resume?.());
+    expect(screen.getByTestId("location")).toHaveTextContent("/current");
+    expect(blocker).toHaveBeenCalledTimes(2);
   });
 
   it("tracks an internal overlay without treating a refreshed URL as layered", () => {

@@ -52,10 +52,9 @@ describe("MarkdownContent", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "@owner" })).toHaveAttribute(
-      "href",
-      "/@owner",
-    );
+    const mention = screen.getByRole("link", { name: "@owner" });
+    expect(mention).toHaveAttribute("href", "/@owner");
+    expect(mention).toHaveAttribute("data-moment-mention", "owner");
     expect(screen.getByText(/别误连 @owner_two/)).toBeInTheDocument();
     expect(document.querySelector("code a")).toBeNull();
   });

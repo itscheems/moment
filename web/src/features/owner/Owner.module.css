@@ -273,7 +273,33 @@
   clip-path: inset(50%);
 }
 
-.composerForm textarea {
+.composerEditor {
+  position: relative;
+  display: grid;
+  min-inline-size: 0;
+}
+
+.composerHighlight {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  padding: var(--space-2) 0 var(--space-3);
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+.composerMention {
+  color: var(--accent);
+}
+
+.composerEditor textarea {
+  position: relative;
+  z-index: 1;
   field-sizing: content;
   inline-size: 100%;
   min-block-size: 2.75rem;
@@ -283,18 +309,22 @@
   border-radius: 0;
   padding: var(--space-2) 0 var(--space-3);
   overflow-y: auto;
-  color: var(--text-primary);
+  color: transparent;
+  caret-color: var(--text-primary);
   background: transparent;
   font-size: 1.25rem;
   line-height: 1.4;
+  overflow-wrap: break-word;
+  -webkit-text-fill-color: transparent;
   transition: min-block-size var(--motion-fast) var(--ease-out);
 }
 
-.composerForm textarea::placeholder {
+.composerEditor textarea::placeholder {
   color: var(--text-tertiary);
+  -webkit-text-fill-color: var(--text-tertiary);
 }
 
-.composerForm textarea:focus-visible {
+.composerEditor textarea:focus-visible {
   outline: none;
 }
 
@@ -304,6 +334,10 @@
 
 .pageComposer.composerHasMedia .composerForm textarea {
   min-block-size: 2.75rem;
+  padding-block: var(--space-1) var(--space-2);
+}
+
+.pageComposer.composerHasMedia .composerHighlight {
   padding-block: var(--space-1) var(--space-2);
 }
 
@@ -965,6 +999,10 @@
     font-size: 1.125rem;
   }
 
+  .composerHighlight {
+    font-size: 1.125rem;
+  }
+
   .pageComposer .composerForm textarea {
     min-block-size: 7rem;
   }
@@ -1002,6 +1040,17 @@
   .locationPopup[data-starting-style],
   .locationPopup[data-ending-style] {
     transform: translateY(1.25rem);
+  }
+}
+
+@media (forced-colors: active) {
+  .composerHighlight {
+    display: none;
+  }
+
+  .composerEditor textarea {
+    color: CanvasText;
+    -webkit-text-fill-color: CanvasText;
   }
 }
 

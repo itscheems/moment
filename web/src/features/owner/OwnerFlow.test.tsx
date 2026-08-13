@@ -270,6 +270,13 @@ function preauthenticate() {
   );
 }
 
+async function keepDraftAndResumeNavigation() {
+  const dialog = await screen.findByRole("dialog", { name: "退出发布？" });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "保留草稿并退出" }),
+  );
+}
+
 function installApi(
   override?: (
     url: string,
@@ -395,6 +402,9 @@ describe("owner composing flow", () => {
     ).toBe(true);
     fireEvent.click(option);
     expect(editor).toHaveValue("今天想起 @owner ");
+    expect(
+      document.querySelector('[data-mention-highlight="@owner"]'),
+    ).toHaveTextContent("@owner");
   });
 
   it("offers explicit recovery and discarding for the real instance draft", async () => {
@@ -870,8 +880,6 @@ describe("owner composing flow", () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");
     installApi();
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(false);
     render(<App />);
     fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
       target: { value: "还没有发布" },
@@ -880,18 +888,37 @@ describe("owner composing flow", () => {
       screen.getAllByRole("link", { name: "乔乔的 Moment首页" })[0],
     );
     expect(window.location.pathname).toBe("/owner/compose");
-    expect(confirm).toHaveBeenCalledWith(
-      "这段内容还没有发布。离开后仍会保留本地草稿。",
-    );
+    const dialog = await screen.findByRole("dialog", { name: "退出发布？" });
+    expect(window.confirm).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" }));
+    expect(window.location.pathname).toBe("/owner/compose");
 
-    confirm.mockReturnValue(true);
     fireEvent.click(
       screen.getAllByRole("link", { name: "乔乔的 Moment首页" })[0],
     );
-    expect(window.location.pathname).toBe("/");
+    await keepDraftAndResumeNavigation();
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
       "还没有发布",
     );
+  });
+
+  it("does not repeat the draft prompt after an approved inline navigation", async () => {
+    preauthenticate();
+    installApi();
+    render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
+      target: { value: "切页前保留这段草稿" },
+    });
+    fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
+    await keepDraftAndResumeNavigation();
+    await waitFor(() => expect(window.location.pathname).toBe("/search"));
+
+    fireEvent.click(screen.getAllByRole("link", { name: "归档" })[0]);
+    await waitFor(() => expect(window.location.pathname).toBe("/archive"));
+    expect(screen.queryByRole("dialog", { name: "退出发布？" })).toBeNull();
+    expect(window.confirm).not.toHaveBeenCalled();
   });
 
   it("uses the in-app discard dialog when closing the desktop composer", async () => {
@@ -968,13 +995,12 @@ describe("owner composing flow", () => {
       "发布后继续写的新草稿",
     );
 
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(false);
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     expect(window.location.pathname).toBe("/");
-    expect(confirm).toHaveBeenCalledWith(
-      "这段内容还没有发布。离开后仍会保留本地草稿。",
-    );
+    expect(
+      await screen.findByRole("dialog", { name: "退出发布？" }),
+    ).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);
     expect(beforeUnload.defaultPrevented).toBe(true);
@@ -1003,6 +1029,7 @@ describe("owner composing flow", () => {
     const inline = await screen.findByLabelText("此刻想到什么？");
     fireEvent.change(inline, { target: { value: "无法落盘但已经发布" } });
     fireEvent.keyDown(document.body, { key: "n" });
+    await keepDraftAndResumeNavigation();
     await waitFor(() =>
       expect(window.location.pathname).toBe("/owner/compose"),
     );
@@ -1041,6 +1068,7 @@ describe("owner composing flow", () => {
     const inline = await screen.findByLabelText("此刻想到什么？");
     fireEvent.change(inline, { target: { value: "A 标签页仍未发布" } });
     fireEvent.keyDown(document.body, { key: "n" });
+    await keepDraftAndResumeNavigation();
     await waitFor(() =>
       expect(window.location.pathname).toBe("/owner/compose"),
     );
@@ -1074,6 +1102,7 @@ describe("owner composing flow", () => {
     fireEvent.change(inline, { target: { value: "共同起点" } });
     await new Promise((resolve) => window.setTimeout(resolve, 550));
     fireEvent.keyDown(document.body, { key: "n" });
+    await keepDraftAndResumeNavigation();
     await waitFor(() =>
       expect(window.location.pathname).toBe("/owner/compose"),
     );
@@ -1134,6 +1163,7 @@ describe("owner composing flow", () => {
       }),
     );
 
+    await keepDraftAndResumeNavigation();
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     getItem.mockRestore();
     expect(injectedNewerProjection).toBe(true);
@@ -1145,13 +1175,9 @@ describe("owner composing flow", () => {
       fingerprint: activeDraft?.fingerprint,
       savedAt: activeDraft?.savedAt,
     });
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(false);
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
-    expect(window.location.pathname).toBe("/");
-    const beforeUnload = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(beforeUnload);
-    expect(beforeUnload.defaultPrevented).toBe(true);
+    await waitFor(() => expect(window.location.pathname).toBe("/search"));
+    expect(screen.queryByRole("dialog", { name: "退出发布？" })).toBeNull();
   });
 
   it("re-saves a dirty draft when another document removes its projection", async () => {
@@ -1182,11 +1208,12 @@ describe("owner composing flow", () => {
         ).toContain("清理竞态里的新正文"),
       { timeout: 500 },
     );
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(false);
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     expect(window.location.pathname).toBe("/");
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByRole("dialog", { name: "退出发布？" }),
+    ).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
   });
 
   it("does not resurrect an equal draft when marker writes fail but clearance is broadcast", async () => {
@@ -1497,13 +1524,12 @@ describe("owner composing flow", () => {
       "跨标签页清理后重新写",
     );
 
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(false);
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     expect(window.location.pathname).toBe("/");
-    expect(confirm).toHaveBeenCalledWith(
-      "这段内容还没有发布。离开后仍会保留本地草稿。",
-    );
+    expect(
+      await screen.findByRole("dialog", { name: "退出发布？" }),
+    ).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);
     expect(beforeUnload.defaultPrevented).toBe(true);
@@ -1581,13 +1607,12 @@ describe("owner composing flow", () => {
       "A 标签页已经分叉的正文",
     );
 
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(false);
     fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
     expect(window.location.pathname).toBe("/");
-    expect(confirm).toHaveBeenCalledWith(
-      "这段内容还没有发布。离开后仍会保留本地草稿。",
-    );
+    expect(
+      await screen.findByRole("dialog", { name: "退出发布？" }),
+    ).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);
     expect(beforeUnload.defaultPrevented).toBe(true);
@@ -1644,8 +1669,6 @@ describe("owner composing flow", () => {
         return json({ data: item, meta: {} });
       }
     });
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(false);
     render(<App />);
 
     await screen.findByLabelText("Moment 正文");
@@ -1654,7 +1677,12 @@ describe("owner composing flow", () => {
 
     fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
     expect(window.location.pathname).toBe(`/owner/m/${item.id}/edit`);
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByRole("dialog", {
+        name: "放弃未保存的更改？",
+      }),
+    ).toBeInTheDocument();
+    expect(window.confirm).not.toHaveBeenCalled();
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);
     expect(beforeUnload.defaultPrevented).toBe(true);
@@ -1669,16 +1697,21 @@ describe("owner composing flow", () => {
         return json({ data: item, meta: {} });
       }
     });
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(true);
     render(<App />);
     const editor = await screen.findByLabelText("Moment 正文");
     fireEvent.change(editor, { target: { value: "尚未保存的编辑" } });
 
     fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
 
+    const dialog = await screen.findByRole("dialog", {
+      name: "放弃未保存的更改？",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "放弃更改并离开" }),
+    );
+
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(window.confirm).not.toHaveBeenCalled();
   });
 
   it("uses a focus-restoring confirmation before owner deletion", async () => {

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
@@ -55,6 +55,44 @@ function registeredLanguage(code: HTMLElement): string | null {
   return null;
 }
 
+function linkOwnerMentions(html: string, username?: string): string {
+  if (!username) return html;
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `(^|[^A-Za-z0-9_])(@${escaped})(?![A-Za-z0-9_])`,
+    "gi",
+  );
+  const walker = parsed.createTreeWalker(parsed.body, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (!node.parentElement?.closest("a, code, pre")) nodes.push(node);
+  }
+  for (const node of nodes) {
+    const value = node.nodeValue ?? "";
+    pattern.lastIndex = 0;
+    if (!pattern.test(value)) continue;
+    pattern.lastIndex = 0;
+    const fragment = parsed.createDocumentFragment();
+    let cursor = 0;
+    for (const match of value.matchAll(pattern)) {
+      const index = match.index ?? 0;
+      const prefix = match[1] ?? "";
+      fragment.append(value.slice(cursor, index + prefix.length));
+      const link = parsed.createElement("a");
+      link.setAttribute("href", `/@${username}`);
+      link.textContent = match[2];
+      link.dataset.momentMention = username;
+      fragment.append(link);
+      cursor = index + match[0].length;
+    }
+    fragment.append(value.slice(cursor));
+    node.replaceWith(fragment);
+  }
+  return parsed.body.innerHTML;
+}
+
 export function MarkdownContent({
   className,
   html,
@@ -65,42 +103,11 @@ export function MarkdownContent({
   mentionUsername?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const renderedHtml = useMemo(
+    () => linkOwnerMentions(html, mentionUsername),
+    [html, mentionUsername],
+  );
   useLayoutEffect(() => {
-    const root = rootRef.current;
-    if (root && mentionUsername) {
-      const escaped = mentionUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const pattern = new RegExp(
-        `(^|[^A-Za-z0-9_])(@${escaped})(?![A-Za-z0-9_])`,
-        "gi",
-      );
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-      const nodes: Text[] = [];
-      while (walker.nextNode()) {
-        const node = walker.currentNode as Text;
-        if (!node.parentElement?.closest("a, code, pre")) nodes.push(node);
-      }
-      for (const node of nodes) {
-        const value = node.nodeValue ?? "";
-        pattern.lastIndex = 0;
-        if (!pattern.test(value)) continue;
-        pattern.lastIndex = 0;
-        const fragment = document.createDocumentFragment();
-        let cursor = 0;
-        for (const match of value.matchAll(pattern)) {
-          const index = match.index ?? 0;
-          const prefix = match[1] ?? "";
-          fragment.append(value.slice(cursor, index + prefix.length));
-          const link = document.createElement("a");
-          link.href = `/@${mentionUsername}`;
-          link.textContent = match[2];
-          link.dataset.momentMention = mentionUsername;
-          fragment.append(link);
-          cursor = index + match[0].length;
-        }
-        fragment.append(value.slice(cursor));
-        node.replaceWith(fragment);
-      }
-    }
     for (const code of rootRef.current?.querySelectorAll<HTMLElement>(
       "pre code",
     ) ?? []) {
@@ -114,12 +121,12 @@ export function MarkdownContent({
       code.classList.add("hljs");
       code.dataset.highlighted = "yes";
     }
-  }, [html, mentionUsername]);
+  }, [renderedHtml]);
 
   return (
     <div
       className={`${styles.root} ${className ?? ""}`}
-      dangerouslySetInnerHTML={{ __html: html }}
+      dangerouslySetInnerHTML={{ __html: renderedHtml }}
       ref={rootRef}
     />
   );

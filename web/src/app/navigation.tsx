@@ -27,9 +27,11 @@ interface NavigationContextValue extends NavigationLocation {
   restoreCurrentEntry: () => void;
   setNavigationBlocker: (
     owner: symbol,
-    blocker: (() => boolean) | null,
+    blocker: NavigationBlocker | null,
   ) => void;
 }
+
+export type NavigationBlocker = (resume: () => void) => boolean;
 
 interface MomentHistoryState {
   momentFocusKey?: string;
@@ -95,16 +97,16 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   const [location, setLocation] = useState(() =>
     locationSnapshot(window.history.state, false),
   );
-  const navigationBlockers = useRef(new Map<symbol, () => boolean>());
+  const navigationBlockers = useRef(new Map<symbol, NavigationBlocker>());
   const suppressNextPopGuard = useRef(false);
 
-  const canLeave = useCallback(() => {
+  const canLeave = useCallback((resume: () => void) => {
     const blockers = Array.from(navigationBlockers.current.values()).reverse();
-    return blockers.every((blocker) => blocker());
+    return blockers.every((blocker) => blocker(resume));
   }, []);
 
   const setNavigationBlocker = useCallback(
-    (owner: symbol, blocker: (() => boolean) | null) => {
+    (owner: symbol, blocker: NavigationBlocker | null) => {
       if (blocker) {
         navigationBlockers.current.set(owner, blocker);
       } else {
@@ -146,16 +148,16 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   );
 
   const navigate = useCallback(
-    (href: string) => {
-      if (!canLeave()) return;
+    function navigateTo(href: string) {
+      if (!canLeave(() => navigateTo(href))) return;
       commitNavigation(href);
     },
     [canLeave, commitNavigation],
   );
 
   const navigateOverlay = useCallback(
-    (href: string) => {
-      if (!canLeave()) return;
+    function navigateToOverlay(href: string) {
+      if (!canLeave(() => navigateToOverlay(href))) return;
       commitNavigation(href, currentLocation());
     },
     [canLeave, commitNavigation],
@@ -177,9 +179,9 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const goBack = useCallback(
-    (fallback: string) => {
+    function navigateBack(fallback: string) {
       const state = window.history.state as MomentHistoryState | null;
-      if (!canLeave()) return;
+      if (!canLeave(() => navigateBack(fallback))) return;
       if (state?.momentInternal) {
         suppressNextPopGuard.current = true;
         window.history.back();
@@ -198,7 +200,8 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         restoreEntry(event.state);
         return;
       }
-      if (!canLeave()) {
+      const resume = () => window.history.back();
+      if (!canLeave(resume)) {
         suppressNextPopGuard.current = true;
         window.history.go(1);
         return;
