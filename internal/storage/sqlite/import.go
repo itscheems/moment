@@ -221,6 +221,20 @@ func (importer *PortableImporter) SetSite(ctx context.Context, value ArchiveSite
 	if value.CommentsEnabled {
 		commentsEnabled = 1
 	}
+	if value.OwnerID != "" {
+		result, err := importer.tx.ExecContext(ctx, `
+UPDATE site_settings
+SET owner_id = ?, username = ?, display_name = ?, title = ?, bio = ?, timezone = ?, public_base_url = ?, avatar_media_id = ?, cover_media_id = ?, pinned_entry_id = ?, comments_enabled = ?
+WHERE id = 1`, value.OwnerID, value.Username, value.DisplayName, value.Title, value.Bio, value.Timezone, value.PublicBaseURL, value.AvatarMediaID, value.CoverMediaID, value.PinnedPostID, commentsEnabled)
+		if err != nil {
+			return fmt.Errorf("replace portable site settings: %w", err)
+		}
+		changed, err := result.RowsAffected()
+		if err != nil || changed != 1 {
+			return fmt.Errorf("replace portable site settings changed %d rows: %w", changed, err)
+		}
+		return nil
+	}
 	result, err := importer.tx.ExecContext(ctx, `
 UPDATE site_settings
 SET title = ?, bio = ?, timezone = ?, public_base_url = ?, avatar_media_id = ?, cover_media_id = ?, pinned_entry_id = ?, comments_enabled = ?

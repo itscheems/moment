@@ -322,6 +322,48 @@ func TestOwnerAPIModeTokenSourcesParityAndLiveRotation(t *testing.T) {
 	}
 }
 
+func TestOwnerSetPasswordDirectAPIParityAndSecretInput(t *testing.T) {
+	application := momentTestApplication()
+	dataDir := t.TempDir()
+	initialized := commandData(t, execute(application, "", "owner", "init", "--data-dir", dataDir, "--json"))
+	token := initialized["token"].(string)
+	password := "correct horse battery staple"
+	directOutput := execute(application, password+"\n", "owner", "set-password", "--data-dir", dataDir, "--password-file", "-", "--json")
+	direct := commandData(t, directOutput)
+	if direct["password_enabled"] != true || strings.Contains(directOutput.stdout+directOutput.stderr, password) {
+		t.Fatalf("direct password output = %#v", directOutput)
+	}
+	runtimeState, err := runtimefs.Open(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := auth.NewManager(runtimeState.Root, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(engine)
+	defer server.Close()
+	t.Setenv("MOMENT_TOKEN", token)
+	passwordFile := filepath.Join(t.TempDir(), "owner.password")
+	if err := os.WriteFile(passwordFile, []byte("a different secure password\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	api := commandData(t, execute(application, "", "--url", server.URL, "owner", "set-password", "--password-file", passwordFile, "--json"))
+	if !reflect.DeepEqual(direct, api) {
+		t.Fatalf("direct = %#v, api = %#v", direct, api)
+	}
+	if output := execute(application, "short", "owner", "set-password", "--data-dir", dataDir, "--password-file", "-", "--json"); output.exit != ExitInvalidInput {
+		t.Fatalf("short password = %#v", output)
+	}
+}
+
 func TestOwnerCommandModeMatrixCredentialFlagsAndTokenFileFailures(t *testing.T) {
 	application := momentTestApplication()
 	unsupported := execute(application, "", "--url", "http://127.0.0.1:8080", "owner", "init", "--json")

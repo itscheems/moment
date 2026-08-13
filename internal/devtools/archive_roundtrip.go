@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -421,7 +422,29 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 		}
 		_, _ = io.WriteString(digest, member.Name)
 		_, _ = io.WriteString(digest, "\x00")
-		_, copyErr := io.Copy(digest, opened)
+		var copyErr error
+		if member.Name == "data/site.json" {
+			contents, readErr := io.ReadAll(opened)
+			if readErr != nil {
+				copyErr = readErr
+			} else {
+				// owner_id is deliberately random for every real instance. The
+				// development fixture digest compares logical scenario content
+				// across instances, so exclude only that immutable deployment ID.
+				var site map[string]any
+				if jsonErr := json.Unmarshal(contents, &site); jsonErr != nil {
+					copyErr = jsonErr
+				} else {
+					delete(site, "owner_id")
+					contents, copyErr = json.Marshal(site)
+					if copyErr == nil {
+						_, copyErr = digest.Write(contents)
+					}
+				}
+			}
+		} else {
+			_, copyErr = io.Copy(digest, opened)
+		}
 		closeErr := opened.Close()
 		if copyErr != nil || closeErr != nil {
 			return "", errors.Join(copyErr, closeErr)

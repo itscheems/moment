@@ -22,18 +22,22 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/runtimefs"
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
-	secretsFilename    = "secrets.json"
-	secretsVersion     = 1
-	tokenBytes         = 32
-	signingKeyBytes    = 32
-	csrfTokenBytes     = 32
-	maxSecretsBytes    = 16 << 10
-	maxSessionBytes    = 4 << 10
-	defaultSessionTTL  = 12 * time.Hour
-	offlineLockTimeout = 150 * time.Millisecond
+	secretsFilename      = "secrets.json"
+	legacySecretsVersion = 1
+	secretsVersion       = 2
+	tokenBytes           = 32
+	signingKeyBytes      = 32
+	csrfTokenBytes       = 32
+	maxSecretsBytes      = 16 << 10
+	maxSessionBytes      = 4 << 10
+	defaultSessionTTL    = 12 * time.Hour
+	offlineLockTimeout   = 150 * time.Millisecond
+	minPasswordBytes     = 8
+	maxPasswordBytes     = 72
 )
 
 var (
@@ -49,6 +53,8 @@ var (
 	ErrSecretPermissions = errors.New("owner secrets permissions are not private")
 	// ErrInstanceInUse reports that an offline mutation cannot own serve.lock.
 	ErrInstanceInUse = errors.New("moment server is using this instance")
+	// ErrInvalidPassword reports a password outside the bounded human-login contract.
+	ErrInvalidPassword = errors.New("owner password is invalid")
 )
 
 // Options provides deterministic test seams. Zero values select cryptographic
@@ -61,10 +67,11 @@ type Options struct {
 
 // Status is deliberately safe for owner status responses and diagnostics.
 type Status struct {
-	Initialized   bool       `json:"initialized"`
-	SessionEpoch  uint64     `json:"session_epoch"`
-	InitializedAt *time.Time `json:"initialized_at,omitempty"`
-	RotatedAt     *time.Time `json:"rotated_at,omitempty"`
+	Initialized     bool       `json:"initialized"`
+	PasswordEnabled bool       `json:"password_enabled"`
+	SessionEpoch    uint64     `json:"session_epoch"`
+	InitializedAt   *time.Time `json:"initialized_at,omitempty"`
+	RotatedAt       *time.Time `json:"rotated_at,omitempty"`
 }
 
 // Credential is returned only by initialization and rotation. Token is never
@@ -109,6 +116,7 @@ type diskSecrets struct {
 	SessionEpoch      uint64 `json:"session_epoch"`
 	InitializedAtMS   int64  `json:"initialized_at_ms"`
 	RotatedAtMS       *int64 `json:"rotated_at_ms,omitempty"`
+	PasswordHash      string `json:"password_hash,omitempty"`
 }
 
 type snapshot struct {
@@ -117,6 +125,7 @@ type snapshot struct {
 	sessionEpoch    uint64
 	initializedAtMS int64
 	rotatedAtMS     *int64
+	passwordHash    []byte
 }
 
 type sessionPayload struct {
@@ -349,7 +358,7 @@ func writeSnapshotWithinRoot(authority *os.Root, value *snapshot) error {
 	stored := diskSecrets{
 		Version: secretsVersion, TokenHash: base64.RawURLEncoding.EncodeToString(value.tokenHash[:]),
 		SessionSigningKey: base64.RawURLEncoding.EncodeToString(value.signingKey[:]), SessionEpoch: value.sessionEpoch,
-		InitializedAtMS: value.initializedAtMS, RotatedAtMS: cloneInt64(value.rotatedAtMS),
+		InitializedAtMS: value.initializedAtMS, RotatedAtMS: cloneInt64(value.rotatedAtMS), PasswordHash: string(value.passwordHash),
 	}
 	encoded, err := json.MarshalIndent(stored, "", "  ")
 	if err != nil {
@@ -477,6 +486,24 @@ func (manager *Manager) IssueSession(token string) (string, Session, error) {
 	if !authenticateBearer(current, token) {
 		return "", Session{}, ErrUnauthorized
 	}
+	return manager.issueSession(current)
+}
+
+// IssuePasswordSession exchanges the configured human password for the same
+// short-lived browser session used by bearer login. Passwords are never used
+// as API bearer credentials.
+func (manager *Manager) IssuePasswordSession(password string) (string, Session, error) {
+	manager.mutationMu.Lock()
+	defer manager.mutationMu.Unlock()
+	current := manager.current.Load()
+	if current == nil || len(current.passwordHash) == 0 ||
+		bcrypt.CompareHashAndPassword(current.passwordHash, []byte(password)) != nil {
+		return "", Session{}, ErrUnauthorized
+	}
+	return manager.issueSession(current)
+}
+
+func (manager *Manager) issueSession(current *snapshot) (string, Session, error) {
 	csrf, err := randomToken(manager.random, csrfTokenBytes)
 	if err != nil {
 		return "", Session{}, fmt.Errorf("generate CSRF token: %w", err)
@@ -491,6 +518,64 @@ func (manager *Manager) IssueSession(token string) (string, Session, error) {
 	signature := sign(current.signingKey[:], payloadPart)
 	value := payloadPart + "." + base64.RawURLEncoding.EncodeToString(signature)
 	return value, Session{ExpiresAt: expiresAt, Epoch: current.sessionEpoch, CSRFToken: csrf}, nil
+}
+
+// SetPasswordAuthorized configures or replaces the owner password after a
+// bearer or browser grant was already verified. It deliberately keeps the
+// current session epoch; explicit token rotation remains the revocation tool.
+func (manager *Manager) SetPasswordAuthorized(grant Grant, password string) (Status, error) {
+	if err := validatePassword(password); err != nil {
+		return Status{}, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return Status{}, fmt.Errorf("hash owner password: %w", err)
+	}
+	manager.mutationMu.Lock()
+	defer manager.mutationMu.Unlock()
+	current := manager.current.Load()
+	if current == nil {
+		return Status{}, ErrNotInitialized
+	}
+	if grant.authority == nil || grant.authority != current {
+		return Status{}, ErrUnauthorized
+	}
+	next := cloneSnapshot(current)
+	next.passwordHash = append([]byte(nil), hash...)
+	if err := writeSnapshot(manager.root, next); err != nil {
+		return Status{}, err
+	}
+	manager.current.Store(next)
+	return next.status(), nil
+}
+
+// SetPasswordOffline updates the password while excluding a running server.
+func SetPasswordOffline(ctx context.Context, runtimeState *runtimefs.Runtime, password string) (Status, error) {
+	if runtimeState == nil || runtimeState.Locks == nil {
+		return Status{}, errors.New("resolved runtime is required")
+	}
+	if err := validatePassword(password); err != nil {
+		return Status{}, err
+	}
+	lease, err := acquireOfflineLease(ctx, runtimeState.Locks)
+	if err != nil {
+		return Status{}, err
+	}
+	defer func() { _ = lease.Release() }()
+	current, err := readSnapshot(runtimeState.Root)
+	if err != nil {
+		return Status{}, err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return Status{}, fmt.Errorf("hash owner password: %w", err)
+	}
+	next := cloneSnapshot(current)
+	next.passwordHash = append([]byte(nil), hash...)
+	if err := writeSnapshot(runtimeState.Root, next); err != nil {
+		return Status{}, err
+	}
+	return next.status(), nil
 }
 
 // ValidateSession verifies signature, expiry, and the currently active epoch.
@@ -569,6 +654,7 @@ func (manager *Manager) newSnapshot(previous *snapshot) (string, *snapshot, erro
 		next.initializedAtMS = previous.initializedAtMS
 		next.sessionEpoch = previous.sessionEpoch + 1
 		next.rotatedAtMS = &nowMS
+		next.passwordHash = append([]byte(nil), previous.passwordHash...)
 	}
 	next.tokenHash = sha256.Sum256([]byte(token))
 	return token, next, nil
@@ -629,7 +715,7 @@ func readSnapshot(root string) (*snapshot, error) {
 }
 
 func decodeSnapshot(stored diskSecrets) (*snapshot, error) {
-	if stored.Version != secretsVersion || stored.SessionEpoch == 0 || stored.InitializedAtMS <= 0 {
+	if (stored.Version != legacySecretsVersion && stored.Version != secretsVersion) || stored.SessionEpoch == 0 || stored.InitializedAtMS <= 0 {
 		return nil, fmt.Errorf("%w: unsupported or incomplete state", ErrInvalidSecrets)
 	}
 	hash, err := base64.RawURLEncoding.DecodeString(stored.TokenHash)
@@ -643,10 +729,19 @@ func decodeSnapshot(stored diskSecrets) (*snapshot, error) {
 	if stored.RotatedAtMS != nil && *stored.RotatedAtMS < stored.InitializedAtMS {
 		return nil, fmt.Errorf("%w: rotation precedes initialization", ErrInvalidSecrets)
 	}
+	if stored.Version == legacySecretsVersion && stored.PasswordHash != "" {
+		return nil, fmt.Errorf("%w: password hash in legacy state", ErrInvalidSecrets)
+	}
+	if stored.PasswordHash != "" {
+		if _, err := bcrypt.Cost([]byte(stored.PasswordHash)); err != nil {
+			return nil, fmt.Errorf("%w: malformed password hash", ErrInvalidSecrets)
+		}
+	}
 	loaded := &snapshot{
 		sessionEpoch:    stored.SessionEpoch,
 		initializedAtMS: stored.InitializedAtMS,
 		rotatedAtMS:     cloneInt64(stored.RotatedAtMS),
+		passwordHash:    append([]byte(nil), stored.PasswordHash...),
 	}
 	copy(loaded.tokenHash[:], hash)
 	copy(loaded.signingKey[:], key)
@@ -661,6 +756,7 @@ func writeSnapshot(root string, value *snapshot) error {
 		SessionEpoch:      value.sessionEpoch,
 		InitializedAtMS:   value.initializedAtMS,
 		RotatedAtMS:       cloneInt64(value.rotatedAtMS),
+		PasswordHash:      string(value.passwordHash),
 	}
 	encoded, err := json.MarshalIndent(stored, "", "  ")
 	if err != nil {
@@ -675,7 +771,7 @@ func writeSnapshot(root string, value *snapshot) error {
 
 func (value *snapshot) status() Status {
 	initializedAt := time.UnixMilli(value.initializedAtMS).UTC()
-	status := Status{Initialized: true, SessionEpoch: value.sessionEpoch, InitializedAt: &initializedAt}
+	status := Status{Initialized: true, PasswordEnabled: len(value.passwordHash) > 0, SessionEpoch: value.sessionEpoch, InitializedAt: &initializedAt}
 	if value.rotatedAtMS != nil {
 		rotatedAt := time.UnixMilli(*value.rotatedAtMS).UTC()
 		status.RotatedAt = &rotatedAt
@@ -721,5 +817,22 @@ func cloneInt64(value *int64) *int64 {
 		return nil
 	}
 	cloned := *value
+	return &cloned
+}
+
+func validatePassword(password string) error {
+	if len(password) < minPasswordBytes || len(password) > maxPasswordBytes || strings.TrimSpace(password) != password {
+		return fmt.Errorf("%w: must contain %d to %d bytes and have no surrounding whitespace", ErrInvalidPassword, minPasswordBytes, maxPasswordBytes)
+	}
+	return nil
+}
+
+func cloneSnapshot(value *snapshot) *snapshot {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	cloned.rotatedAtMS = cloneInt64(value.rotatedAtMS)
+	cloned.passwordHash = append([]byte(nil), value.passwordHash...)
 	return &cloned
 }

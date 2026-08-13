@@ -19,6 +19,9 @@ import (
 // Authentication material and deployment-derived request data never belong in
 // this value.
 type SiteSettings struct {
+	OwnerID         string  `json:"owner_id"`
+	Username        string  `json:"username"`
+	DisplayName     string  `json:"display_name"`
 	Title           string  `json:"title"`
 	Bio             string  `json:"bio"`
 	Timezone        string  `json:"timezone"`
@@ -29,6 +32,16 @@ type SiteSettings struct {
 	CommentsEnabled bool    `json:"comments_enabled"`
 }
 
+// MentionSuggestion is the bounded public identity projection used by
+// composers. OwnerID remains stable when the editable username changes.
+type MentionSuggestion struct {
+	OwnerID       string  `json:"owner_id"`
+	Username      string  `json:"username"`
+	DisplayName   string  `json:"display_name"`
+	AvatarMediaID *string `json:"avatar_media_id"`
+	ProfileURL    string  `json:"profile_url"`
+}
+
 // NullableString distinguishes an omitted PATCH field from an explicit null.
 type NullableString struct {
 	Value *string
@@ -36,6 +49,8 @@ type NullableString struct {
 
 // SiteUpdate contains transport-independent partial update intent.
 type SiteUpdate struct {
+	Username        *string
+	DisplayName     *string
 	Title           *string
 	Bio             *string
 	Timezone        *string
@@ -47,7 +62,7 @@ type SiteUpdate struct {
 
 // Empty reports whether an update carries no fields.
 func (update SiteUpdate) Empty() bool {
-	return update.Title == nil && update.Bio == nil && update.Timezone == nil &&
+	return update.Username == nil && update.DisplayName == nil && update.Title == nil && update.Bio == nil && update.Timezone == nil &&
 		update.PublicBaseURL == nil && update.AvatarMediaID == nil && update.CoverMediaID == nil && update.CommentsEnabled == nil
 }
 
@@ -160,12 +175,40 @@ func (service *SiteService) Get(ctx context.Context) (SiteSettings, error) {
 		if err != nil {
 			return err
 		}
+		settings = withLegacyIdentityDefaults(settings)
 		return service.validateStored(ctx, store, settings)
 	})
 	if err != nil {
 		return SiteSettings{}, normalizeSiteRepositoryError(err)
 	}
 	return cloneSiteSettings(settings), nil
+}
+
+// SuggestMentions searches the instance's public owner identity. Moment is a
+// single-owner product today, so querying the indexed singleton is both the
+// lightest and most accurate implementation; the response remains a list for
+// future expansion without changing browser or CLI contracts.
+func (service *SiteService) SuggestMentions(ctx context.Context, query string, limit int) ([]MentionSuggestion, error) {
+	if limit < 1 || limit > 20 {
+		return nil, domain.NewError(domain.CodeInvalidArgument, "limit must be between 1 and 20", map[string]any{"field": "limit"})
+	}
+	query = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(query, "@")))
+	if len([]rune(query)) > 30 {
+		return nil, domain.NewError(domain.CodeInvalidArgument, "mention query must not exceed 30 characters", map[string]any{"field": "query"})
+	}
+	settings, err := service.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	username := strings.ToLower(settings.Username)
+	displayName := strings.ToLower(settings.DisplayName)
+	if query != "" && !strings.HasPrefix(username, query) && !strings.Contains(displayName, query) {
+		return []MentionSuggestion{}, nil
+	}
+	return []MentionSuggestion{{
+		OwnerID: settings.OwnerID, Username: settings.Username, DisplayName: settings.DisplayName,
+		AvatarMediaID: cloneString(settings.AvatarMediaID), ProfileURL: "/@" + settings.Username,
+	}}, nil
 }
 
 // Ready verifies that the singleton and its managed avatar reference remain
@@ -191,6 +234,7 @@ func (service *SiteService) Pin(ctx context.Context, id domain.ID) (SiteSettings
 		if err != nil {
 			return err
 		}
+		current = withLegacyIdentityDefaults(current)
 		if err := service.validateStored(ctx, store, current); err != nil {
 			return err
 		}
@@ -226,6 +270,7 @@ func (service *SiteService) Unpin(ctx context.Context, expected ...domain.ID) (S
 		if err != nil {
 			return err
 		}
+		current = withLegacyIdentityDefaults(current)
 		if err := service.validateStored(ctx, store, current); err != nil {
 			return err
 		}
@@ -270,6 +315,7 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 		if err != nil {
 			return err
 		}
+		current = withLegacyIdentityDefaults(current)
 		if err := service.validateStored(ctx, store, current); err != nil {
 			return err
 		}
@@ -319,6 +365,20 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 
 func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 	prepared := update
+	if update.Username != nil {
+		value := strings.ToLower(strings.TrimSpace(*update.Username))
+		if !validUsername(value) {
+			return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "username must contain 3 to 30 lowercase letters, numbers, or underscores and start with a letter", map[string]any{"field": "username"})
+		}
+		prepared.Username = &value
+	}
+	if update.DisplayName != nil {
+		value := strings.TrimSpace(*update.DisplayName)
+		if value == "" || len([]rune(value)) > 80 {
+			return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "display_name must contain 1 to 80 characters", map[string]any{"field": "display_name"})
+		}
+		prepared.DisplayName = &value
+	}
 	if update.Title != nil && (strings.TrimSpace(*update.Title) == "" || len([]rune(*update.Title)) > 120) {
 		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "title must contain 1 to 120 characters", map[string]any{"field": "title"})
 	}
@@ -355,7 +415,8 @@ func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 }
 
 func (service *SiteService) validateStored(ctx context.Context, store SiteStore, settings SiteSettings) error {
-	if strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > 500 {
+	if !validOwnerID(settings.OwnerID) || !validUsername(settings.Username) || strings.TrimSpace(settings.DisplayName) != settings.DisplayName || settings.DisplayName == "" || len([]rune(settings.DisplayName)) > 80 ||
+		strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > 500 {
 		return domain.NewError(domain.CodeDataIntegrityFailed, "stored site identity text is invalid", nil)
 	}
 	if err := validateTimezone(settings.Timezone); err != nil {
@@ -411,6 +472,12 @@ func (service *SiteService) validateStored(ctx context.Context, store SiteStore,
 
 func applySiteUpdate(current SiteSettings, update SiteUpdate) SiteSettings {
 	next := cloneSiteSettings(current)
+	if update.Username != nil {
+		next.Username = *update.Username
+	}
+	if update.DisplayName != nil {
+		next.DisplayName = *update.DisplayName
+	}
 	if update.Title != nil {
 		next.Title = *update.Title
 	}
@@ -433,6 +500,46 @@ func applySiteUpdate(current SiteSettings, update SiteUpdate) SiteSettings {
 		next.CommentsEnabled = *update.CommentsEnabled
 	}
 	return next
+}
+
+func validUsername(value string) bool {
+	if len(value) < 3 || len(value) > 30 || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func validOwnerID(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'f') && (character < '0' || character > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// withLegacyIdentityDefaults keeps older in-process adapters and pre-migration
+// archives readable while SQLite's migration supplies a random immutable ID
+// for every real instance. New persistence always writes all three fields.
+func withLegacyIdentityDefaults(settings SiteSettings) SiteSettings {
+	if settings.OwnerID != "" || settings.Username != "" || settings.DisplayName != "" {
+		return settings
+	}
+	settings.OwnerID = "00000000000000000000000000000000"
+	settings.Username = "owner"
+	settings.DisplayName = strings.TrimSpace(settings.Title)
+	if settings.DisplayName == "" {
+		settings.DisplayName = "Moment"
+	}
+	return settings
 }
 
 func validateTimezone(value string) error {

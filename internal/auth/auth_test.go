@@ -181,6 +181,87 @@ func TestBearerSessionsExpireAndRotationRevokesAllOldCredentials(t *testing.T) {
 	}
 }
 
+func TestPasswordSessionsAndRotationPreserveHumanLogin(t *testing.T) {
+	runtimeState := initializedRuntime(t)
+	now := time.Date(2026, time.August, 13, 12, 0, 0, 0, time.UTC)
+	credential := initializeOwner(t, runtimeState, now)
+	manager, err := NewManager(runtimeState.Root, Options{Now: func() time.Time { return now }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := manager.IssuePasswordSession("not-configured"); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("password before setup error = %v", err)
+	}
+	grant, err := manager.AuthorizeBearer(credential.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := manager.SetPasswordAuthorized(grant, "correct horse battery staple")
+	if err != nil || !status.PasswordEnabled || status.SessionEpoch != 1 {
+		t.Fatalf("set password status = %#v, err = %v", status, err)
+	}
+	if _, _, err := manager.IssuePasswordSession("wrong password"); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("wrong password error = %v", err)
+	}
+	cookie, session, err := manager.IssuePasswordSession("correct horse battery staple")
+	if err != nil || session.CSRFToken == "" {
+		t.Fatalf("password session = %#v, err = %v", session, err)
+	}
+	if _, err := manager.ValidateSession(cookie); err != nil {
+		t.Fatalf("validate password session: %v", err)
+	}
+	grant, err = manager.AuthorizeBearer(credential.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rotated, err := manager.RotateAuthorized(grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rotated.Initialized || rotated.SessionEpoch != 2 {
+		t.Fatalf("rotated = %#v", rotated)
+	}
+	if _, _, err := manager.IssuePasswordSession("correct horse battery staple"); err != nil {
+		t.Fatalf("rotation unexpectedly removed password: %v", err)
+	}
+	if _, err := manager.ValidateSession(cookie); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("rotation did not revoke old password session: %v", err)
+	}
+}
+
+func TestPasswordValidationAndLegacySecretsRemainCompatible(t *testing.T) {
+	runtimeState := initializedRuntime(t)
+	initializeOwner(t, runtimeState, time.Now())
+	for _, password := range []string{"short", " surrounded-password ", strings.Repeat("x", 73)} {
+		if _, err := SetPasswordOffline(context.Background(), runtimeState, password); !errors.Is(err, ErrInvalidPassword) {
+			t.Fatalf("password %q error = %v", password, err)
+		}
+	}
+	path := filepath.Join(runtimeState.Root, secretsFilename)
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := strings.Replace(string(contents), `"version": 2`, `"version": 1`, 1)
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manager, err := NewManager(runtimeState.Root, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(); err != nil {
+		t.Fatalf("load legacy owner secrets: %v", err)
+	}
+	status, err := manager.Status()
+	if err != nil || status.PasswordEnabled {
+		t.Fatalf("legacy status = %#v, err = %v", status, err)
+	}
+}
+
 func TestOfflineRotationUsesLockOwnershipNotLockFileExistence(t *testing.T) {
 	runtimeState := initializedRuntime(t)
 	original := initializeOwner(t, runtimeState, time.Now())

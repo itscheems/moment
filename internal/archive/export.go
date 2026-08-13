@@ -211,6 +211,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 		return Summary{}, archiveInvalid("site settings are not portable", err)
 	}
 	if err := protocol.jsonMember("data/site.json", siteRecord{
+		OwnerID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName,
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone,
 		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID,
 		CommentsEnabled: site.CommentsEnabled,
@@ -496,6 +497,9 @@ type limitManifest struct {
 }
 
 type siteRecord struct {
+	OwnerID         string  `json:"owner_id,omitempty"`
+	Username        string  `json:"username,omitempty"`
+	DisplayName     string  `json:"display_name,omitempty"`
 	Title           string  `json:"title"`
 	Bio             string  `json:"bio"`
 	Timezone        string  `json:"timezone"`
@@ -833,10 +837,20 @@ func validateArchiveComment(value sqlitestore.ArchiveComment) error {
 }
 
 func validateArchiveSite(value sqlitestore.ArchiveSite, development bool) error {
-	for _, field := range []string{value.Title, value.Bio, value.Timezone} {
+	for _, field := range []string{value.OwnerID, value.Username, value.DisplayName, value.Title, value.Bio, value.Timezone} {
 		if !utf8.ValidString(field) || strings.ContainsRune(field, 0) {
 			return errors.New("site text is not canonical UTF-8")
 		}
+	}
+	if value.OwnerID != "" {
+		if len(value.OwnerID) != 32 || strings.Trim(value.OwnerID, "0123456789abcdef") != "" ||
+			len(value.Username) < 3 || len(value.Username) > 30 || value.Username != strings.ToLower(value.Username) ||
+			value.Username[0] < 'a' || value.Username[0] > 'z' || strings.Trim(value.Username, "abcdefghijklmnopqrstuvwxyz0123456789_") != "" ||
+			strings.TrimSpace(value.DisplayName) != value.DisplayName || value.DisplayName == "" || len([]rune(value.DisplayName)) > 80 {
+			return errors.New("site owner identity is invalid")
+		}
+	} else if value.Username != "" || value.DisplayName != "" {
+		return errors.New("site owner identity is incomplete")
 	}
 	if strings.TrimSpace(value.Title) == "" || len([]rune(value.Title)) > 120 {
 		return errors.New("site title is empty")
@@ -1242,6 +1256,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		return err
 	}
 	if err := validateArchiveSite(sqlitestore.ArchiveSite{
+		OwnerID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName,
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone,
 		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID,
 		CommentsEnabled: site.CommentsEnabled,

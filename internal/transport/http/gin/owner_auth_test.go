@@ -219,6 +219,38 @@ func TestBearerAuthenticatedWriteDoesNotRequireCSRF(t *testing.T) {
 	}
 }
 
+func TestPasswordLoginOptionsSetupAndExchange(t *testing.T) {
+	fixture := newOwnerTestFixture(t, false)
+	options := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/owner/login-options", ""))
+	if options.Code != http.StatusOK || decodeDataMap(t, options)["password_enabled"] != false {
+		t.Fatalf("initial login options = %d, body = %s", options.Code, options.Body.String())
+	}
+	set := ownerRequest(http.MethodPut, "/api/v1/owner/password", `{"password":"correct horse battery staple"}`)
+	set.Header.Set("Authorization", "Bearer "+fixture.token)
+	setResponse := performRequest(fixture.engine, set)
+	if setResponse.Code != http.StatusOK || decodeDataMap(t, setResponse)["password_enabled"] != true {
+		t.Fatalf("set password = %d, body = %s", setResponse.Code, setResponse.Body.String())
+	}
+	wrong := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/owner/session", `{"password":"incorrect password"}`))
+	if wrong.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password = %d, body = %s", wrong.Code, wrong.Body.String())
+	}
+	passwordSession := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/owner/session", `{"password":"correct horse battery staple"}`))
+	if passwordSession.Code != http.StatusOK || decodeDataMap(t, passwordSession)["csrf_token"] == "" {
+		t.Fatalf("password session = %d, body = %s", passwordSession.Code, passwordSession.Body.String())
+	}
+	options = performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/owner/login-options", ""))
+	if decodeDataMap(t, options)["password_enabled"] != true {
+		t.Fatalf("updated login options = %s", options.Body.String())
+	}
+	for _, body := range []string{`{"token":"x","password":"y"}`, `{"password":"short","extra":true}`, `{"password":""}`} {
+		response := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/owner/session", body))
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid exchange %s = %d, body = %s", body, response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestConcurrentlyPreauthorizedOldBearerCanRotateOnlyOnce(t *testing.T) {
 	fixture := newOwnerTestFixture(t, false)
 	engine := fixture.engine.(*gin.Engine)

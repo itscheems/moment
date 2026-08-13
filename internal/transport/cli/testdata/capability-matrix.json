@@ -210,6 +210,15 @@
       "parity_strategy": "semantic_random_credential_and_epoch"
     },
     {
+      "command": "owner set-password",
+      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["serve:exclusive"]},
+      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
+      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "output_schema": "owner_status_v1",
+      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "parity_strategy": "byte_identical_safe_status_and_password_effect"
+    },
+    {
       "command": "owner status",
       "direct": {"availability": "supported", "auth": "local_data_access", "locks": []},
       "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
@@ -325,6 +334,15 @@
       "output_schema": "site_settings_v1",
       "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       "parity_strategy": "byte_identical_data_and_effect"
+    },
+    {
+      "command": "user suggest",
+      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
+      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
+      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "output_schema": "mention_suggestion_list_v1",
+      "expected_exits": [0, 2, 4, 6, 7, 8, 9, 10],
+      "parity_strategy": "byte_identical_data"
     },
     {
       "command": "version",

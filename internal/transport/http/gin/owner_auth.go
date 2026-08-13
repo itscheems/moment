@@ -29,7 +29,12 @@ type CookieOptions struct {
 }
 
 type sessionRequest struct {
-	Token string `json:"token"`
+	Token    *string `json:"token"`
+	Password *string `json:"password"`
+}
+
+type passwordRequest struct {
+	Password string `json:"password"`
 }
 
 type sessionResponse struct {
@@ -41,6 +46,7 @@ type sessionResponse struct {
 // owner feature groups can reuse RequireOwner rather than decode credentials.
 func RegisterOwnerRoutes(engine *gin.Engine, manager *auth.Manager, cookies CookieOptions) {
 	owner := engine.Group("/api/v1/owner")
+	owner.GET("/login-options", loginOptions(manager))
 	owner.POST("/session", exchangeSession(manager, cookies))
 
 	protected := owner.Group("")
@@ -48,6 +54,18 @@ func RegisterOwnerRoutes(engine *gin.Engine, manager *auth.Manager, cookies Cook
 	protected.DELETE("/session", logoutSession(cookies))
 	protected.GET("/status", ownerStatus(manager))
 	protected.POST("/token/rotate", rotateToken(manager))
+	protected.PUT("/password", setPassword(manager))
+}
+
+func loginOptions(manager *auth.Manager) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		status, err := manager.Status()
+		if err != nil {
+			Failure(ctx, http.StatusServiceUnavailable, "OWNER_NOT_INITIALIZED", "owner authentication is not initialized", nil)
+			return
+		}
+		Success(ctx, http.StatusOK, map[string]bool{"password_enabled": status.PasswordEnabled}, nil)
+	}
 }
 
 // RequireOwner accepts either an exact bearer credential or a signed browser
@@ -111,17 +129,61 @@ func exchangeSession(manager *auth.Manager, cookies CookieOptions) gin.HandlerFu
 		var request sessionRequest
 		decoder := json.NewDecoder(strings.NewReader(string(body)))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&request); err != nil || decoder.Decode(&struct{}{}) != io.EOF || request.Token == "" {
-			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "a JSON owner token is required", nil)
+		if err := decoder.Decode(&request); err != nil || decoder.Decode(&struct{}{}) != io.EOF ||
+			(request.Token == nil) == (request.Password == nil) ||
+			(request.Token != nil && *request.Token == "") || (request.Password != nil && *request.Password == "") {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "exactly one owner password or token is required", nil)
 			return
 		}
-		cookieValue, session, err := manager.IssueSession(request.Token)
+		var cookieValue string
+		var session auth.Session
+		var err error
+		if request.Password != nil {
+			cookieValue, session, err = manager.IssuePasswordSession(*request.Password)
+		} else {
+			cookieValue, session, err = manager.IssueSession(*request.Token)
+		}
 		if err != nil {
 			unauthorized(ctx)
 			return
 		}
 		setSessionCookie(ctx, cookieValue, session.ExpiresAt, cookies)
 		Success(ctx, http.StatusOK, sessionResponse{ExpiresAt: session.ExpiresAt, CSRFToken: session.CSRFToken}, nil)
+	}
+}
+
+func setPassword(manager *auth.Manager) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		body, ok := readBody(ctx)
+		if !ok {
+			return
+		}
+		var request passwordRequest
+		decoder := json.NewDecoder(strings.NewReader(string(body)))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&request); err != nil || decoder.Decode(&struct{}{}) != io.EOF || request.Password == "" {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "a JSON owner password is required", nil)
+			return
+		}
+		grant, ok := ownerGrant(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		status, err := manager.SetPasswordAuthorized(grant, request.Password)
+		if errors.Is(err, auth.ErrInvalidPassword) {
+			Failure(ctx, http.StatusBadRequest, "PASSWORD_INVALID", "password must be 8 to 72 bytes without surrounding whitespace", nil)
+			return
+		}
+		if errors.Is(err, auth.ErrUnauthorized) {
+			unauthorized(ctx)
+			return
+		}
+		if err != nil {
+			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "owner password update failed", nil)
+			return
+		}
+		Success(ctx, http.StatusOK, status, nil)
 	}
 }
 

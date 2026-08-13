@@ -128,6 +128,7 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("site settings routes require owner authentication")
 		}
 		RegisterSiteRoutes(engine, config.SiteSettings, config.OwnerAuth, config.InstanceID, config.InstanceInitializedAt)
+		RegisterMentionRoutes(engine, config.SiteSettings)
 	}
 	if config.Media != nil {
 		if config.OwnerAuth == nil {

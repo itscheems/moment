@@ -35,12 +35,14 @@ func registerSite(application *Application) {
 		Path:       []string{"site", "update"},
 		Short:      "Partially update portable site settings",
 		Long:       "Atomically validate and update only the explicitly supplied site identity fields through the selected transport.",
-		Inputs:     "Set fields with --title, --bio, --timezone, --public-base-url, --avatar-media-id, --cover-media-id, and --comments-enabled. Clear nullable fields with --clear-public-base-url, --clear-avatar, or --clear-cover. API mode authenticates through MOMENT_TOKEN or --token-file.",
+		Inputs:     "Set fields with --username, --display-name, --title, --bio, --timezone, --public-base-url, --avatar-media-id, --cover-media-id, and --comments-enabled. Clear nullable fields with --clear-public-base-url, --clear-avatar, or --clear-cover. API mode authenticates through MOMENT_TOKEN or --token-file.",
 		Output:     "The complete updated public settings DTO, equivalent in direct and API modes.",
 		Errors:     "Invalid IANA zones or URLs return INVALID_ARGUMENT; missing managed media returns MEDIA_NOT_FOUND; API authentication failures return UNAUTHORIZED.",
-		Example:    "moment site update --data-dir ./moment-data --title 'Jojo moments' --timezone Asia/Shanghai --comments-enabled=false --json",
+		Example:    "moment site update --data-dir ./moment-data --username cheems --display-name 'Cheems' --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
+			flags.String("username", "", "set the unique lowercase public username")
+			flags.String("display-name", "", "set the public owner display name")
 			flags.String("title", "", "set the public site title")
 			flags.String("bio", "", "set the public site biography")
 			flags.String("timezone", "", "set an IANA timezone such as Asia/Shanghai")
@@ -110,6 +112,8 @@ func siteUpdateInput(input CommandInput) (app.SiteUpdate, map[string]any, error)
 		flag string
 		set  func(string)
 	}{
+		{flag: "username", set: func(value string) { update.Username = &value; payload["username"] = value }},
+		{flag: "display-name", set: func(value string) { update.DisplayName = &value; payload["display_name"] = value }},
 		{flag: "title", set: func(value string) { update.Title = &value; payload["title"] = value }},
 		{flag: "bio", set: func(value string) { update.Bio = &value; payload["bio"] = value }},
 		{flag: "timezone", set: func(value string) { update.Timezone = &value; payload["timezone"] = value }},
@@ -343,8 +347,8 @@ func siteAPIRequest(
 }
 
 func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
-	if !hasRequiredAPIDataFields(data, "title", "bio", "timezone", "public_base_url", "avatar_media_id", "cover_media_id", "pinned_post_id", "comments_enabled") ||
-		!hasRequiredNonNullAPIDataFields(data, "title", "bio", "timezone", "comments_enabled") ||
+	if !hasRequiredAPIDataFields(data, "owner_id", "username", "display_name", "title", "bio", "timezone", "public_base_url", "avatar_media_id", "cover_media_id", "pinned_post_id", "comments_enabled") ||
+		!hasRequiredNonNullAPIDataFields(data, "owner_id", "username", "display_name", "title", "bio", "timezone", "comments_enabled") ||
 		settings.Timezone == "" || settings.Timezone == "Local" || strings.HasPrefix(settings.Timezone, "/") || strings.Contains(settings.Timezone, "..") {
 		return false
 	}

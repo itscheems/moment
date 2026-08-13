@@ -18,6 +18,7 @@ import (
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -77,6 +78,93 @@ func registerOwner(application *Application) {
 		Capability: CapabilityBoth,
 		Run:        runOwnerRotate,
 	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:       []string{"owner", "set-password"},
+		Short:      "Set the owner browser-login password",
+		Long:       "Configure or replace the human password used only to create browser sessions. The owner bearer token remains the CLI and API credential.",
+		Inputs:     "Read the password from exactly one --password-file path or - for stdin. Direct mode requires a stopped server; API mode authenticates through MOMENT_TOKEN or --token-file.",
+		Output:     "Safe owner authentication status including password_enabled; password bytes are never echoed or returned as JSON.",
+		Errors:     "Passwords outside 8-72 bytes return INVALID_ARGUMENT; direct mode returns INSTANCE_IN_USE for an active server.",
+		Safety:     "Password material is accepted only from a bounded file or stdin, never from argv, output, logs, or exported site data.",
+		Example:    "printf '%s' 'correct horse battery staple' | moment owner set-password --data-dir ./moment-data --password-file - --json",
+		Capability: CapabilityBoth,
+		Flags: func(flags *pflag.FlagSet) {
+			flags.Var(&onceStringFlag{name: "--password-file"}, "password-file", "read the new password from one file path or - for stdin")
+		},
+		Run: runOwnerSetPassword,
+	})
+}
+
+func runOwnerSetPassword(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	path, err := input.String("password-file")
+	if err != nil || !input.Changed("password-file") || path == "" {
+		return Result{}, invalidArgument("--password-file is required", "provide a private file path or - for stdin")
+	}
+	password, err := readPasswordInput(input.In(), path)
+	if err != nil {
+		return Result{}, err
+	}
+	var status auth.Status
+	switch invocation.Mode() {
+	case ModeDirect:
+		target, targetErr := invocation.DirectTransport()
+		if targetErr != nil {
+			return Result{}, targetErr
+		}
+		runtimeState, runtimeErr := runtimefs.OpenContext(ctx, target.DataDirectory())
+		if runtimeErr != nil {
+			return Result{}, ownerRuntimeError(runtimeErr)
+		}
+		status, err = auth.SetPasswordOffline(ctx, runtimeState, password)
+	case ModeAPI:
+		payload, marshalErr := json.Marshal(map[string]string{"password": password})
+		if marshalErr != nil {
+			return Result{}, marshalErr
+		}
+		var meta map[string]any
+		meta, err = ownerAPIJSONRequest(ctx, invocation, http.MethodPut, "/api/v1/owner/password", payload, http.StatusOK, &status)
+		result := ownerStatusResult(status)
+		result.Meta = meta
+		if err != nil {
+			return Result{}, err
+		}
+		return result, nil
+	default:
+		return Result{}, errors.New("unsupported owner password transport")
+	}
+	if err != nil {
+		return Result{}, ownerAuthError(err)
+	}
+	return ownerStatusResult(status), nil
+}
+
+func readPasswordInput(stdin io.Reader, path string) (string, error) {
+	var reader io.Reader
+	var file *os.File
+	if path == "-" {
+		reader = stdin
+	} else {
+		info, err := os.Lstat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return "", NewCommandError("PASSWORD_FILE_UNREADABLE", "the password file could not be read", "provide a readable regular file or - for stdin", ExitIO).WithCause(err)
+		}
+		file, err = os.Open(path)
+		if err != nil {
+			return "", NewCommandError("PASSWORD_FILE_UNREADABLE", "the password file could not be read", "check the path and permissions", ExitIO).WithCause(err)
+		}
+		defer func() { _ = file.Close() }()
+		reader = file
+	}
+	contents, err := io.ReadAll(io.LimitReader(reader, maxTokenFileBytes+1))
+	if err != nil {
+		return "", NewCommandError("PASSWORD_FILE_UNREADABLE", "the password input could not be read", "check the selected input and retry", ExitIO).WithCause(err)
+	}
+	if len(contents) > maxTokenFileBytes {
+		return "", invalidArgument("--password-file is too large", "provide only the owner password")
+	}
+	contents = bytes.TrimSuffix(contents, []byte("\r\n"))
+	contents = bytes.TrimSuffix(contents, []byte("\n"))
+	return string(contents), nil
 }
 
 func runOwnerInit(ctx context.Context, invocation Invocation, _ CommandInput) (Result, error) {
@@ -208,10 +296,60 @@ func ownerAPIRequest(ctx context.Context, invocation Invocation, method, endpoin
 	return meta, nil
 }
 
+func ownerAPIJSONRequest(ctx context.Context, invocation Invocation, method, endpoint string, payload []byte, expectedStatus int, destination any) (map[string]any, error) {
+	target, err := invocation.APITransport()
+	if err != nil {
+		return nil, err
+	}
+	token, err := readAPIToken(target)
+	if err != nil {
+		return nil, err
+	}
+	endpointURL, err := url.JoinPath(target.BaseURL().String(), endpoint)
+	if err != nil {
+		return nil, invalidArgument("the API endpoint URL is invalid", "check --url and retry")
+	}
+	request, err := http.NewRequestWithContext(ctx, method, endpointURL, bytes.NewReader(payload))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxAPIResponse {
+		return nil, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the Moment API response exceeded the allowed size", "inspect the server and retry", ExitUnavailable)
+	}
+	if response.StatusCode != expectedStatus {
+		return nil, decodeOwnerAPIFailure(response.StatusCode, body)
+	}
+	if !validAPIJSONContentType(response.Header.Get("Content-Type")) {
+		return nil, invalidAPIResponse()
+	}
+	data, meta, err := decodeStrictAPIEnvelope(body)
+	if err != nil {
+		return nil, invalidAPIResponse()
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil || decoder.Decode(&struct{}{}) != io.EOF || !validOwnerAPIData(data, destination) {
+		return nil, invalidAPIResponse()
+	}
+	return meta, nil
+}
+
 func validOwnerAPIData(data json.RawMessage, destination any) bool {
 	switch value := destination.(type) {
 	case *auth.Status:
-		if !hasRequiredNonNullAPIDataFields(data, "initialized", "session_epoch", "initialized_at") ||
+		if !hasRequiredNonNullAPIDataFields(data, "initialized", "password_enabled", "session_epoch", "initialized_at") ||
 			!value.Initialized || value.SessionEpoch == 0 || !validCanonicalAPITimePointer(value.InitializedAt) ||
 			!validCanonicalAPIInstantField(data, "initialized_at", *value.InitializedAt) || !validOwnerRotationState(data, value.SessionEpoch, *value.InitializedAt, value.RotatedAt) {
 			return false
@@ -572,6 +710,8 @@ func invalidAPIResponse() error {
 
 func ownerAuthError(err error) error {
 	switch {
+	case errors.Is(err, auth.ErrInvalidPassword):
+		return invalidArgument("the owner password must be 8 to 72 bytes without surrounding whitespace", "choose a longer password and retry")
 	case errors.Is(err, auth.ErrInstanceInUse):
 		return NewCommandError(
 			"INSTANCE_IN_USE",

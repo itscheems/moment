@@ -114,6 +114,8 @@ func (field *requiredBoolField) UnmarshalJSON(data []byte) error {
 }
 
 type siteUpdateRequest struct {
+	Username        requiredStringField `json:"username"`
+	DisplayName     requiredStringField `json:"display_name"`
 	Title           requiredStringField `json:"title"`
 	Bio             requiredStringField `json:"bio"`
 	Timezone        requiredStringField `json:"timezone"`
@@ -134,6 +136,12 @@ func decodeSiteUpdate(body []byte) (app.SiteUpdate, error) {
 		return app.SiteUpdate{}, errors.New("request must contain exactly one JSON document")
 	}
 	update := app.SiteUpdate{}
+	if request.Username.set {
+		update.Username = &request.Username.value
+	}
+	if request.DisplayName.set {
+		update.DisplayName = &request.DisplayName.value
+	}
 	if request.Title.set {
 		update.Title = &request.Title.value
 	}

@@ -242,7 +242,29 @@ func TestSitePublicJSONContainsOnlyStableDTOFields(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Data) != 8 {
+	if len(envelope.Data) != 11 {
 		t.Fatalf("public DTO fields = %v", envelope.Data)
+	}
+}
+
+func TestMentionSuggestionsExposeOnlyCurrentOwner(t *testing.T) {
+	fixture, _ := newSiteHTTPFixture(t)
+	response := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/users/mention-suggestions?q=own&limit=8", ""))
+	if response.Code != http.StatusOK {
+		t.Fatalf("mention suggestions = %d, body = %s", response.Code, response.Body.String())
+	}
+	var envelope struct {
+		Data []app.MentionSuggestion `json:"data"`
+		Meta map[string]any          `json:"meta"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope.Data) != 1 || envelope.Data[0].Username != "owner" || envelope.Data[0].ProfileURL != "/@owner" || envelope.Meta["count"] != float64(1) {
+		t.Fatalf("mention envelope = %#v", envelope)
+	}
+	invalid := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/users/mention-suggestions?limit=0", ""))
+	if invalid.Code != http.StatusBadRequest || decodeError(t, invalid.Body).Error.Code != "INVALID_ARGUMENT" {
+		t.Fatalf("invalid limit = %d, body = %s", invalid.Code, invalid.Body.String())
 	}
 }

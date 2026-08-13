@@ -27,6 +27,9 @@ type ArchiveImpact struct {
 
 // ArchiveSite is the complete portable site singleton.
 type ArchiveSite struct {
+	OwnerID         string
+	Username        string
+	DisplayName     string
 	Title           string
 	Bio             string
 	Timezone        string
@@ -211,9 +214,9 @@ func (snapshot *ArchiveSnapshot) Site(ctx context.Context) (ArchiveSite, error) 
 	var publicURL, avatar, cover, pinned sql.NullString
 	var comments int
 	err := snapshot.tx.QueryRowContext(ctx, `
-SELECT title, bio, timezone, public_base_url, avatar_media_id, cover_media_id, pinned_entry_id, comments_enabled
+SELECT owner_id, username, display_name, title, bio, timezone, public_base_url, avatar_media_id, cover_media_id, pinned_entry_id, comments_enabled
 FROM site_settings
-WHERE id = 1`).Scan(&value.Title, &value.Bio, &value.Timezone, &publicURL, &avatar, &cover, &pinned, &comments)
+WHERE id = 1`).Scan(&value.OwnerID, &value.Username, &value.DisplayName, &value.Title, &value.Bio, &value.Timezone, &publicURL, &avatar, &cover, &pinned, &comments)
 	if err != nil {
 		return ArchiveSite{}, fmt.Errorf("read archive site settings: %w", err)
 	}

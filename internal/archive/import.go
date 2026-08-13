@@ -1257,12 +1257,14 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		return err
 	}
 	if err := validateArchiveSite(sqlitestore.ArchiveSite{
+		OwnerID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName,
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone, PublicBaseURL: site.PublicBaseURL,
 		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID, CommentsEnabled: site.CommentsEnabled,
 	}, parent.IsDevelopment()); err != nil {
 		return err
 	}
 	if err := importer.SetSite(ctx, sqlitestore.ArchiveSite{
+		OwnerID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName,
 		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone, PublicBaseURL: site.PublicBaseURL,
 		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID, CommentsEnabled: site.CommentsEnabled,
 	}); err != nil {
@@ -1678,6 +1680,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		return err
 	}
 	if !reflect.DeepEqual(expectedSite, siteRecord{
+		OwnerID: actualSite.OwnerID, Username: actualSite.Username, DisplayName: actualSite.DisplayName,
 		Title: actualSite.Title, Bio: actualSite.Bio, Timezone: actualSite.Timezone,
 		PublicBaseURL: actualSite.PublicBaseURL, AvatarMediaID: actualSite.AvatarMediaID, CoverMediaID: actualSite.CoverMediaID, PinnedPostID: actualSite.PinnedPostID, CommentsEnabled: actualSite.CommentsEnabled,
 	}) {
