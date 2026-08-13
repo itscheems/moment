@@ -91,6 +91,11 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil {
 		return err
 	}
+	if value.Location != nil {
+		if err := value.Location.Validate(); err != nil {
+			return err
+		}
+	}
 	contentText, err := domain.NormalizeContentV2(value.ContentMD)
 	if err != nil {
 		return err
@@ -116,6 +121,26 @@ INSERT INTO entries (
 INSERT INTO entry_media (entry_id, media_id, position, alt_text)
 VALUES (?, ?, ?, ?)`, value.ID, usage.MediaID, usage.Position, usage.AltText); err != nil {
 			return fmt.Errorf("insert portable entry media usage: %w", err)
+		}
+	}
+	if value.Location != nil {
+		var latitude, longitude, coordinateSystem any
+		if value.Location.Point != nil {
+			latitude = value.Location.Point.LatitudeE7
+			longitude = value.Location.Point.LongitudeE7
+			coordinateSystem = string(value.Location.Point.System)
+		}
+		if _, err := importer.tx.ExecContext(ctx, `
+INSERT INTO entry_location (
+    entry_id, name, display_name, country_code, country, region, city, district,
+    category, provider, provider_place_id, latitude_e7, longitude_e7, coordinate_system
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			value.ID, value.Location.Name, value.Location.DisplayName, value.Location.CountryCode,
+			value.Location.Country, value.Location.Region, value.Location.City, value.Location.District,
+			value.Location.Category, value.Location.Provider, value.Location.ProviderPlaceID,
+			latitude, longitude, coordinateSystem,
+		); err != nil {
+			return fmt.Errorf("insert portable entry location: %w", err)
 		}
 	}
 	importer.entries++

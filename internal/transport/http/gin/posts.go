@@ -16,6 +16,7 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/transport/locationdto"
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
@@ -116,7 +117,7 @@ func createPost(posts *app.PostService) gin.HandlerFunc {
 			writePostError(ctx, err)
 			return
 		}
-		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Media: input.Media, IdempotencyKey: idempotencyKey})
+		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Media: input.Media, Location: input.Location, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -145,6 +146,10 @@ func updatePost(posts *app.PostService) gin.HandlerFunc {
 		if decoded.MediaPresent {
 			media := domain.CloneEntryMediaUsages(decoded.Media)
 			update.Media = &media
+		}
+		if decoded.LocationPresent {
+			location := domain.CloneLocation(decoded.Location)
+			update.Location = &location
 		}
 		post, err := posts.Update(ctx.Request.Context(), update)
 		if err != nil {
@@ -213,10 +218,12 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 }
 
 type decodedPostWrite struct {
-	ContentMD      string
-	ContentPresent bool
-	Media          []domain.EntryMediaUsage
-	MediaPresent   bool
+	ContentMD       string
+	ContentPresent  bool
+	Media           []domain.EntryMediaUsage
+	MediaPresent    bool
+	Location        *domain.Location
+	LocationPresent bool
 }
 
 func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
@@ -263,6 +270,13 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 			}
 			result.Media = media
 			result.MediaPresent = true
+		case "location":
+			location, err := decodePostLocation(raw)
+			if err != nil {
+				return decodedPostWrite{}, err
+			}
+			result.Location = location
+			result.LocationPresent = true
 		default:
 			return decodedPostWrite{}, invalidPostArgument("request contains an unsupported field", key)
 		}
@@ -273,10 +287,27 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return decodedPostWrite{}, invalidPostArgument("request must contain exactly one JSON document", "body")
 	}
-	if (!patch && !result.ContentPresent) || (patch && !result.ContentPresent && !result.MediaPresent) {
-		return decodedPostWrite{}, invalidPostArgument("request must contain content_md or media", "body")
+	if (!patch && !result.ContentPresent) || (patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent) {
+		return decodedPostWrite{}, invalidPostArgument("request must contain content_md, media, or location", "body")
 	}
 	return result, nil
+}
+
+func decodePostLocation(raw json.RawMessage) (*domain.Location, error) {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var wire locationdto.Location
+	if err := decoder.Decode(&wire); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return nil, invalidPostArgument("location must contain one canonical location object", "location")
+	}
+	location, err := wire.Domain()
+	if err != nil {
+		return nil, err
+	}
+	return &location, nil
 }
 
 func decodePostMedia(raw json.RawMessage) ([]domain.EntryMediaUsage, error) {

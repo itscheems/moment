@@ -102,6 +102,56 @@ func TestPostContentBoundariesLeaveNoPartialEntry(t *testing.T) {
 	assertCount(t, db.read, `SELECT count(*) FROM entries`, 1)
 }
 
+func TestPostLocationLifecycleAndIdempotency(t *testing.T) {
+	t.Parallel()
+	db, _ := openTestDatabase(t, Options{})
+	clock := newSequenceClock(time.UnixMilli(1_700_000_000_000), time.UnixMilli(1_700_000_001_000), time.UnixMilli(1_700_000_002_000))
+	service := newTestPostService(t, db, clock.Now, sequenceIDs(entryOne))
+	ctx := context.Background()
+	point, err := domain.NewGeoPoint(31.223186, 121.445260, domain.CoordinateGCJ02)
+	if err != nil {
+		t.Fatal(err)
+	}
+	location := &domain.Location{
+		Name: "静安寺", DisplayName: "上海市静安区南京西路1686号", CountryCode: "CN", Country: "中国",
+		Region: "上海市", City: "上海市", District: "静安区", Category: "风景名胜", Provider: "amap",
+		ProviderPlaceID: "B0FFF", Point: point,
+	}
+	input := app.CreatePostInput{ContentMD: "有地点", Location: location, IdempotencyKey: "location-replay"}
+	created, err := service.Create(ctx, input)
+	if err != nil || !reflect.DeepEqual(created.Post.Location, location) {
+		t.Fatalf("created = %#v, %v", created, err)
+	}
+	location.Name = "调用方后来修改了名称"
+	stored, err := service.Get(ctx, created.Post.Entry.ID)
+	if err != nil || stored.Location == nil || stored.Location.Name != "静安寺" {
+		t.Fatalf("stored = %#v, %v", stored, err)
+	}
+
+	replayInput := app.CreatePostInput{ContentMD: "有地点", Location: stored.Location, IdempotencyKey: "location-replay"}
+	replayed, err := service.Create(ctx, replayInput)
+	if err != nil || !replayed.Replayed || !reflect.DeepEqual(replayed.Post.Location, stored.Location) {
+		t.Fatalf("replay = %#v, %v", replayed, err)
+	}
+	different := domain.CloneLocation(stored.Location)
+	different.Name = "人民广场"
+	if _, err := service.Create(ctx, app.CreatePostInput{ContentMD: "有地点", Location: different, IdempotencyKey: "location-replay"}); !domain.HasCode(err, domain.CodeIdempotencyKeyReused) {
+		t.Fatalf("different-location replay error = %v", err)
+	}
+
+	manual := &domain.Location{Name: "书房", DisplayName: "书房", Provider: "manual"}
+	updated, err := service.Update(ctx, app.UpdatePostInput{ID: stored.Entry.ID, PreserveContent: true, Location: &manual})
+	if err != nil || !reflect.DeepEqual(updated.Location, manual) {
+		t.Fatalf("updated = %#v, %v", updated, err)
+	}
+	var clear *domain.Location
+	cleared, err := service.Update(ctx, app.UpdatePostInput{ID: stored.Entry.ID, PreserveContent: true, Location: &clear})
+	if err != nil || cleared.Location != nil {
+		t.Fatalf("cleared = %#v, %v", cleared, err)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM entry_location`, 0)
+}
+
 func TestPostCreateIdempotencyIsAtomicAndConcurrent(t *testing.T) {
 	db, _ := openTestDatabase(t, Options{})
 	service := newTestPostService(t, db, func() time.Time { return time.UnixMilli(1_700_000_000_000) }, sequenceIDs(entryOne))

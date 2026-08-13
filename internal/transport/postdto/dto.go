@@ -24,6 +24,14 @@ type Post struct {
 	PublishedAt  time.Time    `json:"published_at"`
 	CommentCount int          `json:"comment_count"`
 	Media        []MediaUsage `json:"media"`
+	Location     *Location    `json:"location"`
+}
+
+// Location is the deliberately coarse public location projection. Exact
+// coordinates and provider identifiers remain owner-only.
+type Location struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
 }
 
 // MediaUsage is the exact public ordered usage shape. AltText is always
@@ -111,6 +119,12 @@ func FromPost(post app.Post) Post {
 		PublishedAt:  post.Entry.PublishedAt.UTC(),
 		CommentCount: post.CommentCount,
 		Media:        media,
+		Location: func() *Location {
+			if post.Location == nil {
+				return nil
+			}
+			return &Location{Name: post.Location.Name, DisplayName: post.Location.DisplayName}
+		}(),
 	}
 }
 
@@ -150,6 +164,15 @@ func ValidatePost(post Post) error {
 	}
 	if post.Media == nil {
 		return errors.New("post media must be an array")
+	}
+	if post.Location != nil {
+		location := domain.Location{
+			Name: post.Location.Name, DisplayName: post.Location.DisplayName,
+			Provider: "manual",
+		}
+		if err := location.Validate(); err != nil {
+			return err
+		}
 	}
 	usages := make([]domain.EntryMediaUsage, 0, len(post.Media))
 	for _, usage := range post.Media {

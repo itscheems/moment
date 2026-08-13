@@ -87,6 +87,10 @@ func (store searchStore) EntryMediaUsages(ctx context.Context, entryID domain.ID
 	return newPostStore(store.queries).EntryMediaUsages(ctx, entryID)
 }
 
+func (store searchStore) EntryLocation(ctx context.Context, entryID domain.ID) (*domain.Location, error) {
+	return newPostStore(store.queries).EntryLocation(ctx, entryID)
+}
+
 func (store searchStore) Timezone(ctx context.Context) (string, error) {
 	var timezone string
 	if err := store.queries.QueryRowContext(ctx, `SELECT timezone FROM site_settings WHERE id = 1`).Scan(&timezone); err != nil {

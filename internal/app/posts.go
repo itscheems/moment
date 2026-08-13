@@ -26,6 +26,8 @@ type PostStore interface {
 	CommentCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
 	EntryMediaUsages(context.Context, domain.ID) ([]domain.EntryMediaUsage, error)
 	ReplaceEntryMediaUsages(context.Context, domain.ID, []domain.EntryMediaUsage) error
+	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
+	ReplaceEntryLocation(context.Context, domain.ID, *domain.Location) error
 	UpdateEntry(context.Context, domain.Entry, string) (bool, error)
 	DeleteEntry(context.Context, domain.ID) (bool, error)
 	IdempotencyRecord(context.Context, string, string) (IdempotencyRecord, bool, error)
@@ -54,6 +56,7 @@ type Post struct {
 	Entry        domain.Entry
 	ContentHTML  string
 	Media        []domain.EntryMediaUsage
+	Location     *domain.Location
 	CommentCount int
 }
 
@@ -62,6 +65,7 @@ type Post struct {
 type CreatePostInput struct {
 	ContentMD      string
 	Media          []domain.EntryMediaUsage
+	Location       *domain.Location
 	IdempotencyKey string
 }
 
@@ -80,6 +84,9 @@ type UpdatePostInput struct {
 	// Media nil preserves existing usages. A non-nil empty slice clears them;
 	// every other non-nil value is the complete ordered replacement.
 	Media *[]domain.EntryMediaUsage
+	// Location nil preserves the current snapshot. A non-nil pointer whose
+	// value is nil clears it; every other value replaces it atomically.
+	Location **domain.Location
 }
 
 // ListPostsInput requests one reverse-chronological timeline page. A zero
@@ -178,7 +185,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err := contextError(ctx); err != nil {
 		return CreatePostResult{}, err
 	}
-	requestHash := hashCreatePost(input.ContentMD, input.Media)
+	requestHash := hashCreatePost(input.ContentMD, input.Media, input.Location)
 	if input.IdempotencyKey != "" {
 		replayed, found, err := service.loadCreateReplay(ctx, input, requestHash)
 		if err != nil {
@@ -190,6 +197,11 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	}
 	if err := domain.ValidateEntryMediaUsages(input.Media); err != nil {
 		return CreatePostResult{}, err
+	}
+	if input.Location != nil {
+		if err := input.Location.Validate(); err != nil {
+			return CreatePostResult{}, err
+		}
 	}
 	if err := domain.ValidatePostMarkdown(input.ContentMD, len(input.Media)); err != nil {
 		return CreatePostResult{}, err
@@ -241,6 +253,9 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		if err := store.ReplaceEntryMediaUsages(ctx, entry.ID, input.Media); err != nil {
 			return err
 		}
+		if err := store.ReplaceEntryLocation(ctx, entry.ID, input.Location); err != nil {
+			return err
+		}
 		if err := store.ReconcileMediaReferences(ctx, mediaUsageIDs(input.Media), now); err != nil {
 			return err
 		}
@@ -257,6 +272,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		}
 		result.Post.Entry = entry
 		result.Post.Media = domain.CloneEntryMediaUsages(input.Media)
+		result.Post.Location = domain.CloneLocation(input.Location)
 		return nil
 	})
 	if err != nil {
@@ -293,7 +309,7 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 	if err != nil {
 		return CreatePostResult{}, false, err
 	}
-	post, err = renderPost(post.Entry, post.Media, commentCount)
+	post, err = renderPost(post.Entry, post.Media, post.Location, commentCount)
 	if err != nil {
 		return CreatePostResult{}, false, idempotencySnapshotError()
 	}
@@ -314,6 +330,11 @@ func reconstructCreateReplay(input CreatePostInput, requestHash string, record I
 	if err := domain.ValidateEntryMediaUsages(input.Media); err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
+	if input.Location != nil {
+		if err := input.Location.Validate(); err != nil {
+			return Post{}, idempotencySnapshotError()
+		}
+	}
 	if err := domain.ValidatePostMarkdown(input.ContentMD, len(input.Media)); err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
@@ -324,7 +345,7 @@ func reconstructCreateReplay(input CreatePostInput, requestHash string, record I
 	if err := entry.Validate(); err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
-	return Post{Entry: entry, Media: domain.CloneEntryMediaUsages(input.Media)}, nil
+	return Post{Entry: entry, Media: domain.CloneEntryMediaUsages(input.Media), Location: domain.CloneLocation(input.Location)}, nil
 }
 
 // Get returns one post or a stable not-found error.
@@ -337,6 +358,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 	}
 	var entry domain.Entry
 	var media []domain.EntryMediaUsage
+	var location *domain.Location
 	var commentCount int
 	var found bool
 	err := service.transactions.Read(ctx, func(store PostStore) error {
@@ -346,6 +368,10 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 			return storeErr
 		}
 		media, storeErr = store.EntryMediaUsages(ctx, id)
+		if storeErr != nil {
+			return storeErr
+		}
+		location, storeErr = store.EntryLocation(ctx, id)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -359,7 +385,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 	if !found {
 		return Post{}, postNotFound(id)
 	}
-	return renderPost(entry, media, commentCount)
+	return renderPost(entry, media, location, commentCount)
 }
 
 // List returns one deterministic reverse-chronological keyset page.
@@ -382,6 +408,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 
 	var entries []domain.Entry
 	mediaByEntry := make(map[domain.ID][]domain.EntryMediaUsage)
+	locationByEntry := make(map[domain.ID]*domain.Location)
 	commentCounts := make(map[domain.ID]int)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
@@ -391,6 +418,10 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		}
 		for _, entry := range entries {
 			mediaByEntry[entry.ID], storeErr = store.EntryMediaUsages(ctx, entry.ID)
+			if storeErr != nil {
+				return storeErr
+			}
+			locationByEntry[entry.ID], storeErr = store.EntryLocation(ctx, entry.ID)
 			if storeErr != nil {
 				return storeErr
 			}
@@ -412,7 +443,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	}
 	page := PostPage{Items: make([]Post, 0, len(entries))}
 	for _, entry := range entries {
-		post, renderErr := renderPost(entry, mediaByEntry[entry.ID], commentCounts[entry.ID])
+		post, renderErr := renderPost(entry, mediaByEntry[entry.ID], locationByEntry[entry.ID], commentCounts[entry.ID])
 		if renderErr != nil {
 			return PostPage{}, renderErr
 		}
@@ -474,16 +505,22 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if err := validatePostID(input.ID); err != nil {
 		return Post{}, err
 	}
-	if input.PreserveContent && input.Media == nil {
-		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md or media", map[string]any{"field": "body"})
+	if input.PreserveContent && input.Media == nil && input.Location == nil {
+		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md, media, or location", map[string]any{"field": "body"})
 	}
 	if input.Media != nil {
 		if err := domain.ValidateEntryMediaUsages(*input.Media); err != nil {
 			return Post{}, err
 		}
 	}
+	if input.Location != nil && *input.Location != nil {
+		if err := (*input.Location).Validate(); err != nil {
+			return Post{}, err
+		}
+	}
 	var updated domain.Entry
 	var updatedMedia []domain.EntryMediaUsage
+	var updatedLocation *domain.Location
 	var commentCount int
 	err := service.transactions.Write(ctx, func(store PostStore) error {
 		entry, found, storeErr := store.EntryByID(ctx, input.ID)
@@ -497,6 +534,10 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if mediaErr != nil {
 			return mediaErr
 		}
+		currentLocation, mediaErr := store.EntryLocation(ctx, input.ID)
+		if mediaErr != nil {
+			return mediaErr
+		}
 		counts, mediaErr := store.CommentCounts(ctx, []domain.ID{input.ID})
 		if mediaErr != nil {
 			return mediaErr
@@ -507,8 +548,12 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			content = entry.ContentMD
 		}
 		updatedMedia = currentMedia
+		updatedLocation = currentLocation
 		if input.Media != nil {
 			updatedMedia = domain.CloneEntryMediaUsages(*input.Media)
+		}
+		if input.Location != nil {
+			updatedLocation = domain.CloneLocation(*input.Location)
 		}
 		if mediaErr := domain.ValidatePostMarkdown(content, len(updatedMedia)); mediaErr != nil {
 			return mediaErr
@@ -543,13 +588,18 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 				return mediaErr
 			}
 		}
+		if input.Location != nil {
+			if updateErr := store.ReplaceEntryLocation(ctx, input.ID, *input.Location); updateErr != nil {
+				return updateErr
+			}
+		}
 		updated = entry
 		return nil
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
-	return renderPost(updated, updatedMedia, commentCount)
+	return renderPost(updated, updatedMedia, updatedLocation, commentCount)
 }
 
 // Delete removes one Entry in a write transaction. Database foreign keys own
@@ -574,6 +624,10 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if mediaErr != nil {
 			return mediaErr
 		}
+		location, mediaErr := store.EntryLocation(ctx, id)
+		if mediaErr != nil {
+			return mediaErr
+		}
 		counts, mediaErr := store.CommentCounts(ctx, []domain.ID{id})
 		if mediaErr != nil {
 			return mediaErr
@@ -592,16 +646,16 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if err := store.ReconcileMediaReferences(ctx, affectedMedia, domain.NormalizeTime(service.clock())); err != nil {
 			return err
 		}
-		deleted = Post{Entry: entry, Media: domain.CloneEntryMediaUsages(mediaUsages), CommentCount: counts[id]}
+		deleted = Post{Entry: entry, Media: domain.CloneEntryMediaUsages(mediaUsages), Location: domain.CloneLocation(location), CommentCount: counts[id]}
 		return nil
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
-	return renderPost(deleted.Entry, deleted.Media, deleted.CommentCount)
+	return renderPost(deleted.Entry, deleted.Media, deleted.Location, deleted.CommentCount)
 }
 
-func hashCreatePost(content string, media []domain.EntryMediaUsage) string {
+func hashCreatePost(content string, media []domain.EntryMediaUsage, location *domain.Location) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("moment-post-create-v1\x00"))
 	writeHashLength(digest, len(content))
@@ -627,7 +681,32 @@ func hashCreatePost(content string, media []domain.EntryMediaUsage) string {
 			}
 		}
 	}
+	if location != nil {
+		_, _ = digest.Write([]byte("\x00location-v1\x00"))
+		for _, value := range []string{
+			location.Name, location.DisplayName, location.CountryCode, location.Country,
+			location.Region, location.City, location.District, location.Category,
+			location.Provider, location.ProviderPlaceID,
+		} {
+			writeHashLength(digest, len(value))
+			_, _ = digest.Write([]byte(value))
+		}
+		if location.Point == nil {
+			_, _ = digest.Write([]byte{0})
+		} else {
+			_, _ = digest.Write([]byte{1})
+			writeHashInt64(digest, location.Point.LatitudeE7)
+			writeHashInt64(digest, location.Point.LongitudeE7)
+			_, _ = digest.Write([]byte(location.Point.System))
+		}
+	}
 	return hex.EncodeToString(digest.Sum(nil))
+}
+
+func writeHashInt64(writer interface{ Write([]byte) (int, error) }, value int64) {
+	var encoded [8]byte
+	binary.BigEndian.PutUint64(encoded[:], uint64(value))
+	_, _ = writer.Write(encoded[:])
 }
 
 func writeHashLength(writer interface{ Write([]byte) (int, error) }, value int) {
@@ -644,7 +723,7 @@ func validRequestHash(value string) bool {
 	return err == nil && hex.EncodeToString(decoded) == value
 }
 
-func renderPost(entry domain.Entry, media []domain.EntryMediaUsage, commentCount int) (Post, error) {
+func renderPost(entry domain.Entry, media []domain.EntryMediaUsage, location *domain.Location, commentCount int) (Post, error) {
 	if err := domain.ValidateEntryMediaUsages(media); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
@@ -658,7 +737,12 @@ func renderPost(entry domain.Entry, media []domain.EntryMediaUsage, commentCount
 	if commentCount < 0 {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	return Post{Entry: entry, ContentHTML: html, Media: domain.CloneEntryMediaUsages(media), CommentCount: commentCount}, nil
+	if location != nil {
+		if err := location.Validate(); err != nil {
+			return Post{}, storedEntryError(entry.ID)
+		}
+	}
+	return Post{Entry: entry, ContentHTML: html, Media: domain.CloneEntryMediaUsages(media), Location: domain.CloneLocation(location), CommentCount: commentCount}, nil
 }
 
 func mediaUsageIDs(usages []domain.EntryMediaUsage) []domain.ID {

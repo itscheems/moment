@@ -278,6 +278,79 @@ VALUES (?, ?, ?, ?)`, entryID.String(), usage.MediaID.String(), usage.Position, 
 	return nil
 }
 
+func (store postStore) EntryLocation(ctx context.Context, entryID domain.ID) (*domain.Location, error) {
+	var (
+		location  domain.Location
+		latitude  sql.NullInt64
+		longitude sql.NullInt64
+		system    sql.NullString
+	)
+	err := store.queries.QueryRowContext(ctx, `
+SELECT name, display_name, country_code, country, region, city, district,
+       category, provider, provider_place_id, latitude_e7, longitude_e7,
+       coordinate_system
+FROM entry_location
+WHERE entry_id = ?`, entryID.String()).Scan(
+		&location.Name, &location.DisplayName, &location.CountryCode, &location.Country,
+		&location.Region, &location.City, &location.District, &location.Category,
+		&location.Provider, &location.ProviderPlaceID, &latitude, &longitude, &system,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query entry location: %w", err)
+	}
+	if latitude.Valid != longitude.Valid || latitude.Valid != system.Valid {
+		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry location has incomplete coordinates", map[string]any{"post_id": entryID.String()})
+	}
+	if latitude.Valid {
+		location.Point = &domain.GeoPoint{
+			LatitudeE7: latitude.Int64, LongitudeE7: longitude.Int64,
+			System: domain.CoordinateSystem(system.String),
+		}
+	}
+	if err := location.Validate(); err != nil {
+		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry location violates the domain contract", map[string]any{"post_id": entryID.String()})
+	}
+	return &location, nil
+}
+
+func (store postStore) ReplaceEntryLocation(ctx context.Context, entryID domain.ID, location *domain.Location) error {
+	if location != nil {
+		if err := location.Validate(); err != nil {
+			return err
+		}
+	}
+	if _, err := store.queries.ExecContext(ctx, `DELETE FROM entry_location WHERE entry_id = ?`, entryID.String()); err != nil {
+		return fmt.Errorf("delete entry location: %w", err)
+	}
+	if location == nil {
+		return nil
+	}
+	var latitude, longitude, system any
+	if location.Point != nil {
+		latitude = location.Point.LatitudeE7
+		longitude = location.Point.LongitudeE7
+		system = string(location.Point.System)
+	}
+	_, err := store.queries.ExecContext(ctx, `
+INSERT INTO entry_location (
+    entry_id, name, display_name, country_code, country, region, city, district,
+    category, provider, provider_place_id, latitude_e7, longitude_e7,
+    coordinate_system
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		entryID.String(), location.Name, location.DisplayName, location.CountryCode,
+		location.Country, location.Region, location.City, location.District,
+		location.Category, location.Provider, location.ProviderPlaceID,
+		latitude, longitude, system,
+	)
+	if err != nil {
+		return fmt.Errorf("insert entry location: %w", err)
+	}
+	return nil
+}
+
 func (store postStore) UpdateEntry(ctx context.Context, entry domain.Entry, contentText string) (bool, error) {
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE entries

@@ -782,6 +782,9 @@ func summarizePortable(ctx context.Context, archivePath string, document manifes
 	}
 	result := portableSummary{counts: ImportCounts{Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media}}
 	_, err = validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
+		if _, err := domainLocation(value.Location); err != nil {
+			return err
+		}
 		published, err := parsePortableTimestamp(value.PublishedAt)
 		if err != nil {
 			return err
@@ -1214,9 +1217,13 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		for index, usage := range value.Media {
 			usages[index] = sqlitestore.ArchiveUsage{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
 		}
+		location, err := domainLocation(value.Location)
+		if err != nil {
+			return err
+		}
 		return importer.InsertEntry(ctx, sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), Media: usages,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), Media: usages, Location: location,
 		})
 	})
 	if err != nil {
@@ -1692,7 +1699,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		}
 		actualEntries = append(actualEntries, entryRecord{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS), PublishedAt: portableTime(value.PublishedAtMS), Media: usages,
+			CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS), PublishedAt: portableTime(value.PublishedAtMS), Media: usages, Location: portableLocation(value.Location),
 		})
 		return nil
 	})

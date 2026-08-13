@@ -233,7 +233,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			return write(entryRecord{
 				ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
 				CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
-				PublishedAt: portableTime(value.PublishedAtMS), Media: media,
+				PublishedAt: portableTime(value.PublishedAtMS), Media: media, Location: portableLocation(value.Location),
 			})
 		})
 	})
@@ -513,13 +513,30 @@ type usageRecord struct {
 }
 
 type entryRecord struct {
-	ID          string        `json:"id"`
-	Kind        string        `json:"kind"`
-	ContentMD   string        `json:"content_md"`
-	CreatedAt   string        `json:"created_at"`
-	UpdatedAt   string        `json:"updated_at"`
-	PublishedAt string        `json:"published_at"`
-	Media       []usageRecord `json:"media"`
+	ID          string          `json:"id"`
+	Kind        string          `json:"kind"`
+	ContentMD   string          `json:"content_md"`
+	CreatedAt   string          `json:"created_at"`
+	UpdatedAt   string          `json:"updated_at"`
+	PublishedAt string          `json:"published_at"`
+	Media       []usageRecord   `json:"media"`
+	Location    *locationRecord `json:"location,omitempty"`
+}
+
+type locationRecord struct {
+	Name             string  `json:"name"`
+	DisplayName      string  `json:"display_name"`
+	CountryCode      string  `json:"country_code"`
+	Country          string  `json:"country"`
+	Region           string  `json:"region"`
+	City             string  `json:"city"`
+	District         string  `json:"district"`
+	Category         string  `json:"category"`
+	Provider         string  `json:"provider"`
+	ProviderPlaceID  string  `json:"provider_place_id"`
+	LatitudeE7       *int64  `json:"latitude_e7"`
+	LongitudeE7      *int64  `json:"longitude_e7"`
+	CoordinateSystem *string `json:"coordinate_system"`
 }
 
 type commentRecord struct {
@@ -728,7 +745,53 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
 	}
-	return domain.ValidatePostMarkdown(value.ContentMD, len(usages))
+	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil {
+		return err
+	}
+	if value.Location != nil {
+		return value.Location.Validate()
+	}
+	return nil
+}
+
+func portableLocation(value *domain.Location) *locationRecord {
+	if value == nil {
+		return nil
+	}
+	record := &locationRecord{
+		Name: value.Name, DisplayName: value.DisplayName, CountryCode: value.CountryCode,
+		Country: value.Country, Region: value.Region, City: value.City, District: value.District,
+		Category: value.Category, Provider: value.Provider, ProviderPlaceID: value.ProviderPlaceID,
+	}
+	if value.Point != nil {
+		latitude, longitude, system := value.Point.LatitudeE7, value.Point.LongitudeE7, string(value.Point.System)
+		record.LatitudeE7, record.LongitudeE7, record.CoordinateSystem = &latitude, &longitude, &system
+	}
+	return record
+}
+
+func domainLocation(value *locationRecord) (*domain.Location, error) {
+	if value == nil {
+		return nil, nil
+	}
+	location := &domain.Location{
+		Name: value.Name, DisplayName: value.DisplayName, CountryCode: value.CountryCode,
+		Country: value.Country, Region: value.Region, City: value.City, District: value.District,
+		Category: value.Category, Provider: value.Provider, ProviderPlaceID: value.ProviderPlaceID,
+	}
+	if value.LatitudeE7 != nil || value.LongitudeE7 != nil || value.CoordinateSystem != nil {
+		if value.LatitudeE7 == nil || value.LongitudeE7 == nil || value.CoordinateSystem == nil {
+			return nil, errors.New("location coordinates must be complete or null")
+		}
+		location.Point = &domain.GeoPoint{
+			LatitudeE7: *value.LatitudeE7, LongitudeE7: *value.LongitudeE7,
+			System: domain.CoordinateSystem(*value.CoordinateSystem),
+		}
+	}
+	if err := location.Validate(); err != nil {
+		return nil, err
+	}
+	return location, nil
 }
 
 func validateArchiveComment(value sqlitestore.ArchiveComment) error {
@@ -1223,6 +1286,18 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			usages[index] = sqlitestore.ArchiveUsage{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
 			usageMediaIDs[usage.MediaID] = struct{}{}
 		}
+		if raw, exists := fields["location"]; exists && !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			if err := requireObjectFields(raw, []string{
+				"name", "display_name", "country_code", "country", "region", "city", "district", "category",
+				"provider", "provider_place_id", "latitude_e7", "longitude_e7", "coordinate_system",
+			}, []string{"name", "display_name", "provider"}); err != nil {
+				return err
+			}
+		}
+		location, err := domainLocation(value.Location)
+		if err != nil {
+			return err
+		}
 		if value.ID <= lastEntryID {
 			return errors.New("entry records are not in strict ID order")
 		}
@@ -1231,7 +1306,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), Media: usages,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), Media: usages, Location: location,
 		}); err != nil {
 			return err
 		}

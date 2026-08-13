@@ -108,6 +108,9 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	if entry.ContentMD != "Unicode 世界" || len(entry.Media) != 3 || entry.Media[0].AltText != nil || entry.Media[1].AltText == nil || *entry.Media[1].AltText != "" || entry.Media[2].AltText == nil || *entry.Media[2].AltText != "街景" {
 		t.Fatalf("entry alt tri-state = %#v", entry)
 	}
+	if entry.Location == nil || entry.Location.Name != "静安寺" || entry.Location.LatitudeE7 == nil || *entry.Location.LatitudeE7 != 312231860 || entry.Location.CoordinateSystem == nil || *entry.Location.CoordinateSystem != "gcj02" {
+		t.Fatalf("entry location = %#v", entry.Location)
+	}
 	commentLines := nonemptyLines(members["data/comments.jsonl"])
 	if len(commentLines) != 2 {
 		t.Fatalf("comment lines = %d", len(commentLines))
@@ -847,6 +850,7 @@ func newExportFixture(t *testing.T, full bool) exportFixture {
 			args  []any
 		}{
 			{`INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms) VALUES (?, 'moment', ?, ?, ?, ?)`, []any{entryID, "Unicode 世界", clock.UnixMilli(), clock.UnixMilli(), clock.UnixMilli()}},
+			{`INSERT INTO entry_location (entry_id, name, display_name, country_code, country, region, city, district, category, provider, provider_place_id, latitude_e7, longitude_e7, coordinate_system) VALUES (?, '静安寺', '上海市静安区南京西路1686号', 'CN', '中国', '上海市', '上海市', '静安区', '风景名胜', 'amap', 'B0FFF', 312231860, 1214452600, 'gcj02')`, []any{entryID}},
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, []any{entryID, mediaOneID}},
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 1, '')`, []any{entryID, mediaOneID}},
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 2, '街景')`, []any{entryID, mediaTwoID}},

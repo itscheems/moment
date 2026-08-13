@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/moment/moment/internal/domain"
 )
 
 // ArchiveCounts are captured by the first statement in an archive read
@@ -51,6 +53,7 @@ type ArchiveEntry struct {
 	UpdatedAtMS   int64
 	PublishedAtMS int64
 	Media         []ArchiveUsage
+	Location      *domain.Location
 }
 
 // ArchiveComment is one portable comment record.
@@ -240,9 +243,14 @@ func (snapshot *ArchiveSnapshot) Entries(ctx context.Context, yield func(Archive
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
 SELECT e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms,
-       usage.media_id, usage.position, usage.alt_text
+       usage.media_id, usage.position, usage.alt_text,
+       location.name, location.display_name, location.country_code, location.country,
+       location.region, location.city, location.district, location.category,
+       location.provider, location.provider_place_id, location.latitude_e7,
+       location.longitude_e7, location.coordinate_system
 FROM entries AS e
 LEFT JOIN entry_media AS usage ON usage.entry_id = e.id
+LEFT JOIN entry_location AS location ON location.entry_id = e.id
 ORDER BY e.id, usage.position`)
 	if err != nil {
 		return fmt.Errorf("query archive entries: %w", err)
@@ -253,7 +261,13 @@ ORDER BY e.id, usage.position`)
 		var entry ArchiveEntry
 		var mediaID, alt sql.NullString
 		var position sql.NullInt64
-		if err := rows.Scan(&entry.ID, &entry.Kind, &entry.ContentMD, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &mediaID, &position, &alt); err != nil {
+		var name, displayName, countryCode, country, region, city, district, category, provider, providerID, coordinateSystem sql.NullString
+		var latitude, longitude sql.NullInt64
+		if err := rows.Scan(
+			&entry.ID, &entry.Kind, &entry.ContentMD, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS,
+			&mediaID, &position, &alt, &name, &displayName, &countryCode, &country, &region, &city,
+			&district, &category, &provider, &providerID, &latitude, &longitude, &coordinateSystem,
+		); err != nil {
 			return fmt.Errorf("scan archive entry: %w", err)
 		}
 		if current == nil || current.ID != entry.ID {
@@ -263,6 +277,22 @@ ORDER BY e.id, usage.position`)
 				}
 			}
 			entry.Media = make([]ArchiveUsage, 0, 9)
+			if name.Valid {
+				if !displayName.Valid || !countryCode.Valid || !country.Valid || !region.Valid || !city.Valid || !district.Valid || !category.Valid || !provider.Valid || !providerID.Valid || latitude.Valid != longitude.Valid || latitude.Valid != coordinateSystem.Valid {
+					return errors.New("archive entry location is incomplete")
+				}
+				entry.Location = &domain.Location{
+					Name: name.String, DisplayName: displayName.String, CountryCode: countryCode.String,
+					Country: country.String, Region: region.String, City: city.String, District: district.String,
+					Category: category.String, Provider: provider.String, ProviderPlaceID: providerID.String,
+				}
+				if latitude.Valid {
+					entry.Location.Point = &domain.GeoPoint{LatitudeE7: latitude.Int64, LongitudeE7: longitude.Int64, System: domain.CoordinateSystem(coordinateSystem.String)}
+				}
+				if err := entry.Location.Validate(); err != nil {
+					return errors.New("archive entry location is invalid")
+				}
+			}
 			current = &entry
 		}
 		if mediaID.Valid {

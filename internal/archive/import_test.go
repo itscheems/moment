@@ -77,7 +77,8 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 	}
 	if len(stagedEntries) != 1 || len(stagedEntries[0].Media) != 3 || stagedEntries[0].Media[0].AltText != nil ||
 		stagedEntries[0].Media[1].AltText == nil || *stagedEntries[0].Media[1].AltText != "" ||
-		stagedEntries[0].Media[2].AltText == nil || *stagedEntries[0].Media[2].AltText != "街景" {
+		stagedEntries[0].Media[2].AltText == nil || *stagedEntries[0].Media[2].AltText != "街景" ||
+		stagedEntries[0].Location == nil || stagedEntries[0].Location.Name != "静安寺" || stagedEntries[0].Location.Point == nil || stagedEntries[0].Location.Point.System != domain.CoordinateGCJ02 {
 		t.Fatalf("staged entries = %#v", stagedEntries)
 	}
 	if err := stagedSnapshot.Comments(context.Background(), func(value sqlitestore.ArchiveComment) error {
