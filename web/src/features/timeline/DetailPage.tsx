@@ -37,6 +37,7 @@ export function DetailPage({
   const [post, setPost] = useState<PublicPost | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const activeRequest = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -76,6 +77,7 @@ export function DetailPage({
       <PostPresentation
         detail
         onDeleted={() => navigate("/")}
+        onReply={() => setReplyDialogOpen(true)}
         onSiteChanged={onSiteChanged}
         owner={owner}
         post={post}
@@ -84,7 +86,10 @@ export function DetailPage({
       <CommentThread
         api={api}
         onCountChange={handleCommentCountChange}
+        onReplyDialogOpenChange={setReplyDialogOpen}
         postId={post.id}
+        post={post}
+        replyDialogOpen={replyDialogOpen}
         site={site}
       />
     </>

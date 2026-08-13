@@ -85,10 +85,12 @@ describe("shared post presentation", () => {
   });
 
   it("shows the full body and explicit absolute publication time in detail", () => {
+    const onReply = vi.fn();
     render(
       <NavigationProvider>
         <PostPresentation
           detail
+          onReply={onReply}
           post={makePost("# 标题", "<h1>标题</h1><p>完整正文</p>")}
           site={site}
         />
@@ -97,9 +99,8 @@ describe("shared post presentation", () => {
     expect(screen.getByRole("heading", { name: "标题" })).toBeInTheDocument();
     expect(screen.getByText("完整正文")).toBeInTheDocument();
     expect(screen.getByText("发布于").parentElement).toHaveTextContent("2026");
-    expect(
-      screen.getByRole("link", { name: "回复这条 Moment" }),
-    ).toHaveAttribute("href", "#top-level-comment-content");
+    fireEvent.click(screen.getByRole("button", { name: "回复这条 Moment" }));
+    expect(onReply).toHaveBeenCalledTimes(1);
     const article = screen.getByText("完整正文").closest("article");
     expect(article?.querySelector("[class*='detailBody']")).toContainElement(
       screen.getByText("完整正文"),

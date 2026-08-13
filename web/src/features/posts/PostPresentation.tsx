@@ -36,6 +36,7 @@ export function PostPresentation({
   onSiteChanged,
   pinned = false,
   contentHtml,
+  onReply,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -47,6 +48,7 @@ export function PostPresentation({
   onSiteChanged?: (site: SiteIdentity) => void;
   pinned?: boolean;
   contentHtml?: string;
+  onReply?: () => void;
 }) {
   const { navigate } = useNavigation();
   const title = site.displayName.trim() || site.title.trim() || "Moment";
@@ -183,13 +185,14 @@ export function PostPresentation({
           ) : null}
           <div className={styles.postActions}>
             <ActionTooltip label="回复">
-              <a
+              <button
                 aria-label="回复这条 Moment"
                 className={styles.postAction}
-                href="#top-level-comment-content"
+                onClick={onReply}
+                type="button"
               >
                 <Icon name="reply" />
-              </a>
+              </button>
             </ActionTooltip>
             {share("start")}
           </div>

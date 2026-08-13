@@ -10,7 +10,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { PublicApi, PublicApiError, type SiteIdentity } from "../../api/public";
+import {
+  PublicApi,
+  PublicApiError,
+  type PublicPost,
+  type SiteIdentity,
+} from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { OwnerProvider, useOwner } from "../owner/OwnerProvider";
 import { CommentThread } from "./CommentThread";
@@ -35,6 +40,17 @@ const site: SiteIdentity = {
   commentsEnabled: true,
   instanceId: null,
   instanceInitializedAt: null,
+};
+
+const post: PublicPost = {
+  id: postId,
+  contentMd: "一段需要回应的 Moment",
+  contentHtml: "<p>一段需要回应的 Moment</p>\n",
+  createdAt: "2026-08-10T01:00:00Z",
+  updatedAt: "2026-08-10T01:00:00Z",
+  publishedAt: "2026-08-10T01:00:00Z",
+  commentCount: 0,
+  media: [],
 };
 
 function comment(
@@ -257,6 +273,86 @@ describe("public comment thread", () => {
     await screen.findByRole("form", { name: "发表回复" });
     await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(0));
     expect(screen.queryByText("暂无回复")).not.toBeInTheDocument();
+  });
+
+  it("expands the detail reply composer once and keeps it open after blur", async () => {
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+    });
+    renderThread();
+
+    const form = await screen.findByRole("form", { name: "发表回复" });
+    const content = within(form).getByLabelText("回复内容");
+    expect(
+      within(form).getByRole("button", { name: "展开回复编辑器" }),
+    ).toBeVisible();
+    expect(within(form).getByLabelText("显示名")).not.toBeVisible();
+    expect(
+      within(form).getByRole("button", { name: "选择图片", hidden: true }),
+    ).not.toBeVisible();
+
+    fireEvent.focus(content);
+
+    expect(
+      within(form).queryByRole("button", { name: "展开回复编辑器" }),
+    ).not.toBeInTheDocument();
+    expect(within(form).getByText(/正在回复/)).toHaveTextContent(
+      "正在回复 @owner",
+    );
+    expect(within(form).getByLabelText("显示名")).toBeVisible();
+    expect(
+      within(form).getByRole("button", { name: "选择图片" }),
+    ).toBeVisible();
+
+    fireEvent.blur(content, { relatedTarget: document.body });
+    expect(within(form).getByText(/正在回复/)).toHaveTextContent(
+      "正在回复 @owner",
+    );
+    expect(
+      within(form).getByRole("button", { name: "选择图片" }),
+    ).toBeVisible();
+  });
+
+  it("renders the action reply as an independent modal composer", async () => {
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+    });
+    render(
+      <NavigationProvider>
+        <OwnerProvider>
+          <CommentThread
+            api={new PublicApi()}
+            onReplyDialogOpenChange={vi.fn()}
+            post={post}
+            postId={postId}
+            replyDialogOpen
+            site={site}
+          />
+        </OwnerProvider>
+      </NavigationProvider>,
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "回复这条 Moment",
+    });
+    expect(within(dialog).getByText("一段需要回应的 Moment")).toBeVisible();
+    expect(within(dialog).getByText(/正在回复/)).toHaveTextContent(
+      "正在回复 @owner",
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "选择图片" }),
+    ).toBeVisible();
+    expect(within(dialog).getByLabelText("回复内容")).toHaveAttribute(
+      "id",
+      "dialog-top-level-comment-content",
+    );
+    expect(document.getElementById("top-level-comment-content")).not.toBe(
+      within(dialog).getByLabelText("回复内容"),
+    );
   });
 
   it("keeps a flat one-level presentation and places reply composition after its root", async () => {

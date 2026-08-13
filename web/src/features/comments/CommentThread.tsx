@@ -15,6 +15,7 @@ import {
   PublicApiError,
   type PublicComment,
   type MentionSuggestion,
+  type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
@@ -219,6 +220,9 @@ function CommentForm({
   onClosed,
   onPromote,
   onCancel,
+  formId: suppliedFormId,
+  initialExpanded = false,
+  topLevelTargetUsername,
 }: {
   api: PublicApi;
   site: SiteIdentity;
@@ -236,6 +240,9 @@ function CommentForm({
   onClosed: () => void;
   onPromote?: () => void;
   onCancel?: () => void;
+  formId?: string;
+  initialExpanded?: boolean;
+  topLevelTargetUsername?: string;
 }) {
   const owner = useOwner();
   const [pending, setPending] = useState(false);
@@ -244,7 +251,9 @@ function CommentForm({
   const [website, setWebsite] = useState("");
   const [retryUntil, setRetryUntil] = useState(0);
   const [remaining, setRemaining] = useState(0);
-  const [focused, setFocused] = useState(parentId !== null);
+  const [activated, setActivated] = useState(
+    parentId !== null || initialExpanded,
+  );
   const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>([]);
   const [mention, setMention] = useState<ActiveMention | null>(null);
   const [mentionItems, setMentionItems] = useState<MentionSuggestion[]>([]);
@@ -266,9 +275,9 @@ function CommentForm({
   const validContent = content.trim().length > 0 && contentCount <= MAX_COMMENT;
   const mediaError = mediaValidation(mediaItems, 4);
   const rateLimited = remaining > 0;
-  const formId = parentId
-    ? `reply-${replyTargetId ?? parentId}`
-    : "top-level-comment";
+  const formId =
+    suppliedFormId ??
+    (parentId ? `reply-${replyTargetId ?? parentId}` : "top-level-comment");
   const displayReauth =
     mode === "owner" &&
     (authExpired || (owner.state === "expired" && !owner.session));
@@ -279,7 +288,7 @@ function CommentForm({
       : null);
   const expanded =
     parentId !== null ||
-    focused ||
+    activated ||
     content.trim().length > 0 ||
     mediaItems.length > 0 ||
     pending ||
@@ -505,6 +514,7 @@ function CommentForm({
       idempotencyRef.current = "";
       setRetryUntil(0);
       replaceMedia([]);
+      setActivated(parentId !== null || initialExpanded);
     } catch (nextError) {
       if (mode === "owner" && owner.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
@@ -534,18 +544,7 @@ function CommentForm({
   return (
     <div
       className={`${styles.formSurface} ${parentId ? styles.replyForm : ""} ${expanded ? styles.commentExpanded : styles.commentCollapsed}`}
-      onBlurCapture={(event) => {
-        if (
-          parentId === null &&
-          !event.currentTarget.contains(event.relatedTarget as Node | null) &&
-          content.trim().length === 0 &&
-          mediaItems.length === 0 &&
-          !displayedError
-        ) {
-          setFocused(false);
-        }
-      }}
-      onFocusCapture={() => setFocused(true)}
+      onFocusCapture={() => setActivated(true)}
     >
       <div className={styles.commentComposerLayout}>
         <span aria-hidden="true" className={styles.composerAvatar}>
@@ -575,9 +574,13 @@ function CommentForm({
               {mode === "owner" ? "所有者" : "访客"}
             </span>
           </header>
-          {parentId && replyTargetAuthor ? (
+          {(parentId && replyTargetAuthor) ||
+          (!parentId && expanded && topLevelTargetUsername) ? (
             <p className={styles.replyTarget}>
-              正在回复 <span>@{replyTargetAuthor}</span>
+              正在回复{" "}
+              <span>
+                @{parentId ? replyTargetAuthor : topLevelTargetUsername}
+              </span>
             </p>
           ) : null}
           {mode === "guest" ? (
@@ -604,69 +607,86 @@ function CommentForm({
           <label className={styles.srOnly} htmlFor={`${formId}-content`}>
             回复内容
           </label>
-          <textarea
-            aria-describedby={`${formId}-guidance ${formId}-error`}
-            disabled={pending}
-            id={`${formId}-content`}
-            onChange={(event) => {
-              setContent(event.target.value);
-              setMention(
-                activeMention(
-                  event.target.value,
-                  event.target.selectionStart ?? event.target.value.length,
-                ),
-              );
-              setError(null);
-            }}
-            onKeyDown={(event) => {
-              if (mentionItems.length > 0 && mention) {
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setMentionActive(
-                    (current) =>
-                      (current +
-                        (event.key === "ArrowDown" ? 1 : -1) +
-                        mentionItems.length) %
-                      mentionItems.length,
-                  );
-                  return;
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  setMention(null);
-                  setMentionItems([]);
-                  return;
+          <div className={styles.commentInputRow}>
+            <textarea
+              aria-describedby={`${formId}-guidance ${formId}-error`}
+              disabled={pending}
+              id={`${formId}-content`}
+              onChange={(event) => {
+                setContent(event.target.value);
+                setMention(
+                  activeMention(
+                    event.target.value,
+                    event.target.selectionStart ?? event.target.value.length,
+                  ),
+                );
+                setError(null);
+              }}
+              onKeyDown={(event) => {
+                if (mentionItems.length > 0 && mention) {
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setMentionActive(
+                      (current) =>
+                        (current +
+                          (event.key === "ArrowDown" ? 1 : -1) +
+                          mentionItems.length) %
+                        mentionItems.length,
+                    );
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setMention(null);
+                    setMentionItems([]);
+                    return;
+                  }
+                  if (
+                    (event.key === "Enter" || event.key === "Tab") &&
+                    !event.metaKey &&
+                    !event.ctrlKey
+                  ) {
+                    event.preventDefault();
+                    pickMention(mentionItems[mentionActive]);
+                    return;
+                  }
                 }
                 if (
-                  (event.key === "Enter" || event.key === "Tab") &&
-                  !event.metaKey &&
-                  !event.ctrlKey
+                  event.key === "Enter" &&
+                  (event.metaKey || event.ctrlKey) &&
+                  !event.nativeEvent.isComposing &&
+                  validName &&
+                  validContent &&
+                  commentsEnabled &&
+                  !rateLimited &&
+                  mediaError === null
                 ) {
                   event.preventDefault();
-                  pickMention(mentionItems[mentionActive]);
-                  return;
+                  event.currentTarget.form?.requestSubmit();
                 }
-              }
-              if (
-                event.key === "Enter" &&
-                (event.metaKey || event.ctrlKey) &&
-                !event.nativeEvent.isComposing &&
-                validName &&
-                validContent &&
-                commentsEnabled &&
-                !rateLimited &&
-                mediaError === null
-              ) {
-                event.preventDefault();
-                event.currentTarget.form?.requestSubmit();
-              }
-            }}
-            placeholder={parentId ? "发布你的回复" : "发布你的回复"}
-            ref={textareaRef}
-            required
-            rows={parentId ? 1 : 2}
-            value={content}
-          />
+              }}
+              placeholder="发布你的回复"
+              ref={textareaRef}
+              required
+              rows={parentId ? 1 : 2}
+              value={content}
+            />
+            {!expanded ? (
+              <button
+                aria-label="展开回复编辑器"
+                className={styles.collapsedReplyAction}
+                onClick={() => {
+                  setActivated(true);
+                  window.requestAnimationFrame(() =>
+                    textareaRef.current?.focus(),
+                  );
+                }}
+                type="button"
+              >
+                回复
+              </button>
+            ) : null}
+          </div>
           <MentionSuggestions
             active={mentionActive}
             items={mentionItems}
@@ -770,7 +790,7 @@ function CommentForm({
                   .catch(() => undefined);
               }
               replaceMedia(next);
-              setFocused(true);
+              setActivated(true);
             }}
             onChange={(next) => replaceMedia(next)}
             onRemove={(key) => {
@@ -1078,13 +1098,19 @@ function CommentItem({
 export function CommentThread({
   api,
   postId,
+  post,
   site,
   onCountChange,
+  replyDialogOpen = false,
+  onReplyDialogOpenChange,
 }: {
   api: PublicApi;
   postId: string;
+  post?: PublicPost;
   site: SiteIdentity;
   onCountChange?: (count: number) => void;
+  replyDialogOpen?: boolean;
+  onReplyDialogOpenChange?: (open: boolean) => void;
 }) {
   const owner = useOwner();
   const [items, setItems] = useState<PublicComment[] | null>(null);
@@ -1092,6 +1118,7 @@ export function CommentThread({
   const [attempt, setAttempt] = useState(0);
   const [guestName, setGuestName] = useState("");
   const [topContent, setTopContent] = useState("");
+  const [dialogContent, setDialogContent] = useState("");
   const [reply, setReply] = useState<ReplyDraft | null>(null);
   const [closedByServer, setClosedByServer] = useState(false);
   const [announcement, setAnnouncement] = useState("");
@@ -1197,6 +1224,74 @@ export function CommentThread({
         {announcement}
       </p>
 
+      <Dialog.Root
+        onOpenChange={(open) => onReplyDialogOpenChange?.(open)}
+        open={replyDialogOpen}
+      >
+        <Dialog.Portal>
+          <Dialog.Backdrop className={styles.dialogBackdrop} />
+          <Dialog.Viewport className={styles.dialogViewport}>
+            <Dialog.Popup className={styles.replyDialogPopup}>
+              <header className={styles.replyDialogHeader}>
+                <Dialog.Close
+                  aria-label="关闭回复窗口"
+                  className={styles.replyDialogClose}
+                >
+                  <Icon name="close" />
+                </Dialog.Close>
+                <Dialog.Title className={styles.srOnly}>
+                  回复这条 Moment
+                </Dialog.Title>
+              </header>
+              {post ? (
+                <article
+                  aria-label={`${site.displayName}发布的 Moment`}
+                  className={styles.replyContext}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={styles.replyContextAvatar}
+                  >
+                    <SiteAvatar site={site} />
+                  </span>
+                  <div>
+                    <p className={styles.replyContextByline}>
+                      <strong>{site.displayName}</strong>
+                      <span>@{site.username}</span>
+                    </p>
+                    <MarkdownContent
+                      className={styles.replyContextContent}
+                      html={post.contentHtml}
+                      mentionUsername={site.username}
+                    />
+                  </div>
+                </article>
+              ) : null}
+              <CommentForm
+                api={api}
+                commentsEnabled={commentsEnabled}
+                content={dialogContent}
+                formId="dialog-top-level-comment"
+                guestName={guestName}
+                initialExpanded
+                mode={mode}
+                onClosed={() => setClosedByServer(true)}
+                onCreated={(comment) => {
+                  created(comment);
+                  onReplyDialogOpenChange?.(false);
+                }}
+                parentId={null}
+                postId={postId}
+                setContent={setDialogContent}
+                setGuestName={setGuestName}
+                site={site}
+                topLevelTargetUsername={site.username}
+              />
+            </Dialog.Popup>
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
+
       {items === null && !loadError ? (
         <div aria-busy="true" className={styles.threadState}>
           <span className={styles.loadingDot} />
@@ -1240,6 +1335,7 @@ export function CommentThread({
               setContent={setTopContent}
               setGuestName={setGuestName}
               site={site}
+              topLevelTargetUsername={site.username}
             />
           )}
 

@@ -105,6 +105,35 @@
   min-block-size: 5.5rem;
 }
 
+.commentInputRow {
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.commentInputRow textarea {
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.collapsedReplyAction {
+  min-block-size: var(--target-size);
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
+  font-weight: 700;
+  opacity: 0.45;
+  cursor: pointer;
+}
+
+.collapsedReplyAction:hover,
+.collapsedReplyAction:focus-visible {
+  opacity: 0.75;
+}
+
 .commentForm > header {
   display: flex;
   align-items: center;
@@ -661,6 +690,118 @@
     transform var(--motion-dialog) var(--ease-out);
 }
 
+.replyDialogPopup {
+  inline-size: min(100%, 39rem);
+  max-block-size: min(90vh, 48rem);
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-dialog) var(--ease-out),
+    transform var(--motion-dialog) var(--ease-out);
+}
+
+.replyDialogPopup[data-starting-style],
+.replyDialogPopup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+.replyDialogHeader {
+  min-block-size: 3.5rem;
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-3);
+}
+
+.replyDialogClose {
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.replyDialogClose:hover,
+.replyDialogClose:focus-visible {
+  background: var(--surface-hover);
+}
+
+.replyContext {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--target-size) minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.replyContext::after {
+  content: "";
+  position: absolute;
+  inset-block-start: calc(var(--target-size) + var(--space-2));
+  inset-block-end: 0;
+  inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
+  inline-size: 2px;
+  background: var(--border-subtle);
+}
+
+.replyContextAvatar {
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 50%;
+}
+
+.replyContextAvatar > img,
+.replyContextAvatar > span {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.replyContextByline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.replyContextByline strong {
+  color: var(--text-primary);
+}
+
+.replyContextContent {
+  max-block-size: 7.5rem;
+  overflow: hidden;
+  margin-block-start: var(--space-1);
+  color: var(--text-primary);
+  line-height: 1.45;
+  -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent);
+  mask-image: linear-gradient(to bottom, #000 75%, transparent);
+}
+
+.replyContextContent > :first-child {
+  margin-block-start: 0;
+}
+
+.replyContextContent > :last-child {
+  margin-block-end: 0;
+}
+
+.replyDialogPopup > .formSurface {
+  border-block-end: 0;
+}
+
 .dialogBackdrop[data-starting-style],
 .dialogBackdrop[data-ending-style],
 .dialogPopup[data-starting-style],
@@ -750,7 +891,8 @@
   }
 
   .dialogBackdrop,
-  .dialogPopup {
+  .dialogPopup,
+  .replyDialogPopup {
     transition: none;
   }
 }
