@@ -50,6 +50,31 @@ import styles from "./Comments.module.css";
 const MAX_AUTHOR_NAME = 40;
 const MAX_COMMENT = 2_000;
 
+function CommentProgress({ count }: { count: number }) {
+  const radius = 9;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = Math.min(count / MAX_COMMENT, 1);
+  return (
+    <span
+      aria-hidden="true"
+      className={styles.commentProgress}
+      data-invalid={count > MAX_COMMENT ? "true" : undefined}
+    >
+      <svg viewBox="0 0 24 24">
+        <circle className={styles.progressTrack} cx="12" cy="12" r={radius} />
+        <circle
+          className={styles.progressValue}
+          cx="12"
+          cy="12"
+          r={radius}
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - ratio)}
+        />
+      </svg>
+    </span>
+  );
+}
+
 type CommentMode = "guest" | "owner";
 
 interface ReplyDraft {
@@ -720,42 +745,44 @@ function CommentForm({
             </span>
           </div>
           <MediaComposer
+            className={styles.commentMediaComposer}
             disabled={pending || !commentsEnabled}
             footerAction={
-              <div className={styles.commentSubmitActions}>
-                {onCancel ? (
+              <div className={styles.commentSubmitCluster}>
+                <CommentProgress count={contentCount} />
+                <div className={styles.commentSubmitActions}>
+                  {onCancel ? (
+                    <button
+                      className={styles.secondaryAction}
+                      onClick={onCancel}
+                      type="button"
+                    >
+                      取消
+                    </button>
+                  ) : null}
                   <button
-                    className={styles.secondaryAction}
-                    onClick={onCancel}
-                    type="button"
+                    aria-label="发表回复"
+                    className={styles.primaryAction}
+                    disabled={
+                      pending ||
+                      !validName ||
+                      !validContent ||
+                      !commentsEnabled ||
+                      rateLimited ||
+                      (mode === "owner" && !owner.session) ||
+                      mediaError !== null
+                    }
+                    type="submit"
                   >
-                    取消回复
-                  </button>
-                ) : null}
-                <button
-                  aria-label="发表回复"
-                  className={styles.primaryAction}
-                  disabled={
-                    pending ||
-                    !validName ||
-                    !validContent ||
-                    !commentsEnabled ||
-                    rateLimited ||
-                    (mode === "owner" && !owner.session) ||
-                    mediaError !== null
-                  }
-                  type="submit"
-                >
-                  <span aria-hidden="true">
-                    {pending
-                      ? "正在发表…"
-                      : rateLimited
-                        ? `${remaining} 秒后重试`
-                        : parentId
-                          ? "回复"
+                    <span aria-hidden="true">
+                      {pending
+                        ? "正在发表…"
+                        : rateLimited
+                          ? `${remaining} 秒后重试`
                           : "回复"}
-                  </span>
-                </button>
+                    </span>
+                  </button>
+                </div>
               </div>
             }
             items={mediaItems}
@@ -927,9 +954,15 @@ function DeleteCommentDialog({
       }}
       open={open}
     >
-      <Dialog.Trigger className={styles.commentAction} ref={triggerRef}>
-        删除
-      </Dialog.Trigger>
+      <ActionTooltip label="删除">
+        <Dialog.Trigger
+          aria-label="删除"
+          className={styles.commentAction}
+          ref={triggerRef}
+        >
+          <Icon name="delete" />
+        </Dialog.Trigger>
+      </ActionTooltip>
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
         <Dialog.Viewport className={styles.dialogViewport}>

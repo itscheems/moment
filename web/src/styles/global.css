@@ -33,9 +33,9 @@
   --accent-hover: #1a8cd8;
   --accent-soft: #e8f5fd;
   --accent-contrast: #ffffff;
-  --button-primary: #0f1419;
-  --button-primary-hover: #272c30;
-  --button-primary-contrast: #ffffff;
+  --button-primary: var(--accent);
+  --button-primary-hover: var(--accent-hover);
+  --button-primary-contrast: var(--accent-contrast);
   --danger: #f4212e;
   --focus-ring: #1d9bf0;
 
@@ -69,6 +69,7 @@
   --layer-popover: 30;
   --layer-skip: 40;
   --layer-lightbox: 110;
+  --layer-confirm: 130;
 
   color: var(--text-primary);
   background: var(--canvas);
@@ -109,9 +110,9 @@
   --accent-hover: #1a8cd8;
   --accent-soft: #031018;
   --accent-contrast: #ffffff;
-  --button-primary: #eff3f4;
-  --button-primary-hover: #d7dbdc;
-  --button-primary-contrast: #0f1419;
+  --button-primary: var(--accent);
+  --button-primary-hover: var(--accent-hover);
+  --button-primary-contrast: var(--accent-contrast);
   --danger: #f4212e;
   --focus-ring: #1d9bf0;
   --shadow-popover: 0 0 15px rgb(255 255 255 / 20%);
@@ -239,9 +240,9 @@ a {
     --border-subtle: #2f3336;
     --border-strong: #536471;
     --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
-    --button-primary: #eff3f4;
-    --button-primary-hover: #d7dbdc;
-    --button-primary-contrast: #0f1419;
+    --button-primary: var(--accent);
+    --button-primary-hover: var(--accent-hover);
+    --button-primary-contrast: var(--accent-contrast);
     --danger: #f4212e;
     --focus-ring: #1d9bf0;
     --shadow-popover: 0 0 15px rgb(255 255 255 / 20%);

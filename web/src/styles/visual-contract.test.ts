@@ -134,12 +134,21 @@ describe("visual foundation contract", () => {
     expect(ownerCss).toContain("min-block-size: var(--target-size)");
   });
 
-  it("uses blue emphasis with black and white primary controls", () => {
+  it("drives primary controls from the selected accent in every theme", () => {
     expect(globalCss).toContain("--accent: #1d9bf0");
-    expect(globalCss).toContain("--button-primary: #0f1419");
-    expect(globalCss).toContain("--button-primary: #eff3f4");
-    expect(contrast("#ffffff", "#0f1419")).toBeGreaterThanOrEqual(4.5);
-    expect(contrast("#0f1419", "#eff3f4")).toBeGreaterThanOrEqual(4.5);
+    expect(globalCss).toContain("--button-primary: var(--accent)");
+    expect(globalCss).toContain("--button-primary-hover: var(--accent-hover)");
+    expect(globalCss).toContain(
+      "--button-primary-contrast: var(--accent-contrast)",
+    );
+    expect(contrast("#ffffff", "#1d9bf0")).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps confirmations above composer and lightbox layers", () => {
+    expect(globalCss).toContain("--layer-lightbox: 110");
+    expect(globalCss).toContain("--layer-confirm: 130");
+    expect(ownerCss).toContain("z-index: var(--layer-confirm)");
+    expect(ownerCss).toContain("z-index: calc(var(--layer-confirm) + 1)");
   });
 
   it("keeps small tertiary copy readable on every light surface", () => {

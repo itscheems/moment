@@ -604,7 +604,7 @@
 
 .dialogBackdrop {
   position: fixed;
-  z-index: var(--layer-popover);
+  z-index: var(--layer-confirm);
   inset: 0;
   background: rgb(0 0 0 / 40%);
   transition: opacity var(--motion-dialog) var(--ease-out);
@@ -612,7 +612,7 @@
 
 .dialogViewport {
   position: fixed;
-  z-index: calc(var(--layer-popover) + 1);
+  z-index: calc(var(--layer-confirm) + 1);
   inset: 0;
   display: grid;
   place-items: center;

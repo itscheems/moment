@@ -62,6 +62,7 @@ const MediaPresenceItem = forwardRef<
 });
 
 export function MediaComposer({
+  className,
   items,
   disabled,
   onAdd,
@@ -74,6 +75,7 @@ export function MediaComposer({
   maximumTotalBytes,
   subject = "Moment",
 }: {
+  className?: string;
   items: ComposerMediaItem[];
   disabled: boolean;
   onAdd: (files: File[]) => void;
@@ -184,7 +186,10 @@ export function MediaComposer({
   };
 
   return (
-    <section aria-label="图片" className={styles.composerMedia}>
+    <section
+      aria-label="图片"
+      className={`${styles.composerMedia} ${className ?? ""}`}
+    >
       <input
         accept="image/jpeg,image/png,image/webp,image/gif"
         aria-describedby={`${inputId}-guidance`}

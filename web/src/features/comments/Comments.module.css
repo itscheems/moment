@@ -43,14 +43,14 @@
 .closedNotice,
 .emptyThread {
   border-block-end: 1px solid var(--border-subtle);
-  padding: var(--space-3) var(--space-4);
+  padding: 0.85rem var(--space-4);
 }
 
 .replyForm,
 .replyComposerRow .formSurface {
   margin-inline-start: 0;
   border-inline-start: 0;
-  background: var(--surface-hover);
+  background: var(--surface);
 }
 
 .replyComposerRow {
@@ -67,7 +67,7 @@
   display: grid;
   grid-template-columns: var(--target-size) minmax(0, 1fr);
   align-items: start;
-  gap: var(--space-3);
+  gap: 0.7rem;
 }
 
 .composerAvatar {
@@ -90,7 +90,7 @@
 }
 
 .commentCollapsed {
-  padding-block: 0.75rem;
+  padding-block: 0.8rem;
 }
 
 .commentCollapsed .commentComposerHeader,
@@ -102,14 +102,14 @@
 }
 
 .commentExpanded .commentForm textarea {
-  min-block-size: 5.5rem;
+  min-block-size: 4.75rem;
 }
 
 .commentInputRow {
   min-inline-size: 0;
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
 }
 
 .commentInputRow textarea {
@@ -125,7 +125,7 @@
   color: var(--button-primary-contrast);
   background: var(--button-primary);
   font-weight: 700;
-  opacity: 0.45;
+  opacity: 0.38;
   cursor: pointer;
 }
 
@@ -170,9 +170,11 @@
 }
 
 .replyTarget {
-  margin: 0.15rem 0 var(--space-1);
+  margin: 0.05rem 0 0.4rem;
   color: var(--text-secondary);
   font-size: var(--text-sm);
+  transform-origin: top left;
+  animation: comment-reveal-target 360ms cubic-bezier(0.16, 1.3, 0.3, 1);
 }
 
 .replyTarget span {
@@ -184,19 +186,20 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
-  margin-block-start: var(--space-3);
+  margin-block: var(--space-1) var(--space-2);
+  animation: comment-reveal-fade var(--motion-content) var(--ease-out);
 }
 
 .nameField label {
   grid-column: 1 / -1;
   color: var(--text-secondary);
   font-size: var(--text-sm);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .nameField input,
 .reauth input {
-  min-block-size: 2.75rem;
+  min-block-size: 2.5rem;
   min-inline-size: 0;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
@@ -223,12 +226,12 @@
   resize: none;
   border: 0;
   margin: 0;
-  padding: 0.45rem 0 var(--space-2);
+  padding: 0.35rem 0 var(--space-2);
   outline: 0;
   color: var(--text-primary);
   background: transparent;
-  font-size: 1.15rem;
-  line-height: 1.45;
+  font-size: 1.2rem;
+  line-height: 1.4;
 }
 
 .commentForm textarea::placeholder,
@@ -249,6 +252,65 @@
   min-block-size: 0;
   justify-content: flex-end;
   margin: 0;
+}
+
+.commentMediaComposer {
+  margin-block-start: 0;
+  transform-origin: top;
+  animation: comment-reveal-toolbar 360ms cubic-bezier(0.16, 1.3, 0.3, 1);
+}
+
+.commentMediaComposer > div {
+  min-block-size: var(--target-size);
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+
+.commentSubmitCluster,
+.commentSubmitActions {
+  display: flex;
+  align-items: center;
+}
+
+.commentSubmitCluster {
+  gap: var(--space-2);
+}
+
+.commentProgress {
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  display: grid;
+  place-items: center;
+  border-inline-end: 1px solid var(--border-subtle);
+  padding-inline-end: var(--space-2);
+  box-sizing: content-box;
+}
+
+.commentProgress svg {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+
+.progressTrack,
+.progressValue {
+  fill: none;
+  stroke-width: 2;
+}
+
+.progressTrack {
+  stroke: var(--border-subtle);
+}
+
+.progressValue {
+  stroke: var(--accent);
+  stroke-linecap: round;
+  transition: stroke-dashoffset var(--motion-content) var(--ease-out);
+}
+
+.commentProgress[data-invalid="true"] .progressValue {
+  stroke: var(--danger);
 }
 
 .countInvalid,
@@ -312,8 +374,6 @@
 }
 
 .commentSubmitActions {
-  display: flex;
-  align-items: center;
   justify-content: flex-end;
   gap: var(--space-2);
 }
@@ -325,10 +385,18 @@
 .primaryAction {
   color: var(--button-primary-contrast);
   background: var(--button-primary);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .primaryAction:hover {
   background: var(--button-primary-hover);
+}
+
+.primaryAction:active:not(:disabled) {
+  transform: scale(0.94);
 }
 
 .secondaryAction,
@@ -471,6 +539,11 @@
   border-block-end: 1px solid var(--border-subtle);
   padding: var(--space-3) var(--space-4);
   overflow-wrap: anywhere;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.commentItem:hover {
+  background: color-mix(in srgb, var(--surface-hover) 70%, transparent);
 }
 
 .commentItem > article {
@@ -568,8 +641,8 @@
   grid-column: 2;
   margin-block-start: 0.2rem;
   color: var(--text-primary);
-  font-size: 0.9375rem;
-  line-height: 1.48;
+  font-size: 0.98rem;
+  line-height: 1.5;
 }
 
 .commentMarkdown > :first-child {
@@ -643,7 +716,7 @@
   grid-column: 2;
   min-block-size: var(--target-size);
   justify-content: flex-start;
-  margin-block-start: 0.2rem;
+  margin-block-start: 0.1rem;
 }
 
 .commentAction {
@@ -655,8 +728,8 @@
 }
 
 .commentAction svg {
-  inline-size: 1.15rem;
-  block-size: 1.15rem;
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
 }
 
 .dialogBackdrop {
@@ -692,10 +765,13 @@
 
 .replyDialogPopup {
   inline-size: min(100%, 39rem);
+  min-block-size: min(36rem, calc(100dvh - 2rem));
   max-block-size: min(90vh, 48rem);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow-y: auto;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-panel);
+  border-radius: 1.25rem;
   color: var(--text-primary);
   background: var(--surface-elevated);
   box-shadow: var(--shadow-popover);
@@ -716,6 +792,7 @@
   display: flex;
   align-items: center;
   padding-inline: var(--space-3);
+  border-block-end: 0;
 }
 
 .replyDialogClose {
@@ -740,7 +817,7 @@
   display: grid;
   grid-template-columns: var(--target-size) minmax(0, 1fr);
   gap: var(--space-3);
-  padding: 0 var(--space-4) var(--space-4);
+  padding: 0 var(--space-4) var(--space-3);
 }
 
 .replyContext::after {
@@ -800,6 +877,52 @@
 
 .replyDialogPopup > .formSurface {
   border-block-end: 0;
+  padding-block-start: var(--space-2);
+}
+
+.replyDialogPopup .commentForm textarea {
+  min-block-size: 8rem;
+}
+
+@keyframes comment-reveal-target {
+  0% {
+    opacity: 0;
+    transform: translateY(-0.55rem) scaleY(0.92);
+  }
+  72% {
+    opacity: 1;
+    transform: translateY(0.08rem) scaleY(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes comment-reveal-toolbar {
+  0% {
+    opacity: 0;
+    transform: translateY(-0.45rem) scaleY(0.88);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(0.08rem) scaleY(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes comment-reveal-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .dialogBackdrop[data-starting-style],
@@ -892,7 +1015,11 @@
 
   .dialogBackdrop,
   .dialogPopup,
-  .replyDialogPopup {
+  .replyDialogPopup,
+  .replyTarget,
+  .nameField,
+  .commentMediaComposer {
+    animation: none;
     transition: none;
   }
 }
