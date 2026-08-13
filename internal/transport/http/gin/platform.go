@@ -46,6 +46,7 @@ type Config struct {
 	InstanceID            string
 	InstanceInitializedAt time.Time
 	Posts                 *app.PostService
+	Locations             *app.LocationService
 	Comments              *app.CommentService
 	Search                *app.SearchService
 	ShareMetadata         *app.ShareMetadataService
@@ -139,6 +140,12 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("post routes require owner authentication and site settings")
 		}
 		RegisterPostRoutes(engine, config.Posts, config.SiteSettings, config.OwnerAuth)
+	}
+	if config.Locations != nil {
+		if config.OwnerAuth == nil {
+			return nil, errors.New("location routes require owner authentication")
+		}
+		RegisterLocationRoutes(engine, config.Locations, config.OwnerAuth)
 	}
 	if config.Comments != nil {
 		if config.OwnerAuth == nil {

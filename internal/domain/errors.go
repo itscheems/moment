@@ -27,6 +27,7 @@ const (
 	CodeMediaCorrupt                Code = "MEDIA_CORRUPT"
 	CodeMediaPreviewFailed          Code = "MEDIA_PREVIEW_FAILED"
 	CodeMediaNotFound               Code = "MEDIA_NOT_FOUND"
+	CodeLocationProviderUnavailable Code = "LOCATION_PROVIDER_UNAVAILABLE"
 	CodeUnauthorized                Code = "UNAUTHORIZED"
 	CodeIdempotencyKeyReused        Code = "IDEMPOTENCY_KEY_REUSED"
 	CodeImportInProgress            Code = "IMPORT_IN_PROGRESS"

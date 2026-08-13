@@ -64,4 +64,32 @@ mise exec -- task run
 Runtime data and secrets must stay outside source control. Copy `.env.example`
 for local conventions; do not commit `.env` files or real instance data.
 
+## Post locations
+
+Posts can carry a saved place snapshot selected from search, resolved from an
+explicit browser/device location request, or entered as a manual label. Comments
+do not carry locations. Provider credentials remain in the server process and
+are never sent to the browser:
+
+```sh
+AMAP_API_KEY=... \
+GEOAPIFY_API_KEY=... \
+mise exec -- task run
+```
+
+For the development launcher, the same values may be placed in the ignored
+`.env.local` file. `scripts/dev/serve.sh` parses only the documented location
+fields and does not evaluate the file as shell code:
+
+```dotenv
+AMAP_API_KEY=...
+GEOAPIFY_API_KEY=...
+```
+
+Moment prefers AMap for mainland China and Geoapify for searches biased outside
+mainland China, with automatic fallback when both are configured. Either key can
+be omitted; manual labels remain available when no provider is configured. The
+Moment binary itself intentionally does not parse `.env` files; this convenience
+belongs only to the local development launcher.
+
 No open-source license is granted by this repository at this time.

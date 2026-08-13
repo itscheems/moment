@@ -10,6 +10,38 @@ binary="${repo_root}/dist/moment"
 rotate_token=false
 serve_args=()
 
+read_local_setting() {
+  local setting_file="$1"
+  local setting_name="$2"
+  [[ -f "$setting_file" ]] || return 0
+  awk -v setting_name="$setting_name" '
+    index($0, setting_name "=") == 1 {
+      value = substr($0, length(setting_name) + 2)
+      sub(/\r$/, "", value)
+      print value
+      exit
+    }
+  ' "$setting_file"
+}
+
+load_location_provider_keys() {
+  local config_file value
+
+  # Process environment wins, followed by .env.local, then .env. Parse only
+  # the two explicit provider keys below; never source or evaluate local files.
+  for config_file in "${repo_root}/.env.local" "${repo_root}/.env"; do
+    [[ -f "$config_file" ]] || continue
+    if [[ -z "${AMAP_API_KEY:-}" ]]; then
+      value="$(read_local_setting "$config_file" AMAP_API_KEY)"
+      [[ -z "$value" ]] || export AMAP_API_KEY="$value"
+    fi
+    if [[ -z "${GEOAPIFY_API_KEY:-}" ]]; then
+      value="$(read_local_setting "$config_file" GEOAPIFY_API_KEY)"
+      [[ -z "$value" ]] || export GEOAPIFY_API_KEY="$value"
+    fi
+  done
+}
+
 if [[ "$token_file" != /* ]]; then
   token_file="${repo_root}/${token_file#./}"
 fi
@@ -34,6 +66,13 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     '  MOMENT_LISTEN    Listen address (default: 127.0.0.1:8080)' \
     '  MOMENT_OWNER_TOKEN_FILE' \
     '                   Local owner token file (default: ./.moment-local/owner.token)' \
+    '  AMAP_API_KEY     AMap Web Service key for mainland place suggestions' \
+    '  GEOAPIFY_API_KEY' \
+    '                   Geoapify key for global place suggestions' \
+    '' \
+    'Local config:' \
+    '  .env.local and .env are read without shell evaluation. Existing process' \
+    '  environment values take precedence. Only the two provider keys above are read.' \
     '' \
     'Options:' \
     '  --rotate-owner-token  Rotate a missing or compromised local owner token before serving' \
@@ -115,6 +154,19 @@ if [[ -t 1 ]]; then
   printf 'Owner token (local testing only): '
   tr -d '\r\n' <"$token_file"
   printf '\n'
+fi
+
+load_location_provider_keys
+if [[ -n "${AMAP_API_KEY:-}" || -n "${GEOAPIFY_API_KEY:-}" ]]; then
+  provider_summary=''
+  [[ -z "${AMAP_API_KEY:-}" ]] || provider_summary='AMap'
+  if [[ -n "${GEOAPIFY_API_KEY:-}" ]]; then
+    [[ -z "$provider_summary" ]] || provider_summary+=', '
+    provider_summary+='Geoapify'
+  fi
+  printf 'Location providers: %s\n' "$provider_summary"
+else
+  printf '%s\n' 'Location providers: none (manual location labels only)' >&2
 fi
 
 printf 'Starting Moment at http://%s (Ctrl+C to stop)...\n' "$listen_address"

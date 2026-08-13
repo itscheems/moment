@@ -56,7 +56,7 @@ func TestHealthReadinessHeadersAndRequestIDs(t *testing.T) {
 		"X-Content-Type-Options": "nosniff",
 		"X-Frame-Options":        "DENY",
 		"Referrer-Policy":        "same-origin",
-		"Permissions-Policy":     "camera=(), microphone=(), geolocation=()",
+		"Permissions-Policy":     "camera=(), microphone=(), geolocation=(self)",
 	} {
 		if got := health.Header().Get(header); got != want {
 			t.Errorf("%s = %q, want %q", header, got, want)
