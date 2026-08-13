@@ -21,6 +21,7 @@ export interface OwnerSession {
 
 export interface OwnerStatus {
   initialized: boolean;
+  passwordEnabled: boolean;
   sessionEpoch: number;
   initializedAt: string | null;
   rotatedAt: string | null;
@@ -34,7 +35,13 @@ export interface RotatedCredential {
   rotatedAt: string;
 }
 
+export interface OwnerLoginOptions {
+  passwordEnabled: boolean;
+}
+
 export interface SiteSettingsUpdate {
+  username?: string;
+  displayName?: string;
   title?: string;
   bio?: string;
   timezone?: string;
@@ -63,6 +70,30 @@ export interface PostMediaInput {
   mediaId: string;
   position: number;
   altText: string | null;
+}
+
+export type LocationProvider = "manual" | "amap" | "geoapify";
+export type CoordinateSystem = "wgs84" | "gcj02";
+
+export interface OwnerLocation {
+  name: string;
+  displayName: string;
+  countryCode: string;
+  country: string;
+  region: string;
+  city: string;
+  district: string;
+  category: string;
+  provider: LocationProvider;
+  providerPlaceId: string;
+  latitude: number | null;
+  longitude: number | null;
+  coordinateSystem: CoordinateSystem | null;
+}
+
+export interface LocationBias {
+  latitude: number;
+  longitude: number;
 }
 
 export interface ImportCounts {
@@ -948,6 +979,9 @@ async function decodeExactOwnerSuccess(
 
 function sitePayload(update: SiteSettingsUpdate): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
+  if (update.username !== undefined) payload.username = update.username;
+  if (update.displayName !== undefined)
+    payload.display_name = update.displayName;
   if (update.title !== undefined) payload.title = update.title;
   if (update.bio !== undefined) payload.bio = update.bio;
   if (update.timezone !== undefined) payload.timezone = update.timezone;
@@ -974,6 +1008,93 @@ function mediaPayload(media: PostMediaInput[]): Record<string, unknown>[] {
   }));
 }
 
+function nullableNumberField(
+  record: Record<string, unknown>,
+  field: string,
+): number | null {
+  const value = record[field];
+  if (
+    value !== null &&
+    (typeof value !== "number" || !Number.isFinite(value))
+  ) {
+    throw invalidResponse(`response field ${field} must be a number or null`);
+  }
+  return value as number | null;
+}
+
+function parseOwnerLocation(value: unknown): OwnerLocation {
+  if (!isRecord(value)) throw invalidResponse("location must be an object");
+  const keys = [
+    "name",
+    "display_name",
+    "country_code",
+    "country",
+    "region",
+    "city",
+    "district",
+    "category",
+    "provider",
+    "provider_place_id",
+    "latitude",
+    "longitude",
+    "coordinate_system",
+  ];
+  if (!hasExactKeys(value, keys)) {
+    throw invalidResponse("location contains unsupported fields");
+  }
+  const provider = stringField(value, "provider");
+  if (!["manual", "amap", "geoapify"].includes(provider)) {
+    throw invalidResponse("location provider is invalid");
+  }
+  const coordinate = value.coordinate_system;
+  if (coordinate !== null && coordinate !== "wgs84" && coordinate !== "gcj02") {
+    throw invalidResponse("location coordinate system is invalid");
+  }
+  const latitude = nullableNumberField(value, "latitude");
+  const longitude = nullableNumberField(value, "longitude");
+  if (
+    (latitude === null) !== (longitude === null) ||
+    (latitude === null) !== (coordinate === null)
+  ) {
+    throw invalidResponse(
+      "location coordinate fields must be supplied together",
+    );
+  }
+  return {
+    name: stringField(value, "name"),
+    displayName: stringField(value, "display_name"),
+    countryCode: stringField(value, "country_code"),
+    country: stringField(value, "country"),
+    region: stringField(value, "region"),
+    city: stringField(value, "city"),
+    district: stringField(value, "district"),
+    category: stringField(value, "category"),
+    provider: provider as LocationProvider,
+    providerPlaceId: stringField(value, "provider_place_id"),
+    latitude,
+    longitude,
+    coordinateSystem: coordinate as CoordinateSystem | null,
+  };
+}
+
+function locationPayload(location: OwnerLocation): Record<string, unknown> {
+  return {
+    name: location.name,
+    display_name: location.displayName,
+    country_code: location.countryCode,
+    country: location.country,
+    region: location.region,
+    city: location.city,
+    district: location.district,
+    category: location.category,
+    provider: location.provider,
+    provider_place_id: location.providerPlaceId,
+    latitude: location.latitude,
+    longitude: location.longitude,
+    coordinate_system: location.coordinateSystem,
+  };
+}
+
 function requestInit(
   method: string,
   csrfToken?: string,
@@ -997,10 +1118,13 @@ export class OwnerApi {
     this.fetcher = fetcher;
   }
 
-  async exchange(token: string): Promise<OwnerSession> {
+  async exchange(
+    credential: string,
+    method: "password" | "token" = "password",
+  ): Promise<OwnerSession> {
     const response = await this.fetcher(
       "/api/v1/owner/session",
-      requestInit("POST", undefined, { token }),
+      requestInit("POST", undefined, { [method]: credential }),
     );
     const { data } = await decodeResponse(response);
     const record = objectData(data);
@@ -1013,6 +1137,18 @@ export class OwnerApi {
     return { csrfToken, expiresAt };
   }
 
+  async loginOptions(signal?: AbortSignal): Promise<OwnerLoginOptions> {
+    const response = await this.fetcher("/api/v1/owner/login-options", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const record = objectData((await decodeResponse(response)).data);
+    if (!hasExactKeys(record, ["password_enabled"])) {
+      throw invalidResponse("login options response has unexpected fields");
+    }
+    return { passwordEnabled: booleanField(record, "password_enabled") };
+  }
+
   async status(signal?: AbortSignal): Promise<OwnerStatus> {
     const response = await this.fetcher("/api/v1/owner/status", {
       ...requestInit("GET"),
@@ -1020,7 +1156,7 @@ export class OwnerApi {
     });
     const preliminary = await decodeExactOwnerSuccess(
       response,
-      ["initialized", "session_epoch", "initialized_at"],
+      ["initialized", "password_enabled", "session_epoch", "initialized_at"],
       ["rotated_at"],
     );
     if (booleanField(preliminary, "initialized") !== true) {
@@ -1028,9 +1164,29 @@ export class OwnerApi {
     }
     return {
       initialized: true,
+      passwordEnabled: booleanField(preliminary, "password_enabled"),
       sessionEpoch: positiveIntegerField(preliminary, "session_epoch"),
       initializedAt: utcInstantField(preliminary, "initialized_at"),
       rotatedAt: optionalInstantField(preliminary, "rotated_at"),
+    };
+  }
+
+  async setPassword(csrfToken: string, password: string): Promise<OwnerStatus> {
+    const response = await this.fetcher(
+      "/api/v1/owner/password",
+      requestInit("PUT", csrfToken, { password }),
+    );
+    const record = await decodeExactOwnerSuccess(
+      response,
+      ["initialized", "password_enabled", "session_epoch", "initialized_at"],
+      ["rotated_at"],
+    );
+    return {
+      initialized: booleanField(record, "initialized"),
+      passwordEnabled: booleanField(record, "password_enabled"),
+      sessionEpoch: positiveIntegerField(record, "session_epoch"),
+      initializedAt: utcInstantField(record, "initialized_at"),
+      rotatedAt: optionalInstantField(record, "rotated_at"),
     };
   }
 
@@ -1043,6 +1199,9 @@ export class OwnerApi {
       requestInit("PATCH", csrfToken, sitePayload(update)),
     );
     const data = await decodeExactOwnerSuccess(response, [
+      "owner_id",
+      "username",
+      "display_name",
       "title",
       "bio",
       "timezone",
@@ -1153,16 +1312,64 @@ export class OwnerApi {
     }
   }
 
+  async searchLocations(
+    query: string,
+    bias?: LocationBias,
+    signal?: AbortSignal,
+  ): Promise<OwnerLocation[]> {
+    const params = new URLSearchParams({ q: query });
+    if (bias) {
+      params.set("latitude", bias.latitude.toString());
+      params.set("longitude", bias.longitude.toString());
+    }
+    return this.locations(`/api/v1/owner/locations/search?${params}`, signal);
+  }
+
+  async nearbyLocations(
+    point: LocationBias,
+    signal?: AbortSignal,
+  ): Promise<OwnerLocation[]> {
+    const params = new URLSearchParams({
+      latitude: point.latitude.toString(),
+      longitude: point.longitude.toString(),
+    });
+    return this.locations(`/api/v1/owner/locations/nearby?${params}`, signal);
+  }
+
+  private async locations(
+    endpoint: string,
+    signal?: AbortSignal,
+  ): Promise<OwnerLocation[]> {
+    const response = await this.fetcher(endpoint, {
+      ...requestInit("GET"),
+      signal,
+    });
+    const { data, meta } = await decodeResponse(response);
+    if (!hasExactKeys(meta, ["request_id"])) {
+      throw invalidResponse("location metadata is invalid");
+    }
+    const record = objectData(data);
+    if (!hasExactKeys(record, ["items"]) || !Array.isArray(record.items)) {
+      throw invalidResponse("location results are invalid");
+    }
+    return record.items.map(parseOwnerLocation);
+  }
+
   async create(
     csrfToken: string,
     contentMd: string,
     idempotencyKey: string,
     media: PostMediaInput[] = [],
+    location?: OwnerLocation | null,
   ): Promise<PublicPost> {
-    const init = requestInit("POST", csrfToken, {
+    const body: Record<string, unknown> = {
       content_md: contentMd,
       media: mediaPayload(media),
-    });
+    };
+    if (location !== undefined) {
+      body.location = location === null ? null : locationPayload(location);
+    }
+    const init = requestInit("POST", csrfToken, body);
     const headers = new Headers(init.headers);
     headers.set("Idempotency-Key", idempotencyKey);
     const response = await this.fetcher("/api/v1/owner/posts", {
@@ -1178,9 +1385,13 @@ export class OwnerApi {
     id: string,
     contentMd: string,
     media?: PostMediaInput[],
+    location?: OwnerLocation | null,
   ): Promise<PublicPost> {
     const body: Record<string, unknown> = { content_md: contentMd };
     if (media) body.media = mediaPayload(media);
+    if (location !== undefined) {
+      body.location = location === null ? null : locationPayload(location);
+    }
     const response = await this.fetcher(
       `/api/v1/owner/posts/${encodeURIComponent(id)}`,
       requestInit("PATCH", csrfToken, body),
@@ -1227,6 +1438,9 @@ export class OwnerApi {
       requestInit(method, csrfToken),
     );
     const data = await decodeExactOwnerSuccess(response, [
+      "owner_id",
+      "username",
+      "display_name",
       "title",
       "bio",
       "timezone",

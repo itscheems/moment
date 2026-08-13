@@ -48,6 +48,11 @@ function normalizedPublicBaseUrl(value: string): string | null {
   return trimmed ? trimmed : null;
 }
 
+function validOwnerPassword(value: string): boolean {
+  const byteLength = new TextEncoder().encode(value).length;
+  return byteLength >= 8 && byteLength <= 72 && value.trim() === value;
+}
+
 function validateForm(form: SettingsForm): FieldErrors {
   const errors: FieldErrors = {};
   const timezone = form.timezone.trim();
@@ -197,6 +202,10 @@ export function SettingsPage({
     "idle",
   );
   const [dataRestoreBusy, setDataRestoreBusy] = useState(true);
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordPending, setPasswordPending] = useState(false);
+  const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
   const formRef = useRef(form);
   const formRevisionRef = useRef(0);
   const mountedRef = useRef(true);
@@ -365,6 +374,7 @@ export function SettingsPage({
       setRotated(credential);
       setStatus({
         initialized: credential.initialized,
+        passwordEnabled: status?.passwordEnabled ?? false,
         sessionEpoch: credential.sessionEpoch,
         initializedAt: credential.initializedAt,
         rotatedAt: credential.rotatedAt,
@@ -390,6 +400,33 @@ export function SettingsPage({
       }
     } finally {
       if (mountedRef.current) setRotationPending(false);
+    }
+  };
+
+  const savePassword = async (event: FormEvent) => {
+    event.preventDefault();
+    if (
+      !session ||
+      passwordPending ||
+      !validOwnerPassword(password) ||
+      password !== passwordConfirm
+    )
+      return;
+    setPasswordPending(true);
+    setPasswordNotice(null);
+    try {
+      const next = await api.setPassword(session.csrfToken, password);
+      setStatus(next);
+      setPassword("");
+      setPasswordConfirm("");
+      setPasswordNotice(
+        next.passwordEnabled ? "密码已保存，下次可直接使用密码登录。" : null,
+      );
+    } catch (error) {
+      if (!expireIfInvalidSession(error))
+        setPasswordNotice("密码没有保存，当前会话未改变，可以重试。");
+    } finally {
+      setPasswordPending(false);
     }
   };
 
@@ -575,6 +612,10 @@ export function SettingsPage({
                     </dd>
                   </div>
                   <div>
+                    <dt>密码登录</dt>
+                    <dd>{status.passwordEnabled ? "已启用" : "尚未设置"}</dd>
+                  </div>
+                  <div>
                     <dt>最近轮换</dt>
                     <dd>{formatInstant(status.rotatedAt, form.timezone)}</dd>
                   </div>
@@ -584,6 +625,61 @@ export function SettingsPage({
                   <p>登录版本 {status.sessionEpoch}</p>
                 </details>
               </>
+            ) : null}
+
+            {session && !rotated && !rotationOutcomeUnknown ? (
+              <form
+                className={styles.passwordCard}
+                onSubmit={(event) => void savePassword(event)}
+              >
+                <div>
+                  <strong>
+                    {status?.passwordEnabled ? "更改密码" : "设置日常登录密码"}
+                  </strong>
+                  <p>
+                    8–72 个字节。保存后，令牌仍可供 CLI、API 和紧急恢复使用。
+                  </p>
+                </div>
+                <label>
+                  <span>新密码</span>
+                  <input
+                    autoComplete="new-password"
+                    onChange={(event) => setPassword(event.target.value)}
+                    type="password"
+                    value={password}
+                  />
+                </label>
+                <label>
+                  <span>再次输入</span>
+                  <input
+                    aria-invalid={Boolean(
+                      passwordConfirm && passwordConfirm !== password,
+                    )}
+                    autoComplete="new-password"
+                    onChange={(event) => setPasswordConfirm(event.target.value)}
+                    type="password"
+                    value={passwordConfirm}
+                  />
+                </label>
+                {passwordNotice ? (
+                  <p aria-live="polite">{passwordNotice}</p>
+                ) : null}
+                <button
+                  className={styles.primaryButton}
+                  disabled={
+                    passwordPending ||
+                    !validOwnerPassword(password) ||
+                    password !== passwordConfirm
+                  }
+                  type="submit"
+                >
+                  {passwordPending
+                    ? "正在保存…"
+                    : status?.passwordEnabled
+                      ? "更新密码"
+                      : "启用密码登录"}
+                </button>
+              </form>
             ) : null}
 
             {rotated ? (

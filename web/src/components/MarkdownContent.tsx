@@ -58,13 +58,49 @@ function registeredLanguage(code: HTMLElement): string | null {
 export function MarkdownContent({
   className,
   html,
+  mentionUsername,
 }: {
   className?: string;
   html: string;
+  mentionUsername?: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-
   useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (root && mentionUsername) {
+      const escaped = mentionUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pattern = new RegExp(
+        `(^|[^A-Za-z0-9_])(@${escaped})(?![A-Za-z0-9_])`,
+        "gi",
+      );
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      const nodes: Text[] = [];
+      while (walker.nextNode()) {
+        const node = walker.currentNode as Text;
+        if (!node.parentElement?.closest("a, code, pre")) nodes.push(node);
+      }
+      for (const node of nodes) {
+        const value = node.nodeValue ?? "";
+        pattern.lastIndex = 0;
+        if (!pattern.test(value)) continue;
+        pattern.lastIndex = 0;
+        const fragment = document.createDocumentFragment();
+        let cursor = 0;
+        for (const match of value.matchAll(pattern)) {
+          const index = match.index ?? 0;
+          const prefix = match[1] ?? "";
+          fragment.append(value.slice(cursor, index + prefix.length));
+          const link = document.createElement("a");
+          link.href = `/@${mentionUsername}`;
+          link.textContent = match[2];
+          link.dataset.momentMention = mentionUsername;
+          fragment.append(link);
+          cursor = index + match[0].length;
+        }
+        fragment.append(value.slice(cursor));
+        node.replaceWith(fragment);
+      }
+    }
     for (const code of rootRef.current?.querySelectorAll<HTMLElement>(
       "pre code",
     ) ?? []) {
@@ -78,7 +114,7 @@ export function MarkdownContent({
       code.classList.add("hljs");
       code.dataset.highlighted = "yes";
     }
-  }, [html]);
+  }, [html, mentionUsername]);
 
   return (
     <div

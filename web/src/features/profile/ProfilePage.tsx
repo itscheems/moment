@@ -41,7 +41,7 @@ export function ProfilePage({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const active = useRef<AbortController | null>(null);
-  const title = site.title.trim() || "Moment";
+  const title = site.displayName.trim() || site.title.trim() || "Moment";
   const handle = siteHandle(site);
   const initialized = site.instanceInitializedAt
     ? formatMomentDate(site.instanceInitializedAt, site.timezone)
@@ -120,7 +120,7 @@ export function ProfilePage({
         <div className={styles.profileActions}>
           <ShareMenu
             baseUrl={site.publicBaseUrl}
-            href="/profile"
+            href={`/@${site.username}`}
             title={`${title} 的个人资料`}
             trigger={
               <button

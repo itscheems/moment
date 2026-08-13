@@ -184,6 +184,9 @@ function json(body: unknown, status = 200): Response {
 
 const siteEnvelope = {
   data: {
+    owner_id: "00000000000000000000000000000000",
+    username: "owner",
+    display_name: "乔乔",
     title: "乔乔的 Moment",
     bio: "沿着日常留下坐标",
     timezone: "Asia/Shanghai",
@@ -221,6 +224,7 @@ function ownerStatus() {
   return json({
     data: {
       initialized: true,
+      password_enabled: false,
       session_epoch: 1,
       initialized_at: "2026-08-01T00:00:00Z",
     },
@@ -358,6 +362,39 @@ describe("owner composing flow", () => {
       ([url]) => String(url) === "/api/v1/owner/session",
     );
     expect(exchange?.[1]?.body).toBe(JSON.stringify({ token: bearer }));
+  });
+
+  it("searches and inserts the owner identity from an active @mention", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    const fetcher = installApi((url) => {
+      if (url.startsWith("/api/v1/users/mention-suggestions?")) {
+        return json({
+          data: [
+            {
+              owner_id: "00000000000000000000000000000000",
+              username: "owner",
+              display_name: "乔乔",
+              avatar_media_id: null,
+              profile_url: "/@owner",
+            },
+          ],
+          meta: { request_id: "req_mentions" },
+        });
+      }
+    });
+    render(<App />);
+
+    const editor = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(editor, {
+      target: { value: "今天想起 @ow", selectionStart: 9 },
+    });
+    const option = await screen.findByRole("option", { name: /乔乔.*@owner/ });
+    expect(
+      fetcher.mock.calls.some(([url]) => String(url).includes("q=ow")),
+    ).toBe(true);
+    fireEvent.click(option);
+    expect(editor).toHaveValue("今天想起 @owner ");
   });
 
   it("offers explicit recovery and discarding for the real instance draft", async () => {

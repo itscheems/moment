@@ -1,4 +1,7 @@
 export interface SiteIdentity {
+  ownerId: string;
+  username: string;
+  displayName: string;
   title: string;
   bio: string;
   timezone: string;
@@ -11,6 +14,14 @@ export interface SiteIdentity {
   instanceInitializedAt: string | null;
 }
 
+export interface MentionSuggestion {
+  ownerId: string;
+  username: string;
+  displayName: string;
+  avatarMediaId: string | null;
+  profileUrl: string;
+}
+
 export interface PublicPost {
   id: string;
   contentMd: string;
@@ -20,6 +31,12 @@ export interface PublicPost {
   publishedAt: string;
   commentCount: number;
   media: PublicMediaUsage[];
+  location?: PublicPostLocation | null;
+}
+
+export interface PublicPostLocation {
+  name: string;
+  displayName: string;
 }
 
 export interface PublicMediaUsage {
@@ -538,23 +555,40 @@ function parseCommentThread(value: unknown, postId: string): CommentThread {
 
 export function parsePost(value: unknown): PublicPost {
   if (!isRecord(value)) throw invalidResponse("post must be an object");
+  const postKeys = [
+    "id",
+    "content_md",
+    "content_html",
+    "created_at",
+    "updated_at",
+    "published_at",
+    "comment_count",
+    "media",
+  ];
   if (
-    !hasExactKeys(value, [
-      "id",
-      "content_md",
-      "content_html",
-      "created_at",
-      "updated_at",
-      "published_at",
-      "comment_count",
-      "media",
-    ]) ||
+    (!hasExactKeys(value, postKeys) &&
+      !hasExactKeys(value, [...postKeys, "location"])) ||
     !Array.isArray(value.media) ||
     value.media.length > 9
   ) {
     throw invalidResponse("post contains an unsupported or missing field");
   }
   const media = parseMediaUsages(value.media, 9, "post");
+  let location: PublicPostLocation | null = null;
+  if (value.location !== undefined && value.location !== null) {
+    if (
+      !isRecord(value.location) ||
+      !hasExactKeys(value.location, ["name", "display_name"])
+    ) {
+      throw invalidResponse("post location is invalid");
+    }
+    const name = stringField(value.location, "name");
+    const displayName = stringField(value.location, "display_name");
+    if (!name.trim() || !displayName.trim()) {
+      throw invalidResponse("post location cannot be empty");
+    }
+    location = { name, displayName };
+  }
   return {
     id: stringField(value, "id"),
     contentMd: stringField(value, "content_md"),
@@ -564,6 +598,7 @@ export function parsePost(value: unknown): PublicPost {
     publishedAt: instantField(value, "published_at"),
     commentCount: nonNegativeIntegerField(value, "comment_count"),
     media,
+    ...(value.location === undefined ? {} : { location }),
   };
 }
 
@@ -582,19 +617,21 @@ function nullableCursor(meta: Record<string, unknown>): string | null {
 }
 
 function parseSearchHit(value: unknown): SearchHit {
+  const searchKeys = [
+    "id",
+    "content_md",
+    "content_html",
+    "created_at",
+    "updated_at",
+    "published_at",
+    "comment_count",
+    "media",
+    "snippet",
+  ];
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, [
-      "id",
-      "content_md",
-      "content_html",
-      "created_at",
-      "updated_at",
-      "published_at",
-      "comment_count",
-      "media",
-      "snippet",
-    ])
+    (!hasExactKeys(value, searchKeys) &&
+      !hasExactKeys(value, [...searchKeys, "location"]))
   ) {
     throw invalidResponse(
       "search hit contains an unsupported or missing field",
@@ -831,6 +868,9 @@ export function parseSiteIdentity(
   if (!isRecord(data)) throw invalidResponse("site data must be an object");
   if (
     !hasExactKeys(data, [
+      "owner_id",
+      "username",
+      "display_name",
       "title",
       "bio",
       "timezone",
@@ -848,6 +888,24 @@ export function parseSiteIdentity(
     throw invalidResponse("response field comments_enabled must be a boolean");
   }
   const timezone = stringField(data, "timezone");
+  const ownerId = stringField(data, "owner_id");
+  const username = stringField(data, "username");
+  const displayName = stringField(data, "display_name");
+  if (!/^[0-9a-f]{32}$/.test(ownerId)) {
+    throw invalidResponse("response field owner_id must be a stable owner ID");
+  }
+  if (!/^[a-z][a-z0-9_]{2,29}$/.test(username)) {
+    throw invalidResponse(
+      "response field username must be a canonical username",
+    );
+  }
+  if (
+    !displayName.trim() ||
+    displayName.trim() !== displayName ||
+    Array.from(displayName).length > 80
+  ) {
+    throw invalidResponse("response field display_name must be a display name");
+  }
   try {
     new Intl.DateTimeFormat("zh-CN", { timeZone: timezone }).format();
   } catch {
@@ -866,6 +924,9 @@ export function parseSiteIdentity(
     throw invalidResponse("response field pinned_post_id must be a post ID");
   }
   return {
+    ownerId,
+    username,
+    displayName,
     title: stringField(data, "title"),
     bio: stringField(data, "bio"),
     timezone,
@@ -922,6 +983,49 @@ export class PublicApi {
       instanceId ?? null,
       instanceInitializedAt ?? null,
     );
+  }
+
+  async mentionSuggestions(
+    query: string,
+    signal?: AbortSignal,
+  ): Promise<MentionSuggestion[]> {
+    const params = new URLSearchParams({ q: query, limit: "8" });
+    const response = await this.fetcher(
+      `/api/v1/users/mention-suggestions?${params}`,
+      { headers: { Accept: "application/json" }, signal },
+    );
+    const { data } = await decodeResponse(response);
+    if (!Array.isArray(data))
+      throw invalidResponse("mention suggestions must be an array");
+    return data.map((item) => {
+      if (
+        !isRecord(item) ||
+        !hasExactKeys(item, [
+          "owner_id",
+          "username",
+          "display_name",
+          "avatar_media_id",
+          "profile_url",
+        ])
+      ) {
+        throw invalidResponse("mention suggestion contains unsupported fields");
+      }
+      const ownerId = stringField(item, "owner_id");
+      const username = stringField(item, "username");
+      const displayName = stringField(item, "display_name");
+      const avatarMediaId = nullableStringField(item, "avatar_media_id");
+      const profileUrl = stringField(item, "profile_url");
+      if (
+        !/^[0-9a-f]{32}$/.test(ownerId) ||
+        !/^[a-z][a-z0-9_]{2,29}$/.test(username) ||
+        !displayName ||
+        profileUrl !== `/@${username}` ||
+        (avatarMediaId !== null && !isCanonicalUlid(avatarMediaId))
+      ) {
+        throw invalidResponse("mention suggestion identity is invalid");
+      }
+      return { ownerId, username, displayName, avatarMediaId, profileUrl };
+    });
   }
 
   async timeline(request: TimelineRequest = {}): Promise<TimelinePage> {

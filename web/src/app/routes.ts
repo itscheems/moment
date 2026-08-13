@@ -52,7 +52,10 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     title: "个人资料",
     eyebrow: "",
     href: "/profile",
-    match: (pathname) => pathname === "/profile" || pathname === "/profile/",
+    match: (pathname) =>
+      pathname === "/profile" ||
+      pathname === "/profile/" ||
+      /^\/@[a-z][a-z0-9_]{2,29}\/?$/.test(pathname),
   },
   {
     id: "owner-login",

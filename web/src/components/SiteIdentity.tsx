@@ -3,9 +3,7 @@ import type { SiteIdentity } from "../api/public";
 import styles from "./SiteIdentity.module.css";
 
 export function siteHandle(site: SiteIdentity): string {
-  const title = site.title.trim() || "Moment";
-  const compact = title.normalize("NFKC").replace(/\s+/g, "").slice(0, 24);
-  return `@${compact.toLowerCase() || "moment"}`;
+  return `@${site.username}`;
 }
 
 export function SiteAvatar({
@@ -15,7 +13,7 @@ export function SiteAvatar({
   site: SiteIdentity;
   eager?: boolean;
 }) {
-  const title = site.title.trim() || "Moment";
+  const title = site.displayName.trim() || site.title.trim() || "Moment";
   if (site.avatarMediaId) {
     return (
       <img

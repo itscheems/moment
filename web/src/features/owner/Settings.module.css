@@ -111,6 +111,42 @@
   line-height: 1.6;
 }
 
+.passwordCard {
+  display: grid;
+  gap: var(--space-3);
+  border-block: 1px solid var(--border-subtle);
+  margin-block: var(--space-5);
+  padding-block: var(--space-5);
+}
+
+.passwordCard > div > p,
+.passwordCard > p {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.passwordCard label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.passwordCard input {
+  min-block-size: var(--target-size);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+.passwordCard button {
+  justify-self: start;
+}
+
 .portableFlow {
   display: grid;
   margin-block-start: var(--space-4);

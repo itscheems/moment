@@ -23,6 +23,9 @@ import { resolveRoute } from "./routes";
 import styles from "./App.module.css";
 
 const fallbackSite: SiteIdentity = {
+  ownerId: "00000000000000000000000000000000",
+  username: "owner",
+  displayName: "Moment",
   title: "Moment",
   bio: "",
   timezone: "UTC",
@@ -51,6 +54,10 @@ function editId(pathname: string): string {
   } catch {
     return raw;
   }
+}
+
+function profileUsername(pathname: string): string | null {
+  return pathname.match(/^\/@([a-z][a-z0-9_]{2,29})\/?$/)?.[1] ?? null;
 }
 
 function editableTarget(target: EventTarget | null): boolean {
@@ -235,6 +242,10 @@ function PublicApp() {
     route.id !== "search" &&
     route.id !== "archive" &&
     route.id !== "profile";
+  const requestedProfileUsername = profileUsername(displayLocation.pathname);
+  const profileExists =
+    requestedProfileUsername === null ||
+    requestedProfileUsername === site.username;
 
   const shellYears =
     route.id === "search" || route.id === "archive"
@@ -313,8 +324,19 @@ function PublicApp() {
             site={site}
           />
         ) : null}
-        {!siteLoading && route.id === "profile" ? (
+        {!siteLoading && route.id === "profile" && profileExists ? (
           <ProfilePage api={api} onSiteSaved={setSite} site={site} />
+        ) : null}
+        {!siteLoading && route.id === "profile" && !profileExists ? (
+          <ShellState
+            route={{
+              id: "not-found",
+              title: "没有这个用户",
+              eyebrow: "",
+              href: "/",
+            }}
+            state={null}
+          />
         ) : null}
         {!siteLoading && route.id === "owner-login" ? (
           <OwnerLogin site={site} />

@@ -69,6 +69,7 @@ export function MediaComposer({
   onRemove,
   onRetry,
   footerAction,
+  toolbarAction,
   maximum = MAX_MEDIA_COUNT,
   maximumTotalBytes,
   subject = "Moment",
@@ -80,6 +81,7 @@ export function MediaComposer({
   onRemove: (key: string) => void;
   onRetry: (key: string) => void;
   footerAction?: ReactNode;
+  toolbarAction?: ReactNode;
   maximum?: number;
   maximumTotalBytes?: number;
   subject?: string;
@@ -414,6 +416,7 @@ export function MediaComposer({
           >
             <Icon name="media" />
           </button>
+          {toolbarAction}
           {items.length > 0 ? (
             <span aria-live="polite">
               {items.length} / {maximum}

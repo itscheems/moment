@@ -41,6 +41,9 @@ function failure(code: string, status: number): Response {
 function siteEnvelope() {
   return {
     data: {
+      owner_id: "00000000000000000000000000000000",
+      username: "owner",
+      display_name: "乔乔",
       title: "乔乔的 Moment",
       bio: "沿着日常留下坐标",
       timezone: "Asia/Shanghai",
@@ -61,6 +64,7 @@ function ownerStatusEnvelope() {
   return {
     data: {
       initialized: true,
+      password_enabled: false,
       session_epoch: 3,
       initialized_at: "2026-08-01T00:00:00Z",
       rotated_at: "2026-08-09T00:00:00Z",

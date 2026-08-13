@@ -114,6 +114,69 @@ afterEach(() => {
 });
 
 describe("owner API client", () => {
+  it("searches, resolves, and submits canonical post locations", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fullLocation = {
+      name: "静安寺",
+      display_name: "上海市静安区南京西路1686号",
+      country_code: "CN",
+      country: "中国",
+      region: "上海市",
+      city: "上海市",
+      district: "静安区",
+      category: "风景名胜",
+      provider: "amap",
+      provider_place_id: "B0FFF",
+      latitude: 31.223186,
+      longitude: 121.44526,
+      coordinate_system: "gcj02",
+    };
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        requests.push({ url, init });
+        if (url.includes("/locations/")) {
+          return json({
+            data: { items: [fullLocation] },
+            meta: { request_id: "req_location" },
+          });
+        }
+        return json(
+          {
+            data: {
+              ...post,
+              location: {
+                name: fullLocation.name,
+                display_name: fullLocation.display_name,
+              },
+            },
+            meta: { replayed: false },
+          },
+          201,
+        );
+      },
+    );
+    const api = new OwnerApi(fetcher as typeof fetch);
+    const locations = await api.searchLocations("静安寺", {
+      latitude: 31.23,
+      longitude: 121.47,
+    });
+    expect(locations[0]).toMatchObject({
+      name: "静安寺",
+      provider: "amap",
+      coordinateSystem: "gcj02",
+    });
+    expect(requests[0].url).toContain("q=%E9%9D%99%E5%AE%89%E5%AF%BA");
+    expect(requests[0].url).toContain("latitude=31.23");
+
+    await api.create("csrf", "带地点", "web-location", [], locations[0]);
+    expect(JSON.parse(String(requests[1].init?.body))).toEqual({
+      content_md: "带地点",
+      media: [],
+      location: fullLocation,
+    });
+  });
+
   it("patches only changed site fields and parses auth rotation metadata", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const fetcher = vi.fn(
@@ -123,6 +186,9 @@ describe("owner API client", () => {
         if (url.endsWith("/site")) {
           return json({
             data: {
+              owner_id: "00000000000000000000000000000000",
+              username: "owner",
+              display_name: "雨天记录",
               title: "雨天记录",
               bio: "沿着日常留下坐标",
               timezone: "Asia/Shanghai",
@@ -139,6 +205,7 @@ describe("owner API client", () => {
           return json({
             data: {
               initialized: true,
+              password_enabled: false,
               session_epoch: 4,
               initialized_at: "2026-08-01T00:00:00Z",
               rotated_at: "2026-08-10T00:00:00Z",
@@ -197,6 +264,9 @@ describe("owner API client", () => {
 
   it("fails closed on non-canonical settings, status, and rotation successes", async () => {
     const siteData = {
+      owner_id: "00000000000000000000000000000000",
+      username: "owner",
+      display_name: "雨天记录",
       title: "雨天记录",
       bio: "沿着日常留下坐标",
       timezone: "Asia/Shanghai",
@@ -208,6 +278,7 @@ describe("owner API client", () => {
     };
     const statusData = {
       initialized: true,
+      password_enabled: false,
       session_epoch: 4,
       initialized_at: "2026-08-01T00:00:00Z",
       rotated_at: "2026-08-10T00:00:00Z",
@@ -334,6 +405,7 @@ describe("owner API client", () => {
         json({
           data: {
             initialized: true,
+            password_enabled: false,
             session_epoch: 1,
             initialized_at: "2026-08-01T00:00:00.123456789Z",
           },
@@ -517,7 +589,7 @@ describe("owner API client", () => {
       },
     );
     const api = new OwnerApi(fetcher as typeof fetch);
-    await api.exchange("bearer-secret");
+    await api.exchange("bearer-secret", "token");
     await api.create("csrf-only", post.content_md, "web-retry-1");
 
     const exchange = fetcher.mock.calls[0];

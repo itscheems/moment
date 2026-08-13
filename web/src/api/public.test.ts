@@ -168,6 +168,9 @@ describe("public API client", () => {
       if (url === "/api/v1/site") {
         return json({
           data: {
+            owner_id: "00000000000000000000000000000000",
+            username: "owner",
+            display_name: "乔乔",
             title: "乔乔的 Moment",
             bio: "一些正在发生的事",
             timezone: "Asia/Shanghai",
@@ -422,6 +425,9 @@ describe("public API client", () => {
       vi.fn(async () =>
         json({
           data: {
+            owner_id: "00000000000000000000000000000000",
+            username: "owner",
+            display_name: "Moment",
             title: "Moment",
             bio: "",
             timezone: "UTC",
@@ -446,6 +452,9 @@ describe("public API client", () => {
       vi.fn(async () =>
         json({
           data: {
+            owner_id: "00000000000000000000000000000000",
+            username: "owner",
+            display_name: "Moment",
             title: "Moment",
             bio: "",
             timezone: "UTC",

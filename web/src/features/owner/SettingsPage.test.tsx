@@ -38,6 +38,9 @@ function failure(code: string, status: number): Response {
 function siteEnvelope(avatarMediaId: string | null = null) {
   return {
     data: {
+      owner_id: "00000000000000000000000000000000",
+      username: "owner",
+      display_name: "乔乔",
       title: "乔乔的 Moment",
       bio: "沿着日常留下坐标",
       timezone: "Asia/Shanghai",
@@ -58,6 +61,7 @@ function statusEnvelope(epoch = 3) {
   return {
     data: {
       initialized: true,
+      password_enabled: false,
       session_epoch: epoch,
       initialized_at: "2026-08-01T00:00:00Z",
       rotated_at: "2026-08-09T00:00:00Z",
@@ -345,6 +349,43 @@ describe("owner site settings", () => {
       expect(clipboard.writeText).toHaveBeenCalledWith("one-time-owner-token"),
     );
     expect(screen.getByText(/已复制。请确认/)).toBeInTheDocument();
+  });
+
+  it("enables password login without exposing the password in the response", async () => {
+    const requests: unknown[] = [];
+    installFetch(async (url, init) => {
+      if (url === "/api/v1/site") return json(siteEnvelope());
+      if (url === "/api/v1/owner/status") return json(statusEnvelope());
+      if (url === "/api/v1/owner/password" && init?.method === "PUT") {
+        requests.push(JSON.parse(String(init.body)));
+        return json({
+          data: {
+            ...statusEnvelope().data,
+            password_enabled: true,
+          },
+          meta: { request_id: "req_password" },
+        });
+      }
+      return json({}, 404);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "登录与安全" });
+    await waitForRestoreStatus();
+
+    fireEvent.change(screen.getByLabelText("新密码"), {
+      target: { value: "correct horse battery staple" },
+    });
+    fireEvent.change(screen.getByLabelText("再次输入"), {
+      target: { value: "correct horse battery staple" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "启用密码登录" }));
+
+    expect(
+      await screen.findByText("密码已保存，下次可直接使用密码登录。"),
+    ).toBeInTheDocument();
+    expect(requests).toEqual([{ password: "correct horse battery staple" }]);
+    expect(screen.getByText("已启用")).toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("correct horse battery staple");
   });
 
   it.each([

@@ -17,6 +17,9 @@ const sessionKey = "moment.owner.session.v1";
 const mediaId = "01ARZ3NDEKTSV4RRFFQ69G5FAY";
 
 const site: SiteIdentity = {
+  ownerId: "00000000000000000000000000000000",
+  username: "owner",
+  displayName: "Moment",
   title: "Moment",
   bio: "一段简介",
   timezone: "Asia/Shanghai",
@@ -39,6 +42,9 @@ function json(body: unknown, status = 200): Response {
 function siteEnvelope(coverMediaId: string | null) {
   return {
     data: {
+      owner_id: "00000000000000000000000000000000",
+      username: "owner",
+      display_name: "更新后的 Moment",
       title: "更新后的 Moment",
       bio: "一段简介",
       timezone: "Asia/Shanghai",
@@ -80,6 +86,7 @@ describe("profile editor", () => {
           return json({
             data: {
               initialized: true,
+              password_enabled: false,
               session_epoch: 1,
               initialized_at: "2026-08-01T00:00:00Z",
             },
@@ -110,14 +117,14 @@ describe("profile editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "编辑个人资料" }));
     expect(screen.getByRole("img", { name: "封面预览" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "移除封面图片" }));
-    fireEvent.change(screen.getByLabelText("名称"), {
+    fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "更新后的 Moment" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     expect(bodies).toEqual([
-      { title: "更新后的 Moment", cover_media_id: null },
+      { display_name: "更新后的 Moment", cover_media_id: null },
     ]);
     expect(await screen.findByText("个人资料已更新")).toBeInTheDocument();
   });
@@ -130,6 +137,7 @@ describe("profile editor", () => {
           return json({
             data: {
               initialized: true,
+              password_enabled: false,
               session_epoch: 1,
               initialized_at: "2026-08-01T00:00:00Z",
             },
@@ -159,13 +167,13 @@ describe("profile editor", () => {
     ).not.toHaveTextContent("相机");
     const reset = screen.getByRole("button", { name: "重置个人资料更改" });
     expect(reset).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("名称"), {
+    fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "尚未保存的名称" },
     });
     expect(reset).toBeEnabled();
     fireEvent.click(reset);
 
-    expect(screen.getByLabelText("名称")).toHaveValue("Moment");
+    expect(screen.getByLabelText("显示名称")).toHaveValue("Moment");
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 });

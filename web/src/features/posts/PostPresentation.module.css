@@ -168,6 +168,30 @@
   margin-block-end: 0;
 }
 
+.postLocation {
+  min-block-size: 1.6rem;
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0.35rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.postLocation svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  flex: 0 0 auto;
+}
+
+.postLocation span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .markdown p,
 .markdown ul,
 .markdown ol,

@@ -13,6 +13,9 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { ThemeMenu } from "./ThemeMenu";
 
 const site: SiteIdentity = {
+  ownerId: "00000000000000000000000000000000",
+  username: "owner",
+  displayName: "Moment",
   title: "Cheems Notes",
   bio: "",
   timezone: "Asia/Shanghai",
@@ -53,10 +56,8 @@ describe("ThemeMenu", () => {
     const dialog = await screen.findByRole("dialog", { name: "自定义显示" });
     const preview = within(dialog).getByLabelText("显示效果预览");
     expect(within(preview).getByText("Cheems Notes")).toBeInTheDocument();
-    expect(
-      within(preview).getByText("@cheemsnotes · 刚刚"),
-    ).toBeInTheDocument();
-    expect(within(preview).getByText("@cheemsnotes")).toBeInTheDocument();
+    expect(within(preview).getByText("@owner · 刚刚")).toBeInTheDocument();
+    expect(within(preview).getByText("@owner")).toBeInTheDocument();
     expect(preview.querySelector("img")).toHaveAttribute(
       "src",
       "/api/v1/media/01K2ABCDEF0123456789ABCDEFG/preview",

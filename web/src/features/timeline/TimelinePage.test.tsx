@@ -13,6 +13,9 @@ import { NavigationProvider } from "../../app/navigation";
 import { TimelinePage } from "./TimelinePage";
 
 const site: SiteIdentity = {
+  ownerId: "00000000000000000000000000000000",
+  username: "owner",
+  displayName: "Moment",
   title: "乔乔的 Moment",
   bio: "一些正在发生的事",
   timezone: "Asia/Shanghai",

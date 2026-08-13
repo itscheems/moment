@@ -10,13 +10,17 @@ import {
 } from "react";
 
 import {
+  PublicApi,
   PublicApiError,
+  type MentionSuggestion,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
+import type { OwnerLocation } from "../../api/owner";
 import { useNavigation } from "../../app/navigation";
 import { MediaComposer } from "../media/MediaComposer";
 import { SiteAvatar } from "../../components/SiteIdentity";
+import { Icon } from "../../components/icons";
 import {
   altValue,
   applyUpload,
@@ -32,6 +36,9 @@ import {
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { LocationPicker } from "./LocationPicker";
+import { MentionSuggestions } from "./MentionSuggestions";
+import { activeMention } from "./mentions";
 import {
   COMPOSE_DRAFT_CLEAR_ALL_SCHEMA,
   COMPOSE_DRAFT_CLEARED_EVENT,
@@ -85,6 +92,25 @@ function messageFor(error: unknown): string {
   }
 }
 
+function initialPostLocation(post?: PublicPost): OwnerLocation | null {
+  if (!post?.location) return null;
+  return {
+    name: post.location.name,
+    displayName: post.location.displayName,
+    countryCode: "",
+    country: "",
+    region: "",
+    city: "",
+    district: "",
+    category: "",
+    provider: "manual",
+    providerPlaceId: "",
+    latitude: null,
+    longitude: null,
+    coordinateSystem: null,
+  };
+}
+
 export interface ComposerHandle {
   hasUnpublishedChanges: () => boolean;
   leaveAndKeepDraft: () => void;
@@ -102,6 +128,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
   function Composer({ site, variant, post, active = true }, ref) {
     const { navigate, setNavigationBlocker } = useNavigation();
     const { api, session, expireIfInvalidSession } = useOwner();
+    const publicApi = useMemo(() => new PublicApi(), []);
     const initialContent = post?.contentMd ?? "";
     const [content, setContent] = useState(initialContent);
     const [draft, setDraft] = useState<ComposeDraft | null>(() =>
@@ -120,6 +147,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>(() =>
       itemsFromPost(post?.media ?? []),
     );
+    const initialLocation = useMemo(() => initialPostLocation(post), [post]);
+    const [location, setLocation] = useState<OwnerLocation | null>(
+      initialLocation,
+    );
+    const [locationChanged, setLocationChanged] = useState(false);
+    const [mention, setMention] = useState<{
+      start: number;
+      end: number;
+      query: string;
+    } | null>(null);
+    const [mentionItems, setMentionItems] = useState<MentionSuggestion[]>([]);
+    const [mentionActive, setMentionActive] = useState(0);
     const pendingRef = useRef(false);
     const allowLeaveRef = useRef(false);
     const dirtyRef = useRef(false);
@@ -156,11 +195,62 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       draft !== null ||
       pending ||
       error !== null ||
-      mediaError !== null;
+      mediaError !== null ||
+      location !== null;
     const hasUnpublishedChange =
       dirty &&
-      (content !== initialContent || mediaChanged) &&
+      (content !== initialContent || mediaChanged || locationChanged) &&
       !allowLeaveRef.current;
+
+    useEffect(() => {
+      if (!mention) {
+        setMentionItems([]);
+        return;
+      }
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => {
+        void publicApi
+          .mentionSuggestions(mention.query, controller.signal)
+          .then((items) => {
+            if (!controller.signal.aborted) {
+              setMentionItems(items);
+              setMentionActive(0);
+            }
+          })
+          .catch(() => {
+            if (!controller.signal.aborted) setMentionItems([]);
+          });
+      }, 120);
+      return () => {
+        window.clearTimeout(timer);
+        controller.abort();
+      };
+    }, [mention?.query, mention?.start, publicApi]);
+
+    const pickMention = (item: MentionSuggestion) => {
+      if (!mention) return;
+      const next = `${content.slice(0, mention.start)}@${item.username} ${content.slice(mention.end)}`;
+      const caret = mention.start + item.username.length + 2;
+      setContent(next);
+      if (variant !== "edit") {
+        const nextDraft = createComposeDraft(
+          next,
+          activeDraftRef.current?.savedAt,
+        );
+        activeDraftRef.current = nextDraft;
+        setActiveDraft(nextDraft);
+      }
+      setMention(null);
+      setMentionItems([]);
+      dirtyRef.current = true;
+      setDirty(true);
+      setError(null);
+      idempotencyKey.current = createIdempotencyKey();
+      window.requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(caret, caret);
+      });
+    };
 
     const replaceMedia = (next: ComposerMediaItem[]) => {
       releaseDiscardedLocalPreviews(mediaItemsRef.current, next);
@@ -201,9 +291,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             });
           }
           clearMedia();
+          setLocation(initialLocation);
+          setLocationChanged(false);
         },
       }),
-      [clearMedia, content, hasUnpublishedChange, site.instanceId, variant],
+      [
+        clearMedia,
+        content,
+        hasUnpublishedChange,
+        initialLocation,
+        site.instanceId,
+        variant,
+      ],
     );
 
     const markMediaEdited = (message: string) => {
@@ -252,16 +351,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       if (
         active ||
         variant !== "inline" ||
-        mediaItemsRef.current.length === 0
+        (mediaItemsRef.current.length === 0 && location === null)
       ) {
         return;
       }
       clearMedia();
+      setLocation(null);
+      setLocationChanged(false);
       if (content === initialContent) {
         dirtyRef.current = false;
         setDirty(false);
       }
-    }, [active, clearMedia, content, initialContent, variant]);
+    }, [active, clearMedia, content, initialContent, location, variant]);
 
     useEffect(() => {
       const instanceId = site.instanceId;
@@ -276,6 +377,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         setDirty(false);
         setError(null);
         clearMedia();
+        setLocation(null);
+        setLocationChanged(false);
       };
       const cancelDraftRemovalRepair = () => {
         if (draftRemovalRepairRef.current !== null) {
@@ -528,12 +631,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         const usages = mediaInput(mediaItemsRef.current);
         setAnnouncement(variant === "edit" ? "正在保存…" : "正在发布…");
         const saved = post
-          ? await api.update(session.csrfToken, post.id, content, usages)
+          ? await api.update(
+              session.csrfToken,
+              post.id,
+              content,
+              usages,
+              locationChanged ? location : undefined,
+            )
           : await api.create(
               session.csrfToken,
               content,
               idempotencyKey.current,
               usages,
+              location ?? undefined,
             );
         allowLeaveRef.current = true;
         dirtyRef.current = false;
@@ -549,6 +659,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         clearMedia();
         if (variant === "inline") {
           setContent("");
+          setLocation(null);
+          setLocationChanged(false);
           idempotencyKey.current = createIdempotencyKey();
           window.setTimeout(() => {
             allowLeaveRef.current = false;
@@ -612,7 +724,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           if (
             !event.currentTarget.contains(event.relatedTarget as Node | null) &&
             content.trim().length === 0 &&
-            mediaItemsRef.current.length === 0
+            mediaItemsRef.current.length === 0 &&
+            location === null
           ) {
             setFocused(false);
           }
@@ -670,6 +783,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 }
                 if (draft) setDraft(null);
                 setContent(event.target.value);
+                setMention(
+                  activeMention(
+                    event.target.value,
+                    event.target.selectionStart ?? event.target.value.length,
+                  ),
+                );
                 dirtyRef.current = true;
                 setDirty(true);
                 setError(null);
@@ -677,6 +796,34 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               }}
               onCompositionEnd={() => undefined}
               onKeyDown={(event) => {
+                if (mentionItems.length > 0 && mention) {
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setMentionActive(
+                      (current) =>
+                        (current +
+                          (event.key === "ArrowDown" ? 1 : -1) +
+                          mentionItems.length) %
+                        mentionItems.length,
+                    );
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setMention(null);
+                    setMentionItems([]);
+                    return;
+                  }
+                  if (
+                    (event.key === "Enter" || event.key === "Tab") &&
+                    !event.metaKey &&
+                    !event.ctrlKey
+                  ) {
+                    event.preventDefault();
+                    pickMention(mentionItems[mentionActive]);
+                    return;
+                  }
+                }
                 if (
                   event.key === "Enter" &&
                   (event.metaKey || event.ctrlKey) &&
@@ -701,6 +848,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               }
               value={content}
             />
+            <MentionSuggestions
+              active={mentionActive}
+              items={mentionItems}
+              onPick={pickMention}
+            />
             <p
               className={styles.composerGuidance}
               id={`${variant}-composer-guidance`}
@@ -714,6 +866,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 {count.toLocaleString("zh-CN")} /{" "}
                 {MAX_CONTENT.toLocaleString("zh-CN")}
               </p>
+            ) : null}
+            {location ? (
+              <div className={styles.selectedLocation}>
+                <Icon name="location" />
+                <span>{location.name}</span>
+                <button
+                  aria-label={`移除位置：${location.name}`}
+                  disabled={pending}
+                  onClick={() => {
+                    setLocation(null);
+                    setLocationChanged(true);
+                    dirtyRef.current = true;
+                    setDirty(true);
+                    setAnnouncement("位置已移除");
+                    idempotencyKey.current = createIdempotencyKey();
+                  }}
+                  type="button"
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
             ) : null}
             <MediaComposer
               disabled={pending}
@@ -733,6 +906,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 </button>
               }
               items={mediaItems}
+              toolbarAction={
+                <LocationPicker
+                  api={api}
+                  disabled={pending || !session}
+                  onChange={(nextLocation) => {
+                    allowLeaveRef.current = false;
+                    setLocation(nextLocation);
+                    setLocationChanged(true);
+                    dirtyRef.current = true;
+                    setDirty(true);
+                    setError(null);
+                    setAnnouncement(
+                      nextLocation
+                        ? `已添加位置：${nextLocation.name}`
+                        : "位置已移除",
+                    );
+                    idempotencyKey.current = createIdempotencyKey();
+                  }}
+                  value={location}
+                />
+              }
               onAdd={(files) => {
                 const next = [...mediaItemsRef.current];
                 for (const file of files) {

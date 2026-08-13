@@ -44,7 +44,7 @@ interface OwnerContextValue {
   api: OwnerApi;
   state: OwnerState;
   session: BrowserOwnerSession | null;
-  login: (token: string) => Promise<void>;
+  login: (credential: string, method?: "password" | "token") => Promise<void>;
   logout: (instanceId: string | null) => Promise<void>;
   expireIfInvalidSession: (error: unknown) => boolean;
   expireAfterTokenRotation: () => void;
@@ -368,8 +368,8 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
   }, [api, clearSession, statusAttempt]);
 
   const login = useCallback(
-    async (token: string) => {
-      const exchanged = await api.exchange(token);
+    async (credential: string, method: "password" | "token" = "password") => {
+      const exchanged = await api.exchange(credential, method);
       const marker = nextMarker(markerRef.current);
       const next = { ...exchanged, ...marker };
       acceptSession(next);

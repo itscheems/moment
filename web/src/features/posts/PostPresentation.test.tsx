@@ -21,6 +21,9 @@ afterEach(() => {
 });
 
 const site: SiteIdentity = {
+  ownerId: "00000000000000000000000000000000",
+  username: "owner",
+  displayName: "Moment",
   title: "乔乔的 Moment",
   bio: "一些正在发生的事",
   timezone: "Asia/Shanghai",
@@ -213,17 +216,17 @@ describe("shared post presentation", () => {
 
     fireEvent.focus(
       screen.getByRole("link", {
-        name: "查看 乔乔的 Moment 的个人资料",
+        name: "查看 Moment 的个人资料",
       }),
     );
 
     expect(
-      await screen.findByRole("heading", { name: "乔乔的 Moment" }),
+      await screen.findByRole("heading", { name: "Moment" }),
     ).toBeInTheDocument();
     expect(screen.getByText("一些正在发生的事")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "查看个人资料" })).toHaveAttribute(
       "href",
-      "/profile",
+      "/@owner",
     );
   });
 
@@ -246,6 +249,7 @@ describe("shared post presentation", () => {
             JSON.stringify({
               data: {
                 initialized: true,
+                password_enabled: false,
                 session_epoch: 1,
                 initialized_at: "2026-08-01T00:00:00Z",
               },
@@ -261,6 +265,9 @@ describe("shared post presentation", () => {
           return new Response(
             JSON.stringify({
               data: {
+                owner_id: site.ownerId,
+                username: site.username,
+                display_name: site.displayName,
                 title: site.title,
                 bio: site.bio,
                 timezone: site.timezone,

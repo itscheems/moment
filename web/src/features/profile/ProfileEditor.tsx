@@ -27,6 +27,8 @@ export function ProfileEditor({
   const { api, session, expireIfInvalidSession } = useOwner();
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(site.title);
+  const [displayName, setDisplayName] = useState(site.displayName);
+  const [username, setUsername] = useState(site.username);
   const [bio, setBio] = useState(site.bio);
   const [avatarId, setAvatarId] = useState(site.avatarMediaId);
   const [coverId, setCoverId] = useState(site.coverMediaId);
@@ -53,6 +55,8 @@ export function ProfileEditor({
     objectURLs.current.forEach((url) => URL.revokeObjectURL(url));
     objectURLs.current = [];
     setTitle(site.title);
+    setDisplayName(site.displayName);
+    setUsername(site.username);
     setBio(site.bio);
     setAvatarId(site.avatarMediaId);
     setCoverId(site.coverMediaId);
@@ -127,6 +131,8 @@ export function ProfileEditor({
 
   const changed =
     title !== site.title ||
+    displayName !== site.displayName ||
+    username !== site.username ||
     bio !== site.bio ||
     avatarId !== site.avatarMediaId ||
     coverId !== site.coverMediaId;
@@ -134,7 +140,10 @@ export function ProfileEditor({
   const uploadFailed = avatarState === "failed" || coverState === "failed";
   const invalid =
     !title.trim() ||
+    !displayName.trim() ||
+    !/^[a-z][a-z0-9_]{2,29}$/.test(username.trim().toLowerCase()) ||
     Array.from(title).length > 120 ||
+    Array.from(displayName).length > 80 ||
     Array.from(bio).length > 500;
 
   const save = async () => {
@@ -142,6 +151,8 @@ export function ProfileEditor({
       return;
     const update: SiteSettingsUpdate = {};
     if (title !== site.title) update.title = title;
+    if (displayName !== site.displayName) update.displayName = displayName;
+    if (username !== site.username) update.username = username;
     if (bio !== site.bio) update.bio = bio;
     if (avatarId !== site.avatarMediaId) update.avatarMediaId = avatarId;
     if (coverId !== site.coverMediaId) update.coverMediaId = coverId;
@@ -317,7 +328,38 @@ export function ProfileEditor({
 
               <div className={styles.fields}>
                 <label>
-                  <span>名称</span>
+                  <span>显示名称</span>
+                  <input
+                    maxLength={80}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    required
+                    value={displayName}
+                  />
+                </label>
+                <label>
+                  <span>用户名</span>
+                  <div className={styles.usernameField}>
+                    <span aria-hidden="true">@</span>
+                    <input
+                      autoCapitalize="none"
+                      maxLength={30}
+                      onChange={(event) =>
+                        setUsername(
+                          event.target.value
+                            .toLowerCase()
+                            .replace(/[^a-z0-9_]/g, ""),
+                        )
+                      }
+                      pattern="[a-z][a-z0-9_]{2,29}"
+                      required
+                      spellCheck={false}
+                      value={username}
+                    />
+                  </div>
+                  <small>唯一公开标识，用于个人资料链接和 @ 提及。</small>
+                </label>
+                <label>
+                  <span>站点标题</span>
                   <input
                     maxLength={120}
                     onChange={(event) => setTitle(event.currentTarget.value)}

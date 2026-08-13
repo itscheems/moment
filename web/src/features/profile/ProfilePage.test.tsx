@@ -12,6 +12,9 @@ const pinnedId = "01K2ABCDEF0123456789ABCDE0";
 const otherId = "01K2ABCDEF0123456789ABCDE1";
 
 const site: SiteIdentity = {
+  ownerId: "00000000000000000000000000000000",
+  username: "owner",
+  displayName: "Moment",
   title: "Moment",
   bio: "",
   timezone: "Asia/Shanghai",
@@ -59,6 +62,7 @@ describe("profile page", () => {
         json({
           data: {
             initialized: true,
+            password_enabled: false,
             session_epoch: 1,
             initialized_at: "2026-08-01T00:00:00Z",
           },
@@ -99,7 +103,7 @@ describe("profile page", () => {
       screen.getByRole("navigation", { name: "个人资料内容" }),
     ).toHaveTextContent("Moment");
     expect(screen.queryByText("媒体与归档")).not.toBeInTheDocument();
-    expect(screen.getByText("@moment")).toBeInTheDocument();
+    expect(screen.getByText("@owner")).toBeInTheDocument();
     expect(screen.getByText("2026年8月加入")).toHaveAttribute(
       "datetime",
       site.instanceInitializedAt,

@@ -14,6 +14,7 @@ import {
   PublicApi,
   PublicApiError,
   type PublicComment,
+  type MentionSuggestion,
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
@@ -41,6 +42,8 @@ import {
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { useOwner } from "../owner/OwnerProvider";
+import { MentionSuggestions } from "../owner/MentionSuggestions";
+import { activeMention, type ActiveMention } from "../owner/mentions";
 import styles from "./Comments.module.css";
 
 const MAX_AUTHOR_NAME = 40;
@@ -243,6 +246,9 @@ function CommentForm({
   const [remaining, setRemaining] = useState(0);
   const [focused, setFocused] = useState(parentId !== null);
   const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>([]);
+  const [mention, setMention] = useState<ActiveMention | null>(null);
+  const [mentionItems, setMentionItems] = useState<MentionSuggestion[]>([]);
+  const [mentionActive, setMentionActive] = useState(0);
   const mediaItemsRef = useRef(mediaItems);
   const mediaUploadsRef = useRef(new Map<string, AbortController>());
   const mountedRef = useRef(true);
@@ -387,6 +393,45 @@ function CommentForm({
     setError(null);
     window.requestAnimationFrame(() => textareaRef.current?.focus());
   }, [authExpired, owner.session]);
+
+  useEffect(() => {
+    if (!mention) {
+      setMentionItems([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void api
+        .mentionSuggestions(mention.query, controller.signal)
+        .then((items) => {
+          if (!controller.signal.aborted) {
+            setMentionItems(items);
+            setMentionActive(0);
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setMentionItems([]);
+        });
+    }, 120);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [api, mention?.query, mention?.start]);
+
+  const pickMention = (item: MentionSuggestion) => {
+    if (!mention) return;
+    const next = `${content.slice(0, mention.start)}@${item.username} ${content.slice(mention.end)}`;
+    const caret = mention.start + item.username.length + 2;
+    setContent(next);
+    setMention(null);
+    setMentionItems([]);
+    setError(null);
+    window.requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(caret, caret);
+    });
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -565,9 +610,43 @@ function CommentForm({
             id={`${formId}-content`}
             onChange={(event) => {
               setContent(event.target.value);
+              setMention(
+                activeMention(
+                  event.target.value,
+                  event.target.selectionStart ?? event.target.value.length,
+                ),
+              );
               setError(null);
             }}
             onKeyDown={(event) => {
+              if (mentionItems.length > 0 && mention) {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setMentionActive(
+                    (current) =>
+                      (current +
+                        (event.key === "ArrowDown" ? 1 : -1) +
+                        mentionItems.length) %
+                      mentionItems.length,
+                  );
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setMention(null);
+                  setMentionItems([]);
+                  return;
+                }
+                if (
+                  (event.key === "Enter" || event.key === "Tab") &&
+                  !event.metaKey &&
+                  !event.ctrlKey
+                ) {
+                  event.preventDefault();
+                  pickMention(mentionItems[mentionActive]);
+                  return;
+                }
+              }
               if (
                 event.key === "Enter" &&
                 (event.metaKey || event.ctrlKey) &&
@@ -587,6 +666,11 @@ function CommentForm({
             required
             rows={parentId ? 1 : 2}
             value={content}
+          />
+          <MentionSuggestions
+            active={mentionActive}
+            items={mentionItems}
+            onPick={pickMention}
           />
           <input
             aria-hidden="true"
@@ -909,7 +993,7 @@ function CommentItem({
   const root = comment.parentId === null;
   const authorName =
     comment.authorKind === "owner"
-      ? site.title.trim() || comment.authorName
+      ? site.displayName.trim() || site.title.trim() || comment.authorName
       : comment.authorName;
   return (
     <li
@@ -924,7 +1008,7 @@ function CommentItem({
             <InternalLink
               aria-label={`查看 ${authorName} 的个人资料`}
               className={styles.commentAvatar}
-              href="/profile"
+              href={`/@${site.username}`}
             >
               <SiteAvatar site={site} />
             </InternalLink>
@@ -937,7 +1021,10 @@ function CommentItem({
         <header className={styles.commentByline}>
           {comment.authorKind === "owner" ? (
             <SiteIdentityPreview site={site}>
-              <InternalLink className={styles.commentAuthor} href="/profile">
+              <InternalLink
+                className={styles.commentAuthor}
+                href={`/@${site.username}`}
+              >
                 {authorName}
               </InternalLink>
             </SiteIdentityPreview>
@@ -955,6 +1042,7 @@ function CommentItem({
         <MarkdownContent
           className={styles.commentMarkdown}
           html={comment.contentHtml}
+          mentionUsername={site.username}
         />
         <ImageGrid media={comment.media} />
         <footer className={styles.commentActions}>
@@ -1166,7 +1254,9 @@ export function CommentThread({
                     onReply={(root, target) => {
                       const targetAuthor =
                         target.authorKind === "owner"
-                          ? site.title.trim() || target.authorName
+                          ? site.displayName.trim() ||
+                            site.title.trim() ||
+                            target.authorName
                           : target.authorName;
                       setReply({
                         rootId: root.id,

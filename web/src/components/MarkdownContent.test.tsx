@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { MarkdownContent } from "./MarkdownContent";
@@ -40,5 +40,23 @@ describe("MarkdownContent", () => {
     expect(code).toHaveTextContent("plain & safe");
     expect(code).not.toHaveAttribute("data-highlighted");
     expect(code?.querySelector("span")).toBeNull();
+  });
+
+  it("links exact owner mentions without touching code or similar handles", () => {
+    render(
+      <MarkdownContent
+        html={
+          "<p>你好 @owner，别误连 @owner_two。</p><pre><code>@owner</code></pre>"
+        }
+        mentionUsername="owner"
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "@owner" })).toHaveAttribute(
+      "href",
+      "/@owner",
+    );
+    expect(screen.getByText(/别误连 @owner_two/)).toBeInTheDocument();
+    expect(document.querySelector("code a")).toBeNull();
   });
 });

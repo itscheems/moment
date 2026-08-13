@@ -19,6 +19,9 @@ function json(body: unknown, status = 200): Response {
 
 const siteEnvelope = {
   data: {
+    owner_id: "00000000000000000000000000000000",
+    username: "owner",
+    display_name: "乔乔",
     title: "乔乔的 Moment",
     bio: "沿着日常留下坐标",
     timezone: "Asia/Shanghai",
@@ -243,12 +246,12 @@ describe("App shell and public routes", () => {
 
     expect(
       await screen.findByRole("region", {
-        name: "乔乔的 Moment 的个人资料",
+        name: "乔乔 的个人资料",
       }),
     ).toBeInTheDocument();
     expect(await screen.findByText("个人资料里的 Moment")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { level: 1, name: "乔乔的 Moment" }),
+      screen.getByRole("heading", { level: 2, name: "乔乔" }),
     ).toBeInTheDocument();
     expect(
       screen.getAllByRole("link", { name: "个人资料" })[0],

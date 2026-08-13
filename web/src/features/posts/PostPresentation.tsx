@@ -49,7 +49,7 @@ export function PostPresentation({
   contentHtml?: string;
 }) {
   const { navigate } = useNavigation();
-  const title = site.title.trim() || "Moment";
+  const title = site.displayName.trim() || site.title.trim() || "Moment";
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
   const collapsed = !detail && longInTimeline(post);
   const detailHref = `/m/${encodeURIComponent(post.id)}`;
@@ -72,7 +72,7 @@ export function PostPresentation({
         <InternalLink
           aria-label={`查看 ${title} 的个人资料`}
           className={styles.identityLink}
-          href="/profile"
+          href={`/@${site.username}`}
         >
           <SiteAvatar eager={detail} site={site} />
         </InternalLink>
@@ -91,8 +91,11 @@ export function PostPresentation({
         <SiteIdentityPreview
           site={site}
           children={
-            <InternalLink className={styles.nameLink} href="/profile">
-              <strong>{title}</strong>
+            <InternalLink
+              className={styles.nameLink}
+              href={`/@${site.username}`}
+            >
+              <strong>{site.displayName}</strong>
             </InternalLink>
           }
         />
@@ -156,7 +159,17 @@ export function PostPresentation({
           <MarkdownContent
             className={styles.markdown}
             html={contentHtml ?? post.contentHtml}
+            mentionUsername={site.username}
           />
+          {post.location ? (
+            <p
+              className={styles.postLocation}
+              title={post.location.displayName}
+            >
+              <Icon name="location" />
+              <span>{post.location.name}</span>
+            </p>
+          ) : null}
           <ImageGrid media={post.media} />
           <p className={styles.publishedLine}>
             <span>发布于</span>
@@ -200,7 +213,14 @@ export function PostPresentation({
         <MarkdownContent
           className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
           html={contentHtml ?? post.contentHtml}
+          mentionUsername={site.username}
         />
+        {post.location ? (
+          <p className={styles.postLocation} title={post.location.displayName}>
+            <Icon name="location" />
+            <span>{post.location.name}</span>
+          </p>
+        ) : null}
         <ImageGrid media={post.media} />
         {collapsed ? (
           <InternalLink

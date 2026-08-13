@@ -1,4 +1,4 @@
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
@@ -19,33 +19,57 @@ export function OwnerLogin({
   embedded?: boolean;
 }) {
   const { navigate } = useNavigation();
-  const { state, login, logout, retryStatus } = useOwner();
-  const [token, setToken] = useState("");
-  const [showToken, setShowToken] = useState(false);
+  const { api, state, login, logout, retryStatus } = useOwner();
+  const [method, setMethod] = useState<"password" | "token">("password");
+  const [credential, setCredential] = useState("");
+  const [showCredential, setShowCredential] = useState(false);
   const [pending, setPending] = useState(false);
+  const [optionsPending, setOptionsPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const pendingRef = useRef(false);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    void api
+      .loginOptions(controller.signal)
+      .then((options) => {
+        if (!controller.signal.aborted)
+          setMethod(options.passwordEnabled ? "password" : "token");
+      })
+      .catch(() => {
+        // Older instances do not expose login options yet. Keep their token
+        // login path usable instead of presenting a password form that cannot
+        // succeed against that server.
+        if (!controller.signal.aborted) setMethod("token");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setOptionsPending(false);
+      });
+    return () => controller.abort();
+  }, [api]);
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!token || pendingRef.current) return;
+    if (!credential || pendingRef.current) return;
     pendingRef.current = true;
     setPending(true);
     setError(null);
     try {
-      await login(token);
-      setToken("");
-      if (!embedded) {
-        const returnTo = safeReturnPath(
-          new URLSearchParams(window.location.search).get("return"),
+      await login(credential, method);
+      setCredential("");
+      if (!embedded)
+        navigate(
+          safeReturnPath(
+            new URLSearchParams(window.location.search).get("return"),
+          ),
         );
-        navigate(returnTo);
-      }
     } catch (nextError) {
       setError(
         nextError instanceof PublicApiError && nextError.status === 401
-          ? "这个所有者令牌无效，请检查后重试。"
-          : "登录没有完成。令牌仍只留在当前输入框中，可以安全重试。",
+          ? method === "password"
+            ? "密码不正确，请重试。"
+            : "这个所有者令牌无效，请检查后重试。"
+          : "登录没有完成。输入内容仍只留在当前输入框中，可以安全重试。",
       );
     } finally {
       pendingRef.current = false;
@@ -69,16 +93,14 @@ export function OwnerLogin({
     }
   };
 
-  if (state === "checking") {
+  if (state === "checking")
     return (
       <section aria-busy="true" className={styles.loginGate}>
         <p className={styles.eyebrow}>正在确认身份</p>
         <h2>检查当前会话…</h2>
       </section>
     );
-  }
-
-  if (state === "owner") {
+  if (state === "owner")
     return (
       <section className={styles.loginGate}>
         <p className={styles.eyebrow}>所有者会话</p>
@@ -95,18 +117,23 @@ export function OwnerLogin({
         </button>
       </section>
     );
-  }
 
   return (
     <section className={styles.loginGate}>
       <p className={styles.eyebrow}>
         {state === "expired" ? "会话已过期" : "所有者登录"}
       </p>
-      <h2>{state === "expired" ? "重新登录" : "输入所有者令牌"}</h2>
-      <p>
+      <h2>
         {state === "expired"
-          ? "当前文字仍保留在编辑器中。重新输入令牌即可继续。"
-          : "这不是账号密码。令牌在初始化或轮换时生成，只用于登录当前浏览器。"}
+          ? "重新登录"
+          : method === "password"
+            ? `欢迎回来，${site.displayName}`
+            : "使用所有者令牌"}
+      </h2>
+      <p>
+        {method === "password"
+          ? "输入此实例的所有者密码。Moment 不需要公开注册、邮箱或账号选择。"
+          : "令牌用于初始化、CLI 和恢复；只在尚未设置密码或紧急访问时使用。"}
       </p>
       {state === "unavailable" ? (
         <div className={styles.inlineNotice} role="alert">
@@ -120,38 +147,58 @@ export function OwnerLogin({
         className={styles.loginForm}
         onSubmit={(event) => void submit(event)}
       >
-        <label htmlFor="owner-token">所有者令牌</label>
+        <label htmlFor="owner-credential">
+          {method === "password" ? "密码" : "所有者令牌"}
+        </label>
         <div className={styles.tokenField}>
           <input
             autoCapitalize="none"
-            autoComplete="off"
-            id="owner-token"
-            name="owner-token"
-            onChange={(event) => setToken(event.target.value)}
+            autoComplete={method === "password" ? "current-password" : "off"}
+            id="owner-credential"
+            onChange={(event) => setCredential(event.target.value)}
             required
             spellCheck={false}
-            type={showToken ? "text" : "password"}
-            value={token}
+            type={showCredential ? "text" : "password"}
+            value={credential}
           />
           <button
-            aria-pressed={showToken}
-            onClick={() => setShowToken((current) => !current)}
+            aria-pressed={showCredential}
+            onClick={() => setShowCredential((current) => !current)}
             type="button"
           >
-            {showToken ? "隐藏" : "显示"}
+            {showCredential ? "隐藏" : "显示"}
           </button>
         </div>
         <small>
-          本地开发时，启动命令会显示令牌，并保存到
-          <code>.moment-local/owner.token</code>。
+          {method === "password" ? (
+            "密码只发送到当前 Moment 实例，不会进入帖子导出。"
+          ) : (
+            <>
+              本地开发令牌保存在 <code>.moment-local/owner.token</code>。
+            </>
+          )}
         </small>
         {error ? <p role="alert">{error}</p> : null}
         <button
           className={styles.primaryButton}
-          disabled={!token || pending}
+          disabled={!credential || pending || optionsPending}
           type="submit"
         >
           {pending ? "正在登录…" : "登录"}
+        </button>
+        <button
+          className={styles.loginMethodSwitch}
+          disabled={pending}
+          onClick={() => {
+            setMethod((current) =>
+              current === "password" ? "token" : "password",
+            );
+            setCredential("");
+            setError(null);
+          }}
+          type="button"
+        >
+          {method === "password" ? "改用所有者令牌" : "改用密码"}
         </button>
       </form>
     </section>

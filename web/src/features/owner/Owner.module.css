@@ -140,6 +140,18 @@
   font-size: var(--text-sm);
 }
 
+.loginMethodSwitch {
+  justify-self: center;
+  color: var(--accent);
+  background: transparent;
+  font-size: var(--text-sm);
+}
+
+.loginMethodSwitch:hover:not(:disabled),
+.loginMethodSwitch:focus-visible {
+  background: var(--accent-soft);
+}
+
 .inlineNotice {
   display: flex;
   flex-wrap: wrap;
@@ -194,8 +206,63 @@
 }
 
 .composerForm {
+  position: relative;
   display: grid;
   margin-block-start: 0;
+}
+
+.mentionSuggestions {
+  position: absolute;
+  z-index: var(--layer-popover);
+  inset-inline: 0;
+  inset-block-start: calc(100% - 0.5rem);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+
+.mentionSuggestion {
+  inline-size: 100%;
+  min-block-size: 4.25rem;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  border: 0;
+  border-radius: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  text-align: start;
+}
+
+.mentionSuggestion:hover,
+.mentionSuggestion[aria-selected="true"] {
+  background: var(--surface-hover);
+}
+
+.mentionSuggestion > :first-child {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+}
+
+.mentionSuggestion > span,
+.mentionSuggestion strong,
+.mentionSuggestion small {
+  min-inline-size: 0;
+  display: block;
+}
+
+.mentionSuggestion small {
+  color: var(--text-secondary);
+}
+
+.mentionSuggestion em {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-style: normal;
 }
 
 .composerForm > label {
@@ -525,6 +592,359 @@
   margin-block-start: var(--space-6);
 }
 
+.locationTrigger {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.locationTrigger:hover:not(:disabled),
+.locationTrigger:focus-visible,
+.locationTrigger[data-popup-open] {
+  background: var(--accent-soft);
+}
+
+.locationTrigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.locationTrigger svg {
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+}
+
+.selectedLocation {
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  margin-block: 0 var(--space-2);
+  padding: 0.32rem 0.45rem 0.32rem 0.65rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.selectedLocation > svg,
+.selectedLocation button svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.selectedLocation > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectedLocation button {
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  cursor: pointer;
+}
+
+.selectedLocation button:hover,
+.selectedLocation button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.locationViewport {
+  position: fixed;
+  z-index: calc(var(--layer-popover) + 1);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.locationPopup {
+  inline-size: min(100%, 34rem);
+  max-block-size: min(44rem, calc(100dvh - 2rem));
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-dialog) var(--ease-out),
+    transform var(--motion-dialog) var(--ease-out);
+}
+
+.locationPopup[data-starting-style],
+.locationPopup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.97) translateY(0.25rem);
+}
+
+.locationHeader {
+  min-block-size: 3.5rem;
+  display: grid;
+  grid-template-columns: 2.75rem 1fr 2.75rem;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-2);
+}
+
+.locationHeader h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.locationClose,
+.locationRemove,
+.locationBack,
+.locationFooter button {
+  border: 0;
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.locationClose {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  padding: 0;
+}
+
+.locationClose:hover,
+.locationClose:focus-visible {
+  background: var(--surface-hover);
+}
+
+.locationClose svg {
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+}
+
+.locationRemove {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.locationSearch {
+  min-block-size: 2.75rem;
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: 999px;
+  margin: 0 var(--space-4) var(--space-2);
+  padding-inline: var(--space-4);
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+}
+
+.locationSearch svg {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+}
+
+.locationSearch input {
+  min-inline-size: 0;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+}
+
+.locationSearch:focus-within {
+  box-shadow: 0 0 0 1px var(--accent);
+  color: var(--accent);
+}
+
+.locationNearby,
+.locationResult {
+  inline-size: 100%;
+  min-block-size: 4rem;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  border: 0;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-primary);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+
+.locationNearby:hover:not(:disabled),
+.locationNearby:focus-visible,
+.locationResult:hover,
+.locationResult:focus-visible {
+  background: var(--surface-hover);
+}
+
+.locationNearby > span:first-child,
+.locationResult > span:first-child {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.locationNearby svg,
+.locationResult svg {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+}
+
+.locationNearby strong,
+.locationNearby small,
+.locationResult strong,
+.locationResult small {
+  display: block;
+}
+
+.locationNearby strong,
+.locationResult strong {
+  overflow: hidden;
+  font-size: 0.9375rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locationNearby small,
+.locationResult small {
+  margin-block-start: 0.15rem;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locationResults {
+  max-block-size: 22rem;
+  overflow-y: auto;
+  border-block-start: 1px solid var(--border-subtle);
+}
+
+.locationState,
+.locationError {
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.locationError {
+  padding-block: var(--space-3);
+  color: var(--danger);
+}
+
+.locationFooter {
+  min-block-size: 3.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-block-start: 1px solid var(--border-subtle);
+  padding-inline: var(--space-4);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.locationFooter button {
+  min-block-size: var(--target-size);
+  padding: 0;
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.locationFooter a {
+  color: inherit;
+}
+
+.locationManual {
+  display: grid;
+  gap: var(--space-4);
+  border-block-start: 1px solid var(--border-subtle);
+  padding: var(--space-4);
+}
+
+.locationBack {
+  inline-size: fit-content;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  color: var(--accent);
+}
+
+.locationBack svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.locationManual label,
+.locationManual label span {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.locationManual input {
+  min-block-size: 3rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface);
+  font: inherit;
+}
+
+.locationManual input:focus {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.locationManual p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.locationManual > button:last-child {
+  justify-self: end;
+}
+
 @media (max-width: 719px) {
   .loginGate {
     padding: var(--space-8) var(--space-5);
@@ -565,12 +985,34 @@
   .dialogActions button {
     inline-size: 100%;
   }
+
+  .locationViewport {
+    place-items: end center;
+    padding: 0;
+  }
+
+  .locationPopup {
+    inline-size: 100%;
+    max-block-size: min(85dvh, 44rem);
+    border-inline: 0;
+    border-block-end: 0;
+    border-radius: 1.25rem 1.25rem 0 0;
+  }
+
+  .locationPopup[data-starting-style],
+  .locationPopup[data-ending-style] {
+    transform: translateY(1.25rem);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ownerMenuPopup,
   .dialogBackdrop,
   .dialogPopup {
+    transition: none;
+  }
+
+  .locationPopup {
     transition: none;
   }
 }

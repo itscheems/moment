@@ -52,7 +52,7 @@ export function SiteIdentityPreview({
   children: ReactElement;
   site: SiteIdentity;
 }) {
-  const title = site.title.trim() || "Moment";
+  const title = site.displayName.trim() || site.title.trim() || "Moment";
   return (
     <PreviewCard.Root>
       <PreviewCard.Trigger closeDelay={160} delay={450} render={children} />
@@ -72,10 +72,11 @@ export function SiteIdentityPreview({
                 <SiteAvatar eager site={site} />
               </div>
               <h2>{title}</h2>
+              <p>@{site.username}</p>
               {site.bio.trim() ? <p>{site.bio.trim()}</p> : null}
               <InternalLink
                 className={styles.identityProfileLink}
-                href="/profile"
+                href={`/@${site.username}`}
               >
                 查看个人资料
               </InternalLink>

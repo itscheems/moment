@@ -22,6 +22,9 @@ const createdId = "01K2ABCDEF0123456789ABCDE3";
 const sessionKey = "moment.owner.session.v1";
 
 const site: SiteIdentity = {
+  ownerId: "00000000000000000000000000000000",
+  username: "owner",
+  displayName: "Moment",
   title: "乔乔的 Moment",
   bio: "沿着日常留下坐标",
   timezone: "Asia/Shanghai",
@@ -280,24 +283,24 @@ describe("public comment thread", () => {
     expect(screen.getAllByRole("button", { name: /^回复 / })).toHaveLength(2);
 
     const replyArticle = screen.getByRole("article", {
-      name: "乔乔的 Moment的回复",
+      name: "Moment的回复",
     });
     fireEvent.click(
       within(replyArticle).getByRole("button", {
-        name: "回复 乔乔的 Moment",
+        name: "回复 Moment",
       }),
     );
     const replyForm = screen.getByRole("form", {
-      name: "回复 乔乔的 Moment",
+      name: "回复 Moment",
     });
-    expect(
-      screen.getAllByRole("form", { name: "回复 乔乔的 Moment" }),
-    ).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "回复 Moment" })).toHaveLength(
+      1,
+    );
     expect(replyForm.closest("li")?.previousElementSibling).toHaveAttribute(
       "data-comment-id",
       replyId,
     );
-    expect(replyForm).toHaveTextContent("正在回复 @乔乔的 Moment");
+    expect(replyForm).toHaveTextContent("正在回复 @Moment");
     fireEvent.change(within(replyForm).getByLabelText("显示名"), {
       target: { value: "后来的人" },
     });
@@ -688,6 +691,7 @@ describe("public comment thread", () => {
       if (url === "/api/v1/owner/status") {
         return success({
           initialized: true,
+          password_enabled: false,
           session_epoch: 1,
           initialized_at: "2026-08-01T00:00:00Z",
         });
@@ -758,6 +762,7 @@ describe("public comment thread", () => {
         if (url === "/api/v1/owner/status") {
           return success({
             initialized: true,
+            password_enabled: false,
             session_epoch: 1,
             initialized_at: "2026-08-01T00:00:00Z",
           });
@@ -826,6 +831,7 @@ describe("public comment thread", () => {
       if (url === "/api/v1/owner/status") {
         return success({
           initialized: true,
+          password_enabled: false,
           session_epoch: 1,
           initialized_at: "2026-08-01T00:00:00Z",
         });
@@ -845,7 +851,7 @@ describe("public comment thread", () => {
 
     await screen.findByText("已有一级回复");
     expect(screen.getAllByText("所有者")).toHaveLength(2);
-    expect(screen.getByText("乔乔的 Moment")).toBeInTheDocument();
+    expect(screen.getByText("Moment")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "删除" })[0]);
     expect(await screen.findByRole("dialog")).toHaveTextContent(
       "下面的 1 条回复",
@@ -869,6 +875,7 @@ describe("public comment thread", () => {
       if (url === "/api/v1/owner/status") {
         return success({
           initialized: true,
+          password_enabled: false,
           session_epoch: 1,
           initialized_at: "2026-08-01T00:00:00Z",
         });
@@ -924,6 +931,7 @@ describe("public comment thread", () => {
       if (url === "/api/v1/owner/status") {
         return success({
           initialized: true,
+          password_enabled: false,
           session_epoch: 1,
           initialized_at: "2026-08-01T00:00:00Z",
         });
