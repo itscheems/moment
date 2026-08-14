@@ -186,7 +186,7 @@
 .inlineComposer .newTick {
   align-self: stretch;
   place-items: start center;
-  padding-block-start: var(--space-1);
+  padding-block-start: var(--space-3);
 }
 
 .pageComposer {
