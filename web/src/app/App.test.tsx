@@ -185,6 +185,102 @@ describe("App shell and public routes", () => {
     expect(document.title).toBe("乔乔的 Moment");
   });
 
+  it("starts the timeline while site identity is still pending and does not refetch after identity arrives", async () => {
+    const item = post("01K2ABCDEF0123456789ABCDE0", "身份之前已经可读");
+    let resolveSite: ((response: Response) => void) | null = null;
+    let siteSettled = false;
+    let timelineRequests = 0;
+    const delayedSite = new Promise<Response>((resolve) => {
+      resolveSite = resolve;
+    });
+    preauthenticate();
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return delayedSite;
+      if (url === "/api/v1/owner/status") {
+        return json(ownerStatusEnvelope());
+      }
+      if (url.startsWith("/api/v1/posts?")) {
+        timelineRequests += 1;
+        return json(timelineEnvelope([item]));
+      }
+      return json({}, 404);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByText("身份之前已经可读")).toBeInTheDocument(),
+    );
+    expect(
+      document.querySelector('section[aria-label="发布 Moment"]'),
+    ).not.toBeInTheDocument();
+    expect(resolveSite).not.toBeNull();
+    expect(siteSettled).toBe(false);
+    expect(timelineRequests).toBe(1);
+
+    await act(async () => {
+      siteSettled = true;
+      resolveSite?.(json(siteEnvelope));
+      await delayedSite;
+    });
+    await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
+    await waitFor(() =>
+      expect(
+        document.querySelector('section[aria-label="发布 Moment"]'),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("身份之前已经可读")).toBeInTheDocument();
+    expect(timelineRequests).toBe(1);
+  });
+
+  it("keeps independently loaded content readable while identity retry repairs the shell", async () => {
+    const item = post("01K2ABCDEF0123456789ABCDE0", "资料失败也能阅读");
+    let siteRequests = 0;
+    let timelineRequests = 0;
+    preauthenticate();
+    installApi(async (url) => {
+      if (url === "/api/v1/site") {
+        siteRequests += 1;
+        if (siteRequests === 1) throw new Error("site unavailable");
+        return json(siteEnvelope);
+      }
+      if (url === "/api/v1/owner/status") {
+        return json(ownerStatusEnvelope());
+      }
+      if (url.startsWith("/api/v1/posts?")) {
+        timelineRequests += 1;
+        return json(timelineEnvelope([item]));
+      }
+      return json({}, 404);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByText("资料失败也能阅读")).toBeInTheDocument(),
+    );
+    const identityError = await screen.findByRole("alert");
+    expect(identityError).toHaveTextContent(
+      "站点资料没有加载完成，暂时使用默认身份。",
+    );
+    expect(
+      document.querySelector('section[aria-label="发布 Moment"]'),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "重试资料",
+      }),
+    );
+
+    await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
+    await waitFor(() =>
+      expect(
+        document.querySelector('section[aria-label="发布 Moment"]'),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByText("资料失败也能阅读")).toBeInTheDocument();
+    expect(siteRequests).toBe(2);
+    expect(timelineRequests).toBe(1);
+  });
+
   it("keeps Owner access in the mobile account menu and restores trigger focus", async () => {
     render(<App />);
     const trigger = document.querySelector<HTMLButtonElement>(

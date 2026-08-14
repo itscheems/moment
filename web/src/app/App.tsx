@@ -5,7 +5,6 @@ import { PublicApi, type SiteIdentity } from "../api/public";
 import { AppShell } from "../components/AppShell";
 import { ShellState } from "../components/ShellState";
 import { DetailPage } from "../features/timeline/DetailPage";
-import { TimelineLoading } from "../features/timeline/PublicStates";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { Composer, type ComposerHandle } from "../features/owner/Composer";
 import { EditPage } from "../features/owner/EditPage";
@@ -110,8 +109,9 @@ function PublicApp() {
   );
   const overlayComposer = useRef<ComposerHandle>(null);
   const [composeExitOpen, setComposeExitOpen] = useState(false);
+  const siteIdentityReady = !siteLoading && !siteError;
 
-  useDocumentScrollLock(overlayCompose);
+  useDocumentScrollLock(overlayCompose && siteIdentityReady);
 
   const closeOverlayComposer = () => {
     location.goBack(`${displayLocation.pathname}${displayLocation.search}`);
@@ -167,6 +167,7 @@ function PublicApp() {
     };
     const newMoment = (event: KeyboardEvent) => {
       if (
+        !siteIdentityReady ||
         owner.state !== "owner" ||
         event.defaultPrevented ||
         event.key.toLowerCase() !== "n" ||
@@ -196,7 +197,7 @@ function PublicApp() {
       document.removeEventListener("compositionend", endComposition);
       window.removeEventListener("keydown", newMoment);
     };
-  }, [location, owner.state]);
+  }, [location, owner.state, siteIdentityReady]);
 
   useEffect(() => {
     let composing = false;
@@ -259,13 +260,13 @@ function PublicApp() {
     route.id === "search" || route.id === "archive"
       ? discoveryYears
       : memoryYears;
-
   return (
     <>
       <AppShell
         memoryYears={shellYears}
         ownerSettingsAvailable={
-          owner.state === "owner" || owner.state === "expired"
+          siteIdentityReady &&
+          (owner.state === "owner" || owner.state === "expired")
         }
         route={route}
         site={site}
@@ -282,10 +283,10 @@ function PublicApp() {
             </button>
           </div>
         ) : null}
-        {siteLoading ? <TimelineLoading /> : null}
-        {!siteLoading && hasTimeline ? (
+        {hasTimeline ? (
           <div hidden={route.id !== "home"}>
-            {!mobileViewport &&
+            {siteIdentityReady &&
+            !mobileViewport &&
             (owner.state === "owner" || owner.state === "expired") ? (
               <Composer
                 active={route.id === "home"}
@@ -296,47 +297,47 @@ function PublicApp() {
             <TimelinePage
               api={api}
               initialSearch={initialHomeSearch.current}
-              onYearsChange={setMemoryYears}
+              onYearsChange={siteIdentityReady ? setMemoryYears : undefined}
               onSiteChanged={setSite}
               site={site}
-              owner={owner.state === "owner"}
+              owner={siteIdentityReady && owner.state === "owner"}
             />
           </div>
         ) : null}
-        {!siteLoading && route.id === "detail" ? (
+        {route.id === "detail" ? (
           <DetailPage
             api={api}
             id={detailId(displayLocation.pathname)}
-            owner={owner.state === "owner"}
+            owner={siteIdentityReady && owner.state === "owner"}
             onSiteChanged={setSite}
             site={site}
           />
         ) : null}
-        {!siteLoading && route.id === "search" ? (
+        {route.id === "search" ? (
           <SearchPage
             api={api}
             key={routeSearchKey(displayLocation.search)}
-            onYearsChange={setDiscoveryYears}
+            onYearsChange={siteIdentityReady ? setDiscoveryYears : undefined}
             onSiteChanged={setSite}
-            owner={owner.state === "owner"}
+            owner={siteIdentityReady && owner.state === "owner"}
             search={displayLocation.search}
             site={site}
           />
         ) : null}
-        {!siteLoading && route.id === "archive" ? (
+        {route.id === "archive" ? (
           <ArchivePage
             api={api}
             key={routeSearchKey(displayLocation.search)}
-            onYearsChange={setDiscoveryYears}
-            owner={owner.state === "owner"}
+            onYearsChange={siteIdentityReady ? setDiscoveryYears : undefined}
+            owner={siteIdentityReady && owner.state === "owner"}
             search={displayLocation.search}
             site={site}
           />
         ) : null}
-        {!siteLoading && route.id === "profile" && profileExists ? (
+        {siteIdentityReady && route.id === "profile" && profileExists ? (
           <ProfilePage api={api} onSiteSaved={setSite} site={site} />
         ) : null}
-        {!siteLoading && route.id === "profile" && !profileExists ? (
+        {siteIdentityReady && route.id === "profile" && !profileExists ? (
           <ShellState
             route={{
               id: "not-found",
@@ -347,17 +348,17 @@ function PublicApp() {
             state={null}
           />
         ) : null}
-        {!siteLoading && route.id === "owner-login" ? (
+        {siteIdentityReady && route.id === "owner-login" ? (
           <OwnerLogin site={site} />
         ) : null}
-        {!siteLoading && route.id === "owner-compose" ? (
+        {siteIdentityReady && route.id === "owner-compose" ? (
           owner.state === "owner" || owner.state === "expired" ? (
             <Composer site={site} variant="page" />
           ) : (
             <OwnerLogin embedded site={site} />
           )
         ) : null}
-        {!siteLoading && route.id === "owner-edit" ? (
+        {siteIdentityReady && route.id === "owner-edit" ? (
           owner.state === "owner" || owner.state === "expired" ? (
             <EditPage
               api={api}
@@ -368,7 +369,7 @@ function PublicApp() {
             <OwnerLogin embedded site={site} />
           )
         ) : null}
-        {!siteLoading && route.id === "owner-settings" ? (
+        {siteIdentityReady && route.id === "owner-settings" ? (
           owner.state === "owner" || owner.state === "expired" ? (
             <SettingsPage onSaved={setSite} site={site} />
           ) : (
@@ -379,7 +380,7 @@ function PublicApp() {
           <ShellState route={route} state={state} />
         ) : null}
       </AppShell>
-      {overlayCompose ? (
+      {overlayCompose && siteIdentityReady ? (
         <Dialog.Root
           onOpenChange={(open) => {
             if (!open) requestOverlayComposerClose();
