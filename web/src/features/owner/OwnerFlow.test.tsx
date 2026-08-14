@@ -1749,6 +1749,9 @@ describe("owner composing flow", () => {
     expect(
       await screen.findByRole("heading", { name: "删除这段 Moment？" }),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "保留" })).toHaveFocus(),
+    );
     fireEvent.keyDown(document.body, { key: "n" });
     expect(window.location.pathname).toBe("/");
     fireEvent.click(screen.getByRole("button", { name: "保留" }));

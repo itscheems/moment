@@ -747,6 +747,7 @@
   display: grid;
   place-items: center;
   padding: var(--space-4);
+  overscroll-behavior: contain;
 }
 
 .dialogPopup {
@@ -765,11 +766,11 @@
 
 .replyDialogPopup {
   inline-size: min(100%, 39rem);
-  min-block-size: min(36rem, calc(100dvh - 2rem));
-  max-block-size: min(90vh, 48rem);
+  max-block-size: min(90dvh, 48rem);
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border-subtle);
   border-radius: 1.25rem;
   color: var(--text-primary);
@@ -777,14 +778,18 @@
   box-shadow: var(--shadow-popover);
   transform-origin: center;
   transition:
-    opacity var(--motion-dialog) var(--ease-out),
-    transform var(--motion-dialog) var(--ease-out);
+    opacity var(--motion-content) var(--ease-out),
+    transform var(--motion-content) var(--ease-out);
 }
 
 .replyDialogPopup[data-starting-style],
 .replyDialogPopup[data-ending-style] {
   opacity: 0;
-  transform: scale(0.96);
+  transform: translateY(0.35rem) scale(0.97);
+}
+
+.replyDialogPopup[data-ending-style] {
+  transition-duration: var(--motion-dialog);
 }
 
 .replyDialogHeader {
@@ -878,10 +883,6 @@
 .replyDialogPopup > .formSurface {
   border-block-end: 0;
   padding-block-start: var(--space-2);
-}
-
-.replyDialogPopup .commentForm textarea {
-  min-block-size: 8rem;
 }
 
 @keyframes comment-reveal-target {

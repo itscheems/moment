@@ -39,6 +39,7 @@ export function DetailPage({
   const [loading, setLoading] = useState(true);
   const [replyDialogOpen, setReplyDialogOpen] = useState(false);
   const activeRequest = useRef<AbortController | null>(null);
+  const replyTriggerRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
     activeRequest.current?.abort();
@@ -77,7 +78,10 @@ export function DetailPage({
       <PostPresentation
         detail
         onDeleted={() => navigate("/")}
-        onReply={() => setReplyDialogOpen(true)}
+        onReply={(event) => {
+          replyTriggerRef.current = event.currentTarget;
+          setReplyDialogOpen(true);
+        }}
         onSiteChanged={onSiteChanged}
         owner={owner}
         post={post}
@@ -90,6 +94,7 @@ export function DetailPage({
         postId={post.id}
         post={post}
         replyDialogOpen={replyDialogOpen}
+        replyDialogTriggerRef={replyTriggerRef}
         site={site}
       />
     </>

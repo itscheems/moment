@@ -8,6 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -243,6 +244,29 @@ function renderThread(
   );
 }
 
+function ReplyDialogHarness() {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const apiRef = useRef(new PublicApi());
+
+  return (
+    <>
+      <button ref={triggerRef} onClick={() => setOpen(true)} type="button">
+        打开回复窗口
+      </button>
+      <CommentThread
+        api={apiRef.current}
+        onReplyDialogOpenChange={setOpen}
+        post={post}
+        postId={postId}
+        replyDialogOpen={open}
+        replyDialogTriggerRef={triggerRef}
+        site={site}
+      />
+    </>
+  );
+}
+
 describe("public comment thread", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
@@ -355,6 +379,69 @@ describe("public comment thread", () => {
     expect(document.getElementById("top-level-comment-content")).not.toBe(
       within(dialog).getByLabelText("回复内容"),
     );
+    expect(within(dialog).getByLabelText("回复内容")).toHaveFocus();
+    expect(
+      within(dialog).getByRole("button", { name: "关闭回复窗口" }),
+    ).toBeInTheDocument();
+  });
+
+  it("locks the document and restores one reply trigger through every dismissal path", async () => {
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+    });
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(420);
+    render(
+      <NavigationProvider>
+        <OwnerProvider>
+          <ReplyDialogHarness />
+        </OwnerProvider>
+      </NavigationProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "打开回复窗口" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    let dialog = await screen.findByRole("dialog", {
+      name: "回复这条 Moment",
+    });
+    let textarea =
+      within(dialog).getByLabelText<HTMLTextAreaElement>("回复内容");
+    expect(textarea).toHaveFocus();
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-420px");
+    fireEvent.change(textarea, { target: { value: "保留到再次打开" } });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "关闭回复窗口" }),
+    );
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 420);
+
+    fireEvent.click(trigger);
+    dialog = await screen.findByRole("dialog", { name: "回复这条 Moment" });
+    textarea = within(dialog).getByLabelText<HTMLTextAreaElement>("回复内容");
+    expect(textarea).toHaveFocus();
+    expect(textarea).toHaveValue("保留到再次打开");
+    await waitFor(() =>
+      expect(textarea.selectionStart).toBe(textarea.value.length),
+    );
+    expect(textarea.selectionEnd).toBe(textarea.value.length);
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    await waitFor(() => expect(trigger).toHaveFocus());
+
+    fireEvent.click(trigger);
+    dialog = await screen.findByRole("dialog", { name: "回复这条 Moment" });
+    const backdrop = dialog.parentElement?.previousElementSibling;
+    expect(backdrop).toHaveAttribute("role", "presentation");
+    fireEvent.mouseDown(backdrop!);
+    fireEvent.click(backdrop!);
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(
+      screen.queryByRole("dialog", { name: "回复这条 Moment" }),
+    ).toBeNull();
   });
 
   it("keeps a flat one-level presentation and places reply composition after its root", async () => {

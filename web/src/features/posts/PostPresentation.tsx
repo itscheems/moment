@@ -1,4 +1,4 @@
-import { type MouseEvent } from "react";
+import { type MouseEvent, type MouseEventHandler } from "react";
 
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
@@ -61,7 +61,7 @@ export function PostPresentation({
   onSiteChanged?: (site: SiteIdentity) => void;
   pinned?: boolean;
   contentHtml?: string;
-  onReply?: () => void;
+  onReply?: MouseEventHandler<HTMLButtonElement>;
 }) {
   const { navigate } = useNavigation();
   const title = site.displayName.trim() || site.title.trim() || "Moment";

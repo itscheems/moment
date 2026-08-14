@@ -46,12 +46,14 @@
   display: grid;
   place-items: start center;
   padding: 5vh var(--space-4) var(--space-4);
+  overscroll-behavior: contain;
 }
 
 .composeDialog {
   inline-size: min(37.5rem, 100%);
   max-block-size: calc(100dvh - 10vh);
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-radius: 1rem;
   color: var(--text-primary);
   background: var(--surface);

@@ -26,6 +26,7 @@ import {
   SiteIdentityPreview,
 } from "../../components/TimelineInteractions";
 import { Icon } from "../../components/icons";
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatMomentDate } from "../posts/dates";
 import { ImageGrid } from "../media/ImageGrid";
@@ -247,6 +248,7 @@ function CommentForm({
   onCancel,
   formId: suppliedFormId,
   initialExpanded = false,
+  textareaRef: suppliedTextareaRef,
   topLevelTargetUsername,
 }: {
   api: PublicApi;
@@ -267,6 +269,7 @@ function CommentForm({
   onCancel?: () => void;
   formId?: string;
   initialExpanded?: boolean;
+  textareaRef?: RefObject<HTMLTextAreaElement | null>;
   topLevelTargetUsername?: string;
 }) {
   const owner = useOwner();
@@ -289,7 +292,8 @@ function CommentForm({
   const pendingRef = useRef(false);
   const idempotencyRef = useRef("");
   const signatureRef = useRef("");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const localTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = suppliedTextareaRef ?? localTextareaRef;
   const contentCount = useMemo(() => Array.from(content).length, [content]);
   const nameCount = useMemo(
     () => Array.from(guestName.trim()).length,
@@ -1136,6 +1140,7 @@ export function CommentThread({
   onCountChange,
   replyDialogOpen = false,
   onReplyDialogOpenChange,
+  replyDialogTriggerRef,
 }: {
   api: PublicApi;
   postId: string;
@@ -1144,6 +1149,7 @@ export function CommentThread({
   onCountChange?: (count: number) => void;
   replyDialogOpen?: boolean;
   onReplyDialogOpenChange?: (open: boolean) => void;
+  replyDialogTriggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const owner = useOwner();
   const [items, setItems] = useState<PublicComment[] | null>(null);
@@ -1157,11 +1163,22 @@ export function CommentThread({
   const [announcement, setAnnouncement] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusCommentRef = useRef<string | null>(null);
+  const dialogTextareaRef = useRef<HTMLTextAreaElement>(null);
   const commentsEnabled = site.commentsEnabled && !closedByServer;
   const mode: CommentMode =
     owner.state === "owner" || owner.state === "expired" || owner.session
       ? "owner"
       : "guest";
+
+  useDocumentScrollLock(replyDialogOpen);
+
+  const replyInitialFocus = useCallback(() => {
+    const textarea = dialogTextareaRef.current;
+    if (!textarea) return null;
+    const caret = textarea.value.length;
+    textarea.setSelectionRange(caret, caret);
+    return textarea;
+  }, []);
 
   const load = useCallback(() => setAttempt((value) => value + 1), []);
 
@@ -1264,7 +1281,11 @@ export function CommentThread({
         <Dialog.Portal>
           <Dialog.Backdrop className={styles.dialogBackdrop} />
           <Dialog.Viewport className={styles.dialogViewport}>
-            <Dialog.Popup className={styles.replyDialogPopup}>
+            <Dialog.Popup
+              className={styles.replyDialogPopup}
+              finalFocus={() => replyDialogTriggerRef?.current ?? true}
+              initialFocus={replyInitialFocus}
+            >
               <header className={styles.replyDialogHeader}>
                 <Dialog.Close
                   aria-label="关闭回复窗口"
@@ -1318,6 +1339,7 @@ export function CommentThread({
                 setContent={setDialogContent}
                 setGuestName={setGuestName}
                 site={site}
+                textareaRef={dialogTextareaRef}
                 topLevelTargetUsername={site.username}
               />
             </Dialog.Popup>

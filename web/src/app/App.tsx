@@ -18,6 +18,7 @@ import { SearchPage } from "../features/memory/SearchPage";
 import { ProfilePage } from "../features/profile/ProfilePage";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { FeedbackProvider } from "../components/Feedback";
+import { useDocumentScrollLock } from "../components/useDocumentScrollLock";
 import { NavigationProvider, useNavigation } from "./navigation";
 import { resolveRoute } from "./routes";
 import styles from "./App.module.css";
@@ -104,6 +105,8 @@ function PublicApp() {
   );
   const overlayComposer = useRef<ComposerHandle>(null);
   const [composeExitOpen, setComposeExitOpen] = useState(false);
+
+  useDocumentScrollLock(overlayCompose);
 
   const closeOverlayComposer = () => {
     location.goBack(`${displayLocation.pathname}${displayLocation.search}`);

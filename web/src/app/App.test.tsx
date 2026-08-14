@@ -170,6 +170,8 @@ describe("App shell and public routes", () => {
     }));
     render(<App />);
     const publish = screen.getByRole("link", { name: "发布" });
+    vi.spyOn(window, "scrollX", "get").mockReturnValue(12);
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(640);
 
     publish.focus();
     fireEvent.click(publish);
@@ -178,6 +180,11 @@ describe("App shell and public routes", () => {
       await screen.findByRole("dialog", { name: "发布 Moment" }),
     ).toBeInTheDocument();
     expect(document.querySelector("main h1")).toHaveTextContent("时间流");
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.documentElement.style.overscrollBehavior).toBe("none");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-640px");
+    expect(document.body.style.left).toBe("-12px");
 
     fireEvent.keyDown(screen.getByRole("dialog", { name: "发布 Moment" }), {
       key: "Escape",
@@ -187,6 +194,10 @@ describe("App shell and public routes", () => {
       window.requestAnimationFrame(() => resolve()),
     );
     expect(publish).toHaveFocus();
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overscrollBehavior).toBe("");
+    expect(document.body.style.position).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(12, 640);
   });
 
   it("replaces discovery placeholders with recoverable URL-state errors", async () => {
