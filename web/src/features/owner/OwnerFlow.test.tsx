@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import {
   cleanup,
+  createEvent,
   fireEvent,
   render,
   screen,
@@ -578,6 +579,95 @@ describe("owner composing flow", () => {
         },
       ]);
     }
+  });
+
+  it("keeps text paste native and manages image or mixed clipboard ingress", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    installApi();
+    render(<App />);
+
+    const textarea = await screen.findByLabelText("此刻想到什么？");
+    const textPaste = createEvent.paste(textarea, {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: {
+        files: [],
+        getData: () => "只粘贴文字",
+        types: ["text/plain"],
+      },
+    });
+    fireEvent(textarea, textPaste);
+    expect(textPaste.defaultPrevented).toBe(false);
+    expect(screen.queryByText("1 / 9")).not.toBeInTheDocument();
+
+    const image = new File(["image"], "clipboard.png", {
+      type: "image/png",
+    });
+    const imagePaste = createEvent.paste(textarea, {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: {
+        files: [image],
+        getData: () => "",
+        types: ["Files"],
+      },
+    });
+    fireEvent(textarea, imagePaste);
+    expect(imagePaste.defaultPrevented).toBe(true);
+    expect(await screen.findByText("1 / 9")).toBeInTheDocument();
+
+    const mixedImage = new File(["image"], "mixed.png", {
+      type: "image/png",
+    });
+    const mixedPaste = createEvent.paste(textarea, {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: {
+        files: [mixedImage],
+        getData: () => "不要重复插入这段伴随文字",
+        types: ["text/plain", "Files"],
+      },
+    });
+    fireEvent(textarea, mixedPaste);
+    expect(mixedPaste.defaultPrevented).toBe(true);
+    expect(textarea).toHaveValue("");
+    expect(await screen.findByText("2 / 9")).toBeInTheDocument();
+
+    const overLimitPaste = createEvent.paste(textarea, {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: {
+        files: Array.from(
+          { length: 8 },
+          (_, index) =>
+            new File(["image"], `overflow-${index}.png`, {
+              type: "image/png",
+            }),
+        ),
+        getData: () => "",
+        types: ["Files"],
+      },
+    });
+    fireEvent(textarea, overLimitPaste);
+    expect(overLimitPaste.defaultPrevented).toBe(true);
+    expect(await screen.findByText("9 / 9")).toBeInTheDocument();
+    expect(
+      screen.getByText("每条Moment最多附加 9 张图片；多出的文件没有加入。"),
+    ).toBeInTheDocument();
+
+    const rejectedMixedPaste = createEvent.paste(textarea, {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: {
+        files: [new File(["image"], "tenth.png", { type: "image/png" })],
+        getData: () => "仍由浏览器处理的文字",
+        types: ["text/plain", "Files"],
+      },
+    });
+    fireEvent(textarea, rejectedMixedPaste);
+    expect(rejectedMixedPaste.defaultPrevented).toBe(false);
+    expect(screen.getByText("9 / 9")).toBeInTheDocument();
   });
 
   it("publishes a Moment that contains only an image", async () => {

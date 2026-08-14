@@ -195,7 +195,7 @@ export function mediaValidation(
 
 export function fileValidation(
   file: File,
-  current: ComposerMediaItem[],
+  current: Array<Pick<ComposerMediaItem, "file">>,
   maximumTotalBytes = MAX_TOTAL_BYTES,
 ): string | null {
   if (!MEDIA_TYPES.has(file.type)) {
@@ -212,4 +212,38 @@ export function fileValidation(
     return `本次选择的图片总量超过 ${Math.round(maximumTotalBytes / 1024 / 1024)} MiB，请移除一些图片后重试。`;
   }
   return null;
+}
+
+export function selectMediaFiles(
+  files: Iterable<File>,
+  current: ComposerMediaItem[],
+  {
+    maximum = MAX_MEDIA_COUNT,
+    maximumTotalBytes = MAX_TOTAL_BYTES,
+    subject = "Moment",
+  }: {
+    maximum?: number;
+    maximumTotalBytes?: number;
+    subject?: string;
+  } = {},
+): { accepted: File[]; error: string | null } {
+  const accepted: File[] = [];
+  let error: string | null = null;
+  for (const file of files) {
+    if (current.length + accepted.length >= maximum) {
+      error = `每条${subject}最多附加 ${maximum} 张图片；多出的文件没有加入。`;
+      break;
+    }
+    const invalid = fileValidation(
+      file,
+      [...current, ...accepted.map((selected) => ({ file: selected }))],
+      maximumTotalBytes,
+    );
+    if (invalid) {
+      error = invalid;
+      continue;
+    }
+    accepted.push(file);
+  }
+  return { accepted, error };
 }

@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  type ClipboardEvent as ReactClipboardEvent,
   type FormEvent,
   useCallback,
   useEffect,
@@ -26,7 +27,6 @@ import { Icon } from "../../components/icons";
 import {
   altValue,
   applyUpload,
-  fileValidation,
   itemsFromPost,
   mediaInput,
   mediaValidation,
@@ -34,6 +34,7 @@ import {
   readLocalPreview,
   releaseDiscardedLocalPreviews,
   releaseLocalPreview,
+  selectMediaFiles,
   uploadMessage,
   type ComposerMediaItem,
 } from "../media/mediaState";
@@ -153,6 +154,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>(() =>
       itemsFromPost(post?.media ?? []),
     );
+    const [mediaSelectionError, setMediaSelectionError] = useState<
+      string | null
+    >(null);
     const initialLocation = useMemo(() => initialPostLocation(post), [post]);
     const [location, setLocation] = useState<OwnerLocation | null>(
       initialLocation,
@@ -373,6 +377,67 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       setError(null);
       setAnnouncement(message);
       idempotencyKey.current = createIdempotencyKey();
+    };
+
+    const addMedia = (files: File[], source: "picker" | "paste" = "picker") => {
+      const next = [...mediaItemsRef.current];
+      for (const file of files) {
+        const item = newMediaItem(file);
+        next.push(item);
+        void readLocalPreview(file)
+          .then((localPreviewUrl) => {
+            if (
+              !mountedRef.current ||
+              !mediaItemsRef.current.some(
+                (candidate) =>
+                  candidate.key === item.key && candidate.file === file,
+              )
+            ) {
+              releaseLocalPreview(localPreviewUrl);
+              return;
+            }
+            replaceMedia(
+              mediaItemsRef.current.map((candidate) =>
+                candidate.key === item.key
+                  ? { ...candidate, localPreviewUrl }
+                  : candidate,
+              ),
+            );
+          })
+          .catch(() => {
+            if (
+              !mountedRef.current ||
+              !mediaItemsRef.current.some(
+                (candidate) =>
+                  candidate.key === item.key && candidate.file === file,
+              )
+            ) {
+              return;
+            }
+            setAnnouncement(
+              "有一张本地缩略图暂时无法显示；原文件仍可继续上传。",
+            );
+          });
+      }
+      replaceMedia(next);
+      markMediaEdited(
+        source === "paste"
+          ? `已从剪贴板加入 ${files.length} 张图片。`
+          : `已加入 ${files.length} 张图片。`,
+      );
+    };
+
+    const pasteMedia = (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+      const files = Array.from(event.clipboardData.files);
+      if (files.length === 0) return;
+      const { accepted, error: selectionError } = selectMediaFiles(
+        files,
+        mediaItemsRef.current,
+      );
+      setMediaSelectionError(selectionError);
+      if (accepted.length === 0) return;
+      event.preventDefault();
+      addMedia(accepted, "paste");
     };
 
     useEffect(() => {
@@ -943,6 +1008,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     event.currentTarget.form?.requestSubmit();
                   }
                 }}
+                onPaste={pasteMedia}
                 onScroll={(event) => {
                   if (!highlightRef.current) return;
                   highlightRef.current.scrollTop =
@@ -1033,6 +1099,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 </button>
               }
               items={mediaItems}
+              onAdd={addMedia}
+              onSelectionError={setMediaSelectionError}
+              selectionError={mediaSelectionError}
               toolbarAction={
                 <LocationPicker
                   api={api}
@@ -1054,53 +1123,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   value={location}
                 />
               }
-              onAdd={(files) => {
-                const next = [...mediaItemsRef.current];
-                for (const file of files) {
-                  const invalid = fileValidation(file, next);
-                  if (invalid) continue;
-                  const item = newMediaItem(file);
-                  next.push(item);
-                  void readLocalPreview(file)
-                    .then((localPreviewUrl) => {
-                      if (
-                        !mountedRef.current ||
-                        !mediaItemsRef.current.some(
-                          (candidate) =>
-                            candidate.key === item.key &&
-                            candidate.file === file,
-                        )
-                      ) {
-                        releaseLocalPreview(localPreviewUrl);
-                        return;
-                      }
-                      replaceMedia(
-                        mediaItemsRef.current.map((candidate) =>
-                          candidate.key === item.key
-                            ? { ...candidate, localPreviewUrl }
-                            : candidate,
-                        ),
-                      );
-                    })
-                    .catch(() => {
-                      if (
-                        !mountedRef.current ||
-                        !mediaItemsRef.current.some(
-                          (candidate) =>
-                            candidate.key === item.key &&
-                            candidate.file === file,
-                        )
-                      ) {
-                        return;
-                      }
-                      setAnnouncement(
-                        "有一张本地缩略图暂时无法显示；原文件仍可继续上传。",
-                      );
-                    });
-                }
-                replaceMedia(next);
-                markMediaEdited(`已加入 ${files.length} 张图片。`);
-              }}
               onChange={(next, message) => {
                 replaceMedia(next);
                 markMediaEdited(message);

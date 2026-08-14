@@ -17,9 +17,9 @@ import {
 import { Icon } from "../../components/icons";
 import type { ComposerMediaItem } from "./mediaState";
 import {
-  fileValidation,
   MAX_MEDIA_COUNT,
   MAX_ALT_CODE_POINTS,
+  selectMediaFiles,
 } from "./mediaState";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import styles from "./Media.module.css";
@@ -71,6 +71,8 @@ export function MediaComposer({
   onRetry,
   footerAction,
   toolbarAction,
+  selectionError: controlledSelectionError,
+  onSelectionError,
   maximum = MAX_MEDIA_COUNT,
   maximumTotalBytes,
   subject = "Moment",
@@ -84,13 +86,17 @@ export function MediaComposer({
   onRetry: (key: string) => void;
   footerAction?: ReactNode;
   toolbarAction?: ReactNode;
+  selectionError?: string | null;
+  onSelectionError?: (error: string | null) => void;
   maximum?: number;
   maximumTotalBytes?: number;
   subject?: string;
 }) {
   const inputId = useId();
   const reduceMotion = useReducedMotion();
-  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [localSelectionError, setLocalSelectionError] = useState<string | null>(
+    null,
+  );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -141,29 +147,22 @@ export function MediaComposer({
     });
   }, [items]);
 
+  const selectionError =
+    controlledSelectionError === undefined
+      ? localSelectionError
+      : controlledSelectionError;
+  const reportSelectionError = (error: string | null) => {
+    if (onSelectionError) onSelectionError(error);
+    else setLocalSelectionError(error);
+  };
+
   const selectFiles = (event: ChangeEvent<HTMLInputElement>) => {
-    const accepted: File[] = [];
-    const nextItems = items;
-    let error: string | null = null;
-    for (const file of Array.from(event.currentTarget.files ?? [])) {
-      if (nextItems.length + accepted.length >= maximum) {
-        error = `每条${subject}最多附加 ${maximum} 张图片；多出的文件没有加入。`;
-        break;
-      }
-      const candidateItems = [
-        ...nextItems,
-        ...accepted.map(
-          (selected) => ({ file: selected }) as ComposerMediaItem,
-        ),
-      ];
-      const invalid = fileValidation(file, candidateItems, maximumTotalBytes);
-      if (invalid) {
-        error = invalid;
-        continue;
-      }
-      accepted.push(file);
-    }
-    setSelectionError(error);
+    const { accepted, error } = selectMediaFiles(
+      Array.from(event.currentTarget.files ?? []),
+      items,
+      { maximum, maximumTotalBytes, subject },
+    );
+    reportSelectionError(error);
     if (accepted.length > 0) onAdd(accepted);
     event.currentTarget.value = "";
   };
