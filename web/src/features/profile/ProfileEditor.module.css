@@ -354,18 +354,12 @@
 .mediaMenu {
   min-inline-size: 11rem;
   overflow: hidden;
-  border: 0;
-  border-radius: 0.9rem;
-  padding: 0.35rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  padding: 0;
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--surface-elevated) 82%, transparent);
-  box-shadow:
-    0 1.25rem 3rem rgb(15 20 25 / 16%),
-    0 0.25rem 0.8rem rgb(15 20 25 / 10%),
-    inset 0 1px 0 color-mix(in srgb, var(--surface) 68%, transparent),
-    inset 0 -1px 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
-  -webkit-backdrop-filter: blur(1.5rem) saturate(160%);
-  backdrop-filter: blur(1.5rem) saturate(160%);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
   transform-origin: var(--transform-origin);
   transition:
     opacity var(--motion-menu) var(--ease-out),
@@ -384,33 +378,31 @@
 }
 
 .mediaMenuItem {
-  min-block-size: var(--target-size);
+  min-block-size: 3.25rem;
   display: flex;
   align-items: center;
-  gap: 0.625rem;
-  border-radius: 0.65rem;
-  padding-inline: 0.625rem 0.8rem;
+  gap: var(--space-3);
+  border-radius: 0;
+  padding-inline: var(--space-4);
   outline: 0;
   cursor: pointer;
   font-size: var(--text-sm);
   font-weight: 600;
   letter-spacing: var(--tracking-body);
+  background: var(--surface-elevated);
   transition:
     color var(--motion-menu) var(--ease-out),
     background var(--motion-menu) var(--ease-out);
 }
 
 .mediaMenuItem svg {
-  inline-size: 1.75rem;
-  block-size: 1.75rem;
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
   flex: 0 0 auto;
-  border-radius: 0.5rem;
-  padding: 0.35rem;
-  background: color-mix(in srgb, currentColor 7%, transparent);
 }
 
 .mediaMenuItem[data-highlighted] {
-  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  background: var(--surface-hover);
 }
 
 .mediaMenuItem[data-disabled] {
@@ -420,10 +412,6 @@
 
 .mediaMenuDanger:not([data-disabled]) {
   color: var(--danger);
-}
-
-.mediaMenuDanger[data-highlighted]:not([data-disabled]) {
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .identityCopy {

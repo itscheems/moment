@@ -217,12 +217,12 @@ describe("visual foundation contract", () => {
     expect(ownerCss).toContain("z-index: calc(var(--layer-confirm) + 1)");
   });
 
-  it("uses a borderless material for profile media action menus", () => {
+  it("aligns profile media menus with the mention suggestion surface", () => {
     expect(profileEditorCss).toMatch(
-      /\._mediaMenu_[\w-]+\s*\{[^}]*border: 0;[^}]*background: color-mix\([^}]*backdrop-filter: blur\(1\.5rem\) saturate\(160%\)/s,
+      /\._mediaMenu_[\w-]+\s*\{[^}]*border: 1px solid var\(--border-subtle\);[^}]*border-radius: var\(--radius-panel\);[^}]*background: var\(--surface-elevated\);[^}]*box-shadow: var\(--shadow-popover\)/s,
     );
-    expect(profileEditorCss).toContain(
-      "-webkit-backdrop-filter: blur(1.5rem) saturate(160%)",
+    expect(profileEditorCss).toMatch(
+      /\._mediaMenuItem_[\w-]+\[data-highlighted\]\s*\{[^}]*background: var\(--surface-hover\)/s,
     );
   });
 
