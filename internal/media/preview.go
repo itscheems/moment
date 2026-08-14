@@ -22,6 +22,14 @@ import (
 	"golang.org/x/image/webp"
 )
 
+const (
+	previewJPEGMaxQuality   = 90
+	previewJPEGMinQuality   = 60
+	previewJPEGQualityStep  = 5
+	previewScaleNumerator   = 4
+	previewScaleDenominator = 5
+)
+
 func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, inspection inspected, sha string) (Preview, error) {
 	if preview, ok := store.existingPreview(sha); ok {
 		preview.AnimatedOriginal = inspection.format == formatGIF
@@ -69,34 +77,23 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 	if err != nil {
 		return Preview{}, err
 	}
-	var encoded bytes.Buffer
-	output := &contextWriter{ctx: ctx, writer: &encoded}
-	mimeType := "image/jpeg"
-	extension := "jpg"
-	if alpha {
-		mimeType = "image/png"
-		extension = "png"
-		encoder := png.Encoder{CompressionLevel: png.BestCompression}
-		if err := encoder.Encode(output, oriented); err != nil {
-			return Preview{}, previewFailure(err)
-		}
-	} else {
-		opaque, err := flattenOpaque(ctx, oriented)
-		if err != nil {
-			return Preview{}, err
-		}
-		if err := jpeg.Encode(output, opaque, &jpeg.Options{Quality: 82}); err != nil {
-			return Preview{}, previewFailure(err)
-		}
+	encoded, outputImage, mimeType, extension, err := encodePreviewWithinBudget(
+		ctx,
+		oriented,
+		alpha,
+		store.options.Limits.PreviewMaxBytes,
+	)
+	if err != nil {
+		return Preview{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return Preview{}, err
 	}
 	path := store.previewPath(sha, extension)
-	if err := store.writeCacheAtomic(ctx, path, encoded.Bytes(), store.beforePreviewCommit); err != nil {
+	if err := store.writeCacheAtomic(ctx, path, encoded, store.beforePreviewCommit); err != nil {
 		return Preview{}, previewFailure(err)
 	}
-	bounds := oriented.Bounds()
+	bounds := outputImage.Bounds()
 	return Preview{
 		Path:             path,
 		RecipeVersion:    RecipeVersion,
@@ -106,6 +103,79 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 		Height:           uint32(bounds.Dy()),
 		AnimatedOriginal: inspection.format == formatGIF,
 	}, nil
+}
+
+func encodePreviewWithinBudget(ctx context.Context, source image.Image, alpha bool, maxBytes int64) ([]byte, image.Image, string, string, error) {
+	candidate := source
+	var encoded bytes.Buffer
+	if !alpha {
+		opaque, err := flattenOpaque(ctx, candidate)
+		if err != nil {
+			return nil, nil, "", "", err
+		}
+		candidate = opaque
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, nil, "", "", err
+		}
+		if alpha {
+			if err := encodePNGPreviewInto(ctx, candidate, &encoded); err != nil {
+				return nil, nil, "", "", err
+			}
+			if int64(encoded.Len()) <= maxBytes {
+				return encoded.Bytes(), candidate, "image/png", "png", nil
+			}
+		} else {
+			for quality := previewJPEGMaxQuality; quality >= previewJPEGMinQuality; quality -= previewJPEGQualityStep {
+				if err := encodeJPEGPreviewInto(ctx, candidate, quality, &encoded); err != nil {
+					return nil, nil, "", "", err
+				}
+				if int64(encoded.Len()) <= maxBytes {
+					return encoded.Bytes(), candidate, "image/jpeg", "jpg", nil
+				}
+			}
+		}
+
+		bounds := candidate.Bounds()
+		longestEdge := max(bounds.Dx(), bounds.Dy())
+		if longestEdge <= 1 {
+			return nil, nil, "", "", domain.NewError(domain.CodeMediaPreviewFailed, "preview cannot fit within the byte budget", map[string]any{"max_bytes": maxBytes})
+		}
+		nextEdge := max(1, longestEdge*previewScaleNumerator/previewScaleDenominator)
+		resized, err := resize(ctx, candidate, uint32(nextEdge))
+		if err != nil {
+			return nil, nil, "", "", err
+		}
+		candidate = resized
+	}
+}
+
+func encodePNGPreviewInto(ctx context.Context, source image.Image, encoded *bytes.Buffer) error {
+	encoded.Reset()
+	output := &contextWriter{ctx: ctx, writer: encoded}
+	encoder := png.Encoder{CompressionLevel: png.BestCompression}
+	if err := encoder.Encode(output, source); err != nil {
+		return previewFailure(err)
+	}
+	return nil
+}
+
+func encodeJPEGPreview(ctx context.Context, source image.Image, quality int) ([]byte, error) {
+	var encoded bytes.Buffer
+	if err := encodeJPEGPreviewInto(ctx, source, quality, &encoded); err != nil {
+		return nil, err
+	}
+	return encoded.Bytes(), nil
+}
+
+func encodeJPEGPreviewInto(ctx context.Context, source image.Image, quality int, encoded *bytes.Buffer) error {
+	encoded.Reset()
+	output := &contextWriter{ctx: ctx, writer: encoded}
+	if err := jpeg.Encode(output, source, &jpeg.Options{Quality: quality}); err != nil {
+		return previewFailure(err)
+	}
+	return nil
 }
 
 func decodeFull(ctx context.Context, inspection inspected, contents []byte) (image.Image, error) {
@@ -149,13 +219,13 @@ func (store *Store) existingPreview(sha string) (Preview, bool) {
 			}
 			config, decodedFormat, decodeErr := image.DecodeConfig(file)
 			closeErr := file.Close()
-			if decodeErr == nil && closeErr == nil && decodedFormat == candidate.extension && config.Width > 0 && config.Height > 0 && config.Width <= int(store.options.Limits.PreviewMaxEdge) && config.Height <= int(store.options.Limits.PreviewMaxEdge) {
+			if decodeErr == nil && closeErr == nil && info.Size() <= store.options.Limits.PreviewMaxBytes && decodedFormat == candidate.extension && config.Width > 0 && config.Height > 0 && config.Width <= int(store.options.Limits.PreviewMaxEdge) && config.Height <= int(store.options.Limits.PreviewMaxEdge) {
 				return Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: candidate.mimeType, Width: uint32(config.Width), Height: uint32(config.Height)}, true
 			}
 			continue
 		}
 		info, err := os.Lstat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 {
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > store.options.Limits.PreviewMaxBytes {
 			continue
 		}
 		file, err := os.Open(path)

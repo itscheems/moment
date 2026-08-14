@@ -30,7 +30,7 @@ func registerMedia(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"media", "add"}, ArgsUsage: "<path>", Short: "Add one managed image",
 		Long:    "Validate one local JPEG, PNG, WebP, or GIF, store its immutable original, and build the current preview recipe through the selected transport.",
-		Inputs:  "One readable local file path. API mode authenticates through MOMENT_TOKEN or --token-file.",
+		Inputs:  "One readable local file path up to 32 MiB. API mode authenticates through MOMENT_TOKEN or --token-file.",
 		Output:  "Managed media metadata, preview metadata, and explicit original/preview URLs.",
 		Errors:  "Invalid images use stable MEDIA_* codes; filesystem failures use exit code 6; cancellation uses exit code 9.",
 		Example: "moment media add ./fixtures/cat.jpg --data-dir ./moment-data --json",

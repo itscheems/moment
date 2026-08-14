@@ -17,8 +17,7 @@ import (
 )
 
 const (
-	previewResponseLimit = int64(32 << 20)
-	pruneGracePeriod     = 24 * time.Hour
+	pruneGracePeriod = 24 * time.Hour
 )
 
 // Get returns authoritative metadata while preventing prune from invalidating
@@ -87,7 +86,7 @@ func (store *Store) ReadPreview(ctx context.Context, id domain.ID) (Asset, error
 		return Asset{}, domain.NewError(domain.CodeMediaPreviewFailed, "preview cache could not be opened", map[string]any{"media_id": id.String()})
 	}
 	defer func() { _ = file.Close() }()
-	contents, err := readBounded(ctx, file, previewResponseLimit)
+	contents, err := readBounded(ctx, file, store.options.Limits.PreviewMaxBytes)
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return Asset{}, err

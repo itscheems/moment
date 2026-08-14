@@ -103,7 +103,7 @@ describe("media composer contract", () => {
   });
 
   it("validates logical duplicate usage bytes and browser-declared types", () => {
-    const duplicate = sizedFile("same.png", "image/png", MAX_FILE_BYTES);
+    const duplicate = sizedFile("same.png", "image/png", MAX_TOTAL_BYTES / 5);
     const current = Array.from({ length: 5 }, (_, index) =>
       item({ key: `copy-${index}`, file: duplicate }),
     );
@@ -116,9 +116,15 @@ describe("media composer contract", () => {
     ).toContain("不是支持的");
     expect(
       fileValidation(
+        sizedFile("camera-original.jpg", "image/jpeg", 30 * 1024 * 1024),
+        [],
+      ),
+    ).toBeNull();
+    expect(
+      fileValidation(
         sizedFile("large.jpg", "image/jpeg", MAX_FILE_BYTES + 1),
         [],
       ),
-    ).toContain("10 MiB");
+    ).toContain("32 MiB");
   });
 });

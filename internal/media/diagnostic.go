@@ -278,7 +278,7 @@ func diagnosePreviewFileWithinRoot(ctx context.Context, root *os.Root, path, exp
 	if errors.Is(err, os.ErrNotExist) {
 		return false, false, nil
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > DefaultMaxBytes {
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > limits.PreviewMaxBytes {
 		return true, false, nil
 	}
 	file, err := root.Open(path)
@@ -290,13 +290,13 @@ func diagnosePreviewFileWithinRoot(ctx context.Context, root *os.Root, path, exp
 		_ = file.Close()
 		return true, false, nil
 	}
-	config, decodedFormat, decodeErr := image.DecodeConfig(io.LimitReader(&contextReader{ctx: ctx, reader: file}, DefaultMaxBytes+1))
+	config, decodedFormat, decodeErr := image.DecodeConfig(io.LimitReader(&contextReader{ctx: ctx, reader: file}, limits.PreviewMaxBytes+1))
 	closeErr := file.Close()
 	if err := ctx.Err(); err != nil {
 		return true, false, err
 	}
 	if decodeErr != nil || closeErr != nil || decodedFormat != expectedFormat || config.Width < 1 || config.Height < 1 ||
-		uint64(config.Width)*uint64(config.Height) > limits.MaxPixels {
+		config.Width > int(limits.PreviewMaxEdge) || config.Height > int(limits.PreviewMaxEdge) {
 		return true, false, nil
 	}
 	return true, true, nil
@@ -307,14 +307,14 @@ func diagnosePreviewFile(ctx context.Context, path, expectedFormat string, limit
 	if errors.Is(err, os.ErrNotExist) {
 		return false, false, nil
 	}
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > DefaultMaxBytes {
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > limits.PreviewMaxBytes {
 		return true, false, nil
 	}
 	file, err := os.Open(path)
 	if err != nil {
 		return true, false, nil
 	}
-	config, decodedFormat, decodeErr := image.DecodeConfig(io.LimitReader(&contextReader{ctx: ctx, reader: file}, DefaultMaxBytes+1))
+	config, decodedFormat, decodeErr := image.DecodeConfig(io.LimitReader(&contextReader{ctx: ctx, reader: file}, limits.PreviewMaxBytes+1))
 	closeErr := file.Close()
 	if err := ctx.Err(); err != nil {
 		return true, false, errors.Join(err, closeErr)

@@ -318,6 +318,91 @@ func TestIngestDeduplicatesBytesAndProducesBoundedOrientedPreview(t *testing.T) 
 	}
 }
 
+func TestIngestRetainsThirtyMiBOriginalAndServesBoundedPreview(t *testing.T) {
+	store, _, _ := newTestStore(t, Limits{})
+	original := encodeJPEG(t, image.NewNRGBA(image.Rect(0, 0, 24, 12)))
+	original = append(original, make([]byte, 30<<20)...)
+
+	value, preview, err := store.Ingest(context.Background(), "large-source.jpg", bytes.NewReader(original))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.ByteSize != int64(len(original)) || value.ByteSize <= 10<<20 {
+		t.Fatalf("stored original bytes = %d, want %d and above the preview budget", value.ByteSize, len(original))
+	}
+	originalAsset, err := store.ReadOriginal(context.Background(), value.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(originalAsset.Contents, original) {
+		t.Fatal("stored original was recompressed or changed")
+	}
+	previewAsset, err := store.ReadPreview(context.Background(), value.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(previewAsset.Contents)) > DefaultPreviewMaxBytes || bytes.Equal(previewAsset.Contents, original) {
+		t.Fatalf("preview bytes = %d, budget = %d, original reused = %v", len(previewAsset.Contents), DefaultPreviewMaxBytes, bytes.Equal(previewAsset.Contents, original))
+	}
+	if preview.Width != 24 || preview.Height != 12 {
+		t.Fatalf("preview dimensions = %dx%d, want source dimensions without upscaling", preview.Width, preview.Height)
+	}
+}
+
+func TestPreviewEncodingPreservesUsefulQualityThenReducesResolutionToFit(t *testing.T) {
+	t.Parallel()
+	opaque := image.NewNRGBA(image.Rect(0, 0, 256, 192))
+	transparent := image.NewNRGBA(image.Rect(0, 0, 256, 192))
+	for y := 0; y < 192; y++ {
+		for x := 0; x < 256; x++ {
+			pixel := color.NRGBA{
+				R: uint8(x*37 + y*17),
+				G: uint8(x*11 + y*43),
+				B: uint8(x*29 + y*7),
+				A: 0xff,
+			}
+			opaque.SetNRGBA(x, y, pixel)
+			pixel.A = uint8(64 + (x+y)%192)
+			transparent.SetNRGBA(x, y, pixel)
+		}
+	}
+
+	qualityFloor, err := encodeJPEGPreview(context.Background(), opaque, previewJPEGMinQuality)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qualityBudget := int64(len(qualityFloor))
+	encoded, output, mimeType, extension, err := encodePreviewWithinBudget(context.Background(), opaque, false, qualityBudget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if int64(len(encoded)) > qualityBudget || output.Bounds() != opaque.Bounds() || mimeType != "image/jpeg" || extension != "jpg" {
+		t.Fatalf("quality adaptation = %d bytes %v %q .%s, budget=%d bounds=%v", len(encoded), output.Bounds(), mimeType, extension, qualityBudget, opaque.Bounds())
+	}
+
+	for name, source := range map[string]struct {
+		image image.Image
+		alpha bool
+	}{
+		"opaque":      {image: opaque, alpha: false},
+		"transparent": {image: transparent, alpha: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			const budget = int64(1 << 10)
+			encoded, output, _, _, err := encodePreviewWithinBudget(context.Background(), source.image, source.alpha, budget)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if int64(len(encoded)) > budget {
+				t.Fatalf("preview bytes = %d, budget = %d", len(encoded), budget)
+			}
+			if output.Bounds().Dx() >= source.image.Bounds().Dx() || output.Bounds().Dy() >= source.image.Bounds().Dy() {
+				t.Fatalf("tight budget did not reduce resolution: got %v from %v", output.Bounds(), source.image.Bounds())
+			}
+		})
+	}
+}
+
 func TestPNGAndWebPApplyEXIFOrientation(t *testing.T) {
 	t.Parallel()
 	store, _, _ := newTestStore(t, Limits{})

@@ -24,7 +24,7 @@ export interface ComposerMediaItem {
 }
 
 export const MAX_MEDIA_COUNT = 9;
-export const MAX_FILE_BYTES = 10 * 1024 * 1024;
+export const MAX_FILE_BYTES = 32 * 1024 * 1024;
 export const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 export const MAX_ALT_CODE_POINTS = 1_000;
 export const MEDIA_TYPES = new Set([
@@ -202,7 +202,7 @@ export function fileValidation(
     return `${file.name || "所选文件"} 不是支持的 JPEG、PNG、WebP 或 GIF。`;
   }
   if (file.size <= 0 || file.size > MAX_FILE_BYTES) {
-    return `${file.name || "所选文件"} 超过单图 10 MiB 限制或为空。`;
+    return `${file.name || "所选文件"} 超过单图 32 MiB 限制或为空。`;
   }
   const currentBytes = current.reduce(
     (total, item) => total + (item.file?.size ?? 0),

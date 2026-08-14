@@ -14,16 +14,20 @@ import (
 // Product ceilings and recipe identity are exported for transport diagnostics
 // and deterministic maintenance tooling.
 const (
-	DefaultMaxBytes           int64  = 10 << 20
+	// DefaultMaxBytes bounds immutable originals. Previews have a separate,
+	// smaller delivery budget so accepting a large source never makes timeline
+	// rendering load the same bytes implicitly.
+	DefaultMaxBytes           int64  = 32 << 20
 	DefaultMaxDimension       uint32 = 16_384
 	DefaultMaxPixels          uint64 = 80_000_000
 	DefaultMaxGIFFrames       uint32 = 300
 	DefaultMaxGIFFramePixels  uint64 = 160_000_000
+	DefaultPreviewMaxBytes    int64  = 10 << 20
 	DefaultPreviewMaxEdge     uint32 = 1_600
 	DefaultPreviewConcurrency        = 2
 
 	// RecipeVersion changes whenever any output byte semantics change.
-	RecipeVersion = "v2-max1600-orient-all-jpeg82-alpha-png-gif-canvas-first"
+	RecipeVersion = "v3-max1600-jpeg90-preview10m-orient-all-alpha-png-gif-canvas-first"
 
 	// Nine bytes cover the largest supported 16-bit RGBA decode plus bounded
 	// preview intermediates; fixed bytes cover compressed input and encoders.
@@ -34,13 +38,16 @@ const (
 // Limits are hard resource ceilings. Zero values select the bounded defaults.
 // Values may be lowered by callers but cannot exceed the product ceilings.
 type Limits struct {
+	// MaxBytes applies to the authoritative original read during ingestion.
 	MaxBytes          int64
 	MaxDimension      uint32
 	MaxPixels         uint64
 	MaxGIFFrames      uint32
 	MaxGIFFramePixels uint64
-	PreviewMaxEdge    uint32
-	PreviewWorkers    int
+	// PreviewMaxBytes is the hard cap for every derived display artifact.
+	PreviewMaxBytes int64
+	PreviewMaxEdge  uint32
+	PreviewWorkers  int
 }
 
 func (limits Limits) normalized() (Limits, error) {
@@ -50,6 +57,7 @@ func (limits Limits) normalized() (Limits, error) {
 		MaxPixels:         DefaultMaxPixels,
 		MaxGIFFrames:      DefaultMaxGIFFrames,
 		MaxGIFFramePixels: DefaultMaxGIFFramePixels,
+		PreviewMaxBytes:   DefaultPreviewMaxBytes,
 		PreviewMaxEdge:    DefaultPreviewMaxEdge,
 		PreviewWorkers:    DefaultPreviewConcurrency,
 	}
@@ -68,6 +76,9 @@ func (limits Limits) normalized() (Limits, error) {
 	if limits.MaxGIFFramePixels == 0 {
 		limits.MaxGIFFramePixels = defaults.MaxGIFFramePixels
 	}
+	if limits.PreviewMaxBytes == 0 {
+		limits.PreviewMaxBytes = defaults.PreviewMaxBytes
+	}
 	if limits.PreviewMaxEdge == 0 {
 		limits.PreviewMaxEdge = defaults.PreviewMaxEdge
 	}
@@ -79,6 +90,7 @@ func (limits Limits) normalized() (Limits, error) {
 		limits.MaxPixels < 1 || limits.MaxPixels > defaults.MaxPixels ||
 		limits.MaxGIFFrames < 1 || limits.MaxGIFFrames > defaults.MaxGIFFrames ||
 		limits.MaxGIFFramePixels < 1 || limits.MaxGIFFramePixels > defaults.MaxGIFFramePixels ||
+		limits.PreviewMaxBytes < 1 || limits.PreviewMaxBytes > defaults.PreviewMaxBytes ||
 		limits.PreviewMaxEdge < 1 || limits.PreviewMaxEdge > defaults.PreviewMaxEdge ||
 		limits.PreviewWorkers < 1 || limits.PreviewWorkers > 8 {
 		return Limits{}, domain.NewError(domain.CodeInvalidArgument, "media limits must be positive and no greater than product ceilings", nil)

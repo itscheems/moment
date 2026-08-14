@@ -432,7 +432,7 @@ export function MediaComposer({
         {footerAction}
       </div>
       <p className={styles.srOnly} id={`${inputId}-guidance`}>
-        支持 JPEG、PNG、WebP 或 GIF，单图最大 10 MiB，最多 {maximum} 张。
+        支持 JPEG、PNG、WebP 或 GIF，原图单张最大 32 MiB，最多 {maximum} 张。
         图片不会写入本地文字草稿。
       </p>
       {selectionError ? (

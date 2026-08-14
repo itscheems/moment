@@ -278,7 +278,7 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"location nearby":        "85c27f5fda0617bb0cc70a3d68d155e8521207e456adf61b2e20363cfbc36cf2",
 		"location search":        "1fa980dd1019997d94d26f7baa5bb872b7d2359fb906ec619bebaa1355c6afd0",
 		"media":                  "c41a56ccf11dae431650b9b7a726820567c3f31d30612a383f5d3ce8dd0efede",
-		"media add":              "5dde8c7f45f638cef87117dd6431edde094175378e5745fe3d9dfe07811ecc7d",
+		"media add":              "bcfaa87425a353827a478e7395193557d18f16ba0650f065e041028b8eafe2de",
 		"media get":              "6840a6e4053f84760e7a1a92efdd31c9a77965a502a2b9e41d57c9696e2618f5",
 		"media list":             "6fc9294aa50466b8ccfa034dc9280b40efbcffa56c02fb76e1cb237446f2c69f",
 		"media prune":            "f2719f2b81bbba418e0ad4527416b14e13b54cf7dc804c6f8e15ba773ecbc54d",
