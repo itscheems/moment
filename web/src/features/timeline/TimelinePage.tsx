@@ -8,10 +8,21 @@ import {
   type TimelineRequest,
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import {
+  LoadMoreSentinel,
+  type LoadSource,
+} from "../../components/LoadMoreSentinel";
 import { PostPresentation } from "../posts/PostPresentation";
 import { PublicEmpty, PublicError, TimelineLoading } from "./PublicStates";
 import { listenForOwnerPosts } from "../owner/postEvents";
 import type { OwnerPostEvent } from "../owner/postEvents";
+import {
+  appendUnique,
+  invalidCursorProgress,
+  loadedThroughFromSearch,
+  validateCursorPage,
+  withoutLoadedProgress,
+} from "./cursorContinuity";
 import styles from "./TimelinePage.module.css";
 
 const MAX_REPLAY_PAGES = 1_000;
@@ -21,65 +32,16 @@ interface TimelineRestoreRequest {
   request: TimelineRequest;
 }
 
-function invalidTimelineProgress(message: string): PublicApiError {
-  return new PublicApiError(message, {
-    code: "API_RESPONSE_INVALID",
-    status: 0,
-  });
-}
-
 function requestFromSearch(search: string): TimelineRestoreRequest {
   const query = new URLSearchParams(search);
-  const progress = query.getAll("loaded_through");
-  if (
-    progress.length > 1 ||
-    (progress.length === 1 &&
-      (progress[0].length === 0 || progress[0].length > 4_096))
-  ) {
-    throw invalidTimelineProgress("loaded timeline cursor is invalid");
-  }
   return {
-    loadedThrough: progress[0] ?? null,
+    loadedThrough: loadedThroughFromSearch(search),
     request: {
       cursor: query.get("cursor"),
       from: query.get("from"),
       to: query.get("to"),
     },
   };
-}
-
-function appendPage(current: PublicPost[], incoming: PublicPost[]) {
-  const existing = new Set(current.map((post) => post.id));
-  if (incoming.some((post) => existing.has(post.id))) {
-    throw invalidTimelineProgress("continued page contains a duplicate post");
-  }
-  return [...current, ...incoming];
-}
-
-type TimelinePageResult = Awaited<ReturnType<PublicApi["timeline"]>>;
-
-function validateCursorPage(
-  page: TimelinePageResult,
-  requestedCursor: string | null,
-  visited: ReadonlySet<string>,
-): void {
-  if (page.items.length === 0 && page.nextCursor !== null) {
-    throw invalidTimelineProgress("empty timeline page advances the cursor");
-  }
-  if (page.nextCursor !== null && visited.has(page.nextCursor)) {
-    throw invalidTimelineProgress(
-      page.nextCursor === requestedCursor
-        ? "timeline cursor points to itself"
-        : "timeline cursor cycle detected",
-    );
-  }
-}
-
-function withoutLoadedProgress(search: string): string {
-  const query = new URLSearchParams(search);
-  query.delete("loaded_through");
-  const value = query.toString();
-  return value ? `?${value}` : "";
 }
 
 function hasLoadedProgress(search: string): boolean {
@@ -184,7 +146,7 @@ export function TimelinePage({
       let requestedCursor = initialCursor;
       const visited = new Set<string>();
       if (requestedCursor) visited.add(requestedCursor);
-      validateCursorPage(page, requestedCursor, visited);
+      validateCursorPage(page, requestedCursor, visited, "timeline");
 
       for (
         let replayed = 0;
@@ -192,16 +154,14 @@ export function TimelinePage({
         replayed += 1
       ) {
         if (replayed >= MAX_REPLAY_PAGES) {
-          throw invalidTimelineProgress("loaded timeline cursor is too deep");
+          throw invalidCursorProgress("loaded timeline cursor is too deep");
         }
         const continuation = page.nextCursor;
         if (!continuation) {
-          throw invalidTimelineProgress(
-            "loaded timeline cursor is unreachable",
-          );
+          throw invalidCursorProgress("loaded timeline cursor is unreachable");
         }
         if (visited.has(continuation)) {
-          throw invalidTimelineProgress("timeline cursor cycle detected");
+          throw invalidCursorProgress("timeline cursor cycle detected");
         }
         visited.add(continuation);
         requestedCursor = continuation;
@@ -211,8 +171,13 @@ export function TimelinePage({
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
-        validateCursorPage(page, requestedCursor, visited);
-        combined = appendPage(combined, page.items);
+        validateCursorPage(page, requestedCursor, visited, "timeline");
+        combined = appendUnique(
+          combined,
+          page.items,
+          (post) => post.id,
+          "timeline",
+        );
       }
 
       combined = reconcileOwnerEvents(combined);
@@ -272,7 +237,7 @@ export function TimelinePage({
     restoreCurrentEntry();
   }, [initialError, loadingInitial, restoreCurrentEntry]);
 
-  const loadMore = async () => {
+  const loadMore = async (source: LoadSource = "manual") => {
     if (!nextCursor || loadingMoreRef.current) return;
     const controller = new AbortController();
     activeMore.current = controller;
@@ -282,7 +247,7 @@ export function TimelinePage({
     const requestedCursor = nextCursor;
     try {
       if (visitedCursors.current.has(requestedCursor)) {
-        throw invalidTimelineProgress("timeline cursor cycle detected");
+        throw invalidCursorProgress("timeline cursor cycle detected");
       }
       const page = await api.timeline({
         ...requestFromSearch(initialSearchRef.current).request,
@@ -292,14 +257,19 @@ export function TimelinePage({
       if (controller.signal.aborted) return;
       const visited = new Set(visitedCursors.current);
       visited.add(requestedCursor);
-      validateCursorPage(page, requestedCursor, visited);
+      validateCursorPage(page, requestedCursor, visited, "timeline");
       const firstNew = page.items[0]?.id;
-      const combined = appendPage(posts, page.items);
+      const combined = appendUnique(
+        posts,
+        page.items,
+        (post) => post.id,
+        "timeline",
+      );
       visitedCursors.current = visited;
       setPosts(combined);
       setNextCursor(page.nextCursor);
       replaceTimelineProgress(requestedCursor);
-      if (firstNew) {
+      if (source === "manual" && firstNew) {
         window.requestAnimationFrame(() => {
           Array.from(document.querySelectorAll<HTMLElement>("[data-post-id]"))
             .find((element) => element.dataset.postId === firstNew)
@@ -367,18 +337,20 @@ export function TimelinePage({
               从第一页重新加载
             </button>
           ) : (
-            <button onClick={loadMore} type="button">
+            <button onClick={() => void loadMore("manual")} type="button">
               重试加载
             </button>
           )}
         </div>
       ) : null}
       {nextCursor && !moreError ? (
-        <div className={styles.moreRow}>
-          <button disabled={loadingMore} onClick={loadMore} type="button">
-            {loadingMore ? "正在加载…" : "加载更早的 Moment"}
-          </button>
-        </div>
+        <LoadMoreSentinel
+          className={styles.moreRow}
+          cursor={nextCursor}
+          label="加载更早的 Moment"
+          loading={loadingMore}
+          onLoad={(source) => void loadMore(source)}
+        />
       ) : (
         <p className={styles.endMark}>已经走到这段时间流的起点</p>
       )}

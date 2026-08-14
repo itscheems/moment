@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -128,6 +129,58 @@ describe("public timeline", () => {
     );
     expect(window.location.search).toContain("loaded_through=cursor-one");
     expect(screen.getByText("已经走到这段时间流的起点")).toBeInTheDocument();
+  });
+
+  it("loads an intersecting continuation once without stealing focus", async () => {
+    let intersect: IntersectionObserverCallback | null = null;
+    const observe = vi.fn();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          intersect = callback;
+        }
+        observe = observe;
+        disconnect = vi.fn();
+        unobserve = vi.fn();
+        takeRecords = vi.fn(() => []);
+        root = null;
+        rootMargin = "800px 0px";
+        thresholds = [0];
+      },
+    );
+    const first = post("01K2ABCDEF0123456789ABCDE0", "可见的一段");
+    const second = post("01K2ABCDEF0123456789ABCDE1", "自动接上的一段");
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("cursor=cursor-one")
+        ? page([second], null)
+        : page([first], "cursor-one"),
+    );
+    renderTimeline(new PublicApi(fetcher as typeof fetch));
+
+    await screen.findByText("可见的一段");
+    await waitFor(() => expect(observe).toHaveBeenCalled());
+    const focusTarget = screen.getByRole("link", {
+      name: "打开这条 Moment 详情",
+    });
+    focusTarget.focus();
+    const callback = intersect as unknown as IntersectionObserverCallback;
+    expect(callback).toBeTypeOf("function");
+    act(() => {
+      callback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+      callback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    expect(await screen.findByText("自动接上的一段")).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(focusTarget).toHaveFocus();
+    expect(window.location.search).toContain("loaded_through=cursor-one");
   });
 
   it("replays the server cursor chain on refresh and restores scroll", async () => {

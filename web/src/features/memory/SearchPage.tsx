@@ -15,7 +15,12 @@ import {
 } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
+import {
+  LoadMoreSentinel,
+  type LoadSource,
+} from "../../components/LoadMoreSentinel";
 import { PostPresentation } from "../posts/PostPresentation";
+import { appendUnique, validateCursorPage } from "../timeline/cursorContinuity";
 import { DatePicker } from "./DatePicker";
 import {
   activeSearchYear,
@@ -46,31 +51,6 @@ function sameYearCounts(
         item.year === right[index]?.year && item.count === right[index]?.count,
     )
   );
-}
-
-function appendHits(current: SearchHit[], incoming: SearchHit[]): SearchHit[] {
-  const ids = new Set(current.map((item) => item.post.id));
-  if (incoming.some((item) => ids.has(item.post.id))) {
-    throw malformed("continued search page contains a duplicate post");
-  }
-  return [...current, ...incoming];
-}
-
-function validateCursorPage(
-  page: { items: SearchHit[]; nextCursor: string | null },
-  requestedCursor: string | null,
-  visited: ReadonlySet<string>,
-): void {
-  if (page.items.length === 0 && page.nextCursor !== null) {
-    throw malformed("empty search page advances the cursor");
-  }
-  if (page.nextCursor !== null && visited.has(page.nextCursor)) {
-    throw malformed(
-      page.nextCursor === requestedCursor
-        ? "search cursor points to itself"
-        : "search cursor cycle detected",
-    );
-  }
 }
 
 function highlightedContentHtml(contentHtml: string, query: string): string {
@@ -190,7 +170,7 @@ export function SearchPage({
       const aggregate = page.yearCounts;
       let requestedCursor: string | null = null;
       const visited = new Set<string>();
-      validateCursorPage(page, requestedCursor, visited);
+      validateCursorPage(page, requestedCursor, visited, "search");
       for (
         let replayed = 0;
         state.loadedThrough !== null && requestedCursor !== state.loadedThrough;
@@ -216,8 +196,13 @@ export function SearchPage({
         if (!sameYearCounts(aggregate, page.yearCounts)) {
           throw malformed("search aggregate changed between cursor pages");
         }
-        validateCursorPage(page, requestedCursor, visited);
-        combined = appendHits(combined, page.items);
+        validateCursorPage(page, requestedCursor, visited, "search");
+        combined = appendUnique(
+          combined,
+          page.items,
+          (item) => item.post.id,
+          "search",
+        );
       }
       visitedCursors.current = visited;
       setHits(combined);
@@ -275,7 +260,7 @@ export function SearchPage({
     );
   };
 
-  const loadMore = async () => {
+  const loadMore = async (source: LoadSource = "manual") => {
     if (!state.query || !nextCursor || loadingMoreRef.current) return;
     const controller = new AbortController();
     activeMore.current = controller;
@@ -300,14 +285,19 @@ export function SearchPage({
       }
       const visited = new Set(visitedCursors.current);
       visited.add(requestedCursor);
-      validateCursorPage(page, requestedCursor, visited);
+      validateCursorPage(page, requestedCursor, visited, "search");
       const firstNew = page.items[0]?.post.id;
-      const combined = appendHits(hits, page.items);
+      const combined = appendUnique(
+        hits,
+        page.items,
+        (item) => item.post.id,
+        "search",
+      );
       visitedCursors.current = visited;
       setHits(combined);
       setNextCursor(page.nextCursor);
       location.replaceTimelineProgress(requestedCursor);
-      if (firstNew) {
+      if (source === "manual" && firstNew) {
         window.requestAnimationFrame(() => {
           document
             .querySelector<HTMLElement>(`[data-post-id="${firstNew}"]`)
@@ -572,22 +562,23 @@ export function SearchPage({
                       从第一页重新加载
                     </button>
                   ) : (
-                    <button onClick={() => void loadMore()} type="button">
+                    <button
+                      onClick={() => void loadMore("manual")}
+                      type="button"
+                    >
                       重试加载
                     </button>
                   )}
                 </div>
               ) : null}
               {nextCursor && !moreError ? (
-                <div className={styles.moreRow}>
-                  <button
-                    disabled={loadingMore}
-                    onClick={() => void loadMore()}
-                    type="button"
-                  >
-                    {loadingMore ? "正在加载…" : "加载更早的结果"}
-                  </button>
-                </div>
+                <LoadMoreSentinel
+                  className={styles.moreRow}
+                  cursor={nextCursor}
+                  label="加载更早的结果"
+                  loading={loadingMore}
+                  onLoad={(source) => void loadMore(source)}
+                />
               ) : hits.length > 0 ? (
                 <p className={styles.endMark}>已显示全部 Moment</p>
               ) : null}

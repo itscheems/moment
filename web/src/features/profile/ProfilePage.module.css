@@ -189,6 +189,27 @@
   cursor: pointer;
 }
 
+.moreError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-4);
+  color: var(--danger);
+}
+
+.moreError button {
+  min-block-size: var(--target-size);
+  flex: 0 0 auto;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
 .empty {
   border-block-end: 1px solid var(--border-subtle);
   margin: 0;

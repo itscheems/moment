@@ -1,6 +1,12 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PublicApi, type SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
@@ -46,6 +52,18 @@ function json(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+function page(items: unknown[], nextCursor: string | null): Response {
+  return json({
+    data: { items },
+    meta: { next_cursor: nextCursor, request_id: "req_posts" },
+  });
+}
+
+beforeEach(() => {
+  window.history.replaceState({}, "", "/@owner");
+  vi.stubGlobal("scrollTo", vi.fn());
+});
 
 afterEach(() => {
   cleanup();
@@ -121,5 +139,84 @@ describe("profile page", () => {
             Node.DOCUMENT_POSITION_FOLLOWING
         : 0,
     ).toBeTruthy();
+  });
+
+  it("keeps loaded posts visible when an append fails and retries in place", async () => {
+    const first = post(pinnedId, "已经读到这里");
+    const second = post(otherId, "重试后接上的内容");
+    let continued = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes("cursor=cursor-one")) {
+        continued += 1;
+        if (continued === 1) throw new TypeError("offline");
+        return page([second], null);
+      }
+      return page([first], "cursor-one");
+    });
+
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={new PublicApi(fetcher as typeof fetch)}
+              onSiteSaved={vi.fn()}
+              site={{ ...site, pinnedPostId: null }}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    expect(await screen.findByText("已经读到这里")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "加载更早的 Moment" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "已保留当前 Moment",
+    );
+    expect(screen.getByText("已经读到这里")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试加载" }));
+    expect(await screen.findByText("重试后接上的内容")).toBeInTheDocument();
+    expect(screen.getByText("已经读到这里")).toBeInTheDocument();
+    expect(window.location.search).toContain("loaded_through=cursor-one");
+  });
+
+  it("replays saved profile pages before restoring the history entry", async () => {
+    window.history.replaceState(
+      { momentScrollY: 640 },
+      "",
+      "/@owner?loaded_through=cursor-one",
+    );
+    const first = post(pinnedId, "资料页第一页");
+    const second = post(otherId, "资料页第二页");
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).includes("cursor=cursor-one")
+        ? page([second], null)
+        : page([first], "cursor-one"),
+    );
+
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={new PublicApi(fetcher as typeof fetch)}
+              onSiteSaved={vi.fn()}
+              site={{ ...site, pinnedPostId: null }}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    expect(await screen.findByText("资料页第二页")).toBeInTheDocument();
+    expect(screen.getByText("资料页第一页")).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await waitFor(() =>
+      expect(window.scrollTo).toHaveBeenCalledWith({
+        top: 640,
+        behavior: "auto",
+      }),
+    );
   });
 });

@@ -296,6 +296,66 @@ describe("search and archive memory layer", () => {
     });
   });
 
+  it("automatically continues search once while keeping the searchbox focused", async () => {
+    window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
+    let intersect: IntersectionObserverCallback | null = null;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          intersect = callback;
+        }
+        observe = vi.fn();
+        disconnect = vi.fn();
+        unobserve = vi.fn();
+        takeRecords = vi.fn(() => []);
+        root = null;
+        rootMargin = "800px 0px";
+        thresholds = [0];
+      },
+    );
+    let requests = 0;
+    install((url) => {
+      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+      requests += 1;
+      const continued = url.includes("cursor=cursor-one");
+      return json({
+        data: {
+          items: [{ ...(continued ? second : first), snippet: "雨" }],
+          year_counts: [{ year: 2026, count: 2 }],
+        },
+        meta: {
+          next_cursor: continued ? null : "cursor-one",
+          request_id: "req_search",
+        },
+      });
+    });
+    render(<App />);
+
+    await screen.findByText(paragraphText("旧城雨落在街口"));
+    const searchbox = screen.getByRole("searchbox");
+    searchbox.focus();
+    const callback = intersect as unknown as IntersectionObserverCallback;
+    expect(callback).toBeTypeOf("function");
+    act(() => {
+      callback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+      callback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+
+    expect(
+      await screen.findByText(paragraphText("旧城雨后的第二页")),
+    ).toBeInTheDocument();
+    expect(requests).toBe(2);
+    expect(searchbox).toHaveFocus();
+    expect(window.location.search).toContain("loaded_through=cursor-one");
+  });
+
   it("guides empty and failed searches without erasing the query", async () => {
     window.history.replaceState({}, "", "/search?q=a");
     let fail = false;
