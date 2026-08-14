@@ -346,12 +346,12 @@
     var(--shadow-popover);
 }
 
-.avatarMenuPositioner {
+.mediaMenuPositioner {
   z-index: 102;
   max-inline-size: calc(100vw - 1rem);
 }
 
-.avatarMenu {
+.mediaMenu {
   min-inline-size: 10.5rem;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
@@ -366,18 +366,18 @@
     transform var(--motion-menu) var(--ease-out);
 }
 
-.avatarMenu[data-starting-style],
-.avatarMenu[data-ending-style] {
+.mediaMenu[data-starting-style],
+.mediaMenu[data-ending-style] {
   opacity: 0;
   transform: translateY(-0.2rem) scale(0.98);
 }
 
-.avatarMenu:focus,
-.avatarMenu:focus-visible {
+.mediaMenu:focus,
+.mediaMenu:focus-visible {
   outline: 0;
 }
 
-.avatarMenuItem {
+.mediaMenuItem {
   min-block-size: var(--target-size);
   display: flex;
   align-items: center;
@@ -390,21 +390,21 @@
   font-weight: 650;
 }
 
-.avatarMenuItem svg {
+.mediaMenuItem svg {
   inline-size: 1.1rem;
   block-size: 1.1rem;
 }
 
-.avatarMenuItem[data-highlighted] {
+.mediaMenuItem[data-highlighted] {
   background: var(--surface-hover);
 }
 
-.avatarMenuItem[data-disabled] {
+.mediaMenuItem[data-disabled] {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.avatarMenuDanger:not([data-disabled]) {
+.mediaMenuDanger:not([data-disabled]) {
   color: var(--danger);
 }
 
@@ -648,7 +648,7 @@
   .saveButton,
   .coverActions button,
   .avatarChangeButton,
-  .avatarMenu,
+  .mediaMenu,
   .fields label {
     transition: none;
   }

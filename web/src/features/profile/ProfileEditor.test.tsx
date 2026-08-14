@@ -128,7 +128,8 @@ describe("profile editor", () => {
     expect(document.body.style.position).toBe("fixed");
     expect(document.body.style.top).toBe("-520px");
     expect(screen.getByRole("img", { name: "封面预览" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "移除封面图片" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑封面" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "移除封面" }));
     fireEvent.click(screen.getByRole("button", { name: "编辑头像" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "移除头像" }));
     fireEvent.change(screen.getByLabelText("显示名称"), {
@@ -196,14 +197,31 @@ describe("profile editor", () => {
     )!;
     expect(coverInput).not.toBeNull();
     const coverInputClick = vi.spyOn(coverInput, "click");
-    const coverAction = screen.getByRole("button", { name: "更换封面图片" });
+    const coverAction = screen.getByRole("button", { name: "编辑封面" });
     expect(coverAction).toHaveTextContent(/^$/);
+    fireEvent.click(coverAction);
+    expect(coverInputClick).not.toHaveBeenCalled();
+    expect(screen.getByRole("menu", { name: "编辑封面" })).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "移除封面图片" }),
-    ).toHaveTextContent(/^$/);
+      screen.getByRole("menuitem", { name: "移除封面" }),
+    ).not.toHaveAttribute("data-disabled");
+    fireEvent.click(screen.getByRole("menuitem", { name: "更换封面" }));
+    expect(coverInputClick).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(coverAction).toHaveFocus());
+
     fireEvent.click(coverAction);
+    fireEvent.click(screen.getByRole("menuitem", { name: "移除封面" }));
+    expect(screen.queryByRole("img", { name: "封面预览" })).toBeNull();
+    await waitFor(() => expect(coverAction).toHaveFocus());
+
     fireEvent.click(coverAction);
-    expect(coverInputClick).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("menuitem", { name: "移除封面" })).toHaveAttribute(
+      "data-disabled",
+    );
+    fireEvent.keyDown(screen.getByRole("menu", { name: "编辑封面" }), {
+      key: "Escape",
+    });
+    await waitFor(() => expect(coverAction).toHaveFocus());
 
     const avatarInput = document.querySelector<HTMLInputElement>(
       'input[data-profile-media-input="avatar"]',
@@ -243,6 +261,7 @@ describe("profile editor", () => {
     expect(screen.getByLabelText("显示名称")).toHaveValue("Moment");
     expect(preview).toHaveTextContent("Moment");
     expect(preview).toHaveTextContent("@owner");
+    expect(screen.getByRole("img", { name: "封面预览" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "头像预览" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });

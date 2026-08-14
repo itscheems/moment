@@ -45,6 +45,7 @@ export function ProfileEditor({
   const avatarInput = useRef<HTMLInputElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
   const avatarMenuTrigger = useRef<HTMLButtonElement>(null);
+  const coverMenuTrigger = useRef<HTMLButtonElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const uploads = useRef<Record<AssetKind, AbortController | null>>({
     avatar: null,
@@ -276,26 +277,45 @@ export function ProfileEditor({
                       />
                     )}
                     <div className={styles.coverActions}>
-                      <button
-                        aria-label={
-                          coverPreview ? "更换封面图片" : "添加封面图片"
-                        }
-                        onClick={() => coverInput.current?.click()}
-                        title={coverPreview ? "更换封面图片" : "添加封面图片"}
-                        type="button"
-                      >
-                        <Icon name="camera" />
-                      </button>
-                      {coverPreview ? (
-                        <button
-                          aria-label="移除封面图片"
-                          onClick={() => removeAsset("cover")}
-                          title="移除封面图片"
+                      <Menu.Root>
+                        <Menu.Trigger
+                          aria-label="编辑封面"
+                          ref={coverMenuTrigger}
+                          title="编辑封面"
                           type="button"
                         >
-                          <Icon name="close" />
-                        </button>
-                      ) : null}
+                          <Icon name="camera" />
+                        </Menu.Trigger>
+                        <Menu.Portal>
+                          <Menu.Positioner
+                            align="end"
+                            className={styles.mediaMenuPositioner}
+                            side="bottom"
+                            sideOffset={6}
+                          >
+                            <Menu.Popup
+                              className={styles.mediaMenu}
+                              finalFocus={coverMenuTrigger}
+                            >
+                              <Menu.Item
+                                className={styles.mediaMenuItem}
+                                onClick={() => coverInput.current?.click()}
+                              >
+                                <Icon name="camera" />
+                                <span>更换封面</span>
+                              </Menu.Item>
+                              <Menu.Item
+                                className={`${styles.mediaMenuItem} ${styles.mediaMenuDanger}`}
+                                disabled={!coverPreview}
+                                onClick={() => removeAsset("cover")}
+                              >
+                                <Icon name="delete" />
+                                <span>移除封面</span>
+                              </Menu.Item>
+                            </Menu.Popup>
+                          </Menu.Positioner>
+                        </Menu.Portal>
+                      </Menu.Root>
                     </div>
                     {coverState === "uploading" ? (
                       <small className={styles.coverUploadStatus}>
@@ -326,23 +346,23 @@ export function ProfileEditor({
                         <Menu.Portal>
                           <Menu.Positioner
                             align="start"
-                            className={styles.avatarMenuPositioner}
+                            className={styles.mediaMenuPositioner}
                             side="bottom"
                             sideOffset={6}
                           >
                             <Menu.Popup
-                              className={styles.avatarMenu}
+                              className={styles.mediaMenu}
                               finalFocus={avatarMenuTrigger}
                             >
                               <Menu.Item
-                                className={styles.avatarMenuItem}
+                                className={styles.mediaMenuItem}
                                 onClick={() => avatarInput.current?.click()}
                               >
                                 <Icon name="camera" />
                                 <span>更换头像</span>
                               </Menu.Item>
                               <Menu.Item
-                                className={`${styles.avatarMenuItem} ${styles.avatarMenuDanger}`}
+                                className={`${styles.mediaMenuItem} ${styles.mediaMenuDanger}`}
                                 disabled={!avatarPreview}
                                 onClick={() => removeAsset("avatar")}
                               >
