@@ -112,11 +112,15 @@ describe("profile editor", () => {
     );
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "编辑个人资料" }),
-      ).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "编辑资料" })).toBeEnabled(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "编辑个人资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    expect(
+      screen.getByRole("dialog", { name: "编辑资料" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "关闭编辑资料" }),
+    ).toBeInTheDocument();
     expect(document.documentElement.style.overflowY).toBe("hidden");
     expect(document.body.style.position).toBe("fixed");
     expect(document.body.style.top).toBe("-520px");
@@ -166,11 +170,9 @@ describe("profile editor", () => {
     );
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "编辑个人资料" }),
-      ).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "编辑资料" })).toBeEnabled(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "编辑个人资料" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
 
     const preview = screen.getByRole("region", { name: "个人资料预览" });
     expect(preview).toHaveTextContent("Moment");
@@ -183,7 +185,7 @@ describe("profile editor", () => {
     expect(
       screen.getByRole("button", { name: "选择封面图片" }),
     ).not.toHaveTextContent("相机");
-    const reset = screen.getByRole("button", { name: "重置个人资料更改" });
+    const reset = screen.getByRole("button", { name: "重置资料更改" });
     expect(reset).toBeDisabled();
     fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "尚未保存的名称" },

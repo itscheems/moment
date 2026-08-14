@@ -193,7 +193,7 @@ export function ProfileEditor({
       }}
       open={open}
     >
-      <Dialog.Trigger className={styles.trigger}>编辑个人资料</Dialog.Trigger>
+      <Dialog.Trigger className={styles.trigger}>编辑资料</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.backdrop} />
         <Dialog.Viewport className={styles.viewport}>
@@ -213,16 +213,16 @@ export function ProfileEditor({
             >
               <header className={styles.header}>
                 <Dialog.Close
-                  aria-label="关闭编辑个人资料"
+                  aria-label="关闭编辑资料"
                   className={styles.iconButton}
                   title="关闭"
                 >
                   <Icon name="close" />
                 </Dialog.Close>
-                <Dialog.Title>编辑个人资料</Dialog.Title>
+                <Dialog.Title>编辑资料</Dialog.Title>
                 <div className={styles.headerActions}>
                   <button
-                    aria-label="重置个人资料更改"
+                    aria-label="重置资料更改"
                     className={styles.resetButton}
                     disabled={saving || (!changed && !pending && !uploadFailed)}
                     onClick={reset}
