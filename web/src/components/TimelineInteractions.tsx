@@ -1,7 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import { PreviewCard } from "@base-ui/react/preview-card";
 import { Tooltip } from "@base-ui/react/tooltip";
-import type { ReactElement } from "react";
+import { useRef, type ReactElement, type SyntheticEvent } from "react";
 
 import type { SiteIdentity } from "../api/public";
 import { InternalLink } from "../app/navigation";
@@ -101,6 +101,10 @@ export function ShareMenu({
   title: string;
   trigger: ReactElement;
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const stopCardNavigation = (event: SyntheticEvent) => {
+    event.stopPropagation();
+  };
   const url = () =>
     new URL(href, baseUrl?.trim() || window.location.origin).toString();
 
@@ -130,7 +134,7 @@ export function ShareMenu({
         <Tooltip.Trigger
           closeDelay={80}
           delay={350}
-          render={<Menu.Trigger render={trigger} />}
+          render={<Menu.Trigger ref={triggerRef} render={trigger} />}
         />
         <Tooltip.Portal>
           <Tooltip.Positioner
@@ -153,7 +157,12 @@ export function ShareMenu({
           side="bottom"
           sideOffset={4}
         >
-          <Menu.Popup aria-label="分享" className={styles.sharePopup}>
+          <Menu.Popup
+            aria-label="分享"
+            className={styles.sharePopup}
+            finalFocus={triggerRef}
+            onClick={stopCardNavigation}
+          >
             <Menu.Item className={styles.shareItem} onClick={() => void copy()}>
               <Icon name="link" />
               复制链接

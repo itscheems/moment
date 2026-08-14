@@ -17,6 +17,19 @@
   background: var(--surface-hover);
 }
 
+.surfaceLink {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.surfaceLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 .fresh {
   animation: settle-new-tick var(--motion-content) var(--ease-out) both;
 }

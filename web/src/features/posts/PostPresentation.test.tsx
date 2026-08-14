@@ -18,6 +18,10 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   window.history.replaceState({}, "", "/");
+  Object.defineProperty(window, "scrollY", {
+    configurable: true,
+    value: 0,
+  });
 });
 
 const site: SiteIdentity = {
@@ -155,15 +159,46 @@ describe("shared post presentation", () => {
     expect(window.location.pathname).toBe("/m/01K2ABCDEF0123456789ABCDE0");
   });
 
-  it("copies the canonical public URL and shows a confirmation", async () => {
+  it("exposes a native keyboard detail link before the card actions", () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost("键盘打开", "<p>键盘打开</p>")}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    const link = screen.getByRole("link", { name: "打开这条 Moment 详情" });
+    expect(link).toHaveAttribute(
+      "href",
+      "/m/01K2ABCDEF0123456789ABCDE0",
+    );
+    expect(link).toHaveAttribute(
+      "data-focus-key",
+      "01K2ABCDEF0123456789ABCDE0:surface-link",
+    );
+    link.focus();
+    expect(link).toHaveFocus();
+    fireEvent.click(link);
+    expect(window.location.pathname).toBe("/m/01K2ABCDEF0123456789ABCDE0");
+  });
+
+  it("keeps every share action inside the portal without navigating the card", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
+    const share = vi.fn().mockResolvedValue(undefined);
+    const open = vi.spyOn(window, "open").mockImplementation(() => null);
     vi.stubGlobal(
       "navigator",
       Object.assign(Object.create(window.navigator), {
         clipboard: { writeText },
-        share: undefined,
+        share,
       }),
     );
+    Object.defineProperty(window, "scrollY", {
+      configurable: true,
+      value: 420,
+    });
     render(
       <FeedbackProvider>
         <NavigationProvider>
@@ -175,7 +210,9 @@ describe("shared post presentation", () => {
       </FeedbackProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "分享这条 Moment" }));
+    const trigger = screen.getByRole("button", { name: "分享这条 Moment" });
+    trigger.focus();
+    fireEvent.click(trigger);
     fireEvent.click(await screen.findByRole("menuitem", { name: "复制链接" }));
 
     await waitFor(() => {
@@ -184,6 +221,29 @@ describe("shared post presentation", () => {
       );
     });
     expect(screen.getByRole("dialog", { name: "链接已复制" })).toBeVisible();
+    expect(window.location.pathname).toBe("/");
+    expect(window.scrollY).toBe(420);
+    await waitFor(() => expect(trigger).toHaveFocus());
+
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "系统分享" }));
+    await waitFor(() => expect(share).toHaveBeenCalledTimes(1));
+    expect(window.location.pathname).toBe("/");
+    expect(window.scrollY).toBe(420);
+    await waitFor(() => expect(trigger).toHaveFocus());
+
+    fireEvent.click(trigger);
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "在新标签页打开" }),
+    );
+    expect(open).toHaveBeenCalledWith(
+      "https://moment.example/m/01K2ABCDEF0123456789ABCDE0",
+      "_blank",
+      "noopener,noreferrer",
+    );
+    expect(window.location.pathname).toBe("/");
+    expect(window.scrollY).toBe(420);
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it("keeps a detail share menu on the content side of its trigger", async () => {

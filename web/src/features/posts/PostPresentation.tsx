@@ -18,6 +18,19 @@ import styles from "./PostPresentation.module.css";
 
 export { SiteAvatar } from "../../components/SiteIdentity";
 
+const interactiveSurfaceSelector = [
+  "a",
+  "button",
+  "input",
+  "textarea",
+  "select",
+  '[role="button"]',
+  '[role="link"]',
+  '[role="menu"]',
+  '[role="menuitem"]',
+  "[data-popup-open]",
+].join(", ");
+
 function longInTimeline(post: PublicPost): boolean {
   return (
     Array.from(post.contentMd).length > 480 ||
@@ -60,7 +73,7 @@ export function PostPresentation({
     if (
       detail ||
       (event.target instanceof Element &&
-        event.target.closest("a, button, input, textarea, select"))
+        event.target.closest(interactiveSurfaceSelector))
     ) {
       return;
     }
@@ -209,6 +222,14 @@ export function PostPresentation({
       onClick={openFromSurface}
       tabIndex={-1}
     >
+      <InternalLink
+        aria-label="打开这条 Moment 详情"
+        className={styles.surfaceLink}
+        data-focus-key={`${post.id}:surface-link`}
+        href={detailHref}
+      >
+        <span className={styles.srOnly}>打开这条 Moment 详情</span>
+      </InternalLink>
       <div className={styles.avatarColumn}>{avatar}</div>
       <div className={styles.postMain}>
         {pinLabel}
