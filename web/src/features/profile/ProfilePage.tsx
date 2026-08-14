@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   PublicApi,
   PublicApiError,
+  type PublicComment,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
@@ -22,6 +23,7 @@ import {
   ExactTimeTooltip,
   ShareMenu,
 } from "../../components/TimelineInteractions";
+import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { useOwner } from "../owner/OwnerProvider";
 import { PostPresentation } from "../posts/PostPresentation";
 import { formatMomentDate } from "../posts/dates";
@@ -112,6 +114,19 @@ export function ProfilePage({
     site.timezone,
     new Date(site.instanceInitializedAt ?? Date.now()),
   );
+  const createdFromProfile = useCallback((comment: PublicComment) => {
+    const increment = (post: PublicPost) =>
+      post.id === comment.postId
+        ? { ...post, commentCount: post.commentCount + 1 }
+        : post;
+    setPosts((current) => current.map(increment));
+    setPinnedPost((current) => (current ? increment(current) : current));
+  }, []);
+  const { openReply, replyDialog } = usePostReplyDialog({
+    api,
+    onCreated: createdFromProfile,
+    site,
+  });
 
   const load = useCallback(async () => {
     activeInitial.current?.abort();
@@ -330,6 +345,7 @@ export function ProfilePage({
             {pinnedPost ? (
               <PostPresentation
                 onDeleted={() => setPinnedPost(null)}
+                onReply={(event) => openReply(pinnedPost, event)}
                 onSiteChanged={onSiteSaved}
                 owner={owner.state === "owner"}
                 pinned
@@ -342,6 +358,7 @@ export function ProfilePage({
               .map((post) => (
                 <PostPresentation
                   key={post.id}
+                  onReply={(event) => openReply(post, event)}
                   onSiteChanged={onSiteSaved}
                   owner={owner.state === "owner"}
                   post={post}
@@ -379,6 +396,7 @@ export function ProfilePage({
           <PublicEmpty context="profile" owner={owner.state === "owner"} />
         )
       ) : null}
+      {replyDialog}
     </section>
   );
 }

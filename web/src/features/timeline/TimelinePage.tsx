@@ -13,8 +13,8 @@ import {
   LoadMoreSentinel,
   type LoadSource,
 } from "../../components/LoadMoreSentinel";
+import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { PostPresentation } from "../posts/PostPresentation";
-import { PostReplyDialog } from "../comments/CommentThread";
 import { PublicEmpty, PublicError, TimelineLoading } from "./PublicStates";
 import { listenForOwnerPosts } from "../owner/postEvents";
 import type { OwnerPostEvent } from "../owner/postEvents";
@@ -100,12 +100,6 @@ export function TimelinePage({
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [freshId, setFreshId] = useState<string | null>(null);
-  const [replyDialogOpen, setReplyDialogOpen] = useState(false);
-  const [replyDialogPost, setReplyDialogPost] = useState<PublicPost | null>(
-    null,
-  );
-  const [replyDialogContent, setReplyDialogContent] = useState("");
-  const [replyDialogGuestName, setReplyDialogGuestName] = useState("");
   const initialSearchRef = useRef(initialSearch);
   const activeInitial = useRef<AbortController | null>(null);
   const activeMore = useRef<AbortController | null>(null);
@@ -113,7 +107,6 @@ export function TimelinePage({
   const initialEntryRestored = useRef(false);
   const ownerEvents = useRef(new Map<string, OwnerPostEvent>());
   const visitedCursors = useRef(new Set<string>());
-  const replyDialogTriggerRef = useRef<HTMLButtonElement>(null);
 
   const reconcileOwnerEvents = useCallback((items: PublicPost[]) => {
     let reconciled = items;
@@ -244,8 +237,12 @@ export function TimelinePage({
         ? { ...post, commentCount: post.commentCount + 1 }
         : post;
     setPosts((current) => current.map(increment));
-    setReplyDialogPost((current) => (current ? increment(current) : current));
   }, []);
+  const { openReply, replyDialog } = usePostReplyDialog({
+    api,
+    onCreated: createdFromTimeline,
+    site,
+  });
 
   useEffect(() => {
     if (loadingInitial || initialError || initialEntryRestored.current) {
@@ -339,12 +336,7 @@ export function TimelinePage({
             fresh={post.id === freshId}
             key={post.id}
             owner={owner}
-            onReply={(event) => {
-              replyDialogTriggerRef.current = event.currentTarget;
-              if (replyDialogPost?.id !== post.id) setReplyDialogContent("");
-              setReplyDialogPost(post);
-              setReplyDialogOpen(true);
-            }}
+            onReply={(event) => openReply(post, event)}
             onSiteChanged={onSiteChanged}
             post={post}
             site={site}
@@ -380,22 +372,7 @@ export function TimelinePage({
           <p className={styles.endMark}>已经走到这段时间流的起点</p>
         )}
       </section>
-      {replyDialogPost ? (
-        <PostReplyDialog
-          api={api}
-          commentsEnabled={site.commentsEnabled}
-          content={replyDialogContent}
-          guestName={replyDialogGuestName}
-          onContentChange={setReplyDialogContent}
-          onCreated={createdFromTimeline}
-          onGuestNameChange={setReplyDialogGuestName}
-          onOpenChange={setReplyDialogOpen}
-          open={replyDialogOpen}
-          post={replyDialogPost}
-          site={site}
-          triggerRef={replyDialogTriggerRef}
-        />
-      ) : null}
+      {replyDialog}
     </>
   );
 }

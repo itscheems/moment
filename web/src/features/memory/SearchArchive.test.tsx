@@ -152,6 +152,42 @@ describe("search and archive memory layer", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("opens the reply dialog from a search result without leaving search", async () => {
+    window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
+    install((url) => {
+      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+      return json({
+        data: {
+          items: [{ ...first, snippet: "雨" }],
+          year_counts: [{ year: 2026, count: 1 }],
+        },
+        meta: { next_cursor: null, request_id: "req_search" },
+      });
+    });
+    render(<App />);
+
+    await screen.findByText(paragraphText("旧城雨落在街口"));
+    const trigger = screen.getByRole("button", { name: "回复这条 Moment" });
+    const initialUrl = window.location.href;
+    fireEvent.click(trigger);
+
+    expect(
+      screen.getByRole("dialog", { name: "回复这条 Moment" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByLabelText("回复内容")).toHaveFocus(),
+    );
+    expect(window.location.href).toBe(initialUrl);
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭回复窗口" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "回复这条 Moment" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(trigger).toHaveFocus();
+  });
+
   it("uses Escape to clear, close filters, then release focus", async () => {
     window.history.replaceState({}, "", "/search");
     install(() => json({}, 404));
@@ -325,7 +361,7 @@ describe("search and archive memory layer", () => {
       .getByText(paragraphText("旧城雨后的第二页"))
       .closest<HTMLElement>("[data-post-id]");
     const trigger = secondPost?.querySelector<HTMLAnchorElement>(
-      '[data-focus-key$=":open-post"]',
+      '[data-focus-key$=":surface-link"]',
     );
     expect(trigger).toBeTruthy();
     trigger?.focus();
@@ -348,7 +384,7 @@ describe("search and archive memory layer", () => {
     const restoredTrigger = screen
       .getByText(paragraphText("旧城雨后的第二页"))
       .closest<HTMLElement>("[data-post-id]")
-      ?.querySelector<HTMLAnchorElement>('[data-focus-key$=":open-post"]');
+      ?.querySelector<HTMLAnchorElement>('[data-focus-key$=":surface-link"]');
     expect(restoredTrigger).toHaveFocus();
     expect(window.scrollTo).toHaveBeenCalledWith({
       top: 880,

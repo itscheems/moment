@@ -10,6 +10,7 @@ import {
 import {
   PublicApi,
   PublicApiError,
+  type PublicComment,
   type SearchHit,
   type SiteIdentity,
 } from "../../api/public";
@@ -19,6 +20,7 @@ import {
   LoadMoreSentinel,
   type LoadSource,
 } from "../../components/LoadMoreSentinel";
+import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { PostPresentation } from "../posts/PostPresentation";
 import { appendUnique, validateCursorPage } from "../timeline/cursorContinuity";
 import { DatePicker } from "./DatePicker";
@@ -148,6 +150,26 @@ export function SearchPage({
   const loadingMoreRef = useRef(false);
   const entryRestored = useRef(false);
   const visitedCursors = useRef(new Set<string>());
+  const createdFromSearch = useCallback((comment: PublicComment) => {
+    setHits((current) =>
+      current.map((hit) =>
+        hit.post.id === comment.postId
+          ? {
+              ...hit,
+              post: {
+                ...hit.post,
+                commentCount: hit.post.commentCount + 1,
+              },
+            }
+          : hit,
+      ),
+    );
+  }, []);
+  const { openReply, replyDialog } = usePostReplyDialog({
+    api,
+    onCreated: createdFromSearch,
+    site,
+  });
 
   const load = useCallback(async () => {
     if (!state.query || state.error) return;
@@ -579,6 +601,7 @@ export function SearchPage({
                     hit.post.contentHtml,
                     state.query!,
                   )}
+                  onReply={(event) => openReply(hit.post, event)}
                   onSiteChanged={onSiteChanged}
                   key={hit.post.id}
                   owner={owner}
@@ -618,6 +641,7 @@ export function SearchPage({
           )}
         </>
       ) : null}
+      {replyDialog}
     </div>
   );
 }

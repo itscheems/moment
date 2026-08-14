@@ -73,6 +73,63 @@ afterEach(() => {
 });
 
 describe("profile page", () => {
+  it("opens the reply dialog from a profile Moment and restores the trigger", async () => {
+    const item = post(otherId, "从个人资料直接回复");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/v1/owner/status"
+          ? json(
+              {
+                error: {
+                  code: "UNAUTHORIZED",
+                  message: "guest",
+                  details: {},
+                  request_id: "req_owner",
+                },
+              },
+              401,
+            )
+          : json({}, 404),
+      ),
+    );
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={
+                new PublicApi(
+                  vi.fn(async () => page([item], null)) as typeof fetch,
+                )
+              }
+              onSiteSaved={vi.fn()}
+              site={{ ...site, pinnedPostId: null }}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    expect(await screen.findByText("从个人资料直接回复")).toBeInTheDocument();
+    const trigger = screen.getByRole("button", { name: "回复这条 Moment" });
+    const initialUrl = window.location.href;
+    fireEvent.click(trigger);
+
+    const dialog = screen.getByRole("dialog", { name: "回复这条 Moment" });
+    expect(dialog).toHaveTextContent("从个人资料直接回复");
+    await waitFor(() =>
+      expect(screen.getByLabelText("回复内容")).toHaveFocus(),
+    );
+    expect(window.location.href).toBe(initialUrl);
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭回复窗口" }));
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+    expect(document.documentElement.style.overflowY).toBe("");
+  });
+
   it("renders the singleton pin first without duplicating its timeline row", async () => {
     vi.stubGlobal(
       "fetch",
