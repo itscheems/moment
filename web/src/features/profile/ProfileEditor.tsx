@@ -1,4 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
+import { Menu } from "@base-ui/react/menu";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 
 import type { SiteSettingsUpdate } from "../../api/owner";
@@ -43,6 +44,7 @@ export function ProfileEditor({
   const [saving, setSaving] = useState(false);
   const avatarInput = useRef<HTMLInputElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
+  const avatarMenuTrigger = useRef<HTMLButtonElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const uploads = useRef<Record<AssetKind, AbortController | null>>({
     avatar: null,
@@ -130,6 +132,20 @@ export function ProfileEditor({
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
     if (file) void upload(kind, file);
+  };
+
+  const removeAsset = (kind: AssetKind) => {
+    uploads.current[kind]?.abort();
+    uploads.current[kind] = null;
+    if (kind === "avatar") {
+      setAvatarId(null);
+      setAvatarPreview(null);
+      setAvatarState("idle");
+    } else {
+      setCoverId(null);
+      setCoverPreview(null);
+      setCoverState("idle");
+    }
   };
 
   const changed =
@@ -261,27 +277,23 @@ export function ProfileEditor({
                     )}
                     <div className={styles.coverActions}>
                       <button
-                        aria-label="选择封面图片"
+                        aria-label={
+                          coverPreview ? "更换封面图片" : "添加封面图片"
+                        }
                         onClick={() => coverInput.current?.click()}
-                        title="添加封面图片"
+                        title={coverPreview ? "更换封面图片" : "添加封面图片"}
                         type="button"
                       >
                         <Icon name="camera" />
-                        <span>{coverPreview ? "更换封面" : "添加封面"}</span>
                       </button>
                       {coverPreview ? (
                         <button
                           aria-label="移除封面图片"
-                          onClick={() => {
-                            setCoverId(null);
-                            setCoverPreview(null);
-                            setCoverState("idle");
-                          }}
+                          onClick={() => removeAsset("cover")}
                           title="移除封面图片"
                           type="button"
                         >
                           <Icon name="close" />
-                          <span>移除</span>
                         </button>
                       ) : null}
                     </div>
@@ -301,32 +313,52 @@ export function ProfileEditor({
                           <SiteAvatar site={{ ...site, avatarMediaId: null }} />
                         )}
                       </div>
-                      <button
-                        aria-label="选择头像图片"
-                        className={styles.avatarChangeButton}
-                        onClick={() => avatarInput.current?.click()}
-                        title="更换头像图片"
-                        type="button"
-                      >
-                        <Icon name="camera" />
-                      </button>
+                      <Menu.Root>
+                        <Menu.Trigger
+                          aria-label="编辑头像"
+                          className={styles.avatarChangeButton}
+                          ref={avatarMenuTrigger}
+                          title="编辑头像"
+                          type="button"
+                        >
+                          <Icon name="camera" />
+                        </Menu.Trigger>
+                        <Menu.Portal>
+                          <Menu.Positioner
+                            align="start"
+                            className={styles.avatarMenuPositioner}
+                            side="bottom"
+                            sideOffset={6}
+                          >
+                            <Menu.Popup
+                              className={styles.avatarMenu}
+                              finalFocus={avatarMenuTrigger}
+                            >
+                              <Menu.Item
+                                className={styles.avatarMenuItem}
+                                onClick={() => avatarInput.current?.click()}
+                              >
+                                <Icon name="camera" />
+                                <span>更换头像</span>
+                              </Menu.Item>
+                              <Menu.Item
+                                className={`${styles.avatarMenuItem} ${styles.avatarMenuDanger}`}
+                                disabled={!avatarPreview}
+                                onClick={() => removeAsset("avatar")}
+                              >
+                                <Icon name="delete" />
+                                <span>移除头像</span>
+                              </Menu.Item>
+                            </Menu.Popup>
+                          </Menu.Positioner>
+                        </Menu.Portal>
+                      </Menu.Root>
                     </div>
                     <div className={styles.identityCopy}>
                       <strong>{displayName.trim() || "未命名"}</strong>
                       <small>@{username.trim() || "username"}</small>
                       {avatarState === "uploading" ? (
                         <em>正在上传头像…</em>
-                      ) : avatarPreview ? (
-                        <button
-                          onClick={() => {
-                            setAvatarId(null);
-                            setAvatarPreview(null);
-                            setAvatarState("idle");
-                          }}
-                          type="button"
-                        >
-                          移除头像
-                        </button>
                       ) : null}
                     </div>
                   </div>
@@ -335,6 +367,7 @@ export function ProfileEditor({
                 <input
                   accept="image/jpeg,image/png,image/webp,image/gif"
                   className={styles.fileInput}
+                  data-profile-media-input="cover"
                   onChange={(event) => pick("cover", event)}
                   ref={coverInput}
                   type="file"
@@ -342,6 +375,7 @@ export function ProfileEditor({
                 <input
                   accept="image/jpeg,image/png,image/webp,image/gif"
                   className={styles.fileInput}
+                  data-profile-media-input="avatar"
                   onChange={(event) => pick("avatar", event)}
                   ref={avatarInput}
                   type="file"

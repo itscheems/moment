@@ -235,14 +235,15 @@
 }
 
 .coverActions button {
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
   min-block-size: var(--target-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.4rem;
   border: 1px solid rgb(255 255 255 / 18%);
-  border-radius: 999px;
-  padding-inline: var(--space-3);
+  border-radius: 50%;
+  padding: 0;
   color: #fff;
   background: rgb(15 20 25 / 74%);
   font-size: var(--text-sm);
@@ -344,6 +345,68 @@
   transform: scale(1.04);
 }
 
+.avatarMenuPositioner {
+  z-index: 102;
+  max-inline-size: calc(100vw - 1rem);
+}
+
+.avatarMenu {
+  min-inline-size: 10.5rem;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  padding: var(--space-1);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--motion-menu) var(--ease-out),
+    transform var(--motion-menu) var(--ease-out);
+}
+
+.avatarMenu[data-starting-style],
+.avatarMenu[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-0.2rem) scale(0.98);
+}
+
+.avatarMenu:focus,
+.avatarMenu:focus-visible {
+  outline: 0;
+}
+
+.avatarMenuItem {
+  min-block-size: var(--target-size);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-radius: 0.55rem;
+  padding-inline: var(--space-3);
+  outline: 0;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.avatarMenuItem svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+
+.avatarMenuItem[data-highlighted] {
+  background: var(--surface-hover);
+}
+
+.avatarMenuItem[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.avatarMenuDanger:not([data-disabled]) {
+  color: var(--danger);
+}
+
 .identityCopy {
   min-inline-size: 0;
   display: grid;
@@ -378,31 +441,8 @@
   font-style: normal;
 }
 
-.identityCopy > button {
-  inline-size: fit-content;
-  min-block-size: var(--target-size);
-  border: 0;
-  padding: 0;
-  color: var(--text-tertiary);
-  background: transparent;
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
-.identityCopy > button:hover,
-.identityCopy > button:focus-visible {
-  color: var(--danger);
-  text-decoration: underline;
-  text-underline-offset: 0.18rem;
-}
-
 .fileInput {
-  position: fixed;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
+  display: none;
 }
 
 .fields {
@@ -566,15 +606,6 @@
     inset-block-end: var(--space-3);
   }
 
-  .coverActions button {
-    inline-size: var(--target-size);
-    padding: 0;
-  }
-
-  .coverActions button span {
-    display: none;
-  }
-
   .coverUploadStatus {
     inset-inline-start: var(--space-3);
     inset-block-start: var(--space-3);
@@ -616,6 +647,7 @@
   .saveButton,
   .coverActions button,
   .avatarChangeButton,
+  .avatarMenu,
   .fields label {
     transition: none;
   }

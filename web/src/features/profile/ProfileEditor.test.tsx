@@ -39,7 +39,10 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function siteEnvelope(coverMediaId: string | null) {
+function siteEnvelope(
+  coverMediaId: string | null,
+  avatarMediaId: string | null = mediaId,
+) {
   return {
     data: {
       owner_id: "00000000000000000000000000000000",
@@ -49,7 +52,7 @@ function siteEnvelope(coverMediaId: string | null) {
       bio: "一段简介",
       timezone: "Asia/Shanghai",
       public_base_url: null,
-      avatar_media_id: mediaId,
+      avatar_media_id: avatarMediaId,
       cover_media_id: coverMediaId,
       pinned_post_id: null,
       comments_enabled: true,
@@ -77,7 +80,7 @@ describe("profile editor", () => {
     window.sessionStorage.clear();
   });
 
-  it("previews removal and publishes text and cover in one profile update", async () => {
+  it("previews removal and publishes text with both profile media updates", async () => {
     vi.spyOn(window, "scrollY", "get").mockReturnValue(520);
     const bodies: unknown[] = [];
     vi.stubGlobal(
@@ -97,7 +100,7 @@ describe("profile editor", () => {
         }
         if (url === "/api/v1/owner/site") {
           bodies.push(JSON.parse(String(init?.body)));
-          return json(siteEnvelope(null));
+          return json(siteEnvelope(null, null));
         }
         return json({}, 404);
       }),
@@ -126,6 +129,8 @@ describe("profile editor", () => {
     expect(document.body.style.top).toBe("-520px");
     expect(screen.getByRole("img", { name: "封面预览" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "移除封面图片" }));
+    fireEvent.click(screen.getByRole("button", { name: "编辑头像" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "移除头像" }));
     fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "更新后的 Moment" },
     });
@@ -138,7 +143,11 @@ describe("profile editor", () => {
     expect(document.body.style.position).toBe("");
     expect(window.scrollTo).toHaveBeenCalledWith(0, 520);
     expect(bodies).toEqual([
-      { display_name: "更新后的 Moment", cover_media_id: null },
+      {
+        display_name: "更新后的 Moment",
+        avatar_media_id: null,
+        cover_media_id: null,
+      },
     ]);
     expect(await screen.findByText("个人资料已更新")).toBeInTheDocument();
   });
@@ -182,11 +191,44 @@ describe("profile editor", () => {
     expect(
       screen.queryByText("这些内容会显示在你的个人资料与分享页面。"),
     ).toBeNull();
+    const coverInput = document.querySelector<HTMLInputElement>(
+      'input[data-profile-media-input="cover"]',
+    )!;
+    expect(coverInput).not.toBeNull();
+    const coverInputClick = vi.spyOn(coverInput, "click");
+    const coverAction = screen.getByRole("button", { name: "更换封面图片" });
+    expect(coverAction).toHaveTextContent(/^$/);
     expect(
-      screen.getByRole("button", { name: "选择封面图片" }),
-    ).not.toHaveTextContent("相机");
+      screen.getByRole("button", { name: "移除封面图片" }),
+    ).toHaveTextContent(/^$/);
+    fireEvent.click(coverAction);
+    fireEvent.click(coverAction);
+    expect(coverInputClick).toHaveBeenCalledTimes(2);
+
+    const avatarInput = document.querySelector<HTMLInputElement>(
+      'input[data-profile-media-input="avatar"]',
+    )!;
+    expect(avatarInput).not.toBeNull();
+    const avatarInputClick = vi.spyOn(avatarInput, "click");
+    const avatarAction = screen.getByRole("button", { name: "编辑头像" });
+    expect(screen.queryByText("移除头像")).toBeNull();
+    fireEvent.click(avatarAction);
+    expect(avatarInputClick).not.toHaveBeenCalled();
+    expect(screen.getByRole("menu", { name: "编辑头像" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "移除头像" }),
+    ).not.toHaveAttribute("data-disabled");
+    fireEvent.click(screen.getByRole("menuitem", { name: "更换头像" }));
+    expect(avatarInputClick).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(avatarAction).toHaveFocus());
+
+    fireEvent.click(avatarAction);
+    fireEvent.click(screen.getByRole("menuitem", { name: "移除头像" }));
+    expect(screen.queryByRole("img", { name: "头像预览" })).toBeNull();
+    await waitFor(() => expect(avatarAction).toHaveFocus());
+
     const reset = screen.getByRole("button", { name: "重置资料更改" });
-    expect(reset).toBeDisabled();
+    expect(reset).toBeEnabled();
     fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "尚未保存的名称" },
     });
@@ -201,6 +243,7 @@ describe("profile editor", () => {
     expect(screen.getByLabelText("显示名称")).toHaveValue("Moment");
     expect(preview).toHaveTextContent("Moment");
     expect(preview).toHaveTextContent("@owner");
+    expect(screen.getByRole("img", { name: "头像预览" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 });
