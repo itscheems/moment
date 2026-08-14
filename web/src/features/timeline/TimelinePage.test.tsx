@@ -66,10 +66,15 @@ function staleCursor(): Response {
   );
 }
 
-function renderTimeline(api: PublicApi, initialSearch = "") {
+function renderTimeline(api: PublicApi, initialSearch = "", owner = false) {
   return render(
     <NavigationProvider>
-      <TimelinePage api={api} initialSearch={initialSearch} site={site} />
+      <TimelinePage
+        api={api}
+        initialSearch={initialSearch}
+        owner={owner}
+        site={site}
+      />
     </NavigationProvider>,
   );
 }
@@ -414,5 +419,20 @@ describe("public timeline", () => {
     expect(
       await screen.findByRole("heading", { name: "还没有 Moment" }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/这里还没有公开 Moment/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "发布第一条 Moment" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers the owner a direct first-publish action", async () => {
+    renderTimeline(
+      new PublicApi(vi.fn(async () => page([], null)) as typeof fetch),
+      "",
+      true,
+    );
+    expect(
+      await screen.findByRole("link", { name: "发布第一条 Moment" }),
+    ).toHaveAttribute("href", "/owner/compose");
   });
 });

@@ -3,7 +3,7 @@ import { type MouseEvent, type MouseEventHandler } from "react";
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
-import { SiteAvatar } from "../../components/SiteIdentity";
+import { SiteAvatar, siteDisplayName } from "../../components/SiteIdentity";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import {
   ActionTooltip,
@@ -64,9 +64,10 @@ export function PostPresentation({
   onReply?: MouseEventHandler<HTMLButtonElement>;
 }) {
   const { navigate } = useNavigation();
-  const title = site.displayName.trim() || site.title.trim() || "Moment";
+  const title = siteDisplayName(site);
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
   const collapsed = !detail && longInTimeline(post);
+  const longDetail = detail && longInTimeline(post);
   const detailHref = `/m/${encodeURIComponent(post.id)}`;
 
   const openFromSurface = (event: MouseEvent<HTMLElement>) => {
@@ -170,7 +171,10 @@ export function PostPresentation({
             {byline}
           </div>
         </div>
-        <div className={styles.detailBody}>
+        <div
+          className={`${styles.detailBody} ${longDetail ? styles.detailLong : ""}`}
+          data-content-density={longDetail ? "long" : "short"}
+        >
           <MarkdownContent
             className={styles.markdown}
             html={contentHtml ?? post.contentHtml}
@@ -178,11 +182,11 @@ export function PostPresentation({
           />
           {post.location ? (
             <p
+              aria-label={`地点：${post.location.displayName}`}
               className={styles.postLocation}
-              title={post.location.displayName}
             >
               <Icon name="location" />
-              <span>{post.location.name}</span>
+              <span>{post.location.displayName}</span>
             </p>
           ) : null}
           <ImageGrid media={post.media} />
@@ -240,9 +244,12 @@ export function PostPresentation({
           mentionUsername={site.username}
         />
         {post.location ? (
-          <p className={styles.postLocation} title={post.location.displayName}>
+          <p
+            aria-label={`地点：${post.location.displayName}`}
+            className={styles.postLocation}
+          >
             <Icon name="location" />
-            <span>{post.location.name}</span>
+            <span>{post.location.displayName}</span>
           </p>
         ) : null}
         <ImageGrid media={post.media} />

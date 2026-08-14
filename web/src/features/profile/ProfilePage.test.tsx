@@ -118,8 +118,12 @@ describe("profile page", () => {
       expect(screen.getAllByText("置顶内容")).toHaveLength(1),
     );
     expect(
-      screen.getByRole("navigation", { name: "个人资料内容" }),
-    ).toHaveTextContent("Moment");
+      screen.getByRole("heading", { level: 3, name: "Moment" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "个人资料内容" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("按发布时间排列")).toBeInTheDocument();
     expect(screen.queryByText("媒体与归档")).not.toBeInTheDocument();
     expect(screen.getByText("@owner")).toBeInTheDocument();
     expect(screen.getByText("2026年8月加入")).toHaveAttribute(
@@ -130,6 +134,9 @@ describe("profile page", () => {
       "href",
       "/archive",
     );
+    const timezone = screen.getByLabelText(/时区：.*（Asia\/Shanghai）/);
+    expect(timezone).toHaveAttribute("title", "Asia/Shanghai");
+    expect(timezone).not.toHaveTextContent(/^Asia\/Shanghai$/);
     expect(screen.getByText("已置顶")).toBeInTheDocument();
     const pinned = screen.getByText("置顶内容").closest("article");
     const normal = screen.getByText("普通内容").closest("article");
@@ -139,6 +146,74 @@ describe("profile page", () => {
             Node.DOCUMENT_POSITION_FOLLOWING
         : 0,
     ).toBeTruthy();
+  });
+
+  it("explains an empty public profile without presenting a fake tab", async () => {
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={
+                new PublicApi(vi.fn(async () => page([], null)) as typeof fetch)
+              }
+              onSiteSaved={vi.fn()}
+              site={{ ...site, pinnedPostId: null }}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    expect(
+      await screen.findByText(/这个个人资料还没有公开 Moment/),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "发布第一条 Moment" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers the owner a first-publish action from an empty profile", async () => {
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-profile",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        json({
+          data: {
+            initialized: true,
+            password_enabled: false,
+            session_epoch: 1,
+            initialized_at: "2026-08-01T00:00:00Z",
+          },
+          meta: { request_id: "req_status" },
+        }),
+      ),
+    );
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={
+                new PublicApi(vi.fn(async () => page([], null)) as typeof fetch)
+              }
+              onSiteSaved={vi.fn()}
+              site={{ ...site, pinnedPostId: null }}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "发布第一条 Moment" }),
+    ).toHaveAttribute("href", "/owner/compose");
   });
 
   it("keeps loaded posts visible when an append fails and retries in place", async () => {

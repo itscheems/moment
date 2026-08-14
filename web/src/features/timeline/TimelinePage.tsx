@@ -308,7 +308,7 @@ export function TimelinePage({
       />
     );
   }
-  if (posts.length === 0) return <PublicEmpty />;
+  if (posts.length === 0) return <PublicEmpty owner={owner} />;
 
   return (
     <section aria-label="公开时间流" className={styles.timelineList}>

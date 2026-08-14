@@ -15,6 +15,7 @@ import {
 import {
   SiteAvatar,
   SiteCover,
+  siteDisplayName,
   siteHandle,
 } from "../../components/SiteIdentity";
 import {
@@ -24,7 +25,11 @@ import {
 import { useOwner } from "../owner/OwnerProvider";
 import { PostPresentation } from "../posts/PostPresentation";
 import { formatMomentDate } from "../posts/dates";
-import { PublicError, TimelineLoading } from "../timeline/PublicStates";
+import {
+  PublicEmpty,
+  PublicError,
+  TimelineLoading,
+} from "../timeline/PublicStates";
 import {
   appendUnique,
   invalidCursorProgress,
@@ -36,6 +41,22 @@ import styles from "./ProfilePage.module.css";
 import { ProfileEditor } from "./ProfileEditor";
 
 const MAX_REPLAY_PAGES = 1_000;
+
+function timezoneLabel(timeZone: string, date: Date): string {
+  const part = (style: "longGeneric" | "longOffset") =>
+    new Intl.DateTimeFormat("zh-CN", {
+      timeZone,
+      timeZoneName: style,
+    })
+      .formatToParts(date)
+      .find((candidate) => candidate.type === "timeZoneName")?.value;
+  const offset = part("longOffset")?.replace(/^GMT/, "UTC");
+  const name = part("longGeneric");
+  if (name && name !== timeZone && name !== offset) {
+    return offset ? `${name} · ${offset}` : name;
+  }
+  return offset ?? name ?? timeZone;
+}
 
 function recoverableCursorError(error: unknown): boolean {
   return (
@@ -75,7 +96,7 @@ export function ProfilePage({
   const initialSearch = useRef(window.location.search);
   const entryRestored = useRef(false);
   const visitedCursors = useRef(new Set<string>());
-  const title = site.displayName.trim() || site.title.trim() || "Moment";
+  const title = siteDisplayName(site);
   const handle = siteHandle(site);
   const initialized = site.instanceInitializedAt
     ? formatMomentDate(site.instanceInitializedAt, site.timezone)
@@ -87,6 +108,10 @@ export function ProfilePage({
         timeZone: site.timezone,
       }).format(new Date(site.instanceInitializedAt))
     : null;
+  const publicTimezone = timezoneLabel(
+    site.timezone,
+    new Date(site.instanceInitializedAt ?? Date.now()),
+  );
 
   const load = useCallback(async () => {
     activeInitial.current?.abort();
@@ -272,12 +297,18 @@ export function ProfilePage({
               }
             />
           ) : null}
-          <span>{site.timezone}</span>
+          <span
+            aria-label={`时区：${publicTimezone}（${site.timezone}）`}
+            title={site.timezone}
+          >
+            {publicTimezone}
+          </span>
           <InternalLink href="/archive">查看归档</InternalLink>
         </div>
-        <nav aria-label="个人资料内容" className={styles.tabs}>
-          <span aria-current="page">Moment</span>
-        </nav>
+        <header className={styles.contentHeading}>
+          <h3>Moment</h3>
+          <span>按发布时间排列</span>
+        </header>
       </div>
 
       {loadingInitial ? <TimelineLoading /> : null}
@@ -345,7 +376,7 @@ export function ProfilePage({
             ) : null}
           </div>
         ) : (
-          <p className={styles.empty}>还没有 Moment</p>
+          <PublicEmpty context="profile" owner={owner.state === "owner"} />
         )
       ) : null}
     </section>

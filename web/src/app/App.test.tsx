@@ -498,6 +498,9 @@ describe("App shell and public routes", () => {
         name: "乔乔 的个人资料",
       }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "乔乔" }),
+    ).toBeInTheDocument();
     expect(await screen.findByText("个人资料里的 Moment")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { level: 2, name: "乔乔" }),

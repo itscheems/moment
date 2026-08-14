@@ -51,12 +51,15 @@
 .secondaryAction {
   min-block-size: var(--target-size);
   inline-size: fit-content;
+  display: inline-flex;
+  align-items: center;
   border: 1px solid var(--button-primary);
   border-radius: var(--radius-action);
   padding-inline: var(--space-5);
   color: var(--button-primary-contrast);
   background: var(--button-primary);
   font-weight: 650;
+  text-decoration: none;
   cursor: pointer;
 }
 

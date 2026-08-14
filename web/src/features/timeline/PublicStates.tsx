@@ -1,3 +1,4 @@
+import { InternalLink } from "../../app/navigation";
 import styles from "./PublicStates.module.css";
 
 export function TimelineLoading() {
@@ -22,11 +23,30 @@ export function TimelineLoading() {
   );
 }
 
-export function PublicEmpty() {
+export function PublicEmpty({
+  context = "timeline",
+  owner = false,
+}: {
+  context?: "timeline" | "profile";
+  owner?: boolean;
+}) {
+  const description = owner
+    ? "写下第一段 Moment，它会出现在这里，也会进入你的公开归档。"
+    : context === "profile"
+      ? "这个个人资料还没有公开 Moment；之后发布的内容会按时间出现在这里。"
+      : "这里还没有公开 Moment；稍后再来，就能从最新一段开始阅读。";
   return (
     <section className={styles.message}>
       <div>
         <h2>还没有 Moment</h2>
+        <p>{description}</p>
+        {owner ? (
+          <div className={styles.actions}>
+            <InternalLink className={styles.action} href="/owner/compose">
+              发布第一条 Moment
+            </InternalLink>
+          </div>
+        ) : null}
       </div>
     </section>
   );

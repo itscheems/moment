@@ -200,9 +200,7 @@
 }
 
 .postLocation span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .markdown p,
@@ -382,8 +380,13 @@
 
 .detailBody .markdown {
   margin-block-start: var(--space-4);
-  font-size: 1.0625rem;
-  line-height: 1.55;
+  font-size: 1.375rem;
+  line-height: 1.58;
+}
+
+.detailLong .markdown {
+  font-size: 1.1875rem;
+  line-height: 1.64;
 }
 
 .detail .postActions {
@@ -462,7 +465,11 @@
   }
 
   .detail .markdown {
-    font-size: 1rem;
+    font-size: 1.25rem;
+  }
+
+  .detailLong .markdown {
+    font-size: 1.125rem;
   }
 }
 

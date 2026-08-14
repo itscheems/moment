@@ -6,6 +6,10 @@ export function siteHandle(site: SiteIdentity): string {
   return `@${site.username}`;
 }
 
+export function siteDisplayName(site: SiteIdentity): string {
+  return site.displayName.trim() || site.title.trim() || "Moment";
+}
+
 export function SiteAvatar({
   site,
   eager = false,
@@ -13,7 +17,7 @@ export function SiteAvatar({
   site: SiteIdentity;
   eager?: boolean;
 }) {
-  const title = site.displayName.trim() || site.title.trim() || "Moment";
+  const title = siteDisplayName(site);
   if (site.avatarMediaId) {
     return (
       <img

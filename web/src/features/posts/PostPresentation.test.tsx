@@ -13,6 +13,7 @@ import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { OwnerProvider } from "../owner/OwnerProvider";
 import { PostPresentation } from "./PostPresentation";
+import postCss from "./PostPresentation.module.css?inline";
 
 afterEach(() => {
   cleanup();
@@ -106,13 +107,56 @@ describe("shared post presentation", () => {
     fireEvent.click(screen.getByRole("button", { name: "回复这条 Moment" }));
     expect(onReply).toHaveBeenCalledTimes(1);
     const article = screen.getByText("完整正文").closest("article");
-    expect(article?.querySelector("[class*='detailBody']")).toContainElement(
-      screen.getByText("完整正文"),
-    );
+    const body = article?.querySelector("[class*='detailBody']");
+    expect(body).toContainElement(screen.getByText("完整正文"));
+    expect(body).toHaveAttribute("data-content-density", "short");
     expect(
       screen.queryByRole("link", { name: "阅读全文" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("条回复")).not.toBeInTheDocument();
+  });
+
+  it("uses a restrained density for long detail reading", () => {
+    const longText = "一段需要慢慢读完的长内容。".repeat(60);
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          detail
+          post={makePost(longText, `<p>${longText}</p>`)}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    expect(
+      screen.getByText(longText).closest("[data-content-density]"),
+    ).toHaveAttribute("data-content-density", "long");
+    expect(postCss).toContain("font-size: 1.375rem");
+    expect(postCss).toContain("font-size: 1.1875rem");
+    expect(postCss).toContain("font-size: 1.25rem");
+    expect(postCss).toContain("font-size: 1.125rem");
+  });
+
+  it("renders the complete location name without relying on a title tooltip", () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...makePost("带地点", "<p>带地点</p>"),
+            location: {
+              name: "静安寺",
+              displayName: "静安寺，静安区，上海市，中国",
+            },
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    const location =
+      screen.getByLabelText("地点：静安寺，静安区，上海市，中国");
+    expect(location).toHaveTextContent("静安寺，静安区，上海市，中国");
+    expect(location).not.toHaveAttribute("title");
   });
 
   it("shows reply counts only when they are non-zero", () => {
@@ -170,10 +214,7 @@ describe("shared post presentation", () => {
     );
 
     const link = screen.getByRole("link", { name: "打开这条 Moment 详情" });
-    expect(link).toHaveAttribute(
-      "href",
-      "/m/01K2ABCDEF0123456789ABCDE0",
-    );
+    expect(link).toHaveAttribute("href", "/m/01K2ABCDEF0123456789ABCDE0");
     expect(link).toHaveAttribute(
       "data-focus-key",
       "01K2ABCDEF0123456789ABCDE0:surface-link",

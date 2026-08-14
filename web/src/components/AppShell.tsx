@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { SiteIdentity } from "../api/public";
 import { InternalLink, useNavigation } from "../app/navigation";
 import type { AppRoute, RouteId } from "../app/routes";
-import { SiteAvatar } from "./SiteIdentity";
+import { SiteAvatar, siteDisplayName } from "./SiteIdentity";
 import { Icon, type IconName } from "./icons";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
@@ -350,9 +350,7 @@ export function AppShell({
             <div>
               <p>{route.eyebrow}</p>
               <h1>
-                {route.id === "profile"
-                  ? site.title.trim() || "Moment"
-                  : route.title}
+                {route.id === "profile" ? siteDisplayName(site) : route.title}
               </h1>
             </div>
             {route.id !== "detail" && route.id !== "owner-edit" ? (
