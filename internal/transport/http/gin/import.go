@@ -38,6 +38,11 @@ type archiveImportCommitter interface {
 	CommitArchive(context.Context, io.Reader, string, uint64) (archive.CommitResult, error)
 }
 
+type mergeImportCommitter interface {
+	InspectMergeArchive(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
+	CommitMerge(context.Context, string, uint64, archive.MergeSelection) (archive.CommitResult, error)
+}
+
 // RegisterImportInspectRoutes installs the owner-only raw ZIP upload endpoint.
 func RegisterImportInspectRoutes(engine *gin.Engine, inspector ImportInspector, manager *auth.Manager) {
 	owner := engine.Group("/api/v1/owner")
@@ -57,7 +62,17 @@ func RegisterImportCommitRoutes(engine *gin.Engine, committer ImportCommitter, m
 	if restorer, ok := committer.(archiveImportCommitter); ok {
 		owner.POST("/import/restore", restoreImport(restorer, manager))
 	}
+	if merger, ok := committer.(mergeImportCommitter); ok {
+		owner.POST("/import/merge/plan", planMergeImport(merger, manager))
+		owner.POST("/import/merge/commit", commitMergeImport(merger, manager))
+	}
 	owner.GET("/import/status", importStatus(committer))
+}
+
+func planMergeImport(merger mergeImportCommitter, manager *auth.Manager) gin.HandlerFunc {
+	return importArchiveUpload(manager, "merge plan", false, func(ctx context.Context, source io.Reader, _ string, epoch uint64) (any, error) {
+		return merger.InspectMergeArchive(ctx, source, epoch)
+	}, http.StatusCreated)
 }
 
 func restoreImport(restorer archiveImportCommitter, manager *auth.Manager) gin.HandlerFunc {
@@ -145,7 +160,7 @@ func writeImportUploadError(ctx *gin.Context, operation string, err error) {
 		status = http.StatusBadRequest
 	case domain.CodeUnauthorized:
 		status = http.StatusUnauthorized
-	case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeInstanceInUse:
+	case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeImportMergePlanStale, domain.CodeInstanceInUse:
 		status = http.StatusConflict
 	case domain.CodeImportStagingExpired:
 		status = http.StatusGone
@@ -157,6 +172,45 @@ func writeImportUploadError(ctx *gin.Context, operation string, err error) {
 		status = http.StatusInternalServerError
 	}
 	Failure(ctx, status, string(domainErr.Code), domainErr.Message, domainErr.Details)
+}
+
+func commitMergeImport(committer mergeImportCommitter, manager *auth.Manager) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if ctx.Request.URL.RawQuery != "" {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge commit does not accept query parameters", map[string]any{"field": "query"})
+			return
+		}
+		mediaType, _, err := mime.ParseMediaType(ctx.GetHeader("Content-Type"))
+		if err != nil || mediaType != "application/json" {
+			Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "import merge commit requires application/json", map[string]any{"field": "content_type"})
+			return
+		}
+		body, ok := readBody(ctx)
+		if !ok {
+			return
+		}
+		token, selection, err := decodeMergeCommitRequest(body)
+		if err != nil {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge commit requires exactly staging_token and selection", nil)
+			return
+		}
+		grant, ok := ownerGrant(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		epoch, err := manager.SessionEpochAuthorized(grant)
+		if err != nil {
+			unauthorized(ctx)
+			return
+		}
+		result, err := committer.CommitMerge(ctx.Request.Context(), token, epoch, selection)
+		if err != nil {
+			writeImportCommitError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, result, nil)
+	}
 }
 
 func commitImport(committer ImportCommitter, manager *auth.Manager) gin.HandlerFunc {
@@ -242,6 +296,39 @@ func decodeCommitRequest(body []byte) (string, error) {
 	return stagingToken, nil
 }
 
+func decodeMergeCommitRequest(body []byte) (string, archive.MergeSelection, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return "", archive.MergeSelection{}, errors.New("request must be one object")
+	}
+	var stagingToken string
+	var selection archive.MergeSelection
+	seen := map[string]bool{}
+	for decoder.More() {
+		name, err := decoder.Token()
+		field, ok := name.(string)
+		if err != nil || !ok || seen[field] || (field != "staging_token" && field != "selection") {
+			return "", archive.MergeSelection{}, errors.New("request has duplicate or unknown fields")
+		}
+		seen[field] = true
+		switch field {
+		case "staging_token":
+			if err := decoder.Decode(&stagingToken); err != nil || stagingToken == "" || len(stagingToken) > 256 || strings.TrimSpace(stagingToken) != stagingToken {
+				return "", archive.MergeSelection{}, errors.New("staging_token is invalid")
+			}
+		case "selection":
+			if err := decoder.Decode(&selection); err != nil {
+				return "", archive.MergeSelection{}, errors.New("selection is invalid")
+			}
+		}
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || decoder.Decode(&struct{}{}) != io.EOF || !seen["staging_token"] || !seen["selection"] {
+		return "", archive.MergeSelection{}, errors.New("request object is incomplete")
+	}
+	return stagingToken, selection, nil
+}
+
 func writeImportCommitError(ctx *gin.Context, err error) {
 	if errors.Is(err, context.DeadlineExceeded) {
 		Failure(ctx, http.StatusRequestTimeout, "TIMEOUT", "import commit timed out", nil)
@@ -262,7 +349,7 @@ func writeImportCommitError(ctx *gin.Context, err error) {
 		status = http.StatusBadRequest
 	case domain.CodeUnauthorized:
 		status = http.StatusUnauthorized
-	case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeInstanceInUse:
+	case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeImportMergePlanStale, domain.CodeInstanceInUse:
 		status = http.StatusConflict
 	case domain.CodeImportStagingExpired:
 		status = http.StatusGone

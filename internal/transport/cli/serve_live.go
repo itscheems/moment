@@ -46,6 +46,14 @@ func (committer *hostedImportCommitter) CommitArchive(ctx context.Context, sourc
 	return committer.core.CommitArchive(ctx, source, expectedArchiveSHA, epoch, committer.host)
 }
 
+func (committer *hostedImportCommitter) InspectMergeArchive(ctx context.Context, source io.Reader, epoch uint64) (archive.MergeInspection, error) {
+	return committer.core.InspectMergeArchive(ctx, source, epoch, committer.host.ActiveDatabase())
+}
+
+func (committer *hostedImportCommitter) CommitMerge(ctx context.Context, token string, epoch uint64, selection archive.MergeSelection) (archive.CommitResult, error) {
+	return committer.core.CommitMerge(ctx, token, epoch, selection, committer.host)
+}
+
 func (committer *hostedImportCommitter) Status(ctx context.Context) (archive.CommitStatus, error) {
 	return committer.core.Status(ctx)
 }

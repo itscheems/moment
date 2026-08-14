@@ -2,6 +2,7 @@ package ginhttp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -42,6 +43,20 @@ type fakeArchiveImportCommitter struct {
 	restore func(context.Context, io.Reader, string, uint64) (archive.CommitResult, error)
 }
 
+type fakeMergeImportCommitter struct {
+	fakeImportCommitter
+	planMerge   func(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
+	commitMerge func(context.Context, string, uint64, archive.MergeSelection) (archive.CommitResult, error)
+}
+
+func (fake fakeMergeImportCommitter) InspectMergeArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+	return fake.planMerge(ctx, input, epoch)
+}
+
+func (fake fakeMergeImportCommitter) CommitMerge(ctx context.Context, token string, epoch uint64, selection archive.MergeSelection) (archive.CommitResult, error) {
+	return fake.commitMerge(ctx, token, epoch, selection)
+}
+
 func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
 	return fake.restore(ctx, input, expectedArchiveSHA, epoch)
 }
@@ -52,6 +67,64 @@ func (fake fakeImportCommitter) Commit(ctx context.Context, token string, epoch 
 
 func (fake fakeImportCommitter) Status(ctx context.Context) (archive.CommitStatus, error) {
 	return fake.status(ctx)
+}
+
+func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
+	fixture := newOwnerTestFixture(t, false)
+	selection := archive.MergeSelection{
+		PlanID: strings.Repeat("a", 64), ArchiveSHA256: strings.Repeat("b", 64),
+		BaseGeneration: "generation", BaseAuthoritySHA256: strings.Repeat("c", 64),
+		Items: []archive.MergeSelectionItem{}, SiteFields: []archive.MergeSiteSelection{},
+	}
+	committer := fakeMergeImportCommitter{
+		fakeImportCommitter: fakeImportCommitter{
+			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+				return archive.CommitResult{}, nil
+			},
+			status: func(context.Context) (archive.CommitStatus, error) { return archive.CommitStatus{}, nil },
+		},
+		planMerge: func(_ context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+			body, _ := io.ReadAll(input)
+			if string(body) != "zip-merge" || epoch != 1 {
+				t.Fatalf("plan body=%q epoch=%d", body, epoch)
+			}
+			return archive.MergeInspection{Plan: archive.MergePlan{PlanID: selection.PlanID}, StagingToken: "merge-token"}, nil
+		},
+		commitMerge: func(_ context.Context, token string, epoch uint64, got archive.MergeSelection) (archive.CommitResult, error) {
+			if token != "merge-token" || epoch != 1 || got.PlanID != selection.PlanID {
+				t.Fatalf("commit token=%q epoch=%d selection=%#v", token, epoch, got)
+			}
+			return archive.CommitResult{Status: archive.CommitStatus{Phase: archive.CommitSucceeded}}, nil
+		},
+	}
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, ImportCommitter: committer, RequestID: func() string { return "req_merge" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	planRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/merge/plan", fixture.token, strings.NewReader("zip-merge"))
+	planRequest.Header.Set("Content-Type", "application/zip")
+	planResponse := performRequest(engine, planRequest)
+	if planResponse.Code != http.StatusCreated || !strings.Contains(planResponse.Body.String(), `"staging_token":"merge-token"`) {
+		t.Fatalf("plan response=%d %s", planResponse.Code, planResponse.Body.String())
+	}
+	selectionJSON, _ := json.Marshal(selection)
+	commitRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/merge/commit", fixture.token, strings.NewReader(`{"staging_token":"merge-token","selection":`+string(selectionJSON)+`}`))
+	commitRequest.Header.Set("Content-Type", "application/json")
+	commitResponse := performRequest(engine, commitRequest)
+	if commitResponse.Code != http.StatusOK || !strings.Contains(commitResponse.Body.String(), `"phase":"succeeded"`) {
+		t.Fatalf("commit response=%d %s", commitResponse.Code, commitResponse.Body.String())
+	}
+	for _, body := range []string{
+		`{}`, `{"staging_token":"merge-token"}`, `{"selection":{}}`,
+		`{"staging_token":"merge-token","selection":{},"extra":true}`,
+		`{"staging_token":"merge-token","staging_token":"again","selection":{}}`,
+	} {
+		request := headerRequest(http.MethodPost, "/api/v1/owner/import/merge/commit", fixture.token, strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		if response := performRequest(engine, request); response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid merge body %s => %d %s", body, response.Code, response.Body.String())
+		}
+	}
 }
 
 func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
