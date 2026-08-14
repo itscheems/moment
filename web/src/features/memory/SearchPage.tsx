@@ -330,14 +330,25 @@ export function SearchPage({
     fromInput || toInput
       ? `${naturalDate(fromInput || null, "最早")} 至 ${naturalDate(toInput || null, "现在")}`
       : "日期";
+  const clearQuery = () => {
+    setQueryInput("");
+    setFormError(null);
+    if (state.query || state.from || state.to || state.loadedThrough) {
+      location.navigate("/search");
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      document.querySelector<HTMLInputElement>("#moment-search-input")?.focus();
+    });
+  };
 
   return (
     <div className={styles.memoryPage}>
       <form className={styles.searchForm} onSubmit={submit}>
         <div className={styles.searchPrimary}>
-          <label className={styles.queryField} htmlFor="moment-search-input">
-            <span>搜索 Moment</span>
-            <div className={styles.queryControl}>
+          <div className={styles.queryField}>
+            <label htmlFor="moment-search-input">搜索 Moment</label>
+            <div className={styles.queryControl} data-search-control>
               <Icon name="search" />
               <input
                 aria-describedby={
@@ -352,16 +363,37 @@ export function SearchPage({
                 id="moment-search-input"
                 maxLength={1_000}
                 onChange={(event) => setQueryInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape") return;
+                  event.preventDefault();
+                  if (queryInput) {
+                    clearQuery();
+                  } else if (filtersOpen) {
+                    setFiltersOpen(false);
+                  } else {
+                    event.currentTarget.blur();
+                  }
+                }}
                 placeholder="搜索 Moment"
                 type="search"
                 value={queryInput}
               />
+              {queryInput ? (
+                <button
+                  aria-label="清除搜索内容"
+                  className={styles.searchClear}
+                  onClick={clearQuery}
+                  type="button"
+                >
+                  <Icon name="close" />
+                </button>
+              ) : null}
+              <button className={styles.searchSubmit} type="submit">
+                搜索
+              </button>
             </div>
             <small id="search-shortcut">按 / 聚焦搜索</small>
-          </label>
-          <button className={styles.searchSubmit} type="submit">
-            搜索
-          </button>
+          </div>
         </div>
         <div className={styles.filterBar}>
           <button

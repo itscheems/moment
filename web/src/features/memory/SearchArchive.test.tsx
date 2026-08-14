@@ -118,6 +118,66 @@ describe("search and archive memory layer", () => {
     expect(window.location.pathname).toBe("/search");
   });
 
+  it("keeps clear and submit inside one pill and clears results, URL, and focus state", async () => {
+    window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
+    install((url) => {
+      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+      return json({
+        data: {
+          items: [{ ...first, snippet: "雨" }],
+          year_counts: [{ year: 2026, count: 1 }],
+        },
+        meta: { next_cursor: null, request_id: "req_search" },
+      });
+    });
+    render(<App />);
+
+    await screen.findByText(paragraphText("旧城雨落在街口"));
+    const input = screen.getByRole("searchbox");
+    const control = input.closest("[data-search-control]");
+    expect(control).toContainElement(
+      screen.getByRole("button", { name: "清除搜索内容" }),
+    );
+    expect(control).toContainElement(
+      screen.getByRole("button", { name: "搜索" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "清除搜索内容" }));
+    await waitFor(() => expect(window.location.search).toBe(""));
+    const cleared = await screen.findByRole("searchbox");
+    expect(cleared).toHaveValue("");
+    await waitFor(() => expect(cleared).toHaveFocus());
+    expect(
+      screen.queryByText(paragraphText("旧城雨落在街口")),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses Escape to clear, close filters, then release focus", async () => {
+    window.history.replaceState({}, "", "/search");
+    install(() => json({}, 404));
+    render(<App />);
+
+    const input = await screen.findByRole("searchbox");
+    fireEvent.change(input, { target: { value: "暂存搜索" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(input).toHaveValue("");
+    expect(input).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", { name: "日期" }));
+    expect(document.querySelector("#search-date-filters")).not.toHaveAttribute(
+      "hidden",
+    );
+    input.focus();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(document.querySelector("#search-date-filters")).toHaveAttribute(
+      "hidden",
+    );
+    expect(input).toHaveFocus();
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(input).not.toHaveFocus();
+  });
+
   it("treats the selected end date as an inclusive natural day", async () => {
     window.history.replaceState({}, "", "/search");
     let requestedSearch = "";

@@ -11,10 +11,7 @@
 }
 
 .searchPrimary {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--space-2);
+  min-inline-size: 0;
 }
 
 .queryField {
@@ -22,13 +19,7 @@
   gap: var(--space-2);
 }
 
-.queryField > span {
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 650;
-}
-
-.queryField > span {
+.queryField > label {
   position: absolute;
   inline-size: 1px;
   block-size: 1px;
@@ -40,12 +31,12 @@
   min-block-size: 2.75rem;
   inline-size: 100%;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-2);
   border: 1px solid transparent;
   border-radius: 999px;
-  padding-inline: var(--space-3);
+  padding: 0.2rem 0.25rem 0.2rem var(--space-3);
   color: var(--text-primary);
   background: var(--surface-muted);
 }
@@ -63,6 +54,10 @@
   color: inherit;
   background: transparent;
   font-size: 1rem;
+}
+
+.queryControl input::-webkit-search-cancel-button {
+  display: none;
 }
 
 .queryControl:focus-within {
@@ -84,14 +79,38 @@
 }
 
 .searchSubmit {
-  min-block-size: var(--target-size);
+  min-block-size: 2.25rem;
   border: 0;
   border-radius: 999px;
-  padding-inline: var(--space-5);
+  padding-inline: var(--space-4);
   color: var(--button-primary-contrast);
   background: var(--button-primary);
   font-weight: 700;
   cursor: pointer;
+}
+
+.searchClear {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.searchClear:hover,
+.searchClear:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.searchClear svg {
+  inline-size: 1rem;
+  block-size: 1rem;
 }
 
 .searchSubmit:hover {
