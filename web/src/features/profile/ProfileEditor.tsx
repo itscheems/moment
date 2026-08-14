@@ -219,10 +219,7 @@ export function ProfileEditor({
                 >
                   <Icon name="close" />
                 </Dialog.Close>
-                <div className={styles.titleGroup}>
-                  <Dialog.Title>编辑个人资料</Dialog.Title>
-                  <p>调整访客看到的身份与主页外观</p>
-                </div>
+                <Dialog.Title>编辑个人资料</Dialog.Title>
                 <div className={styles.headerActions}>
                   <button
                     aria-label="重置个人资料更改"
@@ -257,10 +254,10 @@ export function ProfileEditor({
                     {coverPreview ? (
                       <img alt="封面预览" src={coverPreview} />
                     ) : (
-                      <div className={styles.coverPlaceholder}>
-                        <span>主页封面</span>
-                        <strong>为你的时间线留一块背景</strong>
-                      </div>
+                      <div
+                        aria-hidden="true"
+                        className={styles.coverPlaceholder}
+                      />
                     )}
                     <div className={styles.coverActions}>
                       <button
@@ -315,7 +312,6 @@ export function ProfileEditor({
                       </button>
                     </div>
                     <div className={styles.identityCopy}>
-                      <span>公开资料预览</span>
                       <strong>{displayName.trim() || "未命名"}</strong>
                       <small>@{username.trim() || "username"}</small>
                       {avatarState === "uploading" ? (
@@ -351,17 +347,7 @@ export function ProfileEditor({
                   type="file"
                 />
 
-                <section
-                  aria-labelledby="profile-editor-fields-heading"
-                  className={styles.fields}
-                >
-                  <div className={styles.fieldsHeading}>
-                    <div>
-                      <h3 id="profile-editor-fields-heading">基本信息</h3>
-                      <p>这些内容会显示在你的个人资料与分享页面。</p>
-                    </div>
-                    <span>公开</span>
-                  </div>
+                <section aria-label="个人资料字段" className={styles.fields}>
                   <label>
                     <span>显示名称</span>
                     <input
@@ -391,7 +377,6 @@ export function ProfileEditor({
                         value={username}
                       />
                     </div>
-                    <small>用于个人资料链接和 @ 提及。</small>
                   </label>
                   <label className={styles.fieldWide}>
                     <span>站点标题</span>
@@ -402,12 +387,12 @@ export function ProfileEditor({
                       value={title}
                     />
                   </label>
-                  <label className={styles.fieldWide}>
+                  <label className={`${styles.fieldWide} ${styles.bioField}`}>
                     <span>简介</span>
                     <textarea
                       maxLength={500}
                       onChange={(event) => setBio(event.currentTarget.value)}
-                      rows={4}
+                      rows={3}
                       value={bio}
                     />
                     <small className={styles.counter}>

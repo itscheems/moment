@@ -173,9 +173,13 @@ describe("profile editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "编辑个人资料" }));
 
     const preview = screen.getByRole("region", { name: "个人资料预览" });
-    expect(preview).toHaveTextContent("公开资料预览");
     expect(preview).toHaveTextContent("Moment");
     expect(preview).toHaveTextContent("@owner");
+    expect(screen.queryByText("调整访客看到的身份与主页外观")).toBeNull();
+    expect(screen.queryByText("为你的时间线留一块背景")).toBeNull();
+    expect(
+      screen.queryByText("这些内容会显示在你的个人资料与分享页面。"),
+    ).toBeNull();
     expect(
       screen.getByRole("button", { name: "选择封面图片" }),
     ).not.toHaveTextContent("相机");
