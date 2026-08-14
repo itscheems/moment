@@ -175,11 +175,18 @@
   border-block-end: 1px solid var(--border-subtle);
   padding: var(--space-3) var(--space-4);
   background: var(--surface);
-  transition: padding-block var(--motion-fast) var(--ease-out);
 }
 
 .inlineComposer {
+  grid-template-columns: 3rem minmax(0, 1fr);
   border-block-start: 0;
+  padding-block: var(--space-2);
+}
+
+.inlineComposer .newTick > img,
+.inlineComposer .newTick > span {
+  inline-size: 3rem;
+  block-size: 3rem;
 }
 
 .pageComposer {
@@ -378,14 +385,6 @@
 .pageComposer.composerHasMedia .composerHighlight,
 .pageComposer.composerHasMedia .composerMentionMeasure {
   padding-block: var(--space-1) var(--space-2);
-}
-
-.inlineComposer.composerExpanded .composerForm textarea {
-  min-block-size: 6rem;
-}
-
-.inlineComposer.composerCollapsed {
-  padding-block: var(--space-2);
 }
 
 .composerGuidance {

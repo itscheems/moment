@@ -152,7 +152,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     );
     const [activeDraft, setActiveDraft] = useState<ComposeDraft | null>(draft);
     const [announcement, setAnnouncement] = useState("");
-    const [focused, setFocused] = useState(false);
     const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>(() =>
       itemsFromPost(post?.media ?? []),
     );
@@ -211,16 +210,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       (content.trim().length > 0 || mediaItems.length > 0) &&
       count <= MAX_CONTENT &&
       mediaError === null;
-    const expanded =
-      variant !== "inline" ||
-      focused ||
-      content.length > 0 ||
-      mediaItems.length > 0 ||
-      draft !== null ||
-      pending ||
-      error !== null ||
-      mediaError !== null ||
-      location !== null;
     const hasUnpublishedChange =
       dirty &&
       (content !== initialContent || mediaChanged || locationChanged) &&
@@ -460,10 +449,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         return;
       }
       textarea.style.height = "auto";
-      if (expanded) {
-        textarea.style.height = `${Math.min(textarea.scrollHeight, 288)}px`;
-      }
-    }, [content, expanded, mediaItems.length]);
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 288)}px`;
+    }, [content, mediaItems.length]);
 
     useEffect(
       () => () => {
@@ -879,19 +866,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     return (
       <section
         aria-label={post ? "编辑 Moment" : "发布 Moment"}
-        className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${expanded ? styles.composerExpanded : ""} ${mediaItems.length > 0 ? styles.composerHasMedia : ""} ${variant === "inline" && !expanded ? styles.composerCollapsed : ""}`}
-        onBlurCapture={(event) => {
-          if (variant !== "inline") return;
-          if (
-            !event.currentTarget.contains(event.relatedTarget as Node | null) &&
-            content.trim().length === 0 &&
-            mediaItemsRef.current.length === 0 &&
-            location === null
-          ) {
-            setFocused(false);
-          }
-        }}
-        onFocusCapture={() => setFocused(true)}
+        className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${mediaItems.length > 0 ? styles.composerHasMedia : ""}`}
       >
         <div aria-hidden="true" className={styles.newTick}>
           <SiteAvatar site={site} />
@@ -1029,15 +1004,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 }}
                 placeholder={post ? "编辑 Moment" : "有什么新鲜事？"}
                 ref={textareaRef}
-                rows={
-                  mediaItems.length > 0
-                    ? 1
-                    : variant === "inline"
-                      ? expanded
-                        ? 3
-                        : 1
-                      : 4
-                }
+                rows={mediaItems.length > 0 ? 1 : variant === "inline" ? 1 : 4}
                 value={content}
               />
               {mention ? (
@@ -1092,6 +1059,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               </div>
             ) : null}
             <MediaComposer
+              compact={variant === "inline"}
               disabled={pending}
               footerAction={
                 <button

@@ -71,6 +71,7 @@ export function MediaComposer({
   onRetry,
   footerAction,
   toolbarAction,
+  compact = false,
   selectionError: controlledSelectionError,
   onSelectionError,
   maximum = MAX_MEDIA_COUNT,
@@ -86,6 +87,7 @@ export function MediaComposer({
   onRetry: (key: string) => void;
   footerAction?: ReactNode;
   toolbarAction?: ReactNode;
+  compact?: boolean;
   selectionError?: string | null;
   onSelectionError?: (error: string | null) => void;
   maximum?: number;
@@ -187,7 +189,7 @@ export function MediaComposer({
   return (
     <section
       aria-label="图片"
-      className={`${styles.composerMedia} ${className ?? ""}`}
+      className={`${styles.composerMedia} ${compact ? styles.compactComposer : ""} ${className ?? ""}`}
     >
       <input
         accept="image/jpeg,image/png,image/webp,image/gif"

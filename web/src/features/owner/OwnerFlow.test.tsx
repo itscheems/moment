@@ -963,7 +963,7 @@ describe("owner composing flow", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps the inline composer compact until it receives focus", async () => {
+  it("keeps the inline composer geometry stable while writing", async () => {
     preauthenticate();
     installApi();
     render(<App />);
@@ -975,10 +975,13 @@ describe("owner composing flow", () => {
     ).toBeInTheDocument();
 
     fireEvent.focus(inline);
-    expect(inline).toHaveAttribute("rows", "3");
+    expect(inline).toHaveAttribute("rows", "1");
     expect(
       screen.getByRole("button", { name: "选择图片" }),
     ).toBeInTheDocument();
+
+    fireEvent.change(inline, { target: { value: "正在记录" } });
+    expect(inline).toHaveAttribute("rows", "1");
 
     fireEvent.blur(inline, { relatedTarget: null });
     await waitFor(() => expect(inline).toHaveAttribute("rows", "1"));
