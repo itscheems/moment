@@ -42,7 +42,7 @@ type SearchRepositoryQuery struct {
 // values used only inside the application boundary.
 type SearchRecord struct {
 	Entry       domain.Entry
-	Media       []domain.EntryMediaUsage
+	Media       []MediaUsageProjection
 	ContentText string
 	Rank        float64
 }
@@ -62,7 +62,7 @@ type SearchStore interface {
 	Timezone(context.Context) (string, error)
 	SearchEntries(context.Context, SearchRepositoryQuery, int) ([]SearchRecord, error)
 	CommentCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
-	EntryMediaUsages(context.Context, domain.ID) ([]domain.EntryMediaUsage, error)
+	EntryMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
 	SearchPublishedMillis(context.Context, SearchRepositoryQuery) ([]int64, error)
 	ArchivePublishedMillis(context.Context, *int64, *int64) ([]int64, error)

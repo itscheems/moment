@@ -449,6 +449,8 @@ describe("owner API client", () => {
                 media_id: usage.mediaId,
                 position,
                 alt_text: usage.altText,
+                width: 1_200,
+                height: 800,
               })),
             },
             meta: { replayed: false },

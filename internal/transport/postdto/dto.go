@@ -16,15 +16,15 @@ import (
 
 // Post is the stable plain-text post representation used by HTTP and CLI.
 type Post struct {
-	ID           string       `json:"id"`
-	ContentMD    string       `json:"content_md"`
-	ContentHTML  string       `json:"content_html"`
-	CreatedAt    time.Time    `json:"created_at"`
-	UpdatedAt    time.Time    `json:"updated_at"`
-	PublishedAt  time.Time    `json:"published_at"`
-	CommentCount int          `json:"comment_count"`
-	Media        []MediaUsage `json:"media"`
-	Location     *Location    `json:"location"`
+	ID           string            `json:"id"`
+	ContentMD    string            `json:"content_md"`
+	ContentHTML  string            `json:"content_html"`
+	CreatedAt    time.Time         `json:"created_at"`
+	UpdatedAt    time.Time         `json:"updated_at"`
+	PublishedAt  time.Time         `json:"published_at"`
+	CommentCount int               `json:"comment_count"`
+	Media        []MediaProjection `json:"media"`
+	Location     *Location         `json:"location"`
 }
 
 // Location is the deliberately coarse public location projection. Exact
@@ -40,6 +40,75 @@ type MediaUsage struct {
 	MediaID  string  `json:"media_id"`
 	Position int     `json:"position"`
 	AltText  *string `json:"alt_text"`
+}
+
+// MediaProjection is the public read shape. Width and height are authoritative
+// stored image dimensions and are deliberately absent from MediaUsage writes.
+type MediaProjection struct {
+	MediaID  string  `json:"media_id"`
+	Position int     `json:"position"`
+	AltText  *string `json:"alt_text"`
+	Width    uint32  `json:"width"`
+	Height   uint32  `json:"height"`
+}
+
+// UnmarshalJSON keeps API-mode clients strict about the complete read shape.
+func (usage *MediaProjection) UnmarshalJSON(data []byte) error {
+	*usage = MediaProjection{}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return errors.New("media projection must be an object")
+	}
+	seen := map[string]bool{}
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		key, ok := keyToken.(string)
+		if err != nil || !ok || seen[key] {
+			return errors.New("media projection fields must appear exactly once")
+		}
+		seen[key] = true
+		switch key {
+		case "media_id":
+			if err := decoder.Decode(&usage.MediaID); err != nil {
+				return errors.New("media_id must be a string")
+			}
+		case "position":
+			if err := decoder.Decode(&usage.Position); err != nil {
+				return errors.New("position must be an integer")
+			}
+		case "alt_text":
+			var raw json.RawMessage
+			if err := decoder.Decode(&raw); err != nil {
+				return errors.New("alt_text must be null or a string")
+			}
+			if !bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				var alt string
+				if err := json.Unmarshal(raw, &alt); err != nil {
+					return errors.New("alt_text must be null or a string")
+				}
+				usage.AltText = &alt
+			}
+		case "width":
+			if err := decoder.Decode(&usage.Width); err != nil {
+				return errors.New("width must be a non-negative integer")
+			}
+		case "height":
+			if err := decoder.Decode(&usage.Height); err != nil {
+				return errors.New("height must be a non-negative integer")
+			}
+		default:
+			return errors.New("media projection contains an unknown field")
+		}
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') ||
+		!seen["media_id"] || !seen["position"] || !seen["alt_text"] || !seen["width"] || !seen["height"] {
+		return errors.New("media projection requires media_id, position, alt_text, width, and height")
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("media projection contains trailing data")
+	}
+	return nil
 }
 
 // UnmarshalJSON rejects missing, duplicate, and unknown fields so API-mode
@@ -101,9 +170,9 @@ type Page struct {
 // FromPost strips internal Entry fields while preserving the canonical
 // application result.
 func FromPost(post app.Post) Post {
-	media := make([]MediaUsage, 0, len(post.Media))
+	media := make([]MediaProjection, 0, len(post.Media))
 	for _, usage := range post.Media {
-		mapped := MediaUsage{MediaID: usage.MediaID.String(), Position: usage.Position}
+		mapped := MediaProjection{MediaID: usage.MediaID.String(), Position: usage.Position, Width: usage.Width, Height: usage.Height}
 		if usage.AltText != nil {
 			alt := *usage.AltText
 			mapped.AltText = &alt
@@ -176,6 +245,9 @@ func ValidatePost(post Post) error {
 	}
 	usages := make([]domain.EntryMediaUsage, 0, len(post.Media))
 	for _, usage := range post.Media {
+		if usage.Width == 0 || usage.Height == 0 {
+			return errors.New("post media dimensions must be positive")
+		}
 		id, err := domain.ParseID(usage.MediaID)
 		if err != nil {
 			return err

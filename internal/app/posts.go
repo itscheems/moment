@@ -24,7 +24,8 @@ type PostStore interface {
 	EntryByID(context.Context, domain.ID) (domain.Entry, bool, error)
 	ListEntries(context.Context, TimelineQuery, int) ([]domain.Entry, error)
 	CommentCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
-	EntryMediaUsages(context.Context, domain.ID) ([]domain.EntryMediaUsage, error)
+	EntryMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
+	ProjectMediaUsages(context.Context, []domain.EntryMediaUsage) ([]MediaUsageProjection, error)
 	ReplaceEntryMediaUsages(context.Context, domain.ID, []domain.EntryMediaUsage) error
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
 	ReplaceEntryLocation(context.Context, domain.ID, *domain.Location) error
@@ -55,7 +56,7 @@ type IdempotencyRecord struct {
 type Post struct {
 	Entry        domain.Entry
 	ContentHTML  string
-	Media        []domain.EntryMediaUsage
+	Media        []MediaUsageProjection
 	Location     *domain.Location
 	CommentCount int
 }
@@ -232,6 +233,10 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 					return replayErr
 				}
 				post.CommentCount = counts[record.ResponseResourceID]
+				post.Media, replayErr = store.ProjectMediaUsages(ctx, input.Media)
+				if replayErr != nil {
+					return replayErr
+				}
 				result.Post = post
 				result.Replayed = true
 				return nil
@@ -271,7 +276,11 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 			}
 		}
 		result.Post.Entry = entry
-		result.Post.Media = domain.CloneEntryMediaUsages(input.Media)
+		projectedMedia, projectErr := store.ProjectMediaUsages(ctx, input.Media)
+		if projectErr != nil {
+			return projectErr
+		}
+		result.Post.Media = projectedMedia
 		result.Post.Location = domain.CloneLocation(input.Location)
 		return nil
 	})
@@ -289,14 +298,24 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 	var record IdempotencyRecord
 	var found bool
 	var commentCount int
+	var media []MediaUsageProjection
+	var post Post
 	err := service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
 		record, found, storeErr = store.IdempotencyRecord(ctx, postCreateIdempotencyScope, input.IdempotencyKey)
 		if storeErr != nil || !found {
 			return storeErr
 		}
+		post, storeErr = reconstructCreateReplay(input, requestHash, record)
+		if storeErr != nil {
+			return storeErr
+		}
 		counts, storeErr := store.CommentCounts(ctx, []domain.ID{record.ResponseResourceID})
 		commentCount = counts[record.ResponseResourceID]
+		if storeErr != nil {
+			return storeErr
+		}
+		media, storeErr = store.ProjectMediaUsages(ctx, input.Media)
 		return storeErr
 	})
 	if err != nil {
@@ -305,11 +324,7 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 	if !found {
 		return CreatePostResult{}, false, nil
 	}
-	post, err := reconstructCreateReplay(input, requestHash, record)
-	if err != nil {
-		return CreatePostResult{}, false, err
-	}
-	post, err = renderPost(post.Entry, post.Media, post.Location, commentCount)
+	post, err = renderPost(post.Entry, media, post.Location, commentCount)
 	if err != nil {
 		return CreatePostResult{}, false, idempotencySnapshotError()
 	}
@@ -345,7 +360,7 @@ func reconstructCreateReplay(input CreatePostInput, requestHash string, record I
 	if err := entry.Validate(); err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
-	return Post{Entry: entry, Media: domain.CloneEntryMediaUsages(input.Media), Location: domain.CloneLocation(input.Location)}, nil
+	return Post{Entry: entry, Location: domain.CloneLocation(input.Location)}, nil
 }
 
 // Get returns one post or a stable not-found error.
@@ -357,7 +372,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 		return Post{}, err
 	}
 	var entry domain.Entry
-	var media []domain.EntryMediaUsage
+	var media []MediaUsageProjection
 	var location *domain.Location
 	var commentCount int
 	var found bool
@@ -407,7 +422,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	}
 
 	var entries []domain.Entry
-	mediaByEntry := make(map[domain.ID][]domain.EntryMediaUsage)
+	mediaByEntry := make(map[domain.ID][]MediaUsageProjection)
 	locationByEntry := make(map[domain.ID]*domain.Location)
 	commentCounts := make(map[domain.ID]int)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
@@ -519,7 +534,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		}
 	}
 	var updated domain.Entry
-	var updatedMedia []domain.EntryMediaUsage
+	var updatedMedia []MediaUsageProjection
 	var updatedLocation *domain.Location
 	var commentCount int
 	err := service.transactions.Write(ctx, func(store PostStore) error {
@@ -550,7 +565,10 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		updatedMedia = currentMedia
 		updatedLocation = currentLocation
 		if input.Media != nil {
-			updatedMedia = domain.CloneEntryMediaUsages(*input.Media)
+			updatedMedia, mediaErr = store.ProjectMediaUsages(ctx, *input.Media)
+			if mediaErr != nil {
+				return mediaErr
+			}
 		}
 		if input.Location != nil {
 			updatedLocation = domain.CloneLocation(*input.Location)
@@ -583,7 +601,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			if mediaErr := store.ReplaceEntryMediaUsages(ctx, input.ID, *input.Media); mediaErr != nil {
 				return mediaErr
 			}
-			affected := append(mediaUsageIDs(currentMedia), mediaUsageIDs(*input.Media)...)
+			affected := append(mediaProjectionIDs(currentMedia), mediaUsageIDs(*input.Media)...)
 			if mediaErr := store.ReconcileMediaReferences(ctx, affected, now); mediaErr != nil {
 				return mediaErr
 			}
@@ -646,7 +664,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if err := store.ReconcileMediaReferences(ctx, affectedMedia, domain.NormalizeTime(service.clock())); err != nil {
 			return err
 		}
-		deleted = Post{Entry: entry, Media: domain.CloneEntryMediaUsages(mediaUsages), Location: domain.CloneLocation(location), CommentCount: counts[id]}
+		deleted = Post{Entry: entry, Media: cloneMediaUsageProjections(mediaUsages), Location: domain.CloneLocation(location), CommentCount: counts[id]}
 		return nil
 	})
 	if err != nil {
@@ -723,8 +741,8 @@ func validRequestHash(value string) bool {
 	return err == nil && hex.EncodeToString(decoded) == value
 }
 
-func renderPost(entry domain.Entry, media []domain.EntryMediaUsage, location *domain.Location, commentCount int) (Post, error) {
-	if err := domain.ValidateEntryMediaUsages(media); err != nil {
+func renderPost(entry domain.Entry, media []MediaUsageProjection, location *domain.Location, commentCount int) (Post, error) {
+	if err := validatePostMediaProjections(media); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
 	if err := domain.ValidatePostMarkdown(entry.ContentMD, len(media)); err != nil {
@@ -742,10 +760,18 @@ func renderPost(entry domain.Entry, media []domain.EntryMediaUsage, location *do
 			return Post{}, storedEntryError(entry.ID)
 		}
 	}
-	return Post{Entry: entry, ContentHTML: html, Media: domain.CloneEntryMediaUsages(media), Location: domain.CloneLocation(location), CommentCount: commentCount}, nil
+	return Post{Entry: entry, ContentHTML: html, Media: cloneMediaUsageProjections(media), Location: domain.CloneLocation(location), CommentCount: commentCount}, nil
 }
 
 func mediaUsageIDs(usages []domain.EntryMediaUsage) []domain.ID {
+	ids := make([]domain.ID, 0, len(usages))
+	for _, usage := range usages {
+		ids = append(ids, usage.MediaID)
+	}
+	return ids
+}
+
+func mediaProjectionIDs(usages []MediaUsageProjection) []domain.ID {
 	ids := make([]domain.ID, 0, len(usages))
 	for _, usage := range usages {
 		ids = append(ids, usage.MediaID)

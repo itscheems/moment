@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
@@ -205,29 +206,34 @@ func (store postStore) CommentCounts(ctx context.Context, ids []domain.ID) (map[
 	return queryCommentCounts(ctx, store.queries, ids)
 }
 
-func (store postStore) EntryMediaUsages(ctx context.Context, entryID domain.ID) ([]domain.EntryMediaUsage, error) {
+func (store postStore) EntryMediaUsages(ctx context.Context, entryID domain.ID) ([]app.MediaUsageProjection, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT media_id, position, alt_text
-FROM entry_media
-WHERE entry_id = ?
-ORDER BY position`, entryID.String())
+SELECT usage.media_id, usage.position, usage.alt_text, media.width, media.height
+FROM entry_media AS usage
+LEFT JOIN media ON media.id = usage.media_id
+WHERE usage.entry_id = ?
+ORDER BY usage.position`, entryID.String())
 	if err != nil {
 		return nil, fmt.Errorf("query entry media usages: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	usages := make([]domain.EntryMediaUsage, 0, domain.MaxEntryMediaUsages)
+	usages := make([]app.MediaUsageProjection, 0, domain.MaxEntryMediaUsages)
 	for rows.Next() {
 		var rawID string
 		var position int
 		var alt sql.NullString
-		if err := rows.Scan(&rawID, &position, &alt); err != nil {
+		var width, height sql.NullInt64
+		if err := rows.Scan(&rawID, &position, &alt, &width, &height); err != nil {
 			return nil, fmt.Errorf("scan entry media usage: %w", err)
 		}
 		id, err := domain.ParseID(rawID)
 		if err != nil {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry media ID is invalid", map[string]any{"post_id": entryID.String()})
 		}
-		usage := domain.EntryMediaUsage{MediaID: id, Position: position}
+		if !validStoredMediaDimension(width) || !validStoredMediaDimension(height) {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry media dimensions are invalid", map[string]any{"post_id": entryID.String(), "media_id": id.String()})
+		}
+		usage := app.MediaUsageProjection{MediaID: id, Position: position, Width: uint32(width.Int64), Height: uint32(height.Int64)}
 		if alt.Valid {
 			value := alt.String
 			usage.AltText = &value
@@ -237,10 +243,51 @@ ORDER BY position`, entryID.String())
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate entry media usages: %w", err)
 	}
-	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
+	if err := domain.ValidateEntryMediaUsages(mediaProjectionInputs(usages)); err != nil {
 		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry media usages violate the ordered contract", map[string]any{"post_id": entryID.String()})
 	}
 	return usages, nil
+}
+
+func (store postStore) ProjectMediaUsages(ctx context.Context, inputs []domain.EntryMediaUsage) ([]app.MediaUsageProjection, error) {
+	usages := make([]app.MediaUsageProjection, 0, len(inputs))
+	for _, input := range inputs {
+		var width, height int64
+		if err := store.queries.QueryRowContext(ctx, `SELECT width, height FROM media WHERE id = ?`, input.MediaID.String()).Scan(&width, &height); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", input.MediaID), map[string]any{"media_id": input.MediaID.String()})
+			}
+			return nil, fmt.Errorf("project media usage: %w", err)
+		}
+		if width <= 0 || width > math.MaxUint32 || height <= 0 || height > math.MaxUint32 {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored media dimensions are invalid", map[string]any{"media_id": input.MediaID.String()})
+		}
+		usage := app.MediaUsageProjection{
+			MediaID:  input.MediaID,
+			Position: input.Position,
+			AltText:  input.AltText,
+			Width:    uint32(width),
+			Height:   uint32(height),
+		}
+		if input.AltText != nil {
+			alt := *input.AltText
+			usage.AltText = &alt
+		}
+		usages = append(usages, usage)
+	}
+	return usages, nil
+}
+
+func validStoredMediaDimension(value sql.NullInt64) bool {
+	return value.Valid && value.Int64 > 0 && value.Int64 <= math.MaxUint32
+}
+
+func mediaProjectionInputs(usages []app.MediaUsageProjection) []domain.EntryMediaUsage {
+	inputs := make([]domain.EntryMediaUsage, len(usages))
+	for index, usage := range usages {
+		inputs[index] = domain.EntryMediaUsage{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
+	}
+	return inputs
 }
 
 func (store postStore) ReplaceEntryMediaUsages(ctx context.Context, entryID domain.ID, usages []domain.EntryMediaUsage) error {

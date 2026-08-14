@@ -206,6 +206,8 @@ function post(
     media_id: string;
     position: number;
     alt_text: string | null;
+    width: number;
+    height: number;
   }> = [],
 ) {
   return {
@@ -533,6 +535,8 @@ describe("owner composing flow", () => {
                 media_id: uploadEnvelope.data.media.id,
                 position: 0,
                 alt_text: null,
+                width: uploadEnvelope.data.media.width,
+                height: uploadEnvelope.data.media.height,
               },
             ]),
             meta: { request_id: "req_post_created", replayed: false },
@@ -589,6 +593,8 @@ describe("owner composing flow", () => {
                 media_id: uploadEnvelope.data.media.id,
                 position: 0,
                 alt_text: null,
+                width: uploadEnvelope.data.media.width,
+                height: uploadEnvelope.data.media.height,
               },
             ]),
             meta: { request_id: "req_image_only", replayed: false },
@@ -1666,6 +1672,8 @@ describe("owner composing flow", () => {
         media_id: "01K2ABCDEF0123456789ABCDE7",
         position: 0,
         alt_text: "雨落下来",
+        width: 1_200,
+        height: 800,
       },
     ]);
     window.history.replaceState({}, "", `/owner/m/${item.id}/edit`);

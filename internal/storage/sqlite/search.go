@@ -83,7 +83,7 @@ type searchStore struct{ queries Queries }
 
 var _ app.SearchStore = searchStore{}
 
-func (store searchStore) EntryMediaUsages(ctx context.Context, entryID domain.ID) ([]domain.EntryMediaUsage, error) {
+func (store searchStore) EntryMediaUsages(ctx context.Context, entryID domain.ID) ([]app.MediaUsageProjection, error) {
 	return newPostStore(store.queries).EntryMediaUsages(ctx, entryID)
 }
 

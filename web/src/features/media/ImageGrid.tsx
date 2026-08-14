@@ -60,6 +60,8 @@ function MediaImage({
       loading="lazy"
       onError={onError}
       src={original ? originalUrl(usage.mediaId) : previewUrl(usage.mediaId)}
+      width={usage.width}
+      height={usage.height}
     />
   );
 }
@@ -79,6 +81,8 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
         : usage.altText === ""
           ? "这是一张明确标记为装饰用途的图片。"
           : usage.altText,
+    width: usage.width,
+    height: usage.height,
   }));
 
   const markFailed = (usage: PublicMediaUsage) => {
@@ -99,6 +103,11 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
             className={styles.imageTile}
             key={`${usage.position}-${usage.mediaId}`}
             onClick={() => setSelected(index)}
+            style={
+              media.length === 1
+                ? { aspectRatio: `${usage.width} / ${usage.height}` }
+                : undefined
+            }
             type="button"
           >
             {failed.has(usageKey(usage)) ? (
@@ -121,9 +130,15 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
                 usage={usage}
               />
             )}
-            <span aria-hidden="true" className={styles.orderMark}>
-              {String(index + 1).padStart(2, "0")}
-            </span>
+            {media.length >= 5 ? (
+              <span
+                aria-hidden="true"
+                className={styles.orderMark}
+                data-media-order={index + 1}
+              >
+                {String(index + 1).padStart(2, "0")}
+              </span>
+            ) : null}
           </button>
         ))}
       </div>

@@ -65,6 +65,8 @@ function comment(
       media_id: string;
       position: number;
       alt_text: string | null;
+      width: number;
+      height: number;
     }>;
   } = {},
 ) {
@@ -438,7 +440,13 @@ describe("public comment thread", () => {
   it("uploads, previews, and publishes an ordered image from the guest reply composer", async () => {
     vi.stubGlobal("XMLHttpRequest", FakeCommentUploadRequest);
     const mediaId = "01K2ABCDEF0123456789ABCDE4";
-    const usage = { media_id: mediaId, position: 0, alt_text: "night sky" };
+    const usage = {
+      media_id: mediaId,
+      position: 0,
+      alt_text: "night sky",
+      width: 10,
+      height: 10,
+    };
     const fetcher = installApi((url, init) => {
       if (url.endsWith("/comments") && init?.method !== "POST") {
         return success({ items: [] });
@@ -512,7 +520,9 @@ describe("public comment thread", () => {
       ([url, init]) =>
         String(url).endsWith("/comments") && init?.method === "POST",
     );
-    expect(JSON.parse(String(mutation?.[1]?.body)).media).toEqual([usage]);
+    expect(JSON.parse(String(mutation?.[1]?.body)).media).toEqual([
+      { media_id: mediaId, position: 0, alt_text: "night sky" },
+    ]);
     expect(
       screen.getByRole("button", {
         name: "打开第 1 张图片，共 1 张：night sky",
@@ -530,7 +540,15 @@ describe("public comment thread", () => {
       if (url.endsWith("/comments") && init?.method === "POST") {
         return success(
           comment(createdId, "失败后重试", {
-            media: [{ media_id: mediaId, position: 0, alt_text: null }],
+            media: [
+              {
+                media_id: mediaId,
+                position: 0,
+                alt_text: null,
+                width: 10,
+                height: 10,
+              },
+            ],
           }),
           { replayed: false },
           201,

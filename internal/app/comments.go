@@ -26,7 +26,8 @@ type CommentStore interface {
 	CommentsEnabled(context.Context) (bool, error)
 	CommentByID(context.Context, domain.ID) (domain.Comment, bool, error)
 	ListComments(context.Context, domain.ID) ([]domain.Comment, error)
-	CommentMediaUsages(context.Context, domain.ID) ([]domain.EntryMediaUsage, error)
+	CommentMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
+	ProjectMediaUsages(context.Context, []domain.EntryMediaUsage) ([]MediaUsageProjection, error)
 	InsertComment(context.Context, domain.Comment) error
 	ReplaceCommentMediaUsages(context.Context, domain.ID, []domain.EntryMediaUsage) error
 	CommentCascadeMediaIDs(context.Context, domain.ID) ([]domain.ID, error)
@@ -46,7 +47,7 @@ type CommentTransactions interface {
 type Comment struct {
 	Comment     domain.Comment
 	ContentHTML string
-	Media       []domain.EntryMediaUsage
+	Media       []MediaUsageProjection
 }
 
 // CommentThread is a stable flattened one-level thread. Roots are ordered by
@@ -235,7 +236,10 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 					return replayErr
 				}
 				result.Comment.Comment = comment
-				result.Comment.Media = domain.CloneEntryMediaUsages(input.Media)
+				result.Comment.Media, replayErr = store.ProjectMediaUsages(ctx, input.Media)
+				if replayErr != nil {
+					return replayErr
+				}
 				result.Replayed = true
 				return nil
 			}
@@ -290,7 +294,11 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 			}
 		}
 		result.Comment.Comment = comment
-		result.Comment.Media = domain.CloneEntryMediaUsages(input.Media)
+		projectedMedia, projectErr := store.ProjectMediaUsages(ctx, input.Media)
+		if projectErr != nil {
+			return projectErr
+		}
+		result.Comment.Media = projectedMedia
 		return nil
 	})
 	if err != nil {
@@ -306,9 +314,19 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 func (service *CommentService) loadCommentReplay(ctx context.Context, input CreateCommentInput, scope, requestHash string) (CreateCommentResult, bool, error) {
 	var record IdempotencyRecord
 	var found bool
+	var media []MediaUsageProjection
+	var recordComment domain.Comment
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		var storeErr error
 		record, found, storeErr = store.IdempotencyRecord(ctx, scope, input.IdempotencyKey)
+		if storeErr != nil || !found {
+			return storeErr
+		}
+		recordComment, storeErr = reconstructCommentReplay(input, scope, requestHash, record)
+		if storeErr != nil {
+			return storeErr
+		}
+		media, storeErr = store.ProjectMediaUsages(ctx, input.Media)
 		return storeErr
 	})
 	if err != nil {
@@ -317,11 +335,7 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 	if !found {
 		return CreateCommentResult{}, false, nil
 	}
-	recordComment, err := reconstructCommentReplay(input, scope, requestHash, record)
-	if err != nil {
-		return CreateCommentResult{}, false, err
-	}
-	comment, err := renderComment(recordComment, input.Media)
+	comment, err := renderComment(recordComment, media)
 	if err != nil {
 		return CreateCommentResult{}, false, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
@@ -337,7 +351,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 		return CommentThread{}, err
 	}
 	var records []domain.Comment
-	mediaByComment := make(map[domain.ID][]domain.EntryMediaUsage)
+	mediaByComment := make(map[domain.ID][]MediaUsageProjection)
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		exists, storeErr := store.EntryExists(ctx, entryID)
 		if storeErr != nil {
@@ -482,7 +496,7 @@ func hashCreateComment(input CreateCommentInput) string {
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
-func renderComment(record domain.Comment, usages ...[]domain.EntryMediaUsage) (Comment, error) {
+func renderComment(record domain.Comment, media []MediaUsageProjection) (Comment, error) {
 	if err := record.Validate(); err != nil {
 		return Comment{}, err
 	}
@@ -490,14 +504,10 @@ func renderComment(record domain.Comment, usages ...[]domain.EntryMediaUsage) (C
 	if err != nil {
 		return Comment{}, err
 	}
-	media := []domain.EntryMediaUsage(nil)
-	if len(usages) > 0 {
-		media = usages[0]
-	}
-	if err := domain.ValidateCommentMediaUsages(media); err != nil {
+	if err := validateCommentMediaProjections(media); err != nil {
 		return Comment{}, err
 	}
-	return Comment{Comment: record, ContentHTML: html, Media: domain.CloneEntryMediaUsages(media)}, nil
+	return Comment{Comment: record, ContentHTML: html, Media: cloneMediaUsageProjections(media)}, nil
 }
 
 func altPointerString(value *string) string {

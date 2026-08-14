@@ -43,6 +43,14 @@ export interface PublicMediaUsage {
   mediaId: string;
   position: number;
   altText: string | null;
+  width: number;
+  height: number;
+}
+
+export interface MediaUsageInput {
+  mediaId: string;
+  position: number;
+  altText: string | null;
 }
 
 export interface TimelinePage {
@@ -115,7 +123,7 @@ export interface CreateGuestCommentInput {
   contentMd: string;
   parentId: string | null;
   website?: string;
-  media?: PublicMediaUsage[];
+  media?: MediaUsageInput[];
 }
 
 export interface UploadedMedia {
@@ -492,7 +500,13 @@ function parseMediaUsages(
   return value.map((item, index): PublicMediaUsage => {
     if (
       !isRecord(item) ||
-      !hasExactKeys(item, ["media_id", "position", "alt_text"]) ||
+      !hasExactKeys(item, [
+        "media_id",
+        "position",
+        "alt_text",
+        "width",
+        "height",
+      ]) ||
       !isCanonicalUlid(stringField(item, "media_id")) ||
       item.position !== index
     ) {
@@ -506,7 +520,13 @@ function parseMediaUsages(
     ) {
       throw invalidResponse(`${subject} media alt_text is not canonical`);
     }
-    return { mediaId: stringField(item, "media_id"), position: index, altText };
+    return {
+      mediaId: stringField(item, "media_id"),
+      position: index,
+      altText,
+      width: positiveIntegerField(item, "width"),
+      height: positiveIntegerField(item, "height"),
+    };
   });
 }
 

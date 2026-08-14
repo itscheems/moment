@@ -536,10 +536,10 @@ func assertCanonicalHTTPMedia(t *testing.T, raw any, expectedAlts []any, expecte
 	}
 	for index, rawItem := range items {
 		item, ok := rawItem.(map[string]any)
-		if !ok || len(item) != 3 || item["media_id"] != expectedIDs[index] || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) {
+		if !ok || len(item) != 5 || item["media_id"] != expectedIDs[index] || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) || item["width"] != float64(8) || item["height"] != float64(8) {
 			t.Fatalf("media[%d] = %#v", index, rawItem)
 		}
-		for _, field := range []string{"media_id", "position", "alt_text"} {
+		for _, field := range []string{"media_id", "position", "alt_text", "width", "height"} {
 			if _, present := item[field]; !present {
 				t.Fatalf("media[%d] omitted %s: %#v", index, field, item)
 			}

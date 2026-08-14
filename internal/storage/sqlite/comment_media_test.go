@@ -43,14 +43,14 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 		EntryID: postID, AuthorName: "Guest", ContentMD: "root with images",
 		Media: rootMedia, IdempotencyKey: "comment-media-root",
 	})
-	if err != nil || !reflect.DeepEqual(root.Comment.Media, rootMedia) {
+	if err != nil || !reflect.DeepEqual(root.Comment.Media, expectedMediaProjections(rootMedia)) {
 		t.Fatalf("create root = %#v, %v", root, err)
 	}
 	reply, err := service.CreateOwner(ctx, app.CreateCommentInput{
 		EntryID: postID, ParentID: &root.Comment.Comment.ID, ContentMD: "reply with image",
 		Media: replyMedia, IdempotencyKey: "comment-media-reply",
 	})
-	if err != nil || !reflect.DeepEqual(reply.Comment.Media, replyMedia) {
+	if err != nil || !reflect.DeepEqual(reply.Comment.Media, expectedMediaProjections(replyMedia)) {
 		t.Fatalf("create reply = %#v, %v", reply, err)
 	}
 	assertMediaClock(t, database, mediaOne, nil)
@@ -58,8 +58,8 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 
 	thread, err := service.List(ctx, postID)
 	if err != nil || len(thread.Items) != 2 ||
-		!reflect.DeepEqual(thread.Items[0].Media, rootMedia) ||
-		!reflect.DeepEqual(thread.Items[1].Media, replyMedia) {
+		!reflect.DeepEqual(thread.Items[0].Media, expectedMediaProjections(rootMedia)) ||
+		!reflect.DeepEqual(thread.Items[1].Media, expectedMediaProjections(replyMedia)) {
 		t.Fatalf("thread = %#v, %v", thread, err)
 	}
 	replayed, err := service.CreateGuest(ctx, app.CreateCommentInput{
@@ -71,7 +71,7 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 	}
 
 	preview, err := service.Delete(ctx, root.Comment.Comment.ID, true)
-	if err != nil || preview.RepliesAffected != 1 || !reflect.DeepEqual(preview.Comment.Media, rootMedia) {
+	if err != nil || preview.RepliesAffected != 1 || !reflect.DeepEqual(preview.Comment.Media, expectedMediaProjections(rootMedia)) {
 		t.Fatalf("delete preview = %#v, %v", preview, err)
 	}
 	assertMediaClock(t, database, mediaOne, nil)

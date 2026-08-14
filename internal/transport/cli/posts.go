@@ -1225,8 +1225,8 @@ func validRawAPIPost(data json.RawMessage, post postdto.Post) bool {
 		return false
 	}
 	for _, usage := range mediaItems {
-		if !hasRequiredAPIDataFields(usage, "media_id", "position", "alt_text") ||
-			!hasRequiredNonNullAPIDataFields(usage, "media_id", "position") {
+		if !hasRequiredAPIDataFields(usage, "media_id", "position", "alt_text", "width", "height") ||
+			!hasRequiredNonNullAPIDataFields(usage, "media_id", "position", "width", "height") {
 			return false
 		}
 	}
@@ -1256,12 +1256,22 @@ func validRawAPIPostPage(data json.RawMessage, page postdto.Page) bool {
 }
 
 func validRawAPIComment(data json.RawMessage, comment commentdto.Comment) bool {
-	if !hasRequiredAPIDataFields(data, "id", "post_id", "parent_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at") ||
-		!hasRequiredNonNullAPIDataFields(data, "id", "post_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at") ||
+	if !hasRequiredAPIDataFields(data, "id", "post_id", "parent_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at", "media") ||
+		!hasRequiredNonNullAPIDataFields(data, "id", "post_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at", "media") ||
 		!validCanonicalAPIInstantField(data, "created_at", comment.CreatedAt) {
 		return false
 	}
 	fields, _ := apiDataFields(data)
+	mediaItems, ok := apiRawArray(fields["media"])
+	if !ok || len(mediaItems) != len(comment.Media) {
+		return false
+	}
+	for _, usage := range mediaItems {
+		if !hasRequiredAPIDataFields(usage, "media_id", "position", "alt_text", "width", "height") ||
+			!hasRequiredNonNullAPIDataFields(usage, "media_id", "position", "width", "height") {
+			return false
+		}
+	}
 	parent := bytes.TrimSpace(fields["parent_id"])
 	if comment.ParentID == nil {
 		return bytes.Equal(parent, []byte("null"))

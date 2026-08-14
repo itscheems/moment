@@ -72,16 +72,22 @@ describe("public API client", () => {
         media_id: "01K2ABCDEF0123456789ABCDE1",
         position: 0,
         alt_text: null,
+        width: 1_200,
+        height: 800,
       },
       {
         media_id: "01K2ABCDEF0123456789ABCDE1",
         position: 1,
         alt_text: "",
+        width: 800,
+        height: 1_200,
       },
       {
         media_id: "01K2ABCDEF0123456789ABCDE2",
         position: 2,
         alt_text: "  雨后的街道  ",
+        width: 1_600,
+        height: 900,
       },
     ];
     const api = new PublicApi(
@@ -91,9 +97,27 @@ describe("public API client", () => {
     );
     await expect(api.post(post.id)).resolves.toMatchObject({
       media: [
-        { mediaId: usages[0].media_id, position: 0, altText: null },
-        { mediaId: usages[1].media_id, position: 1, altText: "" },
-        { mediaId: usages[2].media_id, position: 2, altText: "  雨后的街道  " },
+        {
+          mediaId: usages[0].media_id,
+          position: 0,
+          altText: null,
+          width: 1_200,
+          height: 800,
+        },
+        {
+          mediaId: usages[1].media_id,
+          position: 1,
+          altText: "",
+          width: 800,
+          height: 1_200,
+        },
+        {
+          mediaId: usages[2].media_id,
+          position: 2,
+          altText: "  雨后的街道  ",
+          width: 1_600,
+          height: 900,
+        },
       ],
     });
   });
@@ -116,6 +140,8 @@ describe("public API client", () => {
             media_id: "01K2ABCDEF0123456789ABCDE1",
             position: 1,
             alt_text: null,
+            width: 800,
+            height: 600,
           },
         ],
       },
@@ -124,7 +150,43 @@ describe("public API client", () => {
       name: "missing alt field",
       value: {
         ...post,
-        media: [{ media_id: "01K2ABCDEF0123456789ABCDE1", position: 0 }],
+        media: [
+          {
+            media_id: "01K2ABCDEF0123456789ABCDE1",
+            position: 0,
+            width: 800,
+            height: 600,
+          },
+        ],
+      },
+    },
+    {
+      name: "missing width",
+      value: {
+        ...post,
+        media: [
+          {
+            media_id: "01K2ABCDEF0123456789ABCDE1",
+            position: 0,
+            alt_text: null,
+            height: 600,
+          },
+        ],
+      },
+    },
+    {
+      name: "zero height",
+      value: {
+        ...post,
+        media: [
+          {
+            media_id: "01K2ABCDEF0123456789ABCDE1",
+            position: 0,
+            alt_text: null,
+            width: 800,
+            height: 0,
+          },
+        ],
       },
     },
     {
@@ -136,6 +198,8 @@ describe("public API client", () => {
             media_id: "01K2ABCDEF0123456789ABCDE1",
             position: 0,
             alt_text: "   ",
+            width: 800,
+            height: 600,
           },
         ],
       },
@@ -149,6 +213,8 @@ describe("public API client", () => {
             media_id: "01K2ABCDEF0123456789ABCDE1",
             position: 0,
             alt_text: "🙂".repeat(1_001),
+            width: 800,
+            height: 600,
           },
         ],
       },
@@ -689,6 +755,8 @@ describe("public API client", () => {
       media_id: "01K2ABCDEF0123456789ABCDE4",
       position,
       alt_text: null,
+      width: 800,
+      height: 600,
     }));
     const api = new PublicApi(
       vi.fn(async () =>

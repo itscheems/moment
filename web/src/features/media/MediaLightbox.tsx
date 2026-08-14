@@ -9,6 +9,8 @@ export interface MediaLightboxItem {
   originalSrc?: string | null;
   alt: string;
   description: string;
+  width?: number | null;
+  height?: number | null;
 }
 
 export function MediaLightbox({
@@ -86,6 +88,8 @@ export function MediaLightbox({
                   key={item.key}
                   onError={() => setFailed(true)}
                   src={source}
+                  width={item.width ?? undefined}
+                  height={item.height ?? undefined}
                 />
               ) : (
                 <div className={styles.lightboxFallback} role="alert">

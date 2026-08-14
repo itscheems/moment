@@ -181,29 +181,34 @@ ORDER BY
 	return records, nil
 }
 
-func (store commentStore) CommentMediaUsages(ctx context.Context, commentID domain.ID) ([]domain.EntryMediaUsage, error) {
+func (store commentStore) CommentMediaUsages(ctx context.Context, commentID domain.ID) ([]app.MediaUsageProjection, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT media_id, position, alt_text
-FROM comment_media
-WHERE comment_id = ?
-ORDER BY position`, commentID.String())
+SELECT usage.media_id, usage.position, usage.alt_text, media.width, media.height
+FROM comment_media AS usage
+LEFT JOIN media ON media.id = usage.media_id
+WHERE usage.comment_id = ?
+ORDER BY usage.position`, commentID.String())
 	if err != nil {
 		return nil, fmt.Errorf("query comment media usages: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	usages := make([]domain.EntryMediaUsage, 0, domain.MaxCommentMediaUsages)
+	usages := make([]app.MediaUsageProjection, 0, domain.MaxCommentMediaUsages)
 	for rows.Next() {
 		var rawID string
 		var position int
 		var alt sql.NullString
-		if err := rows.Scan(&rawID, &position, &alt); err != nil {
+		var width, height sql.NullInt64
+		if err := rows.Scan(&rawID, &position, &alt, &width, &height); err != nil {
 			return nil, fmt.Errorf("scan comment media usage: %w", err)
 		}
 		id, err := domain.ParseID(rawID)
 		if err != nil {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media ID is invalid", map[string]any{"comment_id": commentID.String()})
 		}
-		usage := domain.EntryMediaUsage{MediaID: id, Position: position}
+		if !validStoredMediaDimension(width) || !validStoredMediaDimension(height) {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media dimensions are invalid", map[string]any{"comment_id": commentID.String(), "media_id": id.String()})
+		}
+		usage := app.MediaUsageProjection{MediaID: id, Position: position, Width: uint32(width.Int64), Height: uint32(height.Int64)}
 		if alt.Valid {
 			value := alt.String
 			usage.AltText = &value
@@ -213,10 +218,14 @@ ORDER BY position`, commentID.String())
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate comment media usages: %w", err)
 	}
-	if err := domain.ValidateCommentMediaUsages(usages); err != nil {
+	if err := domain.ValidateCommentMediaUsages(mediaProjectionInputs(usages)); err != nil {
 		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media usages violate the ordered contract", map[string]any{"comment_id": commentID.String()})
 	}
 	return usages, nil
+}
+
+func (store commentStore) ProjectMediaUsages(ctx context.Context, inputs []domain.EntryMediaUsage) ([]app.MediaUsageProjection, error) {
+	return newPostStore(store.queries).ProjectMediaUsages(ctx, inputs)
 }
 
 func (store commentStore) ReplaceCommentMediaUsages(ctx context.Context, commentID domain.ID, usages []domain.EntryMediaUsage) error {

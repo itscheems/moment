@@ -185,7 +185,9 @@ func assertCLICommentMedia(t *testing.T, comment map[string]any, expectedAlts []
 	}
 	for index, value := range raw {
 		item, ok := value.(map[string]any)
-		if !ok || len(item) != 3 || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) {
+		width, widthOK := item["width"].(float64)
+		height, heightOK := item["height"].(float64)
+		if !ok || len(item) != 5 || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) || !widthOK || width <= 0 || !heightOK || height <= 0 {
 			t.Fatalf("comment media[%d] = %#v", index, value)
 		}
 		if _, err := domain.ParseID(item["media_id"].(string)); err != nil {

@@ -25,8 +25,8 @@ type Comment struct {
 	Media       []MediaUsage `json:"media"`
 }
 
-// MediaUsage is one ordered managed image attached to a comment.
-type MediaUsage = postdto.MediaUsage
+// MediaUsage is one ordered managed image attached to a comment read model.
+type MediaUsage = postdto.MediaProjection
 
 // Thread is a non-null flattened comment array.
 type Thread struct {
@@ -44,7 +44,7 @@ func FromComment(comment app.Comment) Comment {
 	}
 	media := make([]MediaUsage, len(comment.Media))
 	for index, usage := range comment.Media {
-		media[index] = MediaUsage{MediaID: usage.MediaID.String(), Position: usage.Position, AltText: usage.AltText}
+		media[index] = MediaUsage{MediaID: usage.MediaID.String(), Position: usage.Position, AltText: usage.AltText, Width: usage.Width, Height: usage.Height}
 	}
 	return Comment{
 		ID: comment.Comment.ID.String(), PostID: comment.Comment.EntryID.String(), ParentID: parentID, Depth: depth,
@@ -89,6 +89,9 @@ func ValidateComment(comment Comment) error {
 	}
 	usages := make([]domain.EntryMediaUsage, len(comment.Media))
 	for index, usage := range comment.Media {
+		if usage.Width == 0 || usage.Height == 0 {
+			return errors.New("comment media dimensions must be positive")
+		}
 		mediaID, parseErr := domain.ParseID(usage.MediaID)
 		if parseErr != nil {
 			return parseErr

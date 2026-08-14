@@ -600,6 +600,8 @@ func TestPostAPIRejectsNonCanonicalSuccessEnvelopes(t *testing.T) {
 		"scalar envelope meta": `{"data":` + validData + `,"meta":true}`,
 		"null post media":      `{"data":` + strings.Replace(validData, `"media":[]`, `"media":null`, 1) + `,"meta":{"request_id":"req_fake"}}`,
 		"usage missing alt":    `{"data":` + strings.Replace(validData, `"media":[]`, `"media":[{"media_id":"01ARZ3NDEKTSV4RRFFQ69G5FAW","position":0}]`, 1) + `,"meta":{"request_id":"req_fake"}}`,
+		"usage missing width":  `{"data":` + strings.Replace(validData, `"media":[]`, `"media":[{"media_id":"01ARZ3NDEKTSV4RRFFQ69G5FAW","position":0,"alt_text":null,"height":600}]`, 1) + `,"meta":{"request_id":"req_fake"}}`,
+		"usage zero height":    `{"data":` + strings.Replace(validData, `"media":[]`, `"media":[{"media_id":"01ARZ3NDEKTSV4RRFFQ69G5FAW","position":0,"alt_text":null,"width":800,"height":0}]`, 1) + `,"meta":{"request_id":"req_fake"}}`,
 	}
 	for name, body := range responses {
 		t.Run(name, func(t *testing.T) {
@@ -641,7 +643,7 @@ func TestPostAPIRequiresMutationMetadataAndStatusPairing(t *testing.T) {
 		CreatedAt:   instant,
 		UpdatedAt:   instant,
 		PublishedAt: instant,
-		Media:       []postdto.MediaUsage{},
+		Media:       []postdto.MediaProjection{},
 	}
 	tests := []struct {
 		name   string
@@ -700,13 +702,15 @@ func assertCLIPostMedia(t *testing.T, post map[string]any, expectedAlts []any) [
 	result := make([]map[string]any, 0, len(items))
 	for index, rawItem := range items {
 		item, ok := rawItem.(map[string]any)
-		if !ok || len(item) != 3 || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) {
+		width, widthOK := item["width"].(float64)
+		height, heightOK := item["height"].(float64)
+		if !ok || len(item) != 5 || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) || !widthOK || width <= 0 || !heightOK || height <= 0 {
 			t.Fatalf("media[%d] = %#v", index, rawItem)
 		}
 		if _, err := domain.ParseID(item["media_id"].(string)); err != nil {
 			t.Fatalf("media[%d] ID = %v", index, err)
 		}
-		for _, field := range []string{"media_id", "position", "alt_text"} {
+		for _, field := range []string{"media_id", "position", "alt_text", "width", "height"} {
 			if _, present := item[field]; !present {
 				t.Fatalf("media[%d] omitted %s", index, field)
 			}

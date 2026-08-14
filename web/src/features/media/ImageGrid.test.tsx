@@ -19,6 +19,8 @@ function media(count: number): PublicMediaUsage[] {
     position,
     altText:
       position === 0 ? null : position === 1 ? "" : `第 ${position + 1} 张描述`,
+    width: 1_200 + position,
+    height: 800 + position,
   }));
 }
 
@@ -69,6 +71,39 @@ describe("public image grid", () => {
     ).toBeInTheDocument();
   });
 
+  it("reserves the stored single-image geometry before load", () => {
+    const { container } = render(<ImageGrid media={media(1)} />);
+    const tile = screen.getByRole("button", {
+      name: "打开第 1 张图片，共 1 张：尚未提供图片描述",
+    });
+    const image = screen.getByRole("img", { name: /未提供图片描述/ });
+
+    expect(image).toHaveAttribute("width", "1200");
+    expect(image).toHaveAttribute("height", "800");
+    expect(tile).toHaveStyle({ aspectRatio: "1200 / 800" });
+    const reservedStyle = tile.getAttribute("style");
+
+    fireEvent.load(image);
+    expect(tile.getAttribute("style")).toBe(reservedStyle);
+    expect(container.querySelector('[data-media-order="1"]')).toBeNull();
+  });
+
+  it.each([1, 2, 3, 4])("omits order badges for %i images", (count) => {
+    const { container } = render(<ImageGrid media={media(count)} />);
+    expect(container.querySelectorAll("[data-media-order]")).toHaveLength(0);
+  });
+
+  it.each([5, 6, 7, 8, 9])("keeps order badges for %i images", (count) => {
+    const { container } = render(<ImageGrid media={media(count)} />);
+    const badges = container.querySelectorAll("[data-media-order]");
+    expect(badges).toHaveLength(count);
+    expect(Array.from(badges, (badge) => badge.textContent)).toEqual(
+      Array.from({ length: count }, (_, index) =>
+        String(index + 1).padStart(2, "0"),
+      ),
+    );
+  });
+
   it("keeps a useful fallback when a preview is missing", () => {
     render(<ImageGrid media={media(1)} />);
     fireEvent.error(screen.getByRole("img", { name: /未提供图片描述/ }));
@@ -89,6 +124,8 @@ describe("public image grid", () => {
             mediaId: "01K2ABCDEF0123456789ABCD09",
             position: 1,
             altText: "替换后的图片",
+            width: 1_000,
+            height: 750,
           },
         ]}
       />,

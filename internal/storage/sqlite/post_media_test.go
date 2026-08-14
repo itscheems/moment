@@ -40,18 +40,18 @@ func TestPostMediaLifecycleOrderingClockAndImmutableReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(created.Post.Media, initial) {
+	if !reflect.DeepEqual(created.Post.Media, expectedMediaProjections(initial)) {
 		t.Fatalf("created media = %#v", created.Post.Media)
 	}
 	assertMediaClock(t, database, mediaOne, nil)
 	assertMediaClock(t, database, mediaTwo, nil)
 
 	got, err := service.Get(ctx, created.Post.Entry.ID)
-	if err != nil || !reflect.DeepEqual(got.Media, initial) {
+	if err != nil || !reflect.DeepEqual(got.Media, expectedMediaProjections(initial)) {
 		t.Fatalf("get media = %#v, %v", got.Media, err)
 	}
 	page, err := service.List(ctx, app.ListPostsInput{})
-	if err != nil || len(page.Items) != 1 || !reflect.DeepEqual(page.Items[0].Media, initial) {
+	if err != nil || len(page.Items) != 1 || !reflect.DeepEqual(page.Items[0].Media, expectedMediaProjections(initial)) {
 		t.Fatalf("list = %#v, %v", page, err)
 	}
 
@@ -64,7 +64,7 @@ func TestPostMediaLifecycleOrderingClockAndImmutableReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Entry.ContentMD != created.Post.Entry.ContentMD || !reflect.DeepEqual(updated.Media, reordered) {
+	if updated.Entry.ContentMD != created.Post.Entry.ContentMD || !reflect.DeepEqual(updated.Media, expectedMediaProjections(reordered)) {
 		t.Fatalf("media-only reorder = %#v", updated)
 	}
 	assertMediaClock(t, database, mediaOne, nil)
@@ -224,7 +224,7 @@ func TestPostMediaIdempotentCreateIsConcurrent(t *testing.T) {
 				errorsFound <- err
 				return
 			}
-			if !reflect.DeepEqual(result.Post.Media, input.Media) {
+			if !reflect.DeepEqual(result.Post.Media, expectedMediaProjections(input.Media)) {
 				errorsFound <- domain.NewError(domain.CodeInternal, "media replay drifted", nil)
 			}
 		}()
@@ -237,6 +237,17 @@ func TestPostMediaIdempotentCreateIsConcurrent(t *testing.T) {
 	assertCount(t, database.read, `SELECT count(*) FROM entries`, 1)
 	assertCount(t, database.read, `SELECT count(*) FROM entry_media`, 2)
 	assertMediaClock(t, database, mediaOne, nil)
+}
+
+func expectedMediaProjections(inputs []domain.EntryMediaUsage) []app.MediaUsageProjection {
+	projections := make([]app.MediaUsageProjection, len(inputs))
+	for index, input := range inputs {
+		projections[index] = app.MediaUsageProjection{
+			MediaID: input.MediaID, Position: input.Position, AltText: input.AltText,
+			Width: 32, Height: 32,
+		}
+	}
+	return projections
 }
 
 func TestSearchResultsCarryCanonicalPostMedia(t *testing.T) {
