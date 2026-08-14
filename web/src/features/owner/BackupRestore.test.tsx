@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -296,6 +297,21 @@ describe("owner backup and restore", () => {
     vi.useRealTimers();
   });
 
+  it("keeps the initial view focused on status, export, and file entry", async () => {
+    installFetch();
+    await renderSettings();
+
+    expect(
+      screen.getByRole("heading", { name: "当前没有进行中的恢复" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下载整站备份" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "选择备份文件" })).toBeEnabled();
+    expect(
+      screen.queryByRole("heading", { name: "恢复前影响清单" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("暂存重建")).not.toBeInTheDocument();
+  });
+
   it("keeps settings read-only until the initial restore status is known", async () => {
     let resolveInitial!: (response: Response) => void;
     installFetch(
@@ -374,7 +390,7 @@ describe("owner backup and restore", () => {
     expect(clicks).toEqual(["/api/v1/owner/export", "/api/v1/owner/export"]);
   });
 
-  it("shows complete impact, blocks dirty settings, and cancels before restore", async () => {
+  it("summarizes impact and reveals the complete ledger on explicit intent", async () => {
     installFetch();
     await renderSettings();
     const file = new File(["portable archive"], "长文件名-<script>.zip", {
@@ -382,10 +398,25 @@ describe("owner backup and restore", () => {
     });
     await createPlan(file);
 
+    const decision = screen.getByLabelText("恢复决定摘要");
+    expect(within(decision).getByText("12 条 Moment")).toBeInTheDocument();
+    expect(within(decision).getByText("8 条 Moment")).toBeInTheDocument();
+    expect(within(decision).getByText("容量检查")).toBeInTheDocument();
+    expect(within(decision).getByText("通过")).toBeInTheDocument();
+
+    const summary = screen.getByText("查看完整替换、容量与校验账本");
+    const details = summary.closest("details");
+    expect(details).not.toHaveAttribute("open");
+    expect(summary.tabIndex).toBe(0);
+    summary.focus();
+    expect(summary).toHaveFocus();
+    fireEvent.click(summary);
+    await waitFor(() => expect(details).toHaveAttribute("open"));
     expect(screen.getByText(/格式 v1/)).toBeInTheDocument();
     expect(screen.getByText(/自动恢复前备份/)).toBeInTheDocument();
     expect(screen.getByText("恢复所需空间")).toBeInTheDocument();
     expect(screen.getByText(/1 media usages/)).toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText(/^时区/), {
       target: { value: "Asia/Tokyo" },
     });
@@ -488,6 +519,20 @@ describe("owner backup and restore", () => {
       name: "确认替换当前站点",
     });
     fireEvent.click(trigger);
+    const dialog = await screen.findByRole("dialog", {
+      name: "用这份备份替换当前站点？",
+    });
+    const finalImpact = within(dialog).getByLabelText("最终恢复影响");
+    expect(
+      within(finalImpact).getByText(/12 Moment · 4 评论 · 3 媒体/),
+    ).toBeInTheDocument();
+    expect(
+      within(finalImpact).getByText(/8 Moment · 2 评论 · 2 媒体/),
+    ).toBeInTheDocument();
+    expect(within(finalImpact).getByText(/已通过 · 还需/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("这是覆盖恢复，不会合并数据。"),
+    ).toBeInTheDocument();
     const cancel = await screen.findByRole("button", { name: "返回检查" });
     expect(cancel).toHaveFocus();
     fireEvent.click(screen.getByRole("button", { name: "确认并开始恢复" }));
@@ -760,7 +805,9 @@ describe("owner backup and restore", () => {
       expect(
         screen.getByText("moment doctor --deep --json", { exact: false }),
       ).toBeInTheDocument();
-      expect(screen.getByText("DATA_INTEGRITY_FAILED")).toBeInTheDocument();
+      const errorCode = screen.getByText("DATA_INTEGRITY_FAILED");
+      expect(errorCode).toBeInTheDocument();
+      expect(errorCode.closest("details")).toHaveAttribute("open");
       expect(
         screen.getByRole("button", { name: "选择备份文件" }),
       ).toBeDisabled();

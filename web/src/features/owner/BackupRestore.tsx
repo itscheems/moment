@@ -203,6 +203,7 @@ export function BackupRestore({
   const [manualStatusRequired, setManualStatusRequired] = useState(false);
   const [siteRefreshRequired, setSiteRefreshRequired] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
 
   const restoreBusy =
     !statusInitialized ||
@@ -475,6 +476,7 @@ export function BackupRestore({
     foreignOperationRef.current = null;
     setFile(next);
     setPlan(null);
+    setPlanDetailsOpen(false);
     setPlanProgress(null);
     setRestoreProgress(null);
     setRestoreState("idle");
@@ -502,6 +504,7 @@ export function BackupRestore({
     setPlanProgress(null);
     setPlanError(null);
     setPlan(null);
+    setPlanDetailsOpen(false);
     try {
       const next = await api.planImport(
         session.csrfToken,
@@ -550,6 +553,7 @@ export function BackupRestore({
     foreignOperationRef.current = null;
     setFile(null);
     setPlan(null);
+    setPlanDetailsOpen(false);
     setPlanState("idle");
     setPlanProgress(null);
     setPlanError(null);
@@ -693,9 +697,129 @@ export function BackupRestore({
   };
 
   const currentStatus = status ? statusCopy(status) : null;
+  const showRestoreStatus =
+    restoreState === "running" ||
+    status !== null ||
+    statusDisconnected ||
+    manualStatusRequired;
+
+  const restoreStatusPanel = showRestoreStatus ? (
+    <div
+      aria-live="polite"
+      className={styles.restoreStatus}
+      data-tone={currentStatus?.tone ?? "working"}
+      ref={statusRef}
+      tabIndex={-1}
+    >
+      <p>{currentStatus?.eyebrow ?? "恢复状态"}</p>
+      <h3>{currentStatus?.title ?? "正在确认服务器状态"}</h3>
+      <span>
+        {currentStatus?.detail ??
+          "恢复请求可能仍在运行。本页不会重新提交备份，只会查询服务器记录。"}
+      </span>
+      {restoreState === "running" && !status ? (
+        <progress
+          aria-label="备份恢复上传进度"
+          max="100"
+          value={restoreProgress ?? undefined}
+        />
+      ) : null}
+      {restoreError ? <p className={styles.dataError}>{restoreError}</p> : null}
+      {statusDisconnected ? (
+        <p className={styles.dataError}>
+          暂时无法连接服务器。页面会继续重试状态查询，不会重传备份。
+        </p>
+      ) : null}
+      {manualStatusRequired ? (
+        <p className={styles.dataError}>
+          自动关联已经停止。先在实例主机核对恢复状态；本页不会自行再次提交备份。
+        </p>
+      ) : null}
+      {status?.phase === "needs_attention" ? (
+        <details
+          className={styles.technicalDetails}
+          onToggle={(event) => {
+            if (!event.currentTarget.open) event.currentTarget.open = true;
+          }}
+          open
+        >
+          <summary>需要核对的技术信息</summary>
+          <dl className={styles.operatorFacts}>
+            <div>
+              <dt>操作</dt>
+              <dd>{status.operationId}</dd>
+            </div>
+            <div>
+              <dt>错误码</dt>
+              <dd>{status.errorCode}</dd>
+            </div>
+            <div>
+              <dt>当前数据版本</dt>
+              <dd>{status.activeGeneration}</dd>
+            </div>
+          </dl>
+        </details>
+      ) : null}
+      <div className={styles.inlineActions}>
+        {restoreState === "running" ||
+        activePhases.has(status?.phase ?? "succeeded") ? (
+          <button
+            className={styles.secondaryButton}
+            onClick={stopWaiting}
+            type="button"
+          >
+            停止等待并查询状态
+          </button>
+        ) : null}
+        {statusDisconnected || manualStatusRequired ? (
+          <button
+            className={styles.secondaryButton}
+            disabled={statusChecking}
+            onClick={() => {
+              unassociatedPollsRef.current = 0;
+              setManualStatusRequired(false);
+              const observedNewOperation =
+                status?.operationId &&
+                status.operationId !== restoreBaselineRef.current
+                  ? status.operationId
+                  : null;
+              void queryStatus(
+                fileRevisionRef.current,
+                observedNewOperation,
+                restoreBaselineRef.current,
+              );
+            }}
+            type="button"
+          >
+            立即重试状态
+          </button>
+        ) : null}
+        {status?.phase === "succeeded" ? (
+          <button
+            className={styles.primaryButton}
+            onClick={() => window.location.reload()}
+            type="button"
+          >
+            重新载入已恢复站点
+          </button>
+        ) : null}
+      </div>
+    </div>
+  ) : (
+    <div aria-live="polite" className={styles.backupOverview}>
+      <p>最近状态</p>
+      <h3>{statusChecking ? "正在确认恢复状态" : "当前没有进行中的恢复"}</h3>
+      <span>
+        {statusChecking
+          ? "确认完成前，站点设置与恢复入口会保持只读。"
+          : "可以下载当前站点的完整备份，或选择备份文件进行安全预检。"}
+      </span>
+    </div>
+  );
 
   return (
     <div className={styles.portableFlow}>
+      {restoreStatusPanel}
       <div className={styles.portableStep}>
         <div>
           <h3>导出完整站点</h3>
@@ -807,115 +931,164 @@ export function BackupRestore({
               <p>备份检查完成</p>
               <h3>恢复前影响清单</h3>
             </div>
+            <span>{plan.disk.spaceOK ? "空间检查通过" : "空间不足"}</span>
           </header>
-          <details className={styles.technicalDetails}>
-            <summary>技术信息</summary>
-            <p className={styles.archiveHash}>
-              格式 v{plan.formatVersion} · SHA-256{" "}
-              <code>{plan.archiveSHA256}</code>
-            </p>
-          </details>
-          <div className={styles.impactColumns}>
-            <section aria-labelledby="incoming-impact">
-              <h4 id="incoming-impact">将导入</h4>
-              <dl>
-                <div>
-                  <dt>Moment</dt>
-                  <dd>{plan.counts.entries}</dd>
-                </div>
-                <div>
-                  <dt>评论</dt>
-                  <dd>{plan.counts.comments}</dd>
-                </div>
-                <div>
-                  <dt>媒体</dt>
-                  <dd>
-                    {plan.counts.media} · {formatBytes(plan.mediaBytes)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>时间范围</dt>
-                  <dd>
-                    {formatDate(plan.timeRange.from)} —{" "}
-                    {formatDate(plan.timeRange.to)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>缺少图片描述</dt>
-                  <dd>{plan.missingAlt}</dd>
-                </div>
-              </dl>
+          <div aria-label="恢复决定摘要" className={styles.decisionSummary}>
+            <section>
+              <span>将导入</span>
+              <strong>{plan.counts.entries} 条 Moment</strong>
+              <small>
+                {plan.counts.comments} 条评论 · {plan.counts.media} 个媒体记录
+              </small>
             </section>
-            <section aria-labelledby="replacement-impact">
-              <h4 id="replacement-impact">将被替换</h4>
-              <dl>
-                <div>
-                  <dt>Moment</dt>
-                  <dd>{plan.replacement.counts.entries}</dd>
-                </div>
-                <div>
-                  <dt>评论</dt>
-                  <dd>{plan.replacement.counts.comments}</dd>
-                </div>
-                <div>
-                  <dt>媒体</dt>
-                  <dd>
-                    {plan.replacement.counts.media} ·{" "}
-                    {formatBytes(plan.replacement.mediaBytes)}
-                  </dd>
-                </div>
-                <div>
-                  <dt>当前数据</dt>
-                  <dd>{formatBytes(plan.replacement.dataBytes)}</dd>
-                </div>
-              </dl>
+            <section data-tone="danger">
+              <span>将被替换</span>
+              <strong>{plan.replacement.counts.entries} 条 Moment</strong>
+              <small>
+                {plan.replacement.counts.comments} 条评论 ·{" "}
+                {plan.replacement.counts.media} 个媒体记录
+              </small>
+            </section>
+            <section data-tone={plan.disk.spaceOK ? "success" : "danger"}>
+              <span>容量检查</span>
+              <strong>{plan.disk.spaceOK ? "通过" : "空间不足"}</strong>
+              <small>
+                还需 {formatBytes(plan.disk.requiredAdditionalBytes)} · 可用{" "}
+                {formatBytes(plan.disk.availableBytes)}
+              </small>
             </section>
           </div>
-          <section aria-labelledby="disk-impact" className={styles.diskLedger}>
-            <h4 id="disk-impact">恢复所需空间</h4>
-            <dl>
-              <div>
-                <dt>上传包</dt>
-                <dd>{formatBytes(plan.disk.archiveBytes)}</dd>
+          {!plan.disk.spaceOK ? (
+            <p className={styles.dataError} role="alert">
+              当前空间不足，不能提交恢复。完整容量账本保持展开，释放空间后请重新预检。
+            </p>
+          ) : null}
+          <details
+            className={styles.planDetails}
+            data-locked={!plan.disk.spaceOK ? "true" : undefined}
+            onToggle={(event) => {
+              if (!plan.disk.spaceOK && !event.currentTarget.open) {
+                event.currentTarget.open = true;
+                return;
+              }
+              setPlanDetailsOpen(event.currentTarget.open);
+            }}
+            open={planDetailsOpen || !plan.disk.spaceOK}
+          >
+            <summary>查看完整替换、容量与校验账本</summary>
+            <div className={styles.planDetailsBody}>
+              <p className={styles.archiveHash}>
+                格式 v{plan.formatVersion} · SHA-256{" "}
+                <code>{plan.archiveSHA256}</code>
+              </p>
+              <div className={styles.impactColumns}>
+                <section aria-labelledby="incoming-impact">
+                  <h4 id="incoming-impact">将导入</h4>
+                  <dl>
+                    <div>
+                      <dt>Moment</dt>
+                      <dd>{plan.counts.entries}</dd>
+                    </div>
+                    <div>
+                      <dt>评论</dt>
+                      <dd>{plan.counts.comments}</dd>
+                    </div>
+                    <div>
+                      <dt>媒体</dt>
+                      <dd>
+                        {plan.counts.media} · {formatBytes(plan.mediaBytes)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>时间范围</dt>
+                      <dd>
+                        {formatDate(plan.timeRange.from)} —{" "}
+                        {formatDate(plan.timeRange.to)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>缺少图片描述</dt>
+                      <dd>{plan.missingAlt}</dd>
+                    </div>
+                  </dl>
+                </section>
+                <section aria-labelledby="replacement-impact">
+                  <h4 id="replacement-impact">将被替换</h4>
+                  <dl>
+                    <div>
+                      <dt>Moment</dt>
+                      <dd>{plan.replacement.counts.entries}</dd>
+                    </div>
+                    <div>
+                      <dt>评论</dt>
+                      <dd>{plan.replacement.counts.comments}</dd>
+                    </div>
+                    <div>
+                      <dt>媒体</dt>
+                      <dd>
+                        {plan.replacement.counts.media} ·{" "}
+                        {formatBytes(plan.replacement.mediaBytes)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>当前数据</dt>
+                      <dd>{formatBytes(plan.replacement.dataBytes)}</dd>
+                    </div>
+                  </dl>
+                </section>
               </div>
-              <div>
-                <dt>展开内容</dt>
-                <dd>{formatBytes(plan.disk.expandedBytes)}</dd>
-              </div>
-              <div>
-                <dt>暂存重建</dt>
-                <dd>{formatBytes(plan.disk.stagingBytes)}</dd>
-              </div>
-              <div>
-                <dt>自动恢复前备份</dt>
-                <dd>{formatBytes(plan.disk.preImportBackupBytes)}</dd>
-              </div>
-              <div>
-                <dt>回滚保留</dt>
-                <dd>{formatBytes(plan.disk.rollbackReserveBytes)}</dd>
-              </div>
-              <div>
-                <dt>安全余量</dt>
-                <dd>{formatBytes(plan.disk.safetyMarginBytes)}</dd>
-              </div>
-              <div>
-                <dt>还需空间</dt>
-                <dd>{formatBytes(plan.disk.requiredAdditionalBytes)}</dd>
-              </div>
-              <div>
-                <dt>预计峰值</dt>
-                <dd>{formatBytes(plan.disk.estimatedPeakFootprintBytes)}</dd>
-              </div>
-              <div>
-                <dt>当前可用</dt>
-                <dd>{formatBytes(plan.disk.availableBytes)}</dd>
-              </div>
-              <div>
-                <dt>空间检查</dt>
-                <dd>{plan.disk.spaceOK ? "通过" : "不足"}</dd>
-              </div>
-            </dl>
-          </section>
+              <section
+                aria-labelledby="disk-impact"
+                className={styles.diskLedger}
+              >
+                <h4 id="disk-impact">恢复所需空间</h4>
+                <dl>
+                  <div>
+                    <dt>上传包</dt>
+                    <dd>{formatBytes(plan.disk.archiveBytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>展开内容</dt>
+                    <dd>{formatBytes(plan.disk.expandedBytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>暂存重建</dt>
+                    <dd>{formatBytes(plan.disk.stagingBytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>自动恢复前备份</dt>
+                    <dd>{formatBytes(plan.disk.preImportBackupBytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>回滚保留</dt>
+                    <dd>{formatBytes(plan.disk.rollbackReserveBytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>安全余量</dt>
+                    <dd>{formatBytes(plan.disk.safetyMarginBytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>还需空间</dt>
+                    <dd>{formatBytes(plan.disk.requiredAdditionalBytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>预计峰值</dt>
+                    <dd>
+                      {formatBytes(plan.disk.estimatedPeakFootprintBytes)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>当前可用</dt>
+                    <dd>{formatBytes(plan.disk.availableBytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>空间检查</dt>
+                    <dd>{plan.disk.spaceOK ? "通过" : "不足"}</dd>
+                  </div>
+                </dl>
+              </section>
+            </div>
+          </details>
           {plan.warnings.length ? (
             <div className={styles.importWarnings}>
               <strong>预检提醒</strong>
@@ -942,6 +1115,7 @@ export function BackupRestore({
               className={styles.dialogTrigger}
               disabled={
                 !session ||
+                !plan.disk.spaceOK ||
                 settingsBlocked ||
                 !statusInitialized ||
                 statusDisconnected ||
@@ -965,6 +1139,38 @@ export function BackupRestore({
                     {plan.replacement.counts.media}{" "}
                     个媒体记录。服务器会先自动备份当前数据。
                   </Dialog.Description>
+                  <div
+                    aria-label="最终恢复影响"
+                    className={styles.dialogImpact}
+                  >
+                    <div>
+                      <span>导入</span>
+                      <strong>
+                        {plan.counts.entries} Moment · {plan.counts.comments}{" "}
+                        评论 · {plan.counts.media} 媒体
+                      </strong>
+                    </div>
+                    <div>
+                      <span>替换</span>
+                      <strong>
+                        {plan.replacement.counts.entries} Moment ·{" "}
+                        {plan.replacement.counts.comments} 评论 ·{" "}
+                        {plan.replacement.counts.media} 媒体
+                      </strong>
+                    </div>
+                    <div>
+                      <span>容量</span>
+                      <strong>
+                        已通过 · 还需{" "}
+                        {formatBytes(plan.disk.requiredAdditionalBytes)} · 可用{" "}
+                        {formatBytes(plan.disk.availableBytes)}
+                      </strong>
+                    </div>
+                  </div>
+                  <p className={styles.dialogRisk}>
+                    <strong>这是覆盖恢复，不会合并数据。</strong>
+                    确认后服务器仍会先备份当前站点；备份或恢复后验证失败都不会报告成功。
+                  </p>
                   <div className={styles.dialogActions}>
                     <Dialog.Close className={styles.secondaryButton}>
                       返回检查
@@ -987,109 +1193,6 @@ export function BackupRestore({
               </Dialog.Viewport>
             </Dialog.Portal>
           </Dialog.Root>
-        </div>
-      ) : null}
-
-      {restoreState === "running" ||
-      status ||
-      statusDisconnected ||
-      manualStatusRequired ? (
-        <div
-          aria-live="polite"
-          className={styles.restoreStatus}
-          data-tone={currentStatus?.tone ?? "working"}
-          ref={statusRef}
-          tabIndex={-1}
-        >
-          <p>{currentStatus?.eyebrow ?? "恢复状态"}</p>
-          <h3>{currentStatus?.title ?? "正在确认服务器状态"}</h3>
-          <span>
-            {currentStatus?.detail ??
-              "恢复请求可能仍在运行。本页不会重新提交备份，只会查询服务器记录。"}
-          </span>
-          {restoreState === "running" && !status ? (
-            <progress
-              aria-label="备份恢复上传进度"
-              max="100"
-              value={restoreProgress ?? undefined}
-            />
-          ) : null}
-          {restoreError ? (
-            <p className={styles.dataError}>{restoreError}</p>
-          ) : null}
-          {statusDisconnected ? (
-            <p className={styles.dataError}>
-              暂时无法连接服务器。页面会继续重试状态查询，不会重传备份。
-            </p>
-          ) : null}
-          {manualStatusRequired ? (
-            <p className={styles.dataError}>
-              自动关联已经停止。先在实例主机核对恢复状态；本页不会自行再次提交备份。
-            </p>
-          ) : null}
-          {status?.phase === "needs_attention" ? (
-            <details className={styles.technicalDetails}>
-              <summary>技术信息</summary>
-              <dl className={styles.operatorFacts}>
-                <div>
-                  <dt>操作</dt>
-                  <dd>{status.operationId}</dd>
-                </div>
-                <div>
-                  <dt>错误码</dt>
-                  <dd>{status.errorCode}</dd>
-                </div>
-                <div>
-                  <dt>当前数据版本</dt>
-                  <dd>{status.activeGeneration}</dd>
-                </div>
-              </dl>
-            </details>
-          ) : null}
-          <div className={styles.inlineActions}>
-            {restoreState === "running" ||
-            activePhases.has(status?.phase ?? "succeeded") ? (
-              <button
-                className={styles.secondaryButton}
-                onClick={stopWaiting}
-                type="button"
-              >
-                停止等待并查询状态
-              </button>
-            ) : null}
-            {statusDisconnected || manualStatusRequired ? (
-              <button
-                className={styles.secondaryButton}
-                disabled={statusChecking}
-                onClick={() => {
-                  unassociatedPollsRef.current = 0;
-                  setManualStatusRequired(false);
-                  const observedNewOperation =
-                    status?.operationId &&
-                    status.operationId !== restoreBaselineRef.current
-                      ? status.operationId
-                      : null;
-                  void queryStatus(
-                    fileRevisionRef.current,
-                    observedNewOperation,
-                    restoreBaselineRef.current,
-                  );
-                }}
-                type="button"
-              >
-                立即重试状态
-              </button>
-            ) : null}
-            {status?.phase === "succeeded" ? (
-              <button
-                className={styles.primaryButton}
-                onClick={() => window.location.reload()}
-                type="button"
-              >
-                重新载入已恢复站点
-              </button>
-            ) : null}
-          </div>
         </div>
       ) : null}
     </div>
