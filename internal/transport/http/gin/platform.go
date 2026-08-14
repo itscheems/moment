@@ -31,6 +31,7 @@ type ReadinessFunc func(context.Context) error
 // BodyLimits are streaming hard limits applied before handlers read requests.
 type BodyLimits struct {
 	JSON      int64
+	MergeJSON int64
 	Multipart int64
 	Archive   int64
 	Default   int64
@@ -66,6 +67,7 @@ type Config struct {
 
 const (
 	defaultJSONLimit      = int64(1 << 20)
+	defaultMergeJSONLimit = int64(64 << 20)
 	defaultMultipartLimit = int64(64 << 20)
 	defaultArchiveLimit   = int64(64 << 30)
 	defaultBodyLimit      = int64(1 << 20)
@@ -206,6 +208,9 @@ func completeLimits(limits BodyLimits) BodyLimits {
 	if limits.JSON == 0 {
 		limits.JSON = defaultJSONLimit
 	}
+	if limits.MergeJSON == 0 {
+		limits.MergeJSON = defaultMergeJSONLimit
+	}
 	if limits.Multipart == 0 {
 		limits.Multipart = defaultMultipartLimit
 	}
@@ -219,7 +224,7 @@ func completeLimits(limits BodyLimits) BodyLimits {
 }
 
 func validateLimits(limits BodyLimits) error {
-	if limits.JSON <= 0 || limits.Multipart <= 0 || limits.Archive <= 0 || limits.Default <= 0 {
+	if limits.JSON <= 0 || limits.MergeJSON <= 0 || limits.Multipart <= 0 || limits.Archive <= 0 || limits.Default <= 0 {
 		return errors.New("body limits must be greater than zero")
 	}
 	return nil

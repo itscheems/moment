@@ -111,6 +111,7 @@ func registerBackup(application *Application, info buildinfo.Info) {
 			return runBackupStatus(ctx, invocation, input, info.Version)
 		},
 	})
+	registerBackupMerge(application, info)
 }
 
 func runBackupStatus(ctx context.Context, invocation Invocation, _ CommandInput, appVersion string) (Result, error) {
@@ -468,6 +469,13 @@ func restoreImportAPI(ctx context.Context, invocation Invocation, archivePath, e
 }
 
 func uploadImportArchive(ctx context.Context, invocation Invocation, archivePath, endpointPath string, successStatus int, expectedArchiveSHA string, identity importArchiveIdentity) ([]byte, int64, error) {
+	return uploadImportArchiveBounded(ctx, invocation, archivePath, endpointPath, successStatus, expectedArchiveSHA, identity, maxAPIResponse)
+}
+
+func uploadImportArchiveBounded(ctx context.Context, invocation Invocation, archivePath, endpointPath string, successStatus int, expectedArchiveSHA string, identity importArchiveIdentity, responseLimit int64) ([]byte, int64, error) {
+	if responseLimit < 1 {
+		return nil, 0, errors.New("import response limit must be positive")
+	}
 	before, err := os.Lstat(archivePath)
 	if err != nil {
 		return nil, 0, err
@@ -517,11 +525,11 @@ func uploadImportArchive(ctx context.Context, invocation Invocation, archivePath
 		return nil, 0, err
 	}
 	defer func() { _ = response.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
+	body, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
 	if err != nil {
 		return nil, 0, err
 	}
-	if len(body) > maxAPIResponse {
+	if int64(len(body)) > responseLimit {
 		return nil, 0, invalidAPIResponse()
 	}
 	if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(body) != nil {

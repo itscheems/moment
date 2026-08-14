@@ -30,6 +30,24 @@
       "parity_strategy": "semantic_random_staging_token"
     },
     {
+      "command": "backup merge",
+      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive", "maintenance:exclusive", "media:exclusive"]},
+      "api": {"availability": "online_maintenance", "auth": "owner_token", "locks": ["server_managed_import_order"]},
+      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "output_schema": "merge_action_summary_or_commit_status_v1",
+      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "parity_strategy": "byte_identical_selection_and_canonical_status"
+    },
+    {
+      "command": "backup merge-plan",
+      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive"]},
+      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed_import"]},
+      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "output_schema": "merge_plan_v1_and_private_selection",
+      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "parity_strategy": "semantic_random_staging_token"
+    },
+    {
       "command": "backup status",
       "direct": {"availability": "supported", "auth": "local_data_access", "locks": []},
       "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},

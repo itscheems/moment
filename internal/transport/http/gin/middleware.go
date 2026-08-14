@@ -106,6 +106,9 @@ func bodyLimitFor(request *http.Request, limits BodyLimits) int64 {
 	if request.URL.Path == "/api/v1/owner/import/inspect" {
 		return limits.Archive
 	}
+	if request.URL.Path == "/api/v1/owner/import/merge/commit" {
+		return limits.MergeJSON
+	}
 	contentType, _, _ := mime.ParseMediaType(request.Header.Get("Content-Type"))
 	switch {
 	case contentType == "multipart/form-data":
