@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useEffect, useState } from "react";
 
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import styles from "./Media.module.css";
 
 export interface MediaLightboxItem {
@@ -24,6 +25,9 @@ export function MediaLightbox({
 }) {
   const [failed, setFailed] = useState(false);
   const item = selected === null ? null : (items[selected] ?? null);
+  const open = selected !== null && item !== null;
+
+  useDocumentScrollLock(open);
 
   useEffect(() => {
     setFailed(false);
@@ -44,7 +48,7 @@ export function MediaLightbox({
       onOpenChange={(open) => {
         if (!open) onSelectedChange(null);
       }}
-      open={selected !== null && item !== null}
+      open={open}
     >
       <Dialog.Portal
         className={styles.lightboxPortal}

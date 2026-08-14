@@ -67,6 +67,7 @@ describe("profile editor", () => {
         expires_at: "2999-08-11T01:00:00.000Z",
       }),
     );
+    vi.stubGlobal("scrollTo", vi.fn());
   });
 
   afterEach(() => {
@@ -77,6 +78,7 @@ describe("profile editor", () => {
   });
 
   it("previews removal and publishes text and cover in one profile update", async () => {
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(520);
     const bodies: unknown[] = [];
     vi.stubGlobal(
       "fetch",
@@ -115,6 +117,9 @@ describe("profile editor", () => {
       ).toBeEnabled(),
     );
     fireEvent.click(screen.getByRole("button", { name: "编辑个人资料" }));
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-520px");
     expect(screen.getByRole("img", { name: "封面预览" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "移除封面图片" }));
     fireEvent.change(screen.getByLabelText("显示名称"), {
@@ -123,6 +128,11 @@ describe("profile editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(document.documentElement.style.overflowY).toBe(""),
+    );
+    expect(document.body.style.position).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 520);
     expect(bodies).toEqual([
       { display_name: "更新后的 Moment", cover_media_id: null },
     ]);

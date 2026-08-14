@@ -6,10 +6,14 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OwnerApi } from "../../api/owner";
 import { LocationPicker } from "./LocationPicker";
+
+beforeEach(() => {
+  vi.stubGlobal("scrollTo", vi.fn());
+});
 
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -21,10 +25,12 @@ function json(body: unknown): Response {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("location picker", () => {
   it("keeps browser permission behind an explicit action and selects a nearby place", async () => {
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(410);
     const getCurrentPosition = vi.fn((success: PositionCallback) =>
       success({
         coords: { latitude: 31.23, longitude: 121.47 },
@@ -72,6 +78,9 @@ describe("location picker", () => {
 
     expect(getCurrentPosition).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "添加位置" }));
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-410px");
     expect(getCurrentPosition).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /使用当前位置/ }));
     await waitFor(() =>
@@ -84,6 +93,9 @@ describe("location picker", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ name: "静安寺", provider: "amap" }),
     );
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.body.style.position).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 410);
   });
 
   it("offers a deliberate manual fallback without coordinates", () => {

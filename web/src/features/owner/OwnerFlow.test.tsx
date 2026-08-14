@@ -989,6 +989,7 @@ describe("owner composing flow", () => {
 
   it("keeps an unsaved page composer in place until leave is confirmed", async () => {
     preauthenticate();
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(510);
     window.history.replaceState({}, "", "/owner/compose");
     installApi();
     render(<App />);
@@ -1000,9 +1001,15 @@ describe("owner composing flow", () => {
     );
     expect(window.location.pathname).toBe("/owner/compose");
     const dialog = await screen.findByRole("dialog", { name: "退出发布？" });
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-510px");
     expect(window.confirm).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" }));
     expect(window.location.pathname).toBe("/owner/compose");
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.body.style.position).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 510);
 
     fireEvent.click(
       screen.getAllByRole("link", { name: "乔乔的 Moment首页" })[0],
@@ -1833,6 +1840,7 @@ describe("owner composing flow", () => {
 
   it("uses a focus-restoring confirmation before owner deletion", async () => {
     preauthenticate();
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(900);
     const deletable = post("准备删除", "01K2ABCDEF0123456789ABCDE1");
     installApi((url, init) => {
       if (url.startsWith("/api/v1/posts?")) {
@@ -1853,6 +1861,9 @@ describe("owner composing flow", () => {
     expect(
       await screen.findByRole("heading", { name: "删除这段 Moment？" }),
     ).toBeInTheDocument();
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-900px");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "保留" })).toHaveFocus(),
     );
@@ -1860,6 +1871,9 @@ describe("owner composing flow", () => {
     expect(window.location.pathname).toBe("/");
     fireEvent.click(screen.getByRole("button", { name: "保留" }));
     await waitFor(() => expect(more).toHaveFocus());
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.body.style.position).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 900);
 
     fireEvent.click(more);
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));

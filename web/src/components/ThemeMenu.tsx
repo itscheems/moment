@@ -10,6 +10,7 @@ import {
 } from "../theme/ThemeProvider";
 import { Icon } from "./icons";
 import { SiteAvatar, siteHandle } from "./SiteIdentity";
+import { useDocumentScrollLock } from "./useDocumentScrollLock";
 import styles from "./ThemeMenu.module.css";
 
 const backgrounds: Array<{
@@ -36,6 +37,8 @@ export function ThemeMenu({ site }: { site: SiteIdentity }) {
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const title = site.title.trim() || "Moment";
   const previewHandle = siteHandle(site);
+
+  useDocumentScrollLock(appearanceOpen);
 
   return (
     <>

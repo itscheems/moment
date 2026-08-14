@@ -508,6 +508,7 @@ describe("owner backup and restore", () => {
   });
 
   it("reuses the exact file and SHA, closes confirmation, and preserves browser state", async () => {
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(720);
     const fetcher = installFetch();
     const draftKey = "moment.compose.draft.v1:instance";
     window.localStorage.setItem(draftKey, "draft stays local");
@@ -522,6 +523,9 @@ describe("owner backup and restore", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "用这份备份替换当前站点？",
     });
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-720px");
     const finalImpact = within(dialog).getByLabelText("最终恢复影响");
     expect(
       within(finalImpact).getByText(/12 Moment · 4 评论 · 3 媒体/),
@@ -555,6 +559,9 @@ describe("owner backup and restore", () => {
         screen.queryByRole("dialog", { name: "用这份备份替换当前站点？" }),
       ).not.toBeInTheDocument(),
     );
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.body.style.position).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 720);
 
     const restoreRequest = ArchiveRequest.requests[1];
     expect(restoreRequest.url).toBe("/api/v1/owner/import/restore");

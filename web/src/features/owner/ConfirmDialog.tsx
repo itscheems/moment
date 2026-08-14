@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { type ReactElement, useState } from "react";
 
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import styles from "./Owner.module.css";
 
 export function ConfirmDialog({
@@ -21,6 +22,8 @@ export function ConfirmDialog({
   onConfirm: () => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
+  useDocumentScrollLock(open);
+
   return (
     <Dialog.Root onOpenChange={setOpen} open={open}>
       <Dialog.Trigger className={styles.dialogTrigger} render={trigger} />

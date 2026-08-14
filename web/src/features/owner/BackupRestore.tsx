@@ -9,6 +9,7 @@ import {
 
 import type { ImportPlan, ImportStatus } from "../../api/owner";
 import { PublicApiError } from "../../api/public";
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { useOwner } from "./OwnerProvider";
 import styles from "./Settings.module.css";
 
@@ -204,6 +205,8 @@ export function BackupRestore({
   const [siteRefreshRequired, setSiteRefreshRequired] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
+
+  useDocumentScrollLock(confirmOpen);
 
   const restoreBusy =
     !statusInitialized ||

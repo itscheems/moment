@@ -6,6 +6,7 @@ import type { PublicPost, SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { useOwner } from "./OwnerProvider";
 import { announceOwnerPost } from "./postEvents";
 import styles from "./Owner.module.css";
@@ -31,6 +32,8 @@ export function OwnerPostActions({
   const pendingRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pinned = site.pinnedPostId === post.id;
+
+  useDocumentScrollLock(Boolean(session) && (deleteOpen || pinOpen));
 
   if (!session) return null;
 

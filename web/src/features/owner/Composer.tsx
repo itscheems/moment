@@ -25,6 +25,7 @@ import { notify } from "../../components/Feedback";
 import { MediaComposer } from "../media/MediaComposer";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { Icon } from "../../components/icons";
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import {
   altValue,
   applyUpload,
@@ -190,6 +191,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       top: 48,
       width: 320,
     });
+
+    useDocumentScrollLock(leavePromptOpen);
     const idempotencyKey = useRef(createIdempotencyKey());
     const count = useMemo(() => Array.from(content).length, [content]);
     const mediaError = mediaValidation(mediaItems);

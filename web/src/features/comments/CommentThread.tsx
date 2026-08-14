@@ -974,6 +974,8 @@ function DeleteCommentDialog({
     error ??
     (displayReauth ? "所有者会话已过期。刷新身份后可在这里重新删除。" : null);
 
+  useDocumentScrollLock(open);
+
   useEffect(() => {
     if (!authExpired || !session) return;
     setAuthExpired(false);

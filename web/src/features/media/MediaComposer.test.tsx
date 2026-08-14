@@ -7,12 +7,20 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MediaComposer } from "./MediaComposer";
 import type { ComposerMediaItem } from "./mediaState";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.stubGlobal("scrollTo", vi.fn());
+});
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 function item(key: string): ComposerMediaItem {
   return {
@@ -115,6 +123,7 @@ describe("media editor", () => {
   });
 
   it("opens attached images in a keyboard-navigable preview and restores focus", async () => {
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(360);
     render(<FocusHarness initial={[item("00"), item("01")]} />);
     const trigger = screen.getByRole("button", {
       name: "预览第 1 张图片，共 2 张",
@@ -123,6 +132,9 @@ describe("media editor", () => {
     fireEvent.click(trigger);
 
     const dialog = await screen.findByRole("dialog");
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-360px");
     expect(dialog.closest("[data-base-ui-portal]")?.parentElement).toBe(
       document.body,
     );
@@ -144,6 +156,9 @@ describe("media editor", () => {
     fireEvent.click(screen.getByRole("button", { name: "关闭图片预览" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(trigger).toHaveFocus());
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.body.style.position).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 360);
   });
 
   it("opens a selected local file through its browser object URL", async () => {

@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -28,11 +29,16 @@ const site: SiteIdentity = {
   instanceInitializedAt: null,
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("ThemeMenu", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    vi.stubGlobal("scrollTo", vi.fn());
     vi.stubGlobal(
       "matchMedia",
       vi.fn().mockReturnValue({
@@ -41,6 +47,32 @@ describe("ThemeMenu", () => {
         removeEventListener: vi.fn(),
       }),
     );
+  });
+
+  it("locks the page while display settings are open and restores their trigger", async () => {
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(275);
+    render(
+      <ThemeProvider>
+        <ThemeMenu site={site} />
+      </ThemeProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "更多" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole("menuitem", { name: /显示/ }));
+
+    const dialog = await screen.findByRole("dialog", { name: "自定义显示" });
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-275px");
+    fireEvent.click(within(dialog).getByRole("button", { name: "完成" }));
+
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.body.style.position).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 275);
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it("previews the site identity and applies every accent and background choice", async () => {

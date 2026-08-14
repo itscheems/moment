@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { PublicApiError } from "../../api/public";
 import type { OwnerApi, OwnerLocation } from "../../api/owner";
 import { Icon } from "../../components/icons";
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import styles from "./Owner.module.css";
 
 function locationError(error: unknown): string {
@@ -77,6 +78,8 @@ export function LocationPicker({
     () => results.some((location) => location.provider === "geoapify"),
     [results],
   );
+
+  useDocumentScrollLock(open);
 
   useEffect(() => {
     if (!open || manual || query.trim().length < 2) return;

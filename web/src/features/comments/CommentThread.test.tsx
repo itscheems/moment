@@ -1211,6 +1211,7 @@ describe("public comment thread", () => {
 
   it("cascades a confirmed root deletion and restores focus to the thread heading", async () => {
     preauthenticate();
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(615);
     installApi((url, init) => {
       if (url === "/api/v1/owner/status") {
         return success({
@@ -1240,6 +1241,9 @@ describe("public comment thread", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent(
       "下面的 1 条回复",
     );
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.position).toBe("fixed");
+    expect(document.body.style.top).toBe("-615px");
     fireEvent.click(screen.getByRole("button", { name: "删除回复及其对话" }));
 
     await waitFor(() =>
@@ -1249,6 +1253,9 @@ describe("public comment thread", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "回复" })).toHaveFocus(),
     );
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.body.style.position).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 615);
   });
 
   it("keeps the delete dialog mounted for inline reauthentication and retries with new CSRF", async () => {

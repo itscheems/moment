@@ -6,6 +6,7 @@ import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
 import { SiteAvatar } from "../../components/SiteIdentity";
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { fileValidation } from "../media/mediaState";
 import { useOwner } from "../owner/OwnerProvider";
 import styles from "./ProfileEditor.module.css";
@@ -48,6 +49,8 @@ export function ProfileEditor({
     cover: null,
   });
   const objectURLs = useRef<string[]>([]);
+
+  useDocumentScrollLock(open);
 
   const reset = () => {
     uploads.current.avatar?.abort();

@@ -111,7 +111,9 @@ function PublicApp() {
   const [composeExitOpen, setComposeExitOpen] = useState(false);
   const siteIdentityReady = !siteLoading && !siteError;
 
-  useDocumentScrollLock(overlayCompose && siteIdentityReady);
+  useDocumentScrollLock(
+    (overlayCompose && siteIdentityReady) || composeExitOpen,
+  );
 
   const closeOverlayComposer = () => {
     location.goBack(`${displayLocation.pathname}${displayLocation.search}`);
