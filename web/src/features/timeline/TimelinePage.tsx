@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   PublicApi,
   PublicApiError,
+  type PublicComment,
   type PublicPost,
   type SiteIdentity,
   type TimelineRequest,
@@ -13,6 +14,7 @@ import {
   type LoadSource,
 } from "../../components/LoadMoreSentinel";
 import { PostPresentation } from "../posts/PostPresentation";
+import { PostReplyDialog } from "../comments/CommentThread";
 import { PublicEmpty, PublicError, TimelineLoading } from "./PublicStates";
 import { listenForOwnerPosts } from "../owner/postEvents";
 import type { OwnerPostEvent } from "../owner/postEvents";
@@ -98,6 +100,12 @@ export function TimelinePage({
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [freshId, setFreshId] = useState<string | null>(null);
+  const [replyDialogOpen, setReplyDialogOpen] = useState(false);
+  const [replyDialogPost, setReplyDialogPost] = useState<PublicPost | null>(
+    null,
+  );
+  const [replyDialogContent, setReplyDialogContent] = useState("");
+  const [replyDialogGuestName, setReplyDialogGuestName] = useState("");
   const initialSearchRef = useRef(initialSearch);
   const activeInitial = useRef<AbortController | null>(null);
   const activeMore = useRef<AbortController | null>(null);
@@ -105,6 +113,7 @@ export function TimelinePage({
   const initialEntryRestored = useRef(false);
   const ownerEvents = useRef(new Map<string, OwnerPostEvent>());
   const visitedCursors = useRef(new Set<string>());
+  const replyDialogTriggerRef = useRef<HTMLButtonElement>(null);
 
   const reconcileOwnerEvents = useCallback((items: PublicPost[]) => {
     let reconciled = items;
@@ -229,6 +238,15 @@ export function TimelinePage({
     onYearsChange?.(yearsFor(posts, site.timezone));
   }, [onYearsChange, posts, site.timezone]);
 
+  const createdFromTimeline = useCallback((comment: PublicComment) => {
+    const increment = (post: PublicPost) =>
+      post.id === comment.postId
+        ? { ...post, commentCount: post.commentCount + 1 }
+        : post;
+    setPosts((current) => current.map(increment));
+    setReplyDialogPost((current) => (current ? increment(current) : current));
+  }, []);
+
   useEffect(() => {
     if (loadingInitial || initialError || initialEntryRestored.current) {
       return;
@@ -311,49 +329,73 @@ export function TimelinePage({
   if (posts.length === 0) return <PublicEmpty owner={owner} />;
 
   return (
-    <section aria-label="公开时间流" className={styles.timelineList}>
-      <p aria-live="polite" className={styles.srOnly}>
-        已加载 {posts.length} 条 Moment
-      </p>
-      {posts.map((post) => (
-        <PostPresentation
-          fresh={post.id === freshId}
-          key={post.id}
-          owner={owner}
-          onSiteChanged={onSiteChanged}
-          post={post}
+    <>
+      <section aria-label="公开时间流" className={styles.timelineList}>
+        <p aria-live="polite" className={styles.srOnly}>
+          已加载 {posts.length} 条 Moment
+        </p>
+        {posts.map((post) => (
+          <PostPresentation
+            fresh={post.id === freshId}
+            key={post.id}
+            owner={owner}
+            onReply={(event) => {
+              replyDialogTriggerRef.current = event.currentTarget;
+              if (replyDialogPost?.id !== post.id) setReplyDialogContent("");
+              setReplyDialogPost(post);
+              setReplyDialogOpen(true);
+            }}
+            onSiteChanged={onSiteChanged}
+            post={post}
+            site={site}
+          />
+        ))}
+        {moreError ? (
+          <div className={styles.moreError} role="alert">
+            <span>
+              {errorKind(moreError) === "malformed"
+                ? "下一页数据不完整，没有追加到时间流。"
+                : "下一页没有加载完成。"}
+            </span>
+            {recoverableCursorError(moreError) ? (
+              <button onClick={resetFromFirstPage} type="button">
+                从第一页重新加载
+              </button>
+            ) : (
+              <button onClick={() => void loadMore("manual")} type="button">
+                重试加载
+              </button>
+            )}
+          </div>
+        ) : null}
+        {nextCursor && !moreError ? (
+          <LoadMoreSentinel
+            className={styles.moreRow}
+            cursor={nextCursor}
+            label="加载更早的 Moment"
+            loading={loadingMore}
+            onLoad={(source) => void loadMore(source)}
+          />
+        ) : (
+          <p className={styles.endMark}>已经走到这段时间流的起点</p>
+        )}
+      </section>
+      {replyDialogPost ? (
+        <PostReplyDialog
+          api={api}
+          commentsEnabled={site.commentsEnabled}
+          content={replyDialogContent}
+          guestName={replyDialogGuestName}
+          onContentChange={setReplyDialogContent}
+          onCreated={createdFromTimeline}
+          onGuestNameChange={setReplyDialogGuestName}
+          onOpenChange={setReplyDialogOpen}
+          open={replyDialogOpen}
+          post={replyDialogPost}
           site={site}
+          triggerRef={replyDialogTriggerRef}
         />
-      ))}
-      {moreError ? (
-        <div className={styles.moreError} role="alert">
-          <span>
-            {errorKind(moreError) === "malformed"
-              ? "下一页数据不完整，没有追加到时间流。"
-              : "下一页没有加载完成。"}
-          </span>
-          {recoverableCursorError(moreError) ? (
-            <button onClick={resetFromFirstPage} type="button">
-              从第一页重新加载
-            </button>
-          ) : (
-            <button onClick={() => void loadMore("manual")} type="button">
-              重试加载
-            </button>
-          )}
-        </div>
       ) : null}
-      {nextCursor && !moreError ? (
-        <LoadMoreSentinel
-          className={styles.moreRow}
-          cursor={nextCursor}
-          label="加载更早的 Moment"
-          loading={loadingMore}
-          onLoad={(source) => void loadMore(source)}
-        />
-      ) : (
-        <p className={styles.endMark}>已经走到这段时间流的起点</p>
-      )}
-    </section>
+    </>
   );
 }

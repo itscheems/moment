@@ -495,10 +495,15 @@ describe("public comment thread", () => {
     const dialog = await screen.findByRole("dialog", {
       name: "回复这条 Moment",
     });
-    expect(within(dialog).getByText("一段需要回应的 Moment")).toBeVisible();
-    expect(within(dialog).getByText(/正在回复/)).toHaveTextContent(
+    const context = within(dialog).getByRole("article", {
+      name: "Moment发布的 Moment",
+    });
+    const form = within(dialog).getByRole("form", { name: "发表回复" });
+    expect(within(context).getByText("一段需要回应的 Moment")).toBeVisible();
+    expect(within(context).getByText(/正在回复/)).toHaveTextContent(
       "正在回复 @owner",
     );
+    expect(within(form).queryByText(/正在回复/)).not.toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", { name: "选择图片" }),
     ).toBeVisible();
@@ -521,6 +526,9 @@ describe("public comment thread", () => {
     );
     expect(commentsCss).toMatch(
       /@media \(max-width: 719px\)[\s\S]*\._replyDialogPopup_[\w-]+ > \._formSurface_[\w-]+\s*\{[^}]*padding-inline: var\(--space-4\)/,
+    );
+    expect(commentsCss).toMatch(
+      /\._replyContextTarget_[\w-]+\s*\{[^}]*margin: var\(--space-3\) 0 var\(--space-1\)/,
     );
   });
 

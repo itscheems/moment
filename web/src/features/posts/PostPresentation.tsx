@@ -264,17 +264,36 @@ export function PostPresentation({
         ) : null}
         <div className={styles.postActions}>
           <ActionTooltip label="回复">
-            <InternalLink
-              aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
-              className={styles.postAction}
-              data-focus-key={`${post.id}:open-post`}
-              href={detailHref}
-            >
-              <Icon name="reply" />
-              {post.commentCount > 0 ? (
-                <span className={styles.actionCount}>{post.commentCount}</span>
-              ) : null}
-            </InternalLink>
+            {onReply ? (
+              <button
+                aria-label="回复这条 Moment"
+                className={styles.postAction}
+                data-focus-key={`${post.id}:reply`}
+                onClick={onReply}
+                type="button"
+              >
+                <Icon name="reply" />
+                {post.commentCount > 0 ? (
+                  <span className={styles.actionCount}>
+                    {post.commentCount}
+                  </span>
+                ) : null}
+              </button>
+            ) : (
+              <InternalLink
+                aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
+                className={styles.postAction}
+                data-focus-key={`${post.id}:open-post`}
+                href={detailHref}
+              >
+                <Icon name="reply" />
+                {post.commentCount > 0 ? (
+                  <span className={styles.actionCount}>
+                    {post.commentCount}
+                  </span>
+                ) : null}
+              </InternalLink>
+            )}
           </ActionTooltip>
           {share("end")}
         </div>

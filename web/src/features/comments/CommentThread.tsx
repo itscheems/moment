@@ -1201,6 +1201,129 @@ function CommentItem({
   );
 }
 
+export function PostReplyDialog({
+  api,
+  commentsEnabled,
+  content,
+  guestName,
+  onClosed,
+  onContentChange,
+  onCreated,
+  onGuestNameChange,
+  onOpenChange,
+  open,
+  post,
+  site,
+  triggerRef,
+}: {
+  api: PublicApi;
+  commentsEnabled: boolean;
+  content: string;
+  guestName: string;
+  onClosed?: () => void;
+  onContentChange: (value: string) => void;
+  onCreated: (comment: PublicComment) => void;
+  onGuestNameChange: (value: string) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  post: PublicPost;
+  site: SiteIdentity;
+  triggerRef?: RefObject<HTMLButtonElement | null>;
+}) {
+  const owner = useOwner();
+  const [closedByServer, setClosedByServer] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const mode: CommentMode =
+    owner.state === "owner" || owner.state === "expired" || owner.session
+      ? "owner"
+      : "guest";
+  const canComment = commentsEnabled && !closedByServer;
+
+  useDocumentScrollLock(open);
+
+  useEffect(() => setClosedByServer(false), [post.id, commentsEnabled]);
+
+  const initialFocus = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return null;
+    const caret = textarea.value.length;
+    textarea.setSelectionRange(caret, caret);
+    return textarea;
+  }, []);
+
+  return (
+    <Dialog.Root onOpenChange={onOpenChange} open={open}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className={styles.dialogBackdrop} />
+        <Dialog.Viewport className={styles.dialogViewport}>
+          <Dialog.Popup
+            className={styles.replyDialogPopup}
+            finalFocus={() => triggerRef?.current ?? true}
+            initialFocus={initialFocus}
+          >
+            <header className={styles.replyDialogHeader}>
+              <Dialog.Close
+                aria-label="关闭回复窗口"
+                className={styles.replyDialogClose}
+              >
+                <Icon name="close" />
+              </Dialog.Close>
+              <Dialog.Title className={styles.srOnly}>
+                回复这条 Moment
+              </Dialog.Title>
+            </header>
+            <article
+              aria-label={`${site.displayName}发布的 Moment`}
+              className={styles.replyContext}
+            >
+              <span aria-hidden="true" className={styles.replyContextAvatar}>
+                <SiteAvatar site={site} />
+              </span>
+              <div>
+                <p className={styles.replyContextByline}>
+                  <strong>{site.displayName}</strong>
+                  <span>@{site.username}</span>
+                </p>
+                <MarkdownContent
+                  className={styles.replyContextContent}
+                  html={post.contentHtml}
+                  mentionUsername={site.username}
+                />
+                <p className={styles.replyContextTarget}>
+                  正在回复 <span>@{site.username}</span>
+                </p>
+              </div>
+            </article>
+            <CommentForm
+              api={api}
+              commentsEnabled={canComment}
+              content={content}
+              formId="dialog-top-level-comment"
+              guestName={guestName}
+              initialExpanded
+              mode={mode}
+              onClosed={() => {
+                setClosedByServer(true);
+                onClosed?.();
+              }}
+              onCreated={(comment) => {
+                onCreated(comment);
+                onOpenChange(false);
+              }}
+              parentId={null}
+              postId={post.id}
+              setContent={onContentChange}
+              setGuestName={onGuestNameChange}
+              site={site}
+              textareaRef={textareaRef}
+            />
+          </Dialog.Popup>
+        </Dialog.Viewport>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 export function CommentThread({
   api,
   postId,
@@ -1232,22 +1355,11 @@ export function CommentThread({
   const [announcement, setAnnouncement] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusCommentRef = useRef<string | null>(null);
-  const dialogTextareaRef = useRef<HTMLTextAreaElement>(null);
   const commentsEnabled = site.commentsEnabled && !closedByServer;
   const mode: CommentMode =
     owner.state === "owner" || owner.state === "expired" || owner.session
       ? "owner"
       : "guest";
-
-  useDocumentScrollLock(replyDialogOpen);
-
-  const replyInitialFocus = useCallback(() => {
-    const textarea = dialogTextareaRef.current;
-    if (!textarea) return null;
-    const caret = textarea.value.length;
-    textarea.setSelectionRange(caret, caret);
-    return textarea;
-  }, []);
 
   const load = useCallback(() => setAttempt((value) => value + 1), []);
 
@@ -1343,78 +1455,23 @@ export function CommentThread({
         {announcement}
       </p>
 
-      <Dialog.Root
-        onOpenChange={(open) => onReplyDialogOpenChange?.(open)}
-        open={replyDialogOpen}
-      >
-        <Dialog.Portal>
-          <Dialog.Backdrop className={styles.dialogBackdrop} />
-          <Dialog.Viewport className={styles.dialogViewport}>
-            <Dialog.Popup
-              className={styles.replyDialogPopup}
-              finalFocus={() => replyDialogTriggerRef?.current ?? true}
-              initialFocus={replyInitialFocus}
-            >
-              <header className={styles.replyDialogHeader}>
-                <Dialog.Close
-                  aria-label="关闭回复窗口"
-                  className={styles.replyDialogClose}
-                >
-                  <Icon name="close" />
-                </Dialog.Close>
-                <Dialog.Title className={styles.srOnly}>
-                  回复这条 Moment
-                </Dialog.Title>
-              </header>
-              {post ? (
-                <article
-                  aria-label={`${site.displayName}发布的 Moment`}
-                  className={styles.replyContext}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={styles.replyContextAvatar}
-                  >
-                    <SiteAvatar site={site} />
-                  </span>
-                  <div>
-                    <p className={styles.replyContextByline}>
-                      <strong>{site.displayName}</strong>
-                      <span>@{site.username}</span>
-                    </p>
-                    <MarkdownContent
-                      className={styles.replyContextContent}
-                      html={post.contentHtml}
-                      mentionUsername={site.username}
-                    />
-                  </div>
-                </article>
-              ) : null}
-              <CommentForm
-                api={api}
-                commentsEnabled={commentsEnabled}
-                content={dialogContent}
-                formId="dialog-top-level-comment"
-                guestName={guestName}
-                initialExpanded
-                mode={mode}
-                onClosed={() => setClosedByServer(true)}
-                onCreated={(comment) => {
-                  created(comment);
-                  onReplyDialogOpenChange?.(false);
-                }}
-                parentId={null}
-                postId={postId}
-                setContent={setDialogContent}
-                setGuestName={setGuestName}
-                site={site}
-                textareaRef={dialogTextareaRef}
-                topLevelTargetUsername={site.username}
-              />
-            </Dialog.Popup>
-          </Dialog.Viewport>
-        </Dialog.Portal>
-      </Dialog.Root>
+      {post ? (
+        <PostReplyDialog
+          api={api}
+          commentsEnabled={commentsEnabled}
+          content={dialogContent}
+          guestName={guestName}
+          onClosed={() => setClosedByServer(true)}
+          onContentChange={setDialogContent}
+          onCreated={created}
+          onGuestNameChange={setGuestName}
+          onOpenChange={(open) => onReplyDialogOpenChange?.(open)}
+          open={replyDialogOpen}
+          post={post}
+          site={site}
+          triggerRef={replyDialogTriggerRef}
+        />
+      ) : null}
 
       {items === null && !loadError ? (
         <div aria-busy="true" className={styles.threadState}>

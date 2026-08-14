@@ -529,7 +529,9 @@ describe("App shell and public routes", () => {
     await screen.findByText("可返回的 Moment");
     vi.spyOn(window, "scrollY", "get").mockReturnValue(640);
 
-    const openLink = screen.getByRole("link", { name: "打开完整 Moment" });
+    const openLink = screen.getByRole("link", {
+      name: "打开这条 Moment 详情",
+    });
     openLink.focus();
     fireEvent.click(openLink);
     expect(
@@ -590,7 +592,7 @@ describe("App shell and public routes", () => {
       .getByText("第二页的一段")
       .closest<HTMLElement>("[data-post-id]");
     const trigger = secondPost?.querySelector<HTMLAnchorElement>(
-      '[data-focus-key$=":open-post"]',
+      '[data-focus-key$=":surface-link"]',
     );
     expect(trigger).toBeTruthy();
     trigger?.focus();

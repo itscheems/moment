@@ -6,11 +6,13 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PublicApi, type SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
+import { OwnerProvider } from "../owner/OwnerProvider";
 import { TimelinePage } from "./TimelinePage";
 
 const site: SiteIdentity = {
@@ -63,6 +65,21 @@ function staleCursor(): Response {
       },
     }),
     { status: 400, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+function ownerStatus(): Response {
+  return new Response(
+    JSON.stringify({
+      data: {
+        initialized: true,
+        password_enabled: false,
+        session_epoch: 1,
+        initialized_at: "2026-08-01T00:00:00Z",
+      },
+      meta: { request_id: "req_owner" },
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
   );
 }
 
@@ -186,6 +203,57 @@ describe("public timeline", () => {
     expect(fetcher).toHaveBeenCalledTimes(2);
     expect(focusTarget).toHaveFocus();
     expect(window.location.search).toContain("loaded_through=cursor-one");
+  });
+
+  it("opens the reply dialog from a timeline bubble without navigating", async () => {
+    const item = post("01K2ABCDEF0123456789ABCDE0", "直接在时间流回复");
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/api/v1/owner/status"
+        ? ownerStatus()
+        : page([item], null),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(360);
+    render(
+      <NavigationProvider>
+        <OwnerProvider>
+          <TimelinePage
+            api={new PublicApi(fetcher as typeof fetch)}
+            initialSearch=""
+            site={site}
+          />
+        </OwnerProvider>
+      </NavigationProvider>,
+    );
+
+    const trigger = await screen.findByRole("button", {
+      name: "回复这条 Moment",
+    });
+    trigger.focus();
+    fireEvent.click(trigger);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "回复这条 Moment",
+    });
+    expect(window.location.pathname).toBe("/");
+    expect(within(dialog).getByLabelText("回复内容")).toHaveFocus();
+    expect(
+      within(
+        within(dialog).getByRole("article", {
+          name: "Moment发布的 Moment",
+        }),
+      ).getByText(/正在回复/),
+    ).toHaveTextContent("正在回复 @owner");
+    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.body.style.top).toBe("-360px");
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "关闭回复窗口" }),
+    );
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(window.location.pathname).toBe("/");
+    expect(document.documentElement.style.overflowY).toBe("");
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 360);
   });
 
   it("replays the server cursor chain on refresh and restores scroll", async () => {
