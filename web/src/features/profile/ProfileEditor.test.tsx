@@ -172,6 +172,10 @@ describe("profile editor", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "编辑个人资料" }));
 
+    const preview = screen.getByRole("region", { name: "个人资料预览" });
+    expect(preview).toHaveTextContent("公开资料预览");
+    expect(preview).toHaveTextContent("Moment");
+    expect(preview).toHaveTextContent("@owner");
     expect(
       screen.getByRole("button", { name: "选择封面图片" }),
     ).not.toHaveTextContent("相机");
@@ -180,10 +184,17 @@ describe("profile editor", () => {
     fireEvent.change(screen.getByLabelText("显示名称"), {
       target: { value: "尚未保存的名称" },
     });
+    fireEvent.change(screen.getByRole("textbox", { name: /用户名/ }), {
+      target: { value: "new_owner" },
+    });
+    expect(preview).toHaveTextContent("尚未保存的名称");
+    expect(preview).toHaveTextContent("@new_owner");
     expect(reset).toBeEnabled();
     fireEvent.click(reset);
 
     expect(screen.getByLabelText("显示名称")).toHaveValue("Moment");
+    expect(preview).toHaveTextContent("Moment");
+    expect(preview).toHaveTextContent("@owner");
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
   });
 });
