@@ -216,7 +216,7 @@
 
 .accentGrid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: var(--space-3);
   justify-items: center;
 }
@@ -259,6 +259,10 @@
 }
 .accentChoice[data-accent-choice="green"] {
   --choice-color: #00ba7c;
+}
+.accentChoice[data-accent-choice="black"] {
+  --choice-color: #000000;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 32%);
 }
 
 .backgroundGrid {
@@ -412,6 +416,7 @@
   }
 
   .accentGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--space-1);
   }
 

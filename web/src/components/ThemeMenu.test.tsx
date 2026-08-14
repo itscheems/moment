@@ -117,6 +117,7 @@ describe("ThemeMenu", () => {
       ["紫色", "purple"],
       ["橙色", "orange"],
       ["绿色", "green"],
+      ["纯黑色", "black"],
     ] as const;
     const backgroundChoices = [
       ["浅色", "light"],

@@ -9,7 +9,7 @@ import {
 
 export type ThemePreference = "light" | "dim" | "lights-out";
 export type AccentPreference =
-  "blue" | "yellow" | "pink" | "purple" | "orange" | "green";
+  "blue" | "yellow" | "pink" | "purple" | "orange" | "green" | "black";
 interface ThemeContextValue {
   preference: ThemePreference;
   accent: AccentPreference;
@@ -41,9 +41,15 @@ function readPreference(): ThemePreference {
 }
 
 function isAccent(value: string | null): value is AccentPreference {
-  return ["blue", "yellow", "pink", "purple", "orange", "green"].includes(
-    value ?? "",
-  );
+  return [
+    "blue",
+    "yellow",
+    "pink",
+    "purple",
+    "orange",
+    "green",
+    "black",
+  ].includes(value ?? "");
 }
 
 function readAccent(): AccentPreference {

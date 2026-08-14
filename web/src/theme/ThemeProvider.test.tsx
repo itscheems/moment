@@ -5,10 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider, type ThemePreference, useTheme } from "./ThemeProvider";
 
 function Probe() {
-  const { preference, resolvedTheme, setPreference } = useTheme();
+  const { accent, preference, resolvedTheme, setAccent, setPreference } =
+    useTheme();
   return (
     <>
       <output>{`${preference}:${resolvedTheme}`}</output>
+      <output aria-label="accent">{accent}</output>
       <button
         type="button"
         onClick={() => setPreference("lights-out" satisfies ThemePreference)}
@@ -26,6 +28,9 @@ function Probe() {
         onClick={() => setPreference("dim" satisfies ThemePreference)}
       >
         Dim
+      </button>
+      <button type="button" onClick={() => setAccent("black")}>
+        Black accent
       </button>
     </>
   );
@@ -86,5 +91,20 @@ describe("ThemeProvider", () => {
 
     expect(screen.getByText("light:light")).toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
+  });
+
+  it("restores and persists the black accent", () => {
+    window.localStorage.setItem("moment.accent.v1", "black");
+
+    render(
+      <ThemeProvider>
+        <Probe />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByLabelText("accent")).toHaveTextContent("black");
+    expect(document.documentElement).toHaveAttribute("data-accent", "black");
+    act(() => screen.getByRole("button", { name: "Black accent" }).click());
+    expect(window.localStorage.getItem("moment.accent.v1")).toBe("black");
   });
 });

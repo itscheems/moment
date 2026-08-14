@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import shellCss from "../components/AppShell.module.css?inline";
+import identityCss from "../components/SiteIdentity.module.css?inline";
 import stateCss from "../components/ShellState.module.css?inline";
 import themeMenuCss from "../components/ThemeMenu.module.css?inline";
 import interactionsCss from "../components/TimelineInteractions.module.css?inline";
@@ -149,8 +150,28 @@ describe("visual foundation contract", () => {
     expect(ownerCss).toContain("min-block-size: var(--target-size)");
   });
 
+  it("keeps the inline composer avatar on the timeline avatar rail", () => {
+    expect(identityCss).toMatch(
+      /\._avatar_[\w-]+,\s*\._avatarFallback_[\w-]+\s*\{[^}]*inline-size: 2\.5rem;[^}]*block-size: 2\.5rem;/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._inlineComposer_[\w-]+\s*\{[^}]*grid-template-columns: 3rem minmax\(0, 1fr\)/s,
+    );
+    expect(ownerCss).not.toMatch(
+      /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*>/,
+    );
+  });
+
   it("drives primary controls from the selected accent in every theme", () => {
-    const accents = ["blue", "yellow", "pink", "purple", "orange", "green"];
+    const accents = [
+      "blue",
+      "yellow",
+      "pink",
+      "purple",
+      "orange",
+      "green",
+      "black",
+    ];
 
     expect(globalCss).toContain("--accent: #1d9bf0");
     expect(globalCss).toContain(
@@ -180,6 +201,8 @@ describe("visual foundation contract", () => {
     );
     expect(contrast("#ffffff", "#1d9bf0")).toBeGreaterThanOrEqual(3);
     expect(contrast("#0f1419", "#ffd400")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#ffffff", "#000000")).toBeGreaterThanOrEqual(4.5);
+    expect(contrast("#0f1419", "#f7f9f9")).toBeGreaterThanOrEqual(4.5);
   });
 
   it("uses contrast-safe state tokens on publish and selected-date actions", () => {

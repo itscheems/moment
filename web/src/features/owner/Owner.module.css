@@ -183,12 +183,6 @@
   padding-block: var(--space-2);
 }
 
-.inlineComposer .newTick > img,
-.inlineComposer .newTick > span {
-  inline-size: 3rem;
-  block-size: 3rem;
-}
-
 .pageComposer {
   min-block-size: 0;
 }

@@ -459,7 +459,7 @@ describe("App shell and public routes", () => {
 
     fireEvent.click(await screen.findByRole("menuitem", { name: /显示/ }));
     fireEvent.click(await screen.findByRole("button", { name: "粉色" }));
-    fireEvent.click(await screen.findByRole("button", { name: /^纯黑/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^纯黑$/ }));
     await waitFor(() =>
       expect(document.documentElement).toHaveAttribute(
         "data-theme",
