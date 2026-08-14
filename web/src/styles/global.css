@@ -31,10 +31,14 @@
   --border-strong: #cfd9de;
   --accent: #1d9bf0;
   --accent-hover: #1a8cd8;
+  --accent-pressed: color-mix(in srgb, var(--accent) 82%, #000000);
   --accent-soft: #e8f5fd;
   --accent-contrast: #ffffff;
   --button-primary: var(--accent);
   --button-primary-hover: var(--accent-hover);
+  --button-primary-pressed: var(--accent-pressed);
+  --button-primary-disabled: var(--accent);
+  --button-primary-disabled-opacity: 0.5;
   --button-primary-contrast: var(--accent-contrast);
   --danger: #f4212e;
   --focus-ring: #1d9bf0;
@@ -244,7 +248,6 @@ a {
     --button-primary-hover: var(--accent-hover);
     --button-primary-contrast: var(--accent-contrast);
     --danger: #f4212e;
-    --focus-ring: #1d9bf0;
     --shadow-popover: 0 0 15px rgb(255 255 255 / 20%);
   }
 }

@@ -77,8 +77,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    if (preference !== "system") {
+      setResolvedTheme(preference);
+      return;
+    }
+
     const media = window.matchMedia?.(DARK_QUERY);
-    const sync = () => setResolvedTheme(resolveTheme(preference));
+    const sync = () => setResolvedTheme(systemTheme());
     sync();
     media?.addEventListener("change", sync);
     return () => media?.removeEventListener("change", sync);

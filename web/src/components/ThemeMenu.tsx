@@ -16,7 +16,8 @@ const backgrounds: Array<{
   value: ThemePreference;
   label: string;
 }> = [
-  { value: "system", label: "默认" },
+  { value: "system", label: "跟随系统" },
+  { value: "light", label: "浅色" },
   { value: "dim", label: "柔和深色" },
   { value: "lights-out", label: "纯黑" },
 ];
@@ -29,15 +30,6 @@ const accents: Array<{ value: AccentPreference; label: string }> = [
   { value: "orange", label: "橙色" },
   { value: "green", label: "绿色" },
 ];
-
-function backgroundSelected(
-  preference: ThemePreference,
-  option: ThemePreference,
-): boolean {
-  return option === "system"
-    ? preference === "system" || preference === "light"
-    : preference === option;
-}
 
 export function ThemeMenu({ site }: { site: SiteIdentity }) {
   const { accent, preference, setAccent, setPreference } = useTheme();
@@ -136,10 +128,7 @@ export function ThemeMenu({ site }: { site: SiteIdentity }) {
                   {backgrounds.map((option) => (
                     <button
                       aria-label={option.label}
-                      aria-pressed={backgroundSelected(
-                        preference,
-                        option.value,
-                      )}
+                      aria-pressed={preference === option.value}
                       className={styles.backgroundChoice}
                       data-background-choice={option.value}
                       key={option.value}
@@ -147,9 +136,7 @@ export function ThemeMenu({ site }: { site: SiteIdentity }) {
                       type="button"
                     >
                       <span className={styles.radioMark}>
-                        {backgroundSelected(preference, option.value)
-                          ? "✓"
-                          : ""}
+                        {preference === option.value ? "✓" : ""}
                       </span>
                       <strong>{option.label}</strong>
                     </button>

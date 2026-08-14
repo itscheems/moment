@@ -428,20 +428,27 @@
   min-block-size: var(--target-size);
   border-radius: 999px;
   padding-inline: var(--space-4);
-  color: #fff;
-  background: var(--accent);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
   font-size: var(--text-sm);
   font-weight: 700;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out);
 }
 
 .composerPublishButton:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--button-primary-hover);
+}
+
+.composerPublishButton:active:not(:disabled) {
+  background: var(--button-primary-pressed);
 }
 
 .primaryButton.composerPublishButton:disabled {
-  color: #fff;
-  background: var(--accent);
-  opacity: 0.5;
+  color: var(--button-primary-contrast);
+  background: var(--button-primary-disabled);
+  opacity: var(--button-primary-disabled-opacity);
   cursor: not-allowed;
 }
 
@@ -1107,6 +1114,10 @@
   }
 
   .locationPopup {
+    transition: none;
+  }
+
+  .composerPublishButton {
     transition: none;
   }
 }

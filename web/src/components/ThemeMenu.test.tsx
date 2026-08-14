@@ -43,7 +43,7 @@ describe("ThemeMenu", () => {
     );
   });
 
-  it("previews the site identity and applies accent and background choices", async () => {
+  it("previews the site identity and applies every accent and background choice", async () => {
     render(
       <ThemeProvider>
         <ThemeMenu site={site} />
@@ -63,27 +63,59 @@ describe("ThemeMenu", () => {
       "/api/v1/media/01K2ABCDEF0123456789ABCDEFG/preview",
     );
 
-    fireEvent.click(within(dialog).getByTitle("粉色"));
-    expect(document.documentElement).toHaveAttribute("data-accent", "pink");
-    expect(within(dialog).getByTitle("粉色")).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    const accentChoices = [
+      ["蓝色", "blue"],
+      ["黄色", "yellow"],
+      ["粉色", "pink"],
+      ["紫色", "purple"],
+      ["橙色", "orange"],
+      ["绿色", "green"],
+    ] as const;
+    const backgroundChoices = [
+      ["跟随系统", "light"],
+      ["浅色", "light"],
+      ["柔和深色", "dim"],
+      ["纯黑", "lights-out"],
+    ] as const;
+    for (const [label, resolvedTheme] of backgroundChoices) {
+      fireEvent.click(within(dialog).getByRole("button", { name: label }));
+      expect(
+        within(dialog).getByRole("button", { name: label }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(document.documentElement).toHaveAttribute(
+        "data-theme",
+        resolvedTheme,
+      );
+      for (const [accentLabel, value] of accentChoices) {
+        fireEvent.click(within(dialog).getByTitle(accentLabel));
+        expect(document.documentElement).toHaveAttribute("data-accent", value);
+        expect(within(dialog).getByTitle(accentLabel)).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+      }
+    }
+  });
+
+  it("reports a saved light override as light rather than system", async () => {
+    window.localStorage.setItem("moment.theme.v1", "light");
+
+    render(
+      <ThemeProvider>
+        <ThemeMenu site={site} />
+      </ThemeProvider>,
     );
 
-    expect(
-      within(dialog).getByRole("button", { name: "默认" }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", { name: "柔和深色" }),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).queryByRole("button", { name: /浅色|跟随系统/ }),
-    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /显示/ }));
 
-    fireEvent.click(within(dialog).getByRole("button", { name: /纯黑/ }));
-    expect(document.documentElement).toHaveAttribute(
-      "data-theme",
-      "lights-out",
-    );
+    const dialog = await screen.findByRole("dialog", { name: "自定义显示" });
+    expect(
+      within(dialog).getByRole("button", { name: "浅色" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      within(dialog).getByRole("button", { name: "跟随系统" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 });

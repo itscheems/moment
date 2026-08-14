@@ -144,13 +144,17 @@
 }
 
 .days button[aria-pressed="true"] {
-  color: #ffffff;
-  background: var(--accent);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
   font-weight: 700;
 }
 
 .days button[aria-pressed="true"]:hover {
-  background: var(--accent-hover);
+  background: var(--button-primary-hover);
+}
+
+.days button[aria-pressed="true"]:active {
+  background: var(--button-primary-pressed);
 }
 
 .days button[aria-current="date"]:not([aria-pressed="true"]) {

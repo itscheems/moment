@@ -6,6 +6,7 @@ import themeMenuCss from "../components/ThemeMenu.module.css?inline";
 import interactionsCss from "../components/TimelineInteractions.module.css?inline";
 import commentsCss from "../features/comments/Comments.module.css?inline";
 import mediaCss from "../features/media/Media.module.css?inline";
+import datePickerCss from "../features/memory/DatePicker.module.css?inline";
 import ownerCss from "../features/owner/Owner.module.css?inline";
 import postCss from "../features/posts/PostPresentation.module.css?inline";
 import profileEditorCss from "../features/profile/ProfileEditor.module.css?inline";
@@ -135,13 +136,57 @@ describe("visual foundation contract", () => {
   });
 
   it("drives primary controls from the selected accent in every theme", () => {
+    const accents = ["blue", "yellow", "pink", "purple", "orange", "green"];
+
     expect(globalCss).toContain("--accent: #1d9bf0");
+    expect(globalCss).toContain(
+      "--accent-pressed: color-mix(in srgb, var(--accent) 82%, #000000)",
+    );
     expect(globalCss).toContain("--button-primary: var(--accent)");
     expect(globalCss).toContain("--button-primary-hover: var(--accent-hover)");
     expect(globalCss).toContain(
+      "--button-primary-pressed: var(--accent-pressed)",
+    );
+    expect(globalCss).toContain("--button-primary-disabled: var(--accent)");
+    expect(globalCss).toContain("--button-primary-disabled-opacity: 0.5");
+    expect(globalCss).toContain(
       "--button-primary-contrast: var(--accent-contrast)",
     );
+    for (const accent of accents) {
+      const block = globalCss.match(
+        new RegExp(`:root\\[data-accent="${accent}"\\]\\s*\\{([^}]*)\\}`),
+      )?.[1];
+      expect(block, `${accent} accent tokens`).toContain("--accent:");
+      expect(block, `${accent} hover token`).toContain("--accent-hover:");
+      expect(block, `${accent} contrast token`).toContain("--accent-contrast:");
+      expect(block, `${accent} focus token`).toContain("--focus-ring:");
+    }
+    expect(globalCss).not.toMatch(
+      /@media \(prefers-color-scheme: dark\)[\s\S]*--focus-ring: #1d9bf0/,
+    );
     expect(contrast("#ffffff", "#1d9bf0")).toBeGreaterThanOrEqual(3);
+    expect(contrast("#0f1419", "#ffd400")).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("uses contrast-safe state tokens on publish and selected-date actions", () => {
+    expect(ownerCss).toMatch(
+      /\._composerPublishButton_[\w-]+\s*\{[^}]*color: var\(--button-primary-contrast\);[^}]*background: var\(--button-primary\);[^}]*opacity var\(--motion-fast\)/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._composerPublishButton_[\w-]+:active:not\(:disabled\)\s*\{[^}]*background: var\(--button-primary-pressed\)/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._primaryButton_[\w-]+\._composerPublishButton_[\w-]+:disabled\s*\{[^}]*color: var\(--button-primary-contrast\);[^}]*background: var\(--button-primary-disabled\);[^}]*opacity: var\(--button-primary-disabled-opacity\)/s,
+    );
+    expect(datePickerCss).toMatch(
+      /\._days_[\w-]+ button\[aria-pressed="true"\]\s*\{[^}]*color: var\(--button-primary-contrast\);[^}]*background: var\(--button-primary\)/s,
+    );
+    expect(datePickerCss).toMatch(
+      /\._days_[\w-]+ button\[aria-pressed="true"\]:active\s*\{[^}]*background: var\(--button-primary-pressed\)/s,
+    );
+    expect(ownerCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\._composerPublishButton_[\w-]+\s*\{\s*transition: none/,
+    );
   });
 
   it("keeps confirmations above composer and lightbox layers", () => {
