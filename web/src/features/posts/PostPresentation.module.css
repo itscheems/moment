@@ -193,6 +193,32 @@
   font-size: 0.875rem;
 }
 
+.postLocationTrigger {
+  border: 0;
+  border-radius: 0.45rem;
+  padding: 0 0.2rem;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  text-align: start;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+
+.postLocationTrigger:hover,
+.postLocationTrigger:focus-visible,
+.postLocationTrigger[data-popup-open] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.postLocationTrigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .postLocation svg {
   inline-size: 1rem;
   block-size: 1rem;
@@ -200,6 +226,50 @@
 }
 
 .postLocation span {
+  overflow-wrap: anywhere;
+}
+
+.locationPositioner {
+  z-index: var(--layer-popover);
+  max-inline-size: calc(100vw - 1rem);
+}
+
+.locationPopup {
+  inline-size: max-content;
+  max-inline-size: min(22rem, calc(100vw - 1rem));
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--motion-popover) var(--ease-out),
+    transform var(--motion-popover) var(--ease-out);
+}
+
+.locationPopup[data-starting-style],
+.locationPopup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-0.2rem) scale(0.98);
+}
+
+.locationTitle,
+.locationAddress {
+  margin: 0;
+}
+
+.locationTitle {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.locationAddress {
+  margin-block-start: 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 

@@ -54,6 +54,53 @@ function currentPosition(): Promise<GeolocationPosition> {
   });
 }
 
+function normalizedLocationName(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function shortLocality(location: OwnerLocation): string {
+  let locality =
+    location.district.trim() || location.city.trim() || location.region.trim();
+  if (!locality) return "";
+
+  for (const prefix of [
+    location.country.trim(),
+    location.region.trim(),
+    location.city.trim(),
+  ].sort((left, right) => right.length - left.length)) {
+    if (
+      prefix &&
+      locality.startsWith(prefix) &&
+      locality.length > prefix.length
+    ) {
+      locality = locality.slice(prefix.length).trim();
+    }
+  }
+  return locality;
+}
+
+function selectedLocation(
+  location: OwnerLocation,
+  results: OwnerLocation[],
+): OwnerLocation {
+  const matches = results.filter(
+    (candidate) =>
+      normalizedLocationName(candidate.name) ===
+      normalizedLocationName(location.name),
+  );
+  const distinctMatches = new Set(
+    matches.map(
+      (candidate) =>
+        `${candidate.provider}:${candidate.providerPlaceId}:${candidate.displayName}`,
+    ),
+  );
+  if (distinctMatches.size < 2) return location;
+
+  const locality = shortLocality(location);
+  if (!locality) return location;
+  return { ...location, name: `${location.name} · ${locality}` };
+}
+
 export function LocationPicker({
   api,
   disabled,
@@ -135,7 +182,7 @@ export function LocationPicker({
   };
 
   const select = (location: OwnerLocation) => {
-    onChange(location);
+    onChange(selectedLocation(location, results));
     setOpen(false);
   };
 

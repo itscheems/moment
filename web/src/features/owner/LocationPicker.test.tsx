@@ -127,4 +127,69 @@ describe("location picker", () => {
       }),
     );
   });
+
+  it("adds a district only when visible search results contain distinct places with the same name", async () => {
+    const fetcher = vi.fn(async () =>
+      json({
+        data: {
+          items: [
+            {
+              name: "陆悦天地",
+              display_name: "中科路1600号",
+              country_code: "CN",
+              country: "中国",
+              region: "上海市",
+              city: "上海市",
+              district: "上海市浦东新区",
+              category: "购物服务",
+              provider: "amap",
+              provider_place_id: "POI_A",
+              latitude: 31.2,
+              longitude: 121.6,
+              coordinate_system: "gcj02",
+            },
+            {
+              name: "陆悦天地",
+              display_name: "吴中路附近",
+              country_code: "CN",
+              country: "中国",
+              region: "上海市",
+              city: "上海市",
+              district: "闵行区",
+              category: "购物服务",
+              provider: "amap",
+              provider_place_id: "POI_B",
+              latitude: 31.1,
+              longitude: 121.4,
+              coordinate_system: "gcj02",
+            },
+          ],
+        },
+        meta: { request_id: "req_duplicate_locations" },
+      }),
+    ) as typeof fetch;
+    const onChange = vi.fn();
+    render(
+      <LocationPicker
+        api={new OwnerApi(fetcher)}
+        disabled={false}
+        onChange={onChange}
+        value={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "添加位置" }));
+    fireEvent.change(screen.getByLabelText("搜索地点"), {
+      target: { value: "陆悦" },
+    });
+    const choices = await screen.findAllByRole("button", { name: /陆悦天地/ });
+    fireEvent.click(choices[0]);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "陆悦天地 · 浦东新区",
+        displayName: "中科路1600号",
+      }),
+    );
+  });
 });

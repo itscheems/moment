@@ -137,7 +137,7 @@ describe("shared post presentation", () => {
     expect(postCss).toContain("font-size: 1.125rem");
   });
 
-  it("renders the complete location name without relying on a title tooltip", () => {
+  it("keeps the selected place name primary and discloses its address on focus or press", async () => {
     render(
       <NavigationProvider>
         <PostPresentation
@@ -153,10 +153,36 @@ describe("shared post presentation", () => {
       </NavigationProvider>,
     );
 
-    const location =
-      screen.getByLabelText("地点：静安寺，静安区，上海市，中国");
-    expect(location).toHaveTextContent("静安寺，静安区，上海市，中国");
+    const location = screen.getByRole("button", {
+      name: "地点：静安寺。查看详细地址",
+    });
+    expect(location).toHaveTextContent("静安寺");
+    expect(location).not.toHaveTextContent("静安区");
     expect(location).not.toHaveAttribute("title");
+
+    fireEvent.click(location);
+    await waitFor(() =>
+      expect(screen.getByText("静安寺，静安区，上海市，中国")).toBeVisible(),
+    );
+  });
+
+  it("keeps manual locations compact when the name is already the full label", () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...makePost("手动地点", "<p>手动地点</p>"),
+            location: { name: "书房", displayName: "书房" },
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    expect(screen.getByLabelText("地点：书房")).toHaveTextContent("书房");
+    expect(
+      screen.queryByRole("button", { name: /地点：书房/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows reply counts only when they are non-zero", () => {

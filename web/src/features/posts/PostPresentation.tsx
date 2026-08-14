@@ -1,3 +1,4 @@
+import { Popover } from "@base-ui/react/popover";
 import { type MouseEvent, type MouseEventHandler } from "react";
 
 import type { PublicPost, SiteIdentity } from "../../api/public";
@@ -35,6 +36,64 @@ function longInTimeline(post: PublicPost): boolean {
   return (
     Array.from(post.contentMd).length > 480 ||
     post.contentMd.split(/\r?\n/).length > 9
+  );
+}
+
+function PostLocation({
+  location,
+}: {
+  location: NonNullable<PublicPost["location"]>;
+}) {
+  const name = location.name.trim();
+  const address = location.displayName.trim();
+  const hasDetails = address !== "" && address !== name;
+
+  if (!hasDetails) {
+    return (
+      <p aria-label={`地点：${name}`} className={styles.postLocation}>
+        <Icon name="location" />
+        <span>{name}</span>
+      </p>
+    );
+  }
+
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        aria-label={`地点：${name}。查看详细地址`}
+        className={`${styles.postLocation} ${styles.postLocationTrigger}`}
+        closeDelay={120}
+        delay={280}
+        onClick={(event) => event.stopPropagation()}
+        openOnHover
+      >
+        <Icon name="location" />
+        <span>{name}</span>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner
+          align="start"
+          className={styles.locationPositioner}
+          collisionAvoidance={{ side: "flip", align: "shift" }}
+          collisionPadding={8}
+          side="bottom"
+          sideOffset={5}
+        >
+          <Popover.Popup
+            className={styles.locationPopup}
+            initialFocus={false}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Popover.Title className={styles.locationTitle}>
+              {name}
+            </Popover.Title>
+            <Popover.Description className={styles.locationAddress}>
+              {address}
+            </Popover.Description>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -180,15 +239,7 @@ export function PostPresentation({
             html={contentHtml ?? post.contentHtml}
             mentionUsername={site.username}
           />
-          {post.location ? (
-            <p
-              aria-label={`地点：${post.location.displayName}`}
-              className={styles.postLocation}
-            >
-              <Icon name="location" />
-              <span>{post.location.displayName}</span>
-            </p>
-          ) : null}
+          {post.location ? <PostLocation location={post.location} /> : null}
           <ImageGrid media={post.media} />
           <p className={styles.publishedLine}>
             <span>发布于</span>
@@ -243,15 +294,7 @@ export function PostPresentation({
           html={contentHtml ?? post.contentHtml}
           mentionUsername={site.username}
         />
-        {post.location ? (
-          <p
-            aria-label={`地点：${post.location.displayName}`}
-            className={styles.postLocation}
-          >
-            <Icon name="location" />
-            <span>{post.location.displayName}</span>
-          </p>
-        ) : null}
+        {post.location ? <PostLocation location={post.location} /> : null}
         <ImageGrid media={post.media} />
         {collapsed ? (
           <InternalLink
