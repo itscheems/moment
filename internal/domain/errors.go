@@ -36,6 +36,8 @@ const (
 	CodeImportDiskSpaceInsufficient Code = "IMPORT_DISK_SPACE_INSUFFICIENT"
 	CodeImportStagingInvalid        Code = "IMPORT_STAGING_INVALID"
 	CodeImportStagingExpired        Code = "IMPORT_STAGING_EXPIRED"
+	CodeImportOwnerMismatch         Code = "IMPORT_OWNER_MISMATCH"
+	CodeImportMergePlanStale        Code = "IMPORT_MERGE_PLAN_STALE"
 	CodeExportInvalid               Code = "EXPORT_INVALID"
 	CodeExportVersionUnsupported    Code = "EXPORT_VERSION_UNSUPPORTED"
 	CodeExportChecksumMismatch      Code = "EXPORT_CHECKSUM_MISMATCH"
