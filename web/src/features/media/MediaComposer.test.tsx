@@ -10,6 +10,7 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MediaComposer } from "./MediaComposer";
+import mediaCss from "./Media.module.css?inline";
 import type { ComposerMediaItem } from "./mediaState";
 
 beforeEach(() => {
@@ -59,6 +60,15 @@ function FocusHarness({ initial }: { initial: ComposerMediaItem[] }) {
 }
 
 describe("media editor", () => {
+  it("optically aligns the leading media action without shrinking its target", () => {
+    expect(mediaCss).toContain(
+      "margin-inline-start: calc(0px - var(--space-3))",
+    );
+    expect(mediaCss).toMatch(
+      /\._mediaToolbar_[\w-]+ button\s*\{[^}]*inline-size: var\(--target-size\)[^}]*block-size: var\(--target-size\)/,
+    );
+  });
+
   it("preserves duplicate selections as two ordered usages", () => {
     const onAdd = vi.fn();
     render(

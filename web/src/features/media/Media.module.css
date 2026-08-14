@@ -38,6 +38,7 @@
 .mediaToolbar {
   min-inline-size: 0;
   gap: var(--space-2);
+  margin-inline-start: calc(0px - var(--space-3));
 }
 
 .mediaToolbar span,
