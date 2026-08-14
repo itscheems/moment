@@ -20,6 +20,7 @@ import {
 import { NavigationProvider } from "../../app/navigation";
 import { OwnerProvider, useOwner } from "../owner/OwnerProvider";
 import { CommentThread } from "./CommentThread";
+import commentsCss from "./Comments.module.css?inline";
 
 const postId = "01K2ABCDEF0123456789ABCDE0";
 const rootId = "01K2ABCDEF0123456789ABCDE1";
@@ -134,6 +135,46 @@ class FakeCommentUploadRequest extends EventTarget {
     this.dispatchEvent(new Event("load"));
     this.dispatchEvent(new Event("loadend"));
   }
+}
+
+class FakeCommentResizeObserver implements ResizeObserver {
+  static instances = new Set<FakeCommentResizeObserver>();
+
+  constructor(private readonly callback: ResizeObserverCallback) {
+    FakeCommentResizeObserver.instances.add(this);
+  }
+
+  observe() {}
+
+  unobserve() {}
+
+  disconnect() {
+    FakeCommentResizeObserver.instances.delete(this);
+  }
+
+  static notify() {
+    for (const observer of FakeCommentResizeObserver.instances) {
+      observer.callback([], observer);
+    }
+  }
+
+  static reset() {
+    FakeCommentResizeObserver.instances.clear();
+  }
+}
+
+function measuredRect(height: number): DOMRect {
+  return {
+    bottom: height,
+    height,
+    left: 0,
+    right: 640,
+    top: 0,
+    width: 640,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  };
 }
 
 const root = comment(rootId, "顶级回应");
@@ -270,6 +311,8 @@ function ReplyDialogHarness() {
 describe("public comment thread", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    FakeCommentResizeObserver.reset();
+    vi.stubGlobal("ResizeObserver", FakeCommentResizeObserver);
     vi.stubGlobal(
       "requestAnimationFrame",
       vi.fn((callback: FrameRequestCallback) => {
@@ -339,6 +382,93 @@ describe("public comment thread", () => {
     expect(
       within(form).getByRole("button", { name: "选择图片" }),
     ).toBeVisible();
+  });
+
+  it("retargets the guest composer's measured block size as activation and media change its real layout", async () => {
+    let measuredHeight = 74.625;
+    const nativeRect = HTMLElement.prototype.getBoundingClientRect;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.commentLayoutContent === "true"
+          ? measuredRect(measuredHeight)
+          : nativeRect.call(this);
+      });
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+    });
+    renderThread();
+
+    const form = await screen.findByRole("form", { name: "发表回复" });
+    const content = within(form).getByLabelText("回复内容");
+    const frame = form.closest<HTMLElement>("[data-comment-layout-frame]");
+    expect(frame?.style.blockSize).toBe("74.625px");
+
+    measuredHeight = 254.625;
+    fireEvent.focus(content);
+    expect(frame?.style.blockSize).toBe("254.625px");
+
+    measuredHeight = 337.25;
+    fireEvent.change(within(form).getByLabelText("图片文件"), {
+      target: {
+        files: [new File(["image"], "layout.png", { type: "image/png" })],
+      },
+    });
+    expect(frame?.style.blockSize).toBe("337.25px");
+
+    measuredHeight = 361.75;
+    act(() => FakeCommentResizeObserver.notify());
+    expect(frame?.style.blockSize).toBe("361.75px");
+    rectSpy.mockRestore();
+  });
+
+  it("measures the shorter owner variant without requiring a guest final height", async () => {
+    preauthenticate();
+    let measuredHeight = 74.625;
+    const nativeRect = HTMLElement.prototype.getBoundingClientRect;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.commentLayoutContent === "true"
+          ? measuredRect(measuredHeight)
+          : nativeRect.call(this);
+      });
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/status") {
+        return success({
+          initialized: true,
+          password_enabled: false,
+          session_epoch: 1,
+          initialized_at: "2026-08-01T00:00:00Z",
+        });
+      }
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+    });
+    renderThread();
+
+    const form = await screen.findByRole("form", { name: "发表回复" });
+    const frame = form.closest<HTMLElement>("[data-comment-layout-frame]");
+    expect(within(form).queryByLabelText("显示名")).not.toBeInTheDocument();
+    expect(frame?.style.blockSize).toBe("74.625px");
+
+    measuredHeight = 191.375;
+    fireEvent.focus(within(form).getByLabelText("回复内容"));
+    expect(frame?.style.blockSize).toBe("191.375px");
+    rectSpy.mockRestore();
+  });
+
+  it("keeps layout motion bounded and removes it for reduced-motion users", () => {
+    expect(commentsCss).toContain(
+      "transition: block-size var(--motion-content) var(--ease-out)",
+    );
+    expect(commentsCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*commentLayoutFrame[\s\S]*transition: none/,
+    );
+    expect(commentsCss).not.toContain("cubic-bezier(0.16, 1.3, 0.3, 1)");
   });
 
   it("renders the action reply as an independent modal composer", async () => {
@@ -522,6 +652,45 @@ describe("public comment thread", () => {
       [replyId, "1"],
       [createdId, "1"],
     ]);
+  });
+
+  it("retargets the measured layout when a submission error is revealed", async () => {
+    let measuredHeight = 254.625;
+    const nativeRect = HTMLElement.prototype.getBoundingClientRect;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.dataset.commentLayoutContent === "true"
+          ? measuredRect(measuredHeight)
+          : nativeRect.call(this);
+      });
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+      if (url.endsWith("/comments") && init?.method === "POST") {
+        return failure("COMMENT_REJECTED", 422);
+      }
+    });
+    renderThread();
+
+    const form = await screen.findByRole("form", { name: "发表回复" });
+    fireEvent.change(within(form).getByLabelText("显示名"), {
+      target: { value: "访客" },
+    });
+    fireEvent.change(within(form).getByLabelText("回复内容"), {
+      target: { value: "保留这段文字" },
+    });
+    const frame = form.closest<HTMLElement>("[data-comment-layout-frame]");
+    expect(frame?.style.blockSize).toBe("254.625px");
+
+    measuredHeight = 318.375;
+    fireEvent.click(within(form).getByRole("button", { name: "发表回复" }));
+    expect(await within(form).findByRole("alert")).toHaveTextContent(
+      "防滥用检查",
+    );
+    expect(frame?.style.blockSize).toBe("318.375px");
+    rectSpy.mockRestore();
   });
 
   it("uploads, previews, and publishes an ordered image from the guest reply composer", async () => {
@@ -837,15 +1006,29 @@ describe("public comment thread", () => {
     renderThread();
 
     await screen.findByRole("form", { name: "发表回复" });
+    const contentField = screen.getByLabelText("回复内容");
+    fireEvent.focus(contentField);
+    const initiallyDisabled = screen.getByRole("button", {
+      name: "发表回复",
+    });
+    expect(initiallyDisabled).toBeDisabled();
+    expect(initiallyDisabled).not.toHaveAttribute("data-pending");
+    expect(initiallyDisabled).not.toHaveAttribute("aria-busy");
+    expect(commentsCss).toContain("cursor: not-allowed");
+    expect(commentsCss).toContain("cursor: progress");
+    expect(commentsCss).not.toContain("cursor: wait");
     fireEvent.change(screen.getByLabelText("显示名"), {
       target: { value: "访客" },
     });
-    fireEvent.change(screen.getByLabelText("回复内容"), {
+    fireEvent.change(contentField, {
       target: { value: "只发表一次" },
     });
     const submit = screen.getByRole("button", { name: "发表回复" });
     fireEvent.click(submit);
     fireEvent.click(submit);
+    expect(submit).toBeDisabled();
+    expect(submit).toHaveAttribute("data-pending", "true");
+    expect(submit).toHaveAttribute("aria-busy", "true");
     expect(
       fetcher.mock.calls.filter(([, init]) => init?.method === "POST"),
     ).toHaveLength(1);

@@ -5,6 +5,7 @@ import {
   type RefObject,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -83,6 +84,45 @@ interface ReplyDraft {
   targetId: string;
   targetAuthor: string;
   content: string;
+}
+
+function useMeasuredBlockSize(layoutRevision: string) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const measuredHeightRef = useRef<number | null>(null);
+
+  const measure = useCallback(() => {
+    const frame = frameRef.current;
+    const measuredContent = contentRef.current;
+    if (!frame || !measuredContent) return;
+
+    const nextHeight = measuredContent.getBoundingClientRect().height;
+    if (!Number.isFinite(nextHeight) || nextHeight <= 0) return;
+    if (
+      measuredHeightRef.current !== null &&
+      Math.abs(measuredHeightRef.current - nextHeight) < 0.5
+    ) {
+      return;
+    }
+
+    measuredHeightRef.current = nextHeight;
+    frame.style.blockSize = `${nextHeight}px`;
+  }, []);
+
+  useLayoutEffect(() => {
+    measure();
+  }, [layoutRevision, measure]);
+
+  useLayoutEffect(() => {
+    const measuredContent = contentRef.current;
+    if (!measuredContent || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(measuredContent);
+    return () => observer.disconnect();
+  }, [measure]);
+
+  return { contentRef, frameRef };
 }
 
 function createIdempotencyKey(): string {
@@ -222,7 +262,12 @@ function Reauthenticate({
         value={token}
       />
       {error ? <p role="alert">{error}</p> : null}
-      <button disabled={!token || pending} type="submit">
+      <button
+        aria-busy={pending || undefined}
+        data-pending={pending ? "true" : undefined}
+        disabled={!token || pending}
+        type="submit"
+      >
         {pending ? "正在确认…" : "刷新身份"}
       </button>
     </form>
@@ -324,6 +369,18 @@ function CommentForm({
     displayedError !== null ||
     rateLimited ||
     !commentsEnabled;
+  const layoutRevision = [
+    mode,
+    expanded,
+    mediaItems.length,
+    displayedError !== null,
+    rateLimited,
+    displayReauth,
+    commentsEnabled,
+    mentionItems.length,
+  ].join(":");
+  const { contentRef: layoutContentRef, frameRef: layoutFrameRef } =
+    useMeasuredBlockSize(layoutRevision);
 
   const replaceMedia = (next: ComposerMediaItem[]) => {
     releaseDiscardedLocalPreviews(mediaItemsRef.current, next);
@@ -572,10 +629,16 @@ function CommentForm({
 
   return (
     <div
-      className={`${styles.formSurface} ${parentId ? styles.replyForm : ""} ${expanded ? styles.commentExpanded : styles.commentCollapsed}`}
+      className={`${styles.formSurface} ${styles.commentLayoutFrame} ${parentId ? styles.replyForm : ""} ${expanded ? styles.commentExpanded : styles.commentCollapsed}`}
+      data-comment-layout-frame="true"
       onFocusCapture={() => setActivated(true)}
+      ref={layoutFrameRef}
     >
-      <div className={styles.commentComposerLayout}>
+      <div
+        className={styles.commentComposerLayout}
+        data-comment-layout-content="true"
+        ref={layoutContentRef}
+      >
         <span aria-hidden="true" className={styles.composerAvatar}>
           {mode === "owner" ? (
             <SiteAvatar site={site} />
@@ -765,8 +828,10 @@ function CommentForm({
                     </button>
                   ) : null}
                   <button
+                    aria-busy={pending || undefined}
                     aria-label="发表回复"
                     className={styles.primaryAction}
+                    data-pending={pending ? "true" : undefined}
                     disabled={
                       pending ||
                       !validName ||
@@ -1006,7 +1071,9 @@ function DeleteCommentDialog({
                 保留
               </Dialog.Close>
               <button
+                aria-busy={pending || undefined}
                 className={styles.dangerAction}
+                data-pending={pending ? "true" : undefined}
                 disabled={pending || !session}
                 onClick={() => void remove()}
                 type="button"

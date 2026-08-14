@@ -63,6 +63,14 @@
   display: grid;
 }
 
+.commentLayoutFrame {
+  box-sizing: content-box;
+  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 4px;
+  transition: block-size var(--motion-content) var(--ease-out);
+}
+
 .commentComposerLayout {
   display: grid;
   grid-template-columns: var(--target-size) minmax(0, 1fr);
@@ -87,10 +95,6 @@
 .composerAvatar > span {
   inline-size: 100%;
   block-size: 100%;
-}
-
-.commentCollapsed {
-  padding-block: 0.8rem;
 }
 
 .commentCollapsed .commentComposerHeader,
@@ -174,7 +178,7 @@
   color: var(--text-secondary);
   font-size: var(--text-sm);
   transform-origin: top left;
-  animation: comment-reveal-target 360ms cubic-bezier(0.16, 1.3, 0.3, 1);
+  animation: comment-reveal-target var(--motion-content) var(--ease-out);
 }
 
 .replyTarget span {
@@ -257,7 +261,7 @@
 .commentMediaComposer {
   margin-block-start: 0;
   transform-origin: top;
-  animation: comment-reveal-toolbar 360ms cubic-bezier(0.16, 1.3, 0.3, 1);
+  animation: comment-reveal-toolbar var(--motion-content) var(--ease-out);
 }
 
 .commentMediaComposer > div {
@@ -416,12 +420,22 @@
   background: var(--danger);
 }
 
-.primaryAction:disabled,
+.primaryAction:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .secondaryAction:disabled,
 .dangerAction:disabled,
 .reauth button:disabled {
   opacity: 0.55;
-  cursor: wait;
+  cursor: not-allowed;
+}
+
+.primaryAction[data-pending="true"],
+.dangerAction[data-pending="true"],
+.reauth button[data-pending="true"] {
+  cursor: progress;
 }
 
 .honeypot {
@@ -886,32 +900,24 @@
 }
 
 @keyframes comment-reveal-target {
-  0% {
+  from {
     opacity: 0;
-    transform: translateY(-0.55rem) scaleY(0.92);
+    transform: translateY(-0.25rem);
   }
-  72% {
+  to {
     opacity: 1;
-    transform: translateY(0.08rem) scaleY(1.02);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scaleY(1);
+    transform: translateY(0);
   }
 }
 
 @keyframes comment-reveal-toolbar {
-  0% {
+  from {
     opacity: 0;
-    transform: translateY(-0.45rem) scaleY(0.88);
+    transform: translateY(-0.25rem);
   }
-  70% {
+  to {
     opacity: 1;
-    transform: translateY(0.08rem) scaleY(1.03);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scaleY(1);
+    transform: translateY(0);
   }
 }
 
@@ -1017,6 +1023,7 @@
   .dialogBackdrop,
   .dialogPopup,
   .replyDialogPopup,
+  .commentLayoutFrame,
   .replyTarget,
   .nameField,
   .commentMediaComposer {
