@@ -1,5 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import type { SiteIdentity } from "../api/public";
 import { InternalLink, useNavigation } from "../app/navigation";
@@ -8,6 +8,7 @@ import { SiteAvatar } from "./SiteIdentity";
 import { Icon, type IconName } from "./icons";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
+import { MOBILE_VIEWPORT_QUERY, useMediaQuery } from "./useMediaQuery";
 import styles from "./AppShell.module.css";
 
 interface NavItem {
@@ -43,6 +44,67 @@ function ownerNav(settingsAvailable: boolean): NavItem {
     icon: "owner",
     active: ["owner-login", "owner-settings", "owner-edit"],
   };
+}
+
+function focusedComposerControl(): boolean {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) return false;
+  if (
+    !active.matches(
+      'input:not([type="hidden"]), textarea, select, [contenteditable="true"]',
+    )
+  ) {
+    return false;
+  }
+  return Boolean(
+    active.closest(
+      'section[aria-label="发布 Moment"], section[aria-label="编辑 Moment"], form[aria-label="发表回复"], form[aria-label^="回复 "]',
+    ),
+  );
+}
+
+function useMobileNavigationObscured(mobileViewport: boolean): boolean {
+  const [obscured, setObscured] = useState(false);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!mobileViewport || !viewport) return;
+    let frame = 0;
+    let layoutHeight = Math.max(window.innerHeight, viewport.height);
+    const update = () => {
+      const contraction = Math.max(96, layoutHeight * 0.12);
+      setObscured(
+        focusedComposerControl() &&
+          viewport.height < layoutHeight - contraction,
+      );
+    };
+    const updateLayout = () => {
+      if (!focusedComposerControl()) {
+        layoutHeight = Math.max(window.innerHeight, viewport.height);
+      }
+      update();
+    };
+    const updateAfterFocus = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(update);
+    };
+    update();
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    window.addEventListener("resize", updateLayout);
+    document.addEventListener("focusin", update);
+    document.addEventListener("focusout", updateAfterFocus);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+      window.removeEventListener("resize", updateLayout);
+      document.removeEventListener("focusin", update);
+      document.removeEventListener("focusout", updateAfterFocus);
+    };
+  }, [mobileViewport]);
+
+  return mobileViewport && obscured;
 }
 
 function Brand({ site }: { site: SiteIdentity }) {
@@ -209,10 +271,26 @@ function MobileAccountMenu({
   );
 }
 
-function MobileNavigation({ route }: { route: AppRoute }) {
-  const items: NavItem[] = [...primaryNav, publishNav];
+function MobileNavigation({
+  ownerSettingsAvailable,
+  route,
+}: {
+  ownerSettingsAvailable: boolean;
+  route: AppRoute;
+}) {
+  const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
+  const obscured = useMobileNavigationObscured(mobileViewport);
+  const items: NavItem[] = [
+    ...primaryNav.slice(0, 3),
+    publishNav,
+    ownerNav(ownerSettingsAvailable),
+  ];
   return (
-    <nav aria-label="移动导航" className={styles.mobileNav}>
+    <nav
+      aria-label="移动导航"
+      className={styles.mobileNav}
+      data-viewport-obscured={obscured || undefined}
+    >
       {items.map((item) => (
         <NavLink item={item} key={item.href} route={route} />
       ))}
@@ -287,7 +365,10 @@ export function AppShell({
         </main>
         <MemoryRail route={route} years={memoryYears} />
       </div>
-      <MobileNavigation route={route} />
+      <MobileNavigation
+        ownerSettingsAvailable={ownerSettingsAvailable}
+        route={route}
+      />
     </div>
   );
 }

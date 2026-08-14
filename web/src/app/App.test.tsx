@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,6 +10,37 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+
+class FakeVisualViewport extends EventTarget {
+  height: number;
+  width: number;
+  offsetLeft = 0;
+  offsetTop = 0;
+  pageLeft = 0;
+  pageTop = 0;
+  scale = 1;
+  onresize: ((this: VisualViewport, event: Event) => unknown) | null = null;
+  onscroll: ((this: VisualViewport, event: Event) => unknown) | null = null;
+
+  constructor(width: number, height: number) {
+    super();
+    this.width = width;
+    this.height = height;
+  }
+}
+
+function mediaQuery(matches: boolean, media: string): MediaQueryList {
+  return {
+    matches,
+    media,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  };
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -54,6 +86,28 @@ function timelineEnvelope(items: unknown[] = []) {
   };
 }
 
+function ownerStatusEnvelope() {
+  return {
+    data: {
+      initialized: true,
+      password_enabled: false,
+      session_epoch: 1,
+      initialized_at: "2026-08-01T00:00:00Z",
+    },
+    meta: { request_id: "req_owner" },
+  };
+}
+
+function preauthenticate() {
+  window.sessionStorage.setItem(
+    "moment.owner.session.v1",
+    JSON.stringify({
+      csrf_token: "csrf-from-session",
+      expires_at: "2999-08-11T01:00:00.000Z",
+    }),
+  );
+}
+
 function installApi(
   handler: (url: string) => Promise<Response> = async (url) => {
     if (url === "/api/v1/site") return json(siteEnvelope);
@@ -71,6 +125,7 @@ describe("App shell and public routes", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/");
     window.localStorage.clear();
+    window.sessionStorage.clear();
     vi.stubGlobal(
       "matchMedia",
       vi.fn().mockReturnValue({
@@ -155,6 +210,93 @@ describe("App shell and public routes", () => {
       await screen.findByRole("menuitem", { name: "所有者登录" }),
     );
     await waitFor(() => expect(window.location.pathname).toBe("/owner/login"));
+  });
+
+  it("uses five distinct mobile destinations and omits the inline owner composer", async () => {
+    const item = post("01K2ABCDEF0123456789ABCDE0", "手机首屏的第一条");
+    preauthenticate();
+    vi.mocked(window.matchMedia).mockImplementation((query) =>
+      mediaQuery(query === "(max-width: 719px)", query),
+    );
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/owner/status") {
+        return json(ownerStatusEnvelope());
+      }
+      if (url.startsWith("/api/v1/posts?")) {
+        return json(timelineEnvelope([item]));
+      }
+      return json({}, 404);
+    });
+
+    const { container } = render(<App />);
+    await screen.findByText("手机首屏的第一条");
+    const article = container.querySelector(
+      `article[data-post-id="${item.id}"]`,
+    );
+    const mobileNavigation = container.querySelector<HTMLElement>(
+      'nav[aria-label="移动导航"]',
+    );
+
+    expect(article).not.toBeNull();
+    expect(
+      container.querySelector('section[aria-label="发布 Moment"]'),
+    ).toBeNull();
+    expect(
+      Array.from(mobileNavigation?.querySelectorAll("a") ?? [], (link) =>
+        link.getAttribute("aria-label"),
+      ),
+    ).toEqual(["时间流", "搜索", "归档", "发布", "所有者"]);
+    expect(
+      mobileNavigation?.querySelector('a[aria-label="发布"]'),
+    ).toHaveAttribute("href", "/owner/compose");
+    expect(
+      mobileNavigation?.querySelector('a[aria-label="所有者"]'),
+    ).toHaveAttribute("href", "/owner/settings");
+    expect(
+      mobileNavigation?.querySelector('a[aria-label="个人资料"]'),
+    ).toBeNull();
+  });
+
+  it("hides the mobile bar on deterministic visual-viewport contraction without moving composer focus", async () => {
+    const viewport = new FakeVisualViewport(390, 844);
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    vi.stubGlobal("innerHeight", 844);
+    vi.stubGlobal("visualViewport", viewport);
+    vi.mocked(window.matchMedia).mockImplementation((query) =>
+      mediaQuery(query === "(max-width: 719px)", query),
+    );
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/owner/status") {
+        return json(ownerStatusEnvelope());
+      }
+      return json({}, 404);
+    });
+
+    const { container } = render(<App />);
+    const editor = await screen.findByLabelText("此刻想到什么？");
+    const mobileNavigation = container.querySelector<HTMLElement>(
+      'nav[aria-label="移动导航"]',
+    );
+    editor.focus();
+    expect(editor).toHaveFocus();
+    expect(mobileNavigation).not.toHaveAttribute("data-viewport-obscured");
+
+    act(() => {
+      viewport.height = 480;
+      viewport.dispatchEvent(new Event("resize"));
+    });
+    expect(mobileNavigation).toHaveAttribute("data-viewport-obscured", "true");
+    expect(editor).toHaveFocus();
+
+    act(() => {
+      viewport.height = 844;
+      viewport.dispatchEvent(new Event("resize"));
+    });
+    expect(mobileNavigation).not.toHaveAttribute("data-viewport-obscured");
+    expect(editor).toHaveFocus();
   });
 
   it("opens desktop Publish as a route-backed dialog and restores shell focus", async () => {

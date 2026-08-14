@@ -536,6 +536,17 @@
     padding: 0 var(--space-1) env(safe-area-inset-bottom);
     background: color-mix(in srgb, var(--surface) 94%, transparent);
     backdrop-filter: blur(14px);
+    transition:
+      opacity var(--motion-fast) var(--ease-out),
+      transform var(--motion-fast) var(--ease-out),
+      visibility var(--motion-fast) step-end;
+  }
+
+  .mobileNav[data-viewport-obscured="true"] {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(100%);
   }
 
   .mobileNav .navLink {
@@ -569,6 +580,10 @@
   }
 
   .mobileAccountPopup {
+    transition: none;
+  }
+
+  .mobileNav {
     transition: none;
   }
 }

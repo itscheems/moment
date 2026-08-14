@@ -19,6 +19,10 @@ import { ProfilePage } from "../features/profile/ProfilePage";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { FeedbackProvider } from "../components/Feedback";
 import { useDocumentScrollLock } from "../components/useDocumentScrollLock";
+import {
+  MOBILE_VIEWPORT_QUERY,
+  useMediaQuery,
+} from "../components/useMediaQuery";
 import { NavigationProvider, useNavigation } from "./navigation";
 import { resolveRoute } from "./routes";
 import styles from "./App.module.css";
@@ -93,6 +97,7 @@ function PublicApp() {
       : new URLSearchParams(displayLocation.search).get("state");
   const api = useMemo(() => new PublicApi(), []);
   const owner = useOwner();
+  const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const [site, setSite] = useState(fallbackSite);
   const [siteLoading, setSiteLoading] = useState(true);
   const [siteError, setSiteError] = useState(false);
@@ -280,7 +285,8 @@ function PublicApp() {
         {siteLoading ? <TimelineLoading /> : null}
         {!siteLoading && hasTimeline ? (
           <div hidden={route.id !== "home"}>
-            {owner.state === "owner" || owner.state === "expired" ? (
+            {!mobileViewport &&
+            (owner.state === "owner" || owner.state === "expired") ? (
               <Composer
                 active={route.id === "home"}
                 site={site}
