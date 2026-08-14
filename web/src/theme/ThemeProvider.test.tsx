@@ -21,6 +21,12 @@ function Probe() {
       >
         Light
       </button>
+      <button
+        type="button"
+        onClick={() => setPreference("dim" satisfies ThemePreference)}
+      >
+        Dim
+      </button>
     </>
   );
 }
@@ -33,24 +39,19 @@ afterEach(() => {
 describe("ThemeProvider", () => {
   beforeEach(() => {
     window.localStorage.clear();
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockReturnValue({
-        matches: false,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      }),
-    );
   });
 
-  it("follows the system until a local override is chosen", () => {
+  it("defaults to light until an explicit background is chosen", () => {
     render(
       <ThemeProvider>
         <Probe />
       </ThemeProvider>,
     );
 
-    expect(screen.getByText("system:light")).toBeInTheDocument();
+    expect(screen.getByText("light:light")).toBeInTheDocument();
+    act(() => screen.getByRole("button", { name: "Dim" }).click());
+    expect(screen.getByText("dim:dim")).toBeInTheDocument();
+    expect(window.localStorage.getItem("moment.theme.v1")).toBe("dim");
     act(() => screen.getByRole("button", { name: "Dark" }).click());
     expect(screen.getByText("lights-out:lights-out")).toBeInTheDocument();
     expect(window.localStorage.getItem("moment.theme.v1")).toBe("lights-out");
@@ -60,17 +61,8 @@ describe("ThemeProvider", () => {
     );
   });
 
-  it("keeps an explicit saved light preference independent from a dark system", () => {
-    const addEventListener = vi.fn();
-    window.localStorage.setItem("moment.theme.v1", "light");
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockReturnValue({
-        matches: true,
-        addEventListener,
-        removeEventListener: vi.fn(),
-      }),
-    );
+  it("migrates a legacy system preference to light", () => {
+    window.localStorage.setItem("moment.theme.v1", "system");
 
     render(
       <ThemeProvider>
@@ -80,19 +72,11 @@ describe("ThemeProvider", () => {
 
     expect(screen.getByText("light:light")).toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
-    expect(addEventListener).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("moment.theme.v1")).toBe("light");
   });
 
-  it("tracks system changes while the system preference is active", () => {
-    let listener: (() => void) | undefined;
-    const media = {
-      matches: false,
-      addEventListener: vi.fn(
-        (_event: string, nextListener: () => void) => (listener = nextListener),
-      ),
-      removeEventListener: vi.fn(),
-    };
-    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue(media));
+  it("keeps an explicit saved light preference", () => {
+    window.localStorage.setItem("moment.theme.v1", "light");
 
     render(
       <ThemeProvider>
@@ -100,23 +84,7 @@ describe("ThemeProvider", () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByText("system:light")).toBeInTheDocument();
-    expect(media.addEventListener).toHaveBeenCalledWith(
-      "change",
-      expect.any(Function),
-    );
-
-    act(() => {
-      media.matches = true;
-      listener?.();
-    });
-    expect(screen.getByText("system:lights-out")).toBeInTheDocument();
-
-    act(() => screen.getByRole("button", { name: "Light" }).click());
     expect(screen.getByText("light:light")).toBeInTheDocument();
-    expect(media.removeEventListener).toHaveBeenCalledWith(
-      "change",
-      expect.any(Function),
-    );
+    expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 });

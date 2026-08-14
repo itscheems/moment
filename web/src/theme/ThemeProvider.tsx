@@ -7,41 +7,36 @@ import {
   useState,
 } from "react";
 
-export type ThemePreference = "system" | "light" | "dim" | "lights-out";
+export type ThemePreference = "light" | "dim" | "lights-out";
 export type AccentPreference =
   "blue" | "yellow" | "pink" | "purple" | "orange" | "green";
-type ResolvedTheme = Exclude<ThemePreference, "system">;
-
 interface ThemeContextValue {
   preference: ThemePreference;
   accent: AccentPreference;
-  resolvedTheme: ResolvedTheme;
+  resolvedTheme: ThemePreference;
   setPreference: (preference: ThemePreference) => void;
   setAccent: (accent: AccentPreference) => void;
 }
 
 const STORAGE_KEY = "moment.theme.v1";
 const ACCENT_STORAGE_KEY = "moment.accent.v1";
-const DARK_QUERY = "(prefers-color-scheme: dark)";
-
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 function isPreference(value: string | null): value is ThemePreference {
-  return (
-    value === "system" ||
-    value === "light" ||
-    value === "dim" ||
-    value === "lights-out"
-  );
+  return value === "light" || value === "dim" || value === "lights-out";
 }
 
 function readPreference(): ThemePreference {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     if (stored === "dark") return "lights-out";
-    return isPreference(stored) ? stored : "system";
+    if (stored === "system") {
+      window.localStorage.setItem(STORAGE_KEY, "light");
+      return "light";
+    }
+    return isPreference(stored) ? stored : "light";
   } catch {
-    return "system";
+    return "light";
   }
 }
 
@@ -60,34 +55,11 @@ function readAccent(): AccentPreference {
   }
 }
 
-function systemTheme(): ResolvedTheme {
-  return window.matchMedia?.(DARK_QUERY).matches ? "lights-out" : "light";
-}
-
-function resolveTheme(preference: ThemePreference): ResolvedTheme {
-  return preference === "system" ? systemTheme() : preference;
-}
-
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] =
     useState<ThemePreference>(readPreference);
   const [accent, setAccentState] = useState<AccentPreference>(readAccent);
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
-    resolveTheme(preference),
-  );
-
-  useEffect(() => {
-    if (preference !== "system") {
-      setResolvedTheme(preference);
-      return;
-    }
-
-    const media = window.matchMedia?.(DARK_QUERY);
-    const sync = () => setResolvedTheme(systemTheme());
-    sync();
-    media?.addEventListener("change", sync);
-    return () => media?.removeEventListener("change", sync);
-  }, [preference]);
+  const resolvedTheme = preference;
 
   useEffect(() => {
     const root = document.documentElement;

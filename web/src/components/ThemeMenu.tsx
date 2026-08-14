@@ -17,7 +17,6 @@ const backgrounds: Array<{
   value: ThemePreference;
   label: string;
 }> = [
-  { value: "system", label: "跟随系统" },
   { value: "light", label: "浅色" },
   { value: "dim", label: "柔和深色" },
   { value: "lights-out", label: "纯黑" },

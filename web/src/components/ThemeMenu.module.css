@@ -263,7 +263,7 @@
 
 .backgroundGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-2);
 }
 
@@ -286,10 +286,13 @@
   border-color: var(--accent);
 }
 
-.backgroundChoice[data-background-choice="system"],
 .backgroundChoice[data-background-choice="light"] {
   --choice-background: #ffffff;
   --choice-text: #0f1419;
+}
+
+.backgroundChoice strong {
+  white-space: nowrap;
 }
 
 .backgroundChoice[data-background-choice="dim"] {
@@ -426,10 +429,6 @@
     gap: var(--space-1);
     padding-inline: var(--space-1);
     font-size: 0.875rem;
-  }
-
-  .backgroundGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

@@ -39,14 +39,6 @@ describe("ThemeMenu", () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.stubGlobal("scrollTo", vi.fn());
-    vi.stubGlobal(
-      "matchMedia",
-      vi.fn().mockReturnValue({
-        matches: false,
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-      }),
-    );
   });
 
   it("locks the page while display settings are open and restores their trigger", async () => {
@@ -104,7 +96,6 @@ describe("ThemeMenu", () => {
       ["绿色", "green"],
     ] as const;
     const backgroundChoices = [
-      ["跟随系统", "light"],
       ["浅色", "light"],
       ["柔和深色", "dim"],
       ["纯黑", "lights-out"],
@@ -129,7 +120,7 @@ describe("ThemeMenu", () => {
     }
   });
 
-  it("reports a saved light override as light rather than system", async () => {
+  it("offers only the three explicit background choices", async () => {
     window.localStorage.setItem("moment.theme.v1", "light");
 
     render(
@@ -146,8 +137,13 @@ describe("ThemeMenu", () => {
       within(dialog).getByRole("button", { name: "浅色" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(
-      within(dialog).getByRole("button", { name: "跟随系统" }),
-    ).toHaveAttribute("aria-pressed", "false");
+      within(dialog).queryByRole("button", { name: "跟随系统" }),
+    ).toBeNull();
+    expect(
+      within(dialog).getAllByRole("button", {
+        name: /^(浅色|柔和深色|纯黑)$/,
+      }),
+    ).toHaveLength(3);
     expect(document.documentElement).toHaveAttribute("data-theme", "light");
   });
 });
