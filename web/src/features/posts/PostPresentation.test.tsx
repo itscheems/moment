@@ -188,6 +188,27 @@ describe("shared post presentation", () => {
     );
   });
 
+  it("optically aligns the reply glyph without shrinking its hit target", () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          onReply={() => undefined}
+          post={makePost("对齐回复动作", "<p>对齐回复动作</p>")}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    const reply = screen.getByRole("button", { name: "回复这条 Moment" });
+    expect(reply.className).toContain("replyAction");
+    expect(postCss).toMatch(
+      /\._replyAction_[\w-]+\s*\{[^}]*margin-inline-start: calc\(0px - var\(--space-3\)\)/,
+    );
+    expect(postCss).toMatch(
+      /\._postAction_[\w-]+\s*\{[^}]*inline-size: 2\.75rem[^}]*block-size: 2\.75rem/,
+    );
+  });
+
   it("opens the detail from the post surface without hijacking post actions", () => {
     window.scrollTo = vi.fn();
     render(

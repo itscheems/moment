@@ -204,7 +204,7 @@ export function PostPresentation({
             <ActionTooltip label="回复">
               <button
                 aria-label="回复这条 Moment"
-                className={styles.postAction}
+                className={`${styles.postAction} ${styles.replyAction}`}
                 onClick={onReply}
                 type="button"
               >
@@ -267,7 +267,7 @@ export function PostPresentation({
             {onReply ? (
               <button
                 aria-label="回复这条 Moment"
-                className={styles.postAction}
+                className={`${styles.postAction} ${styles.replyAction}`}
                 data-focus-key={`${post.id}:reply`}
                 onClick={onReply}
                 type="button"
@@ -282,7 +282,7 @@ export function PostPresentation({
             ) : (
               <InternalLink
                 aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
-                className={styles.postAction}
+                className={`${styles.postAction} ${styles.replyAction}`}
                 data-focus-key={`${post.id}:open-post`}
                 href={detailHref}
               >

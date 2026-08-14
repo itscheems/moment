@@ -338,6 +338,10 @@
   block-size: 1.15rem;
 }
 
+.replyAction {
+  margin-inline-start: calc(0px - var(--space-3));
+}
+
 .actionCount {
   position: absolute;
   inset-block-start: 50%;
