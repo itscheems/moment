@@ -844,7 +844,9 @@
   position: absolute;
   inset-block-start: calc(var(--target-size) + var(--space-2));
   inset-block-end: 0;
-  inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
+  inset-inline-start: calc(
+    var(--space-4) + (var(--target-size) / 2) - 1px
+  );
   inline-size: 2px;
   background: var(--border-subtle);
 }
@@ -988,6 +990,10 @@
 
   .replyComment {
     padding-inline-start: var(--space-3);
+  }
+
+  .replyDialogPopup > .formSurface {
+    padding-inline: var(--space-4);
   }
 
   .replyComment::before {

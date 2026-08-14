@@ -515,6 +515,15 @@ describe("public comment thread", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the reply dialog avatars on one mobile alignment rail", () => {
+    expect(commentsCss).toMatch(
+      /\._replyContext_[\w-]+::after\s*\{[^}]*inset-inline-start: calc\(\s*var\(--space-4\) \+ \(var\(--target-size\) \/ 2\) - 1px\s*\)/,
+    );
+    expect(commentsCss).toMatch(
+      /@media \(max-width: 719px\)[\s\S]*\._replyDialogPopup_[\w-]+ > \._formSurface_[\w-]+\s*\{[^}]*padding-inline: var\(--space-4\)/,
+    );
+  });
+
   it("locks the document and restores one reply trigger through every dismissal path", async () => {
     installApi((url, init) => {
       if (url.endsWith("/comments") && init?.method !== "POST") {
