@@ -37,6 +37,14 @@ function sectionRect(top: number): DOMRect {
   };
 }
 
+function boundedSectionRect(top: number, bottom: number): DOMRect {
+  return {
+    ...sectionRect(top),
+    bottom,
+    height: bottom - top,
+  };
+}
+
 function intersectSection(activeID: (typeof sectionIDs)[number]) {
   const activeIndex = sectionIDs.indexOf(activeID);
   sectionIDs.forEach((id, index) => {
@@ -259,7 +267,48 @@ describe("owner site settings", () => {
     expect(heading).toHaveAttribute("tabindex", "-1");
   });
 
-  it("restores direct hashes and browser history without moving focus", async () => {
+  it("keeps a clicked final section current when the viewport cannot align its heading", async () => {
+    installFetch();
+    render(<App />);
+    await screen.findByRole("heading", { name: "网站" });
+    await waitForRestoreStatus();
+
+    const navigation = screen.getByRole("navigation", { name: "设置分区" });
+    const dataLink = within(navigation).getByRole("link", { name: "备份" });
+    const centerDataLink = vi.fn();
+    Object.defineProperty(dataLink, "scrollIntoView", {
+      configurable: true,
+      value: centerDataLink,
+    });
+    fireEvent.click(dataLink);
+
+    const dataHeading = screen.getByRole("heading", { name: "备份与恢复" });
+    await waitFor(() => expect(dataHeading).toHaveFocus());
+
+    const rects: Record<(typeof sectionIDs)[number], DOMRect> = {
+      identity: boundedSectionRect(-1_900, -1_250),
+      conversation: boundedSectionRect(-1_250, -730),
+      access: boundedSectionRect(-730, 215),
+      data: boundedSectionRect(215, 1_100),
+    };
+    sectionIDs.forEach((id) => {
+      const section = document.getElementById(id);
+      if (!section) throw new Error(`missing settings section ${id}`);
+      vi.spyOn(section, "getBoundingClientRect").mockReturnValue(rects[id]);
+    });
+
+    act(() => intersectionCallback?.([], intersectionObserver));
+
+    expect(window.location.hash).toBe("#data");
+    expect(dataLink).toHaveAttribute("aria-current", "location");
+    expect(dataHeading).toHaveFocus();
+    expect(centerDataLink).toHaveBeenCalledWith({
+      block: "nearest",
+      inline: "center",
+    });
+  });
+
+  it("restores direct hashes and browser history with matching heading focus", async () => {
     window.history.replaceState({}, "", "/owner/settings#data");
     installFetch();
     render(<App />);
@@ -271,10 +320,9 @@ describe("owner site settings", () => {
     const accessLink = within(navigation).getByRole("link", {
       name: "登录与安全",
     });
+    const dataHeading = screen.getByRole("heading", { name: "备份与恢复" });
     expect(dataLink).toHaveAttribute("aria-current", "location");
-    expect(
-      screen.getByRole("heading", { name: "备份与恢复" }),
-    ).not.toHaveFocus();
+    await waitFor(() => expect(dataHeading).toHaveFocus());
 
     fireEvent.click(accessLink);
     const accessHeading = screen.getByRole("heading", { name: "登录与安全" });
@@ -283,12 +331,12 @@ describe("owner site settings", () => {
     window.history.back();
     await waitFor(() => expect(window.location.hash).toBe("#data"));
     expect(dataLink).toHaveAttribute("aria-current", "location");
-    expect(accessHeading).toHaveFocus();
+    await waitFor(() => expect(dataHeading).toHaveFocus());
 
     window.history.forward();
     await waitFor(() => expect(window.location.hash).toBe("#access"));
     expect(accessLink).toHaveAttribute("aria-current", "location");
-    expect(accessHeading).toHaveFocus();
+    await waitFor(() => expect(accessHeading).toHaveFocus());
   });
 
   it("gives the current section a non-color visual indicator", () => {

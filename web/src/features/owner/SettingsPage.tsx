@@ -51,22 +51,14 @@ function sectionAtViewportAnchor(
   sections: Array<{ id: SettingsSectionId; element: HTMLElement }>,
 ): SettingsSectionId {
   const anchor = 96;
-  const atAnchor = sections.find(({ element }) => {
-    const bounds = element.getBoundingClientRect();
-    return bounds.top <= anchor && bounds.bottom > anchor;
-  });
-  if (atAnchor) return atAnchor.id;
-
-  const passed = sections.filter(
-    ({ element }) => element.getBoundingClientRect().top <= anchor,
-  );
-  if (passed.length > 0) return passed[passed.length - 1].id;
-
-  return (
-    sections.find(({ element }) => {
-      return element.getBoundingClientRect().bottom > 0;
-    })?.id ?? "identity"
-  );
+  return sections
+    .map(({ id, element }) => ({
+      distance: Math.abs(element.getBoundingClientRect().top - anchor),
+      id,
+    }))
+    .reduce((closest, candidate) =>
+      candidate.distance < closest.distance ? candidate : closest,
+    ).id;
 }
 
 interface SettingsForm {
@@ -279,18 +271,27 @@ export function SettingsPage({
   );
 
   useEffect(() => {
-    const syncFromLocation = () => {
+    const syncFromLocation = (focusHeading: boolean) => {
       const next = sectionFromHash(window.location.hash);
       setActiveSection(next);
-      document.getElementById(next)?.scrollIntoView?.({ block: "start" });
+      const target = document.getElementById(next);
+      target?.scrollIntoView?.({ block: "start" });
+      if (focusHeading) {
+        window.requestAnimationFrame(() => {
+          target
+            ?.querySelector<HTMLElement>("h2")
+            ?.focus({ preventScroll: true });
+        });
+      }
     };
+    const syncFromHistory = () => syncFromLocation(true);
 
-    syncFromLocation();
-    window.addEventListener("hashchange", syncFromLocation);
-    window.addEventListener("popstate", syncFromLocation);
+    syncFromLocation(Boolean(window.location.hash));
+    window.addEventListener("hashchange", syncFromHistory);
+    window.addEventListener("popstate", syncFromHistory);
     return () => {
-      window.removeEventListener("hashchange", syncFromLocation);
-      window.removeEventListener("popstate", syncFromLocation);
+      window.removeEventListener("hashchange", syncFromHistory);
+      window.removeEventListener("popstate", syncFromHistory);
     };
   }, []);
 
