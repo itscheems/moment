@@ -114,6 +114,8 @@ type Committer struct {
 	statusWriter   func(string, CommitStatus) error
 }
 
+type commitPrepare func(context.Context, *runtimefs.Runtime, *runtimefs.LeaseSet, *StagingClaim, *sqlitestore.Database) error
+
 // InputBinding pins an offline archive preview to one local regular
 // file identity and byte digest. Commit reopens and compares this identity only
 // after Import→Serve is held, then reads from that verified descriptor.
@@ -220,7 +222,7 @@ func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath s
 	if err := verifyExpectedArchiveSHA(inspection.ArchiveSHA256, binding.SHA256); err != nil {
 		return CommitResult{}, errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
-	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, nil)
+	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, nil, nil)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
@@ -255,7 +257,7 @@ func (committer *Committer) CommitArchive(ctx context.Context, source io.Reader,
 	if err := verifyExpectedArchiveSHA(inspection.ArchiveSHA256, expectedArchiveSHA); err != nil {
 		return CommitResult{}, errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
-	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, host)
+	result, err = committer.commitWithinLocks(ctx, runtimeState, held, inspection.StagingToken, sessionEpoch, host, nil)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
@@ -288,7 +290,7 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 			return CommitResult{}, err
 		}
 		defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-		return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, nil)
+		return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, nil, nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
 	if err != nil {
@@ -299,10 +301,10 @@ func (committer *Committer) Commit(ctx context.Context, token string, sessionEpo
 		return CommitResult{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, host)
+	return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, host, nil)
 }
 
-func (committer *Committer) commitWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, token string, sessionEpoch uint64, host CommitHost) (result CommitResult, resultErr error) {
+func (committer *Committer) commitWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, token string, sessionEpoch uint64, host CommitHost, prepare commitPrepare) (result CommitResult, resultErr error) {
 	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) ||
 		(host == nil && !held.Holds(runtimefs.ServeLock, runtimefs.Exclusive)) {
 		return CommitResult{}, runtimefs.ErrInsufficientLocks
@@ -403,6 +405,11 @@ func (committer *Committer) commitWithinLocks(ctx context.Context, runtimeState 
 	}()
 	if err := committer.checkFinalDisk(ctx, runtimeState, activeDatabase); err != nil {
 		return CommitResult{}, err
+	}
+	if prepare != nil {
+		if err := prepare(ctx, runtimeState, held, &claim, activeDatabase); err != nil {
+			return CommitResult{}, err
+		}
 	}
 
 	status.Phase = CommitBackingUp
