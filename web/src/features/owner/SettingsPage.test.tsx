@@ -6,13 +6,48 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
+import settingsCss from "./Settings.module.css?inline";
 
 const sessionKey = "moment.owner.session.v1";
 const avatarID = "01K2ABCDEF0123456789ABCDE7";
+const sectionIDs = ["identity", "conversation", "access", "data"] as const;
+let intersectionCallback: IntersectionObserverCallback | undefined;
+let intersectionObserver: IntersectionObserver;
+
+function captureIntersectionObserver(observer: IntersectionObserver) {
+  intersectionObserver = observer;
+}
+
+function sectionRect(top: number): DOMRect {
+  return {
+    bottom: top + 450,
+    height: 450,
+    left: 0,
+    right: 640,
+    top,
+    width: 640,
+    x: 0,
+    y: top,
+    toJSON: () => ({}),
+  };
+}
+
+function intersectSection(activeID: (typeof sectionIDs)[number]) {
+  const activeIndex = sectionIDs.indexOf(activeID);
+  sectionIDs.forEach((id, index) => {
+    const section = document.getElementById(id);
+    if (!section) throw new Error(`missing settings section ${id}`);
+    vi.spyOn(section, "getBoundingClientRect").mockReturnValue(
+      sectionRect(96 + (index - activeIndex) * 500),
+    );
+  });
+  act(() => intersectionCallback?.([], intersectionObserver));
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -120,6 +155,27 @@ describe("owner site settings", () => {
       }),
     );
     vi.stubGlobal("scrollTo", vi.fn());
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    class IntersectionObserverMock implements IntersectionObserver {
+      readonly root: Element | Document | null = null;
+      readonly rootMargin = "-96px 0px -65% 0px";
+      readonly scrollMargin = "0px";
+      readonly thresholds = [0, 1];
+
+      constructor(callback: IntersectionObserverCallback) {
+        intersectionCallback = callback;
+        captureIntersectionObserver(this);
+      }
+
+      disconnect = vi.fn();
+      observe = vi.fn();
+      takeRecords = vi.fn(() => []);
+      unobserve = vi.fn();
+    }
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
     vi.stubGlobal(
       "requestAnimationFrame",
       vi.fn((callback: FrameRequestCallback) => {
@@ -132,7 +188,113 @@ describe("owner site settings", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    delete (
+      HTMLElement.prototype as Partial<Pick<HTMLElement, "scrollIntoView">>
+    ).scrollIntoView;
     window.sessionStorage.clear();
+  });
+
+  it("tracks passive scrolling without adding history or stealing focus", async () => {
+    installFetch();
+    render(<App />);
+    await screen.findByRole("heading", { name: "网站" });
+    await waitForRestoreStatus();
+
+    const navigation = screen.getByRole("navigation", { name: "设置分区" });
+    const dataLink = within(navigation).getByRole("link", { name: "备份" });
+    const centerActiveLink = vi.fn();
+    Object.defineProperty(dataLink, "scrollIntoView", {
+      configurable: true,
+      value: centerActiveLink,
+    });
+    const timezone = screen.getByLabelText(/^时区/);
+    timezone.focus();
+    const historyLength = window.history.length;
+
+    intersectSection("data");
+
+    await waitFor(() =>
+      expect(dataLink).toHaveAttribute("aria-current", "location"),
+    );
+    expect(
+      within(navigation)
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("aria-current") === "location"),
+    ).toHaveLength(1);
+    expect(centerActiveLink).toHaveBeenCalledWith({
+      block: "nearest",
+      inline: "center",
+    });
+    expect(window.location.hash).toBe("#data");
+    expect(window.history.length).toBe(historyLength);
+    expect(timezone).toHaveFocus();
+  });
+
+  it("pushes and focuses only for explicit section activation", async () => {
+    installFetch();
+    render(<App />);
+    await screen.findByRole("heading", { name: "网站" });
+    await waitForRestoreStatus();
+
+    const navigation = screen.getByRole("navigation", { name: "设置分区" });
+    const accessLink = within(navigation).getByRole("link", {
+      name: "登录与安全",
+    });
+    const accessSection = document.getElementById("access");
+    if (!accessSection) throw new Error("missing access settings section");
+    const scrollSection = vi.fn();
+    Object.defineProperty(accessSection, "scrollIntoView", {
+      configurable: true,
+      value: scrollSection,
+    });
+    const pushState = vi.spyOn(window.history, "pushState");
+
+    fireEvent.click(accessLink);
+
+    const heading = screen.getByRole("heading", { name: "登录与安全" });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(accessLink).toHaveAttribute("aria-current", "location");
+    expect(pushState.mock.calls.at(-1)?.[2]).toBe("#access");
+    expect(scrollSection).toHaveBeenCalledWith({ block: "start" });
+    expect(heading).toHaveAttribute("tabindex", "-1");
+  });
+
+  it("restores direct hashes and browser history without moving focus", async () => {
+    window.history.replaceState({}, "", "/owner/settings#data");
+    installFetch();
+    render(<App />);
+    await screen.findByRole("heading", { name: "网站" });
+    await waitForRestoreStatus();
+
+    const navigation = screen.getByRole("navigation", { name: "设置分区" });
+    const dataLink = within(navigation).getByRole("link", { name: "备份" });
+    const accessLink = within(navigation).getByRole("link", {
+      name: "登录与安全",
+    });
+    expect(dataLink).toHaveAttribute("aria-current", "location");
+    expect(
+      screen.getByRole("heading", { name: "备份与恢复" }),
+    ).not.toHaveFocus();
+
+    fireEvent.click(accessLink);
+    const accessHeading = screen.getByRole("heading", { name: "登录与安全" });
+    await waitFor(() => expect(accessHeading).toHaveFocus());
+
+    window.history.back();
+    await waitFor(() => expect(window.location.hash).toBe("#data"));
+    expect(dataLink).toHaveAttribute("aria-current", "location");
+    expect(accessHeading).toHaveFocus();
+
+    window.history.forward();
+    await waitFor(() => expect(window.location.hash).toBe("#access"));
+    expect(accessLink).toHaveAttribute("aria-current", "location");
+    expect(accessHeading).toHaveFocus();
+  });
+
+  it("gives the current section a non-color visual indicator", () => {
+    expect(settingsCss).toContain('a[aria-current="location"]');
+    expect(settingsCss).toContain("border-block-end-color: var(--accent)");
+    expect(settingsCss).toContain("font-weight: 700");
   });
 
   it("shows field errors, blocks dirty navigation, and warns before unload", async () => {

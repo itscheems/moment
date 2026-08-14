@@ -66,6 +66,13 @@
   background: var(--surface-hover);
 }
 
+.settingsNav a[aria-current="location"] {
+  border-block-end-color: var(--accent);
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+
 .settingsContent {
   min-inline-size: 0;
 }

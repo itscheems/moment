@@ -1,4 +1,11 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type MouseEvent as ReactMouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import type {
   OwnerStatus,
@@ -23,6 +30,44 @@ const commonTimezones = [
   "America/New_York",
   "America/Los_Angeles",
 ];
+
+const settingsSections = [
+  { id: "identity", label: "网站" },
+  { id: "conversation", label: "回复" },
+  { id: "access", label: "登录与安全" },
+  { id: "data", label: "备份" },
+] as const;
+
+type SettingsSectionId = (typeof settingsSections)[number]["id"];
+
+function sectionFromHash(hash: string): SettingsSectionId {
+  const id = hash.replace(/^#/, "");
+  return settingsSections.some((section) => section.id === id)
+    ? (id as SettingsSectionId)
+    : "identity";
+}
+
+function sectionAtViewportAnchor(
+  sections: Array<{ id: SettingsSectionId; element: HTMLElement }>,
+): SettingsSectionId {
+  const anchor = 96;
+  const atAnchor = sections.find(({ element }) => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.top <= anchor && bounds.bottom > anchor;
+  });
+  if (atAnchor) return atAnchor.id;
+
+  const passed = sections.filter(
+    ({ element }) => element.getBoundingClientRect().top <= anchor,
+  );
+  if (passed.length > 0) return passed[passed.length - 1].id;
+
+  return (
+    sections.find(({ element }) => {
+      return element.getBoundingClientRect().bottom > 0;
+    })?.id ?? "identity"
+  );
+}
 
 interface SettingsForm {
   timezone: string;
@@ -206,11 +251,15 @@ export function SettingsPage({
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [passwordPending, setPasswordPending] = useState(false);
   const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<SettingsSectionId>(() =>
+    sectionFromHash(window.location.hash),
+  );
   const formRef = useRef(form);
   const formRevisionRef = useRef(0);
   const mountedRef = useRef(true);
   const navigationBlockerId = useRef(Symbol("settings-navigation-blocker"));
   const allowLeaveRef = useRef(false);
+  const settingsNavRef = useRef<HTMLElement>(null);
 
   const validation = useMemo(() => validateForm(form), [form]);
   const update = changedSiteFields(form, baseline);
@@ -228,6 +277,56 @@ export function SettingsPage({
     },
     [],
   );
+
+  useEffect(() => {
+    const syncFromLocation = () => {
+      const next = sectionFromHash(window.location.hash);
+      setActiveSection(next);
+      document.getElementById(next)?.scrollIntoView?.({ block: "start" });
+    };
+
+    syncFromLocation();
+    window.addEventListener("hashchange", syncFromLocation);
+    window.addEventListener("popstate", syncFromLocation);
+    return () => {
+      window.removeEventListener("hashchange", syncFromLocation);
+      window.removeEventListener("popstate", syncFromLocation);
+    };
+  }, []);
+
+  useEffect(() => {
+    const sections = settingsSections.flatMap(({ id }) => {
+      const element = document.getElementById(id);
+      return element ? [{ id, element }] : [];
+    });
+    if (sections.length === 0 || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      () => {
+        const next = sectionAtViewportAnchor(sections);
+        setActiveSection(next);
+        const hash = `#${next}`;
+        if (window.location.hash !== hash) {
+          window.history.replaceState(window.history.state, "", hash);
+        }
+      },
+      {
+        rootMargin: "-96px 0px -65% 0px",
+        threshold: [0, 1],
+      },
+    );
+    sections.forEach(({ element }) => observer.observe(element));
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const link = settingsNavRef.current?.querySelector<HTMLAnchorElement>(
+      `a[href="#${activeSection}"]`,
+    );
+    link?.scrollIntoView?.({ block: "nearest", inline: "center" });
+  }, [activeSection]);
 
   useEffect(() => {
     if (!session || rotated) {
@@ -447,6 +546,32 @@ export function SettingsPage({
     navigation.navigate("/owner/login?return=/owner/settings");
   };
 
+  const navigateToSection = (
+    event: ReactMouseEvent<HTMLAnchorElement>,
+    section: SettingsSectionId,
+  ) => {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+    event.preventDefault();
+    const hash = `#${section}`;
+    if (window.location.hash !== hash) {
+      window.history.pushState(window.history.state, "", hash);
+    }
+    setActiveSection(section);
+    const target = document.getElementById(section);
+    target?.scrollIntoView?.({ block: "start" });
+    window.requestAnimationFrame(() => {
+      target?.querySelector<HTMLElement>("h2")?.focus({ preventScroll: true });
+    });
+  };
+
   const effectiveErrors: FieldErrors = {
     timezone: validation.timezone ?? fieldErrors.timezone,
     publicBaseUrl: validation.publicBaseUrl ?? fieldErrors.publicBaseUrl,
@@ -455,11 +580,23 @@ export function SettingsPage({
   return (
     <div className={styles.settingsPage}>
       <div className={styles.settingsLayout}>
-        <nav aria-label="设置分区" className={styles.settingsNav}>
-          <a href="#identity">网站</a>
-          <a href="#conversation">回复</a>
-          <a href="#access">登录与安全</a>
-          <a href="#data">备份</a>
+        <nav
+          aria-label="设置分区"
+          className={styles.settingsNav}
+          ref={settingsNavRef}
+        >
+          {settingsSections.map((section) => (
+            <a
+              aria-current={
+                activeSection === section.id ? "location" : undefined
+              }
+              href={`#${section.id}`}
+              key={section.id}
+              onClick={(event) => navigateToSection(event, section.id)}
+            >
+              {section.label}
+            </a>
+          ))}
         </nav>
 
         <div className={styles.settingsContent}>
@@ -471,7 +608,9 @@ export function SettingsPage({
           >
             <section aria-labelledby="identity-title" id="identity">
               <header className={styles.sectionHeader}>
-                <h2 id="identity-title">网站</h2>
+                <h2 id="identity-title" tabIndex={-1}>
+                  网站
+                </h2>
               </header>
 
               <div className={styles.fieldGrid}>
@@ -535,7 +674,9 @@ export function SettingsPage({
 
             <section aria-labelledby="conversation-title" id="conversation">
               <header className={styles.sectionHeader}>
-                <h2 id="conversation-title">回复</h2>
+                <h2 id="conversation-title" tabIndex={-1}>
+                  回复
+                </h2>
               </header>
               <label className={styles.toggleRow}>
                 <span>
@@ -583,7 +724,9 @@ export function SettingsPage({
 
           <section aria-labelledby="access-title" id="access">
             <header className={styles.sectionHeader}>
-              <h2 id="access-title">登录与安全</h2>
+              <h2 id="access-title" tabIndex={-1}>
+                登录与安全
+              </h2>
             </header>
             {statusPending ? (
               <p aria-busy="true">正在读取认证状态…</p>
@@ -777,7 +920,9 @@ export function SettingsPage({
 
           <section aria-labelledby="data-title" id="data">
             <header className={styles.sectionHeader}>
-              <h2 id="data-title">备份与恢复</h2>
+              <h2 id="data-title" tabIndex={-1}>
+                备份与恢复
+              </h2>
             </header>
             <BackupRestore
               onRestoreBusyChange={setDataRestoreBusy}
