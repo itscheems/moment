@@ -21,6 +21,7 @@ import {
 } from "../../api/public";
 import type { OwnerLocation } from "../../api/owner";
 import { useNavigation } from "../../app/navigation";
+import { notify } from "../../components/Feedback";
 import { MediaComposer } from "../media/MediaComposer";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { Icon } from "../../components/icons";
@@ -807,6 +808,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         }
         announceOwnerPost({ kind: post ? "updated" : "created", post: saved });
         setAnnouncement(post ? "已保存" : "已发布");
+        notify(post ? "Moment 已保存" : "Moment 已发布", {
+          action: {
+            label: "查看 Moment",
+            onAction: () => navigate(`/m/${encodeURIComponent(saved.id)}`),
+          },
+        });
         clearMedia();
         if (variant === "inline") {
           setContent("");

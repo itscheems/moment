@@ -5,26 +5,67 @@ import styles from "./Feedback.module.css";
 
 export const feedback = Toast.createToastManager();
 
-export function notify(
-  title: string,
-  options: { description?: string; type?: "success" | "error" } = {},
-) {
-  feedback.add({
+const SUCCESS_TIMEOUT = 4_000;
+const EXPLANATORY_TIMEOUT = 6_000;
+
+interface FeedbackAction {
+  label: string;
+  onAction: () => void;
+}
+
+interface FeedbackOptions {
+  description?: string;
+  type?: "success" | "error";
+  action?: FeedbackAction;
+}
+
+export function notify(title: string, options: FeedbackOptions = {}) {
+  const type = options.type ?? "success";
+  let id = "";
+  id = feedback.add({
     title,
     description: options.description,
-    type: options.type ?? "success",
-    priority: options.type === "error" ? "high" : "low",
-    timeout: 2_600,
+    type,
+    priority: type === "error" ? "high" : "low",
+    timeout:
+      type === "error" || options.description
+        ? EXPLANATORY_TIMEOUT
+        : SUCCESS_TIMEOUT,
+    actionProps: options.action
+      ? {
+          children: options.action.label,
+          onClick: () => {
+            feedback.close(id);
+            options.action?.onAction();
+          },
+        }
+      : undefined,
   });
+  return id;
 }
 
 function FeedbackList() {
   const { toasts } = Toast.useToastManager();
   return toasts.map((toast) => (
     <Toast.Root className={styles.toast} key={toast.id} toast={toast}>
-      <Toast.Content>
-        <Toast.Title className={styles.title} />
-        <Toast.Description className={styles.description} />
+      <Toast.Content className={styles.content}>
+        <div className={styles.message}>
+          <Toast.Title className={styles.title} />
+          {toast.description ? (
+            <Toast.Description className={styles.description} />
+          ) : null}
+        </div>
+        <div className={styles.actions}>
+          <Toast.Action className={styles.action} />
+          <button
+            aria-label="关闭通知"
+            className={styles.close}
+            onClick={() => feedback.close(toast.id)}
+            type="button"
+          >
+            关闭
+          </button>
+        </div>
       </Toast.Content>
     </Toast.Root>
   ));
@@ -32,7 +73,7 @@ function FeedbackList() {
 
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   return (
-    <Toast.Provider limit={3} timeout={2_600} toastManager={feedback}>
+    <Toast.Provider limit={3} timeout={SUCCESS_TIMEOUT} toastManager={feedback}>
       {children}
       <Toast.Portal>
         <Toast.Viewport className={styles.viewport}>

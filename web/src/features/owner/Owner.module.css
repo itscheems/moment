@@ -665,6 +665,17 @@
   line-height: 1.6;
 }
 
+.dialogError {
+  margin: var(--space-3) 0 0;
+  border-inline-start: 3px solid var(--danger);
+  border-radius: 0.25rem;
+  padding: var(--space-2) var(--space-3);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
 .dialogActions {
   display: flex;
   justify-content: flex-end;

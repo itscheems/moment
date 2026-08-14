@@ -49,13 +49,13 @@ export function OwnerPostActions({
       onDeleted?.(deleted);
       if (pinned) onSiteChanged?.({ ...site, pinnedPostId: null });
       setDeleteOpen(false);
+      notify("Moment 已删除");
     } catch (nextError) {
       setError(
         expireIfInvalidSession(nextError)
           ? "登录已过期，重新登录后再删除。"
           : "没有删除这个 Moment，可以安全重试。",
       );
-      setDeleteOpen(false);
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -139,6 +139,7 @@ export function OwnerPostActions({
                 className={`${styles.ownerMenuItem} ${styles.ownerMenuDanger}`}
                 onClick={() => {
                   setMenuOpen(false);
+                  setError(null);
                   setDeleteOpen(true);
                 }}
               >
@@ -153,7 +154,10 @@ export function OwnerPostActions({
       <Dialog.Root
         onOpenChange={(open) => {
           setDeleteOpen(open);
-          if (!open) restoreMenuFocus();
+          if (!open) {
+            setError(null);
+            restoreMenuFocus();
+          }
         }}
         open={deleteOpen}
       >
@@ -167,6 +171,11 @@ export function OwnerPostActions({
               <Dialog.Description className={styles.dialogDescription}>
                 这段 Moment 会从公开时间流中移除。此操作不能撤销。
               </Dialog.Description>
+              {error ? (
+                <p className={styles.dialogError} role="alert">
+                  {error}
+                </p>
+              ) : null}
               <div className={styles.dialogActions}>
                 <Dialog.Close
                   className={styles.secondaryButton}
@@ -180,7 +189,7 @@ export function OwnerPostActions({
                   onClick={() => void remove()}
                   type="button"
                 >
-                  {pending ? "正在处理…" : "删除 Moment"}
+                  {pending ? "正在处理…" : error ? "重试删除" : "删除 Moment"}
                 </button>
               </div>
             </Dialog.Popup>
@@ -230,7 +239,7 @@ export function OwnerPostActions({
         </Dialog.Portal>
       </Dialog.Root>
 
-      {error ? (
+      {error && !deleteOpen ? (
         <span className={styles.ownerActionError} role="alert">
           {error}
         </span>

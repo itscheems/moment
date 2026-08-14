@@ -506,6 +506,16 @@ describe("owner composing flow", () => {
       () => expect(screen.getByText("十秒内写下这一刻")).toBeInTheDocument(),
       { timeout: 3_000 },
     );
+    const published = screen.getByRole("dialog", {
+      name: "Moment 已发布",
+    });
+    expect(
+      within(published).getByRole("button", { name: "查看 Moment" }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(published).getByRole("button", { name: "查看 Moment" }),
+    );
+    expect(window.location.pathname).toBe("/m/01K2ABCDEF0123456789ABCDE0");
   });
 
   it("reuses an uploaded media ID when post submission fails and retries", async () => {
@@ -1753,6 +1763,10 @@ describe("owner composing flow", () => {
       "csrf-from-session",
     );
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+    const saved = screen.getByRole("dialog", { name: "Moment 已保存" });
+    expect(
+      within(saved).getByRole("button", { name: "查看 Moment" }),
+    ).toBeInTheDocument();
   });
 
   it("keeps leave guards active after removing the last existing media usage", async () => {
@@ -1851,6 +1865,67 @@ describe("owner composing flow", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
     fireEvent.click(await screen.findByRole("button", { name: "删除 Moment" }));
     await waitFor(() => expect(screen.queryByText("准备删除")).toBeNull());
+    expect(screen.getByRole("dialog", { name: "Moment 已删除" })).toBeVisible();
+  });
+
+  it("keeps a failed delete open and retries without removing the Moment", async () => {
+    preauthenticate();
+    const deletable = post("删除失败后保留", "01K2ABCDEF0123456789ABCDE2");
+    let deletes = 0;
+    installApi((url, init) => {
+      if (url.startsWith("/api/v1/posts?")) {
+        return json({
+          data: { items: [deletable] },
+          meta: { next_cursor: null },
+        });
+      }
+      if (url.includes("/api/v1/owner/posts/") && init?.method === "DELETE") {
+        deletes += 1;
+        if (deletes === 1) {
+          return json(
+            {
+              error: {
+                code: "INTERNAL",
+                message: "temporary",
+                details: {},
+                request_id: "req_delete_failed",
+              },
+            },
+            500,
+          );
+        }
+        return json({ data: deletable, meta: { deleted: true } });
+      }
+    });
+    render(<App />);
+    await screen.findByText("删除失败后保留");
+
+    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "删除这段 Moment？",
+    });
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "保留" }),
+      ).toHaveFocus(),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "删除 Moment" }),
+    );
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "没有删除这个 Moment，可以安全重试。",
+    );
+    expect(screen.getByText("删除失败后保留")).toBeInTheDocument();
+    expect(dialog).toBeVisible();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "重试删除" }));
+    await waitFor(() =>
+      expect(screen.queryByText("删除失败后保留")).toBeNull(),
+    );
+    expect(deletes).toBe(2);
+    expect(screen.getByRole("dialog", { name: "Moment 已删除" })).toBeVisible();
   });
 
   it("clears the instance draft and CSRF cache after confirmed logout", async () => {
