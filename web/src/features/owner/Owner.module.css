@@ -756,9 +756,17 @@
   background: color-mix(in srgb, var(--accent) 14%, transparent);
 }
 
+.locationBackdrop {
+  position: fixed;
+  z-index: var(--layer-picker);
+  inset: 0;
+  background: rgb(15 20 25 / 32%);
+  transition: opacity var(--motion-dialog) var(--ease-out);
+}
+
 .locationViewport {
   position: fixed;
-  z-index: calc(var(--layer-popover) + 1);
+  z-index: calc(var(--layer-picker) + 1);
   inset: 0;
   display: grid;
   place-items: center;
@@ -784,6 +792,11 @@
 .locationPopup[data-ending-style] {
   opacity: 0;
   transform: scale(0.97) translateY(0.25rem);
+}
+
+.locationBackdrop[data-starting-style],
+.locationBackdrop[data-ending-style] {
+  opacity: 0;
 }
 
 .locationHeader {
@@ -1117,6 +1130,7 @@
 @media (prefers-reduced-motion: reduce) {
   .ownerMenuPopup,
   .dialogBackdrop,
+  .locationBackdrop,
   .dialogPopup,
   .mentionSuggestionsCaret {
     transition: none;

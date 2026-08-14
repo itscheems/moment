@@ -182,7 +182,7 @@ export function LocationPicker({
         <Icon name="location-picker" />
       </Dialog.Trigger>
       <Dialog.Portal>
-        <Dialog.Backdrop className={styles.dialogBackdrop} />
+        <Dialog.Backdrop className={styles.locationBackdrop} />
         <Dialog.Viewport className={styles.locationViewport}>
           <Dialog.Popup className={styles.locationPopup}>
             <header className={styles.locationHeader}>

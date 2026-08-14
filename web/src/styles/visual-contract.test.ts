@@ -203,11 +203,27 @@ describe("visual foundation contract", () => {
     );
   });
 
-  it("keeps confirmations above composer and lightbox layers", () => {
+  it("keeps nested pickers below lightbox and confirmation layers", () => {
+    expect(globalCss).toContain("--layer-picker: 100");
     expect(globalCss).toContain("--layer-lightbox: 110");
     expect(globalCss).toContain("--layer-confirm: 130");
+    expect(ownerCss).toMatch(
+      /\._locationBackdrop_[\w-]+\s*\{[^}]*z-index: var\(--layer-picker\)/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._locationViewport_[\w-]+\s*\{[^}]*z-index: calc\(var\(--layer-picker\) \+ 1\)/s,
+    );
     expect(ownerCss).toContain("z-index: var(--layer-confirm)");
     expect(ownerCss).toContain("z-index: calc(var(--layer-confirm) + 1)");
+  });
+
+  it("uses a borderless material for profile media action menus", () => {
+    expect(profileEditorCss).toMatch(
+      /\._mediaMenu_[\w-]+\s*\{[^}]*border: 0;[^}]*background: color-mix\([^}]*backdrop-filter: blur\(1\.5rem\) saturate\(160%\)/s,
+    );
+    expect(profileEditorCss).toContain(
+      "-webkit-backdrop-filter: blur(1.5rem) saturate(160%)",
+    );
   });
 
   it("keeps small tertiary copy readable on every light surface", () => {
