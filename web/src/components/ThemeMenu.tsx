@@ -31,9 +31,16 @@ const accents: Array<{ value: AccentPreference; label: string }> = [
   { value: "green", label: "绿色" },
 ];
 
-export function ThemeMenu({ site }: { site: SiteIdentity }) {
+export function ThemeMenu({
+  navigation = false,
+  site,
+}: {
+  navigation?: boolean;
+  site: SiteIdentity;
+}) {
   const { accent, preference, setAccent, setPreference } = useTheme();
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const title = site.title.trim() || "Moment";
   const previewHandle = siteHandle(site);
 
@@ -41,13 +48,22 @@ export function ThemeMenu({ site }: { site: SiteIdentity }) {
 
   return (
     <>
-      <Menu.Root>
+      <Menu.Root onOpenChange={setMenuOpen}>
         <Menu.Trigger
           aria-label="更多"
           className={styles.trigger}
           data-compact-label="更多"
         >
-          <Icon name="more" />
+          <Icon
+            name="more"
+            variant={
+              navigation
+                ? menuOpen || appearanceOpen
+                  ? "navigation-active"
+                  : "navigation"
+                : "default"
+            }
+          />
           <span className={styles.triggerLabel}>更多</span>
         </Menu.Trigger>
         <Menu.Portal>

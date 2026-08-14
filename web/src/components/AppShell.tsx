@@ -129,7 +129,10 @@ function NavLink({ item, route }: { item: NavItem; route: AppRoute }) {
       data-compact-label={item.label}
       href={item.href}
     >
-      <Icon name={item.icon} />
+      <Icon
+        name={item.icon}
+        variant={current ? "navigation-active" : "navigation"}
+      />
       <span>{item.label}</span>
     </InternalLink>
   );
@@ -152,7 +155,7 @@ function LeftRail({
         {primaryNav.map((item) => (
           <NavLink item={item} key={item.href} route={route} />
         ))}
-        <ThemeMenu site={site} />
+        <ThemeMenu navigation site={site} />
       </nav>
       <InternalLink
         aria-label="发布"

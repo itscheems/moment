@@ -119,10 +119,6 @@
   font-weight: 700;
 }
 
-.navLink[aria-current="page"] svg {
-  stroke-width: 2.2;
-}
-
 .publishAction {
   inline-size: min(100%, 14.5rem);
   justify-content: center;

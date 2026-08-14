@@ -41,6 +41,29 @@ describe("ThemeMenu", () => {
     vi.stubGlobal("scrollTo", vi.fn());
   });
 
+  it("uses a heavier More icon while the navigation menu is active", async () => {
+    render(
+      <ThemeProvider>
+        <ThemeMenu navigation site={site} />
+      </ThemeProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "更多" });
+    const iconUse = trigger.querySelector('svg[data-icon="more"] use');
+    expect(iconUse).toHaveAttribute(
+      "href",
+      "/icons/ui-symbols-v2.svg#nav-more",
+    );
+
+    fireEvent.click(trigger);
+    await waitFor(() =>
+      expect(iconUse).toHaveAttribute(
+        "href",
+        "/icons/ui-symbols-v2.svg#nav-more-active",
+      ),
+    );
+  });
+
   it("locks the page while display settings are open and restores their trigger", async () => {
     vi.spyOn(window, "scrollY", "get").mockReturnValue(275);
     render(

@@ -1,5 +1,7 @@
 import type { SVGProps } from "react";
 
+const iconSprite = "/icons/ui-symbols-v2.svg";
+
 export type IconName =
   | "home"
   | "search"
@@ -25,6 +27,8 @@ export type IconName =
   | "camera"
   | "location"
   | "location-picker";
+
+export type IconVariant = "default" | "navigation" | "navigation-active";
 
 const paths: Record<IconName, React.ReactNode> = {
   home: (
@@ -113,7 +117,7 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="m12.5 7.5 4 4" />
     </>
   ),
-  delete: <use href="/icons/ui-symbols.svg#trash" />,
+  delete: <use href={`${iconSprite}#trash`} />,
   pin: (
     <>
       <path d="M8 4.5h8M9 4.5v5l-2.5 3h11L15 9.5v-5" />
@@ -146,7 +150,7 @@ const paths: Record<IconName, React.ReactNode> = {
       <path d="M5.2 4.5v4h4" />
     </>
   ),
-  camera: <use href="/icons/ui-symbols.svg#profile-camera" />,
+  camera: <use href={`${iconSprite}#profile-camera`} />,
   location: (
     <>
       <path d="M19 10.2c0 5-7 10.3-7 10.3S5 15.2 5 10.2a7 7 0 1 1 14 0Z" />
@@ -165,11 +169,36 @@ const filledIcons = new Set<IconName>([
   "location-picker",
 ]);
 
+const navigationSymbols: Partial<
+  Record<IconName, { idle: string; active: string }>
+> = {
+  home: { idle: "nav-home", active: "nav-home-active" },
+  search: { idle: "nav-search", active: "nav-search-active" },
+  archive: { idle: "nav-archive", active: "nav-archive-active" },
+  owner: { idle: "nav-profile", active: "nav-profile-active" },
+  more: { idle: "nav-more", active: "nav-more-active" },
+};
+
 export function Icon({
   name,
+  variant = "default",
   ...props
-}: { name: IconName } & SVGProps<SVGSVGElement>) {
-  const filled = filledIcons.has(name);
+}: {
+  name: IconName;
+  variant?: IconVariant;
+} & SVGProps<SVGSVGElement>) {
+  const navigationSymbol =
+    variant === "default"
+      ? undefined
+      : navigationSymbols[name]?.[
+          variant === "navigation-active" ? "active" : "idle"
+        ];
+  const filled = navigationSymbol !== undefined || filledIcons.has(name);
+  const artwork = navigationSymbol ? (
+    <use href={`${iconSprite}#${navigationSymbol}`} />
+  ) : (
+    paths[name]
+  );
   return (
     <svg
       aria-hidden="true"
@@ -181,7 +210,7 @@ export function Icon({
       {...props}
     >
       {filled ? (
-        paths[name]
+        artwork
       ) : (
         <g
           stroke="currentColor"
@@ -189,7 +218,7 @@ export function Icon({
           strokeLinejoin="round"
           strokeWidth="1.7"
         >
-          {paths[name]}
+          {artwork}
         </g>
       )}
     </svg>

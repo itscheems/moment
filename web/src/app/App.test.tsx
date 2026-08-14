@@ -474,9 +474,15 @@ describe("App shell and public routes", () => {
   it("gives active navigation a semantic current-page state", () => {
     window.history.replaceState({}, "", "/archive");
     render(<App />);
-    expect(screen.getAllByRole("link", { name: "归档" })[0]).toHaveAttribute(
-      "aria-current",
-      "page",
+    const archiveLink = screen.getAllByRole("link", { name: "归档" })[0]!;
+    const homeLink = screen.getAllByRole("link", { name: "时间流" })[0]!;
+    expect(archiveLink).toHaveAttribute("aria-current", "page");
+    expect(
+      archiveLink.querySelector('svg[data-icon="archive"] use'),
+    ).toHaveAttribute("href", "/icons/ui-symbols-v2.svg#nav-archive-active");
+    expect(homeLink.querySelector('svg[data-icon="home"] use')).toHaveAttribute(
+      "href",
+      "/icons/ui-symbols-v2.svg#nav-home",
     );
   });
 
