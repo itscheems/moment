@@ -305,7 +305,7 @@
 }
 
 .postActions {
-  max-inline-size: 18rem;
+  inline-size: 100%;
   min-block-size: 2.75rem;
   display: flex;
   align-items: center;

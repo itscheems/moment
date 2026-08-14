@@ -209,6 +209,13 @@ describe("shared post presentation", () => {
     );
   });
 
+  it("aligns timeline sharing with the owner action while keeping detail compact", () => {
+    expect(postCss).toMatch(/\._postActions_[\w-]+\s*\{[^}]*inline-size: 100%/);
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*max-inline-size: 18rem/,
+    );
+  });
+
   it("opens the detail from the post surface without hijacking post actions", () => {
     window.scrollTo = vi.fn();
     render(
