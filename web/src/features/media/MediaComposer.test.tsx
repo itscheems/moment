@@ -69,6 +69,24 @@ describe("media editor", () => {
     );
   });
 
+  it("uses the solid media artwork in composer toolbars", () => {
+    render(
+      <MediaComposer
+        disabled={false}
+        items={[]}
+        onAdd={vi.fn()}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+    const icon = screen
+      .getByRole("button", { name: "选择图片" })
+      .querySelector('svg[data-icon="media-picker"]');
+    expect(icon).toHaveAttribute("fill", "currentColor");
+    expect(icon?.querySelectorAll("path")).toHaveLength(2);
+  });
+
   it("preserves duplicate selections as two ordered usages", () => {
     const onAdd = vi.fn();
     render(

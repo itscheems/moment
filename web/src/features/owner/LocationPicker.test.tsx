@@ -108,7 +108,11 @@ describe("location picker", () => {
         value={null}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "添加位置" }));
+    const trigger = screen.getByRole("button", { name: "添加位置" });
+    expect(
+      trigger.querySelector('svg[data-icon="location-picker"]'),
+    ).toHaveAttribute("fill", "currentColor");
+    fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("button", { name: "手动添加地点" }));
     fireEvent.change(screen.getByLabelText("地点名称"), {
       target: { value: "书房" },

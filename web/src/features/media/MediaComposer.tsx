@@ -420,7 +420,7 @@ export function MediaComposer({
             title="添加图片"
             type="button"
           >
-            <Icon name="media" />
+            <Icon name="media-picker" />
           </button>
           {toolbarAction}
           {items.length > 0 ? (

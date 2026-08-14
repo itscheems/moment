@@ -179,7 +179,7 @@ export function LocationPicker({
         disabled={disabled}
         title={value ? "更改位置" : "添加位置"}
       >
-        <Icon name="location" />
+        <Icon name="location-picker" />
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
