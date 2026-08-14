@@ -250,9 +250,7 @@
   font-weight: 700;
   cursor: pointer;
   backdrop-filter: blur(0.45rem);
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .coverActions svg {
@@ -263,7 +261,6 @@
 .coverActions button:hover,
 .coverActions button:focus-visible {
   background: rgb(15 20 25 / 88%);
-  transform: translateY(-1px);
 }
 
 .coverUploadStatus {
@@ -330,7 +327,8 @@
   transition:
     color var(--motion-fast) var(--ease-out),
     background var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .avatarChangeButton svg {
@@ -341,8 +339,11 @@
 .avatarChangeButton:hover,
 .avatarChangeButton:focus-visible {
   color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border-strong));
   background: var(--surface-hover);
-  transform: scale(1.04);
+  box-shadow:
+    0 0 0 0.2rem color-mix(in srgb, var(--accent) 10%, transparent),
+    var(--shadow-popover);
 }
 
 .avatarMenuPositioner {

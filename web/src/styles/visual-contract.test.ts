@@ -90,6 +90,20 @@ describe("visual foundation contract", () => {
     expect(profileCss).not.toMatch(/\._profileActions_[\w-]+ button,/);
   });
 
+  it("keeps profile media menu anchors stable during hover and focus", () => {
+    const avatarState = profileEditorCss.match(
+      /\._avatarChangeButton_[\w-]+:hover,\s*\._avatarChangeButton_[\w-]+:focus-visible\s*\{([^}]*)\}/,
+    )?.[1];
+    const coverState = profileEditorCss.match(
+      /\._coverActions_[\w-]+ button:hover,\s*\._coverActions_[\w-]+ button:focus-visible\s*\{([^}]*)\}/,
+    )?.[1];
+
+    expect(avatarState).toBeDefined();
+    expect(coverState).toBeDefined();
+    expect(avatarState).not.toContain("transform:");
+    expect(coverState).not.toContain("transform:");
+  });
+
   it("defines explicit light and dark theme surfaces and a visible focus token", () => {
     expect(globalCss).toContain(':root[data-theme="dim"]');
     expect(globalCss).toContain(':root[data-theme="lights-out"]');
