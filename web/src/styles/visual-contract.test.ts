@@ -157,8 +157,11 @@ describe("visual foundation contract", () => {
     expect(ownerCss).toMatch(
       /\._inlineComposer_[\w-]+\s*\{[^}]*grid-template-columns: 3rem minmax\(0, 1fr\)/s,
     );
+    expect(ownerCss).toMatch(
+      /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*\{[^}]*align-self: stretch;[^}]*place-items: start center;[^}]*padding-block-start: var\(--space-1\)/s,
+    );
     expect(ownerCss).not.toMatch(
-      /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*>/,
+      /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*>[^{]*\{/,
     );
   });
 
