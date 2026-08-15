@@ -23,6 +23,8 @@ const mergePlanVersion = 1
 // local-only record is always retained because portable v1 has no tombstones.
 type MergeClassification string
 
+// Merge classification values describe the deterministic relationship
+// between one local and incoming portable record.
 const (
 	MergeUnchanged    MergeClassification = "unchanged"
 	MergeIncomingOnly MergeClassification = "incoming_only"
@@ -33,6 +35,7 @@ const (
 // MergeEntityKind identifies a portable authority record in a plan.
 type MergeEntityKind string
 
+// Merge entity kinds identify records whose references must remain closed.
 const (
 	MergeEntry   MergeEntityKind = "entry"
 	MergeComment MergeEntityKind = "comment"
@@ -43,6 +46,7 @@ const (
 // from selected references and are therefore never independently selectable.
 type MergeAction string
 
+// Merge actions are the complete set of explicit review decisions.
 const (
 	MergeSkip        MergeAction = "skip"
 	MergeAdd         MergeAction = "add"

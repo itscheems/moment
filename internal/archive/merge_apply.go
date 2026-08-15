@@ -23,6 +23,7 @@ import (
 // MergeMediaOrigin identifies which immutable generation owns an original.
 type MergeMediaOrigin string
 
+// Merge media origins identify which immutable source supplies original bytes.
 const (
 	MergeMediaLocal    MergeMediaOrigin = "local"
 	MergeMediaIncoming MergeMediaOrigin = "incoming"
@@ -114,9 +115,9 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 			if err != nil {
 				return ResolvedMerge{}, err
 			}
-			copy := cloneArchiveEntry(value)
-			copy.ID = id
-			entries[id] = copy
+			duplicateEntry := cloneArchiveEntry(value)
+			duplicateEntry.ID = id
+			entries[id] = duplicateEntry
 			result.EntryRemap[value.ID] = id
 		default:
 			return ResolvedMerge{}, invalidMergeSelection("entry", value.ID, choice)
@@ -151,8 +152,8 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 		if choice == MergeSkip || choice == MergeKeepLocal {
 			continue
 		}
-		copy := cloneArchiveComment(value)
-		copy.ID = result.CommentRemap[value.ID]
+		resolvedComment := cloneArchiveComment(value)
+		resolvedComment.ID = result.CommentRemap[value.ID]
 		entryID, retained := result.EntryRemap[value.EntryID]
 		if !retained {
 			if _, localExists := entries[value.EntryID]; localExists {
@@ -162,7 +163,7 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 		if !retained {
 			return ResolvedMerge{}, domain.NewError(domain.CodeInvalidArgument, "selected comment depends on a skipped post", map[string]any{"comment_id": value.ID, "entry_id": value.EntryID})
 		}
-		copy.EntryID = entryID
+		resolvedComment.EntryID = entryID
 		if value.ParentID != nil {
 			parentID, exists := result.CommentRemap[*value.ParentID]
 			if !exists {
@@ -173,9 +174,9 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 			if !exists {
 				return ResolvedMerge{}, domain.NewError(domain.CodeInvalidArgument, "selected reply depends on a skipped parent comment", map[string]any{"comment_id": value.ID, "parent_id": *value.ParentID})
 			}
-			copy.ParentID = &parentID
+			resolvedComment.ParentID = &parentID
 		}
-		comments[copy.ID] = copy
+		comments[resolvedComment.ID] = resolvedComment
 	}
 	result.Authority.Comments = topologicalComments(comments)
 

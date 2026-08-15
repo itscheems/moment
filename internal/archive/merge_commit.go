@@ -166,7 +166,7 @@ func (committer *Committer) CommitMerge(ctx context.Context, token string, sessi
 }
 
 func (committer *Committer) prepareMerge(selection MergeSelection) commitPrepare {
-	return func(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, claim *StagingClaim, activeDatabase *sqlitestore.Database) (resultErr error) {
+	return func(ctx context.Context, runtimeState *runtimefs.Runtime, _ *runtimefs.LeaseSet, claim *StagingClaim, activeDatabase *sqlitestore.Database) (resultErr error) {
 		plan, err := readMergePlan(claim.StageRoot)
 		if err != nil {
 			return importStagingInvalid("merge plan is missing or corrupt", err)
