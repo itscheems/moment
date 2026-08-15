@@ -116,7 +116,7 @@ export function TimelinePage({
           event.post,
           ...reconciled.filter((post) => post.id !== event.post.id),
         ];
-      } else if (event.kind === "updated") {
+      } else if (event.kind === "updated" || event.kind === "reordered") {
         reconciled = reconciled.map((post) =>
           post.id === event.post.id ? event.post : post,
         );
@@ -124,7 +124,11 @@ export function TimelinePage({
         reconciled = reconciled.filter((post) => post.id !== event.post.id);
       }
     }
-    return reconciled;
+    return reconciled.sort((left, right) => {
+      const leftTime = Date.parse(left.repostedAt ?? left.publishedAt);
+      const rightTime = Date.parse(right.repostedAt ?? right.publishedAt);
+      return rightTime - leftTime || right.id.localeCompare(left.id);
+    });
   }, []);
 
   const loadInitial = useCallback(async () => {
@@ -218,6 +222,18 @@ export function TimelinePage({
             next = current.map((post) =>
               post.id === event.post.id ? event.post : post,
             );
+          } else if (event.kind === "reordered") {
+            next = current
+              .map((post) => (post.id === event.post.id ? event.post : post))
+              .sort((left, right) => {
+                const leftTime = Date.parse(
+                  left.repostedAt ?? left.publishedAt,
+                );
+                const rightTime = Date.parse(
+                  right.repostedAt ?? right.publishedAt,
+                );
+                return rightTime - leftTime || right.id.localeCompare(left.id);
+              });
           } else {
             next = current.filter((post) => post.id !== event.post.id);
           }

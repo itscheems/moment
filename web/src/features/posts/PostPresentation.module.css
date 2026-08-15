@@ -412,6 +412,37 @@
   margin-inline-start: calc(0px - var(--space-3));
 }
 
+.repostAction:hover,
+.repostAction:focus-visible,
+.repostActive {
+  color: #07ba7c;
+}
+
+.repostAction:hover,
+.repostAction:focus-visible {
+  background: #e3f1eb;
+}
+
+.repostAction:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.repostedLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-block-end: var(--space-1);
+  color: #07865d;
+  font-size: 0.8125rem;
+  font-weight: 650;
+}
+
+.repostedLabel svg {
+  inline-size: 0.95rem;
+  block-size: 0.95rem;
+}
+
 .actionCount {
   position: absolute;
   inset-block-start: 50%;

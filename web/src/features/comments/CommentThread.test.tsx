@@ -51,6 +51,7 @@ const post: PublicPost = {
   createdAt: "2026-08-10T01:00:00Z",
   updatedAt: "2026-08-10T01:00:00Z",
   publishedAt: "2026-08-10T01:00:00Z",
+  repostedAt: null,
   commentCount: 0,
   media: [],
 };

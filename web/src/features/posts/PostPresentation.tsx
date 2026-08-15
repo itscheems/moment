@@ -14,6 +14,7 @@ import {
 } from "../../components/TimelineInteractions";
 import { formatMomentDate } from "./dates";
 import { OwnerPostActions } from "../owner/OwnerPostActions";
+import { OwnerRepostAction } from "../owner/OwnerRepostAction";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
 
@@ -160,6 +161,12 @@ export function PostPresentation({
       <span>已置顶</span>
     </div>
   ) : null;
+  const repostLabel = post.repostedAt ? (
+    <div className={styles.repostedLabel}>
+      <Icon name="repost" />
+      <span>已转发</span>
+    </div>
+  ) : null;
   const byline = (
     <header className={styles.byline}>
       <div className={styles.bylineIdentity}>
@@ -226,6 +233,7 @@ export function PostPresentation({
         <div className={styles.detailIdentity}>
           <div className={styles.avatarColumn}>{avatar}</div>
           <div className={styles.detailHeading}>
+            {repostLabel}
             {pinLabel}
             {byline}
           </div>
@@ -262,6 +270,7 @@ export function PostPresentation({
                 <Icon name="reply" />
               </button>
             </ActionTooltip>
+            {owner ? <OwnerRepostAction post={post} /> : null}
             {share("start")}
           </div>
         </div>
@@ -287,6 +296,7 @@ export function PostPresentation({
       </InternalLink>
       <div className={styles.avatarColumn}>{avatar}</div>
       <div className={styles.postMain}>
+        {repostLabel}
         {pinLabel}
         {byline}
         <MarkdownContent
@@ -338,6 +348,7 @@ export function PostPresentation({
               </InternalLink>
             )}
           </ActionTooltip>
+          {owner ? <OwnerRepostAction post={post} /> : null}
           {share("end")}
         </div>
       </div>

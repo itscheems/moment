@@ -2337,6 +2337,19 @@ export class OwnerApi {
     return parsePost(data);
   }
 
+  async setReposted(
+    csrfToken: string,
+    id: string,
+    active: boolean,
+  ): Promise<PublicPost> {
+    const response = await this.fetcher(
+      `/api/v1/owner/posts/${encodeURIComponent(id)}/repost`,
+      requestInit(active ? "PUT" : "DELETE", csrfToken),
+    );
+    const { data } = await decodeResponse(response);
+    return parsePost(data);
+  }
+
   async pinPost(csrfToken: string, id: string): Promise<SiteIdentity> {
     return this.pinPostChange(csrfToken, id, "PUT");
   }

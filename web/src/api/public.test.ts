@@ -16,6 +16,7 @@ const post = {
   created_at: "2026-08-10T01:02:03.000Z",
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
+  reposted_at: null,
   comment_count: 0,
   media: [],
 };
@@ -277,6 +278,7 @@ describe("public API client", () => {
           createdAt: post.created_at,
           updatedAt: post.updated_at,
           publishedAt: post.published_at,
+          repostedAt: post.reposted_at,
           commentCount: post.comment_count,
           media: [],
         },

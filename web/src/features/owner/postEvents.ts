@@ -1,7 +1,7 @@
 import type { PublicPost } from "../../api/public";
 
 export interface OwnerPostEvent {
-  kind: "created" | "updated" | "deleted";
+  kind: "created" | "updated" | "deleted" | "reordered";
   post: PublicPost;
 }
 

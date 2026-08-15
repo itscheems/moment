@@ -29,6 +29,7 @@ export interface PublicPost {
   createdAt: string;
   updatedAt: string;
   publishedAt: string;
+  repostedAt: string | null;
   commentCount: number;
   media: PublicMediaUsage[];
   location?: PublicPostLocation | null;
@@ -582,6 +583,7 @@ export function parsePost(value: unknown): PublicPost {
     "created_at",
     "updated_at",
     "published_at",
+    "reposted_at",
     "comment_count",
     "media",
   ];
@@ -616,6 +618,10 @@ export function parsePost(value: unknown): PublicPost {
     createdAt: instantField(value, "created_at"),
     updatedAt: instantField(value, "updated_at"),
     publishedAt: instantField(value, "published_at"),
+    repostedAt:
+      nullableStringField(value, "reposted_at") === null
+        ? null
+        : instantField(value, "reposted_at"),
     commentCount: nonNegativeIntegerField(value, "comment_count"),
     media,
     ...(value.location === undefined ? {} : { location }),
@@ -644,6 +650,7 @@ function parseSearchHit(value: unknown): SearchHit {
     "created_at",
     "updated_at",
     "published_at",
+    "reposted_at",
     "comment_count",
     "media",
     "snippet",

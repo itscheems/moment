@@ -53,6 +53,7 @@ function makePost(
     createdAt: "2026-08-10T01:00:00.000Z",
     updatedAt: "2026-08-10T01:00:00.000Z",
     publishedAt: "2026-08-10T01:00:00.000Z",
+    repostedAt: null,
     commentCount,
     media: [],
   };
@@ -477,6 +478,93 @@ describe("shared post presentation", () => {
       method: "PUT",
     });
     expect(screen.getByText("已置顶到个人资料")).toBeInTheDocument();
+    window.sessionStorage.removeItem("moment.owner.session.v1");
+  });
+
+  it("reposts from the owner toolbar and exposes the green active state", async () => {
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-repost",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    const requests: Array<{ url: string; method: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        requests.push({ url, method: init?.method ?? "GET" });
+        if (url === "/api/v1/owner/status") {
+          return new Response(
+            JSON.stringify({
+              data: {
+                initialized: true,
+                password_enabled: false,
+                session_epoch: 1,
+                initialized_at: "2026-08-01T00:00:00Z",
+              },
+              meta: { request_id: "req_status" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        if (
+          url === "/api/v1/owner/posts/01K2ABCDEF0123456789ABCDE0/repost" &&
+          init?.method === "PUT"
+        ) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                id: "01K2ABCDEF0123456789ABCDE0",
+                content_md: "可转发",
+                content_html: "<p>可转发</p>",
+                created_at: "2026-08-10T01:00:00.000Z",
+                updated_at: "2026-08-10T02:00:00.000Z",
+                published_at: "2026-08-10T01:00:00.000Z",
+                reposted_at: "2026-08-10T02:00:00.000Z",
+                comment_count: 0,
+                media: [],
+              },
+              meta: { request_id: "req_repost" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response("{}", { status: 404 });
+      }),
+    );
+
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <PostPresentation
+              owner
+              post={makePost("可转发", "<p>可转发</p>")}
+              site={site}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    const repost = await screen.findByRole("button", {
+      name: "转发这条 Moment",
+    });
+    fireEvent.click(repost);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "取消转发这条 Moment" }),
+      ).toHaveAttribute("aria-pressed", "true"),
+    );
+    expect(requests).toContainEqual({
+      url: "/api/v1/owner/posts/01K2ABCDEF0123456789ABCDE0/repost",
+      method: "PUT",
+    });
+    expect(screen.getByText("已转发到时间流顶部")).toBeInTheDocument();
+    expect(postCss).toContain("#07ba7c");
+    expect(postCss).toContain("#e3f1eb");
     window.sessionStorage.removeItem("moment.owner.session.v1");
   });
 });

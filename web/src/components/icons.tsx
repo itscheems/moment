@@ -13,6 +13,7 @@ export type IconName =
   | "theme"
   | "back"
   | "reply"
+  | "repost"
   | "share"
   | "media"
   | "media-picker"
@@ -85,6 +86,9 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   reply: (
     <path d="M12 20.25c4.97 0 9-3.694 9-8.25s-4.03-8.25-9-8.25S3 7.444 3 12c0 2.104.859 4.023 2.273 5.48.432.447.74 1.04.586 1.641a4.483 4.483 0 0 1-.923 1.785A5.969 5.969 0 0 0 6 21c1.282 0 2.47-.402 3.445-1.087.81.22 1.668.337 2.555.337Z" />
+  ),
+  repost: (
+    <path d="M4.5 3.88l4.432 4.14-1.364 1.46L5.5 7.55V16c0 1.1.896 2 2 2H13v2H7.5c-2.209 0-4-1.79-4-4V7.55L1.432 9.48.068 8.02 4.5 3.88zM16.5 6H11V4h5.5c2.209 0 4 1.79 4 4v8.45l2.068-1.93 1.364 1.46-4.432 4.14-4.432-4.14 1.364-1.46 2.068 1.93V8c0-1.1-.896-2-2-2z" />
   ),
   share: (
     <>
@@ -174,6 +178,7 @@ const filledIcons = new Set<IconName>([
   "camera",
   "media-picker",
   "location-picker",
+  "repost",
 ]);
 
 const navigationSymbols: Partial<

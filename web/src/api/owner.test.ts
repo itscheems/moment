@@ -16,6 +16,7 @@ const post = {
   created_at: "2026-08-10T01:02:03.000Z",
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
+  reposted_at: null,
   comment_count: 0,
   media: [],
 };
