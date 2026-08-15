@@ -156,6 +156,61 @@ func TestMergePlanDetectsLocationAltAndMediaIDCollision(t *testing.T) {
 	assertMergeItem(t, items["media\x00media"], MergeConflict, []string{"sha256"})
 }
 
+func TestMergeReviewShowsRecognizableContentAndSiteMedia(t *testing.T) {
+	localAvatar, incomingAvatar := "media-local", "media-incoming"
+	localPinned, incomingPinned := "entry-local", "entry-incoming"
+	local := PortableAuthority{
+		Site: sqlitestore.ArchiveSite{
+			OwnerID: "owner", AvatarMediaID: &localAvatar, PinnedPostID: &localPinned,
+		},
+		Entries: []sqlitestore.ArchiveEntry{
+			{ID: localPinned, ContentMD: "keep this local post", CreatedAtMS: 10, UpdatedAtMS: 10, PublishedAtMS: 10},
+			{ID: "entry-conflict", ContentMD: "local version", CreatedAtMS: 20, UpdatedAtMS: 20, PublishedAtMS: 20},
+		},
+		Comments: []sqlitestore.ArchiveComment{{ID: "comment-local", EntryID: localPinned, AuthorKind: "guest", AuthorName: "Local guest", ContentMD: "local reply", CreatedAtMS: 30}},
+		Media:    []sqlitestore.ArchiveMedia{{ID: localAvatar, SHA256: repeatHex("a"), OriginalName: "local-avatar.jpg", MIMEType: "image/jpeg", ByteSize: 42, Width: 32, Height: 24}},
+	}
+	incoming := PortableAuthority{
+		Site: sqlitestore.ArchiveSite{
+			OwnerID: "owner", AvatarMediaID: &incomingAvatar, PinnedPostID: &incomingPinned,
+		},
+		Entries: []sqlitestore.ArchiveEntry{
+			{ID: incomingPinned, ContentMD: "incoming post", CreatedAtMS: 40, UpdatedAtMS: 40, PublishedAtMS: 40},
+			{ID: "entry-conflict", ContentMD: "incoming version", CreatedAtMS: 20, UpdatedAtMS: 50, PublishedAtMS: 20},
+		},
+		Media: []sqlitestore.ArchiveMedia{{ID: incomingAvatar, SHA256: repeatHex("b"), OriginalName: "incoming-avatar.png", MIMEType: "image/png", ByteSize: 84, Width: 64, Height: 48}},
+	}
+	plan, err := ComparePortableAuthorities(MergePlanInput{Local: local, Incoming: incoming})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review, err := buildMergeReview(plan, local, incoming)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if review.LocalOnly.Total != 2 || review.IncomingOnly.Total != 1 || review.Conflicts.Total != 1 {
+		t.Fatalf("review buckets = %#v", review)
+	}
+	if review.LocalOnly.Items[0].Local == nil || review.LocalOnly.Items[0].Local.ContentMD != "local reply" {
+		t.Fatalf("local-only content = %#v", review.LocalOnly.Items)
+	}
+	if review.Conflicts.Items[0].Local.ContentMD != "local version" || review.Conflicts.Items[0].Incoming.ContentMD != "incoming version" {
+		t.Fatalf("conflict sides = %#v", review.Conflicts.Items[0])
+	}
+	fields := map[string]MergeReviewSiteField{}
+	for _, field := range review.SiteFields {
+		fields[field.Field] = field
+	}
+	if fields["avatar_media_id"].LocalMedia == nil || fields["avatar_media_id"].LocalMedia.OriginalName != "local-avatar.jpg" ||
+		fields["avatar_media_id"].IncomingMedia == nil || fields["avatar_media_id"].IncomingMedia.OriginalName != "incoming-avatar.png" {
+		t.Fatalf("avatar review = %#v", fields["avatar_media_id"])
+	}
+	if fields["pinned_post_id"].LocalEntry == nil || fields["pinned_post_id"].LocalEntry.ContentMD != "keep this local post" ||
+		fields["pinned_post_id"].IncomingEntry == nil || fields["pinned_post_id"].IncomingEntry.ContentMD != "incoming post" {
+		t.Fatalf("pinned review = %#v", fields["pinned_post_id"])
+	}
+}
+
 func assertMergeItem(t *testing.T, item MergeItem, classification MergeClassification, fields []string) {
 	t.Helper()
 	if item.Classification != classification {

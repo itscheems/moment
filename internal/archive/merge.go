@@ -206,11 +206,30 @@ func AuthorityDigest(authority PortableAuthority) (string, error) {
 // ComparePortableAuthorities builds a stable two-way plan without mutating
 // either authority source.
 func ComparePortableAuthorities(input MergePlanInput) (MergePlan, error) {
+	return comparePortableAuthorities(input, true)
+}
+
+// comparePortableAuthoritiesForReview creates the same deterministic plan
+// while allowing an exact-replacement review to compare a backup from a
+// different owner. Merge commit still calls ComparePortableAuthorities and
+// therefore retains the same-owner boundary.
+func comparePortableAuthoritiesForReview(input MergePlanInput) (MergePlan, bool, error) {
+	mergeAllowed := input.Local.Site.OwnerID != "" && input.Incoming.Site.OwnerID != "" && input.Local.Site.OwnerID == input.Incoming.Site.OwnerID
+	plan, err := comparePortableAuthorities(input, false)
+	return plan, mergeAllowed, err
+}
+
+func comparePortableAuthorities(input MergePlanInput, requireSameOwner bool) (MergePlan, error) {
 	if input.Local.Site.OwnerID == "" || input.Incoming.Site.OwnerID == "" || input.Local.Site.OwnerID != input.Incoming.Site.OwnerID {
-		return MergePlan{}, domain.NewError(domain.CodeImportOwnerMismatch, "merge import requires a backup from the same owner", map[string]any{
-			"local_owner_id":    input.Local.Site.OwnerID,
-			"incoming_owner_id": input.Incoming.Site.OwnerID,
-		})
+		if requireSameOwner {
+			return MergePlan{}, domain.NewError(domain.CodeImportOwnerMismatch, "merge import requires a backup from the same owner", map[string]any{
+				"local_owner_id":    input.Local.Site.OwnerID,
+				"incoming_owner_id": input.Incoming.Site.OwnerID,
+			})
+		}
+		if input.Local.Site.OwnerID == "" {
+			return MergePlan{}, errors.New("local portable authority owner is required")
+		}
 	}
 	localDigest, err := AuthorityDigest(input.Local)
 	if err != nil {

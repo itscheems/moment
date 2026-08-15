@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
@@ -86,6 +87,124 @@ func TestMergeCommitKeepsBothThroughBackupAndAtomicGenerationSwitch(t *testing.T
 	}
 	if !contents["local edit"] || !contents["Unicode 世界"] {
 		t.Fatalf("merged contents = %#v", contents)
+	}
+}
+
+func TestReviewAllowsReplacementAcrossOwnersButDisablesMerge(t *testing.T) {
+	source := newExportFixture(t, true)
+	archivePath := exportFixtureFile(t, source)
+	target := newExportFixture(t, false)
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	committer, err := NewCommitter(CommitOptions{
+		DataDir: target.runtime.Root, AppVersion: "0.1.0", Clock: func() time.Time { return now },
+		AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = file.Close() }()
+	inspection, err := committer.InspectReviewArchive(context.Background(), file, 1, target.database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.MergeAllowed || inspection.MergeBlockedReason == nil || *inspection.MergeBlockedReason != string(domain.CodeImportOwnerMismatch) {
+		t.Fatalf("merge availability = %#v", inspection)
+	}
+	if inspection.Review.IncomingOnly.Total == 0 || inspection.Review.SiteFields == nil {
+		t.Fatalf("review = %#v", inspection.Review)
+	}
+	if err := committer.DiscardMerge(context.Background(), inspection.StagingToken, 1); err != nil {
+		t.Fatal(err)
+	}
+	strictFile, err := os.Open(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = strictFile.Close() }()
+	if _, err := committer.InspectMergeArchive(context.Background(), strictFile, 1, target.database); !domain.HasCode(err, domain.CodeImportOwnerMismatch) {
+		t.Fatalf("strict merge error = %v", err)
+	}
+}
+
+func TestReviewedReplacementRejectsAuthorityChangedAfterReview(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	archivePath := exportFixtureFile(t, fixture)
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	committer, err := NewCommitter(CommitOptions{
+		DataDir: fixture.runtime.Root, AppVersion: "0.1.0", Clock: func() time.Time { return now },
+		AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(fixture.runtime.Root, "secrets.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.InitializeOffline(context.Background(), fixture.runtime, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := committer.InspectReviewArchive(context.Background(), file, 1, fixture.database)
+	closeErr := file.Close()
+	if err != nil || closeErr != nil {
+		t.Fatal(err, closeErr)
+	}
+	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
+		_, err := queries.ExecContext(context.Background(), `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'created after review', 1, 1, 1)`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := fixture.runtime.ResolveCurrent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = committer.CommitReviewedReplacement(context.Background(), inspection.StagingToken, 1, inspection.Plan.PlanID, nil)
+	if !domain.HasCode(err, domain.CodeImportMergePlanStale) {
+		t.Fatalf("replacement error = %v", err)
+	}
+	after, resolveErr := fixture.runtime.ResolveCurrent()
+	if resolveErr != nil || after.ID != before.ID {
+		t.Fatalf("CURRENT changed from %q to %q: %v", before.ID, after.ID, resolveErr)
+	}
+}
+
+func TestReviewMediaIsBoundToTokenPlanAndSource(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	archivePath := exportFixtureFile(t, fixture)
+	committer, err := NewCommitter(CommitOptions{
+		DataDir: fixture.runtime.Root, AppVersion: "0.1.0",
+		AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := committer.InspectReviewArchive(context.Background(), file, 1, fixture.database)
+	_ = file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := committer.ReadReviewMedia(context.Background(), inspection.StagingToken, 1, inspection.Plan.PlanID, MergeReviewIncoming, mediaOneID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asset.Contents) == 0 || asset.MIMEType != "image/jpeg" {
+		t.Fatalf("asset = %#v", asset)
+	}
+	_, err = committer.ReadReviewMedia(context.Background(), inspection.StagingToken, 1, "wrong-plan", MergeReviewIncoming, mediaOneID)
+	if err == nil {
+		t.Fatal("wrong plan unexpectedly returned review media")
 	}
 }
 

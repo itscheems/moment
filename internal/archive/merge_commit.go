@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
@@ -26,12 +27,17 @@ const (
 // MergeInspection is the restartable, non-mutating merge preview. The token
 // is returned once and is never stored in plaintext.
 type MergeInspection struct {
-	Plan         MergePlan    `json:"plan"`
-	Counts       ImportCounts `json:"incoming_counts"`
-	MediaBytes   int64        `json:"incoming_media_bytes"`
-	Warnings     []string     `json:"warnings"`
-	ExpiresAt    time.Time    `json:"expires_at"`
-	StagingToken string       `json:"staging_token,omitempty"`
+	Plan               MergePlan         `json:"plan"`
+	Review             MergeReview       `json:"review"`
+	Counts             ImportCounts      `json:"incoming_counts"`
+	MediaBytes         int64             `json:"incoming_media_bytes"`
+	Disk               DiskEstimate      `json:"disk"`
+	Replacement        ReplacementImpact `json:"replacement"`
+	MergeAllowed       bool              `json:"merge_allowed"`
+	MergeBlockedReason *string           `json:"merge_blocked_reason"`
+	Warnings           []string          `json:"warnings"`
+	ExpiresAt          time.Time         `json:"expires_at"`
+	StagingToken       string            `json:"staging_token,omitempty"`
 }
 
 // InspectMergeFileOffline creates a persistent merge plan while preventing a
@@ -51,7 +57,7 @@ func (committer *Committer) InspectMergeFileOffline(ctx context.Context, archive
 	if err != nil {
 		return MergeInspection{}, err
 	}
-	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, nil)
+	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, nil, true)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
@@ -78,7 +84,7 @@ func (committer *Committer) InspectMergeArchive(ctx context.Context, source io.R
 	if err != nil {
 		return MergeInspection{}, err
 	}
-	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, activeDatabase)
+	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, activeDatabase, true)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
@@ -132,7 +138,35 @@ func (committer *Committer) discardMergeWithinLocks(ctx context.Context, runtime
 	return committer.inspector.discardReadyWithinLocks(runtimeState, state.GenerationID, held)
 }
 
-func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, inspection Inspection, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
+// InspectReviewArchive creates one persistent comparison that can later be
+// committed as either a same-owner merge or an exact replacement. Unlike the
+// merge-only endpoint it intentionally allows a different incoming owner so a
+// fresh instance can still restore its own portable backup.
+func (committer *Committer) InspectReviewArchive(ctx context.Context, source io.Reader, sessionEpoch uint64, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
+	if committer == nil || source == nil || sessionEpoch == 0 {
+		return MergeInspection{}, domain.NewError(domain.CodeInvalidArgument, "import review requires an archive and owner epoch", nil)
+	}
+	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
+	if err != nil {
+		return MergeInspection{}, err
+	}
+	held, err := committer.inspector.acquireImportSet(ctx, runtimeState)
+	if err != nil {
+		return MergeInspection{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	inspection, err := committer.inspector.inspectWithinLocks(ctx, source, sessionEpoch, runtimeState, held, true)
+	if err != nil {
+		return MergeInspection{}, err
+	}
+	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, activeDatabase, false)
+	if err != nil {
+		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
+	}
+	return result, err
+}
+
+func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, inspection Inspection, activeDatabase *sqlitestore.Database, requireSameOwner bool) (result MergeInspection, resultErr error) {
 	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
 		return MergeInspection{}, runtimefs.ErrInsufficientLocks
 	}
@@ -171,21 +205,152 @@ func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runt
 	if err != nil {
 		return MergeInspection{}, err
 	}
-	plan, err := ComparePortableAuthorities(MergePlanInput{
+	input := MergePlanInput{
 		ArchiveSHA256: inspection.ArchiveSHA256, BaseGeneration: runtimeState.Current.ID,
 		ExpiresAt: inspection.ExpiresAt, Local: local, Incoming: incoming,
-	})
+	}
+	var plan MergePlan
+	mergeAllowed := true
+	if requireSameOwner {
+		plan, err = ComparePortableAuthorities(input)
+	} else {
+		plan, mergeAllowed, err = comparePortableAuthoritiesForReview(input)
+	}
+	if err != nil {
+		return MergeInspection{}, err
+	}
+	review, err := buildMergeReview(plan, local, incoming)
 	if err != nil {
 		return MergeInspection{}, err
 	}
 	if err := writeMergePlan(stageRoot, plan); err != nil {
 		return MergeInspection{}, err
 	}
+	var mergeBlockedReason *string
+	if !mergeAllowed {
+		reason := string(domain.CodeImportOwnerMismatch)
+		mergeBlockedReason = &reason
+	}
 	return MergeInspection{
-		Plan: plan, Counts: inspection.Counts, MediaBytes: inspection.MediaBytes,
-		Warnings: append([]string{}, inspection.Warnings...), ExpiresAt: inspection.ExpiresAt,
-		StagingToken: inspection.StagingToken,
+		Plan: plan, Review: review, Counts: inspection.Counts, MediaBytes: inspection.MediaBytes,
+		Disk: inspection.Disk, Replacement: inspection.Replacement, MergeAllowed: mergeAllowed,
+		MergeBlockedReason: mergeBlockedReason, Warnings: append([]string{}, inspection.Warnings...),
+		ExpiresAt: inspection.ExpiresAt, StagingToken: inspection.StagingToken,
 	}, nil
+}
+
+// CommitReviewedReplacement consumes a reviewed token through the existing
+// atomic replacement state machine after proving that the local authority is
+// still exactly the version shown during review.
+func (committer *Committer) CommitReviewedReplacement(ctx context.Context, token string, sessionEpoch uint64, planID string, host CommitHost) (result CommitResult, resultErr error) {
+	prepare := committer.prepareReviewedReplacement(planID)
+	if host == nil {
+		runtimeState, held, err := committer.acquireOfflineInspection(ctx)
+		if err != nil {
+			return CommitResult{}, err
+		}
+		defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+		return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, nil, prepare)
+	}
+	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
+	if err != nil {
+		return CommitResult{}, err
+	}
+	held, err := runtimeState.Locks.AcquireSet(ctx, runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive})
+	if err != nil {
+		return CommitResult{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, host, prepare)
+}
+
+func (committer *Committer) prepareReviewedReplacement(planID string) commitPrepare {
+	return func(ctx context.Context, runtimeState *runtimefs.Runtime, _ *runtimefs.LeaseSet, claim *StagingClaim, activeDatabase *sqlitestore.Database) error {
+		plan, err := readMergePlan(claim.StageRoot)
+		if err != nil {
+			return importStagingInvalid("import review plan is missing or corrupt", err)
+		}
+		if planID == "" || plan.PlanID != planID {
+			return importStagingInvalid("import review identity does not match", nil)
+		}
+		if runtimeState.Current.ID != plan.BaseGeneration {
+			return staleMergePlan(plan, "active generation changed")
+		}
+		local, err := ReadPortableAuthority(ctx, activeDatabase)
+		if err != nil {
+			return err
+		}
+		localDigest, err := AuthorityDigest(local)
+		if err != nil || localDigest != plan.BaseAuthoritySHA256 {
+			return errors.Join(staleMergePlan(plan, "active authority changed"), err)
+		}
+		incomingDatabase, err := openMergeGenerationDatabase(ctx, runtimeState, claim.Generation)
+		if err != nil {
+			return err
+		}
+		incoming, readErr := ReadPortableAuthority(ctx, incomingDatabase)
+		closeErr := incomingDatabase.Close()
+		if readErr != nil || closeErr != nil {
+			return errors.Join(readErr, closeErr)
+		}
+		incomingDigest, err := AuthorityDigest(incoming)
+		if err != nil || incomingDigest != plan.IncomingAuthoritySHA256 {
+			return errors.Join(importStagingInvalid("incoming review authority changed", nil), err)
+		}
+		return nil
+	}
+}
+
+// ReadReviewMedia returns immutable image bytes from the exact local or incoming
+// authority bound to a ready review token. Callers never receive filesystem
+// paths and the token remains outside URLs.
+func (committer *Committer) ReadReviewMedia(ctx context.Context, token string, sessionEpoch uint64, planID string, source MergeReviewSource, mediaID string) (result media.Asset, resultErr error) {
+	if committer == nil || planID == "" || (source != MergeReviewLocal && source != MergeReviewIncoming) {
+		return media.Asset{}, domain.NewError(domain.CodeInvalidArgument, "review media identity is invalid", nil)
+	}
+	parsedID, err := domain.ParseID(mediaID)
+	if err != nil {
+		return media.Asset{}, domain.NewError(domain.CodeInvalidArgument, "review media ID is invalid", nil)
+	}
+	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
+	if err != nil {
+		return media.Asset{}, err
+	}
+	held, err := runtimeState.Locks.AcquireSet(ctx, runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Shared})
+	if err != nil {
+		return media.Asset{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	state, _, stageRoot, err := committer.inspector.loadReadyHeld(ctx, runtimeState, token, sessionEpoch)
+	if err != nil {
+		return media.Asset{}, err
+	}
+	plan, err := readMergePlan(stageRoot)
+	if err != nil || plan.PlanID != planID {
+		return media.Asset{}, importStagingInvalid("review media plan does not match", err)
+	}
+	current, err := runtimeState.ResolveCurrent()
+	if err != nil {
+		return media.Asset{}, err
+	}
+	runtimeState.Current = current
+	generation := current
+	if source == MergeReviewIncoming {
+		generation = stagingGeneration(stageRoot, state.GenerationID)
+	} else if generation.ID != plan.BaseGeneration {
+		return media.Asset{}, staleMergePlan(plan, "active generation changed")
+	}
+	reviewRuntime := &runtimefs.Runtime{Root: runtimeState.Root, Instance: runtimeState.Instance, Current: generation, Locks: runtimeState.Locks}
+	database, err := sqlitestore.Open(ctx, reviewRuntime, sqlitestore.Options{})
+	if err != nil {
+		return media.Asset{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, database.Close()) }()
+	store, err := media.NewStore(reviewRuntime, database, media.Options{})
+	if err != nil {
+		return media.Asset{}, err
+	}
+	return store.ReadOriginal(ctx, parsedID)
 }
 
 // CommitMerge consumes one merge token and explicit selection through the
