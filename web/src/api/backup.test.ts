@@ -11,6 +11,10 @@ function json(body: unknown, status = 200): Response {
 
 const operationID = "import-20260811T013000000Z-0011223344556677";
 const archiveSHA = "a".repeat(64);
+const mergePlanID = "b".repeat(64);
+const baseAuthoritySHA = "c".repeat(64);
+const incomingAuthoritySHA = "d".repeat(64);
+const mergeToken = "A".repeat(43);
 
 function planData(archiveBytes: number) {
   const replacementDataBytes = 2_000;
@@ -50,6 +54,62 @@ function planData(archiveBytes: number) {
       data_bytes: replacementDataBytes,
     },
     warnings: ["1 media usages have no image description"],
+  };
+}
+
+function mergePlanData() {
+  return {
+    plan: {
+      version: 1,
+      plan_id: mergePlanID,
+      archive_sha256: archiveSHA,
+      base_generation: "gen-old",
+      base_authority_sha256: baseAuthoritySHA,
+      incoming_authority_sha256: incomingAuthoritySHA,
+      owner_id: "00000000000000000000000000000000",
+      expires_at: "2999-08-11T02:00:00Z",
+      summary: {
+        unchanged: 0,
+        incoming_only: 1,
+        local_only: 0,
+        conflict: 1,
+      },
+      items: [
+        {
+          kind: "entry",
+          id: "post-conflict",
+          classification: "conflict",
+          changed_fields: ["content_md"],
+          dependencies: [],
+          selectable: true,
+        },
+        {
+          kind: "comment",
+          id: "comment-new",
+          classification: "incoming_only",
+          changed_fields: [],
+          dependencies: [{ kind: "entry", id: "post-conflict" }],
+          selectable: true,
+        },
+      ],
+      site_fields: [],
+      default_selection: {
+        plan_id: mergePlanID,
+        archive_sha256: archiveSHA,
+        base_generation: "gen-old",
+        base_authority_sha256: baseAuthoritySHA,
+        items: [
+          { kind: "entry", id: "post-conflict", action: "keep_local" },
+          { kind: "comment", id: "comment-new", action: "add" },
+        ],
+        site_fields: [],
+      },
+    },
+    incoming_counts: { entries: 1, comments: 1, media: 0 },
+    incoming_media_bytes: 0,
+    warnings: [],
+    expires_at: "2999-08-11T02:00:00Z",
+    staging_token: mergeToken,
   };
 }
 
@@ -181,6 +241,70 @@ describe("backup and restore owner API", () => {
       disk: { spaceOK: true },
     });
     expect(progress).toHaveBeenLastCalledWith(100);
+  });
+
+  it("plans and commits a strictly bound merge selection", async () => {
+    const file = new File(["zip bytes"], "merge.zip", {
+      type: "application/zip",
+    });
+    const fetcher = vi.fn().mockResolvedValue(
+      json({
+        data: { status: statusData("succeeded") },
+        meta: { request_id: "req_merge" },
+      }),
+    );
+    const api = new OwnerApi(fetcher as typeof fetch);
+    const pending = api.planMergeImport("csrf-owner", file);
+    const request = FakeArchiveRequest.requests[0];
+    expect(request.url).toBe("/api/v1/owner/import/merge/plan");
+    request.respond(mergePlanData(), 201);
+    const inspection = await pending;
+    expect(inspection).toMatchObject({
+      stagingToken: mergeToken,
+      plan: {
+        plan_id: mergePlanID,
+        summary: { incoming_only: 1, conflict: 1 },
+      },
+    });
+    inspection.plan.default_selection.items[0].action = "keep_both";
+    await expect(
+      api.commitMergeImport(
+        "csrf-owner",
+        inspection.stagingToken,
+        inspection.plan.default_selection,
+      ),
+    ).resolves.toMatchObject({ phase: "succeeded" });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/owner/import/merge/commit",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          staging_token: mergeToken,
+          selection: inspection.plan.default_selection,
+        }),
+      }),
+    );
+  });
+
+  it("rejects a merge plan whose summary or default selection is inconsistent", async () => {
+    const file = new File(["zip bytes"], "merge.zip");
+    const api = new OwnerApi(vi.fn() as typeof fetch);
+
+    const badSummary = api.planMergeImport("csrf", file);
+    const summaryData = mergePlanData();
+    summaryData.plan.summary.conflict = 2;
+    FakeArchiveRequest.requests[0].respond(summaryData, 201);
+    await expect(badSummary).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+
+    const badSelection = api.planMergeImport("csrf", file);
+    const selectionData = mergePlanData();
+    selectionData.plan.default_selection.items[0].action = "skip";
+    FakeArchiveRequest.requests[1].respond(selectionData, 201);
+    await expect(badSelection).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
   });
 
   it("rejects duplicate JSON keys and inconsistent preview arithmetic", async () => {

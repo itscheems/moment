@@ -17,6 +17,10 @@ const operationID = "import-20260811T013000000Z-0011223344556677";
 const oldOperationID = "import-20260810T013000000Z-8899aabbccddeeff";
 const baselineOperationID = "import-20260811T012000000Z-aabbccddeeff0011";
 const archiveSHA = "a".repeat(64);
+const mergePlanID = "b".repeat(64);
+const baseAuthoritySHA = "c".repeat(64);
+const incomingAuthoritySHA = "d".repeat(64);
+const mergeToken = "A".repeat(43);
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -111,6 +115,71 @@ function planData(archiveBytes: number) {
   };
 }
 
+function mergePlanData() {
+  const defaultSelection = {
+    plan_id: mergePlanID,
+    archive_sha256: archiveSHA,
+    base_generation: "gen-old",
+    base_authority_sha256: baseAuthoritySHA,
+    items: [
+      { kind: "entry", id: "post-conflict", action: "keep_local" },
+      { kind: "entry", id: "post-new", action: "add" },
+    ],
+    site_fields: [{ field: "title", action: "keep_local" }],
+  };
+  return {
+    plan: {
+      version: 1,
+      plan_id: mergePlanID,
+      archive_sha256: archiveSHA,
+      base_generation: "gen-old",
+      base_authority_sha256: baseAuthoritySHA,
+      incoming_authority_sha256: incomingAuthoritySHA,
+      owner_id: "00000000000000000000000000000000",
+      expires_at: "2999-08-11T02:00:00Z",
+      summary: {
+        unchanged: 0,
+        incoming_only: 1,
+        local_only: 0,
+        conflict: 2,
+      },
+      items: [
+        {
+          kind: "entry",
+          id: "post-conflict",
+          classification: "conflict",
+          changed_fields: ["content"],
+          dependencies: [],
+          selectable: true,
+        },
+        {
+          kind: "entry",
+          id: "post-new",
+          classification: "incoming_only",
+          changed_fields: [],
+          dependencies: [],
+          selectable: true,
+        },
+      ],
+      site_fields: [
+        {
+          field: "title",
+          classification: "conflict",
+          local_value: "当前标题",
+          incoming_value: "备份标题",
+          dependencies: [],
+        },
+      ],
+      default_selection: defaultSelection,
+    },
+    incoming_counts: { entries: 2, comments: 0, media: 0 },
+    incoming_media_bytes: 0,
+    warnings: [],
+    expires_at: "2999-08-11T02:00:00Z",
+    staging_token: mergeToken,
+  };
+}
+
 type Phase =
   "claimed" | "succeeded" | "failed" | "rolled_back" | "needs_attention";
 
@@ -188,8 +257,8 @@ class ArchiveRequest extends EventTarget {
     this.dispatchEvent(new Event("error"));
   }
 
-  respond(data: unknown) {
-    this.status = 200;
+  respond(data: unknown, status = 200) {
+    this.status = status;
     this.responseText = JSON.stringify({
       data,
       meta: { request_id: "req_import" },
@@ -288,6 +357,115 @@ describe("owner backup and restore", () => {
         return 1;
       }),
     );
+  });
+
+  it("reviews merge conflicts and commits the explicit selection", async () => {
+    const fetcher = installFetch(
+      async () => failure("IMPORT_STAGING_INVALID", 409),
+      (url) => {
+        if (url === "/api/v1/owner/import/merge/commit") {
+          return Promise.resolve(
+            json({
+              data: { status: statusData("succeeded") },
+              meta: { request_id: "req_merge" },
+            }),
+          );
+        }
+        return undefined;
+      },
+    );
+    await renderSettings();
+    const file = new File(["merge"], "merge.zip", {
+      type: "application/zip",
+    });
+    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查并合并" }));
+    const request = ArchiveRequest.requests.at(-1)!;
+    expect(request.url).toBe("/api/v1/owner/import/merge/plan");
+    request.respond(mergePlanData(), 201);
+
+    await screen.findByRole("heading", { name: "选择冲突处理方式" });
+    expect(screen.getByText("仅本地，保留")).toBeInTheDocument();
+    fireEvent.change(
+      screen.getByRole("combobox", {
+        name: "Moment post-conflict 的冲突处理",
+      }),
+      { target: { value: "keep_both" } },
+    );
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "站点标题的冲突处理" }),
+      { target: { value: "use_incoming" } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "提交合并" }));
+    expect(
+      await screen.findByRole("heading", {
+        name: "按当前选择合并这份备份？",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认并合并" }));
+
+    expect(
+      await screen.findByText("备份已合并并通过就绪检查"),
+    ).toBeInTheDocument();
+    const commitCall = fetcher.mock.calls.find(
+      ([input]) => String(input) === "/api/v1/owner/import/merge/commit",
+    );
+    expect(commitCall).toBeDefined();
+    const body = JSON.parse(String(commitCall?.[1]?.body)) as {
+      staging_token: string;
+      selection: {
+        items: Array<{ id: string; action: string }>;
+        site_fields: Array<{ field: string; action: string }>;
+      };
+    };
+    expect(body.staging_token).toBe(mergeToken);
+    expect(body.selection.items).toContainEqual({
+      kind: "entry",
+      id: "post-conflict",
+      action: "keep_both",
+    });
+    expect(body.selection.site_fields).toContainEqual({
+      field: "title",
+      action: "use_incoming",
+    });
+  });
+
+  it("treats an explicitly stale merge plan as rejected instead of resubmitting", async () => {
+    const fetcher = installFetch(
+      async () => failure("IMPORT_STAGING_INVALID", 409),
+      (url) =>
+        url === "/api/v1/owner/import/merge/commit"
+          ? Promise.resolve(failure("IMPORT_MERGE_PLAN_STALE", 409))
+          : undefined,
+    );
+    await renderSettings();
+    const file = new File(["merge"], "stale.zip", {
+      type: "application/zip",
+    });
+    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查并合并" }));
+    ArchiveRequest.requests.at(-1)!.respond(mergePlanData(), 201);
+    await screen.findByRole("heading", { name: "选择冲突处理方式" });
+    fireEvent.click(screen.getByRole("button", { name: "提交合并" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并合并" }));
+
+    expect(
+      await screen.findByText(
+        "合并计划已过期或当前站点已变化，请重新检查合并冲突。",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "选择冲突处理方式" }),
+    ).not.toBeInTheDocument();
+    expect(
+      fetcher.mock.calls.filter(
+        ([input]) => String(input) === "/api/v1/owner/import/merge/commit",
+      ),
+    ).toHaveLength(1);
   });
 
   afterEach(() => {

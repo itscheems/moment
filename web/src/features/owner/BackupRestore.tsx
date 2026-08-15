@@ -7,7 +7,14 @@ import {
   useState,
 } from "react";
 
-import type { ImportPlan, ImportStatus } from "../../api/owner";
+import type {
+  ImportPlan,
+  ImportStatus,
+  MergeAction,
+  MergeEntityKind,
+  MergeInspection,
+  MergeSelection,
+} from "../../api/owner";
 import { PublicApiError } from "../../api/public";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { useOwner } from "./OwnerProvider";
@@ -47,6 +54,62 @@ function formatDate(value: string | null): string {
   );
 }
 
+function mergeKindLabel(kind: MergeEntityKind): string {
+  switch (kind) {
+    case "entry":
+      return "Moment";
+    case "comment":
+      return "评论";
+    case "media":
+      return "媒体";
+  }
+}
+
+function mergeValue(value: unknown): string {
+  if (value === null) return "未设置";
+  if (typeof value === "string") return value || "空值";
+  if (typeof value === "boolean") return value ? "开启" : "关闭";
+  return JSON.stringify(value);
+}
+
+function mergeSiteFieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    username: "用户名",
+    display_name: "显示名称",
+    title: "站点标题",
+    bio: "简介",
+    timezone: "时区",
+    avatar_media_id: "头像",
+    cover_media_id: "主页封面",
+    pinned_post_id: "置顶 Moment",
+    comments_enabled: "评论开关",
+  };
+  return labels[field] ?? field;
+}
+
+function mergeChangedFieldLabel(field: string): string {
+  const labels: Record<string, string> = {
+    kind: "类型",
+    content_md: "正文",
+    created_at: "创建时间",
+    updated_at: "更新时间",
+    published_at: "发布时间",
+    media: "媒体与图片描述",
+    location: "位置",
+    entry_id: "所属 Moment",
+    parent_id: "上级评论",
+    author_kind: "作者类型",
+    author_name: "作者名称",
+    sha256: "文件内容",
+    original_name: "原文件名",
+    mime_type: "文件类型",
+    byte_size: "文件大小",
+    width: "宽度",
+    height: "高度",
+  };
+  return labels[field] ?? field;
+}
+
 function importError(error: unknown, operation: "plan" | "restore"): string {
   if (!(error instanceof PublicApiError)) {
     return operation === "plan"
@@ -80,7 +143,10 @@ function importError(error: unknown, operation: "plan" | "restore"): string {
   }
 }
 
-function statusCopy(status: ImportStatus): {
+function statusCopy(
+  status: ImportStatus,
+  merge = false,
+): {
   eyebrow: string;
   title: string;
   detail: string;
@@ -131,9 +197,11 @@ function statusCopy(status: ImportStatus): {
       };
     case "succeeded":
       return {
-        eyebrow: "恢复完成",
-        title: "备份已恢复并通过就绪检查",
-        detail: "恢复前自动备份已验证。重新加载页面即可查看恢复后的内容。",
+        eyebrow: merge ? "合并完成" : "恢复完成",
+        title: merge ? "备份已合并并通过就绪检查" : "备份已恢复并通过就绪检查",
+        detail: merge
+          ? "合并前自动备份已验证。重新加载页面即可查看合并后的内容。"
+          : "恢复前自动备份已验证。重新加载页面即可查看恢复后的内容。",
         tone: "success",
       };
     case "failed":
@@ -172,6 +240,7 @@ export function BackupRestore({
   const mountedRef = useRef(true);
   const fileRevisionRef = useRef(0);
   const planControllerRef = useRef<AbortController | null>(null);
+  const mergeControllerRef = useRef<AbortController | null>(null);
   const restoreControllerRef = useRef<AbortController | null>(null);
   const pollControllerRef = useRef<AbortController | null>(null);
   const pollTimerRef = useRef<number | null>(null);
@@ -192,6 +261,14 @@ export function BackupRestore({
   const [planState, setPlanState] = useState<TransferState>("idle");
   const [planProgress, setPlanProgress] = useState<number | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [mergeInspection, setMergeInspection] =
+    useState<MergeInspection | null>(null);
+  const [mergeSelection, setMergeSelection] = useState<MergeSelection | null>(
+    null,
+  );
+  const [mergeState, setMergeState] = useState<TransferState>("idle");
+  const [mergeProgress, setMergeProgress] = useState<number | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
   const [exportState, setExportState] = useState<TransferState>("idle");
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [restoreState, setRestoreState] = useState<TransferState>("idle");
@@ -204,9 +281,11 @@ export function BackupRestore({
   const [manualStatusRequired, setManualStatusRequired] = useState(false);
   const [siteRefreshRequired, setSiteRefreshRequired] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
+  const [importMode, setImportMode] = useState<"restore" | "merge">("restore");
   const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
 
-  useDocumentScrollLock(confirmOpen);
+  useDocumentScrollLock(confirmOpen || mergeConfirmOpen);
 
   const restoreBusy =
     !statusInitialized ||
@@ -421,6 +500,7 @@ export function BackupRestore({
       mountedRef.current = false;
       fileRevisionRef.current += 1;
       planControllerRef.current?.abort();
+      mergeControllerRef.current?.abort();
       restoreControllerRef.current?.abort();
       clearPoll();
       if (exportGuardTimerRef.current !== null) {
@@ -472,6 +552,7 @@ export function BackupRestore({
     event.currentTarget.value = "";
     if (!next || restoreBusy) return;
     planControllerRef.current?.abort();
+    mergeControllerRef.current?.abort();
     clearPoll();
     fileRevisionRef.current += 1;
     restoreAttemptedRef.current = false;
@@ -479,6 +560,11 @@ export function BackupRestore({
     foreignOperationRef.current = null;
     setFile(next);
     setPlan(null);
+    setMergeInspection(null);
+    setMergeSelection(null);
+    setMergeState("idle");
+    setMergeProgress(null);
+    setMergeError(null);
     setPlanDetailsOpen(false);
     setPlanProgress(null);
     setRestoreProgress(null);
@@ -547,20 +633,248 @@ export function BackupRestore({
     }
   };
 
+  const inspectMerge = async () => {
+    if (!session || !file || mergeState === "running" || restoreBusy) return;
+    mergeControllerRef.current?.abort();
+    const controller = new AbortController();
+    mergeControllerRef.current = controller;
+    const revision = fileRevisionRef.current;
+    setMergeState("running");
+    setMergeProgress(null);
+    setMergeError(null);
+    setMergeInspection(null);
+    setMergeSelection(null);
+    try {
+      const next = await api.planMergeImport(
+        session.csrfToken,
+        file,
+        (progress) => {
+          if (
+            mountedRef.current &&
+            mergeControllerRef.current === controller &&
+            revision === fileRevisionRef.current
+          ) {
+            setMergeProgress(progress);
+          }
+        },
+        controller.signal,
+      );
+      if (
+        !mountedRef.current ||
+        controller.signal.aborted ||
+        mergeControllerRef.current !== controller ||
+        revision !== fileRevisionRef.current
+      ) {
+        return;
+      }
+      setMergeInspection(next);
+      setMergeSelection(structuredClone(next.plan.default_selection));
+      setMergeState("complete");
+    } catch (error) {
+      if (
+        !mountedRef.current ||
+        controller.signal.aborted ||
+        revision !== fileRevisionRef.current
+      ) {
+        return;
+      }
+      expireIfInvalidSession(error);
+      setMergeState("failed");
+      if (error instanceof PublicApiError) {
+        if (error.code === "IMPORT_OWNER_MISMATCH") {
+          setMergeError("这份备份属于另一位所有者，不能与当前站点合并。");
+        } else if (error.code === "IMPORT_MERGE_PLAN_STALE") {
+          setMergeError("当前站点已发生变化，请重新检查合并冲突。");
+        } else {
+          setMergeError(importError(error, "plan"));
+        }
+      } else {
+        setMergeError(importError(error, "plan"));
+      }
+    }
+  };
+
+  const chooseMergeItem = (
+    kind: MergeEntityKind,
+    id: string,
+    action: MergeAction,
+  ) => {
+    setMergeSelection((current) =>
+      current
+        ? {
+            ...current,
+            items: current.items.map((item) =>
+              item.kind === kind && item.id === id ? { ...item, action } : item,
+            ),
+          }
+        : current,
+    );
+  };
+
+  const chooseMergeSiteField = (field: string, action: MergeAction) => {
+    setMergeSelection((current) =>
+      current
+        ? {
+            ...current,
+            site_fields: current.site_fields.map((item) =>
+              item.field === field ? { ...item, action } : item,
+            ),
+          }
+        : current,
+    );
+  };
+
   const cancelPlan = () => {
     planControllerRef.current?.abort();
     planControllerRef.current = null;
+    mergeControllerRef.current?.abort();
+    mergeControllerRef.current = null;
     fileRevisionRef.current += 1;
     restoreAttemptedRef.current = false;
     unassociatedPollsRef.current = 0;
     foreignOperationRef.current = null;
     setFile(null);
     setPlan(null);
+    setMergeInspection(null);
+    setMergeSelection(null);
+    setMergeState("idle");
+    setMergeProgress(null);
+    setMergeError(null);
     setPlanDetailsOpen(false);
     setPlanState("idle");
     setPlanProgress(null);
     setPlanError(null);
     window.requestAnimationFrame(() => pickerRef.current?.focus());
+  };
+
+  const commitMerge = async () => {
+    if (
+      !session ||
+      !mergeInspection ||
+      !mergeSelection ||
+      settingsBlocked ||
+      !statusInitialized ||
+      statusDisconnected ||
+      restoreAttemptedRef.current ||
+      restoreBusy
+    ) {
+      return;
+    }
+    restoreAttemptedRef.current = true;
+    restoreSentRef.current = false;
+    unassociatedPollsRef.current = 0;
+    foreignOperationRef.current = null;
+    const revision = fileRevisionRef.current;
+    const controller = new AbortController();
+    restoreControllerRef.current = controller;
+    clearPoll();
+    setImportMode("merge");
+    setRestoreState("running");
+    setRestoreError(null);
+    setManualStatusRequired(false);
+    setStatus(null);
+    try {
+      let baseline: ImportStatus | null = null;
+      try {
+        baseline = await api.importStatus(controller.signal);
+      } catch (error) {
+        if (!(
+          error instanceof PublicApiError &&
+          error.code === "IMPORT_STAGING_INVALID"
+        )) {
+          throw error;
+        }
+      }
+      if (
+        !mountedRef.current ||
+        controller.signal.aborted ||
+        restoreControllerRef.current !== controller ||
+        revision !== fileRevisionRef.current
+      ) {
+        return;
+      }
+      restoreBaselineRef.current = baseline?.operationId ?? null;
+      lastObservedOperationRef.current = baseline?.operationId ?? null;
+      if (
+        baseline &&
+        (activePhases.has(baseline.phase) ||
+          baseline.phase === "needs_attention")
+      ) {
+        restoreAttemptedRef.current = false;
+        setStatus(baseline);
+        setRestoreState(
+          baseline.phase === "needs_attention" ? "failed" : "idle",
+        );
+        setRestoreError("服务器已有另一项导入正在进行，本次合并尚未提交。");
+        if (activePhases.has(baseline.phase)) {
+          void queryStatus(revision, baseline.operationId);
+        }
+        return;
+      }
+      restoreSentRef.current = true;
+      const next = await api.commitMergeImport(
+        session.csrfToken,
+        mergeInspection.stagingToken,
+        mergeSelection,
+        controller.signal,
+      );
+      if (
+        !mountedRef.current ||
+        controller.signal.aborted ||
+        revision !== fileRevisionRef.current
+      ) {
+        return;
+      }
+      setStatus(next);
+      setRestoreState("complete");
+      setSiteRefreshRequired(true);
+    } catch (error) {
+      if (!mountedRef.current || revision !== fileRevisionRef.current) return;
+      if (
+        error instanceof PublicApiError &&
+        error.status >= 400 &&
+        error.status < 500
+      ) {
+        restoreAttemptedRef.current = false;
+        restoreSentRef.current = false;
+        expireIfInvalidSession(error);
+        setRestoreState("failed");
+        if (
+          error.code === "IMPORT_MERGE_PLAN_STALE" ||
+          error.code === "IMPORT_STAGING_INVALID"
+        ) {
+          setMergeInspection(null);
+          setMergeSelection(null);
+          setMergeState("failed");
+          setMergeError("合并计划已过期或当前站点已变化，请重新检查合并冲突。");
+        } else if (error.code === "IMPORT_OWNER_MISMATCH") {
+          setMergeError("这份备份属于另一位所有者，不能与当前站点合并。");
+        } else if (error.code === "IMPORT_IN_PROGRESS") {
+          setMergeError(
+            "另一项导入刚刚开始，本次合并没有提交。请稍后重新检查。",
+          );
+        } else {
+          setMergeError(
+            "服务器拒绝了当前冲突选择。合并没有开始，请重新检查后再提交。",
+          );
+        }
+        return;
+      }
+      if (!restoreSentRef.current) {
+        restoreAttemptedRef.current = false;
+        expireIfInvalidSession(error);
+        setRestoreState("failed");
+        setRestoreError("提交前无法确认服务器状态，合并尚未开始。");
+        setStatusDisconnected(true);
+        return;
+      }
+      expireIfInvalidSession(error);
+      setRestoreState("running");
+      setRestoreError(
+        "合并结果尚未确认。不会重复提交；正在查询服务器保存的导入状态。",
+      );
+      void queryStatus(revision, null, restoreBaselineRef.current);
+    }
   };
 
   const restore = async () => {
@@ -585,6 +899,7 @@ export function BackupRestore({
     const controller = new AbortController();
     restoreControllerRef.current = controller;
     clearPoll();
+    setImportMode("restore");
     setRestoreState("running");
     setRestoreProgress(null);
     setRestoreError(null);
@@ -699,7 +1014,17 @@ export function BackupRestore({
     );
   };
 
-  const currentStatus = status ? statusCopy(status) : null;
+  const currentStatus = status
+    ? statusCopy(status, importMode === "merge")
+    : null;
+  const mergeItemConflicts =
+    mergeInspection?.plan.items.filter(
+      (item) => item.classification === "conflict" && item.selectable,
+    ) ?? [];
+  const mergeSiteConflicts =
+    mergeInspection?.plan.site_fields.filter(
+      (field) => field.classification === "conflict",
+    ) ?? [];
   const showRestoreStatus =
     restoreState === "running" ||
     status !== null ||
@@ -871,7 +1196,21 @@ export function BackupRestore({
             {file && planState !== "running" ? (
               <button
                 className={styles.primaryButton}
-                disabled={!statusInitialized || restoreBusy}
+                disabled={
+                  !statusInitialized || mergeState === "running" || restoreBusy
+                }
+                onClick={() => void inspectMerge()}
+                type="button"
+              >
+                {mergeInspection ? "重新检查合并" : "检查并合并"}
+              </button>
+            ) : null}
+            {file && planState !== "running" ? (
+              <button
+                className={styles.secondaryButton}
+                disabled={
+                  !statusInitialized || mergeState === "running" || restoreBusy
+                }
                 onClick={() => void inspect()}
                 type="button"
               >
@@ -919,13 +1258,266 @@ export function BackupRestore({
               </p>
             </>
           ) : null}
+          {mergeState === "running" ? (
+            <>
+              <progress
+                aria-label="合并检查上传进度"
+                max="100"
+                value={mergeProgress ?? undefined}
+              />
+              <p aria-live="polite" className={styles.dataNotice}>
+                {mergeProgress === null
+                  ? "正在上传并比较当前站点…"
+                  : mergeProgress < 100
+                    ? `正在上传并比较当前站点… ${mergeProgress}%`
+                    : "上传完成，正在分类新增内容与冲突…"}
+              </p>
+            </>
+          ) : null}
           {planError ? (
             <p className={styles.dataError} role="alert">
               {planError}
             </p>
           ) : null}
+          {mergeError ? (
+            <p className={styles.dataError} role="alert">
+              {mergeError}
+            </p>
+          ) : null}
         </div>
       </div>
+
+      {mergeInspection && mergeSelection ? (
+        <div className={styles.mergePanel}>
+          <header>
+            <div>
+              <p>合并检查完成</p>
+              <h3>选择冲突处理方式</h3>
+            </div>
+            <span>
+              {new Intl.DateTimeFormat("zh-CN", {
+                hour: "2-digit",
+                minute: "2-digit",
+              }).format(new Date(mergeInspection.expiresAt))}
+              前提交
+            </span>
+          </header>
+          <p className={styles.mergeIntroduction}>
+            备份中新增的内容会加入站点；仅存在于当前站点的内容会保留。没有删除标记时，缺失内容不会被当成删除。
+          </p>
+          <div aria-label="合并分类摘要" className={styles.mergeSummary}>
+            <span>
+              <strong>{mergeInspection.plan.summary.incoming_only}</strong>
+              新增
+            </span>
+            <span>
+              <strong>{mergeInspection.plan.summary.local_only}</strong>
+              仅本地，保留
+            </span>
+            <span>
+              <strong>{mergeInspection.plan.summary.unchanged}</strong>
+              相同
+            </span>
+            <span
+              data-tone={
+                mergeInspection.plan.summary.conflict ? "warning" : "success"
+              }
+            >
+              <strong>{mergeInspection.plan.summary.conflict}</strong>
+              冲突
+            </span>
+          </div>
+
+          {mergeItemConflicts.length ? (
+            <section
+              aria-labelledby="content-conflicts"
+              className={styles.mergeConflictSection}
+            >
+              <h4 id="content-conflicts">内容冲突</h4>
+              <div className={styles.mergeConflictList}>
+                {mergeItemConflicts.slice(0, 200).map((item) => {
+                  const decision = mergeSelection.items.find(
+                    (candidate) =>
+                      candidate.kind === item.kind && candidate.id === item.id,
+                  );
+                  return (
+                    <label
+                      className={styles.mergeConflict}
+                      key={`${item.kind}:${item.id}`}
+                    >
+                      <span>
+                        <strong>{mergeKindLabel(item.kind)}</strong>
+                        <code>{item.id}</code>
+                        <small>
+                          变更：
+                          {item.changed_fields
+                            .map(mergeChangedFieldLabel)
+                            .join("、") || "内容"}
+                        </small>
+                      </span>
+                      <select
+                        aria-label={`${mergeKindLabel(item.kind)} ${item.id} 的冲突处理`}
+                        onChange={(event) =>
+                          chooseMergeItem(
+                            item.kind,
+                            item.id,
+                            event.currentTarget.value as MergeAction,
+                          )
+                        }
+                        value={decision?.action ?? "keep_local"}
+                      >
+                        <option value="keep_local">保留当前版本</option>
+                        <option value="use_incoming">使用备份版本</option>
+                        <option value="keep_both">两者都保留</option>
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+              {mergeItemConflicts.length > 200 ? (
+                <p className={styles.dataNotice}>
+                  当前显示前 200
+                  项；其余冲突保持“保留当前版本”。如需逐项调整全部冲突，请使用
+                  CLI 导出的选择文件。
+                </p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {mergeSiteConflicts.length ? (
+            <section
+              aria-labelledby="profile-conflicts"
+              className={styles.mergeConflictSection}
+            >
+              <h4 id="profile-conflicts">资料与站点设置冲突</h4>
+              <div className={styles.mergeConflictList}>
+                {mergeSiteConflicts.map((field) => {
+                  const decision = mergeSelection.site_fields.find(
+                    (candidate) => candidate.field === field.field,
+                  );
+                  return (
+                    <label className={styles.mergeConflict} key={field.field}>
+                      <span>
+                        <strong>{mergeSiteFieldLabel(field.field)}</strong>
+                        <small>当前：{mergeValue(field.local_value)}</small>
+                        <small>备份：{mergeValue(field.incoming_value)}</small>
+                      </span>
+                      <select
+                        aria-label={`${mergeSiteFieldLabel(field.field)}的冲突处理`}
+                        onChange={(event) =>
+                          chooseMergeSiteField(
+                            field.field,
+                            event.currentTarget.value as MergeAction,
+                          )
+                        }
+                        value={decision?.action ?? "keep_local"}
+                      >
+                        <option value="keep_local">保留当前值</option>
+                        <option value="use_incoming">使用备份值</option>
+                      </select>
+                    </label>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {!mergeItemConflicts.length && !mergeSiteConflicts.length ? (
+            <p className={styles.mergeClear}>
+              没有需要手动处理的冲突，可以直接合并。
+            </p>
+          ) : null}
+          {mergeInspection.warnings.length ? (
+            <div className={styles.importWarnings}>
+              <strong>合并提醒</strong>
+              <ul>
+                {mergeInspection.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {settingsBlocked ? (
+            <p className={styles.dataError} role="alert">
+              先保存或放弃当前设置与头像更改，才能提交合并。
+            </p>
+          ) : null}
+          <Dialog.Root
+            onOpenChange={setMergeConfirmOpen}
+            open={mergeConfirmOpen}
+          >
+            <Dialog.Trigger
+              className={styles.dialogTrigger}
+              disabled={
+                !session ||
+                settingsBlocked ||
+                !statusInitialized ||
+                statusDisconnected ||
+                restoreAttemptedRef.current ||
+                restoreBusy
+              }
+              render={<button className={styles.primaryButton} type="button" />}
+            >
+              提交合并
+            </Dialog.Trigger>
+            <Dialog.Portal>
+              <Dialog.Backdrop className={styles.dialogBackdrop} />
+              <Dialog.Viewport className={styles.dialogViewport}>
+                <Dialog.Popup className={styles.restoreDialog}>
+                  <Dialog.Title>按当前选择合并这份备份？</Dialog.Title>
+                  <Dialog.Description>
+                    将加入 {mergeInspection.incomingCounts.entries} 条备份
+                    Moment 中可合并的内容，并按你选择的方式处理{" "}
+                    {mergeInspection.plan.summary.conflict} 项冲突。
+                  </Dialog.Description>
+                  <div className={styles.dialogImpact}>
+                    <div>
+                      <span>新增</span>
+                      <strong>
+                        {mergeInspection.plan.summary.incoming_only} 项
+                      </strong>
+                    </div>
+                    <div>
+                      <span>仅本地</span>
+                      <strong>
+                        {mergeInspection.plan.summary.local_only} 项，全部保留
+                      </strong>
+                    </div>
+                    <div>
+                      <span>冲突</span>
+                      <strong>
+                        {mergeInspection.plan.summary.conflict} 项，按选择处理
+                      </strong>
+                    </div>
+                  </div>
+                  <p className={styles.dialogRisk}>
+                    <strong>合并前仍会自动备份当前站点。</strong>
+                    计划已绑定当前数据版本；若站点已变化，服务器会拒绝旧计划并要求重新检查。
+                  </p>
+                  <div className={styles.dialogActions}>
+                    <Dialog.Close className={styles.secondaryButton}>
+                      返回检查
+                    </Dialog.Close>
+                    <button
+                      aria-busy={restoreState === "running"}
+                      className={styles.primaryButton}
+                      disabled={restoreState === "running"}
+                      onClick={() => {
+                        focusStatusRef.current = true;
+                        setMergeConfirmOpen(false);
+                        void commitMerge();
+                      }}
+                      type="button"
+                    >
+                      确认并合并
+                    </button>
+                  </div>
+                </Dialog.Popup>
+              </Dialog.Viewport>
+            </Dialog.Portal>
+          </Dialog.Root>
+        </div>
+      ) : null}
 
       {plan ? (
         <div className={styles.restorePreview}>

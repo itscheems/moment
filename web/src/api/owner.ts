@@ -131,6 +131,64 @@ export interface ImportPlan {
   warnings: string[];
 }
 
+export type MergeClassification =
+  "unchanged" | "incoming_only" | "local_only" | "conflict";
+export type MergeAction =
+  "skip" | "add" | "keep_local" | "use_incoming" | "keep_both";
+export type MergeEntityKind = "entry" | "comment" | "media";
+
+export interface MergeSelection {
+  plan_id: string;
+  archive_sha256: string;
+  base_generation: string;
+  base_authority_sha256: string;
+  items: Array<{ kind: MergeEntityKind; id: string; action: MergeAction }>;
+  site_fields: Array<{ field: string; action: MergeAction }>;
+}
+
+export interface MergePlan {
+  version: number;
+  plan_id: string;
+  archive_sha256: string;
+  base_generation: string;
+  base_authority_sha256: string;
+  incoming_authority_sha256: string;
+  owner_id: string;
+  expires_at: string;
+  summary: {
+    unchanged: number;
+    incoming_only: number;
+    local_only: number;
+    conflict: number;
+  };
+  items: Array<{
+    kind: MergeEntityKind;
+    id: string;
+    classification: MergeClassification;
+    changed_fields: string[];
+    dependencies: Array<{ kind: MergeEntityKind; id: string }>;
+    selectable: boolean;
+    matched_local_id?: string;
+  }>;
+  site_fields: Array<{
+    field: string;
+    classification: MergeClassification;
+    local_value: unknown;
+    incoming_value: unknown;
+    dependencies: Array<{ kind: MergeEntityKind; id: string }>;
+  }>;
+  default_selection: MergeSelection;
+}
+
+export interface MergeInspection {
+  plan: MergePlan;
+  incomingCounts: ImportCounts;
+  incomingMediaBytes: number;
+  warnings: string[];
+  expiresAt: string;
+  stagingToken: string;
+}
+
 export type ImportPhase =
   | "claimed"
   | "backing_up"
@@ -314,6 +372,378 @@ function parseImportCounts(value: unknown): ImportCounts {
     entries: nonNegativeIntegerField(record, "entries"),
     comments: nonNegativeIntegerField(record, "comments"),
     media: nonNegativeIntegerField(record, "media"),
+  };
+}
+
+function parseMergeInspection(value: unknown): MergeInspection {
+  const record = objectData(value);
+  if (
+    !hasExactKeys(record, [
+      "plan",
+      "incoming_counts",
+      "incoming_media_bytes",
+      "warnings",
+      "expires_at",
+      "staging_token",
+    ])
+  ) {
+    throw invalidResponse("merge inspection contains unsupported fields");
+  }
+  const planRecord = objectData(record.plan);
+  if (
+    !hasExactKeys(planRecord, [
+      "version",
+      "plan_id",
+      "archive_sha256",
+      "base_generation",
+      "base_authority_sha256",
+      "incoming_authority_sha256",
+      "owner_id",
+      "expires_at",
+      "summary",
+      "items",
+      "site_fields",
+      "default_selection",
+    ])
+  ) {
+    throw invalidResponse("merge plan identity is invalid");
+  }
+  const version = positiveIntegerField(planRecord, "version");
+  const planID = stringField(planRecord, "plan_id");
+  const archiveSHA256 = stringField(planRecord, "archive_sha256");
+  const baseGeneration = stringField(planRecord, "base_generation");
+  const baseAuthoritySHA256 = stringField(planRecord, "base_authority_sha256");
+  const incomingAuthoritySHA256 = stringField(
+    planRecord,
+    "incoming_authority_sha256",
+  );
+  const ownerID = stringField(planRecord, "owner_id");
+  const planExpiresAt = canonicalUTCField(planRecord, "expires_at");
+  if (
+    version !== 1 ||
+    !/^[0-9a-f]{64}$/.test(planID) ||
+    !/^[0-9a-f]{64}$/.test(archiveSHA256) ||
+    !/^[0-9a-f]{64}$/.test(baseAuthoritySHA256) ||
+    !/^[0-9a-f]{64}$/.test(incomingAuthoritySHA256) ||
+    !/^[0-9a-f]{32}$/.test(ownerID) ||
+    !/^[A-Za-z0-9_-]{1,128}$/.test(baseGeneration)
+  ) {
+    throw invalidResponse("merge plan identity is invalid");
+  }
+  const summary = objectData(planRecord.summary);
+  if (
+    !hasExactKeys(summary, [
+      "unchanged",
+      "incoming_only",
+      "local_only",
+      "conflict",
+    ])
+  ) {
+    throw invalidResponse("merge summary is invalid");
+  }
+  const parsedSummary = {
+    unchanged: nonNegativeIntegerField(summary, "unchanged"),
+    incoming_only: nonNegativeIntegerField(summary, "incoming_only"),
+    local_only: nonNegativeIntegerField(summary, "local_only"),
+    conflict: nonNegativeIntegerField(summary, "conflict"),
+  };
+  if (
+    !Array.isArray(planRecord.items) ||
+    !Array.isArray(planRecord.site_fields)
+  ) {
+    throw invalidResponse("merge plan entity lists are invalid");
+  }
+  const kinds = new Set<MergeEntityKind>(["entry", "comment", "media"]);
+  const classifications = new Set<MergeClassification>([
+    "unchanged",
+    "incoming_only",
+    "local_only",
+    "conflict",
+  ]);
+  const parseDependencies = (value: unknown) => {
+    if (!Array.isArray(value)) {
+      throw invalidResponse("merge dependencies are invalid");
+    }
+    return value.map((dependency) => {
+      const candidate = objectData(dependency);
+      if (!hasExactKeys(candidate, ["kind", "id"])) {
+        throw invalidResponse("merge dependency contains unsupported fields");
+      }
+      const kind = stringField(candidate, "kind") as MergeEntityKind;
+      const id = stringField(candidate, "id");
+      if (!kinds.has(kind) || !id || id.length > 256) {
+        throw invalidResponse("merge dependency identity is invalid");
+      }
+      return { kind, id };
+    });
+  };
+  const seenItems = new Set<string>();
+  const items: MergePlan["items"] = planRecord.items.map((item) => {
+    const candidate = objectData(item);
+    const required = [
+      "kind",
+      "id",
+      "classification",
+      "changed_fields",
+      "dependencies",
+      "selectable",
+    ];
+    const keys = Object.keys(candidate);
+    if (
+      !keys.every((key) => [...required, "matched_local_id"].includes(key)) ||
+      !required.every((key) => key in candidate)
+    ) {
+      throw invalidResponse("merge item contains unsupported fields");
+    }
+    const kind = stringField(candidate, "kind") as MergeEntityKind;
+    const id = stringField(candidate, "id");
+    const classification = stringField(
+      candidate,
+      "classification",
+    ) as MergeClassification;
+    const selectable = booleanField(candidate, "selectable");
+    if (
+      !kinds.has(kind) ||
+      !id ||
+      id.length > 256 ||
+      !classifications.has(classification) ||
+      (kind === "media" && selectable) ||
+      (classification === "local_only" && selectable)
+    ) {
+      throw invalidResponse("merge item identity is invalid");
+    }
+    const key = `${kind}\u0000${id}`;
+    if (seenItems.has(key)) {
+      throw invalidResponse("merge plan contains duplicate items");
+    }
+    seenItems.add(key);
+    if (
+      !Array.isArray(candidate.changed_fields) ||
+      !candidate.changed_fields.every(
+        (field) => typeof field === "string" && field.length <= 128,
+      )
+    ) {
+      throw invalidResponse("merge changed fields are invalid");
+    }
+    const matchedLocalID =
+      "matched_local_id" in candidate
+        ? stringField(candidate, "matched_local_id")
+        : undefined;
+    if (
+      matchedLocalID !== undefined &&
+      (!matchedLocalID || matchedLocalID.length > 256)
+    ) {
+      throw invalidResponse("merge matched media identity is invalid");
+    }
+    return {
+      kind,
+      id,
+      classification,
+      changed_fields: [...candidate.changed_fields],
+      dependencies: parseDependencies(candidate.dependencies),
+      selectable,
+      ...(matchedLocalID === undefined
+        ? {}
+        : { matched_local_id: matchedLocalID }),
+    };
+  });
+  const seenSiteFields = new Set<string>();
+  const siteFields: MergePlan["site_fields"] = planRecord.site_fields.map(
+    (field) => {
+      const candidate = objectData(field);
+      if (
+        !hasExactKeys(candidate, [
+          "field",
+          "classification",
+          "local_value",
+          "incoming_value",
+          "dependencies",
+        ])
+      ) {
+        throw invalidResponse(
+          "merge profile field contains unsupported fields",
+        );
+      }
+      const fieldName = stringField(candidate, "field");
+      const classification = stringField(
+        candidate,
+        "classification",
+      ) as MergeClassification;
+      if (
+        !fieldName ||
+        fieldName.length > 128 ||
+        seenSiteFields.has(fieldName) ||
+        !classifications.has(classification)
+      ) {
+        throw invalidResponse("merge profile field identity is invalid");
+      }
+      seenSiteFields.add(fieldName);
+      return {
+        field: fieldName,
+        classification,
+        local_value: candidate.local_value,
+        incoming_value: candidate.incoming_value,
+        dependencies: parseDependencies(candidate.dependencies),
+      };
+    },
+  );
+  const computedSummary = {
+    unchanged: 0,
+    incoming_only: 0,
+    local_only: 0,
+    conflict: 0,
+  };
+  for (const candidate of [...items, ...siteFields]) {
+    computedSummary[candidate.classification] += 1;
+  }
+  if (
+    Object.keys(computedSummary).some(
+      (key) =>
+        computedSummary[key as keyof typeof computedSummary] !==
+        parsedSummary[key as keyof typeof parsedSummary],
+    )
+  ) {
+    throw invalidResponse("merge summary does not match the plan");
+  }
+  const selection = objectData(planRecord.default_selection);
+  if (
+    !hasExactKeys(selection, [
+      "plan_id",
+      "archive_sha256",
+      "base_generation",
+      "base_authority_sha256",
+      "items",
+      "site_fields",
+    ])
+  ) {
+    throw invalidResponse("merge default selection is invalid");
+  }
+  if (
+    !Array.isArray(selection.items) ||
+    !Array.isArray(selection.site_fields)
+  ) {
+    throw invalidResponse("merge default selection lists are invalid");
+  }
+  const selectionPlanID = stringField(selection, "plan_id");
+  const selectionArchiveSHA = stringField(selection, "archive_sha256");
+  const selectionGeneration = stringField(selection, "base_generation");
+  const selectionAuthoritySHA = stringField(selection, "base_authority_sha256");
+  if (
+    selectionPlanID !== planID ||
+    selectionArchiveSHA !== archiveSHA256 ||
+    selectionGeneration !== baseGeneration ||
+    selectionAuthoritySHA !== baseAuthoritySHA256
+  ) {
+    throw invalidResponse("merge default selection binding is invalid");
+  }
+  const selectableByKey = new Map<string, MergePlan["items"][number]>(
+    items
+      .filter((item) => item.selectable)
+      .map((item) => [`${item.kind}\u0000${item.id}`, item] as const),
+  );
+  const selectedKeys = new Set<string>();
+  const selectionItems: MergeSelection["items"] = selection.items.map(
+    (item) => {
+      const candidate = objectData(item);
+      if (!hasExactKeys(candidate, ["kind", "id", "action"])) {
+        throw invalidResponse("merge default item decision is invalid");
+      }
+      const kind = stringField(candidate, "kind") as MergeEntityKind;
+      const id = stringField(candidate, "id");
+      const action = stringField(candidate, "action") as MergeAction;
+      const key = `${kind}\u0000${id}`;
+      const planned = selectableByKey.get(key);
+      const allowed =
+        planned?.classification === "unchanged"
+          ? action === "skip"
+          : planned?.classification === "incoming_only"
+            ? action === "add" || action === "skip"
+            : planned?.classification === "conflict"
+              ? ["keep_local", "use_incoming", "keep_both"].includes(action)
+              : false;
+      if (!planned || selectedKeys.has(key) || !allowed) {
+        throw invalidResponse("merge default item decision is invalid");
+      }
+      selectedKeys.add(key);
+      return { kind, id, action };
+    },
+  );
+  if (selectedKeys.size !== selectableByKey.size) {
+    throw invalidResponse("merge default selection is incomplete");
+  }
+  const selectedSiteFields = new Set<string>();
+  const selectionSiteFields: MergeSelection["site_fields"] =
+    selection.site_fields.map((field) => {
+      const candidate = objectData(field);
+      if (!hasExactKeys(candidate, ["field", "action"])) {
+        throw invalidResponse("merge default profile decision is invalid");
+      }
+      const fieldName = stringField(candidate, "field");
+      const action = stringField(candidate, "action") as MergeAction;
+      if (
+        !seenSiteFields.has(fieldName) ||
+        selectedSiteFields.has(fieldName) ||
+        (action !== "keep_local" && action !== "use_incoming")
+      ) {
+        throw invalidResponse("merge default profile decision is invalid");
+      }
+      selectedSiteFields.add(fieldName);
+      return { field: fieldName, action };
+    });
+  if (selectedSiteFields.size !== seenSiteFields.size) {
+    throw invalidResponse("merge default profile selection is incomplete");
+  }
+  const expiresAt = canonicalUTCField(record, "expires_at");
+  if (expiresAt !== planExpiresAt) {
+    throw invalidResponse("merge plan expiry is inconsistent");
+  }
+  const stagingToken = stringField(record, "staging_token");
+  if (!/^[A-Za-z0-9_-]{43}$/.test(stagingToken)) {
+    throw invalidResponse("merge staging token is invalid");
+  }
+  const warnings = record.warnings;
+  if (
+    !Array.isArray(warnings) ||
+    !warnings.every((item) => typeof item === "string" && item.length <= 2_000)
+  ) {
+    throw invalidResponse("merge warnings are invalid");
+  }
+  const incomingCounts = parseImportCounts(record.incoming_counts);
+  if (
+    incomingCounts.entries > 100_000 ||
+    incomingCounts.comments > 500_000 ||
+    incomingCounts.media > 100_000
+  ) {
+    throw invalidResponse("merge incoming counts exceed supported limits");
+  }
+  const plan: MergePlan = {
+    version,
+    plan_id: planID,
+    archive_sha256: archiveSHA256,
+    base_generation: baseGeneration,
+    base_authority_sha256: baseAuthoritySHA256,
+    incoming_authority_sha256: incomingAuthoritySHA256,
+    owner_id: ownerID,
+    expires_at: planExpiresAt,
+    summary: parsedSummary,
+    items,
+    site_fields: siteFields,
+    default_selection: {
+      plan_id: selectionPlanID,
+      archive_sha256: selectionArchiveSHA,
+      base_generation: selectionGeneration,
+      base_authority_sha256: selectionAuthoritySHA,
+      items: selectionItems,
+      site_fields: selectionSiteFields,
+    },
+  };
+  return {
+    plan,
+    incomingCounts,
+    incomingMediaBytes: nonNegativeIntegerField(record, "incoming_media_bytes"),
+    warnings: [...warnings],
+    expiresAt,
+    stagingToken,
   };
 }
 
@@ -852,6 +1282,7 @@ function uploadArchive(
   file: File,
   expectedSHA256: string | null,
   onProgress: (percent: number | null) => void,
+  expectedStatus: number,
   signal?: AbortSignal,
 ): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -938,7 +1369,7 @@ function uploadArchive(
         );
         return;
       }
-      void decodeImportSuccess(response, 200)
+      void decodeImportSuccess(response, expectedStatus)
         .then((data) => finish(() => resolve(data)))
         .catch((error: unknown) => finish(() => reject(error)));
     });
@@ -1253,6 +1684,7 @@ export class OwnerApi {
       file,
       null,
       onProgress,
+      200,
       signal,
     );
     onProgress(100);
@@ -1276,6 +1708,7 @@ export class OwnerApi {
         file,
         expectedSHA256,
         onProgress,
+        200,
         signal,
       ),
     );
@@ -1287,6 +1720,51 @@ export class OwnerApi {
     if (status.phase !== "succeeded") {
       throw invalidResponse(
         "restore response is not a successful terminal state",
+      );
+    }
+    return status;
+  }
+
+  async planMergeImport(
+    csrfToken: string,
+    file: File,
+    onProgress: (percent: number | null) => void = () => undefined,
+    signal?: AbortSignal,
+  ): Promise<MergeInspection> {
+    const data = await uploadArchive(
+      "/api/v1/owner/import/merge/plan",
+      csrfToken,
+      file,
+      null,
+      onProgress,
+      201,
+      signal,
+    );
+    onProgress(100);
+    return parseMergeInspection(data);
+  }
+
+  async commitMergeImport(
+    csrfToken: string,
+    stagingToken: string,
+    selection: MergeSelection,
+    signal?: AbortSignal,
+  ): Promise<ImportStatus> {
+    const response = await this.fetcher("/api/v1/owner/import/merge/commit", {
+      ...requestInit("POST", csrfToken, {
+        staging_token: stagingToken,
+        selection,
+      }),
+      signal,
+    });
+    const data = objectData(await decodeImportSuccess(response, 200));
+    if (!hasExactKeys(data, ["status"])) {
+      throw invalidResponse("merge result contains unsupported fields");
+    }
+    const status = parseImportStatus(data.status);
+    if (status.phase !== "succeeded") {
+      throw invalidResponse(
+        "merge response is not a successful terminal state",
       );
     }
     return status;
