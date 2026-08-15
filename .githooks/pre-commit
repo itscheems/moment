@@ -2,9 +2,9 @@
 set -euo pipefail
 
 branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-if [[ "$branch" == "main" && "${MOMENT_ALLOW_MAIN_COMMIT:-}" != "1" ]]; then
+if [[ "$branch" == "main" && "${ALLOW_MAIN_COMMIT:-}" != "1" ]]; then
   echo "BLOCKED: commits on main require explicit human authorization for the current task." >&2
-  echo "If authorized, run this commit with MOMENT_ALLOW_MAIN_COMMIT=1; other checks still apply." >&2
+  echo "If authorized, run this commit with ALLOW_MAIN_COMMIT=1; other checks still apply." >&2
   exit 1
 fi
 
