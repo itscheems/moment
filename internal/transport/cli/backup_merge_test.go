@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,11 +12,61 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/buildinfo"
 	"github.com/moment/moment/internal/domain"
+	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
+
+func TestDecodeMergeInspectionAPIAllowsOnlyExpectedNullBlockReason(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	authority := archive.PortableAuthority{Site: sqlitestore.ArchiveSite{
+		OwnerID: "owner", Username: "owner", DisplayName: "Moment", Title: "Moment",
+		Timezone: "UTC", CommentsEnabled: true,
+	}}
+	plan, err := archive.ComparePortableAuthorities(archive.MergePlanInput{
+		ArchiveSHA256: strings.Repeat("a", 64), BaseGeneration: "generation",
+		ExpiresAt: now.Add(importInspectionTokenTTL), Local: authority, Incoming: authority,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := archive.MergeReview{
+		IncomingOnly: archive.MergeReviewBucket{Items: []archive.MergeReviewItem{}},
+		LocalOnly:    archive.MergeReviewBucket{Items: []archive.MergeReviewItem{}},
+		Conflicts:    archive.MergeReviewBucket{Items: []archive.MergeReviewItem{}},
+		SiteFields:   make([]archive.MergeReviewSiteField, len(plan.SiteFields)),
+	}
+	for index, field := range plan.SiteFields {
+		review.SiteFields[index] = archive.MergeReviewSiteField{
+			Field: field.Field, Classification: field.Classification,
+			LocalValue: field.LocalValue, IncomingValue: field.IncomingValue,
+		}
+	}
+	inspection := archive.MergeInspection{
+		Plan: plan, Review: review, Warnings: []string{}, MergeAllowed: true,
+		ExpiresAt: plan.ExpiresAt, StagingToken: base64.RawURLEncoding.EncodeToString(make([]byte, 32)),
+	}
+	body, err := json.Marshal(map[string]any{
+		"data": inspection,
+		"meta": map[string]any{"request_id": "req_merge_null"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, _, err := decodeMergeInspectionAPI(body, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !decoded.MergeAllowed || decoded.MergeBlockedReason != nil {
+		t.Fatalf("decoded inspection = %#v", decoded)
+	}
+	if _, err := decodeExactJSONObjectAllowNull([]byte(`{"allowed":null,"rejected":null}`), []string{"allowed"}, "allowed", "rejected"); err == nil {
+		t.Fatal("unexpected nullable field was accepted")
+	}
+}
 
 func TestBackupMergeDomainConflictsUseConflictExit(t *testing.T) {
 	for _, test := range []struct {

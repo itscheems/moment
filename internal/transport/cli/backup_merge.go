@@ -264,7 +264,7 @@ func decodeMergeInspectionAPI(body []byte, observedAt time.Time) (archive.MergeI
 	if err != nil {
 		return archive.MergeInspection{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(envelope["data"], "plan", "review", "incoming_counts", "incoming_media_bytes", "disk", "replacement", "merge_allowed", "merge_blocked_reason", "warnings", "expires_at", "staging_token"); err != nil {
+	if _, err := decodeExactJSONObjectAllowNull(envelope["data"], []string{"merge_blocked_reason"}, "plan", "review", "incoming_counts", "incoming_media_bytes", "disk", "replacement", "merge_allowed", "merge_blocked_reason", "warnings", "expires_at", "staging_token"); err != nil {
 		return archive.MergeInspection{}, nil, err
 	}
 	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")

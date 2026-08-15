@@ -965,7 +965,15 @@ func decodeExactJSONObject(raw []byte, expectedKeys ...string) (map[string]json.
 	return decodeJSONObjectWithOptional(raw, expectedKeys, nil)
 }
 
+func decodeExactJSONObjectAllowNull(raw []byte, nullableKeys []string, expectedKeys ...string) (map[string]json.RawMessage, error) {
+	return decodeJSONObjectWithOptionalNullable(raw, expectedKeys, nil, nullableKeys)
+}
+
 func decodeJSONObjectWithOptional(raw []byte, requiredKeys, optionalKeys []string) (map[string]json.RawMessage, error) {
+	return decodeJSONObjectWithOptionalNullable(raw, requiredKeys, optionalKeys, nil)
+}
+
+func decodeJSONObjectWithOptionalNullable(raw []byte, requiredKeys, optionalKeys, nullableKeys []string) (map[string]json.RawMessage, error) {
 	allowedKeys := make([]string, 0, len(requiredKeys)+len(optionalKeys))
 	allowedKeys = append(allowedKeys, requiredKeys...)
 	allowedKeys = append(allowedKeys, optionalKeys...)
@@ -978,6 +986,16 @@ func decodeJSONObjectWithOptional(raw []byte, requiredKeys, optionalKeys []strin
 			return nil, errors.New("duplicate expected JSON key")
 		}
 		expected[key] = struct{}{}
+	}
+	nullable := make(map[string]struct{}, len(nullableKeys))
+	for _, key := range nullableKeys {
+		if _, allowed := expected[key]; !allowed {
+			return nil, errors.New("nullable JSON key is not allowed")
+		}
+		if _, duplicate := nullable[key]; duplicate {
+			return nil, errors.New("duplicate nullable JSON key")
+		}
+		nullable[key] = struct{}{}
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	token, err := decoder.Token()
@@ -998,8 +1016,13 @@ func decodeJSONObjectWithOptional(raw []byte, requiredKeys, optionalKeys []strin
 			return nil, errors.New("JSON object contains a duplicate key")
 		}
 		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		if err := decoder.Decode(&value); err != nil {
 			return nil, errors.New("JSON object value is invalid")
+		}
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			if _, allowed := nullable[key]; !allowed {
+				return nil, errors.New("JSON object value is invalid")
+			}
 		}
 		fields[key] = value
 	}
