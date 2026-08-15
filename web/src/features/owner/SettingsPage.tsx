@@ -1,3 +1,4 @@
+import { Dialog } from "@base-ui/react/dialog";
 import {
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
@@ -14,6 +15,7 @@ import type {
 } from "../../api/owner";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { BackupRestore } from "./BackupRestore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { OwnerLogin } from "./OwnerLogin";
@@ -246,11 +248,15 @@ export function SettingsPage({
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() =>
     sectionFromHash(window.location.hash),
   );
+  const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
+  const [leaveMessage, setLeaveMessage] = useState("");
   const formRef = useRef(form);
   const formRevisionRef = useRef(0);
   const mountedRef = useRef(true);
   const navigationBlockerId = useRef(Symbol("settings-navigation-blocker"));
   const allowLeaveRef = useRef(false);
+  const pendingLeaveRef = useRef<(() => void) | null>(null);
+  const leaveFocusRef = useRef<HTMLElement | null>(null);
   const settingsNavRef = useRef<HTMLElement>(null);
 
   const validation = useMemo(() => validateForm(form), [form]);
@@ -262,6 +268,8 @@ export function SettingsPage({
     !savePending &&
     !dataRestoreBusy &&
     session !== null;
+
+  useDocumentScrollLock(leaveDialogOpen);
 
   useEffect(
     () => () => {
@@ -355,14 +363,23 @@ export function SettingsPage({
   useEffect(() => {
     const protectOneTimeCredential = rotated !== null;
     const shouldBlock = dirty || protectOneTimeCredential || dataRestoreBusy;
-    const confirmLeave = () =>
-      window.confirm(
+    const confirmLeave = (resume: () => void) => {
+      if (allowLeaveRef.current) return true;
+      leaveFocusRef.current =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : null;
+      pendingLeaveRef.current = resume;
+      setLeaveMessage(
         dataRestoreBusy
-          ? "恢复状态仍在确认。离开后服务器会继续运行，返回本页可重新查询。确定离开吗？"
+          ? "恢复仍在服务器继续运行。离开后不会中止操作，返回备份页可重新查询状态。"
           : protectOneTimeCredential
-            ? "新的所有者凭据只显示这一次。确认已经保存并离开吗？"
-            : "站点设置还没有保存。确定离开吗？",
+            ? "新的所有者凭据只显示这一次。请确认已经安全保存后再离开。"
+            : "当前还有未保存的站点设置。离开后这些更改会丢失。",
       );
+      setLeaveDialogOpen(true);
+      return false;
+    };
     navigation.setNavigationBlocker(
       navigationBlockerId.current,
       shouldBlock && !allowLeaveRef.current ? confirmLeave : null,
@@ -580,6 +597,51 @@ export function SettingsPage({
 
   return (
     <div className={styles.settingsPage}>
+      <Dialog.Root
+        onOpenChange={(open) => {
+          setLeaveDialogOpen(open);
+          if (!open && !allowLeaveRef.current) pendingLeaveRef.current = null;
+        }}
+        open={leaveDialogOpen}
+      >
+        <Dialog.Portal>
+          <Dialog.Backdrop className={styles.dialogBackdrop} />
+          <Dialog.Viewport className={styles.dialogViewport}>
+            <Dialog.Popup
+              className={styles.leaveDialog}
+              finalFocus={() => leaveFocusRef.current ?? true}
+            >
+              <Dialog.Close
+                aria-label="关闭离开确认"
+                className={styles.dialogClose}
+              >
+                ×
+              </Dialog.Close>
+              <span className={styles.leaveDialogEyebrow}>尚未完成</span>
+              <Dialog.Title>要离开设置吗？</Dialog.Title>
+              <Dialog.Description>{leaveMessage}</Dialog.Description>
+              <div className={styles.dialogActions}>
+                <Dialog.Close className={styles.secondaryButton}>
+                  留在这里
+                </Dialog.Close>
+                <button
+                  className={styles.dangerButton}
+                  onClick={() => {
+                    const resume = pendingLeaveRef.current;
+                    pendingLeaveRef.current = null;
+                    allowLeaveRef.current = true;
+                    setLeaveDialogOpen(false);
+                    resume?.();
+                  }}
+                  type="button"
+                >
+                  仍然离开
+                </button>
+              </div>
+            </Dialog.Popup>
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
       <div className={styles.settingsLayout}>
         <nav
           aria-label="设置分区"

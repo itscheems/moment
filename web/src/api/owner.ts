@@ -180,10 +180,80 @@ export interface MergePlan {
   default_selection: MergeSelection;
 }
 
+export type MergeReviewSource = "local" | "incoming";
+
+export interface MergeReviewMedia {
+  source: MergeReviewSource;
+  id: string;
+  original_name: string;
+  mime_type: string;
+  byte_size: number;
+  width: number;
+  height: number;
+  position: number;
+  alt_text: string | null;
+}
+
+export interface MergeReviewEntity {
+  id: string;
+  content_md: string;
+  entry_id?: string;
+  parent_id?: string;
+  author_kind?: string;
+  author_name?: string;
+  created_at: string;
+  updated_at?: string;
+  published_at?: string;
+  location?: OwnerLocation;
+  media: MergeReviewMedia[];
+}
+
+export interface MergeReviewItem {
+  kind: Exclude<MergeEntityKind, "media">;
+  id: string;
+  classification: Exclude<MergeClassification, "unchanged">;
+  changed_fields: string[];
+  local?: MergeReviewEntity;
+  incoming?: MergeReviewEntity;
+}
+
+export interface MergeReviewBucket {
+  total: number;
+  truncated: boolean;
+  items: MergeReviewItem[];
+}
+
+export interface MergeReviewSiteField {
+  field: string;
+  classification: MergeClassification;
+  local_value: unknown;
+  incoming_value: unknown;
+  local_media?: MergeReviewMedia;
+  incoming_media?: MergeReviewMedia;
+  local_entry?: MergeReviewEntity;
+  incoming_entry?: MergeReviewEntity;
+}
+
+export interface MergeReview {
+  incoming_only: MergeReviewBucket;
+  local_only: MergeReviewBucket;
+  conflicts: MergeReviewBucket;
+  site_fields: MergeReviewSiteField[];
+}
+
 export interface MergeInspection {
   plan: MergePlan;
+  review: MergeReview;
   incomingCounts: ImportCounts;
   incomingMediaBytes: number;
+  disk: ImportDiskEstimate;
+  replacement: {
+    counts: ImportCounts;
+    mediaBytes: number;
+    dataBytes: number;
+  };
+  mergeAllowed: boolean;
+  mergeBlockedReason: string | null;
   warnings: string[];
   expiresAt: string;
   stagingToken: string;
@@ -380,8 +450,13 @@ function parseMergeInspection(value: unknown): MergeInspection {
   if (
     !hasExactKeys(record, [
       "plan",
+      "review",
       "incoming_counts",
       "incoming_media_bytes",
+      "disk",
+      "replacement",
+      "merge_allowed",
+      "merge_blocked_reason",
       "warnings",
       "expires_at",
       "staging_token",
@@ -737,13 +812,286 @@ function parseMergeInspection(value: unknown): MergeInspection {
       site_fields: selectionSiteFields,
     },
   };
+  const replacementRecord = objectData(record.replacement);
+  if (
+    !hasExactKeys(replacementRecord, ["counts", "media_bytes", "data_bytes"])
+  ) {
+    throw invalidResponse("merge replacement impact is invalid");
+  }
+  const mergeAllowed = booleanField(record, "merge_allowed");
+  const mergeBlockedReason = record.merge_blocked_reason;
+  if (
+    mergeBlockedReason !== null &&
+    (typeof mergeBlockedReason !== "string" || mergeBlockedReason.length > 128)
+  ) {
+    throw invalidResponse("merge availability reason is invalid");
+  }
+  if (mergeAllowed !== (mergeBlockedReason === null)) {
+    throw invalidResponse("merge availability is inconsistent");
+  }
   return {
     plan,
+    review: parseMergeReview(record.review, plan),
     incomingCounts,
     incomingMediaBytes: nonNegativeIntegerField(record, "incoming_media_bytes"),
+    disk: parseImportDisk(record.disk),
+    replacement: {
+      counts: parseImportCounts(replacementRecord.counts),
+      mediaBytes: nonNegativeIntegerField(replacementRecord, "media_bytes"),
+      dataBytes: nonNegativeIntegerField(replacementRecord, "data_bytes"),
+    },
+    mergeAllowed,
+    mergeBlockedReason,
     warnings: [...warnings],
     expiresAt,
     stagingToken,
+  };
+}
+
+function parseMergeReviewMedia(value: unknown): MergeReviewMedia {
+  const record = objectData(value);
+  if (
+    !hasExactKeys(record, [
+      "source",
+      "id",
+      "original_name",
+      "mime_type",
+      "byte_size",
+      "width",
+      "height",
+      "position",
+      "alt_text",
+    ])
+  ) {
+    throw invalidResponse("merge review media contains unsupported fields");
+  }
+  const source = stringField(record, "source") as MergeReviewSource;
+  const altText = record.alt_text;
+  if (
+    (source !== "local" && source !== "incoming") ||
+    (altText !== null && typeof altText !== "string")
+  ) {
+    throw invalidResponse("merge review media is invalid");
+  }
+  return {
+    source,
+    id: stringField(record, "id"),
+    original_name: stringField(record, "original_name"),
+    mime_type: stringField(record, "mime_type"),
+    byte_size: nonNegativeIntegerField(record, "byte_size"),
+    width: positiveIntegerField(record, "width"),
+    height: positiveIntegerField(record, "height"),
+    position: nonNegativeIntegerField(record, "position"),
+    alt_text: altText,
+  };
+}
+
+function parseMergeReviewEntity(value: unknown): MergeReviewEntity {
+  const record = objectData(value);
+  const required = ["id", "content_md", "created_at", "media"];
+  const optional = [
+    "entry_id",
+    "parent_id",
+    "author_kind",
+    "author_name",
+    "updated_at",
+    "published_at",
+    "location",
+  ];
+  if (
+    !required.every((field) => field in record) ||
+    !Object.keys(record).every((field) =>
+      [...required, ...optional].includes(field),
+    ) ||
+    !Array.isArray(record.media)
+  ) {
+    throw invalidResponse("merge review entity contains unsupported fields");
+  }
+  const optionalString = (field: string): string | undefined =>
+    field in record ? stringField(record, field) : undefined;
+  return {
+    id: stringField(record, "id"),
+    content_md: stringField(record, "content_md"),
+    created_at: canonicalUTCField(record, "created_at"),
+    ...(optionalString("entry_id") === undefined
+      ? {}
+      : { entry_id: optionalString("entry_id") }),
+    ...(optionalString("parent_id") === undefined
+      ? {}
+      : { parent_id: optionalString("parent_id") }),
+    ...(optionalString("author_kind") === undefined
+      ? {}
+      : { author_kind: optionalString("author_kind") }),
+    ...(optionalString("author_name") === undefined
+      ? {}
+      : { author_name: optionalString("author_name") }),
+    ...(optionalString("updated_at") === undefined
+      ? {}
+      : { updated_at: canonicalUTCField(record, "updated_at") }),
+    ...(optionalString("published_at") === undefined
+      ? {}
+      : { published_at: canonicalUTCField(record, "published_at") }),
+    ...(record.location === undefined
+      ? {}
+      : { location: parseOwnerLocation(record.location) }),
+    media: record.media.map(parseMergeReviewMedia),
+  };
+}
+
+function parseMergeReview(value: unknown, plan: MergePlan): MergeReview {
+  const record = objectData(value);
+  if (
+    !hasExactKeys(record, [
+      "incoming_only",
+      "local_only",
+      "conflicts",
+      "site_fields",
+    ]) ||
+    !Array.isArray(record.site_fields)
+  ) {
+    throw invalidResponse("merge review contains unsupported fields");
+  }
+  const planItems = new Map(
+    plan.items.map((item) => [`${item.kind}\u0000${item.id}`, item] as const),
+  );
+  const parseBucket = (
+    candidate: unknown,
+    classification: "incoming_only" | "local_only" | "conflict",
+  ): MergeReviewBucket => {
+    const bucket = objectData(candidate);
+    if (
+      !hasExactKeys(bucket, ["total", "truncated", "items"]) ||
+      !Array.isArray(bucket.items)
+    ) {
+      throw invalidResponse("merge review bucket is invalid");
+    }
+    const total = nonNegativeIntegerField(bucket, "total");
+    const truncated = booleanField(bucket, "truncated");
+    if (
+      bucket.items.length > 200 ||
+      total < bucket.items.length ||
+      truncated !== total > bucket.items.length
+    ) {
+      throw invalidResponse("merge review bucket bounds are invalid");
+    }
+    const items = bucket.items.map((item): MergeReviewItem => {
+      const current = objectData(item);
+      const required = ["kind", "id", "classification", "changed_fields"];
+      const optional = ["local", "incoming"];
+      if (
+        !required.every((field) => field in current) ||
+        !Object.keys(current).every((field) =>
+          [...required, ...optional].includes(field),
+        ) ||
+        !Array.isArray(current.changed_fields)
+      ) {
+        throw invalidResponse("merge review item is invalid");
+      }
+      const kind = stringField(current, "kind") as Exclude<
+        MergeEntityKind,
+        "media"
+      >;
+      const id = stringField(current, "id");
+      const planned = planItems.get(`${kind}\u0000${id}`);
+      if (
+        (kind !== "entry" && kind !== "comment") ||
+        current.classification !== classification ||
+        planned?.classification !== classification ||
+        !current.changed_fields.every((field) => typeof field === "string")
+      ) {
+        throw invalidResponse("merge review item does not match its plan");
+      }
+      const local =
+        current.local === undefined
+          ? undefined
+          : parseMergeReviewEntity(current.local);
+      const incoming =
+        current.incoming === undefined
+          ? undefined
+          : parseMergeReviewEntity(current.incoming);
+      if (
+        (classification === "incoming_only" &&
+          (local !== undefined || incoming === undefined)) ||
+        (classification === "local_only" &&
+          (local === undefined || incoming !== undefined)) ||
+        (classification === "conflict" &&
+          (local === undefined || incoming === undefined))
+      ) {
+        throw invalidResponse("merge review item sides are invalid");
+      }
+      return {
+        kind,
+        id,
+        classification,
+        changed_fields: [...current.changed_fields],
+        ...(local ? { local } : {}),
+        ...(incoming ? { incoming } : {}),
+      };
+    });
+    return { total, truncated, items };
+  };
+  const planFields = new Map(
+    plan.site_fields.map((field) => [field.field, field]),
+  );
+  const siteFields = record.site_fields.map((item): MergeReviewSiteField => {
+    const current = objectData(item);
+    const required = [
+      "field",
+      "classification",
+      "local_value",
+      "incoming_value",
+    ];
+    const optional = [
+      "local_media",
+      "incoming_media",
+      "local_entry",
+      "incoming_entry",
+    ];
+    if (
+      !required.every((field) => field in current) ||
+      !Object.keys(current).every((field) =>
+        [...required, ...optional].includes(field),
+      )
+    ) {
+      throw invalidResponse("merge review profile field is invalid");
+    }
+    const field = stringField(current, "field");
+    const classification = stringField(
+      current,
+      "classification",
+    ) as MergeClassification;
+    if (planFields.get(field)?.classification !== classification) {
+      throw invalidResponse(
+        "merge review profile field does not match its plan",
+      );
+    }
+    return {
+      field,
+      classification,
+      local_value: current.local_value,
+      incoming_value: current.incoming_value,
+      ...(current.local_media === undefined
+        ? {}
+        : { local_media: parseMergeReviewMedia(current.local_media) }),
+      ...(current.incoming_media === undefined
+        ? {}
+        : { incoming_media: parseMergeReviewMedia(current.incoming_media) }),
+      ...(current.local_entry === undefined
+        ? {}
+        : { local_entry: parseMergeReviewEntity(current.local_entry) }),
+      ...(current.incoming_entry === undefined
+        ? {}
+        : { incoming_entry: parseMergeReviewEntity(current.incoming_entry) }),
+    };
+  });
+  if (siteFields.length !== plan.site_fields.length) {
+    throw invalidResponse("merge review profile fields are incomplete");
+  }
+  return {
+    incoming_only: parseBucket(record.incoming_only, "incoming_only"),
+    local_only: parseBucket(record.local_only, "local_only"),
+    conflicts: parseBucket(record.conflicts, "conflict"),
+    site_fields: siteFields,
   };
 }
 
@@ -1742,6 +2090,80 @@ export class OwnerApi {
     );
     onProgress(100);
     return parseMergeInspection(data);
+  }
+
+  async reviewImport(
+    csrfToken: string,
+    file: File,
+    onProgress: (percent: number | null) => void = () => undefined,
+    signal?: AbortSignal,
+  ): Promise<MergeInspection> {
+    const data = await uploadArchive(
+      "/api/v1/owner/import/review",
+      csrfToken,
+      file,
+      null,
+      onProgress,
+      201,
+      signal,
+    );
+    onProgress(100);
+    return parseMergeInspection(data);
+  }
+
+  async commitReviewedReplacement(
+    csrfToken: string,
+    stagingToken: string,
+    planID: string,
+    signal?: AbortSignal,
+  ): Promise<ImportStatus> {
+    const response = await this.fetcher("/api/v1/owner/import/review/replace", {
+      ...requestInit("POST", csrfToken, {
+        staging_token: stagingToken,
+        plan_id: planID,
+      }),
+      signal,
+    });
+    const data = objectData(await decodeImportSuccess(response, 200));
+    if (!hasExactKeys(data, ["status"])) {
+      throw invalidResponse(
+        "reviewed replacement result contains unsupported fields",
+      );
+    }
+    const status = parseImportStatus(data.status);
+    if (status.phase !== "succeeded") {
+      throw invalidResponse(
+        "reviewed replacement is not a successful terminal state",
+      );
+    }
+    return status;
+  }
+
+  async loadImportReviewMedia(
+    csrfToken: string,
+    stagingToken: string,
+    planID: string,
+    source: MergeReviewSource,
+    mediaID: string,
+    signal?: AbortSignal,
+  ): Promise<Blob> {
+    const response = await this.fetcher("/api/v1/owner/import/review/media", {
+      ...requestInit("POST", csrfToken, {
+        staging_token: stagingToken,
+        plan_id: planID,
+        source,
+        media_id: mediaID,
+      }),
+      signal,
+    });
+    if (!response.ok) {
+      await decodeImportSuccess(response, 200);
+    }
+    const contentType = response.headers.get("Content-Type") ?? "";
+    if (response.status !== 200 || !contentType.startsWith("image/")) {
+      throw invalidResponse("review media response is invalid");
+    }
+    return response.blob();
   }
 
   async commitMergeImport(

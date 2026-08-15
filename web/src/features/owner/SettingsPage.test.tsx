@@ -347,7 +347,6 @@ describe("owner site settings", () => {
 
   it("shows field errors, blocks dirty navigation, and warns before unload", async () => {
     installFetch();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<App />);
     await screen.findByRole("heading", { name: "网站" });
     await waitForRestoreStatus();
@@ -364,13 +363,33 @@ describe("owner site settings", () => {
     expect(screen.getByText(/不要包含账号、查询或片段/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存设置" })).toBeDisabled();
 
-    fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
-    expect(confirm).toHaveBeenCalledWith("站点设置还没有保存。确定离开吗？");
+    const searchLink = screen.getAllByRole("link", { name: "搜索" })[0];
+    searchLink.focus();
+    fireEvent.click(searchLink);
+    const dialog = await screen.findByRole("dialog", {
+      name: "要离开设置吗？",
+    });
+    expect(
+      within(dialog).getByText(
+        "当前还有未保存的站点设置。离开后这些更改会丢失。",
+      ),
+    ).toBeInTheDocument();
     expect(window.location.pathname).toBe("/owner/settings");
+    fireEvent.click(within(dialog).getByRole("button", { name: "留在这里" }));
+    await waitFor(() => expect(searchLink).toHaveFocus());
 
     const beforeUnload = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(beforeUnload);
     expect(beforeUnload.defaultPrevented).toBe(true);
+
+    fireEvent.click(searchLink);
+    const leaveDialog = await screen.findByRole("dialog", {
+      name: "要离开设置吗？",
+    });
+    fireEvent.click(
+      within(leaveDialog).getByRole("button", { name: "仍然离开" }),
+    );
+    await waitFor(() => expect(window.location.pathname).toBe("/search"));
   });
 
   it("preserves dirty fields across a failed save and patches only changed values on retry", async () => {

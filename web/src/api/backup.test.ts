@@ -58,6 +58,7 @@ function planData(archiveBytes: number) {
 }
 
 function mergePlanData() {
+  const importPlan = planData(9);
   return {
     plan: {
       version: 1,
@@ -105,8 +106,65 @@ function mergePlanData() {
         site_fields: [],
       },
     },
+    review: {
+      incoming_only: {
+        total: 1,
+        truncated: false,
+        items: [
+          {
+            kind: "comment",
+            id: "comment-new",
+            classification: "incoming_only",
+            changed_fields: [],
+            incoming: {
+              id: "comment-new",
+              content_md: "incoming reply",
+              entry_id: "post-conflict",
+              author_kind: "guest",
+              author_name: "Guest",
+              created_at: "2026-08-11T00:00:00Z",
+              media: [],
+            },
+          },
+        ],
+      },
+      local_only: { total: 0, truncated: false, items: [] },
+      conflicts: {
+        total: 1,
+        truncated: false,
+        items: [
+          {
+            kind: "entry",
+            id: "post-conflict",
+            classification: "conflict",
+            changed_fields: ["content_md"],
+            local: {
+              id: "post-conflict",
+              content_md: "local post",
+              created_at: "2026-08-10T00:00:00Z",
+              updated_at: "2026-08-10T00:00:00Z",
+              published_at: "2026-08-10T00:00:00Z",
+              media: [],
+            },
+            incoming: {
+              id: "post-conflict",
+              content_md: "backup post",
+              created_at: "2026-08-10T00:00:00Z",
+              updated_at: "2026-08-11T00:00:00Z",
+              published_at: "2026-08-10T00:00:00Z",
+              media: [],
+            },
+          },
+        ],
+      },
+      site_fields: [],
+    },
     incoming_counts: { entries: 1, comments: 1, media: 0 },
     incoming_media_bytes: 0,
+    disk: importPlan.disk,
+    replacement: importPlan.replacement,
+    merge_allowed: true,
+    merge_blocked_reason: null,
     warnings: [],
     expires_at: "2999-08-11T02:00:00Z",
     staging_token: mergeToken,
