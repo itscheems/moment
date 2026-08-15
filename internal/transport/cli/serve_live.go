@@ -50,6 +50,18 @@ func (committer *hostedImportCommitter) InspectMergeArchive(ctx context.Context,
 	return committer.core.InspectMergeArchive(ctx, source, epoch, committer.host.ActiveDatabase())
 }
 
+func (committer *hostedImportCommitter) InspectReviewArchive(ctx context.Context, source io.Reader, epoch uint64) (archive.MergeInspection, error) {
+	return committer.core.InspectReviewArchive(ctx, source, epoch, committer.host.ActiveDatabase())
+}
+
+func (committer *hostedImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, epoch uint64, planID string) (archive.CommitResult, error) {
+	return committer.core.CommitReviewedReplacement(ctx, token, epoch, planID, committer.host)
+}
+
+func (committer *hostedImportCommitter) ReadReviewMedia(ctx context.Context, token string, epoch uint64, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
+	return committer.core.ReadReviewMedia(ctx, token, epoch, planID, source, mediaID)
+}
+
 func (committer *hostedImportCommitter) CommitMerge(ctx context.Context, token string, epoch uint64, selection archive.MergeSelection) (archive.CommitResult, error) {
 	return committer.core.CommitMerge(ctx, token, epoch, selection, committer.host)
 }

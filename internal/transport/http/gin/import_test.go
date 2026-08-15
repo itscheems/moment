@@ -12,6 +12,7 @@ import (
 
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 )
 
 type importInspectorFunc func(context.Context, io.Reader, uint64) (archive.Inspection, error)
@@ -50,6 +51,25 @@ type fakeMergeImportCommitter struct {
 	discardMerge func(context.Context, string, uint64) error
 }
 
+type fakeReviewImportCommitter struct {
+	fakeImportCommitter
+	review      func(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
+	replace     func(context.Context, string, uint64, string) (archive.CommitResult, error)
+	reviewMedia func(context.Context, string, uint64, string, archive.MergeReviewSource, string) (media.Asset, error)
+}
+
+func (fake fakeReviewImportCommitter) InspectReviewArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+	return fake.review(ctx, input, epoch)
+}
+
+func (fake fakeReviewImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, epoch uint64, planID string) (archive.CommitResult, error) {
+	return fake.replace(ctx, token, epoch, planID)
+}
+
+func (fake fakeReviewImportCommitter) ReadReviewMedia(ctx context.Context, token string, epoch uint64, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
+	return fake.reviewMedia(ctx, token, epoch, planID, source, mediaID)
+}
+
 func (fake fakeMergeImportCommitter) InspectMergeArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
 	return fake.planMerge(ctx, input, epoch)
 }
@@ -64,6 +84,72 @@ func (fake fakeMergeImportCommitter) DiscardMerge(ctx context.Context, token str
 
 func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
 	return fake.restore(ctx, input, expectedArchiveSHA, epoch)
+}
+
+func TestImportReviewReplacementAndMediaContracts(t *testing.T) {
+	fixture := newOwnerTestFixture(t, false)
+	planID := strings.Repeat("a", 64)
+	mediaID := "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	committer := fakeReviewImportCommitter{
+		fakeImportCommitter: fakeImportCommitter{
+			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+				return archive.CommitResult{}, nil
+			},
+			status: func(context.Context) (archive.CommitStatus, error) { return archive.CommitStatus{}, nil },
+		},
+		review: func(_ context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+			body, _ := io.ReadAll(input)
+			if string(body) != "review-zip" || epoch != 1 {
+				t.Fatalf("review body=%q epoch=%d", body, epoch)
+			}
+			return archive.MergeInspection{Plan: archive.MergePlan{PlanID: planID}, MergeAllowed: true, Warnings: []string{}, StagingToken: "review-token"}, nil
+		},
+		replace: func(_ context.Context, token string, epoch uint64, gotPlanID string) (archive.CommitResult, error) {
+			if token != "review-token" || epoch != 1 || gotPlanID != planID {
+				t.Fatalf("replace token=%q epoch=%d plan=%q", token, epoch, gotPlanID)
+			}
+			return archive.CommitResult{Status: archive.CommitStatus{Phase: archive.CommitSucceeded}}, nil
+		},
+		reviewMedia: func(_ context.Context, token string, epoch uint64, gotPlanID string, source archive.MergeReviewSource, gotMediaID string) (media.Asset, error) {
+			if token != "review-token" || epoch != 1 || gotPlanID != planID || source != archive.MergeReviewIncoming || gotMediaID != mediaID {
+				t.Fatalf("media token=%q epoch=%d plan=%q source=%q id=%q", token, epoch, gotPlanID, source, gotMediaID)
+			}
+			return media.Asset{Contents: []byte("image"), MIMEType: "image/png", ETag: `"sha256-image"`}, nil
+		},
+	}
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, ImportCommitter: committer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/review", fixture.token, strings.NewReader("review-zip"))
+	reviewRequest.Header.Set("Content-Type", "application/zip")
+	if response := performRequest(engine, reviewRequest); response.Code != http.StatusCreated || !strings.Contains(response.Body.String(), `"staging_token":"review-token"`) {
+		t.Fatalf("review response=%d %s", response.Code, response.Body.String())
+	}
+	replaceBody := `{"staging_token":"review-token","plan_id":"` + planID + `"}`
+	replaceRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/review/replace", fixture.token, strings.NewReader(replaceBody))
+	replaceRequest.Header.Set("Content-Type", "application/json")
+	if response := performRequest(engine, replaceRequest); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"phase":"succeeded"`) {
+		t.Fatalf("replace response=%d %s", response.Code, response.Body.String())
+	}
+	mediaBody := `{"staging_token":"review-token","plan_id":"` + planID + `","source":"incoming","media_id":"` + mediaID + `"}`
+	mediaRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/review/media", fixture.token, strings.NewReader(mediaBody))
+	mediaRequest.Header.Set("Content-Type", "application/json")
+	mediaResponse := performRequest(engine, mediaRequest)
+	if mediaResponse.Code != http.StatusOK || mediaResponse.Body.String() != "image" || mediaResponse.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("media response=%d headers=%v body=%q", mediaResponse.Code, mediaResponse.Header(), mediaResponse.Body.String())
+	}
+	for _, body := range []string{
+		`{}`, `{"staging_token":"review-token","plan_id":"bad"}`,
+		`{"staging_token":"review-token","plan_id":"` + planID + `","extra":true}`,
+		`{"staging_token":"review-token","staging_token":"again","plan_id":"` + planID + `"}`,
+	} {
+		request := headerRequest(http.MethodPost, "/api/v1/owner/import/review/replace", fixture.token, strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		if response := performRequest(engine, request); response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid review body %s => %d %s", body, response.Code, response.Body.String())
+		}
+	}
 }
 
 func (fake fakeImportCommitter) Commit(ctx context.Context, token string, epoch uint64) (archive.CommitResult, error) {

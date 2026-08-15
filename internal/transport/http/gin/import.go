@@ -10,12 +10,14 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 )
 
 // ImportInspector is the transport-independent hostile archive preflight.
@@ -44,6 +46,12 @@ type mergeImportCommitter interface {
 	DiscardMerge(context.Context, string, uint64) error
 }
 
+type reviewImportCommitter interface {
+	InspectReviewArchive(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
+	CommitReviewedReplacement(context.Context, string, uint64, string) (archive.CommitResult, error)
+	ReadReviewMedia(context.Context, string, uint64, string, archive.MergeReviewSource, string) (media.Asset, error)
+}
+
 // RegisterImportInspectRoutes installs the owner-only raw ZIP upload endpoint.
 func RegisterImportInspectRoutes(engine *gin.Engine, inspector ImportInspector, manager *auth.Manager) {
 	owner := engine.Group("/api/v1/owner")
@@ -68,7 +76,105 @@ func RegisterImportCommitRoutes(engine *gin.Engine, committer ImportCommitter, m
 		owner.POST("/import/merge/commit", commitMergeImport(merger, manager))
 		owner.POST("/import/merge/discard", discardMergeImport(merger, manager))
 	}
+	if reviewer, ok := committer.(reviewImportCommitter); ok {
+		owner.POST("/import/review", reviewImport(reviewer, manager))
+		owner.POST("/import/review/replace", commitReviewedReplacement(reviewer, manager))
+		owner.POST("/import/review/media", getReviewMedia(reviewer, manager))
+	}
 	owner.GET("/import/status", importStatus(committer))
+}
+
+func reviewImport(reviewer reviewImportCommitter, manager *auth.Manager) gin.HandlerFunc {
+	return importArchiveUpload(manager, "review", false, func(ctx context.Context, source io.Reader, _ string, epoch uint64) (any, error) {
+		return reviewer.InspectReviewArchive(ctx, source, epoch)
+	}, http.StatusCreated)
+}
+
+func commitReviewedReplacement(reviewer reviewImportCommitter, manager *auth.Manager) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if !requireImportJSON(ctx, "review replacement") {
+			return
+		}
+		body, ok := readBody(ctx)
+		if !ok {
+			return
+		}
+		token, planID, err := decodeReviewIdentityRequest(body)
+		if err != nil {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import review replacement requires exactly staging_token and plan_id", nil)
+			return
+		}
+		epoch, ok := authorizedImportEpoch(ctx, manager)
+		if !ok {
+			return
+		}
+		result, err := reviewer.CommitReviewedReplacement(ctx.Request.Context(), token, epoch, planID)
+		if err != nil {
+			writeImportCommitError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, result, nil)
+	}
+}
+
+func getReviewMedia(reviewer reviewImportCommitter, manager *auth.Manager) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if !requireImportJSON(ctx, "review media") {
+			return
+		}
+		body, ok := readBody(ctx)
+		if !ok {
+			return
+		}
+		token, planID, source, mediaID, err := decodeReviewMediaRequest(body)
+		if err != nil {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import review media requires exactly staging_token, plan_id, source and media_id", nil)
+			return
+		}
+		epoch, ok := authorizedImportEpoch(ctx, manager)
+		if !ok {
+			return
+		}
+		asset, err := reviewer.ReadReviewMedia(ctx.Request.Context(), token, epoch, planID, source, mediaID)
+		if err != nil {
+			writeImportCommitError(ctx, err)
+			return
+		}
+		ctx.Header("Content-Type", asset.MIMEType)
+		ctx.Header("Cache-Control", "private, no-store")
+		ctx.Header("ETag", asset.ETag)
+		ctx.Header("X-Content-Type-Options", "nosniff")
+		ctx.Header("Content-Length", strconv.Itoa(len(asset.Contents)))
+		ctx.Status(http.StatusOK)
+		_, _ = ctx.Writer.Write(asset.Contents)
+	}
+}
+
+func requireImportJSON(ctx *gin.Context, operation string) bool {
+	if ctx.Request.URL.RawQuery != "" {
+		Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import "+operation+" does not accept query parameters", map[string]any{"field": "query"})
+		return false
+	}
+	mediaType, _, err := mime.ParseMediaType(ctx.GetHeader("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "import "+operation+" requires application/json", map[string]any{"field": "content_type"})
+		return false
+	}
+	return true
+}
+
+func authorizedImportEpoch(ctx *gin.Context, manager *auth.Manager) (uint64, bool) {
+	grant, ok := ownerGrant(ctx)
+	if !ok {
+		unauthorized(ctx)
+		return 0, false
+	}
+	epoch, err := manager.SessionEpochAuthorized(grant)
+	if err != nil {
+		unauthorized(ctx)
+		return 0, false
+	}
+	return epoch, true
 }
 
 func planMergeImport(merger mergeImportCommitter, manager *auth.Manager) gin.HandlerFunc {
@@ -367,6 +473,56 @@ func decodeMergeCommitRequest(body []byte) (string, archive.MergeSelection, erro
 		return "", archive.MergeSelection{}, errors.New("request object is incomplete")
 	}
 	return stagingToken, selection, nil
+}
+
+func decodeReviewIdentityRequest(body []byte) (string, string, error) {
+	values, err := decodeReviewRequest(body, map[string]bool{"staging_token": true, "plan_id": true})
+	if err != nil || !validReviewCredential(values["staging_token"], 256) || !canonicalArchiveSHA(values["plan_id"]) {
+		return "", "", errors.New("review identity is invalid")
+	}
+	return values["staging_token"], values["plan_id"], nil
+}
+
+func decodeReviewMediaRequest(body []byte) (string, string, archive.MergeReviewSource, string, error) {
+	values, err := decodeReviewRequest(body, map[string]bool{"staging_token": true, "plan_id": true, "source": true, "media_id": true})
+	source := archive.MergeReviewSource(values["source"])
+	if err != nil || !validReviewCredential(values["staging_token"], 256) || !canonicalArchiveSHA(values["plan_id"]) ||
+		(source != archive.MergeReviewLocal && source != archive.MergeReviewIncoming) || !validReviewCredential(values["media_id"], 64) {
+		return "", "", "", "", errors.New("review media identity is invalid")
+	}
+	return values["staging_token"], values["plan_id"], source, values["media_id"], nil
+}
+
+func decodeReviewRequest(body []byte, expected map[string]bool) (map[string]string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, errors.New("request must be one object")
+	}
+	values := make(map[string]string, len(expected))
+	for decoder.More() {
+		name, err := decoder.Token()
+		field, ok := name.(string)
+		if err != nil || !ok || !expected[field] {
+			return nil, errors.New("request has an unknown field")
+		}
+		if _, duplicate := values[field]; duplicate {
+			return nil, errors.New("request has a duplicate field")
+		}
+		var value string
+		if err := decoder.Decode(&value); err != nil {
+			return nil, errors.New("request field is not a string")
+		}
+		values[field] = value
+	}
+	if token, err := decoder.Token(); err != nil || token != json.Delim('}') || decoder.Decode(&struct{}{}) != io.EOF || len(values) != len(expected) {
+		return nil, errors.New("request object is incomplete")
+	}
+	return values, nil
+}
+
+func validReviewCredential(value string, maximum int) bool {
+	return value != "" && len(value) <= maximum && strings.TrimSpace(value) == value
 }
 
 func writeImportCommitError(ctx *gin.Context, err error) {

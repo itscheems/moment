@@ -35,21 +35,39 @@ type MergeReviewMedia struct {
 	AltText      *string           `json:"alt_text"`
 }
 
+// MergeReviewLocation is a stable provider-independent location snapshot for
+// display. Coordinates are optional and never required to understand a place.
+type MergeReviewLocation struct {
+	Name             string                   `json:"name"`
+	DisplayName      string                   `json:"display_name"`
+	CountryCode      string                   `json:"country_code"`
+	Country          string                   `json:"country"`
+	Region           string                   `json:"region"`
+	City             string                   `json:"city"`
+	District         string                   `json:"district"`
+	Category         string                   `json:"category"`
+	Provider         string                   `json:"provider"`
+	ProviderPlaceID  string                   `json:"provider_place_id"`
+	Latitude         *float64                 `json:"latitude"`
+	Longitude        *float64                 `json:"longitude"`
+	CoordinateSystem *domain.CoordinateSystem `json:"coordinate_system"`
+}
+
 // MergeReviewEntity contains recognizable post/comment content. The plan ID
 // and selection remain the only commit authority; this projection is only for
 // humans and agents to understand a decision.
 type MergeReviewEntity struct {
-	ID          string             `json:"id"`
-	ContentMD   string             `json:"content_md"`
-	EntryID     *string            `json:"entry_id,omitempty"`
-	ParentID    *string            `json:"parent_id,omitempty"`
-	AuthorKind  *string            `json:"author_kind,omitempty"`
-	AuthorName  *string            `json:"author_name,omitempty"`
-	CreatedAt   time.Time          `json:"created_at"`
-	UpdatedAt   *time.Time         `json:"updated_at,omitempty"`
-	PublishedAt *time.Time         `json:"published_at,omitempty"`
-	Location    *domain.Location   `json:"location,omitempty"`
-	Media       []MergeReviewMedia `json:"media"`
+	ID          string               `json:"id"`
+	ContentMD   string               `json:"content_md"`
+	EntryID     *string              `json:"entry_id,omitempty"`
+	ParentID    *string              `json:"parent_id,omitempty"`
+	AuthorKind  *string              `json:"author_kind,omitempty"`
+	AuthorName  *string              `json:"author_name,omitempty"`
+	CreatedAt   time.Time            `json:"created_at"`
+	UpdatedAt   *time.Time           `json:"updated_at,omitempty"`
+	PublishedAt *time.Time           `json:"published_at,omitempty"`
+	Location    *MergeReviewLocation `json:"location,omitempty"`
+	Media       []MergeReviewMedia   `json:"media"`
 }
 
 // MergeReviewItem places the actual local and incoming versions beside the
@@ -207,7 +225,7 @@ func reviewEntry(value sqlitestore.ArchiveEntry, source MergeReviewSource, media
 	created, updated, published := archiveTime(value.CreatedAtMS), archiveTime(value.UpdatedAtMS), archiveTime(value.PublishedAtMS)
 	return MergeReviewEntity{
 		ID: value.ID, ContentMD: value.ContentMD, CreatedAt: created,
-		UpdatedAt: &updated, PublishedAt: &published, Location: cloneLocation(value.Location),
+		UpdatedAt: &updated, PublishedAt: &published, Location: reviewLocation(value.Location),
 		Media: reviewUsages(value.Media, source, mediaByID),
 	}
 }
@@ -269,14 +287,18 @@ func archiveTime(milliseconds int64) time.Time {
 	return time.UnixMilli(milliseconds).UTC()
 }
 
-func cloneLocation(value *domain.Location) *domain.Location {
+func reviewLocation(value *domain.Location) *MergeReviewLocation {
 	if value == nil {
 		return nil
 	}
-	result := *value
+	result := MergeReviewLocation{
+		Name: value.Name, DisplayName: value.DisplayName, CountryCode: value.CountryCode,
+		Country: value.Country, Region: value.Region, City: value.City, District: value.District,
+		Category: value.Category, Provider: value.Provider, ProviderPlaceID: value.ProviderPlaceID,
+	}
 	if value.Point != nil {
-		point := *value.Point
-		result.Point = &point
+		latitude, longitude, system := value.Point.Latitude(), value.Point.Longitude(), value.Point.System
+		result.Latitude, result.Longitude, result.CoordinateSystem = &latitude, &longitude, &system
 	}
 	return &result
 }
