@@ -55,6 +55,7 @@ type ArchiveEntry struct {
 	CreatedAtMS   int64
 	UpdatedAtMS   int64
 	PublishedAtMS int64
+	RepostedAtMS  *int64
 	Media         []ArchiveUsage
 	Location      *domain.Location
 }
@@ -245,7 +246,7 @@ func (snapshot *ArchiveSnapshot) Entries(ctx context.Context, yield func(Archive
 		return errors.New("archive entry callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms,
+SELECT e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms,
        usage.media_id, usage.position, usage.alt_text,
        location.name, location.display_name, location.country_code, location.country,
        location.region, location.city, location.district, location.category,
@@ -264,14 +265,19 @@ ORDER BY e.id, usage.position`)
 		var entry ArchiveEntry
 		var mediaID, alt sql.NullString
 		var position sql.NullInt64
+		var repostedAt sql.NullInt64
 		var name, displayName, countryCode, country, region, city, district, category, provider, providerID, coordinateSystem sql.NullString
 		var latitude, longitude sql.NullInt64
 		if err := rows.Scan(
-			&entry.ID, &entry.Kind, &entry.ContentMD, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS,
+			&entry.ID, &entry.Kind, &entry.ContentMD, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt,
 			&mediaID, &position, &alt, &name, &displayName, &countryCode, &country, &region, &city,
 			&district, &category, &provider, &providerID, &latitude, &longitude, &coordinateSystem,
 		); err != nil {
 			return fmt.Errorf("scan archive entry: %w", err)
+		}
+		if repostedAt.Valid {
+			value := repostedAt.Int64
+			entry.RepostedAtMS = &value
 		}
 		if current == nil || current.ID != entry.ID {
 			if current != nil {

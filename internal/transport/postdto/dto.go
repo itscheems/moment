@@ -22,6 +22,7 @@ type Post struct {
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at"`
 	PublishedAt  time.Time         `json:"published_at"`
+	RepostedAt   *time.Time        `json:"reposted_at"`
 	CommentCount int               `json:"comment_count"`
 	Media        []MediaProjection `json:"media"`
 	Location     *Location         `json:"location"`
@@ -179,6 +180,11 @@ func FromPost(post app.Post) Post {
 		}
 		media = append(media, mapped)
 	}
+	var repostedAt *time.Time
+	if post.Entry.RepostedAt != nil {
+		value := post.Entry.RepostedAt.UTC()
+		repostedAt = &value
+	}
 	return Post{
 		ID:           post.Entry.ID.String(),
 		ContentMD:    post.Entry.ContentMD,
@@ -186,6 +192,7 @@ func FromPost(post app.Post) Post {
 		CreatedAt:    post.Entry.CreatedAt.UTC(),
 		UpdatedAt:    post.Entry.UpdatedAt.UTC(),
 		PublishedAt:  post.Entry.PublishedAt.UTC(),
+		RepostedAt:   repostedAt,
 		CommentCount: post.CommentCount,
 		Media:        media,
 		Location: func() *Location {
@@ -224,6 +231,9 @@ func ValidatePost(post Post) error {
 	if post.CreatedAt.IsZero() || post.UpdatedAt.IsZero() || post.PublishedAt.IsZero() ||
 		!wireInstant(post.CreatedAt) || !wireInstant(post.UpdatedAt) || !wireInstant(post.PublishedAt) {
 		return errors.New("post timestamps are not canonical UTC milliseconds")
+	}
+	if post.RepostedAt != nil && (!wireInstant(*post.RepostedAt) || post.RepostedAt.Before(post.PublishedAt) || post.UpdatedAt.Before(*post.RepostedAt)) {
+		return errors.New("post reposted_at is not canonical")
 	}
 	if post.UpdatedAt.Before(post.CreatedAt) {
 		return errors.New("post updated_at precedes created_at")

@@ -524,6 +524,9 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	if local.PublishedAtMS != incoming.PublishedAtMS {
 		fields = append(fields, "published_at")
 	}
+	if !reflect.DeepEqual(local.RepostedAtMS, incoming.RepostedAtMS) {
+		fields = append(fields, "reposted_at")
+	}
 	if !reflect.DeepEqual(usageSignature(local.Media, localSHA), usageSignature(incoming.Media, incomingSHA)) {
 		fields = append(fields, "media")
 	}

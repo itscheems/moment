@@ -17,6 +17,7 @@ type Entry struct {
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	PublishedAt time.Time
+	RepostedAt  *time.Time
 }
 
 // NewEntry validates and creates one v0 Moment at millisecond precision.
@@ -55,7 +56,40 @@ func (entry Entry) Validate() error {
 	if entry.UpdatedAt.Before(entry.CreatedAt) {
 		return NewError(CodeInvalidArgument, "updated time cannot precede creation", map[string]any{"field": "updated_at"})
 	}
+	if entry.RepostedAt != nil {
+		if entry.RepostedAt.IsZero() || entry.RepostedAt.Before(entry.PublishedAt) {
+			return NewError(CodeInvalidArgument, "repost time cannot precede publication", map[string]any{"field": "reposted_at"})
+		}
+		if entry.UpdatedAt.Before(*entry.RepostedAt) {
+			return NewError(CodeInvalidArgument, "updated time cannot precede repost", map[string]any{"field": "updated_at"})
+		}
+	}
 	return nil
+}
+
+// TimelineAt is the activity instant used only for public timeline ordering.
+// Original publication and archive dates remain anchored to PublishedAt.
+func (entry Entry) TimelineAt() time.Time {
+	if entry.RepostedAt != nil {
+		return *entry.RepostedAt
+	}
+	return entry.PublishedAt
+}
+
+// SetReposted applies or removes the owner's single repost activity while
+// preserving the original publication instant.
+func (entry *Entry) SetReposted(active bool, now time.Time) {
+	updated := NormalizeTime(now)
+	if !updated.After(entry.UpdatedAt) {
+		updated = entry.UpdatedAt.Add(time.Millisecond)
+	}
+	entry.UpdatedAt = updated
+	if active {
+		reposted := updated
+		entry.RepostedAt = &reposted
+	} else {
+		entry.RepostedAt = nil
+	}
 }
 
 // UpdateContent changes only editable state. Original creation and publication

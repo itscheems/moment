@@ -11,7 +11,7 @@ const cursorTestID = domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAV")
 
 func TestTimelineCursorRoundTripAndStrictValidation(t *testing.T) {
 	t.Parallel()
-	position := TimelinePosition{PublishedAtMS: 1_723_270_150_123, ID: cursorTestID}
+	position := TimelinePosition{TimelineAtMS: 1_723_270_150_123, ID: cursorTestID}
 	fromMS := int64(1_723_000_000_000)
 	toMS := int64(1_724_000_000_000)
 	encoded := encodeTimelineCursor(position, &fromMS, &toMS)
@@ -25,11 +25,11 @@ func TestTimelineCursorRoundTripAndStrictValidation(t *testing.T) {
 
 	invalidPayloads := []string{
 		`{"v":1,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null}`,
-		`{"v":2,"published_at_ms":1,"id":"not-an-id","from_ms":null,"to_ms":null}`,
-		`{"v":2,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null,"extra":true}`,
-		`{"v":2,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null} {}`,
-		`{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","published_at_ms":1,"v":2,"from_ms":null,"to_ms":null}`,
-		`{"v":2,"v":1,"published_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null}`,
+		`{"v":3,"timeline_at_ms":1,"id":"not-an-id","from_ms":null,"to_ms":null}`,
+		`{"v":3,"timeline_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null,"extra":true}`,
+		`{"v":3,"timeline_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null} {}`,
+		`{"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","timeline_at_ms":1,"v":3,"from_ms":null,"to_ms":null}`,
+		`{"v":3,"v":1,"timeline_at_ms":1,"id":"01ARZ3NDEKTSV4RRFFQ69G5FAV","from_ms":null,"to_ms":null}`,
 	}
 	for _, payload := range invalidPayloads {
 		cursor := base64.RawURLEncoding.EncodeToString([]byte(payload))

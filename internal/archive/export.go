@@ -234,7 +234,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			return write(entryRecord{
 				ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
 				CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
-				PublishedAt: portableTime(value.PublishedAtMS), Media: media, Location: portableLocation(value.Location),
+				PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), Media: media, Location: portableLocation(value.Location),
 			})
 		})
 	})
@@ -523,8 +523,17 @@ type entryRecord struct {
 	CreatedAt   string          `json:"created_at"`
 	UpdatedAt   string          `json:"updated_at"`
 	PublishedAt string          `json:"published_at"`
+	RepostedAt  *string         `json:"reposted_at,omitempty"`
 	Media       []usageRecord   `json:"media"`
 	Location    *locationRecord `json:"location,omitempty"`
+}
+
+func portableOptionalTime(value *int64) *string {
+	if value == nil {
+		return nil
+	}
+	wire := portableTime(*value)
+	return &wire
 }
 
 type locationRecord struct {
@@ -731,6 +740,10 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 		CreatedAt:   time.UnixMilli(value.CreatedAtMS).UTC(),
 		UpdatedAt:   time.UnixMilli(value.UpdatedAtMS).UTC(),
 		PublishedAt: time.UnixMilli(value.PublishedAtMS).UTC(),
+	}
+	if value.RepostedAtMS != nil {
+		repostedAt := time.UnixMilli(*value.RepostedAtMS).UTC()
+		entry.RepostedAt = &repostedAt
 	}
 	if value.CreatedAtMS <= 0 || value.UpdatedAtMS <= 0 || value.PublishedAtMS <= 0 {
 		return errors.New("entry timestamps must be positive")
@@ -1293,6 +1306,15 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if err != nil {
 			return err
 		}
+		var repostedAtMS *int64
+		if value.RepostedAt != nil {
+			repostedAt, err := parsePortableTimestamp(*value.RepostedAt)
+			if err != nil {
+				return err
+			}
+			millis := repostedAt.UnixMilli()
+			repostedAtMS = &millis
+		}
 		usages := make([]sqlitestore.ArchiveUsage, len(value.Media))
 		for index, usage := range value.Media {
 			if err := requireObjectFields(rawUsages[index], []string{"media_id", "position", "alt_text"}, []string{"media_id", "position"}); err != nil {
@@ -1321,7 +1343,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), Media: usages, Location: location,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, Media: usages, Location: location,
 		}); err != nil {
 			return err
 		}

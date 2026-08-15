@@ -122,6 +122,36 @@ func registerPosts(application *Application) {
 		Run: runPostDelete,
 	})
 	application.MustRegisterLeaf(LeafSpec{
+		Path:       []string{"post", "repost"},
+		ArgsUsage:  "<post-id>",
+		Short:      "Repost one Moment to the top of the timeline",
+		Long:       "Record an owner repost activity while preserving the Moment's original publication timestamp.",
+		Inputs:     "Provide one canonical post ULID. Repeating the same repost is an idempotent success.",
+		Output:     "The complete canonical post DTO with reposted_at set.",
+		Errors:     "Invalid or absent posts and authentication failures use stable codes and exit statuses.",
+		Example:    "moment post repost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Args:       cobra.ExactArgs(1),
+		Capability: CapabilityBoth,
+		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+			return runPostRepostChange(ctx, invocation, input, true)
+		},
+	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:       []string{"post", "unrepost"},
+		ArgsUsage:  "<post-id>",
+		Short:      "Remove one Moment repost",
+		Long:       "Remove the owner repost activity and return the Moment to its original chronological position.",
+		Inputs:     "Provide one canonical post ULID. Repeating the same removal is an idempotent success.",
+		Output:     "The complete canonical post DTO with reposted_at cleared.",
+		Errors:     "Invalid or absent posts and authentication failures use stable codes and exit statuses.",
+		Example:    "moment post unrepost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Args:       cobra.ExactArgs(1),
+		Capability: CapabilityBoth,
+		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+			return runPostRepostChange(ctx, invocation, input, false)
+		},
+	})
+	application.MustRegisterLeaf(LeafSpec{
 		Path:       []string{"post", "pin"},
 		ArgsUsage:  "<post-id>",
 		Short:      "Pin one Moment post to the public profile",
@@ -157,6 +187,49 @@ func registerPosts(application *Application) {
 		},
 		Run: runPostUnpin,
 	})
+}
+
+func runPostRepostChange(ctx context.Context, invocation Invocation, input CommandInput, active bool) (Result, error) {
+	id, err := postID(input.Args()[0])
+	if err != nil {
+		return Result{}, postCLIError(err)
+	}
+	var post postdto.Post
+	var meta map[string]any
+	switch invocation.Mode() {
+	case ModeDirect:
+		direct, openErr := openDirectPostWrite(ctx, invocation)
+		if openErr != nil {
+			return Result{}, postCLIError(openErr)
+		}
+		defer func() { _ = direct.Close() }()
+		changed, changeErr := direct.service.SetReposted(ctx, id, active)
+		if changeErr != nil {
+			return Result{}, postCLIError(changeErr)
+		}
+		post = postdto.FromPost(changed)
+		meta = map[string]any{"reposted": active}
+	case ModeAPI:
+		method := http.MethodPut
+		if !active {
+			method = http.MethodDelete
+		}
+		var status int
+		meta, status, err = postAPIRequest(ctx, invocation, method, "/api/v1/owner/posts/"+url.PathEscape(id.String())+"/repost", nil, nil, "", true, &post)
+		if err != nil {
+			return Result{}, postCLIError(err)
+		}
+		if status != http.StatusOK {
+			return Result{}, invalidAPIResponse()
+		}
+	default:
+		return Result{}, errors.New("unsupported post repost transport")
+	}
+	action := "Reposted"
+	if !active {
+		action = "Removed repost from"
+	}
+	return postResult(action, post, meta), nil
 }
 
 func runPostList(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {

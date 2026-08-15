@@ -374,6 +374,53 @@ func TestPostTimelineUsesStableDualKeyCursor(t *testing.T) {
 	}
 }
 
+func TestPostRepostMovesMomentToTopAndUndoRestoresChronology(t *testing.T) {
+	t.Parallel()
+	db, _ := openTestDatabase(t, Options{})
+	base := time.UnixMilli(1_700_000_000_000)
+	clock := newSequenceClock(base, base.Add(time.Hour), base.Add(2*time.Hour), base.Add(3*time.Hour))
+	service := newTestPostService(t, db, clock.Now, sequenceIDs(entryOne, entryTwo))
+	ctx := context.Background()
+
+	first, err := service.Create(ctx, app.CreatePostInput{ContentMD: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.Create(ctx, app.CreatePostInput{ContentMD: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reposted, err := service.SetReposted(ctx, first.Post.Entry.ID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reposted.Entry.RepostedAt == nil || reposted.Entry.PublishedAt != first.Post.Entry.PublishedAt {
+		t.Fatalf("reposted entry = %+v", reposted.Entry)
+	}
+	page, err := service.List(ctx, app.ListPostsInput{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 2 || page.Items[0].Entry.ID != first.Post.Entry.ID {
+		t.Fatalf("reposted timeline = %+v", page.Items)
+	}
+
+	unreposted, err := service.SetReposted(ctx, first.Post.Entry.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unreposted.Entry.RepostedAt != nil {
+		t.Fatalf("unreposted entry = %+v", unreposted.Entry)
+	}
+	page, err = service.List(ctx, app.ListPostsInput{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 2 || page.Items[0].Entry.ID != second.Post.Entry.ID {
+		t.Fatalf("restored timeline = %+v", page.Items)
+	}
+}
+
 func TestPostConcurrentCreatesAndDeletesPreserveOrdering(t *testing.T) {
 	db, _ := openTestDatabase(t, Options{})
 	instant := time.UnixMilli(1_700_000_000_000)

@@ -30,6 +30,7 @@ type PostStore interface {
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
 	ReplaceEntryLocation(context.Context, domain.ID, *domain.Location) error
 	UpdateEntry(context.Context, domain.Entry, string) (bool, error)
+	SetEntryRepostedAt(context.Context, domain.ID, *time.Time, time.Time) (bool, error)
 	DeleteEntry(context.Context, domain.ID) (bool, error)
 	IdempotencyRecord(context.Context, string, string) (IdempotencyRecord, bool, error)
 	InsertIdempotencyRecord(context.Context, IdempotencyRecord) error
@@ -403,6 +404,56 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 	return renderPost(entry, media, location, commentCount)
 }
 
+// SetReposted toggles the owner's repost activity. Repeating the requested
+// state is idempotent and does not move the timeline again.
+func (service *PostService) SetReposted(ctx context.Context, id domain.ID, active bool) (Post, error) {
+	if err := contextError(ctx); err != nil {
+		return Post{}, err
+	}
+	if err := validatePostID(id); err != nil {
+		return Post{}, err
+	}
+	var result Post
+	err := service.transactions.Write(ctx, func(store PostStore) error {
+		entry, found, storeErr := store.EntryByID(ctx, id)
+		if storeErr != nil {
+			return storeErr
+		}
+		if !found {
+			return postNotFound(id)
+		}
+		alreadyActive := entry.RepostedAt != nil
+		if alreadyActive != active {
+			entry.SetReposted(active, service.clock())
+			changed, updateErr := store.SetEntryRepostedAt(ctx, id, entry.RepostedAt, entry.UpdatedAt)
+			if updateErr != nil {
+				return updateErr
+			}
+			if !changed {
+				return postNotFound(id)
+			}
+		}
+		media, storeErr := store.EntryMediaUsages(ctx, id)
+		if storeErr != nil {
+			return storeErr
+		}
+		location, storeErr := store.EntryLocation(ctx, id)
+		if storeErr != nil {
+			return storeErr
+		}
+		counts, storeErr := store.CommentCounts(ctx, []domain.ID{id})
+		if storeErr != nil {
+			return storeErr
+		}
+		result = Post{Entry: entry, Media: media, Location: location, CommentCount: counts[id]}
+		return nil
+	})
+	if err != nil {
+		return Post{}, normalizePostRepositoryError(err)
+	}
+	return renderPost(result.Entry, result.Media, result.Location, result.CommentCount)
+}
+
 // List returns one deterministic reverse-chronological keyset page.
 func (service *PostService) List(ctx context.Context, input ListPostsInput) (PostPage, error) {
 	if err := contextError(ctx); err != nil {
@@ -467,8 +518,8 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	if hasNext {
 		last := entries[len(entries)-1]
 		page.NextCursor = encodeTimelineCursor(TimelinePosition{
-			PublishedAtMS: domain.TimeToMillis(last.PublishedAt),
-			ID:            last.ID,
+			TimelineAtMS: domain.TimeToMillis(last.TimelineAt()),
+			ID:           last.ID,
 		}, fromMS, toMS)
 	}
 	return page, nil

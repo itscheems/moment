@@ -174,6 +174,19 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 		t.Fatalf("update = %d %s", updated.Code, updated.Body.String())
 	}
 
+	repostRequest := ownerRequest(http.MethodPut, "/api/v1/owner/posts/"+id+"/repost", "")
+	repostRequest.Header.Set("Authorization", "Bearer "+fixture.token)
+	reposted := performRequest(fixture.engine, repostRequest)
+	if reposted.Code != http.StatusOK || decodeDataMap(t, reposted)["reposted_at"] == nil {
+		t.Fatalf("repost = %d %s", reposted.Code, reposted.Body.String())
+	}
+	unrepostRequest := ownerRequest(http.MethodDelete, "/api/v1/owner/posts/"+id+"/repost", "")
+	unrepostRequest.Header.Set("Authorization", "Bearer "+fixture.token)
+	unreposted := performRequest(fixture.engine, unrepostRequest)
+	if unreposted.Code != http.StatusOK || decodeDataMap(t, unreposted)["reposted_at"] != nil {
+		t.Fatalf("unrepost = %d %s", unreposted.Code, unreposted.Body.String())
+	}
+
 	pinRequest := ownerRequest(http.MethodPut, "/api/v1/owner/posts/"+id+"/pin", "")
 	pinRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	pinned := performRequest(fixture.engine, pinRequest)

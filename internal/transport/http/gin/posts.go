@@ -31,8 +31,26 @@ func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.Si
 	owner.POST("/posts", createPost(posts))
 	owner.PATCH("/posts/:id", updatePost(posts))
 	owner.DELETE("/posts/:id", deletePost(posts))
+	owner.PUT("/posts/:id/repost", repostPost(posts, true))
+	owner.DELETE("/posts/:id/repost", repostPost(posts, false))
 	owner.PUT("/posts/:id/pin", pinPost(site))
 	owner.DELETE("/posts/:id/pin", unpinPost(site))
+}
+
+func repostPost(posts *app.PostService, active bool) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		id, err := domain.ParseID(ctx.Param("id"))
+		if err != nil {
+			writePostError(ctx, err)
+			return
+		}
+		post, err := posts.SetReposted(ctx.Request.Context(), id, active)
+		if err != nil {
+			writePostError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, postdto.FromPost(post), map[string]any{"reposted": active})
+	}
 }
 
 func pinPost(site *app.SiteService) gin.HandlerFunc {

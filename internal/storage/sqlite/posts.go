@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
@@ -150,7 +151,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
 
 func (store postStore) EntryByID(ctx context.Context, id domain.ID) (domain.Entry, bool, error) {
 	entry, err := scanEntry(store.queries.QueryRowContext(ctx, `
-SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms
+SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms
 FROM entries
 WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment)))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -164,7 +165,7 @@ WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment)))
 
 func (store postStore) ListEntries(ctx context.Context, query app.TimelineQuery, limit int) ([]domain.Entry, error) {
 	statement := `
-SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms
+SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms
 FROM entries
 WHERE kind = ?`
 	arguments := []any{string(domain.KindMoment)}
@@ -177,10 +178,10 @@ WHERE kind = ?`
 		arguments = append(arguments, *query.ToMS)
 	}
 	if query.Position != nil {
-		statement += "\n  AND (published_at_ms < ? OR (published_at_ms = ? AND id < ?))"
-		arguments = append(arguments, query.Position.PublishedAtMS, query.Position.PublishedAtMS, query.Position.ID.String())
+		statement += "\n  AND (COALESCE(reposted_at_ms, published_at_ms) < ? OR (COALESCE(reposted_at_ms, published_at_ms) = ? AND id < ?))"
+		arguments = append(arguments, query.Position.TimelineAtMS, query.Position.TimelineAtMS, query.Position.ID.String())
 	}
-	statement += "\nORDER BY published_at_ms DESC, id DESC\nLIMIT ?"
+	statement += "\nORDER BY COALESCE(reposted_at_ms, published_at_ms) DESC, id DESC\nLIMIT ?"
 	arguments = append(arguments, limit)
 	rows, err := store.queries.QueryContext(ctx, statement, arguments...)
 	if err != nil {
@@ -409,6 +410,21 @@ WHERE id = ? AND kind = ?`, entry.ContentMD, contentText, domain.TimeToMillis(en
 	return exactlyOneChanged(result, "update entry")
 }
 
+func (store postStore) SetEntryRepostedAt(ctx context.Context, id domain.ID, repostedAt *time.Time, updatedAt time.Time) (bool, error) {
+	var reposted any
+	if repostedAt != nil {
+		reposted = domain.TimeToMillis(*repostedAt)
+	}
+	result, err := store.queries.ExecContext(ctx, `
+UPDATE entries
+SET reposted_at_ms = ?, updated_at_ms = ?
+WHERE id = ? AND kind = ?`, reposted, domain.TimeToMillis(updatedAt), id.String(), string(domain.KindMoment))
+	if err != nil {
+		return false, fmt.Errorf("update entry repost: %w", err)
+	}
+	return exactlyOneChanged(result, "update entry repost")
+}
+
 func (store postStore) DeleteEntry(ctx context.Context, id domain.ID) (bool, error) {
 	result, err := store.queries.ExecContext(ctx, `DELETE FROM entries WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment))
 	if err != nil {
@@ -464,8 +480,9 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 		kind                              string
 		content                           string
 		createdAt, updatedAt, publishedAt int64
+		repostedAt                        sql.NullInt64
 	)
-	if err := scanner.Scan(&idString, &kind, &content, &createdAt, &updatedAt, &publishedAt); err != nil {
+	if err := scanner.Scan(&idString, &kind, &content, &createdAt, &updatedAt, &publishedAt, &repostedAt); err != nil {
 		return domain.Entry{}, err
 	}
 	id, err := domain.ParseID(idString)
@@ -479,6 +496,10 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 		CreatedAt:   domain.TimeFromMillis(createdAt),
 		UpdatedAt:   domain.TimeFromMillis(updatedAt),
 		PublishedAt: domain.TimeFromMillis(publishedAt),
+	}
+	if repostedAt.Valid {
+		value := domain.TimeFromMillis(repostedAt.Int64)
+		entry.RepostedAt = &value
 	}
 	if err := entry.Validate(); err != nil {
 		return domain.Entry{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry violates the domain contract", map[string]any{"post_id": id.String()})

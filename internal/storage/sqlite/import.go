@@ -74,6 +74,10 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 		CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(), UpdatedAt: time.UnixMilli(value.UpdatedAtMS).UTC(),
 		PublishedAt: time.UnixMilli(value.PublishedAtMS).UTC(),
 	}
+	if value.RepostedAtMS != nil {
+		repostedAt := time.UnixMilli(*value.RepostedAtMS).UTC()
+		entry.RepostedAt = &repostedAt
+	}
 	if err := entry.Validate(); err != nil {
 		return err
 	}
@@ -102,9 +106,9 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	}
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO entries (
-    id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text
-) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		value.ID, value.Kind, value.ContentMD, value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, contentText); err != nil {
+    id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, content_text
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		value.ID, value.Kind, value.ContentMD, value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, value.RepostedAtMS, contentText); err != nil {
 		return fmt.Errorf("insert portable entry %s: %w", value.ID, err)
 	}
 	var aggregateBytes int64

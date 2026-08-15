@@ -10,7 +10,9 @@ Available Commands:
   get         Get one Moment post
   list        List the public Moment timeline
   pin         Pin one Moment post to the public profile
+  repost      Repost one Moment to the top of the timeline
   unpin       Remove a pinned Moment from the public profile
+  unrepost    Remove one Moment repost
   update      Update a Moment post
 
 Flags:
