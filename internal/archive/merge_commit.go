@@ -136,7 +136,7 @@ func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runt
 	}
 	return MergeInspection{
 		Plan: plan, Counts: inspection.Counts, MediaBytes: inspection.MediaBytes,
-		Warnings: append([]string(nil), inspection.Warnings...), ExpiresAt: inspection.ExpiresAt,
+		Warnings: append([]string{}, inspection.Warnings...), ExpiresAt: inspection.ExpiresAt,
 		StagingToken: inspection.StagingToken,
 	}, nil
 }

@@ -88,7 +88,7 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 			if string(body) != "zip-merge" || epoch != 1 {
 				t.Fatalf("plan body=%q epoch=%d", body, epoch)
 			}
-			return archive.MergeInspection{Plan: archive.MergePlan{PlanID: selection.PlanID}, StagingToken: "merge-token"}, nil
+			return archive.MergeInspection{Plan: archive.MergePlan{PlanID: selection.PlanID}, Warnings: []string{}, StagingToken: "merge-token"}, nil
 		},
 		commitMerge: func(_ context.Context, token string, epoch uint64, got archive.MergeSelection) (archive.CommitResult, error) {
 			if token != "merge-token" || epoch != 1 || got.PlanID != selection.PlanID {
@@ -104,7 +104,8 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 	planRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/merge/plan", fixture.token, strings.NewReader("zip-merge"))
 	planRequest.Header.Set("Content-Type", "application/zip")
 	planResponse := performRequest(engine, planRequest)
-	if planResponse.Code != http.StatusCreated || !strings.Contains(planResponse.Body.String(), `"staging_token":"merge-token"`) {
+	if planResponse.Code != http.StatusCreated || !strings.Contains(planResponse.Body.String(), `"staging_token":"merge-token"`) ||
+		!strings.Contains(planResponse.Body.String(), `"warnings":[]`) {
 		t.Fatalf("plan response=%d %s", planResponse.Code, planResponse.Body.String())
 	}
 	selectionJSON, _ := json.Marshal(selection)

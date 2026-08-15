@@ -69,7 +69,13 @@ func TestSwitchboardCommitAndHealthBypassMaintenance(t *testing.T) {
 	})); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/healthz", "/api/v1/owner/import/commit", "/api/v1/owner/import/status"} {
+	for _, path := range []string{
+		"/healthz",
+		"/api/v1/owner/import/commit",
+		"/api/v1/owner/import/restore",
+		"/api/v1/owner/import/merge/commit",
+		"/api/v1/owner/import/status",
+	} {
 		response := httptest.NewRecorder()
 		board.ServeHTTP(response, httptest.NewRequest(http.MethodPost, path, nil))
 		if response.Code != http.StatusAccepted {

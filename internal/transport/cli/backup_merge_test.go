@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,7 +11,30 @@ import (
 
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/buildinfo"
+	"github.com/moment/moment/internal/domain"
 )
+
+func TestBackupMergeDomainConflictsUseConflictExit(t *testing.T) {
+	for _, test := range []struct {
+		code       domain.Code
+		suggestion string
+	}{
+		{code: domain.CodeImportMergePlanStale, suggestion: "moment backup merge-plan"},
+		{code: domain.CodeImportOwnerMismatch, suggestion: "same Moment owner"},
+	} {
+		t.Run(string(test.code), func(t *testing.T) {
+			err := backupImportCLIError(domain.NewError(test.code, "merge conflict", map[string]any{"safe": true}))
+			var commandErr *CommandError
+			if !errors.As(err, &commandErr) {
+				t.Fatalf("error = %T %v", err, err)
+			}
+			if commandErr.Code != string(test.code) || commandErr.ExitCode != ExitConflict ||
+				!strings.Contains(commandErr.Suggestion, test.suggestion) || !reflect.DeepEqual(commandErr.Details, map[string]any{"safe": true}) {
+				t.Fatalf("command error = %#v", commandErr)
+			}
+		})
+	}
+}
 
 func TestBackupMergeSelectionFileIsPrivateExactAndDryRunnable(t *testing.T) {
 	document := mergeSessionDocument{

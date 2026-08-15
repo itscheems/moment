@@ -43,6 +43,9 @@ func TestMergeCommitKeepsBothThroughBackupAndAtomicGenerationSwitch(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	if inspection.Warnings == nil {
+		t.Fatal("merge inspection warnings must encode as an empty array, not null")
+	}
 	selection := inspection.Plan.DefaultSelection
 	found := false
 	for index := range selection.Items {
