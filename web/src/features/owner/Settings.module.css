@@ -303,29 +303,50 @@
   font-size: 0.68rem;
 }
 
-.mergeIntroduction {
-  max-inline-size: 46rem;
-  margin: var(--space-3) 0 0;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: 1.65;
+.mergeHeadingLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.mergeInformationButton {
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: help;
+}
+
+.mergeInformationButton svg {
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+}
+
+.mergeInformationButton:hover,
+.mergeInformationButton:focus-visible {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .importModeSwitch {
-  inline-size: fit-content;
+  inline-size: 100%;
   display: flex;
-  gap: 0.2rem;
-  border-radius: 999px;
-  margin-block-start: var(--space-4);
-  padding: 0.2rem;
-  background: var(--surface-muted);
+  gap: var(--space-5);
+  border-block-end: 1px solid var(--border-subtle);
+  margin-block-start: var(--space-3);
 }
 
 .importModeSwitch button {
-  min-block-size: 2.35rem;
+  position: relative;
+  min-block-size: var(--target-size);
   border: 0;
-  border-radius: 999px;
-  padding-inline: var(--space-4);
+  border-radius: 0;
+  padding-inline: var(--space-1);
   color: var(--text-secondary);
   background: transparent;
   font: inherit;
@@ -334,9 +355,8 @@
 }
 
 .importModeSwitch button[aria-pressed="true"] {
-  color: var(--button-primary-contrast);
-  background: var(--accent);
-  box-shadow: 0 0.2rem 0.8rem color-mix(in srgb, var(--accent) 24%, transparent);
+  color: var(--text-primary);
+  box-shadow: inset 0 -0.2rem var(--accent);
 }
 
 .importModeSwitch button:disabled {

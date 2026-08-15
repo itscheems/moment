@@ -80,11 +80,10 @@ describe("public image grid", () => {
 
     expect(image).toHaveAttribute("width", "1200");
     expect(image).toHaveAttribute("height", "800");
-    expect(tile).toHaveStyle({ aspectRatio: "1200 / 800" });
-    const reservedStyle = tile.getAttribute("style");
+    expect(tile).not.toHaveAttribute("style");
 
     fireEvent.load(image);
-    expect(tile.getAttribute("style")).toBe(reservedStyle);
+    expect(tile).not.toHaveAttribute("style");
     expect(container.querySelector('[data-media-order="1"]')).toBeNull();
   });
 

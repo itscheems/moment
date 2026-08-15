@@ -25,6 +25,7 @@ export type IconName =
   | "close"
   | "reset"
   | "camera"
+  | "info"
   | "location"
   | "location-picker";
 
@@ -151,6 +152,12 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   camera: <use href={`${iconSprite}#profile-camera`} />,
+  info: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 10.75v5.5M12 7.65h.01" />
+    </>
+  ),
   location: (
     <>
       <path d="M19 10.2c0 5-7 10.3-7 10.3S5 15.2 5 10.2a7 7 0 1 1 14 0Z" />

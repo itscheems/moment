@@ -18,6 +18,8 @@ import type {
   MergeSelection,
 } from "../../api/owner";
 import { PublicApiError } from "../../api/public";
+import { Icon } from "../../components/icons";
+import { ActionTooltip } from "../../components/TimelineInteractions";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { useOwner } from "./OwnerProvider";
 import styles from "./Settings.module.css";
@@ -1447,7 +1449,31 @@ export function BackupRestore({
           <header>
             <div>
               <p>备份检查完成</p>
-              <h3>{importMode === "merge" ? "审阅并合并" : "审阅覆盖恢复"}</h3>
+              <div className={styles.mergeHeadingLine}>
+                <h3>
+                  {importMode === "merge" ? "审阅并合并" : "审阅覆盖恢复"}
+                </h3>
+                <ActionTooltip
+                  label={
+                    importMode === "merge"
+                      ? "备份新增内容会加入站点，当前独有内容会保留。冲突内容在下方并排展示，由你逐项决定。"
+                      : "覆盖恢复会让站点与备份完全一致。下方标为“将移除”的内容只存在于当前站点，请在确认前逐条核对。"
+                  }
+                  wide
+                >
+                  <button
+                    aria-label={
+                      importMode === "merge"
+                        ? "了解审阅并合并"
+                        : "了解审阅覆盖恢复"
+                    }
+                    className={styles.mergeInformationButton}
+                    type="button"
+                  >
+                    <Icon name="info" />
+                  </button>
+                </ActionTooltip>
+              </div>
             </div>
             <span>
               {new Intl.DateTimeFormat("zh-CN", {
@@ -1457,11 +1483,6 @@ export function BackupRestore({
               前提交
             </span>
           </header>
-          <p className={styles.mergeIntroduction}>
-            {importMode === "merge"
-              ? "备份新增内容会加入站点，当前独有内容会保留。冲突内容在下方并排展示，由你逐项决定。"
-              : "覆盖恢复会让站点与备份完全一致。下方标为“将移除”的内容只存在于当前站点，请在确认前逐条核对。"}
-          </p>
           <div aria-label="导入方式" className={styles.importModeSwitch}>
             <button
               aria-pressed={importMode === "merge"}

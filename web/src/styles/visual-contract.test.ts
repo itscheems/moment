@@ -175,6 +175,18 @@ describe("visual foundation contract", () => {
     );
   });
 
+  it("uses settings-style tabs for import mode instead of a segmented pill", () => {
+    expect(settingsCss).toMatch(
+      /\._importModeSwitch_[\w-]+\s*\{[^}]*inline-size: 100%;[^}]*border-block-end: 1px solid var\(--border-subtle\)/s,
+    );
+    expect(settingsCss).toMatch(
+      /\._importModeSwitch_[\w-]+ button\[aria-pressed="true"\]\s*\{[^}]*box-shadow: inset 0 -0\.2rem var\(--accent\)/s,
+    );
+    expect(settingsCss).not.toMatch(
+      /\._importModeSwitch_[\w-]+\s*\{[^}]*border-radius: 999px/s,
+    );
+  });
+
   it("drives primary controls from the selected accent in every theme", () => {
     const accents = [
       "blue",

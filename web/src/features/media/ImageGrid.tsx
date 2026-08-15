@@ -103,11 +103,6 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
             className={styles.imageTile}
             key={`${usage.position}-${usage.mediaId}`}
             onClick={() => setSelected(index)}
-            style={
-              media.length === 1
-                ? { aspectRatio: `${usage.width} / ${usage.height}` }
-                : undefined
-            }
             type="button"
           >
             {failed.has(usageKey(usage)) ? (

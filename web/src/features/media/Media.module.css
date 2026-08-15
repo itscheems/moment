@@ -550,15 +550,24 @@
 }
 
 .imageGrid[data-media-count="1"] {
-  grid-template-columns: minmax(0, 1fr);
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  display: flex;
+  align-items: flex-start;
 }
 
 .imageGrid[data-media-count="1"] .imageTile {
+  inline-size: auto;
+  block-size: auto;
+  max-inline-size: 100%;
   max-block-size: 34rem;
 }
 
 .imageGrid[data-media-count="1"] .imageTile img {
-  block-size: 100%;
+  inline-size: auto;
+  block-size: auto;
+  max-inline-size: 100%;
+  max-block-size: 34rem;
   object-fit: contain;
 }
 

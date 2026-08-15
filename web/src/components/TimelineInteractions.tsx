@@ -23,9 +23,11 @@ export function ExactTimeTooltip({
 export function ActionTooltip({
   children,
   label,
+  wide = false,
 }: {
   children: ReactElement;
   label: string;
+  wide?: boolean;
 }) {
   return (
     <Tooltip.Root>
@@ -36,7 +38,10 @@ export function ActionTooltip({
           side="bottom"
           sideOffset={5}
         >
-          <Tooltip.Popup className={styles.tooltip} role="tooltip">
+          <Tooltip.Popup
+            className={`${styles.tooltip} ${wide ? styles.tooltipWide : ""}`}
+            role="tooltip"
+          >
             {label}
           </Tooltip.Popup>
         </Tooltip.Positioner>

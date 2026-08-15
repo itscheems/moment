@@ -27,6 +27,17 @@
   transform: translateY(-0.2rem);
 }
 
+.tooltipWide {
+  inline-size: min(22rem, calc(100vw - 2rem));
+  padding: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  white-space: normal;
+}
+
 .identityCard {
   inline-size: min(18rem, calc(100vw - 2rem));
   overflow: hidden;
