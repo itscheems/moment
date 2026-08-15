@@ -431,8 +431,8 @@ describe("search and archive memory layer", () => {
     await screen.findByText(paragraphText("旧城雨落在街口"));
     const searchbox = screen.getByRole("searchbox");
     searchbox.focus();
+    await waitFor(() => expect(intersect).toBeTypeOf("function"));
     const callback = intersect as unknown as IntersectionObserverCallback;
-    expect(callback).toBeTypeOf("function");
     act(() => {
       callback(
         [{ isIntersecting: true } as IntersectionObserverEntry],
