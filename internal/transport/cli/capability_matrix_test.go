@@ -266,7 +266,7 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"backup inspect":         "ecc5db494ffe8401cdaeab289d84f8a44b7d701f5584774a036cf185b002ab10",
 		"backup merge":           "b161c3f508eba9a3fffc2f4a824de6d48b6dca21ec3d47758b31eee14de39e65",
 		"backup merge-discard":   "48f213411c4676e6cd6af1400aef5029bf8d5307fd2ced4dff53b4cd1cc8c8ea",
-		"backup merge-plan":      "0acc7d5ab886d35e8dc98bcc8bda6a7519fe883ba7e1498d7ae6e604dd4f15cd",
+		"backup merge-plan":      "f9ea98401a607bc62eb672b7e0cabc316a86c9d654d29b8389e9cfbad522f822",
 		"backup status":          "2ad2eb8806b33a180826d201157e189c2488d7747aa9169bb79c42411118cb9e",
 		"comment":                "e59757017d913839937dc3eaa6abc91e594fcc3518d4d1e33f6c93ad8ed66d89",
 		"comment create":         "e8944ba9aaa714f0654c1c3caa44fa7af228bc5d00281af59ce4168e78de8fb5",

@@ -42,7 +42,7 @@ func registerBackupMerge(application *Application, info buildinfo.Info) {
 		Short:     "Plan a conflict-aware portable backup merge",
 		Long:      "Validate one portable archive, compare every portable authority record with the current instance, and create a restartable explicit selection without changing active data.",
 		Inputs:    "One regular non-symlink v1 ZIP and required --selection-output <json>. The private selection file contains the expiring staging credential and editable default actions; keep its mode at 0600.",
-		Output:    "Human and JSON output report deterministic unchanged, incoming-only, local-only, and conflict counts. The selection file is written atomically and can be reviewed before backup merge.",
+		Output:    "Human output reports deterministic counts. JSON also includes bounded local and incoming post, comment, location, profile, avatar, cover, and pinned-post review data. The private selection file is written atomically for editing before backup merge.",
 		Errors:    "Cross-owner archives, hostile input, unsafe output paths, active imports, disk pressure, cancellation, and direct-mode server use fail with stable errors.",
 		Safety:    "Read-only for active authority. Planning creates isolated expiring staging but never creates a pre-merge backup or switches CURRENT.",
 		Example: "moment backup merge-plan ./moment-export.zip --data-dir ./moment-data --selection-output ./merge-selection.json --json\n" +
@@ -264,7 +264,7 @@ func decodeMergeInspectionAPI(body []byte, observedAt time.Time) (archive.MergeI
 	if err != nil {
 		return archive.MergeInspection{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(envelope["data"], "plan", "incoming_counts", "incoming_media_bytes", "warnings", "expires_at", "staging_token"); err != nil {
+	if _, err := decodeExactJSONObject(envelope["data"], "plan", "review", "incoming_counts", "incoming_media_bytes", "disk", "replacement", "merge_allowed", "merge_blocked_reason", "warnings", "expires_at", "staging_token"); err != nil {
 		return archive.MergeInspection{}, nil, err
 	}
 	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
@@ -274,14 +274,14 @@ func decodeMergeInspectionAPI(body []byte, observedAt time.Time) (archive.MergeI
 	var value archive.MergeInspection
 	decoder := json.NewDecoder(bytes.NewReader(envelope["data"]))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&value); err != nil || decoder.Decode(&struct{}{}) != io.EOF || archive.ValidateMergePlan(value.Plan) != nil {
+	if err := decoder.Decode(&value); err != nil || decoder.Decode(&struct{}{}) != io.EOF || archive.ValidateMergePlan(value.Plan) != nil || archive.ValidateMergeReview(value.Plan, value.Review) != nil {
 		return archive.MergeInspection{}, nil, errors.New("merge inspection data is invalid")
 	}
 	token, err := base64.RawURLEncoding.Strict().DecodeString(value.StagingToken)
 	if err != nil || len(token) != 32 || !value.ExpiresAt.After(observedAt.Add(-importInspectionClockSkew)) || value.ExpiresAt.After(observedAt.Add(importInspectionTokenTTL+importInspectionClockSkew)) || !value.ExpiresAt.Equal(value.Plan.ExpiresAt) {
 		return archive.MergeInspection{}, nil, errors.New("merge inspection token or expiry is invalid")
 	}
-	if value.Counts.Entries < 0 || value.Counts.Comments < 0 || value.Counts.Media < 0 || value.MediaBytes < 0 || value.Warnings == nil {
+	if value.Counts.Entries < 0 || value.Counts.Comments < 0 || value.Counts.Media < 0 || value.MediaBytes < 0 || value.Warnings == nil || !value.MergeAllowed || value.MergeBlockedReason != nil {
 		return archive.MergeInspection{}, nil, errors.New("merge inspection counts are invalid")
 	}
 	requestID, err := decodeImportRequestID(metadata["request_id"])
