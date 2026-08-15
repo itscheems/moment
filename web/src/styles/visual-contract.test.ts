@@ -9,6 +9,7 @@ import commentsCss from "../features/comments/Comments.module.css?inline";
 import mediaCss from "../features/media/Media.module.css?inline";
 import datePickerCss from "../features/memory/DatePicker.module.css?inline";
 import ownerCss from "../features/owner/Owner.module.css?inline";
+import settingsCss from "../features/owner/Settings.module.css?inline";
 import postCss from "../features/posts/PostPresentation.module.css?inline";
 import profileEditorCss from "../features/profile/ProfileEditor.module.css?inline";
 import profileCss from "../features/profile/ProfilePage.module.css?inline";
@@ -162,6 +163,15 @@ describe("visual foundation contract", () => {
     );
     expect(ownerCss).not.toMatch(
       /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*>[^{]*\{/,
+    );
+  });
+
+  it("keeps backup media diffs compact without distorting their ratio", () => {
+    expect(settingsCss).toMatch(
+      /\._reviewMedia_[\w-]+\s*\{[^}]*inline-size: auto;[^}]*block-size: auto;[^}]*max-inline-size: 100%;[^}]*max-block-size: 16rem;[^}]*object-fit: contain;/s,
+    );
+    expect(settingsCss).not.toMatch(
+      /\._reviewMedia_[\w-]+\s*\{[^}]*aspect-ratio:/s,
     );
   });
 

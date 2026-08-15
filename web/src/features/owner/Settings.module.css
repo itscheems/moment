@@ -495,24 +495,31 @@
 }
 
 .reviewMediaGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: var(--space-2);
   margin-block-start: var(--space-3);
 }
 
-.reviewMedia,
-.reviewMediaPlaceholder {
-  inline-size: 100%;
-  aspect-ratio: 4 / 3;
+.reviewMedia {
+  display: block;
+  inline-size: auto;
+  block-size: auto;
+  max-inline-size: 100%;
+  max-block-size: 16rem;
   border-radius: var(--radius-action);
-  object-fit: cover;
+  object-fit: contain;
   background: var(--surface-muted);
 }
 
 .reviewMediaPlaceholder {
+  inline-size: min(100%, 18rem);
+  aspect-ratio: 4 / 3;
+  border-radius: var(--radius-action);
   display: grid;
   place-items: center;
+  background: var(--surface-muted);
   color: var(--text-tertiary);
   font-size: var(--text-xs);
 }
