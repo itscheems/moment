@@ -45,8 +45,9 @@ type fakeArchiveImportCommitter struct {
 
 type fakeMergeImportCommitter struct {
 	fakeImportCommitter
-	planMerge   func(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
-	commitMerge func(context.Context, string, uint64, archive.MergeSelection) (archive.CommitResult, error)
+	planMerge    func(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
+	commitMerge  func(context.Context, string, uint64, archive.MergeSelection) (archive.CommitResult, error)
+	discardMerge func(context.Context, string, uint64) error
 }
 
 func (fake fakeMergeImportCommitter) InspectMergeArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
@@ -55,6 +56,10 @@ func (fake fakeMergeImportCommitter) InspectMergeArchive(ctx context.Context, in
 
 func (fake fakeMergeImportCommitter) CommitMerge(ctx context.Context, token string, epoch uint64, selection archive.MergeSelection) (archive.CommitResult, error) {
 	return fake.commitMerge(ctx, token, epoch, selection)
+}
+
+func (fake fakeMergeImportCommitter) DiscardMerge(ctx context.Context, token string, epoch uint64) error {
+	return fake.discardMerge(ctx, token, epoch)
 }
 
 func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
@@ -96,6 +101,12 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{Phase: archive.CommitSucceeded}}, nil
 		},
+		discardMerge: func(_ context.Context, token string, epoch uint64) error {
+			if token != "merge-token" || epoch != 1 {
+				t.Fatalf("discard token=%q epoch=%d", token, epoch)
+			}
+			return nil
+		},
 	}
 	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, ImportCommitter: committer, RequestID: func() string { return "req_merge" }})
 	if err != nil {
@@ -114,6 +125,12 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 	commitResponse := performRequest(engine, commitRequest)
 	if commitResponse.Code != http.StatusOK || !strings.Contains(commitResponse.Body.String(), `"phase":"succeeded"`) {
 		t.Fatalf("commit response=%d %s", commitResponse.Code, commitResponse.Body.String())
+	}
+	discardRequest := headerRequest(http.MethodPost, "/api/v1/owner/import/merge/discard", fixture.token, strings.NewReader(`{"staging_token":"merge-token"}`))
+	discardRequest.Header.Set("Content-Type", "application/json")
+	discardResponse := performRequest(engine, discardRequest)
+	if discardResponse.Code != http.StatusOK || !strings.Contains(discardResponse.Body.String(), `"discarded":true`) {
+		t.Fatalf("discard response=%d %s", discardResponse.Code, discardResponse.Body.String())
 	}
 	for _, body := range []string{
 		`{}`, `{"staging_token":"merge-token"}`, `{"selection":{}}`,

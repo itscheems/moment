@@ -85,6 +85,53 @@ func (committer *Committer) InspectMergeArchive(ctx context.Context, source io.R
 	return result, err
 }
 
+// DiscardMergeFileOffline abandons one reviewed merge plan while proving that
+// no server can concurrently claim it. Active authority is never changed.
+func (committer *Committer) DiscardMergeFileOffline(ctx context.Context, token string, sessionEpoch uint64) (resultErr error) {
+	if committer == nil {
+		return errors.New("import committer is required")
+	}
+	runtimeState, held, err := committer.acquireOfflineInspection(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	return committer.discardMergeWithinLocks(ctx, runtimeState, held, token, sessionEpoch)
+}
+
+// DiscardMerge abandons one unclaimed live-server merge plan. The exact
+// staging credential and owner epoch are required; committing and terminal
+// staging records are deliberately not cancellable through this path.
+func (committer *Committer) DiscardMerge(ctx context.Context, token string, sessionEpoch uint64) (resultErr error) {
+	if committer == nil {
+		return errors.New("import committer is required")
+	}
+	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
+	if err != nil {
+		return err
+	}
+	held, err := runtimeState.Locks.AcquireSet(ctx, runtimefs.LockRequest{Name: runtimefs.ImportLock, Mode: runtimefs.Exclusive})
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
+	return committer.discardMergeWithinLocks(ctx, runtimeState, held, token, sessionEpoch)
+}
+
+func (committer *Committer) discardMergeWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, token string, sessionEpoch uint64) error {
+	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
+		return runtimefs.ErrInsufficientLocks
+	}
+	state, _, stageRoot, err := committer.inspector.loadReadyHeld(ctx, runtimeState, token, sessionEpoch)
+	if err != nil {
+		return err
+	}
+	if _, err := readMergePlan(stageRoot); err != nil {
+		return importStagingInvalid("staged import is not a merge plan", err)
+	}
+	return committer.inspector.discardReadyWithinLocks(runtimeState, state.GenerationID, held)
+}
+
 func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, inspection Inspection, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
 	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
 		return MergeInspection{}, runtimefs.ErrInsufficientLocks

@@ -31,6 +31,48 @@ const activePhases = new Set<ImportStatus["phase"]>([
   "rolling_back",
 ]);
 
+const mergeStagingStorageKey = "moment.owner.merge-staging.v1";
+
+function rememberedMergeToken(): string | null {
+  try {
+    const value = JSON.parse(
+      window.sessionStorage.getItem(mergeStagingStorageKey) ?? "null",
+    ) as { stagingToken?: unknown; expiresAt?: unknown } | null;
+    if (
+      !value ||
+      typeof value.stagingToken !== "string" ||
+      value.stagingToken.length === 0 ||
+      value.stagingToken.length > 256 ||
+      typeof value.expiresAt !== "string" ||
+      !Number.isFinite(Date.parse(value.expiresAt)) ||
+      Date.parse(value.expiresAt) <= Date.now()
+    ) {
+      window.sessionStorage.removeItem(mergeStagingStorageKey);
+      return null;
+    }
+    return value.stagingToken;
+  } catch {
+    window.sessionStorage.removeItem(mergeStagingStorageKey);
+    return null;
+  }
+}
+
+function rememberMergeStaging(inspection: MergeInspection) {
+  window.sessionStorage.setItem(
+    mergeStagingStorageKey,
+    JSON.stringify({
+      stagingToken: inspection.stagingToken,
+      expiresAt: inspection.expiresAt,
+    }),
+  );
+}
+
+function forgetMergeStaging(expectedToken: string) {
+  if (rememberedMergeToken() === expectedToken) {
+    window.sessionStorage.removeItem(mergeStagingStorageKey);
+  }
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KiB", "MiB", "GiB", "TiB"];
@@ -250,6 +292,9 @@ export function BackupRestore({
   const foreignOperationRef = useRef<string | null>(null);
   const lastObservedOperationRef = useRef<string | null>(null);
   const restoreBaselineRef = useRef<string | null>(null);
+  const mergeTokenRef = useRef<string | null>(rememberedMergeToken());
+  const apiRef = useRef(api);
+  const csrfTokenRef = useRef<string | null>(session?.csrfToken ?? null);
   const exportGuardRef = useRef(false);
   const exportGuardTimerRef = useRef<number | null>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
@@ -284,6 +329,9 @@ export function BackupRestore({
   const [mergeConfirmOpen, setMergeConfirmOpen] = useState(false);
   const [importMode, setImportMode] = useState<"restore" | "merge">("restore");
   const [planDetailsOpen, setPlanDetailsOpen] = useState(false);
+
+  apiRef.current = api;
+  csrfTokenRef.current = session?.csrfToken ?? null;
 
   useDocumentScrollLock(confirmOpen || mergeConfirmOpen);
 
@@ -507,6 +555,14 @@ export function BackupRestore({
         window.clearTimeout(exportGuardTimerRef.current);
       }
       exportGuardRef.current = false;
+      const mergeToken = mergeTokenRef.current;
+      const csrfToken = csrfTokenRef.current;
+      if (mergeToken && csrfToken && !restoreSentRef.current) {
+        void apiRef.current
+          .discardMergeImport(csrfToken, mergeToken, undefined, true)
+          .then(() => forgetMergeStaging(mergeToken))
+          .catch(() => undefined);
+      }
       onRestoreBusyChange(false);
     };
   }, [clearPoll, onRestoreBusyChange, queryStatus]);
@@ -547,13 +603,41 @@ export function BackupRestore({
     }
   };
 
-  const chooseFile = (event: ChangeEvent<HTMLInputElement>) => {
+  const discardCurrentMerge = async (): Promise<boolean> => {
+    const token = mergeTokenRef.current;
+    if (!token) return true;
+    if (!session) {
+      setMergeError("所有者会话已失效，暂时无法放弃上一次合并检查。");
+      return false;
+    }
+    try {
+      await api.discardMergeImport(session.csrfToken, token);
+    } catch (error) {
+      if (!(
+        error instanceof PublicApiError &&
+        (error.code === "IMPORT_STAGING_INVALID" ||
+          error.code === "IMPORT_STAGING_EXPIRED")
+      )) {
+        expireIfInvalidSession(error);
+        setMergeError(
+          "暂时无法放弃上一次合并检查。请重试，或等待计划过期后再选择新文件。",
+        );
+        return false;
+      }
+    }
+    mergeTokenRef.current = null;
+    forgetMergeStaging(token);
+    return true;
+  };
+
+  const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const next = event.currentTarget.files?.[0] ?? null;
     event.currentTarget.value = "";
     if (!next || restoreBusy) return;
     planControllerRef.current?.abort();
     mergeControllerRef.current?.abort();
     clearPoll();
+    if (mergeTokenRef.current && !(await discardCurrentMerge())) return;
     fileRevisionRef.current += 1;
     restoreAttemptedRef.current = false;
     unassociatedPollsRef.current = 0;
@@ -586,6 +670,11 @@ export function BackupRestore({
   const inspect = async () => {
     if (!session || !file || planState === "running" || restoreBusy) return;
     planControllerRef.current?.abort();
+    setPlanError(null);
+    if (mergeTokenRef.current && !(await discardCurrentMerge())) {
+      setPlanState("failed");
+      return;
+    }
     const controller = new AbortController();
     planControllerRef.current = controller;
     const revision = fileRevisionRef.current;
@@ -636,6 +725,11 @@ export function BackupRestore({
   const inspectMerge = async () => {
     if (!session || !file || mergeState === "running" || restoreBusy) return;
     mergeControllerRef.current?.abort();
+    setMergeError(null);
+    if (mergeTokenRef.current && !(await discardCurrentMerge())) {
+      setMergeState("failed");
+      return;
+    }
     const controller = new AbortController();
     mergeControllerRef.current = controller;
     const revision = fileRevisionRef.current;
@@ -668,6 +762,8 @@ export function BackupRestore({
         return;
       }
       setMergeInspection(next);
+      mergeTokenRef.current = next.stagingToken;
+      rememberMergeStaging(next);
       setMergeSelection(structuredClone(next.plan.default_selection));
       setMergeState("complete");
     } catch (error) {
@@ -724,11 +820,12 @@ export function BackupRestore({
     );
   };
 
-  const cancelPlan = () => {
+  const cancelPlan = async () => {
     planControllerRef.current?.abort();
     planControllerRef.current = null;
     mergeControllerRef.current?.abort();
     mergeControllerRef.current = null;
+    if (mergeTokenRef.current && !(await discardCurrentMerge())) return;
     fileRevisionRef.current += 1;
     restoreAttemptedRef.current = false;
     unassociatedPollsRef.current = 0;
@@ -744,6 +841,7 @@ export function BackupRestore({
     setPlanState("idle");
     setPlanProgress(null);
     setPlanError(null);
+    setMergeConfirmOpen(false);
     window.requestAnimationFrame(() => pickerRef.current?.focus());
   };
 
@@ -826,6 +924,9 @@ export function BackupRestore({
         return;
       }
       setStatus(next);
+      const committedToken = mergeTokenRef.current;
+      if (committedToken) forgetMergeStaging(committedToken);
+      mergeTokenRef.current = null;
       setRestoreState("complete");
       setSiteRefreshRequired(true);
     } catch (error) {
@@ -843,6 +944,9 @@ export function BackupRestore({
           error.code === "IMPORT_MERGE_PLAN_STALE" ||
           error.code === "IMPORT_STAGING_INVALID"
         ) {
+          const invalidToken = mergeTokenRef.current;
+          if (invalidToken) forgetMergeStaging(invalidToken);
+          mergeTokenRef.current = null;
           setMergeInspection(null);
           setMergeSelection(null);
           setMergeState("failed");
@@ -1221,10 +1325,12 @@ export function BackupRestore({
               <button
                 className={styles.quietButton}
                 disabled={restoreBusy}
-                onClick={cancelPlan}
+                onClick={() => void cancelPlan()}
                 type="button"
               >
-                {planState === "running" ? "取消预检" : "清除文件"}
+                {planState === "running" || mergeState === "running"
+                  ? "取消检查"
+                  : "清除文件"}
               </button>
             ) : null}
           </div>

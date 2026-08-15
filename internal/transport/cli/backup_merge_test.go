@@ -3,6 +3,9 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -99,5 +102,44 @@ func TestBackupMergeSelectionRejectsUnknownDuplicateAndExistingOutput(t *testing
 	}
 	if _, err := readPrivateMergeSession(duplicate); err == nil {
 		t.Fatal("duplicate selection keys were accepted")
+	}
+}
+
+func TestBackupMergeDiscardAPIUsesPrivateCredentialAndStrictJSON(t *testing.T) {
+	document := mergeSessionDocument{
+		Version: mergeSessionVersion, StagingToken: "private-token",
+		Selection: archive.MergeSelection{
+			PlanID: strings.Repeat("a", 64), ArchiveSHA256: strings.Repeat("b", 64),
+			BaseGeneration: "generation", BaseAuthoritySHA256: strings.Repeat("c", 64),
+			Items: []archive.MergeSelectionItem{}, SiteFields: []archive.MergeSiteSelection{},
+		},
+	}
+	path := filepath.Join(t.TempDir(), "selection.json")
+	if err := writePrivateMergeSession(path, document); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MOMENT_TOKEN", "owner-test-token")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/owner/import/merge/discard" ||
+			request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("request=%s %s %#v", request.Method, request.URL.Path, request.Header)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil || string(body) != `{"staging_token":"private-token"}` {
+			t.Errorf("request body=%q err=%v", body, err)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `{"data":{"discarded":true},"meta":{"request_id":"req_discard"}}`)
+	}))
+	defer server.Close()
+	application := NewMoment(buildinfo.Info{Version: "dev", Commit: "unknown", BuildDate: "unknown"})
+	output := execute(application, "", "--url", server.URL, "backup", "merge-discard", path, "--json")
+	if output.exit != ExitSuccess || output.stderr != "" {
+		t.Fatalf("discard output=%#v", output)
+	}
+	data := commandData(t, output)
+	if data["discarded"] != true || data["plan_id"] != document.Selection.PlanID ||
+		decodeOneDocument(t, output.stdout)["meta"].(map[string]any)["request_id"] != "req_discard" {
+		t.Fatalf("discard document=%s", output.stdout)
 	}
 }

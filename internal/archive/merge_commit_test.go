@@ -88,3 +88,44 @@ func TestMergeCommitKeepsBothThroughBackupAndAtomicGenerationSwitch(t *testing.T
 		t.Fatalf("merged contents = %#v", contents)
 	}
 }
+
+func TestDiscardMergeReleasesReadyStagingWithoutChangingAuthority(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	archivePath := exportFixtureFile(t, fixture)
+	if err := fixture.database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	committer, err := NewCommitter(CommitOptions{
+		DataDir: fixture.runtime.Root, AppVersion: "0.1.0", Clock: func() time.Time { return now },
+		AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := committer.InspectMergeFileOffline(context.Background(), archivePath, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := fixture.runtime.ResolveCurrent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := committer.DiscardMergeFileOffline(context.Background(), first.StagingToken, 1); err != nil {
+		t.Fatal(err)
+	}
+	after, err := fixture.runtime.ResolveCurrent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.ID != before.ID {
+		t.Fatalf("discard changed CURRENT from %q to %q", before.ID, after.ID)
+	}
+	stages, err := os.ReadDir(filepath.Join(fixture.runtime.Root, "staging", "import"))
+	if err != nil || len(stages) != 0 {
+		t.Fatalf("discard left staging=%v err=%v", stages, err)
+	}
+	if _, err := committer.InspectMergeFileOffline(context.Background(), archivePath, 1); err != nil {
+		t.Fatalf("new merge inspection remained blocked after discard: %v", err)
+	}
+}

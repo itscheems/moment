@@ -41,6 +41,7 @@ type archiveImportCommitter interface {
 type mergeImportCommitter interface {
 	InspectMergeArchive(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
 	CommitMerge(context.Context, string, uint64, archive.MergeSelection) (archive.CommitResult, error)
+	DiscardMerge(context.Context, string, uint64) error
 }
 
 // RegisterImportInspectRoutes installs the owner-only raw ZIP upload endpoint.
@@ -65,6 +66,7 @@ func RegisterImportCommitRoutes(engine *gin.Engine, committer ImportCommitter, m
 	if merger, ok := committer.(mergeImportCommitter); ok {
 		owner.POST("/import/merge/plan", planMergeImport(merger, manager))
 		owner.POST("/import/merge/commit", commitMergeImport(merger, manager))
+		owner.POST("/import/merge/discard", discardMergeImport(merger, manager))
 	}
 	owner.GET("/import/status", importStatus(committer))
 }
@@ -210,6 +212,44 @@ func commitMergeImport(committer mergeImportCommitter, manager *auth.Manager) gi
 			return
 		}
 		Success(ctx, http.StatusOK, result, nil)
+	}
+}
+
+func discardMergeImport(committer mergeImportCommitter, manager *auth.Manager) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if ctx.Request.URL.RawQuery != "" {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge discard does not accept query parameters", map[string]any{"field": "query"})
+			return
+		}
+		mediaType, _, err := mime.ParseMediaType(ctx.GetHeader("Content-Type"))
+		if err != nil || mediaType != "application/json" {
+			Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "import merge discard requires application/json", map[string]any{"field": "content_type"})
+			return
+		}
+		body, ok := readBody(ctx)
+		if !ok {
+			return
+		}
+		token, err := decodeCommitRequest(body)
+		if err != nil {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge discard requires exactly one non-empty staging_token", map[string]any{"field": "staging_token"})
+			return
+		}
+		grant, ok := ownerGrant(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		epoch, err := manager.SessionEpochAuthorized(grant)
+		if err != nil {
+			unauthorized(ctx)
+			return
+		}
+		if err := committer.DiscardMerge(ctx.Request.Context(), token, epoch); err != nil {
+			writeImportCommitError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, gin.H{"discarded": true}, nil)
 	}
 }
 

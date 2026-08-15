@@ -432,6 +432,76 @@ describe("owner backup and restore", () => {
     });
   });
 
+  it("discards an uncommitted merge plan when leaving settings so a later file can be inspected", async () => {
+    const fetcher = installFetch(
+      async () => failure("IMPORT_STAGING_INVALID", 409),
+      (url) =>
+        url === "/api/v1/owner/import/merge/discard"
+          ? Promise.resolve(
+              json({
+                data: { discarded: true },
+                meta: { request_id: "req_discard" },
+              }),
+            )
+          : undefined,
+    );
+    const view = render(<App />);
+    await screen.findByRole("heading", { name: "备份与恢复" });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "选择备份文件" }),
+      ).toBeEnabled(),
+    );
+
+    const first = new File(["merge-one"], "first.zip", {
+      type: "application/zip",
+    });
+    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+      target: { files: [first] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查并合并" }));
+    ArchiveRequest.requests.at(-1)!.respond(mergePlanData(), 201);
+    await screen.findByRole("heading", { name: "选择冲突处理方式" });
+
+    view.unmount();
+    await waitFor(() =>
+      expect(fetcher).toHaveBeenCalledWith(
+        "/api/v1/owner/import/merge/discard",
+        expect.objectContaining({
+          body: JSON.stringify({ staging_token: mergeToken }),
+          keepalive: true,
+          method: "POST",
+        }),
+      ),
+    );
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "备份与恢复" });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "选择备份文件" }),
+      ).toBeEnabled(),
+    );
+    const second = new File(["merge-two"], "second.zip", {
+      type: "application/zip",
+    });
+    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+      target: { files: [second] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查并合并" }));
+    const nextRequest = ArchiveRequest.requests.at(-1)!;
+    expect(nextRequest.url).toBe("/api/v1/owner/import/merge/plan");
+    nextRequest.respond(mergePlanData(), 201);
+    expect(
+      await screen.findByRole("heading", { name: "选择冲突处理方式" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        "另一个恢复或维护操作正在进行。请先查询当前状态，稍后再预检。",
+      ),
+    ).not.toBeInTheDocument();
+  });
+
   it("treats an explicitly stale merge plan as rejected instead of resubmitting", async () => {
     const fetcher = installFetch(
       async () => failure("IMPORT_STAGING_INVALID", 409),

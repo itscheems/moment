@@ -54,6 +54,10 @@ func (committer *hostedImportCommitter) CommitMerge(ctx context.Context, token s
 	return committer.core.CommitMerge(ctx, token, epoch, selection, committer.host)
 }
 
+func (committer *hostedImportCommitter) DiscardMerge(ctx context.Context, token string, epoch uint64) error {
+	return committer.core.DiscardMerge(ctx, token, epoch)
+}
+
 func (committer *hostedImportCommitter) Status(ctx context.Context) (archive.CommitStatus, error) {
 	return committer.core.Status(ctx)
 }

@@ -187,7 +187,8 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		"comment delete": {"01ARZ3NDEKTSV4RRFFQ69G5FAW"}, "media add": {"image.png"},
 		"media get": {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "backup inspect": {"archive.zip"},
 		"backup merge-plan": {"archive.zip"}, "backup merge": {"merge-selection.json"},
-		"dev scenario": {"timeline-empty"},
+		"backup merge-discard": {"merge-selection.json"},
+		"dev scenario":         {"timeline-empty"},
 	}
 	for _, row := range matrix.Commands {
 		for _, modeCase := range []struct {
@@ -259,11 +260,12 @@ func TestEveryLeafHelpIsDiscoverableAndScoped(t *testing.T) {
 func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 	application := NewMoment(buildinfo.Info{Version: "dev", Commit: "unknown", BuildDate: "unknown"})
 	expected := map[string]string{
-		"backup":                 "5000d65a7076c4ddbe43b24347718f565fa9a1939d226b06527ebebec0f393fd",
+		"backup":                 "b4e985e599b0a59cf7cc357d777aa08d81d3704d986bd833dc7f5853d757c802",
 		"backup export":          "41c2c59d7320e821b4bb80b6a605df0285f9fb6903d7dff0a22d3adaf795c9c2",
 		"backup import":          "eccbd5ccc42fb93abb68350404f07cf3368cdb8929d23dfa61805f978b5f1ba5",
 		"backup inspect":         "ecc5db494ffe8401cdaeab289d84f8a44b7d701f5584774a036cf185b002ab10",
 		"backup merge":           "b161c3f508eba9a3fffc2f4a824de6d48b6dca21ec3d47758b31eee14de39e65",
+		"backup merge-discard":   "48f213411c4676e6cd6af1400aef5029bf8d5307fd2ced4dff53b4cd1cc8c8ea",
 		"backup merge-plan":      "0acc7d5ab886d35e8dc98bcc8bda6a7519fe883ba7e1498d7ae6e604dd4f15cd",
 		"backup status":          "2ad2eb8806b33a180826d201157e189c2488d7747aa9169bb79c42411118cb9e",
 		"comment":                "e59757017d913839937dc3eaa6abc91e594fcc3518d4d1e33f6c93ad8ed66d89",

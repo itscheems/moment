@@ -284,6 +284,23 @@ describe("backup and restore owner API", () => {
         }),
       }),
     );
+
+    fetcher.mockResolvedValueOnce(
+      json({
+        data: { discarded: true },
+        meta: { request_id: "req_discard" },
+      }),
+    );
+    await expect(
+      api.discardMergeImport("csrf-owner", inspection.stagingToken),
+    ).resolves.toBeUndefined();
+    expect(fetcher).toHaveBeenLastCalledWith(
+      "/api/v1/owner/import/merge/discard",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ staging_token: mergeToken }),
+      }),
+    );
   });
 
   it("rejects a merge plan whose summary or default selection is inconsistent", async () => {

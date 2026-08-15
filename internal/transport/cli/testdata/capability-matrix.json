@@ -39,6 +39,15 @@
       "parity_strategy": "byte_identical_selection_and_canonical_status"
     },
     {
+      "command": "backup merge-discard",
+      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive"]},
+      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed_import"]},
+      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "output_schema": "merge_discard_result_v1",
+      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "parity_strategy": "byte_identical_plan_identity_and_effect"
+    },
+    {
       "command": "backup merge-plan",
       "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive"]},
       "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed_import"]},

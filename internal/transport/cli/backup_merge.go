@@ -77,6 +77,23 @@ func registerBackupMerge(application *Application, info buildinfo.Info) {
 			return runBackupMerge(ctx, invocation, input, info.Version)
 		},
 	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:      []string{"backup", "merge-discard"},
+		ArgsUsage: "<merge-selection.json>",
+		Short:     "Discard an uncommitted portable backup merge plan",
+		Long:      "Consume the private staging credential only to remove its unclaimed merge staging generation, allowing a different backup inspection to start without waiting for expiry.",
+		Inputs:    "One exact 0600 selection JSON produced by backup merge-plan. The owner epoch and staging credential must still match; committing or terminal plans cannot be cancelled.",
+		Output:    "Reports the discarded plan ID. Active authority, CURRENT, backups, and durable import status are unchanged.",
+		Errors:    "Expired, claimed, replayed, mismatched, unsafe-permission, active-server direct mode, and cancellation failures use stable errors.",
+		Safety:    "Removes only isolated uncommitted staging bound to the supplied credential. Direct mode requires the server to be stopped; API mode asks the live owner service to discard it.",
+		Example: "moment backup merge-discard ./merge-selection.json --data-dir ./moment-data --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup merge-discard ./merge-selection.json --json",
+		Args:       cobra.ExactArgs(1),
+		Capability: CapabilityBoth,
+		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+			return runBackupMergeDiscard(ctx, invocation, input, info.Version)
+		},
+	})
 }
 
 func runBackupMergePlan(ctx context.Context, invocation Invocation, input CommandInput, appVersion string) (Result, error) {
@@ -179,6 +196,45 @@ func runBackupMerge(ctx context.Context, invocation Invocation, input CommandInp
 	return Result{Data: result, Text: text, Meta: meta}, nil
 }
 
+func runBackupMergeDiscard(ctx context.Context, invocation Invocation, input CommandInput, appVersion string) (Result, error) {
+	document, err := readPrivateMergeSession(input.Args()[0])
+	if err != nil {
+		return Result{}, backupImportCLIError(err)
+	}
+	var meta map[string]any
+	switch invocation.Mode() {
+	case ModeDirect:
+		target, err := invocation.DirectTransport()
+		if err != nil {
+			return Result{}, err
+		}
+		root, err := runtimefs.ResolveDataDir(target.DataDirectory())
+		if err != nil {
+			return Result{}, backupImportCLIError(err)
+		}
+		status, err := auth.ReadStatus(root)
+		if err != nil || !status.Initialized || status.SessionEpoch == 0 {
+			return Result{}, ownerAuthError(errors.Join(err, auth.ErrNotInitialized))
+		}
+		committer, err := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
+		if err != nil {
+			return Result{}, backupImportCLIError(err)
+		}
+		if err := committer.DiscardMergeFileOffline(ctx, document.StagingToken, status.SessionEpoch); err != nil {
+			return Result{}, backupImportCLIError(err)
+		}
+	case ModeAPI:
+		meta, err = discardMergeAPI(ctx, invocation, document.StagingToken)
+		if err != nil {
+			return Result{}, backupImportCLIError(err)
+		}
+	default:
+		return Result{}, errors.New("unsupported backup merge-discard transport")
+	}
+	data := map[string]any{"discarded": true, "plan_id": document.Selection.PlanID}
+	return Result{Data: data, Text: "Merge plan discarded\nPlan: " + document.Selection.PlanID, Meta: meta}, nil
+}
+
 func mergeActionCounts(selection archive.MergeSelection) map[string]int {
 	result := map[string]int{"add": 0, "skip": 0, "keep_local": 0, "use_incoming": 0, "keep_both": 0, "profile_keep_local": 0, "profile_use_incoming": 0}
 	for _, item := range selection.Items {
@@ -276,6 +332,65 @@ func commitMergeAPI(ctx context.Context, invocation Invocation, document mergeSe
 		return archive.CommitResult{}, nil, invalidAPIResponse()
 	}
 	return result, meta, nil
+}
+
+func discardMergeAPI(ctx context.Context, invocation Invocation, stagingToken string) (map[string]any, error) {
+	target, err := invocation.APITransport()
+	if err != nil {
+		return nil, err
+	}
+	ownerToken, err := readAPIToken(target)
+	if err != nil {
+		return nil, err
+	}
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/merge/discard")
+	if err != nil {
+		return nil, invalidArgument("the import merge discard endpoint URL is invalid", "check --url and retry")
+	}
+	body, err := json.Marshal(map[string]string{"staging_token": stagingToken})
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Authorization", "Bearer "+ownerToken)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
+	if err != nil || len(responseBody) > maxAPIResponse || !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(responseBody) != nil {
+		return nil, errors.Join(invalidAPIResponse(), err)
+	}
+	if response.StatusCode != http.StatusOK {
+		return nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+	}
+	envelope, err := decodeExactJSONObject(responseBody, "data", "meta")
+	if err != nil {
+		return nil, invalidAPIResponse()
+	}
+	data, err := decodeExactJSONObject(envelope["data"], "discarded")
+	if err != nil {
+		return nil, invalidAPIResponse()
+	}
+	var discarded bool
+	if err := json.Unmarshal(data["discarded"], &discarded); err != nil || !discarded {
+		return nil, invalidAPIResponse()
+	}
+	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
+	if err != nil {
+		return nil, invalidAPIResponse()
+	}
+	requestID, err := decodeImportRequestID(metadata["request_id"])
+	if err != nil {
+		return nil, invalidAPIResponse()
+	}
+	return map[string]any{"request_id": requestID}, nil
 }
 
 func writePrivateMergeSession(path string, document mergeSessionDocument) (resultErr error) {

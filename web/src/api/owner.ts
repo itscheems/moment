@@ -1770,6 +1770,23 @@ export class OwnerApi {
     return status;
   }
 
+  async discardMergeImport(
+    csrfToken: string,
+    stagingToken: string,
+    signal?: AbortSignal,
+    keepalive = false,
+  ): Promise<void> {
+    const response = await this.fetcher("/api/v1/owner/import/merge/discard", {
+      ...requestInit("POST", csrfToken, { staging_token: stagingToken }),
+      keepalive,
+      signal,
+    });
+    const data = objectData(await decodeImportSuccess(response, 200));
+    if (!hasExactKeys(data, ["discarded"]) || data.discarded !== true) {
+      throw invalidResponse("merge discard result is invalid");
+    }
+  }
+
   async importStatus(signal?: AbortSignal): Promise<ImportStatus> {
     const response = await this.fetcher("/api/v1/owner/import/status", {
       ...requestInit("GET"),
