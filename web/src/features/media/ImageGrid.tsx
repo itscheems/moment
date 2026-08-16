@@ -1,7 +1,6 @@
 import { useState, type CSSProperties } from "react";
 
 import type { PublicMediaUsage } from "../../api/public";
-import { Icon } from "../../components/icons";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import { ViewportVideo } from "./ViewportVideo";
 import { isVideoMimeType } from "./mediaState";
@@ -19,22 +18,18 @@ function mediaAlt(
     : `未提供图片描述，第 ${index + 1} 张，共 ${total} 张`;
 }
 
-function tileName(
+function imageTileName(
   usage: PublicMediaUsage,
   index: number,
   total: number,
 ): string {
   const state =
     usage.altText === null
-      ? isVideoMimeType(usage.mimeType)
-        ? "尚未提供视频描述"
-        : "尚未提供图片描述"
+      ? "尚未提供图片描述"
       : usage.altText === ""
         ? "明确标记为纯装饰"
         : usage.altText;
-  return isVideoMimeType(usage.mimeType)
-    ? `打开第 ${index + 1} 项视频，共 ${total} 项：${state}`
-    : `打开第 ${index + 1} 张图片，共 ${total} 张：${state}`;
+  return `打开第 ${index + 1} 张图片，共 ${total} 张：${state}`;
 }
 
 function previewUrl(mediaId: string) {
@@ -136,50 +131,39 @@ export function ImageGrid({
         data-media-count={media.length}
         role="group"
       >
-        {media.map((usage, index) => (
-          <button
-            aria-label={tileName(usage, index, media.length)}
-            className={styles.imageTile}
-            key={`${usage.position}-${usage.mediaId}`}
-            onClick={() => setSelected(index)}
-            style={
-              media.length === 1
-                ? ({
-                    "--single-media-ratio": `${usage.width} / ${usage.height}`,
-                    "--single-media-max-width": `${34 * (usage.width / usage.height)}rem`,
-                  } as CSSProperties)
-                : undefined
-            }
-            type="button"
-          >
-            {failed.has(usageKey(usage)) ? (
-              <span
-                className={styles.mediaFallback}
-                role="img"
-                aria-label={
-                  mediaAlt(usage, index, media.length) ||
-                  (containsVideo ? "装饰媒体不可用" : "装饰图片不可用")
-                }
-              >
-                <span aria-hidden="true">×</span>
-                {containsVideo ? "媒体暂不可用" : "图片暂不可用"}
-              </span>
-            ) : (
-              <MediaAsset
-                eagerVideo={eagerVideo}
-                index={index}
-                onError={() => markFailed(usage)}
-                original={false}
-                total={media.length}
-                usage={usage}
-              />
-            )}
-            {isVideoMimeType(usage.mimeType) && !failed.has(usageKey(usage)) ? (
-              <span aria-hidden="true" className={styles.videoPlayIndicator}>
-                <Icon name="video-play" />
-              </span>
-            ) : null}
-            {media.length >= 5 ? (
+        {media.map((usage, index) => {
+          const videoUsage = isVideoMimeType(usage.mimeType);
+          const tileStyle =
+            media.length === 1
+              ? ({
+                  "--single-media-ratio": `${usage.width} / ${usage.height}`,
+                  "--single-media-max-width": `${34 * (usage.width / usage.height)}rem`,
+                } as CSSProperties)
+              : undefined;
+          const contents = failed.has(usageKey(usage)) ? (
+            <span
+              className={styles.mediaFallback}
+              role="img"
+              aria-label={
+                mediaAlt(usage, index, media.length) ||
+                (containsVideo ? "装饰媒体不可用" : "装饰图片不可用")
+              }
+            >
+              <span aria-hidden="true">×</span>
+              {containsVideo ? "媒体暂不可用" : "图片暂不可用"}
+            </span>
+          ) : (
+            <MediaAsset
+              eagerVideo={eagerVideo}
+              index={index}
+              onError={() => markFailed(usage)}
+              original={false}
+              total={media.length}
+              usage={usage}
+            />
+          );
+          const orderMark =
+            media.length >= 5 ? (
               <span
                 aria-hidden="true"
                 className={styles.orderMark}
@@ -187,9 +171,34 @@ export function ImageGrid({
               >
                 {String(index + 1).padStart(2, "0")}
               </span>
-            ) : null}
-          </button>
-        ))}
+            ) : null;
+
+          if (videoUsage) {
+            return (
+              <div
+                className={`${styles.imageTile} ${styles.videoTile}`}
+                key={`${usage.position}-${usage.mediaId}`}
+                style={tileStyle}
+              >
+                {contents}
+                {orderMark}
+              </div>
+            );
+          }
+          return (
+            <button
+              aria-label={imageTileName(usage, index, media.length)}
+              className={`${styles.imageTile} ${styles.imageButton}`}
+              key={`${usage.position}-${usage.mediaId}`}
+              onClick={() => setSelected(index)}
+              style={tileStyle}
+              type="button"
+            >
+              {contents}
+              {orderMark}
+            </button>
+          );
+        })}
       </div>
       <MediaLightbox
         items={lightboxItems}

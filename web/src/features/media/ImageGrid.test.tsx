@@ -187,12 +187,7 @@ describe("public image grid", () => {
     render(<ImageGrid media={[video()]} />);
 
     const element = screen.getByLabelText("一段测试视频");
-    const playIcon = element.parentElement?.querySelector(
-      '[data-icon="video-play"]',
-    );
-    expect(playIcon).toBeInTheDocument();
-    expect(playIcon?.querySelector("path")).toBeInTheDocument();
-    expect(playIcon?.querySelector("use")).toBeNull();
+    expect(screen.getByRole("status", { name: "视频正在加载" })).toBeVisible();
     expect(element).not.toHaveAttribute("src");
     expect(element).not.toHaveAttribute("poster");
     expect(element).toHaveAttribute("preload", "none");
@@ -208,6 +203,17 @@ describe("public image grid", () => {
       "/api/v1/media/01K2ABCDEF0123456789ABCDV0/poster",
     );
     expect(element).toHaveAttribute("preload", "metadata");
+
+    Object.defineProperty(element, "duration", {
+      configurable: true,
+      value: 120,
+    });
+    fireEvent.loadedMetadata(element);
+    const playButton = screen.getByRole("button", { name: "播放视频" });
+    const playIcon = playButton.querySelector('[data-icon="video-play"]');
+    expect(playIcon?.querySelectorAll("path")).toHaveLength(2);
+    expect(playIcon?.querySelector("use")).toBeNull();
+    expect(screen.getByText("2:00")).toBeVisible();
 
     act(() => TestIntersectionObserver.instances[0].setIntersecting(false));
     expect(pause).toHaveBeenCalled();
@@ -228,18 +234,20 @@ describe("public image grid", () => {
     expect(TestIntersectionObserver.instances).toHaveLength(0);
   });
 
-  it("opens video playback with controls in one action", async () => {
+  it("starts inline video playback in one action", async () => {
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, "play")
+      .mockResolvedValue(undefined);
     render(<ImageGrid eagerVideo media={[video()]} />);
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "打开第 1 项视频，共 1 项：一段测试视频",
-      }),
-    );
+    const element = screen.getByLabelText("一段测试视频");
+    fireEvent.loadedMetadata(element);
+    fireEvent.click(screen.getByRole("button", { name: "播放视频" }));
+    expect(play).toHaveBeenCalledOnce();
+    fireEvent.playing(element);
 
-    const dialog = await screen.findByRole("dialog");
-    expect(dialog.querySelector("video")).toHaveAttribute("autoplay");
-    expect(dialog.querySelector("video")).toHaveAttribute("controls");
+    await waitFor(() => expect(element).toHaveAttribute("controls"));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("does not carry a failed preview across reordered or replaced usages", () => {

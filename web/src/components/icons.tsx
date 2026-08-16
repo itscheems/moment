@@ -114,7 +114,24 @@ const paths: Record<IconName, React.ReactNode> = {
   ),
   "media-remove": <use href={`${iconSprite}#media-remove`} />,
   "video-play": (
-    <path d="M8.5 5.42v13.16c0 .86.94 1.39 1.68.95l10.16-6.58a1.12 1.12 0 0 0 0-1.9L10.18 4.47a1.11 1.11 0 0 0-1.68.95z" />
+    <>
+      <path
+        d="M7 4.3 13.3 8.45v7.1L7 19.7Z"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+      <path
+        d="m13.3 8.45 5.4 3.55-5.4 3.55Z"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </>
   ),
   more: (
     <>

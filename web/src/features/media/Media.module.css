@@ -735,6 +735,10 @@
   border-radius: 0;
   padding: 0;
   background: var(--surface-muted);
+  cursor: default;
+}
+
+.imageButton {
   cursor: zoom-in;
 }
 
@@ -748,10 +752,8 @@
   object-fit: cover;
 }
 
-.imageTile:hover img,
-.imageTile:hover video,
-.imageTile:focus-visible img,
-.imageTile:focus-visible video {
+.imageButton:hover img,
+.imageButton:focus-visible img {
   transform: scale(1.015);
 }
 
@@ -760,7 +762,20 @@
   transition: transform var(--motion-fast) var(--ease-out);
 }
 
-.videoPlayIndicator {
+.videoTile,
+.videoPlayer {
+  background: #000;
+}
+
+.videoPlayer {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+}
+
+.videoPlayIndicator,
+.videoLoadingIndicator {
   position: absolute;
   inset-block-start: 50%;
   inset-inline-start: 50%;
@@ -775,10 +790,14 @@
   box-shadow: 0 0.25rem 1rem rgb(0 0 0 / 22%);
   backdrop-filter: blur(4px);
   transform: translate(-50%, -50%);
+}
+
+.videoPlayIndicator {
+  padding: 0;
+  cursor: pointer;
   transition:
     background-color var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-out);
-  pointer-events: none;
 }
 
 .videoPlayIndicator svg {
@@ -787,10 +806,37 @@
   margin-inline-start: 0.15rem;
 }
 
-.imageTile:hover .videoPlayIndicator,
-.imageTile:focus-visible .videoPlayIndicator {
+.videoPlayIndicator:hover,
+.videoPlayIndicator:focus-visible {
   background: rgb(15 20 25 / 90%);
   transform: translate(-50%, -50%) scale(1.04);
+}
+
+.videoLoadingIndicator {
+  border: 0;
+  box-shadow: none;
+  background: rgb(0 0 0 / 38%);
+}
+
+.videoLoadingRing {
+  inline-size: 2rem;
+  block-size: 2rem;
+  border: 0.25rem solid rgb(255 255 255 / 24%);
+  border-block-start-color: #fff;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.videoDuration {
+  position: absolute;
+  inset-inline-start: var(--space-3);
+  inset-block-end: var(--space-3);
+  color: #fff;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 80%);
+  pointer-events: none;
 }
 
 .imageGrid[data-media-count="1"] {
