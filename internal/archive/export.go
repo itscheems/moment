@@ -234,7 +234,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			return write(entryRecord{
 				ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
 				CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
-				PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), Media: media, Location: portableLocation(value.Location),
+				PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, Media: media, Location: portableLocation(value.Location),
 			})
 		})
 	})
@@ -517,15 +517,16 @@ type usageRecord struct {
 }
 
 type entryRecord struct {
-	ID          string          `json:"id"`
-	Kind        string          `json:"kind"`
-	ContentMD   string          `json:"content_md"`
-	CreatedAt   string          `json:"created_at"`
-	UpdatedAt   string          `json:"updated_at"`
-	PublishedAt string          `json:"published_at"`
-	RepostedAt  *string         `json:"reposted_at,omitempty"`
-	Media       []usageRecord   `json:"media"`
-	Location    *locationRecord `json:"location,omitempty"`
+	ID            string          `json:"id"`
+	Kind          string          `json:"kind"`
+	ContentMD     string          `json:"content_md"`
+	CreatedAt     string          `json:"created_at"`
+	UpdatedAt     string          `json:"updated_at"`
+	PublishedAt   string          `json:"published_at"`
+	RepostedAt    *string         `json:"reposted_at,omitempty"`
+	QuotedEntryID *string         `json:"quoted_entry_id,omitempty"`
+	Media         []usageRecord   `json:"media"`
+	Location      *locationRecord `json:"location,omitempty"`
 }
 
 func portableOptionalTime(value *int64) *string {
@@ -764,6 +765,11 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 	}
 	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil {
 		return err
+	}
+	if value.QuotedEntryID != nil {
+		if _, err := domain.ParseID(*value.QuotedEntryID); err != nil || *value.QuotedEntryID == value.ID {
+			return errors.New("entry quote is invalid")
+		}
 	}
 	if value.Location != nil {
 		return value.Location.Validate()
@@ -1278,6 +1284,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	}
 
 	entryIDs := make(map[string]struct{})
+	quoteRefs := make(map[string]string)
 	usageMediaIDs := make(map[string]struct{})
 	lastEntryID := ""
 	entries, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, fields map[string]json.RawMessage) error {
@@ -1343,16 +1350,24 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, Media: usages, Location: location,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, Media: usages, Location: location,
 		}); err != nil {
 			return err
 		}
 		entryIDs[value.ID] = struct{}{}
+		if value.QuotedEntryID != nil {
+			quoteRefs[value.ID] = *value.QuotedEntryID
+		}
 		lastEntryID = value.ID
 		return nil
 	})
 	if err != nil {
 		return err
+	}
+	for id, quotedID := range quoteRefs {
+		if _, exists := entryIDs[quotedID]; !exists {
+			return fmt.Errorf("entry %s quotes missing entry %s", id, quotedID)
+		}
 	}
 	type commentReference struct {
 		entryID string

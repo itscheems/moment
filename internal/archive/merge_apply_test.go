@@ -94,6 +94,48 @@ func TestResolvePortableMergeKeepBothRemapsPostReplyAndMediaCollision(t *testing
 	}
 }
 
+func TestResolvePortableMergeRemapsOnlyIncomingQuoteGraph(t *testing.T) {
+	targetID := "01H00000000000000000000030"
+	quoteID := "01H00000000000000000000031"
+	local := PortableAuthority{
+		Site: sqlitestore.ArchiveSite{OwnerID: "owner"},
+		Entries: []sqlitestore.ArchiveEntry{
+			{ID: targetID, ContentMD: "local target"},
+			{ID: quoteID, ContentMD: "local quote", QuotedEntryID: &targetID},
+		},
+	}
+	incoming := PortableAuthority{
+		Site: sqlitestore.ArchiveSite{OwnerID: "owner"},
+		Entries: []sqlitestore.ArchiveEntry{
+			{ID: targetID, ContentMD: "incoming target"},
+			{ID: quoteID, ContentMD: "incoming quote", QuotedEntryID: &targetID},
+		},
+	}
+	plan, err := ComparePortableAuthorities(MergePlanInput{ArchiveSHA256: repeatHex("d"), BaseGeneration: "generation", ExpiresAt: time.Unix(35, 0).UTC(), Local: local, Incoming: incoming})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := plan.DefaultSelection
+	for index := range selection.Items {
+		selection.Items[index].Action = MergeKeepBoth
+	}
+	resolved, err := ResolvePortableMerge(plan, selection, local, incoming, MergeResolveOptions{
+		Clock:   func() time.Time { return time.UnixMilli(1_700_000_000_000) },
+		Entropy: bytes.NewReader([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries := indexEntries(resolved.Authority.Entries)
+	if entries[quoteID].QuotedEntryID == nil || *entries[quoteID].QuotedEntryID != targetID {
+		t.Fatalf("local quote changed = %#v", entries[quoteID])
+	}
+	remappedQuoteID, remappedTargetID := resolved.EntryRemap[quoteID], resolved.EntryRemap[targetID]
+	if entries[remappedQuoteID].QuotedEntryID == nil || *entries[remappedQuoteID].QuotedEntryID != remappedTargetID {
+		t.Fatalf("incoming quote was not remapped = %#v remap=%#v", entries[remappedQuoteID], resolved.EntryRemap)
+	}
+}
+
 func TestResolvePortableMergeRejectsIncompleteOrStaleSelection(t *testing.T) {
 	local := PortableAuthority{Site: sqlitestore.ArchiveSite{OwnerID: "owner"}}
 	incoming := PortableAuthority{Site: sqlitestore.ArchiveSite{OwnerID: "owner"}, Entries: []sqlitestore.ArchiveEntry{{ID: "01H00000000000000000000020"}}}

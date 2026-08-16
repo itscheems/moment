@@ -135,7 +135,7 @@ func createPost(posts *app.PostService) gin.HandlerFunc {
 			writePostError(ctx, err)
 			return
 		}
-		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Media: input.Media, Location: input.Location, IdempotencyKey: idempotencyKey})
+		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Media: input.Media, Location: input.Location, QuotedPostID: input.QuotedPostID, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -242,6 +242,8 @@ type decodedPostWrite struct {
 	MediaPresent    bool
 	Location        *domain.Location
 	LocationPresent bool
+	QuotedPostID    *domain.ID
+	QuotePresent    bool
 }
 
 func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
@@ -295,6 +297,20 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 			}
 			result.Location = location
 			result.LocationPresent = true
+		case "quoted_post_id":
+			if patch || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				return decodedPostWrite{}, invalidPostArgument("quoted_post_id is only accepted for create and must be a canonical ULID", "quoted_post_id")
+			}
+			var value string
+			if json.Unmarshal(raw, &value) != nil {
+				return decodedPostWrite{}, invalidPostArgument("quoted_post_id must be a string", "quoted_post_id")
+			}
+			id, parseErr := domain.ParseID(value)
+			if parseErr != nil {
+				return decodedPostWrite{}, invalidPostArgument("quoted_post_id must be a canonical ULID", "quoted_post_id")
+			}
+			result.QuotedPostID = &id
+			result.QuotePresent = true
 		default:
 			return decodedPostWrite{}, invalidPostArgument("request contains an unsupported field", key)
 		}
@@ -305,7 +321,7 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return decodedPostWrite{}, invalidPostArgument("request must contain exactly one JSON document", "body")
 	}
-	if (!patch && !result.ContentPresent) || (patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent) {
+	if (!patch && !result.ContentPresent && !result.MediaPresent && !result.QuotePresent) || (patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent) {
 		return decodedPostWrite{}, invalidPostArgument("request must contain content_md, media, or location", "body")
 	}
 	return result, nil

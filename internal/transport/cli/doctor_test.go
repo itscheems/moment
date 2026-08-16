@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -127,6 +128,30 @@ func TestDoctorCLIAPIDeepUnsupportedAndStrictReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	validData := `{"data":` + string(validReportJSON) + `,"meta":{"request_id":"req_doctor"}}`
+	appliedVersion := 0
+	for _, check := range report.Checks {
+		if check.ID != doctor.CheckSchemaVersion {
+			continue
+		}
+		value, ok := check.Evidence["applied_version"]
+		if !ok {
+			t.Fatal("database schema evidence omits applied_version")
+		}
+		switch typed := value.(type) {
+		case int:
+			appliedVersion = typed
+		case int64:
+			appliedVersion = int(typed)
+		case float64:
+			appliedVersion = int(typed)
+		default:
+			t.Fatalf("database schema applied_version = %T", value)
+		}
+	}
+	if appliedVersion <= 0 {
+		t.Fatal("database schema evidence has no positive applied_version")
+	}
+	appliedVersionJSON := fmt.Sprintf(`"applied_version":%d`, appliedVersion)
 	tests := []struct {
 		name        string
 		contentType string
@@ -149,9 +174,9 @@ func TestDoctorCLIAPIDeepUnsupportedAndStrictReport(t *testing.T) {
 		{name: "duplicate check field", contentType: "application/json", body: strings.Replace(validData, `"id":"data_dir"`, `"id":"data_dir","id":"data_dir"`, 1), status: 200},
 		{name: "duplicate evidence field", contentType: "application/json", body: strings.Replace(validData, `"evidence":{`, `"evidence":{"duplicate":true,"duplicate":false,`, 1), status: 200},
 		{name: "unknown evidence field", contentType: "application/json", body: strings.Replace(validData, `"readable":true`, `"readable":true,"absolute_path":"CANARY_PATH"`, 1), status: 200},
-		{name: "negative evidence integer", contentType: "application/json", body: strings.Replace(validData, `"applied_version":11`, `"applied_version":-1`, 1), status: 200},
-		{name: "fractional evidence integer", contentType: "application/json", body: strings.Replace(validData, `"applied_version":11`, `"applied_version":1.5`, 1), status: 200},
-		{name: "string evidence integer", contentType: "application/json", body: strings.Replace(validData, `"applied_version":11`, `"applied_version":"11"`, 1), status: 200},
+		{name: "negative evidence integer", contentType: "application/json", body: strings.Replace(validData, appliedVersionJSON, `"applied_version":-1`, 1), status: 200},
+		{name: "fractional evidence integer", contentType: "application/json", body: strings.Replace(validData, appliedVersionJSON, `"applied_version":1.5`, 1), status: 200},
+		{name: "string evidence integer", contentType: "application/json", body: strings.Replace(validData, appliedVersionJSON, fmt.Sprintf(`"applied_version":"%d"`, appliedVersion), 1), status: 200},
 		{name: "null data", contentType: "application/json", body: `{"data":null,"meta":{"request_id":"req_doctor"}}`, status: 200},
 		{name: "empty data", contentType: "application/json", body: `{"data":{},"meta":{"request_id":"req_doctor"}}`, status: 200},
 		{name: "unknown envelope", contentType: "application/json", body: `{"data":{},"meta":{"request_id":"req_doctor"},"extra":true}`, status: 200},

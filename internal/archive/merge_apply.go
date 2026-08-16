@@ -108,20 +108,36 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 				result.EntryRemap[value.ID] = value.ID
 			}
 		case MergeAdd, MergeUseIncoming:
-			entries[value.ID] = cloneArchiveEntry(value)
 			result.EntryRemap[value.ID] = value.ID
 		case MergeKeepBoth:
 			id, err := newID()
 			if err != nil {
 				return ResolvedMerge{}, err
 			}
-			duplicateEntry := cloneArchiveEntry(value)
-			duplicateEntry.ID = id
-			entries[id] = duplicateEntry
 			result.EntryRemap[value.ID] = id
 		default:
 			return ResolvedMerge{}, invalidMergeSelection("entry", value.ID, choice)
 		}
+	}
+	for _, value := range incoming.Entries {
+		choice := itemChoices[mergeChoiceKey(MergeEntry, value.ID)]
+		if choice == MergeSkip || choice == MergeKeepLocal {
+			continue
+		}
+		resolvedID, ok := result.EntryRemap[value.ID]
+		if !ok {
+			return ResolvedMerge{}, domain.NewError(domain.CodeInvalidArgument, "selected post has no resolved identity", map[string]any{"post_id": value.ID})
+		}
+		resolved := cloneArchiveEntry(value)
+		resolved.ID = resolvedID
+		if value.QuotedEntryID != nil {
+			quotedID, retained := result.EntryRemap[*value.QuotedEntryID]
+			if !retained {
+				return ResolvedMerge{}, domain.NewError(domain.CodeInvalidArgument, "selected quote depends on a skipped post", map[string]any{"post_id": value.ID, "quoted_post_id": *value.QuotedEntryID})
+			}
+			resolved.QuotedEntryID = &quotedID
+		}
+		entries[resolvedID] = resolved
 	}
 	result.Authority.Entries = mapEntries(entries)
 

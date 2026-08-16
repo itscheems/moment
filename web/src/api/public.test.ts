@@ -17,6 +17,7 @@ const post = {
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
   reposted_at: null,
+  quoted_post: null,
   comment_count: 0,
   media: [],
 };
@@ -47,6 +48,37 @@ const replyComment = {
 };
 
 describe("public API client", () => {
+  it("maps the non-recursive quoted Moment projection", async () => {
+    const quoted = {
+      ...post,
+      content_md: "写一点新的想法",
+      content_html: "<p>写一点新的想法</p>",
+      quoted_post: {
+        id: "01K2ABCDEF0123456789ABCDE9",
+        content_md: "被引用的正文",
+        content_html: "<p>被引用的正文</p>",
+        published_at: "2026-08-09T01:02:03.000Z",
+        media: [],
+        location: {
+          name: "陆悦天地",
+          display_name: "上海市浦东新区 · 陆悦天地",
+        },
+      },
+    };
+    const api = new PublicApi(
+      vi.fn(async () => json({ data: quoted, meta: {} })) as typeof fetch,
+    );
+
+    await expect(api.post(quoted.id)).resolves.toMatchObject({
+      contentMd: "写一点新的想法",
+      quotedPost: {
+        id: "01K2ABCDEF0123456789ABCDE9",
+        contentMd: "被引用的正文",
+        location: { name: "陆悦天地" },
+      },
+    });
+  });
+
   it("requires a non-negative canonical comment count", async () => {
     const missing = { ...post } as Record<string, unknown>;
     delete missing.comment_count;
@@ -281,6 +313,8 @@ describe("public API client", () => {
           repostedAt: post.reposted_at,
           commentCount: post.comment_count,
           media: [],
+          location: null,
+          quotedPost: null,
         },
       ],
       nextCursor: "opaque+/=cursor",

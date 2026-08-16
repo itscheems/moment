@@ -297,7 +297,7 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"owner set-password":     "b1d70c130537b43fe989dffcd474b11dbc4dcc0ec4bba5f4148448e1decca7c9",
 		"owner status":           "ca4e6635f78403f88e14f77f225d3aad619123cf25c0e73b57f3daa61eb39d34",
 		"post":                   "218eac009d9d9de2dc0c755b6837f147126ec7d7a1aacf7a3a5e2cb6f92732e7",
-		"post create":            "a135b91b797c488ea58dc2775aa357eec6381ebfebd3c55309c0bfc716f37f37",
+		"post create":            "4f428032f88430a2caf11ddbbb785f2616f378959908133812269385dbde3855",
 		"post delete":            "f053d4498c17f292e84b660b8b8abcb9dcb00daa9291433c0f5eb643233226e6",
 		"post get":               "48690ea66ae796353be0b4cdd94f1fc0b4352abc9e2c834f7964ad2f79104a8e",
 		"post list":              "6afa5e64cd9dee4cafd2f868cb9745ec45e45ee1845dbc81ff9d19ab35fb8739",

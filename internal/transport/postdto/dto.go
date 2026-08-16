@@ -26,6 +26,16 @@ type Post struct {
 	CommentCount int               `json:"comment_count"`
 	Media        []MediaProjection `json:"media"`
 	Location     *Location         `json:"location"`
+	QuotedPost   *QuotedPost       `json:"quoted_post"`
+}
+
+type QuotedPost struct {
+	ID          string            `json:"id"`
+	ContentMD   string            `json:"content_md"`
+	ContentHTML string            `json:"content_html"`
+	PublishedAt time.Time         `json:"published_at"`
+	Media       []MediaProjection `json:"media"`
+	Location    *Location         `json:"location"`
 }
 
 // Location is the deliberately coarse public location projection. Exact
@@ -185,7 +195,7 @@ func FromPost(post app.Post) Post {
 		value := post.Entry.RepostedAt.UTC()
 		repostedAt = &value
 	}
-	return Post{
+	mapped := Post{
 		ID:           post.Entry.ID.String(),
 		ContentMD:    post.Entry.ContentMD,
 		ContentHTML:  post.ContentHTML,
@@ -202,6 +212,18 @@ func FromPost(post app.Post) Post {
 			return &Location{Name: post.Location.Name, DisplayName: post.Location.DisplayName}
 		}(),
 	}
+	if post.Quoted != nil {
+		quotedMedia := make([]MediaProjection, 0, len(post.Quoted.Media))
+		for _, usage := range post.Quoted.Media {
+			item := MediaProjection{MediaID: usage.MediaID.String(), Position: usage.Position, AltText: usage.AltText, Width: usage.Width, Height: usage.Height}
+			quotedMedia = append(quotedMedia, item)
+		}
+		mapped.QuotedPost = &QuotedPost{ID: post.Quoted.Entry.ID.String(), ContentMD: post.Quoted.Entry.ContentMD, ContentHTML: post.Quoted.ContentHTML, PublishedAt: post.Quoted.Entry.PublishedAt.UTC(), Media: quotedMedia}
+		if post.Quoted.Location != nil {
+			mapped.QuotedPost.Location = &Location{Name: post.Quoted.Location.Name, DisplayName: post.Quoted.Location.DisplayName}
+		}
+	}
+	return mapped
 }
 
 // FromPage maps the canonical items; continuation belongs to envelope metadata.
@@ -276,6 +298,51 @@ func ValidatePost(post Post) error {
 	}
 	if html != post.ContentHTML {
 		return errors.New("post content_html does not match content_md")
+	}
+	if post.QuotedPost != nil {
+		if _, err := domain.ParseID(post.QuotedPost.ID); err != nil {
+			return err
+		}
+		if post.QuotedPost.ID == post.ID {
+			return errors.New("post cannot quote itself")
+		}
+		if !wireInstant(post.QuotedPost.PublishedAt) || post.QuotedPost.Media == nil {
+			return errors.New("quoted post is not canonical")
+		}
+		if err := validateQuotedPost(*post.QuotedPost); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateQuotedPost(post QuotedPost) error {
+	if err := domain.ValidateMarkdown(post.ContentMD); err != nil {
+		return err
+	}
+	html, err := domain.RenderMarkdown(post.ContentMD)
+	if err != nil || html != post.ContentHTML {
+		return errors.New("quoted post content_html does not match content_md")
+	}
+	if post.Location != nil {
+		location := domain.Location{Name: post.Location.Name, DisplayName: post.Location.DisplayName, Provider: "manual"}
+		if err := location.Validate(); err != nil {
+			return err
+		}
+	}
+	usages := make([]domain.EntryMediaUsage, 0, len(post.Media))
+	for _, usage := range post.Media {
+		if usage.Width == 0 || usage.Height == 0 {
+			return errors.New("quoted post media is not canonical")
+		}
+		id, err := domain.ParseID(usage.MediaID)
+		if err != nil {
+			return err
+		}
+		usages = append(usages, domain.EntryMediaUsage{MediaID: id, Position: usage.Position, AltText: usage.AltText})
+	}
+	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
+		return err
 	}
 	return nil
 }

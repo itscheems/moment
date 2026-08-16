@@ -120,6 +120,12 @@ func TestPostDirectAgentContractIdempotencyAndDeleteSafety(t *testing.T) {
 	if createdEnvelope["meta"].(map[string]any)["replayed"] != false {
 		t.Fatalf("create meta = %#v", createdEnvelope["meta"])
 	}
+	quotedOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--quote", id, "--content", "my take", "--idempotency-key", "cli-post-quote-001", "--json")
+	quoted := commandData(t, quotedOutput)
+	quotedPost, ok := quoted["quoted_post"].(map[string]any)
+	if quotedOutput.exit != ExitSuccess || !ok || quoted["content_md"] != "my take" || quotedPost["id"] != id || quotedPost["content_md"] != "first **moment**" {
+		t.Fatalf("quoted create = %#v data=%#v", quotedOutput, quoted)
+	}
 
 	replayOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "first **moment**", "--idempotency-key", "cli-post-001", "--json")
 	if replay := commandData(t, replayOutput); !reflect.DeepEqual(created, replay) || decodeOneDocument(t, replayOutput.stdout)["meta"].(map[string]any)["replayed"] != true {

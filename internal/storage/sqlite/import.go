@@ -14,11 +14,12 @@ import (
 // inspection. It never accepts SQLite bytes from an archive and owns one
 // transaction until the complete portable graph has been validated.
 type PortableImporter struct {
-	tx       *sql.Tx
-	closed   bool
-	entries  int64
-	comments int64
-	media    int64
+	tx            *sql.Tx
+	closed        bool
+	entries       int64
+	comments      int64
+	media         int64
+	pendingQuotes [][2]string
 }
 
 // BeginPortableImport starts one isolated current-schema rebuild.
@@ -92,8 +93,17 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
 	}
-	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil {
+	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil && value.QuotedEntryID == nil {
 		return err
+	}
+	if value.QuotedEntryID != nil {
+		if _, err := domain.ParseID(*value.QuotedEntryID); err != nil {
+			return err
+		}
+		if *value.QuotedEntryID == value.ID {
+			return errors.New("portable entry cannot quote itself")
+		}
+		importer.pendingQuotes = append(importer.pendingQuotes, [2]string{value.ID, *value.QuotedEntryID})
 	}
 	if value.Location != nil {
 		if err := value.Location.Validate(); err != nil {
@@ -261,6 +271,11 @@ func (importer *PortableImporter) Commit(ctx context.Context, expected ArchiveCo
 	}
 	if importer.entries != expected.Entries || importer.comments != expected.Comments || importer.media != expected.Media {
 		return errors.New("portable import counts do not match the manifest")
+	}
+	for _, quote := range importer.pendingQuotes {
+		if _, err := importer.tx.ExecContext(ctx, `INSERT INTO entry_quotes (entry_id, quoted_entry_id) VALUES (?, ?)`, quote[0], quote[1]); err != nil {
+			return fmt.Errorf("insert portable entry quote: %w", err)
+		}
 	}
 	rows, err := importer.tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
 	if err != nil {

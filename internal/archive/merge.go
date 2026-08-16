@@ -463,6 +463,9 @@ func mustRawJSON(value any) json.RawMessage {
 
 func entryDependencies(value sqlitestore.ArchiveEntry) []MergeRef {
 	result := make([]MergeRef, 0, len(value.Media))
+	if value.QuotedEntryID != nil {
+		result = append(result, MergeRef{Kind: MergeEntry, ID: *value.QuotedEntryID})
+	}
 	for _, usage := range value.Media {
 		result = append(result, MergeRef{Kind: MergeMedia, ID: usage.MediaID})
 	}
@@ -526,6 +529,9 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	}
 	if !reflect.DeepEqual(local.RepostedAtMS, incoming.RepostedAtMS) {
 		fields = append(fields, "reposted_at")
+	}
+	if !reflect.DeepEqual(local.QuotedEntryID, incoming.QuotedEntryID) {
+		fields = append(fields, "quoted_entry_id")
 	}
 	if !reflect.DeepEqual(usageSignature(local.Media, localSHA), usageSignature(incoming.Media, incomingSHA)) {
 		fields = append(fields, "media")
@@ -661,6 +667,7 @@ func sortedMedia(values []sqlitestore.ArchiveMedia) []sqlitestore.ArchiveMedia {
 }
 
 func cloneArchiveEntry(value sqlitestore.ArchiveEntry) sqlitestore.ArchiveEntry {
+	value.QuotedEntryID = cloneString(value.QuotedEntryID)
 	value.Media = cloneUsages(value.Media)
 	if value.Location != nil {
 		location := *value.Location

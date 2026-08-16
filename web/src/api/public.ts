@@ -33,6 +33,16 @@ export interface PublicPost {
   commentCount: number;
   media: PublicMediaUsage[];
   location?: PublicPostLocation | null;
+  quotedPost?: PublicQuotedPost | null;
+}
+
+export interface PublicQuotedPost {
+  id: string;
+  contentMd: string;
+  contentHtml: string;
+  publishedAt: string;
+  media: PublicMediaUsage[];
+  location: PublicPostLocation | null;
 }
 
 export interface PublicPostLocation {
@@ -589,7 +599,9 @@ export function parsePost(value: unknown): PublicPost {
   ];
   if (
     (!hasExactKeys(value, postKeys) &&
-      !hasExactKeys(value, [...postKeys, "location"])) ||
+      !hasExactKeys(value, [...postKeys, "location"]) &&
+      !hasExactKeys(value, [...postKeys, "quoted_post"]) &&
+      !hasExactKeys(value, [...postKeys, "location", "quoted_post"])) ||
     !Array.isArray(value.media) ||
     value.media.length > 9
   ) {
@@ -611,6 +623,45 @@ export function parsePost(value: unknown): PublicPost {
     }
     location = { name, displayName };
   }
+  let quotedPost: PublicQuotedPost | null = null;
+  if (value.quoted_post !== undefined && value.quoted_post !== null) {
+    const quoted = value.quoted_post;
+    if (
+      !isRecord(quoted) ||
+      !hasExactKeys(quoted, [
+        "id",
+        "content_md",
+        "content_html",
+        "published_at",
+        "media",
+        "location",
+      ])
+    ) {
+      throw invalidResponse("quoted post is invalid");
+    }
+    let quotedLocation: PublicPostLocation | null = null;
+    if (quoted.location !== null) {
+      if (
+        !isRecord(quoted.location) ||
+        !hasExactKeys(quoted.location, ["name", "display_name"])
+      )
+        throw invalidResponse("quoted post location is invalid");
+      const quotedName = stringField(quoted.location, "name");
+      const quotedDisplayName = stringField(quoted.location, "display_name");
+      if (!quotedName.trim() || !quotedDisplayName.trim()) {
+        throw invalidResponse("quoted post location cannot be empty");
+      }
+      quotedLocation = { name: quotedName, displayName: quotedDisplayName };
+    }
+    quotedPost = {
+      id: stringField(quoted, "id"),
+      contentMd: stringField(quoted, "content_md"),
+      contentHtml: stringField(quoted, "content_html"),
+      publishedAt: instantField(quoted, "published_at"),
+      media: parseMediaUsages(quoted.media, 9, "quoted post"),
+      location: quotedLocation,
+    };
+  }
   return {
     id: stringField(value, "id"),
     contentMd: stringField(value, "content_md"),
@@ -624,7 +675,8 @@ export function parsePost(value: unknown): PublicPost {
         : instantField(value, "reposted_at"),
     commentCount: nonNegativeIntegerField(value, "comment_count"),
     media,
-    ...(value.location === undefined ? {} : { location }),
+    location,
+    quotedPost,
   };
 }
 
@@ -658,7 +710,9 @@ function parseSearchHit(value: unknown): SearchHit {
   if (
     !isRecord(value) ||
     (!hasExactKeys(value, searchKeys) &&
-      !hasExactKeys(value, [...searchKeys, "location"]))
+      !hasExactKeys(value, [...searchKeys, "location"]) &&
+      !hasExactKeys(value, [...searchKeys, "quoted_post"]) &&
+      !hasExactKeys(value, [...searchKeys, "location", "quoted_post"]))
   ) {
     throw invalidResponse(
       "search hit contains an unsupported or missing field",

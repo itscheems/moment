@@ -17,6 +17,7 @@ const post = {
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
   reposted_at: null,
+  quoted_post: null,
   comment_count: 0,
   media: [],
 };
@@ -115,6 +116,49 @@ afterEach(() => {
 });
 
 describe("owner API client", () => {
+  it("creates a quoted Moment with commentary and the quoted post identifier", async () => {
+    const fetcher = vi.fn<typeof fetch>(async () =>
+      json(
+        {
+          data: {
+            ...post,
+            content_md: "我的补充",
+            content_html: "<p>我的补充</p>",
+            quoted_post: {
+              id: "01K2ABCDEF0123456789ABCDE9",
+              content_md: "原始内容",
+              content_html: "<p>原始内容</p>",
+              published_at: "2026-08-09T01:02:03.000Z",
+              media: [],
+              location: null,
+            },
+          },
+          meta: { replayed: false },
+        },
+        201,
+      ),
+    );
+    const api = new OwnerApi(fetcher as typeof fetch);
+
+    await expect(
+      api.create(
+        "csrf",
+        "我的补充",
+        "web-quote",
+        [],
+        undefined,
+        "01K2ABCDEF0123456789ABCDE9",
+      ),
+    ).resolves.toMatchObject({
+      quotedPost: { id: "01K2ABCDEF0123456789ABCDE9" },
+    });
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      content_md: "我的补充",
+      media: [],
+      quoted_post_id: "01K2ABCDEF0123456789ABCDE9",
+    });
+  });
+
   it("searches, resolves, and submits canonical post locations", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const fullLocation = {

@@ -69,14 +69,16 @@ func registerPosts(application *Application) {
 		Path:   []string{"post", "create"},
 		Short:  "Publish a Moment post",
 		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated owner HTTP API.",
-		Inputs: "Provide --content, managed media, or both. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin.",
+		Inputs: "Provide --content, managed media, --quote, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin.",
 		Output: "The canonical created post and replay metadata.",
 		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
 		Example: "moment post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
-			"moment post create --data-dir ./moment-data --media ./photo.jpg --idempotency-key demo-002 --json",
+			"moment post create --data-dir ./moment-data --media ./photo.jpg --idempotency-key demo-002 --json\n" +
+			"moment post create --data-dir ./moment-data --quote 01ARZ3NDEKTSV4RRFFQ69G5FAV --content '我的补充' --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
+			flags.String("quote", "", "canonical post ULID to quote")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
 			registerPostMediaFlags(flags)
 			registerPostLocationFlags(flags, false)
@@ -318,8 +320,20 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 	if err != nil {
 		return Result{}, err
 	}
-	if !input.Changed("content") && !mediaInput.Present {
-		return Result{}, invalidArgument("post create requires --content or a media input", "provide --content, --media, or --media-manifest")
+	quoteValue, err := input.String("quote")
+	if err != nil {
+		return Result{}, err
+	}
+	var quotedPostID *domain.ID
+	if input.Changed("quote") {
+		id, parseErr := domain.ParseID(quoteValue)
+		if parseErr != nil {
+			return Result{}, postCLIError(parseErr)
+		}
+		quotedPostID = &id
+	}
+	if !input.Changed("content") && !mediaInput.Present && quotedPostID == nil {
+		return Result{}, invalidArgument("post create requires --content, media, or --quote", "provide --content, --media, --media-manifest, or --quote")
 	}
 	idempotencyKey, err := input.String("idempotency-key")
 	if err != nil {
@@ -342,7 +356,7 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		if err != nil {
 			return Result{}, err
 		}
-		created, err := direct.service.Create(ctx, app.CreatePostInput{ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey})
+		created, err := direct.service.Create(ctx, app.CreatePostInput{ContentMD: content, Media: usages, Location: locationInput.Location, QuotedPostID: quotedPostID, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -356,6 +370,10 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 			return Result{}, err
 		}
 		payload := postWritePayload{ContentMD: &content}
+		if quotedPostID != nil {
+			value := quotedPostID.String()
+			payload.QuotedPostID = &value
+		}
 		if mediaInput.Present {
 			wire := postMediaDTOs(usages)
 			payload.Media = &wire
@@ -567,9 +585,10 @@ func runPostPinChange(ctx context.Context, invocation Invocation, input CommandI
 }
 
 type postWritePayload struct {
-	ContentMD *string                `json:"content_md,omitempty"`
-	Media     *[]postdto.MediaUsage  `json:"media,omitempty"`
-	Location  **locationdto.Location `json:"location,omitempty"`
+	ContentMD    *string                `json:"content_md,omitempty"`
+	Media        *[]postdto.MediaUsage  `json:"media,omitempty"`
+	Location     **locationdto.Location `json:"location,omitempty"`
+	QuotedPostID *string                `json:"quoted_post_id,omitempty"`
 }
 
 type postLocationInput struct {

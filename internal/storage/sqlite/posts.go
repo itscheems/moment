@@ -399,6 +399,38 @@ INSERT INTO entry_location (
 	return nil
 }
 
+func (store postStore) EntryQuote(ctx context.Context, entryID domain.ID) (*domain.ID, error) {
+	var raw sql.NullString
+	err := store.queries.QueryRowContext(ctx, `SELECT quoted_entry_id FROM entry_quotes WHERE entry_id = ?`, entryID.String()).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !raw.Valid) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query entry quote: %w", err)
+	}
+	id, err := domain.ParseID(raw.String)
+	if err != nil {
+		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored quote target is invalid", map[string]any{"post_id": entryID.String()})
+	}
+	return &id, nil
+}
+
+func (store postStore) ReplaceEntryQuote(ctx context.Context, entryID domain.ID, quotedID *domain.ID) error {
+	if _, err := store.queries.ExecContext(ctx, `DELETE FROM entry_quotes WHERE entry_id = ?`, entryID.String()); err != nil {
+		return fmt.Errorf("clear entry quote: %w", err)
+	}
+	if quotedID == nil {
+		return nil
+	}
+	if *quotedID == entryID {
+		return domain.NewError(domain.CodeInvalidArgument, "post cannot quote itself", map[string]any{"field": "quoted_post_id"})
+	}
+	if _, err := store.queries.ExecContext(ctx, `INSERT INTO entry_quotes (entry_id, quoted_entry_id) VALUES (?, ?)`, entryID.String(), quotedID.String()); err != nil {
+		return fmt.Errorf("insert entry quote: %w", err)
+	}
+	return nil
+}
+
 func (store postStore) UpdateEntry(ctx context.Context, entry domain.Entry, contentText string) (bool, error) {
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE entries

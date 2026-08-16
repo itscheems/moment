@@ -56,6 +56,7 @@ type ArchiveEntry struct {
 	UpdatedAtMS   int64
 	PublishedAtMS int64
 	RepostedAtMS  *int64
+	QuotedEntryID *string
 	Media         []ArchiveUsage
 	Location      *domain.Location
 }
@@ -246,7 +247,7 @@ func (snapshot *ArchiveSnapshot) Entries(ctx context.Context, yield func(Archive
 		return errors.New("archive entry callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms,
+SELECT e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, quote.quoted_entry_id,
        usage.media_id, usage.position, usage.alt_text,
        location.name, location.display_name, location.country_code, location.country,
        location.region, location.city, location.district, location.category,
@@ -255,6 +256,7 @@ SELECT e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published
 FROM entries AS e
 LEFT JOIN entry_media AS usage ON usage.entry_id = e.id
 LEFT JOIN entry_location AS location ON location.entry_id = e.id
+LEFT JOIN entry_quotes AS quote ON quote.entry_id = e.id
 ORDER BY e.id, usage.position`)
 	if err != nil {
 		return fmt.Errorf("query archive entries: %w", err)
@@ -266,10 +268,11 @@ ORDER BY e.id, usage.position`)
 		var mediaID, alt sql.NullString
 		var position sql.NullInt64
 		var repostedAt sql.NullInt64
+		var quotedEntryID sql.NullString
 		var name, displayName, countryCode, country, region, city, district, category, provider, providerID, coordinateSystem sql.NullString
 		var latitude, longitude sql.NullInt64
 		if err := rows.Scan(
-			&entry.ID, &entry.Kind, &entry.ContentMD, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt,
+			&entry.ID, &entry.Kind, &entry.ContentMD, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt, &quotedEntryID,
 			&mediaID, &position, &alt, &name, &displayName, &countryCode, &country, &region, &city,
 			&district, &category, &provider, &providerID, &latitude, &longitude, &coordinateSystem,
 		); err != nil {
@@ -278,6 +281,10 @@ ORDER BY e.id, usage.position`)
 		if repostedAt.Valid {
 			value := repostedAt.Int64
 			entry.RepostedAtMS = &value
+		}
+		if quotedEntryID.Valid {
+			value := quotedEntryID.String
+			entry.QuotedEntryID = &value
 		}
 		if current == nil || current.ID != entry.ID {
 			if current != nil {

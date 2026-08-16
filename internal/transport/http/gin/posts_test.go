@@ -152,6 +152,19 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	if media, ok := createdData["media"].([]any); !ok || media == nil || len(media) != 0 {
 		t.Fatalf("text-only post media = %#v", createdData["media"])
 	}
+	quote := ownerRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"my take","quoted_post_id":"`+id+`"}`)
+	quote.Header.Set("Authorization", "Bearer "+fixture.token)
+	quote.Header.Set("Idempotency-Key", "post-http-quote-001")
+	quoted := performRequest(fixture.engine, quote)
+	if quoted.Code != http.StatusCreated {
+		t.Fatalf("quote create = %d %s", quoted.Code, quoted.Body.String())
+	}
+	quotedData := decodeDataMap(t, quoted)
+	quotedID := quotedData["id"].(string)
+	quotedPost, ok := quotedData["quoted_post"].(map[string]any)
+	if !ok || quotedData["content_md"] != "my take" || quotedPost["id"] != id || quotedPost["content_md"] != "first **post**" {
+		t.Fatalf("quote DTO = %#v", quotedData)
+	}
 	duplicatePatch := ownerRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"content_md":"one","content_md":"two"}`)
 	duplicatePatch.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, duplicatePatch); response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
@@ -232,6 +245,11 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	missing := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts/"+id, ""))
 	if missing.Code != http.StatusNotFound || decodeError(t, missing.Body).Error.Code != "POST_NOT_FOUND" {
 		t.Fatalf("missing = %d %s", missing.Code, missing.Body.String())
+	}
+	quoteAfterDelete := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts/"+quotedID, ""))
+	quoteAfterDeleteData := decodeDataMap(t, quoteAfterDelete)
+	if quoteAfterDelete.Code != http.StatusOK || quoteAfterDeleteData["content_md"] != "my take" || quoteAfterDeleteData["quoted_post"] != nil {
+		t.Fatalf("quote after target delete = %d %#v", quoteAfterDelete.Code, quoteAfterDeleteData)
 	}
 }
 

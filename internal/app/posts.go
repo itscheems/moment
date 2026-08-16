@@ -28,6 +28,8 @@ type PostStore interface {
 	ProjectMediaUsages(context.Context, []domain.EntryMediaUsage) ([]MediaUsageProjection, error)
 	ReplaceEntryMediaUsages(context.Context, domain.ID, []domain.EntryMediaUsage) error
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
+	EntryQuote(context.Context, domain.ID) (*domain.ID, error)
+	ReplaceEntryQuote(context.Context, domain.ID, *domain.ID) error
 	ReplaceEntryLocation(context.Context, domain.ID, *domain.Location) error
 	UpdateEntry(context.Context, domain.Entry, string) (bool, error)
 	SetEntryRepostedAt(context.Context, domain.ID, *time.Time, time.Time) (bool, error)
@@ -60,6 +62,15 @@ type Post struct {
 	Media        []MediaUsageProjection
 	Location     *domain.Location
 	CommentCount int
+	Quoted       *QuotedPost
+}
+
+// QuotedPost is the non-recursive public projection embedded by a quote Moment.
+type QuotedPost struct {
+	Entry       domain.Entry
+	ContentHTML string
+	Media       []MediaUsageProjection
+	Location    *domain.Location
 }
 
 // CreatePostInput contains only application semantics. Authentication,
@@ -68,6 +79,7 @@ type CreatePostInput struct {
 	ContentMD      string
 	Media          []domain.EntryMediaUsage
 	Location       *domain.Location
+	QuotedPostID   *domain.ID
 	IdempotencyKey string
 }
 
@@ -187,7 +199,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err := contextError(ctx); err != nil {
 		return CreatePostResult{}, err
 	}
-	requestHash := hashCreatePost(input.ContentMD, input.Media, input.Location)
+	requestHash := hashCreatePost(input.ContentMD, input.Media, input.Location, input.QuotedPostID)
 	if input.IdempotencyKey != "" {
 		replayed, found, err := service.loadCreateReplay(ctx, input, requestHash)
 		if err != nil {
@@ -205,7 +217,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 			return CreatePostResult{}, err
 		}
 	}
-	if err := domain.ValidatePostMarkdown(input.ContentMD, len(input.Media)); err != nil {
+	if err := validatePostAggregate(input.ContentMD, len(input.Media)); err != nil {
 		return CreatePostResult{}, err
 	}
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
@@ -219,6 +231,13 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	result := CreatePostResult{}
 
 	err = service.transactions.Write(ctx, func(store PostStore) error {
+		if input.QuotedPostID != nil {
+			if _, found, quoteErr := store.EntryByID(ctx, *input.QuotedPostID); quoteErr != nil {
+				return quoteErr
+			} else if !found {
+				return postNotFound(*input.QuotedPostID)
+			}
+		}
 		if input.IdempotencyKey != "" {
 			record, found, storeErr := store.IdempotencyRecord(ctx, postCreateIdempotencyScope, input.IdempotencyKey)
 			if storeErr != nil {
@@ -262,6 +281,9 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		if err := store.ReplaceEntryLocation(ctx, entry.ID, input.Location); err != nil {
 			return err
 		}
+		if err := store.ReplaceEntryQuote(ctx, entry.ID, input.QuotedPostID); err != nil {
+			return err
+		}
 		if err := store.ReconcileMediaReferences(ctx, mediaUsageIDs(input.Media), now); err != nil {
 			return err
 		}
@@ -283,6 +305,13 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		}
 		result.Post.Media = projectedMedia
 		result.Post.Location = domain.CloneLocation(input.Location)
+		if input.QuotedPostID != nil {
+			quoted, quoteErr := loadQuotedPost(ctx, store, *input.QuotedPostID)
+			if quoteErr != nil {
+				return quoteErr
+			}
+			result.Post.Quoted = quoted
+		}
 		return nil
 	})
 	if err != nil {
@@ -317,6 +346,12 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 			return storeErr
 		}
 		media, storeErr = store.ProjectMediaUsages(ctx, input.Media)
+		if storeErr != nil {
+			return storeErr
+		}
+		if input.QuotedPostID != nil {
+			post.Quoted, storeErr = loadQuotedPost(ctx, store, *input.QuotedPostID)
+		}
 		return storeErr
 	})
 	if err != nil {
@@ -325,10 +360,12 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 	if !found {
 		return CreatePostResult{}, false, nil
 	}
+	quoted := post.Quoted
 	post, err = renderPost(post.Entry, media, post.Location, commentCount)
 	if err != nil {
 		return CreatePostResult{}, false, idempotencySnapshotError()
 	}
+	post.Quoted = quoted
 	return CreatePostResult{Post: post, Replayed: true}, true, nil
 }
 
@@ -351,7 +388,7 @@ func reconstructCreateReplay(input CreatePostInput, requestHash string, record I
 			return Post{}, idempotencySnapshotError()
 		}
 	}
-	if err := domain.ValidatePostMarkdown(input.ContentMD, len(input.Media)); err != nil {
+	if err := validatePostAggregate(input.ContentMD, len(input.Media)); err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
 	entry, err := domain.NewEntry(record.ResponseResourceID, input.ContentMD, record.CreatedAt)
@@ -376,6 +413,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 	var media []MediaUsageProjection
 	var location *domain.Location
 	var commentCount int
+	var quoted *QuotedPost
 	var found bool
 	err := service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
@@ -393,6 +431,10 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 		}
 		counts, storeErr := store.CommentCounts(ctx, []domain.ID{id})
 		commentCount = counts[id]
+		if storeErr != nil {
+			return storeErr
+		}
+		quoted, storeErr = loadEntryQuote(ctx, store, id)
 		return storeErr
 	})
 	if err != nil {
@@ -401,7 +443,9 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 	if !found {
 		return Post{}, postNotFound(id)
 	}
-	return renderPost(entry, media, location, commentCount)
+	post, err := renderPost(entry, media, location, commentCount)
+	post.Quoted = quoted
+	return post, err
 }
 
 // SetReposted toggles the owner's repost activity. Repeating the requested
@@ -445,13 +489,20 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if storeErr != nil {
 			return storeErr
 		}
-		result = Post{Entry: entry, Media: media, Location: location, CommentCount: counts[id]}
+		quoted, quoteErr := loadEntryQuote(ctx, store, id)
+		if quoteErr != nil {
+			return quoteErr
+		}
+		result = Post{Entry: entry, Media: media, Location: location, CommentCount: counts[id], Quoted: quoted}
 		return nil
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
-	return renderPost(result.Entry, result.Media, result.Location, result.CommentCount)
+	quoted := result.Quoted
+	result, err = renderPost(result.Entry, result.Media, result.Location, result.CommentCount)
+	result.Quoted = quoted
+	return result, err
 }
 
 // List returns one deterministic reverse-chronological keyset page.
@@ -476,6 +527,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	mediaByEntry := make(map[domain.ID][]MediaUsageProjection)
 	locationByEntry := make(map[domain.ID]*domain.Location)
 	commentCounts := make(map[domain.ID]int)
+	quotedByEntry := make(map[domain.ID]*QuotedPost)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
 		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, FromMS: fromMS, ToMS: toMS}, limit+1)
@@ -488,6 +540,10 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 				return storeErr
 			}
 			locationByEntry[entry.ID], storeErr = store.EntryLocation(ctx, entry.ID)
+			if storeErr != nil {
+				return storeErr
+			}
+			quotedByEntry[entry.ID], storeErr = loadEntryQuote(ctx, store, entry.ID)
 			if storeErr != nil {
 				return storeErr
 			}
@@ -513,6 +569,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		if renderErr != nil {
 			return PostPage{}, renderErr
 		}
+		post.Quoted = quotedByEntry[entry.ID]
 		page.Items = append(page.Items, post)
 	}
 	if hasNext {
@@ -587,6 +644,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	var updated domain.Entry
 	var updatedMedia []MediaUsageProjection
 	var updatedLocation *domain.Location
+	var updatedQuoted *QuotedPost
 	var commentCount int
 	err := service.transactions.Write(ctx, func(store PostStore) error {
 		entry, found, storeErr := store.EntryByID(ctx, input.ID)
@@ -601,6 +659,10 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			return mediaErr
 		}
 		currentLocation, mediaErr := store.EntryLocation(ctx, input.ID)
+		if mediaErr != nil {
+			return mediaErr
+		}
+		quoteID, mediaErr := store.EntryQuote(ctx, input.ID)
 		if mediaErr != nil {
 			return mediaErr
 		}
@@ -624,7 +686,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if input.Location != nil {
 			updatedLocation = domain.CloneLocation(*input.Location)
 		}
-		if mediaErr := domain.ValidatePostMarkdown(content, len(updatedMedia)); mediaErr != nil {
+		if mediaErr := validatePostAggregate(content, len(updatedMedia)); mediaErr != nil {
 			return mediaErr
 		}
 		if _, mediaErr := domain.RenderMarkdown(content); mediaErr != nil {
@@ -663,12 +725,20 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			}
 		}
 		updated = entry
+		if quoteID != nil {
+			updatedQuoted, mediaErr = loadQuotedPost(ctx, store, *quoteID)
+			if mediaErr != nil {
+				return mediaErr
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
-	return renderPost(updated, updatedMedia, updatedLocation, commentCount)
+	result, err := renderPost(updated, updatedMedia, updatedLocation, commentCount)
+	result.Quoted = updatedQuoted
+	return result, err
 }
 
 // Delete removes one Entry in a write transaction. Database foreign keys own
@@ -697,6 +767,10 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if mediaErr != nil {
 			return mediaErr
 		}
+		quoted, mediaErr := loadEntryQuote(ctx, store, id)
+		if mediaErr != nil {
+			return mediaErr
+		}
 		counts, mediaErr := store.CommentCounts(ctx, []domain.ID{id})
 		if mediaErr != nil {
 			return mediaErr
@@ -715,16 +789,19 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if err := store.ReconcileMediaReferences(ctx, affectedMedia, domain.NormalizeTime(service.clock())); err != nil {
 			return err
 		}
-		deleted = Post{Entry: entry, Media: cloneMediaUsageProjections(mediaUsages), Location: domain.CloneLocation(location), CommentCount: counts[id]}
+		deleted = Post{Entry: entry, Media: cloneMediaUsageProjections(mediaUsages), Location: domain.CloneLocation(location), CommentCount: counts[id], Quoted: quoted}
 		return nil
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
-	return renderPost(deleted.Entry, deleted.Media, deleted.Location, deleted.CommentCount)
+	quoted := deleted.Quoted
+	deleted, err = renderPost(deleted.Entry, deleted.Media, deleted.Location, deleted.CommentCount)
+	deleted.Quoted = quoted
+	return deleted, err
 }
 
-func hashCreatePost(content string, media []domain.EntryMediaUsage, location *domain.Location) string {
+func hashCreatePost(content string, media []domain.EntryMediaUsage, location *domain.Location, quotedPostID *domain.ID) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("moment-post-create-v1\x00"))
 	writeHashLength(digest, len(content))
@@ -769,7 +846,14 @@ func hashCreatePost(content string, media []domain.EntryMediaUsage, location *do
 			_, _ = digest.Write([]byte(location.Point.System))
 		}
 	}
+	if quotedPostID != nil {
+		_, _ = digest.Write([]byte("\x00quote-v1\x00" + quotedPostID.String()))
+	}
 	return hex.EncodeToString(digest.Sum(nil))
+}
+
+func validatePostAggregate(content string, mediaCount int) error {
+	return domain.ValidatePostMarkdown(content, mediaCount)
 }
 
 func writeHashInt64(writer interface{ Write([]byte) (int, error) }, value int64) {
@@ -790,6 +874,37 @@ func validRequestHash(value string) bool {
 	}
 	decoded, err := hex.DecodeString(value)
 	return err == nil && hex.EncodeToString(decoded) == value
+}
+
+func loadEntryQuote(ctx context.Context, store PostStore, entryID domain.ID) (*QuotedPost, error) {
+	quotedID, err := store.EntryQuote(ctx, entryID)
+	if err != nil || quotedID == nil {
+		return nil, err
+	}
+	return loadQuotedPost(ctx, store, *quotedID)
+}
+
+func loadQuotedPost(ctx context.Context, store PostStore, id domain.ID) (*QuotedPost, error) {
+	entry, found, err := store.EntryByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil
+	}
+	media, err := store.EntryMediaUsages(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	location, err := store.EntryLocation(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	html, err := domain.RenderMarkdown(entry.ContentMD)
+	if err != nil {
+		return nil, storedEntryError(id)
+	}
+	return &QuotedPost{Entry: entry, ContentHTML: html, Media: media, Location: location}, nil
 }
 
 func renderPost(entry domain.Entry, media []MediaUsageProjection, location *domain.Location, commentCount int) (Post, error) {

@@ -2278,6 +2278,7 @@ export class OwnerApi {
     idempotencyKey: string,
     media: PostMediaInput[] = [],
     location?: OwnerLocation | null,
+    quotedPostId?: string,
   ): Promise<PublicPost> {
     const body: Record<string, unknown> = {
       content_md: contentMd,
@@ -2286,6 +2287,7 @@ export class OwnerApi {
     if (location !== undefined) {
       body.location = location === null ? null : locationPayload(location);
     }
+    if (quotedPostId !== undefined) body.quoted_post_id = quotedPostId;
     const init = requestInit("POST", csrfToken, body);
     const headers = new Headers(init.headers);
     headers.set("Idempotency-Key", idempotencyKey);
