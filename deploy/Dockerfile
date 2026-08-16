@@ -21,7 +21,8 @@ RUN CGO_ENABLED=0 go build -buildvcs=false -trimpath \
     -o /out/moment ./cmd/moment
 
 FROM alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40
-RUN addgroup -S -g 65532 moment \
+RUN apk add --no-cache ffmpeg libheif-tools \
+    && addgroup -S -g 65532 moment \
     && adduser -S -D -H -u 65532 -G moment moment \
     && mkdir -p /data \
     && chown 65532:65532 /data
