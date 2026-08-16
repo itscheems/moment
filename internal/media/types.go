@@ -34,7 +34,7 @@ const (
 	DefaultMaxVideoDuration          = 5 * time.Minute
 
 	// RecipeVersion changes whenever any output byte semantics change.
-	RecipeVersion = "v5-max1600-display10m-heic-libheif-mp4-h264-crf-faststart"
+	RecipeVersion = "v6-max1600-display10m-heic-mp4-h264-hdr-bt709"
 
 	// Nine bytes cover the largest supported 16-bit RGBA decode plus bounded
 	// preview intermediates; fixed bytes cover compressed input and encoders.
@@ -229,6 +229,11 @@ type inspected struct {
 	decodedSource       []byte
 	codec               string
 	pixelFormat         string
+	colorRange          string
+	colorSpace          string
+	colorTransfer       string
+	colorPrimaries      string
+	rotationDegrees     int
 }
 
 // Media is the authoritative metadata persisted beside an immutable original.

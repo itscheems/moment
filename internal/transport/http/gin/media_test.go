@@ -37,7 +37,7 @@ func TestMediaDeliveryHeadersConditionalsAndExplicitGIFOriginal(t *testing.T) {
 
 	previewResponse := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/"+value.ID.String()+"/preview", nil))
 	if previewResponse.Code != http.StatusOK || previewResponse.Header().Get("Content-Type") != "image/jpeg" ||
-		previewResponse.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" ||
+		previewResponse.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" ||
 		previewResponse.Header().Get("X-Content-Type-Options") != "nosniff" || previewResponse.Header().Get("ETag") == "" {
 		t.Fatalf("preview response = %d headers=%v body=%s", previewResponse.Code, previewResponse.Header(), previewResponse.Body.String())
 	}
@@ -64,7 +64,8 @@ func TestMediaDeliveryHeadersConditionalsAndExplicitGIFOriginal(t *testing.T) {
 	}
 
 	originalResponse := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/"+value.ID.String(), nil))
-	if originalResponse.Code != http.StatusOK || originalResponse.Header().Get("Content-Type") != "image/gif" || !bytes.Equal(originalResponse.Body.Bytes(), original) {
+	if originalResponse.Code != http.StatusOK || originalResponse.Header().Get("Content-Type") != "image/gif" ||
+		originalResponse.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" || !bytes.Equal(originalResponse.Body.Bytes(), original) {
 		t.Fatalf("explicit original = %d %q equal=%v", originalResponse.Code, originalResponse.Header().Get("Content-Type"), bytes.Equal(originalResponse.Body.Bytes(), original))
 	}
 

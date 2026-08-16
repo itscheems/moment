@@ -170,7 +170,7 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 	prepared := preparedPreview{preview: Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}}
 	if !posterReady {
 		partialPoster := filepath.Join(directory, "poster.jpg")
-		if err := store.generateVideoPosterFile(ctx, input, partialPoster, inspection.durationSeconds); err != nil {
+		if err := store.generateVideoPosterFile(ctx, input, partialPoster, inspection); err != nil {
 			return preparedPreview{}, previewFailure(err)
 		}
 		prepared.posterContents, err = readBoundedFile(ctx, partialPoster, store.options.Limits.PreviewMaxBytes)

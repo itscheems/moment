@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -22,6 +23,10 @@ type probeDocument struct {
 		Duration    string `json:"duration"`
 		Codec       string `json:"codec_name"`
 		PixelFormat string `json:"pix_fmt"`
+		ColorRange  string `json:"color_range"`
+		ColorSpace  string `json:"color_space"`
+		ColorTRC    string `json:"color_transfer"`
+		ColorPrime  string `json:"color_primaries"`
 		Tags        struct {
 			Rotate string `json:"rotate"`
 		} `json:"tags"`
@@ -237,7 +242,7 @@ func (store *Store) probeVideoFileAs(ctx context.Context, input string, sourceFo
 }
 
 func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string, sourceFormat format) (inspected, error) {
-	output, err := store.runTool(ctx, store.options.FFprobePath, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration,codec_name,pix_fmt:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", input)
+	output, err := store.runTool(ctx, store.options.FFprobePath, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration,codec_name,pix_fmt,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", input)
 	if err != nil {
 		return inspected{}, err
 	}
@@ -282,11 +287,78 @@ func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string, so
 	if duration > DefaultMaxVideoDuration.Seconds() {
 		return inspected{}, domain.NewError(domain.CodeMediaTooLarge, "video exceeds the supported duration", map[string]any{"max_duration_seconds": int(DefaultMaxVideoDuration.Seconds())})
 	}
-	return inspected{format: sourceFormat, width: width, height: height, durationSeconds: duration, codec: stream.Codec, pixelFormat: stream.PixelFormat}, nil
+	return inspected{
+		format:          sourceFormat,
+		width:           width,
+		height:          height,
+		durationSeconds: duration,
+		codec:           stream.Codec,
+		pixelFormat:     stream.PixelFormat,
+		colorRange:      stream.ColorRange,
+		colorSpace:      stream.ColorSpace,
+		colorTransfer:   stream.ColorTRC,
+		colorPrimaries:  stream.ColorPrime,
+		rotationDegrees: int(rotation),
+	}, nil
+}
+
+func (value inspected) isHDRVideo() bool {
+	return value.colorPrimaries == "bt2020" || value.colorTransfer == "arib-std-b67" || value.colorTransfer == "smpte2084"
+}
+
+type videoFilterPlan struct {
+	inputArguments []string
+	filter         string
+}
+
+func scaledEvenDimensions(width, height, maxEdge uint32) (uint32, uint32) {
+	if width == 0 || height == 0 || maxEdge == 0 {
+		return width, height
+	}
+	if width <= maxEdge && height <= maxEdge {
+		return width - width%2, height - height%2
+	}
+	scale := float64(maxEdge) / float64(max(width, height))
+	scaledWidth := max(uint32(2), uint32(float64(width)*scale))
+	scaledHeight := max(uint32(2), uint32(float64(height)*scale))
+	return scaledWidth - scaledWidth%2, scaledHeight - scaledHeight%2
+}
+
+func videoToolboxRotationFilter(rotation int) string {
+	switch ((rotation % 360) + 360) % 360 {
+	case 270:
+		return "transpose_vt=clock,"
+	case 90:
+		return "transpose_vt=cclock,"
+	case 180:
+		return "transpose_vt=reversal,"
+	default:
+		return ""
+	}
+}
+
+func videoDisplayFilterPlan(inspection inspected, maxEdge uint32, goos string) videoFilterPlan {
+	scale := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", maxEdge, maxEdge)
+	if !inspection.isHDRVideo() {
+		return videoFilterPlan{filter: scale + ",setsar=1"}
+	}
+	if goos == "darwin" {
+		width, height := scaledEvenDimensions(inspection.width, inspection.height, maxEdge)
+		filter := videoToolboxRotationFilter(inspection.rotationDegrees) + fmt.Sprintf(
+			"scale_vt=w=%d:h=%d:color_matrix=bt709:color_primaries=bt709:color_transfer=bt709,hwdownload,format=p010le,format=yuv420p,setsar=1",
+			width,
+			height,
+		)
+		return videoFilterPlan{
+			inputArguments: []string{"-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld"},
+			filter:         filter,
+		}
+	}
+	return videoFilterPlan{filter: "zscale=transfer=linear:npl=100,format=gbrpf32le,tonemap=mobius:desat=0,zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited,format=yuv420p," + scale + ",setsar=1"}
 }
 
 func (store *Store) transcodeVideoFile(ctx context.Context, input string, inspection inspected, output string) (inspected, error) {
-	filter := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", store.options.Limits.PreviewMaxEdge, store.options.Limits.PreviewMaxEdge)
+	plan := videoDisplayFilterPlan(inspection, store.options.Limits.PreviewMaxEdge, runtime.GOOS)
 	targetBits := float64(store.options.Limits.PreviewMaxBytes-256*1024) * 8
 	videoRate := int64(targetBits/inspection.durationSeconds) - 96_000
 	videoRate = max(96_000, min(videoRate, 4_000_000))
@@ -298,9 +370,11 @@ func (store *Store) transcodeVideoFile(ctx context.Context, input string, inspec
 	var lastErr error
 	for index, rateArguments := range attempts {
 		attempt := fmt.Sprintf("%s.attempt-%d.mp4", output, index+1)
-		arguments := []string{"-nostdin", "-y", "-v", "error", "-i", input, "-map", "0:v:0", "-map", "0:a?", "-map_metadata", "-1", "-vf", filter + ",setsar=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium"}
+		arguments := []string{"-nostdin", "-y", "-v", "error"}
+		arguments = append(arguments, plan.inputArguments...)
+		arguments = append(arguments, "-i", input, "-map", "0:v:0", "-map", "0:a?", "-map_metadata", "-1", "-vf", plan.filter, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium")
 		arguments = append(arguments, rateArguments...)
-		arguments = append(arguments, "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", attempt)
+		arguments = append(arguments, "-c:a", "aac", "-b:a", "96k", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv", "-movflags", "+faststart", attempt)
 		if _, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", arguments...); err != nil {
 			lastErr = err
 			continue
@@ -334,6 +408,9 @@ func (store *Store) validateDerivedVideo(ctx context.Context, output string, sou
 	if derived.codec != "h264" || derived.pixelFormat != "yuv420p" || derived.width > store.options.Limits.PreviewMaxEdge || derived.height > store.options.Limits.PreviewMaxEdge {
 		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display version is not browser compatible", nil)
 	}
+	if source.isHDRVideo() && (derived.colorPrimaries != "bt709" || derived.colorTransfer != "bt709" || derived.colorSpace != "bt709") {
+		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "HDR video display version is not tagged as SDR BT.709", nil)
+	}
 	tolerance := max(1.0, source.durationSeconds*0.03)
 	if difference := derived.durationSeconds - source.durationSeconds; difference > tolerance || difference < -tolerance {
 		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display duration does not match the original", nil)
@@ -356,10 +433,13 @@ func videoPosterTime(durationSeconds float64) float64 {
 	return min(3, max(0.5, durationSeconds*0.1), latestUsableFrame)
 }
 
-func (store *Store) generateVideoPosterFile(ctx context.Context, input, output string, durationSeconds float64) error {
-	filter := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease", store.options.Limits.PreviewMaxEdge, store.options.Limits.PreviewMaxEdge)
-	seek := strconv.FormatFloat(videoPosterTime(durationSeconds), 'f', 3, 64)
-	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", "-nostdin", "-y", "-v", "error", "-ss", seek, "-i", input, "-frames:v", "1", "-vf", filter, "-q:v", "3", output)
+func (store *Store) generateVideoPosterFile(ctx context.Context, input, output string, inspection inspected) error {
+	plan := videoDisplayFilterPlan(inspection, store.options.Limits.PreviewMaxEdge, runtime.GOOS)
+	seek := strconv.FormatFloat(videoPosterTime(inspection.durationSeconds), 'f', 3, 64)
+	arguments := []string{"-nostdin", "-y", "-v", "error"}
+	arguments = append(arguments, plan.inputArguments...)
+	arguments = append(arguments, "-ss", seek, "-i", input, "-frames:v", "1", "-vf", plan.filter, "-q:v", "3", output)
+	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", arguments...)
 	return err
 }
 

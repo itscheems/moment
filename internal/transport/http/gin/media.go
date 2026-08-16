@@ -185,7 +185,15 @@ func getMediaAsset(store *media.Store, kind string) gin.HandlerFunc {
 		}
 		defer func() { _ = asset.Close() }()
 		ctx.Header("Content-Type", asset.MIMEType)
-		ctx.Header("Cache-Control", "public, max-age=31536000, immutable")
+		if kind == "original" {
+			ctx.Header("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			// Derived assets keep a stable public URL while their recipe version
+			// advances. Revalidate that URL so a corrected preview or poster is
+			// not pinned in browser caches for a year; the recipe-bearing ETag
+			// still makes unchanged responses a cheap 304.
+			ctx.Header("Cache-Control", "public, max-age=0, must-revalidate")
+		}
 		ctx.Header("ETag", asset.ETag)
 		ctx.Header("X-Content-Type-Options", "nosniff")
 		if matchesETag(ctx.GetHeader("If-None-Match"), asset.ETag) {
