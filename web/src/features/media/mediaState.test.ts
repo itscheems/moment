@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { mediaPreviewUrl } from "../../api/mediaUrls";
 import type { ComposerMediaItem } from "./mediaState";
 import {
   altValue,
@@ -22,7 +23,7 @@ function item(overrides: Partial<ComposerMediaItem> = {}): ComposerMediaItem {
     localPreviewUrl: null,
     processingPosterUrl: null,
     mediaId: "01K2ABCDEF0123456789ABCDE1",
-    previewUrl: "/api/v1/media/01K2ABCDEF0123456789ABCDE1/preview",
+    previewUrl: mediaPreviewUrl("01K2ABCDEF0123456789ABCDE1"),
     originalUrl: "/api/v1/media/01K2ABCDEF0123456789ABCDE1",
     mimeType: "image/jpeg",
     previewMimeType: "image/jpeg",

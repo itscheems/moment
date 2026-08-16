@@ -12,6 +12,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 )
 
 const shareHTTPPostID = "01K2ABCDEF0123456789ABCDE0"
@@ -77,7 +78,7 @@ func TestShareMetadataShellEscapesCanonicalPostAndPreservesSPABoundaries(t *test
 	for _, expected := range []string{
 		`<meta property="og:type" content="article" />`,
 		`<link rel="canonical" href="https://public.example/memory/m/` + shareHTTPPostID + `" />`,
-		`<meta property="og:image" content="https://public.example/memory/api/v1/media/` + mediaID.String() + `/preview" />`,
+		`<meta property="og:image" content="https://public.example/memory/api/v1/media/` + mediaID.String() + `/preview?v=` + media.RecipeVersion + `" />`,
 		`<meta name="twitter:card" content="summary_large_image" />`,
 		`安全标题 只保留文字`,
 		`乔乔&#34;&gt;&lt;script&gt;alert(1)&lt;/script&gt;`,

@@ -1,4 +1,5 @@
 import type { SiteIdentity } from "../api/public";
+import { mediaPreviewUrl } from "../api/mediaUrls";
 
 import styles from "./SiteIdentity.module.css";
 
@@ -26,7 +27,7 @@ export function SiteAvatar({
         decoding="async"
         height="44"
         loading={eager ? "eager" : "lazy"}
-        src={`/api/v1/media/${encodeURIComponent(site.avatarMediaId)}/preview`}
+        src={mediaPreviewUrl(site.avatarMediaId)}
         width="44"
       />
     );
@@ -53,7 +54,7 @@ export function SiteCover({
       className={styles.cover}
       decoding="async"
       loading={eager ? "eager" : "lazy"}
-      src={`/api/v1/media/${encodeURIComponent(site.coverMediaId)}/preview`}
+      src={mediaPreviewUrl(site.coverMediaId)}
     />
   );
 }

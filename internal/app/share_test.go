@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/mediacontract"
 )
 
 const shareTestPostID = "01K2ABCDEF0123456789ABCDE0"
@@ -53,7 +54,7 @@ func TestShareMetadataUsesPortableBaseAndManagedPreview(t *testing.T) {
 	if metadata.Title != "第一行 记忆 · 乔乔 <家>" || metadata.Description != "第一行 记忆 可见文字" || metadata.Type != "article" || !metadata.PostFound || metadata.NoIndex {
 		t.Fatalf("post metadata = %#v", metadata)
 	}
-	if metadata.CanonicalURL != "https://example.com/journal/m/"+shareTestPostID || metadata.ImageURL != "https://example.com/journal/api/v1/media/"+mediaID.String()+"/preview" {
+	if metadata.CanonicalURL != "https://example.com/journal/m/"+shareTestPostID || metadata.ImageURL != "https://example.com/journal/api/v1/media/"+mediaID.String()+"/preview?v="+mediacontract.RecipeVersion {
 		t.Fatalf("post URLs = %#v", metadata)
 	}
 
@@ -61,7 +62,7 @@ func TestShareMetadataUsesPortableBaseAndManagedPreview(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if search.Title != "搜索 · 乔乔 <家>" || search.CanonicalURL != "https://example.com/journal/search" || search.ImageURL != "https://example.com/journal/api/v1/media/"+avatar+"/preview" {
+	if search.Title != "搜索 · 乔乔 <家>" || search.CanonicalURL != "https://example.com/journal/search" || search.ImageURL != "https://example.com/journal/api/v1/media/"+avatar+"/preview?v="+mediacontract.RecipeVersion {
 		t.Fatalf("search metadata = %#v", search)
 	}
 }

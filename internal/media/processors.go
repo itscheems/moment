@@ -18,20 +18,27 @@ import (
 
 type probeDocument struct {
 	Streams []struct {
-		Width       uint32 `json:"width"`
-		Height      uint32 `json:"height"`
-		Duration    string `json:"duration"`
-		Codec       string `json:"codec_name"`
-		PixelFormat string `json:"pix_fmt"`
-		ColorRange  string `json:"color_range"`
-		ColorSpace  string `json:"color_space"`
-		ColorTRC    string `json:"color_transfer"`
-		ColorPrime  string `json:"color_primaries"`
-		Tags        struct {
+		Width            uint32 `json:"width"`
+		Height           uint32 `json:"height"`
+		Duration         string `json:"duration"`
+		Codec            string `json:"codec_name"`
+		CodecProfile     string `json:"profile"`
+		CodecTag         string `json:"codec_tag_string"`
+		PixelFormat      string `json:"pix_fmt"`
+		BitsPerRawSample string `json:"bits_per_raw_sample"`
+		ChromaLocation   string `json:"chroma_location"`
+		ColorRange       string `json:"color_range"`
+		ColorSpace       string `json:"color_space"`
+		ColorTRC         string `json:"color_transfer"`
+		ColorPrime       string `json:"color_primaries"`
+		Tags             struct {
 			Rotate string `json:"rotate"`
 		} `json:"tags"`
 		SideData []struct {
-			Rotation float64 `json:"rotation"`
+			Type               string  `json:"side_data_type"`
+			Rotation           float64 `json:"rotation"`
+			DolbyProfile       int     `json:"dv_profile"`
+			DolbyCompatibility int     `json:"dv_bl_signal_compatibility_id"`
 		} `json:"side_data_list"`
 	} `json:"streams"`
 	Format struct {
@@ -242,7 +249,7 @@ func (store *Store) probeVideoFileAs(ctx context.Context, input string, sourceFo
 }
 
 func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string, sourceFormat format) (inspected, error) {
-	output, err := store.runTool(ctx, store.options.FFprobePath, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration,codec_name,pix_fmt,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", input)
+	output, err := store.runTool(ctx, store.options.FFprobePath, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration,codec_name,profile,codec_tag_string,pix_fmt,bits_per_raw_sample,chroma_location,color_range,color_space,color_transfer,color_primaries:stream_tags=rotate:stream_side_data:format=duration", "-of", "json", input)
 	if err != nil {
 		return inspected{}, err
 	}
@@ -257,10 +264,17 @@ func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string, so
 	}
 	width, height := stream.Width, stream.Height
 	rotation := 0.0
+	hasDolbyVision := false
+	dolbyVisionProfile := 0
+	dolbyCompatibility := 0
 	for _, sideData := range stream.SideData {
 		if sideData.Rotation != 0 {
 			rotation = sideData.Rotation
-			break
+		}
+		if sideData.Type == "DOVI configuration record" {
+			hasDolbyVision = true
+			dolbyVisionProfile = sideData.DolbyProfile
+			dolbyCompatibility = sideData.DolbyCompatibility
 		}
 	}
 	if rotation == 0 && stream.Tags.Rotate != "" {
@@ -287,23 +301,57 @@ func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string, so
 	if duration > DefaultMaxVideoDuration.Seconds() {
 		return inspected{}, domain.NewError(domain.CodeMediaTooLarge, "video exceeds the supported duration", map[string]any{"max_duration_seconds": int(DefaultMaxVideoDuration.Seconds())})
 	}
+	bitDepth, _ := strconv.Atoi(stream.BitsPerRawSample)
+	if bitDepth == 0 {
+		switch {
+		case strings.Contains(stream.PixelFormat, "12"):
+			bitDepth = 12
+		case strings.Contains(stream.PixelFormat, "10"), strings.Contains(stream.PixelFormat, "p010"):
+			bitDepth = 10
+		default:
+			bitDepth = 8
+		}
+	}
 	return inspected{
-		format:          sourceFormat,
-		width:           width,
-		height:          height,
-		durationSeconds: duration,
-		codec:           stream.Codec,
-		pixelFormat:     stream.PixelFormat,
-		colorRange:      stream.ColorRange,
-		colorSpace:      stream.ColorSpace,
-		colorTransfer:   stream.ColorTRC,
-		colorPrimaries:  stream.ColorPrime,
-		rotationDegrees: int(rotation),
+		format:             sourceFormat,
+		width:              width,
+		height:             height,
+		durationSeconds:    duration,
+		codec:              stream.Codec,
+		codecProfile:       stream.CodecProfile,
+		codecTag:           stream.CodecTag,
+		pixelFormat:        stream.PixelFormat,
+		bitDepth:           bitDepth,
+		chromaLocation:     stream.ChromaLocation,
+		colorRange:         stream.ColorRange,
+		colorSpace:         stream.ColorSpace,
+		colorTransfer:      stream.ColorTRC,
+		colorPrimaries:     stream.ColorPrime,
+		rotationDegrees:    int(rotation),
+		hasDolbyVision:     hasDolbyVision,
+		dolbyVisionProfile: dolbyVisionProfile,
+		dolbyCompatibility: dolbyCompatibility,
 	}, nil
 }
 
 func (value inspected) isHDRVideo() bool {
-	return value.colorPrimaries == "bt2020" || value.colorTransfer == "arib-std-b67" || value.colorTransfer == "smpte2084"
+	return value.hasDolbyVision || value.colorTransfer == "arib-std-b67" || value.colorTransfer == "smpte2084"
+}
+
+func (value inspected) needsSDRColorConversion() bool {
+	return value.isHDRVideo() ||
+		(value.colorPrimaries != "" && value.colorPrimaries != "bt709") ||
+		(value.colorTransfer != "" && value.colorTransfer != "bt709") ||
+		(value.colorSpace != "" && value.colorSpace != "bt709")
+}
+
+func (value inspected) isSDRBT709Video() bool {
+	return !value.isHDRVideo() &&
+		value.bitDepth == 8 &&
+		value.colorRange == "tv" &&
+		value.colorSpace == "bt709" &&
+		value.colorTransfer == "bt709" &&
+		value.colorPrimaries == "bt709"
 }
 
 type videoFilterPlan struct {
@@ -312,9 +360,12 @@ type videoFilterPlan struct {
 }
 
 func videoDisplayFilterPlan(inspection inspected, maxEdge uint32) videoFilterPlan {
-	scale := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", maxEdge, maxEdge)
+	scale := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2:out_color_matrix=bt709:out_range=tv", maxEdge, maxEdge)
 	if !inspection.isHDRVideo() {
-		return videoFilterPlan{filter: scale + ",setsar=1"}
+		if inspection.needsSDRColorConversion() {
+			return videoFilterPlan{filter: "zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited,format=yuv420p," + scale + ",setsar=1"}
+		}
+		return videoFilterPlan{filter: scale + ",format=yuv420p,setsar=1"}
 	}
 	return videoFilterPlan{filter: "zscale=transfer=linear:npl=100,format=gbrpf32le,tonemap=mobius:desat=0,zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited,format=yuv420p," + scale + ",setsar=1"}
 }
@@ -327,7 +378,7 @@ func videoDisplayFilterPlan(inspection inspected, maxEdge uint32) videoFilterPla
 // other browser display rendition. Other platforms retain the explicit
 // zscale/tonemap pipeline above.
 func (store *Store) prepareVideoDisplaySource(ctx context.Context, input, directory string, inspection inspected) (string, inspected, error) {
-	if runtime.GOOS != "darwin" || !inspection.isHDRVideo() {
+	if runtime.GOOS != "darwin" || !inspection.needsSDRColorConversion() {
 		return input, inspection, nil
 	}
 	output := filepath.Join(directory, "avfoundation-sdr.mov")
@@ -346,7 +397,7 @@ func (store *Store) prepareVideoDisplaySource(ctx context.Context, input, direct
 	if err != nil {
 		return "", inspected{}, err
 	}
-	if converted.isHDRVideo() || converted.colorPrimaries != "bt709" || converted.colorTransfer != "bt709" || converted.colorSpace != "bt709" {
+	if !converted.isSDRBT709Video() {
 		return "", inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "AVFoundation did not produce an SDR BT.709 display source", nil)
 	}
 	return output, converted, nil
@@ -367,9 +418,9 @@ func (store *Store) transcodeVideoFile(ctx context.Context, input string, inspec
 		attempt := fmt.Sprintf("%s.attempt-%d.mp4", output, index+1)
 		arguments := []string{"-nostdin", "-y", "-v", "error"}
 		arguments = append(arguments, plan.inputArguments...)
-		arguments = append(arguments, "-i", input, "-map", "0:v:0", "-map", "0:a?", "-map_metadata", "-1", "-vf", plan.filter, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium")
+		arguments = append(arguments, "-i", input, "-map", "0:v:0", "-map", "0:a?", "-map_metadata", "-1", "-vf", plan.filter, "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "medium", "-x264-params", "colorprim=bt709:transfer=bt709:colormatrix=bt709:range=limited")
 		arguments = append(arguments, rateArguments...)
-		arguments = append(arguments, "-c:a", "aac", "-b:a", "96k", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv", "-movflags", "+faststart", attempt)
+		arguments = append(arguments, "-c:a", "aac", "-b:a", "96k", "-tag:v", "avc1", "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv", "-movflags", "+faststart", attempt)
 		if _, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", arguments...); err != nil {
 			lastErr = err
 			continue
@@ -400,11 +451,11 @@ func (store *Store) validateDerivedVideo(ctx context.Context, output string, sou
 	if err != nil {
 		return inspected{}, err
 	}
-	if derived.codec != "h264" || derived.pixelFormat != "yuv420p" || derived.width > store.options.Limits.PreviewMaxEdge || derived.height > store.options.Limits.PreviewMaxEdge {
+	if derived.codec != "h264" || derived.codecTag != "avc1" || derived.pixelFormat != "yuv420p" || derived.width > store.options.Limits.PreviewMaxEdge || derived.height > store.options.Limits.PreviewMaxEdge {
 		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display version is not browser compatible", nil)
 	}
-	if source.isHDRVideo() && (derived.colorPrimaries != "bt709" || derived.colorTransfer != "bt709" || derived.colorSpace != "bt709") {
-		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "HDR video display version is not tagged as SDR BT.709", nil)
+	if !derived.isSDRBT709Video() {
+		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display version is not 8-bit limited-range SDR BT.709", nil)
 	}
 	tolerance := max(1.0, source.durationSeconds*0.03)
 	if difference := derived.durationSeconds - source.durationSeconds; difference > tolerance || difference < -tolerance {
@@ -429,14 +480,14 @@ func videoPosterTime(durationSeconds float64) float64 {
 }
 
 func (store *Store) generateEarlyVideoPosterFile(ctx context.Context, input, output string, inspection inspected) error {
-	if runtime.GOOS == "darwin" && inspection.isHDRVideo() {
+	if runtime.GOOS == "darwin" && inspection.needsSDRColorConversion() {
 		return store.generateDarwinHDRPosterFile(ctx, input, output, inspection)
 	}
 	plan := videoDisplayFilterPlan(inspection, store.options.Limits.PreviewMaxEdge)
 	seek := strconv.FormatFloat(videoPosterTime(inspection.durationSeconds), 'f', 3, 64)
 	arguments := []string{"-nostdin", "-y", "-v", "error"}
 	arguments = append(arguments, plan.inputArguments...)
-	arguments = append(arguments, "-ss", seek, "-i", input, "-frames:v", "1", "-vf", plan.filter, "-q:v", "3", output)
+	arguments = append(arguments, "-ss", seek, "-i", input, "-frames:v", "1", "-vf", plan.filter+",scale=in_color_matrix=bt709:out_color_matrix=bt601:in_range=tv:out_range=pc,format=yuvj444p", "-q:v", "3", output)
 	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", arguments...)
 	return err
 }
@@ -469,7 +520,7 @@ func (store *Store) generateDarwinHDRPosterFile(ctx context.Context, input, outp
 	if err != nil {
 		return err
 	}
-	if converted.isHDRVideo() || converted.colorPrimaries != "bt709" || converted.colorTransfer != "bt709" || converted.colorSpace != "bt709" {
+	if !converted.isSDRBT709Video() {
 		return domain.NewError(domain.CodeMediaPreviewFailed, "AVFoundation did not produce an SDR BT.709 poster source", nil)
 	}
 	return store.generateDisplayPosterFrameFile(ctx, segment, output, 0)
@@ -488,7 +539,7 @@ func (store *Store) generateDisplayPosterFile(ctx context.Context, input, output
 func (store *Store) generateDisplayPosterFrameFile(ctx context.Context, input, output string, posterTime float64) error {
 	seek := strconv.FormatFloat(posterTime, 'f', 3, 64)
 	maxEdge := strconv.FormatUint(uint64(store.options.Limits.PreviewMaxEdge), 10)
-	filter := "scale=w='min(" + maxEdge + ",iw)':h='min(" + maxEdge + ",ih)':force_original_aspect_ratio=decrease:in_color_matrix=bt709:out_color_matrix=bt601:in_range=tv:out_range=pc,format=yuvj420p"
+	filter := "scale=w='min(" + maxEdge + ",iw)':h='min(" + maxEdge + ",ih)':force_original_aspect_ratio=decrease:in_color_matrix=bt709:out_color_matrix=bt601:in_range=tv:out_range=pc,format=yuvj444p"
 	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg",
 		"-nostdin", "-y", "-v", "error", "-ss", seek, "-i", input,
 		"-frames:v", "1", "-vf", filter, "-q:v", "3", output,

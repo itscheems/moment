@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { mediaPreviewUrl } from "./mediaUrls";
 import { OwnerApi } from "./owner";
 
 function json(body: unknown, status = 200): Response {
@@ -108,7 +109,7 @@ const uploaded = {
     animated_original: false,
   },
   original_url: "/api/v1/media/01K2ABCDEF0123456789ABCDE1",
-  preview_url: "/api/v1/media/01K2ABCDEF0123456789ABCDE1/preview",
+  preview_url: mediaPreviewUrl("01K2ABCDEF0123456789ABCDE1"),
 };
 
 afterEach(() => {
@@ -649,7 +650,7 @@ describe("owner API client", () => {
           ...uploaded,
           media: { ...uploaded.media, id: "81K2ABCDEF0123456789ABCDE1" },
           original_url: "/api/v1/media/81K2ABCDEF0123456789ABCDE1",
-          preview_url: "/api/v1/media/81K2ABCDEF0123456789ABCDE1/preview",
+          preview_url: mediaPreviewUrl("81K2ABCDEF0123456789ABCDE1"),
         },
         meta: { request_id: "req_upload" },
       },

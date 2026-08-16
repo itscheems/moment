@@ -6,10 +6,12 @@ import (
 	"crypto/rand"
 	"image/color"
 	"io"
+	"net/url"
 	"sync"
 	"time"
 
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/mediacontract"
 	"github.com/moment/moment/internal/mediatype"
 )
 
@@ -34,7 +36,7 @@ const (
 	DefaultMaxVideoDuration          = 5 * time.Minute
 
 	// RecipeVersion changes whenever any output byte semantics change.
-	RecipeVersion = "v8-max1600-display10m-heic-mp4-h264-hdr-avfoundation-sdr-poster-parity"
+	RecipeVersion = mediacontract.RecipeVersion
 
 	// Nine bytes cover the largest supported 16-bit RGBA decode plus bounded
 	// preview intermediates; fixed bytes cover compressed input and encoders.
@@ -228,12 +230,19 @@ type inspected struct {
 	durationSeconds     float64
 	decodedSource       []byte
 	codec               string
+	codecProfile        string
+	codecTag            string
 	pixelFormat         string
+	bitDepth            int
+	chromaLocation      string
 	colorRange          string
 	colorSpace          string
 	colorTransfer       string
 	colorPrimaries      string
 	rotationDegrees     int
+	hasDolbyVision      bool
+	dolbyVisionProfile  int
+	dolbyCompatibility  int
 }
 
 // Media is the authoritative metadata persisted beside an immutable original.
@@ -281,11 +290,12 @@ type IngestObserver struct {
 // NewUploadResult adds the explicit public original and preview routes.
 func NewUploadResult(value Media, preview Preview) UploadResult {
 	id := value.ID.String()
+	version := url.QueryEscape(RecipeVersion)
 	return UploadResult{
 		Media:       value,
 		Preview:     preview,
 		OriginalURL: "/api/v1/media/" + id,
-		PreviewURL:  "/api/v1/media/" + id + "/preview",
+		PreviewURL:  "/api/v1/media/" + id + "/preview?v=" + version,
 	}
 }
 

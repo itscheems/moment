@@ -11,6 +11,7 @@ import {
 import { useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { mediaPreviewUrl } from "../../api/mediaUrls";
 import {
   PublicApi,
   PublicApiError,
@@ -789,7 +790,7 @@ describe("public comment thread", () => {
           animated_original: false,
         },
         original_url: `/api/v1/media/${mediaId}`,
-        preview_url: `/api/v1/media/${mediaId}/preview`,
+        preview_url: mediaPreviewUrl(mediaId),
       },
       meta: { request_id: "req_upload" },
     });
@@ -888,7 +889,7 @@ describe("public comment thread", () => {
           animated_original: false,
         },
         original_url: `/api/v1/media/${mediaId}`,
-        preview_url: `/api/v1/media/${mediaId}/preview`,
+        preview_url: mediaPreviewUrl(mediaId),
       },
       meta: { request_id: "req_upload_retry" },
     });

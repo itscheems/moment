@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { mediaPosterUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import type { PublicMediaUsage } from "../../api/public";
 import { ImageGrid } from "./ImageGrid";
 
@@ -101,7 +102,7 @@ describe("public image grid", () => {
       expect(group.querySelectorAll("img")).toHaveLength(count);
       for (const image of group.querySelectorAll("img")) {
         expect(image).toHaveAttribute("loading", "lazy");
-        expect(image.getAttribute("src")).toMatch(/\/preview$/);
+        expect(image.getAttribute("src")).toMatch(/\/preview\?v=/);
       }
     },
   );
@@ -196,13 +197,18 @@ describe("public image grid", () => {
     act(() => TestIntersectionObserver.instances[0].setIntersecting(true));
     expect(element).toHaveAttribute(
       "src",
-      "/api/v1/media/01K2ABCDEF0123456789ABCDV0/preview",
+      mediaPreviewUrl("01K2ABCDEF0123456789ABCDV0"),
     );
     expect(element).toHaveAttribute(
       "poster",
-      "/api/v1/media/01K2ABCDEF0123456789ABCDV0/poster",
+      mediaPosterUrl("01K2ABCDEF0123456789ABCDV0"),
     );
     expect(element).toHaveAttribute("preload", "metadata");
+    expect(
+      document.querySelector(
+        `img[src="${mediaPosterUrl("01K2ABCDEF0123456789ABCDV0")}"]`,
+      ),
+    ).not.toBeNull();
 
     Object.defineProperty(element, "duration", {
       configurable: true,
@@ -229,7 +235,7 @@ describe("public image grid", () => {
 
     expect(screen.getByLabelText("一段测试视频")).toHaveAttribute(
       "src",
-      "/api/v1/media/01K2ABCDEF0123456789ABCDV0/preview",
+      mediaPreviewUrl("01K2ABCDEF0123456789ABCDV0"),
     );
     expect(TestIntersectionObserver.instances).toHaveLength(0);
   });
@@ -247,6 +253,17 @@ describe("public image grid", () => {
     fireEvent.playing(element);
 
     await waitFor(() => expect(element).toHaveAttribute("controls"));
+    expect(
+      document.querySelector(
+        `img[src="${mediaPosterUrl("01K2ABCDEF0123456789ABCDV0")}"]`,
+      ),
+    ).toBeNull();
+    fireEvent.ended(element);
+    expect(
+      document.querySelector(
+        `img[src="${mediaPosterUrl("01K2ABCDEF0123456789ABCDV0")}"]`,
+      ),
+    ).not.toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -278,7 +295,7 @@ describe("public image grid", () => {
     ).toHaveLength(2);
     expect(screen.getByRole("img", { name: "替换后的图片" })).toHaveAttribute(
       "src",
-      "/api/v1/media/01K2ABCDEF0123456789ABCD09/preview",
+      mediaPreviewUrl("01K2ABCDEF0123456789ABCD09"),
     );
   });
 
@@ -293,7 +310,7 @@ describe("public image grid", () => {
     const dialog = await screen.findByRole("dialog");
     expect(dialog.querySelector("img")).toHaveAttribute(
       "src",
-      "/api/v1/media/01K2ABCDEF0123456789ABCD00/preview",
+      mediaPreviewUrl("01K2ABCDEF0123456789ABCD00"),
     );
     expect(
       dialog.querySelector(
@@ -310,7 +327,7 @@ describe("public image grid", () => {
     );
     expect(dialog.querySelector("img")).toHaveAttribute(
       "src",
-      "/api/v1/media/01K2ABCDEF0123456789ABCD00/preview",
+      mediaPreviewUrl("01K2ABCDEF0123456789ABCD00"),
     );
 
     fireEvent.keyDown(dialog, { key: "Escape" });

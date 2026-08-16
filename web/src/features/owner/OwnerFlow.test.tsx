@@ -11,6 +11,7 @@ import {
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { App } from "../../app/App";
 import {
   COMPOSE_DRAFT_CLEARANCE_SCHEMA,
@@ -164,7 +165,7 @@ const uploadEnvelope = {
       animated_original: false,
     },
     original_url: "/api/v1/media/01K2ABCDEF0123456789ABCDE7",
-    preview_url: "/api/v1/media/01K2ABCDEF0123456789ABCDE7/preview",
+    preview_url: mediaPreviewUrl("01K2ABCDEF0123456789ABCDE7"),
   },
   meta: { request_id: "req_upload" },
 };

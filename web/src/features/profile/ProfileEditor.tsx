@@ -3,6 +3,7 @@ import { Menu } from "@base-ui/react/menu";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 
 import type { SiteSettingsUpdate } from "../../api/owner";
+import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
@@ -16,7 +17,7 @@ type AssetKind = "avatar" | "cover";
 type UploadState = "idle" | "uploading" | "failed";
 
 function mediaURL(id: string | null): string | null {
-  return id ? `/api/v1/media/${encodeURIComponent(id)}/preview` : null;
+  return id ? mediaPreviewUrl(id) : null;
 }
 
 export function ProfileEditor({

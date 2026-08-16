@@ -1,6 +1,11 @@
 import { useState, type CSSProperties } from "react";
 
 import type { PublicMediaUsage } from "../../api/public";
+import {
+  mediaOriginalUrl,
+  mediaPosterUrl,
+  mediaPreviewUrl,
+} from "../../api/mediaUrls";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import { ViewportVideo } from "./ViewportVideo";
 import { isVideoMimeType } from "./mediaState";
@@ -32,14 +37,6 @@ function imageTileName(
   return `打开第 ${index + 1} 张图片，共 ${total} 张：${state}`;
 }
 
-function previewUrl(mediaId: string) {
-  return `/api/v1/media/${encodeURIComponent(mediaId)}/preview`;
-}
-
-function originalUrl(mediaId: string) {
-  return `/api/v1/media/${encodeURIComponent(mediaId)}`;
-}
-
 function usageKey(usage: PublicMediaUsage): string {
   return `${usage.position}:${usage.mediaId}`;
 }
@@ -65,8 +62,12 @@ function MediaAsset({
         eager={eagerVideo}
         label={mediaAlt(usage, index, total)}
         onError={onError}
-        poster={`/api/v1/media/${encodeURIComponent(usage.mediaId)}/poster`}
-        src={original ? originalUrl(usage.mediaId) : previewUrl(usage.mediaId)}
+        poster={mediaPosterUrl(usage.mediaId)}
+        src={
+          original
+            ? mediaOriginalUrl(usage.mediaId)
+            : mediaPreviewUrl(usage.mediaId)
+        }
       />
     );
   }
@@ -76,7 +77,11 @@ function MediaAsset({
       decoding="async"
       loading="lazy"
       onError={onError}
-      src={original ? originalUrl(usage.mediaId) : previewUrl(usage.mediaId)}
+      src={
+        original
+          ? mediaOriginalUrl(usage.mediaId)
+          : mediaPreviewUrl(usage.mediaId)
+      }
       width={usage.width}
       height={usage.height}
     />
@@ -96,8 +101,8 @@ export function ImageGrid({
   const containsVideo = media.some((usage) => isVideoMimeType(usage.mimeType));
   const lightboxItems: MediaLightboxItem[] = media.map((usage, index) => ({
     key: usageKey(usage),
-    previewSrc: previewUrl(usage.mediaId),
-    originalSrc: originalUrl(usage.mediaId),
+    previewSrc: mediaPreviewUrl(usage.mediaId),
+    originalSrc: mediaOriginalUrl(usage.mediaId),
     alt: mediaAlt(usage, index, media.length),
     description:
       usage.altText === null
@@ -113,7 +118,7 @@ export function ImageGrid({
     height: usage.height,
     kind: isVideoMimeType(usage.mimeType) ? "video" : "image",
     posterSrc: isVideoMimeType(usage.mimeType)
-      ? `/api/v1/media/${encodeURIComponent(usage.mediaId)}/poster`
+      ? mediaPosterUrl(usage.mediaId)
       : null,
   }));
 

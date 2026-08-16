@@ -1,3 +1,5 @@
+import { mediaOriginalUrl, mediaPreviewUrl } from "./mediaUrls";
+
 export interface SiteIdentity {
   ownerId: string;
   username: string;
@@ -1482,8 +1484,8 @@ function parseUploadedMedia(data: unknown): UploadedMedia {
   const originalUrl = stringField(data, "original_url");
   const previewUrl = stringField(data, "preview_url");
   if (
-    originalUrl !== `/api/v1/media/${id}` ||
-    previewUrl !== `${originalUrl}/preview`
+    originalUrl !== mediaOriginalUrl(id) ||
+    previewUrl !== mediaPreviewUrl(id)
   )
     throw invalidResponse("upload result contains an uncontrolled media URL");
   const animatedOriginal = booleanField(data.media, "animated_original");

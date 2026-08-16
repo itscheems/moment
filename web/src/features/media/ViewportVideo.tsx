@@ -37,6 +37,9 @@ export function ViewportVideo({
     eager || !supportsObserver ? "loading" : "idle",
   );
   const [duration, setDuration] = useState(0);
+  const [showPoster, setShowPoster] = useState(true);
+
+  useEffect(() => setShowPoster(true), [poster, src]);
 
   useEffect(() => {
     if (eager || !supportsObserver) {
@@ -65,6 +68,7 @@ export function ViewportVideo({
           setNearViewport(false);
           setPlayback("idle");
           setDuration(0);
+          setShowPoster(true);
         }, RELEASE_DELAY_MS);
       },
       { rootMargin: "600px 0px", threshold: 0.01 },
@@ -102,9 +106,13 @@ export function ViewportVideo({
           setPlayback((current) => (current === "playing" ? current : "paused"))
         }
         onDurationChange={(event) => setDuration(event.currentTarget.duration)}
-        onEnded={() => setPlayback("paused")}
+        onEnded={() => {
+          setPlayback("paused");
+          setShowPoster(true);
+        }}
         onError={() => {
           setPlayback("paused");
+          setShowPoster(true);
           onError();
         }}
         onLoadedMetadata={(event) => {
@@ -112,7 +120,10 @@ export function ViewportVideo({
           setPlayback("paused");
         }}
         onPause={() => setPlayback("paused")}
-        onPlaying={() => setPlayback("playing")}
+        onPlaying={() => {
+          setPlayback("playing");
+          setShowPoster(false);
+        }}
         onWaiting={() => setPlayback("loading")}
         playsInline
         poster={nearViewport ? poster : undefined}
@@ -120,6 +131,15 @@ export function ViewportVideo({
         ref={videoRef}
         src={nearViewport ? src : undefined}
       />
+      {nearViewport && showPoster ? (
+        <img
+          alt=""
+          aria-hidden="true"
+          className={styles.videoPoster}
+          decoding="async"
+          src={poster}
+        />
+      ) : null}
       {playback === "loading" || playback === "idle" ? (
         <span
           aria-label="视频正在加载"

@@ -1,4 +1,5 @@
 import type { PostMediaInput, UploadedMedia } from "../../api/owner";
+import { mediaOriginalUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import type { PublicMediaUsage } from "../../api/public";
 import { PublicApiError } from "../../api/public";
 
@@ -155,8 +156,8 @@ export function itemsFromPost(media: PublicMediaUsage[]): ComposerMediaItem[] {
     localPreviewUrl: null,
     processingPosterUrl: null,
     mediaId: usage.mediaId,
-    previewUrl: `/api/v1/media/${encodeURIComponent(usage.mediaId)}/preview`,
-    originalUrl: `/api/v1/media/${encodeURIComponent(usage.mediaId)}`,
+    previewUrl: mediaPreviewUrl(usage.mediaId),
+    originalUrl: mediaOriginalUrl(usage.mediaId),
     mimeType: usage.mimeType,
     previewMimeType: isVideoMimeType(usage.mimeType)
       ? "video/mp4"

@@ -32,6 +32,27 @@ import (
 // gopher-doc.1bpp.lossless.webp fixture. See testdata/LICENSE.x-image.
 const smallWebPBase64 = "UklGRrIBAABXRUJQVlA4TKUBAAAvSsAYAA8w//M///MfeJAkbXvaSG7m8Q3GfYSBJekwQztm/IcZlgwnmWImn2BK7aFmBtnVir6q//8VOkFE/xm4baTIu8c48ArEo6+B3zFKYln3pqClSCKX0begFTAXFOLXHSyF8cCNcZEG4OywuA4KVVfJCiArU7GAgJI8+lJP/OKMT/fBAjevg1cYB7YVkFuWga2lyPi5I0HFy5YTpWIHg0RZpkniRVW9odHAKOwosWuOGdxIyn2OvaCDvhg/we6TwadPBPbqBV58MsLmMJ8yZnOWk8SRz4N+QoyPL+MnamzMvcE1rHNEr91F9GKZPVUcS9w7PhhH36suB9qPeYb/oLk6cuTiJ0wOK3m5h1cKjW6EVZCYMK7dxcKCBdgP9HkKr9gkAO2P8GKZGWVdIAatQa+1IDpt6qyorVwdy01xdW8Jkfk6xjEXmVQQ+HQdFr6OKhIN34dXWq0+0qr6EJSCeeVLH9+gvGTLyqM65PQ44ihzlTXxQKjKbAvshXgir7Lil9w4L2bvMycmjQcqXaMCO6BlY28i+FOLzbfI1vEqxAhotocAAA=="
 
+func TestWebMediaRecipeMatchesServerCacheKey(t *testing.T) {
+	contents, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "api", "mediaUrls.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `export const MEDIA_RECIPE_VERSION =
+  "` + RecipeVersion + `";`
+	if !bytes.Contains(contents, []byte(want)) {
+		t.Fatalf("web media recipe does not match server %q", RecipeVersion)
+	}
+
+	id, err := domain.ParseID("01K2ABCDEF0123456789ABCDE1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := NewUploadResult(Media{ID: id}, Preview{})
+	if result.PreviewURL != "/api/v1/media/01K2ABCDEF0123456789ABCDE1/preview?v="+RecipeVersion {
+		t.Fatalf("versioned preview URL = %q", result.PreviewURL)
+	}
+}
+
 func TestIngestSupportedFormatsUsesSignaturesAndCanonicalAuthority(t *testing.T) {
 	t.Parallel()
 	webpBytes, err := base64.StdEncoding.DecodeString(smallWebPBase64)
@@ -162,7 +183,7 @@ func TestIngestMP4RealProcessorPreservesOriginalBuildsBoundedDisplayAndPoster(t 
 		t.Fatal("MP4 ingest returned before its poster was ready")
 	}
 	derived, err := store.probeVideoFile(context.Background(), preview.Path)
-	if err != nil || derived.codec != "h264" || derived.pixelFormat != "yuv420p" || derived.width > DefaultPreviewMaxEdge || derived.height > DefaultPreviewMaxEdge {
+	if err != nil || derived.codec != "h264" || derived.codecProfile != "High" || derived.codecTag != "avc1" || derived.pixelFormat != "yuv420p" || !derived.isSDRBT709Video() || derived.width > DefaultPreviewMaxEdge || derived.height > DefaultPreviewMaxEdge {
 		t.Fatalf("derived MP4 contract = %+v, %v", derived, err)
 	}
 	original, err := store.ReadOriginal(context.Background(), value.ID)
@@ -214,8 +235,13 @@ func TestVideoDisplayFilterPlanToneMapsHDRAndKeepsSDRPortable(t *testing.T) {
 	}
 
 	sdr := videoDisplayFilterPlan(inspected{width: 1920, height: 1080, colorPrimaries: "bt709", colorTransfer: "bt709"}, 1600)
-	if len(sdr.inputArguments) != 0 || strings.Contains(sdr.filter, "tonemap") || !strings.Contains(sdr.filter, "force_original_aspect_ratio=decrease") {
+	if len(sdr.inputArguments) != 0 || strings.Contains(sdr.filter, "tonemap") || !strings.Contains(sdr.filter, "force_original_aspect_ratio=decrease") || !strings.Contains(sdr.filter, "out_color_matrix=bt709:out_range=tv") {
 		t.Fatalf("SDR filter plan = %#v", sdr)
+	}
+
+	wideGamutSDR := videoDisplayFilterPlan(inspected{colorPrimaries: "bt2020", colorTransfer: "bt709", colorSpace: "bt2020nc"}, 1600)
+	if strings.Contains(wideGamutSDR.filter, "tonemap") || !strings.Contains(wideGamutSDR.filter, "zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited") {
+		t.Fatalf("wide-gamut SDR filter plan = %#v", wideGamutSDR)
 	}
 }
 
@@ -234,15 +260,26 @@ func TestIngestQuickTimeRealFixturePreservesOriginalAndBuildsMP4Display(t *testi
 		t.Fatal(err)
 	}
 	store, _, _ := newTestStoreWithOptions(t, Options{FFmpegPath: ffmpeg, FFprobePath: ffprobe})
+	sourceInspection, err := store.probeVideoFile(context.Background(), fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sourceInspection.codec != "hevc" || sourceInspection.codecProfile != "Main 10" || sourceInspection.codecTag != "hvc1" || sourceInspection.pixelFormat != "yuv420p10le" || sourceInspection.bitDepth != 10 || sourceInspection.chromaLocation != "left" || sourceInspection.colorRange != "tv" || sourceInspection.colorSpace != "bt2020nc" || sourceInspection.colorTransfer != "arib-std-b67" || sourceInspection.colorPrimaries != "bt2020" || !sourceInspection.hasDolbyVision || sourceInspection.dolbyVisionProfile != 8 || sourceInspection.dolbyCompatibility != 4 {
+		t.Fatalf("QuickTime source color contract = %+v", sourceInspection)
+	}
 	var earlyPoster []byte
+	startedAt := time.Now()
+	var earlyPosterElapsed time.Duration
 	value, preview, err := store.IngestObserved(
 		context.Background(),
 		"IMG_1337.MOV",
 		bytes.NewReader(contents),
 		IngestObserver{VideoPosterReady: func(contents []byte) {
 			earlyPoster = bytes.Clone(contents)
+			earlyPosterElapsed = time.Since(startedAt)
 		}},
 	)
+	fullTranscodeElapsed := time.Since(startedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,8 +293,19 @@ func TestIngestQuickTimeRealFixturePreservesOriginalAndBuildsMP4Display(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if derived.colorSpace != "bt709" || derived.colorTransfer != "bt709" || derived.colorPrimaries != "bt709" {
-		t.Fatalf("QuickTime display color metadata = space %q transfer %q primaries %q", derived.colorSpace, derived.colorTransfer, derived.colorPrimaries)
+	if derived.codec != "h264" || derived.codecProfile != "High" || derived.codecTag != "avc1" || derived.pixelFormat != "yuv420p" || derived.bitDepth != 8 || derived.chromaLocation != "left" || !derived.isSDRBT709Video() || derived.hasDolbyVision {
+		t.Fatalf("QuickTime display color contract = %+v", derived)
+	}
+	rawBitstream := filepath.Join(t.TempDir(), "display.264")
+	if output, err := exec.Command(ffmpeg, "-nostdin", "-y", "-v", "error", "-i", preview.Path, "-map", "0:v:0", "-c:v", "copy", "-bsf:v", "h264_mp4toannexb", "-f", "h264", rawBitstream).CombinedOutput(); err != nil {
+		t.Fatalf("extract display H.264 bitstream: %v: %s", err, output)
+	}
+	rawProbe, err := exec.Command(ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_range,color_space,color_transfer,color_primaries", "-of", "default=noprint_wrappers=1", rawBitstream).CombinedOutput()
+	if err != nil || !strings.Contains(string(rawProbe), "color_range=tv") || !strings.Contains(string(rawProbe), "color_space=bt709") || !strings.Contains(string(rawProbe), "color_transfer=bt709") || !strings.Contains(string(rawProbe), "color_primaries=bt709") {
+		t.Fatalf("QuickTime display H.264 SPS color contract = %q, %v", rawProbe, err)
+	}
+	if earlyPosterElapsed <= 0 || earlyPosterElapsed*2 >= fullTranscodeElapsed {
+		t.Fatalf("QuickTime poster/full processing elapsed = %s/%s, poster was not independently available", earlyPosterElapsed, fullTranscodeElapsed)
 	}
 	original, err := store.ReadOriginal(context.Background(), value.ID)
 	if err != nil || !bytes.Equal(original.Contents, contents) {
@@ -266,6 +314,14 @@ func TestIngestQuickTimeRealFixturePreservesOriginalAndBuildsMP4Display(t *testi
 	poster, err := store.ReadPoster(context.Background(), value.ID)
 	if err != nil || poster.MIMEType != "image/jpeg" {
 		t.Fatalf("QuickTime poster = %q, %v", poster.MIMEType, err)
+	}
+	posterPath := filepath.Join(t.TempDir(), "poster.jpg")
+	if err := os.WriteFile(posterPath, poster.Contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	posterProbe, err := exec.Command(ffprobe, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=pix_fmt,color_range", "-of", "default=noprint_wrappers=1", posterPath).CombinedOutput()
+	if err != nil || !strings.Contains(string(posterProbe), "pix_fmt=yuvj444p") || !strings.Contains(string(posterProbe), "color_range=pc") {
+		t.Fatalf("QuickTime poster JPEG contract = %q, %v", posterProbe, err)
 	}
 	referencePath := filepath.Join(t.TempDir(), "display-frame.png")
 	seek := strconv.FormatFloat(videoPosterTime(derived.durationSeconds), 'f', 3, 64)

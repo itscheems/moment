@@ -35,7 +35,7 @@ func TestMediaDeliveryHeadersConditionalsAndExplicitGIFOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	previewResponse := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/"+value.ID.String()+"/preview", nil))
+	previewResponse := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/"+value.ID.String()+"/preview?v="+media.RecipeVersion, nil))
 	if previewResponse.Code != http.StatusOK || previewResponse.Header().Get("Content-Type") != "image/jpeg" ||
 		previewResponse.Header().Get("Cache-Control") != "public, max-age=0, must-revalidate" ||
 		previewResponse.Header().Get("X-Content-Type-Options") != "nosniff" || previewResponse.Header().Get("ETag") == "" {
@@ -97,7 +97,7 @@ func TestOwnerMediaUploadRequiresAuthenticationAndReturnsManagedURLs(t *testing.
 		t.Fatalf("upload = %d %s", response.Code, response.Body.String())
 	}
 	data := decodeDataMap(t, response)
-	if !strings.HasPrefix(data["original_url"].(string), "/api/v1/media/") || !strings.HasSuffix(data["preview_url"].(string), "/preview") {
+	if !strings.HasPrefix(data["original_url"].(string), "/api/v1/media/") || !strings.HasSuffix(data["preview_url"].(string), "/preview?v="+media.RecipeVersion) {
 		t.Fatalf("upload data = %#v", data)
 	}
 }

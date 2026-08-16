@@ -9,6 +9,7 @@ import {
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { mediaPosterUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import { MediaComposer } from "./MediaComposer";
 import mediaCss from "./Media.module.css?inline";
 import type { ComposerMediaItem } from "./mediaState";
@@ -30,7 +31,7 @@ function item(key: string): ComposerMediaItem {
     localPreviewUrl: null,
     processingPosterUrl: null,
     mediaId: `01K2ABCDEF0123456789ABCD${key}`,
-    previewUrl: `/api/v1/media/${key}/preview`,
+    previewUrl: mediaPreviewUrl(key),
     originalUrl: `/api/v1/media/${key}`,
     mimeType: "image/jpeg",
     previewMimeType: "image/jpeg",
@@ -215,9 +216,11 @@ describe("media editor", () => {
       />,
     );
 
-    expect(screen.getByText("正在准备视频封面")).toBeInTheDocument();
+    expect(screen.getByText("正在生成视频封面")).toBeInTheDocument();
     expect(screen.getByText("climb.mov")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("正在处理视频");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "封面已就绪 · 正在处理视频",
+    );
     const preview = container.querySelector("img");
     expect(preview).not.toBeNull();
     expect(preview).toHaveAttribute(
@@ -236,6 +239,67 @@ describe("media editor", () => {
     expect(mediaCss).not.toContain(
       '.mediaUploadStatus[data-processing="true"] .uploadProgressRing svg',
     );
+  });
+
+  it("keeps the server poster as the editor cover after video processing", () => {
+    const readyVideo = {
+      ...item("00"),
+      mimeType: "video/quicktime",
+      previewMimeType: "video/mp4",
+    };
+    const { container } = render(
+      <MediaComposer
+        disabled={false}
+        items={[readyVideo]}
+        onAdd={vi.fn()}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector("video")).toBeNull();
+    expect(container.querySelector("img")).toHaveAttribute(
+      "src",
+      mediaPosterUrl("01K2ABCDEF0123456789ABCD00"),
+    );
+    expect(container.querySelector("[data-video-frame]")).toHaveAttribute(
+      "data-video-frame",
+      "ready",
+    );
+  });
+
+  it("reports poster and full video processing independently", () => {
+    const video = {
+      ...item("00"),
+      file: new File(["video"], "climb.mov", { type: "video/quicktime" }),
+      localPreviewUrl: "blob:http://localhost/local-video",
+      mediaId: null,
+      previewUrl: "",
+      originalUrl: "",
+      mimeType: "video/quicktime",
+      previewMimeType: "",
+      state: "uploading" as const,
+      progress: 99,
+    };
+    const { container } = render(
+      <MediaComposer
+        disabled={false}
+        items={[video]}
+        onAdd={vi.fn()}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "正在生成封面 · 视频处理中",
+    );
+    expect(container.querySelector("video")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /预览第 1 项视频/ }),
+    ).toBeDisabled();
   });
 
   it("briefly confirms a completed video upload", async () => {
@@ -363,7 +427,7 @@ describe("media editor", () => {
     );
     expect(dialog.querySelector("img")).toHaveAttribute(
       "src",
-      "/api/v1/media/00/preview",
+      mediaPreviewUrl("00"),
     );
     expect(screen.getByRole("link", { name: "打开原图" })).toHaveAttribute(
       "href",
@@ -386,7 +450,7 @@ describe("media editor", () => {
     await waitFor(() =>
       expect(dialog.querySelector("img")).toHaveAttribute(
         "src",
-        "/api/v1/media/01/preview",
+        mediaPreviewUrl("01"),
       ),
     );
     fireEvent.click(close);

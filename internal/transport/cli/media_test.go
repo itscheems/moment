@@ -36,7 +36,7 @@ func TestMediaDirectAgentContractAndMaintenanceSafety(t *testing.T) {
 	added := commandData(t, addedOutput)
 	mediaData := added["media"].(map[string]any)
 	id := mediaData["id"].(string)
-	if id == "" || mediaData["storage_path"] != nil || added["preview_url"] != "/api/v1/media/"+id+"/preview" {
+	if id == "" || mediaData["storage_path"] != nil || added["preview_url"] != "/api/v1/media/"+id+"/preview?v="+media.RecipeVersion {
 		t.Fatalf("added = %#v", added)
 	}
 

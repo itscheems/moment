@@ -9,6 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { mediaPreviewUrl } from "../api/mediaUrls";
 import type { SiteIdentity } from "../api/public";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { ThemeMenu } from "./ThemeMenu";
@@ -107,7 +108,7 @@ describe("ThemeMenu", () => {
     expect(within(preview).getByText("@owner")).toBeInTheDocument();
     expect(preview.querySelector("img")).toHaveAttribute(
       "src",
-      "/api/v1/media/01K2ABCDEF0123456789ABCDEFG/preview",
+      mediaPreviewUrl("01K2ABCDEF0123456789ABCDEFG"),
     );
 
     const accentChoices = [

@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/mediacontract"
 )
 
 const (
@@ -155,7 +156,7 @@ func (service *ShareMetadataService) Post(ctx context.Context, id domain.ID) (Sh
 		PostFound:    true,
 	}
 	if len(post.Media) > 0 {
-		metadata.ImageURL = publicShareURL(settings.PublicBaseURL, "api", "v1", "media", post.Media[0].MediaID.String(), "preview")
+		metadata.ImageURL = derivedShareURL(settings.PublicBaseURL, "api", "v1", "media", post.Media[0].MediaID.String(), "preview")
 	} else {
 		metadata.ImageURL = avatarShareURL(settings)
 	}
@@ -195,7 +196,22 @@ func avatarShareURL(settings SiteSettings) string {
 	if err != nil {
 		return ""
 	}
-	return publicShareURL(settings.PublicBaseURL, "api", "v1", "media", id.String(), "preview")
+	return derivedShareURL(settings.PublicBaseURL, "api", "v1", "media", id.String(), "preview")
+}
+
+func derivedShareURL(base *string, elements ...string) string {
+	value := publicShareURL(base, elements...)
+	if value == "" {
+		return ""
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return ""
+	}
+	query := parsed.Query()
+	query.Set("v", mediacontract.RecipeVersion)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 func publicShareURL(base *string, elements ...string) string {

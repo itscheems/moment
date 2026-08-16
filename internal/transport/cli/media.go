@@ -378,7 +378,7 @@ func validMediaUploadAPIData(data json.RawMessage, result media.UploadResult) bo
 		result.Preview.Width == 0 || result.Preview.Height == 0 || result.Preview.AnimatedOriginal != result.Media.AnimatedOriginal {
 		return false
 	}
-	return result.OriginalURL == "/api/v1/media/"+id.String() && result.PreviewURL == "/api/v1/media/"+id.String()+"/preview"
+	return result.OriginalURL == "/api/v1/media/"+id.String() && result.PreviewURL == "/api/v1/media/"+id.String()+"/preview?v="+media.RecipeVersion
 }
 
 func hasRequiredNestedAPIDataFields(data json.RawMessage, object string, required ...string) bool {

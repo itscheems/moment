@@ -3,7 +3,6 @@ import {
   type ChangeEvent,
   forwardRef,
   type ReactNode,
-  type SyntheticEvent,
   useEffect,
   useId,
   useRef,
@@ -17,6 +16,7 @@ import {
 } from "motion/react";
 
 import { Icon } from "../../components/icons";
+import { mediaPosterUrl } from "../../api/mediaUrls";
 import type { ComposerMediaItem } from "./mediaState";
 import {
   MAX_MEDIA_COUNT,
@@ -38,100 +38,35 @@ const UPLOAD_SUCCESS_DURATION_MS = 1_600;
 function VideoEditorPreview({
   fileName,
   height,
+  pendingLabel,
   poster,
-  posterOnly,
-  src,
   width,
 }: {
   fileName: string | null;
   height?: number;
+  pendingLabel: string;
   poster?: string;
-  posterOnly?: boolean;
-  src: string;
   width?: number;
 }) {
-  const coverTimeRef = useRef(0);
-  const [frameState, setFrameState] = useState<
-    "loading" | "ready" | "unavailable"
-  >(poster ? "ready" : "loading");
-
-  useEffect(() => {
-    coverTimeRef.current = 0;
-    setFrameState(poster ? "ready" : "loading");
-  }, [poster, src]);
-
-  const revealDecodedFrame = (event: SyntheticEvent<HTMLVideoElement>) => {
-    const video = event.currentTarget;
-    if (
-      coverTimeRef.current === 0 ||
-      video.currentTime > 0 ||
-      Math.abs(video.currentTime - coverTimeRef.current) < 0.1
-    ) {
-      setFrameState("ready");
-    }
-  };
-  const seekToCoverFrame = (event: SyntheticEvent<HTMLVideoElement>) => {
-    const video = event.currentTarget;
-    if (!Number.isFinite(video.duration) || video.duration <= 0) return;
-    const latestUsableFrame = Math.max(0, video.duration - 0.05);
-    const representativeFrame = Math.min(
-      3,
-      Math.max(0.5, video.duration * 0.1),
-      latestUsableFrame,
-    );
-    coverTimeRef.current = representativeFrame;
-    if (representativeFrame <= 0) {
-      setFrameState("ready");
-      return;
-    }
-    try {
-      video.currentTime = representativeFrame;
-    } catch {
-      // Some browser/container combinations reject seeking before their first
-      // decoded frame. loadedData still reveals that first usable frame.
-      coverTimeRef.current = 0;
-    }
-  };
-
   return (
-    <span className={styles.editorVideoPreview} data-video-frame={frameState}>
+    <span
+      className={styles.editorVideoPreview}
+      data-video-frame={poster ? "ready" : "loading"}
+    >
       <span className={styles.videoCoverFallback} aria-hidden="true">
         <Icon name="media" />
-        <span>
-          {frameState === "unavailable"
-            ? "视频封面将在处理后显示"
-            : posterOnly
-              ? "正在准备视频封面"
-              : "正在读取视频封面"}
-        </span>
+        <span>{pendingLabel}</span>
         {fileName ? <small>{fileName}</small> : null}
       </span>
-      {posterOnly ? (
-        poster ? (
-          <img
-            alt=""
-            decoding="async"
-            height={height}
-            src={poster}
-            width={width}
-          />
-        ) : null
-      ) : (
-        <video
-          aria-hidden="true"
+      {poster ? (
+        <img
+          alt=""
+          decoding="async"
           height={height}
-          muted
-          onError={() => setFrameState("unavailable")}
-          onLoadedData={revealDecodedFrame}
-          onLoadedMetadata={seekToCoverFrame}
-          onSeeked={revealDecodedFrame}
-          playsInline
-          poster={poster}
-          preload="auto"
-          src={src}
+          src={poster}
           width={width}
         />
-      )}
+      ) : null}
     </span>
   );
 }
@@ -224,12 +159,22 @@ export function MediaComposer({
   const selectedIndex =
     selectedKey === null || selectedItemIndex < 0 ? null : selectedItemIndex;
   const lightboxItems: MediaLightboxItem[] = items.map((item, index) => {
-    const previewSrc = item.localPreviewUrl || item.previewUrl || "";
+    const video = isVideoMimeType(item.mimeType);
+    const videoReady =
+      video && item.state === "ready" && Boolean(item.previewUrl);
+    const previewSrc = video
+      ? videoReady
+        ? item.previewUrl
+        : item.processingPosterUrl || ""
+      : item.localPreviewUrl || item.previewUrl || "";
     return {
       key: item.key,
       previewSrc,
-      originalSrc:
-        item.localPreviewUrl || item.originalUrl || item.previewUrl || null,
+      originalSrc: video
+        ? videoReady
+          ? item.originalUrl || null
+          : null
+        : item.localPreviewUrl || item.originalUrl || item.previewUrl || null,
       alt:
         item.altMode === "provided"
           ? item.altText
@@ -248,11 +193,9 @@ export function MediaComposer({
             : isVideoMimeType(item.mimeType)
               ? "这段视频尚未填写描述。"
               : "这张图片尚未填写描述。",
-      kind: isVideoMimeType(item.mimeType) ? "video" : "image",
+      kind: videoReady ? "video" : "image",
       posterSrc:
-        isVideoMimeType(item.mimeType) && item.mediaId
-          ? `/api/v1/media/${encodeURIComponent(item.mediaId)}/poster`
-          : null,
+        videoReady && item.mediaId ? mediaPosterUrl(item.mediaId) : null,
     };
   });
 
@@ -397,11 +340,20 @@ export function MediaComposer({
               item.mimeType === "image/heic" && !item.previewUrl
                 ? null
                 : item.localPreviewUrl || item.previewUrl || null;
+            const videoPosterUrl = isVideo
+              ? (item.processingPosterUrl ??
+                (item.mediaId ? mediaPosterUrl(item.mediaId) : null))
+              : null;
+            const editorPreviewAvailable = isVideo
+              ? Boolean(videoPosterUrl)
+              : Boolean(editorPreviewUrl);
             const processing =
               item.state === "uploading" && item.progress >= 99;
             const uploadStatus = processing
               ? isVideo
-                ? "正在处理视频"
+                ? item.processingPosterUrl
+                  ? "封面已就绪 · 正在处理视频"
+                  : "正在生成封面 · 视频处理中"
                 : "正在处理媒体"
               : `上传 ${item.progress}%`;
             return (
@@ -420,23 +372,23 @@ export function MediaComposer({
                           : `预览第 ${index + 1} 张图片，共 ${items.length} 张`
                       }
                       className={styles.editorPreviewButton}
-                      disabled={!editorPreviewUrl || !present}
+                      disabled={!editorPreviewAvailable || !present}
                       onClick={() => setSelectedKey(item.key)}
                       type="button"
-                      data-preview-pending={editorPreviewUrl ? undefined : ""}
+                      data-preview-pending={
+                        editorPreviewAvailable ? undefined : ""
+                      }
                     >
-                      {editorPreviewUrl && isVideo ? (
+                      {isVideo ? (
                         <VideoEditorPreview
                           fileName={item.file?.name ?? null}
                           height={item.height ?? undefined}
-                          poster={
-                            item.processingPosterUrl ??
-                            (item.mediaId
-                              ? `/api/v1/media/${encodeURIComponent(item.mediaId)}/poster`
-                              : undefined)
+                          pendingLabel={
+                            item.progress >= 99
+                              ? "正在生成视频封面"
+                              : "视频封面将在上传后生成"
                           }
-                          posterOnly={Boolean(item.localPreviewUrl)}
-                          src={editorPreviewUrl}
+                          poster={videoPosterUrl ?? undefined}
                           width={item.width ?? undefined}
                         />
                       ) : editorPreviewUrl ? (
