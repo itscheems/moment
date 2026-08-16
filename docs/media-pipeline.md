@@ -6,11 +6,11 @@ replaceable cache entries produced by a versioned recipe.
 
 ## Supported product envelope
 
-| Input | Original | Default browser asset |
-|---|---|---|
-| JPEG, PNG, WebP, GIF | retained byte-for-byte | JPEG or PNG, longest edge 1600 px |
-| HEIC | retained byte-for-byte | bounded JPEG decoded with libheif |
-| MP4, up to 5 minutes | retained byte-for-byte | H.264/AAC MP4 plus JPEG poster |
+| Input                | Original               | Default browser asset                                   |
+| -------------------- | ---------------------- | ------------------------------------------------------- |
+| JPEG, PNG, WebP, GIF | retained byte-for-byte | JPEG or PNG, longest edge 1600 px                       |
+| HEIC                 | retained byte-for-byte | bounded JPEG decoded with libheif, with FFmpeg fallback |
+| MP4, up to 5 minutes | retained byte-for-byte | H.264/AAC MP4 plus JPEG poster                          |
 
 - A source file may be at most 30 MiB.
 - Every display artifact and poster is at most 10 MiB.
@@ -58,24 +58,41 @@ The three-attempt ceiling keeps request cost bounded. The five-minute source
 limit makes the 10 MiB delivery budget honest; longer video belongs to a
 different product and delivery architecture.
 
-## Browser delivery
+## Browser delivery and loading
 
 The HTTP transport opens the safe rooted file and passes the seekable reader
 directly to Go's `ServeContent`. The shared media lease remains held until the
 response closes. Byte ranges therefore avoid both unnecessary network bytes
 and whole-file server buffering.
 
-The Web client uses native `<video preload="metadata" playsInline>` with the
-generated poster. Progressive H.264 MP4 plus HTTP Range is sufficient for the
-current short-video envelope. The explicit original-quality action loads the
-immutable original only when the user asks for it.
+The Web client keeps 20-item cursor pages separate from media resource loading.
+Images use their bounded preview with native lazy loading. Timeline, profile,
+search, and quoted videos initially reserve geometry without a `src` or
+`poster`; an `IntersectionObserver` attaches both within a 600 px preload
+margin and uses native `<video preload="metadata" playsInline>`. Leaving the
+margin pauses immediately and releases those attributes after a three-second
+retention window, avoiding refetch churn during small reverse scrolls. The
+primary video on a post detail page loads eagerly because navigation expresses
+viewing intent.
+
+Non-detail posts also use progressive `content-visibility: auto` containment
+where supported. This reduces layout and paint work as cursor pages accumulate
+without changing the accessible DOM, page size, cursor restoration, or
+keyboard order. Virtualization remains deferred until measurements show that
+long retained timelines need it.
+
+Progressive H.264 MP4 plus HTTP Range is sufficient for the current short-video
+envelope. Opening the lightbox is explicit intent and loads the preview; the
+original-quality action loads the immutable original only when requested.
 
 ## Runtime dependencies and repair
 
 Container images install FFmpeg, ffprobe, and libheif tools. Native deployments
-that accept HEIC or MP4 must expose `ffmpeg`, `ffprobe`, and `heif-convert` on
-`PATH`. Missing tools return `MEDIA_PROCESSOR_UNAVAILABLE` before authority is
-published.
+that accept MP4 must expose `ffmpeg` and `ffprobe` on `PATH`. HEIC prefers
+`heif-convert` when available and otherwise uses the same bounded FFmpeg
+runtime. If neither decoder exists, ingestion returns
+`MEDIA_PROCESSOR_UNAVAILABLE` before authority is published. A present decoder
+that rejects corrupt input does not silently fall through to another decoder.
 
 Useful deterministic maintenance commands:
 
@@ -121,8 +138,10 @@ lanes, processor absence, cancellation, and repair. Real processor integration
 can be run explicitly:
 
 ```sh
-MOMENT_TEST_HEIF_CONVERT="$(command -v heif-convert)" \
 MOMENT_TEST_FFMPEG="$(command -v ffmpeg)" \
 MOMENT_TEST_FFPROBE="$(command -v ffprobe)" \
 go test ./internal/media -run 'TestIngest(HEIC|MP4)Real' -count=1
 ```
+
+Set `MOMENT_TEST_HEIF_CONVERT` as well to exercise the preferred libheif path;
+the HEIC integration deliberately also runs with FFmpeg alone.
