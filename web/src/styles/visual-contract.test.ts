@@ -5,6 +5,7 @@ import identityCss from "../components/SiteIdentity.module.css?inline";
 import stateCss from "../components/ShellState.module.css?inline";
 import themeMenuCss from "../components/ThemeMenu.module.css?inline";
 import interactionsCss from "../components/TimelineInteractions.module.css?inline";
+import interCss from "inter-ui/inter-variable-latin.css?inline";
 import commentsCss from "../features/comments/Comments.module.css?inline";
 import mediaCss from "../features/media/Media.module.css?inline";
 import datePickerCss from "../features/memory/DatePicker.module.css?inline";
@@ -114,11 +115,17 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain("--focus-ring:");
   });
 
-  it("gives body, display, and utility type distinct CJK-safe roles", () => {
-    expect(globalCss).toContain('"SF Pro Text"');
-    expect(globalCss).toContain('"SF Pro Display"');
+  it("self-hosts an open variable Latin face with CJK-safe system fallback", () => {
+    expect(interCss).toContain("font-family: InterVariable");
+    expect(interCss).toContain("font-weight: 100 900");
+    expect(interCss).toContain("font-display: swap");
+    expect(globalCss.match(/InterVariable/g)).toHaveLength(3);
     expect(globalCss).toContain('"PingFang SC"');
+    expect(globalCss).toContain('"PingFang TC"');
+    expect(globalCss).toContain('"PingFang HK"');
     expect(globalCss).toContain('"Noto Sans CJK SC"');
+    expect(globalCss).toContain("font-optical-sizing: auto");
+    expect(globalCss).toContain('"calt" 1');
     expect(globalCss).toContain("--tracking-display: -0.022em");
     expect(globalCss).toContain("--tracking-body: -0.006em");
     expect(globalCss).toContain("--tracking-utility: 0.006em");

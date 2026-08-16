@@ -1,18 +1,24 @@
 :root {
   color-scheme: light;
   font-family: var(--font-body);
+  font-feature-settings:
+    "liga" 1,
+    "calt" 1;
+  font-optical-sizing: auto;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
   --font-body:
-    "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "PingFang SC", "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei",
-    sans-serif;
+    InterVariable, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, "PingFang SC", "PingFang TC", "PingFang HK",
+    "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --font-display:
-    "SF Pro Display", -apple-system, BlinkMacSystemFont, "PingFang SC",
+    InterVariable, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, "PingFang SC", "PingFang TC", "PingFang HK",
     "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --font-utility:
-    "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    InterVariable, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, "PingFang SC", "PingFang TC", "PingFang HK",
     "Noto Sans CJK SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --tracking-display: -0.022em;
