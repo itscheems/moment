@@ -147,14 +147,17 @@
 }
 
 .mediaEditorList[data-media-count="1"] {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
   block-size: auto;
 }
 
 .mediaEditorList[data-media-count="1"] .mediaEditorItem {
-  inline-size: min(100%, 32rem);
+  inline-size: min(100%, var(--editor-media-max-width, 32rem));
+  aspect-ratio: var(--editor-media-ratio, 4 / 3);
   max-inline-size: 100%;
-  margin-inline: auto;
+  max-block-size: 32rem;
 }
 
 .mediaEditorList[data-media-count="2"] .mediaEditorItem {
@@ -196,8 +199,8 @@
 }
 
 .mediaEditorList[data-media-count="1"] .editorPreview {
-  block-size: auto;
-  max-block-size: 32rem;
+  block-size: 100%;
+  max-block-size: none;
 }
 
 .editorPreviewButton {
@@ -255,8 +258,8 @@
 .mediaEditorList[data-media-count="1"] .editorPreviewButton video,
 .mediaEditorList[data-media-count="1"] .editorPreview > img,
 .mediaEditorList[data-media-count="1"] .editorPreview > video {
-  block-size: auto;
-  max-block-size: 32rem;
+  block-size: 100%;
+  max-block-size: none;
 }
 
 .mediaEditorList[data-media-count="1"] .editorPreviewButton img,

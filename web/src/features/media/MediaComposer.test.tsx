@@ -205,6 +205,36 @@ describe("media editor", () => {
     );
   });
 
+  it("sizes a single preview from its intrinsic ratio without exposed gutters", () => {
+    const { container } = render(
+      <MediaComposer
+        disabled={false}
+        items={[{ ...item("00"), width: 1200, height: 1600 }]}
+        onAdd={vi.fn()}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    const slot = container.querySelector<HTMLElement>("[data-media-slot]");
+    const image = container.querySelector("[data-media-slot] img");
+    expect(slot?.style.getPropertyValue("--editor-media-ratio")).toBe(
+      "1200 / 1600",
+    );
+    expect(slot?.style.getPropertyValue("--editor-media-max-width")).toBe(
+      "24rem",
+    );
+    expect(image).toHaveAttribute("width", "1200");
+    expect(image).toHaveAttribute("height", "1600");
+    expect(mediaCss).toMatch(
+      /\[data-media-count="1"\]\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*center/,
+    );
+    expect(mediaCss).toMatch(
+      /\[data-media-count="1"\]\s+\._mediaEditorItem_[\w-]+\s*\{[^}]*aspect-ratio:\s*var\(--editor-media-ratio,\s*4\s*\/\s*3\)[^}]*max-block-size:\s*32rem/,
+    );
+  });
+
   it("opens attached images in a keyboard-navigable preview and restores focus", async () => {
     vi.spyOn(window, "scrollY", "get").mockReturnValue(360);
     render(<FocusHarness initial={[item("00"), item("01")]} />);

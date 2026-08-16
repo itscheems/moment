@@ -1,4 +1,5 @@
 import {
+  type CSSProperties,
   type ChangeEvent,
   forwardRef,
   type ReactNode,
@@ -36,9 +37,10 @@ const MediaPresenceItem = forwardRef<
     children: (present: boolean) => ReactNode;
     itemKey: string;
     reduceMotion: boolean;
+    style?: CSSProperties;
   }
 >(function MediaPresenceItem(
-  { children, itemKey, reduceMotion },
+  { children, itemKey, reduceMotion, style },
   forwardedRef,
 ) {
   const present = useIsPresent();
@@ -53,7 +55,7 @@ const MediaPresenceItem = forwardRef<
       initial={reduceMotion ? false : { opacity: 0, scale: 0.5 }}
       layout={!reduceMotion}
       ref={forwardedRef}
-      style={present ? undefined : { pointerEvents: "none" }}
+      style={present ? style : { ...style, pointerEvents: "none" }}
       transition={MEDIA_SPRING}
     >
       {children(present)}
@@ -225,6 +227,18 @@ export function MediaComposer({
         <AnimatePresence initial={false} mode="popLayout">
           {items.map((item, index) => {
             const isVideo = item.mimeType === "video/mp4";
+            const intrinsicWidth = item.width ?? 0;
+            const intrinsicHeight = item.height ?? 0;
+            const hasIntrinsicSize =
+              items.length === 1 &&
+              intrinsicWidth > 0 &&
+              intrinsicHeight > 0;
+            const editorItemStyle = hasIntrinsicSize
+              ? ({
+                  "--editor-media-ratio": `${intrinsicWidth} / ${intrinsicHeight}`,
+                  "--editor-media-max-width": `${32 * (intrinsicWidth / intrinsicHeight)}rem`,
+                } as CSSProperties)
+              : undefined;
             const editorPreviewUrl =
               item.mimeType === "image/heic" && !item.previewUrl
                 ? null
@@ -234,6 +248,7 @@ export function MediaComposer({
                 itemKey={item.key}
                 key={item.key}
                 reduceMotion={Boolean(reduceMotion)}
+                style={editorItemStyle}
               >
                 {(present) => (
                   <div className={styles.editorPreview}>
@@ -252,6 +267,7 @@ export function MediaComposer({
                       {editorPreviewUrl && isVideo ? (
                         <video
                           aria-hidden="true"
+                          height={item.height ?? undefined}
                           muted
                           playsInline
                           poster={
@@ -261,9 +277,16 @@ export function MediaComposer({
                           }
                           preload="metadata"
                           src={editorPreviewUrl}
+                          width={item.width ?? undefined}
                         />
                       ) : editorPreviewUrl ? (
-                        <img alt="" decoding="async" src={editorPreviewUrl} />
+                        <img
+                          alt=""
+                          decoding="async"
+                          height={item.height ?? undefined}
+                          src={editorPreviewUrl}
+                          width={item.width ?? undefined}
+                        />
                       ) : (
                         <span className={styles.editorPreviewPending}>
                           <span aria-hidden="true" />
