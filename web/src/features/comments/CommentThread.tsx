@@ -389,15 +389,15 @@ function CommentForm({
     setMediaItems(next);
   };
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
       for (const controller of mediaUploadsRef.current.values())
         controller.abort();
       releaseDiscardedLocalPreviews(mediaItemsRef.current, []);
-    },
-    [],
-  );
+    };
+  }, []);
 
   const uploadOne = async (key: string) => {
     const current = mediaItemsRef.current.find((item) => item.key === key);

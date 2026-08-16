@@ -566,17 +566,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       textarea.style.height = `${Math.min(textarea.scrollHeight, 288)}px`;
     }, [content, mediaItems.length]);
 
-    useEffect(
-      () => () => {
+    useEffect(() => {
+      mountedRef.current = true;
+      return () => {
         mountedRef.current = false;
         for (const controller of mediaUploadsRef.current.values())
           controller.abort();
         mediaUploadsRef.current.clear();
         releaseDiscardedLocalPreviews(mediaItemsRef.current, []);
         mediaItemsRef.current = [];
-      },
-      [],
-    );
+      };
+    }, []);
 
     useEffect(() => {
       if (

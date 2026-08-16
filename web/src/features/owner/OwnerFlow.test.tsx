@@ -8,6 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
@@ -853,7 +854,11 @@ describe("owner composing flow", () => {
     window.history.replaceState({}, "", "/owner/compose");
     vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
     installApi();
-    render(<App />);
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
 
     fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
       target: { value: "预览仍不进入草稿" },
