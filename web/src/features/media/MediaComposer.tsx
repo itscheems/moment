@@ -230,9 +230,7 @@ export function MediaComposer({
             const intrinsicWidth = item.width ?? 0;
             const intrinsicHeight = item.height ?? 0;
             const hasIntrinsicSize =
-              items.length === 1 &&
-              intrinsicWidth > 0 &&
-              intrinsicHeight > 0;
+              items.length === 1 && intrinsicWidth > 0 && intrinsicHeight > 0;
             const editorItemStyle = hasIntrinsicSize
               ? ({
                   "--editor-media-ratio": `${intrinsicWidth} / ${intrinsicHeight}`,
@@ -304,7 +302,7 @@ export function MediaComposer({
                           ? `移除第 ${index + 1} 项视频`
                           : `移除第 ${index + 1} 张图片`
                       }
-                      className={styles.editorRemove}
+                      className={`${styles.editorRemove} ${styles.mediaRemoveControl}`}
                       data-media-key={item.key}
                       disabled={disabled || !present}
                       onClick={() => remove(index)}

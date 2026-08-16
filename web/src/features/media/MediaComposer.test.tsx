@@ -102,23 +102,24 @@ describe("media editor", () => {
     );
 
     const remove = screen.getByRole("button", { name: "移除第 1 张图片" });
-    expect(remove.querySelector('svg[data-icon="media-remove"]')).not.toBeNull();
-    expect(remove.querySelector('svg[data-icon="media-remove"]')).toHaveAttribute(
-      "fill",
-      "currentColor",
-    );
+    expect(
+      remove.querySelector('svg[data-icon="media-remove"]'),
+    ).not.toBeNull();
+    expect(
+      remove.querySelector('svg[data-icon="media-remove"]'),
+    ).toHaveAttribute("fill", "currentColor");
     expect(
       remove.querySelector('svg[data-icon="media-remove"] use'),
     ).toHaveAttribute("href", "/icons/ui-symbols-v3.svg#media-remove");
     expect(remove).not.toHaveTextContent("×");
     expect(mediaCss).toMatch(
-      /\._editorRemove_[\w-]+\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 75%\)[^}]*backdrop-filter:\s*blur\(4px\)/,
+      /\._mediaRemoveControl_[\w-]+\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 75%\)[^}]*backdrop-filter:\s*blur\(4px\)/,
     );
     expect(mediaCss).toMatch(
-      /\._editorRemove_[\w-]+:hover:not\(:disabled\)\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 55%\)/,
+      /\._mediaRemoveControl_[\w-]+:hover:not\(:disabled\)\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 55%\)/,
     );
     expect(mediaCss).toMatch(
-      /\._editorRemove_[\w-]+\s*\{[^}]*transition:\s*background-color 140ms ease/,
+      /\._mediaRemoveControl_[\w-]+\s*\{[^}]*transition:\s*background-color 140ms ease/,
     );
   });
 
@@ -254,6 +255,7 @@ describe("media editor", () => {
     const trigger = screen.getByRole("button", {
       name: "预览第 1 张图片，共 2 张",
     });
+    const remove = screen.getByRole("button", { name: "移除第 1 张图片" });
     trigger.focus();
     fireEvent.click(trigger);
 
@@ -272,6 +274,19 @@ describe("media editor", () => {
       "href",
       "/api/v1/media/00",
     );
+    const close = screen.getByRole("button", { name: "关闭图片预览" });
+    expect(
+      close.querySelector('svg[data-icon="media-remove"]'),
+    ).toHaveAttribute("fill", "currentColor");
+    expect(
+      close.querySelector('svg[data-icon="media-remove"] use'),
+    ).toHaveAttribute("href", "/icons/ui-symbols-v3.svg#media-remove");
+    expect(close).not.toHaveTextContent("×");
+    const sharedRemovalClass = Array.from(remove.classList).find((className) =>
+      className.includes("mediaRemoveControl"),
+    );
+    expect(sharedRemovalClass).toBeTruthy();
+    expect(close).toHaveClass(sharedRemovalClass!);
     fireEvent.keyDown(dialog, { key: "ArrowRight" });
     await waitFor(() =>
       expect(dialog.querySelector("img")).toHaveAttribute(
@@ -279,7 +294,7 @@ describe("media editor", () => {
         "/api/v1/media/01/preview",
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "关闭图片预览" }));
+    fireEvent.click(close);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(trigger).toHaveFocus());
     expect(document.documentElement.style.overflowY).toBe("");

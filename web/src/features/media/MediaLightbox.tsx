@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { useEffect, useState } from "react";
 
+import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import styles from "./Media.module.css";
 
@@ -79,9 +80,9 @@ export function MediaLightbox({
             </Dialog.Title>
             <Dialog.Close
               aria-label={containsVideo ? "关闭媒体预览" : "关闭图片预览"}
-              className={styles.lightboxClose}
+              className={`${styles.lightboxClose} ${styles.mediaRemoveControl}`}
             >
-              <span aria-hidden="true">×</span>
+              <Icon name="media-remove" />
             </Dialog.Close>
             {items.length > 1 ? (
               <span aria-live="polite" className={styles.lightboxCounter}>

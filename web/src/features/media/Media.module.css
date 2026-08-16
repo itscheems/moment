@@ -326,11 +326,7 @@
   text-align: center;
 }
 
-.editorRemove {
-  position: absolute;
-  z-index: 2;
-  inset-block-start: var(--space-2);
-  inset-inline-end: var(--space-2);
+.mediaRemoveControl {
   inline-size: var(--target-size);
   block-size: var(--target-size);
   min-inline-size: var(--target-size);
@@ -346,22 +342,29 @@
   transition: background-color 140ms ease;
 }
 
-.editorRemove svg {
+.mediaRemoveControl svg {
   inline-size: 1.25rem;
   block-size: 1.25rem;
   color: #fff;
   fill: currentColor;
 }
 
-.editorRemove:hover:not(:disabled) {
+.mediaRemoveControl:hover:not(:disabled) {
   background: rgb(15 20 25 / 55%);
 }
 
-.editorRemove:focus-visible {
+.mediaRemoveControl:focus-visible {
   outline: 2px solid #fff;
   outline-offset: -3px;
   background: rgb(15 20 25 / 88%);
   box-shadow: 0 0 0 2px var(--accent);
+}
+
+.editorRemove {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
 }
 
 .editorPreview progress {
@@ -765,21 +768,8 @@
   z-index: 3;
   inset-block-start: max(var(--space-4), env(safe-area-inset-top));
   inset-inline-start: max(var(--space-4), env(safe-area-inset-left));
-  inline-size: var(--target-size);
-  block-size: var(--target-size);
-  min-inline-size: var(--target-size);
-  justify-content: center;
-  border-radius: 50%;
-  padding: 0;
-  color: #fff;
-  background: rgb(15 20 25 / 74%);
-  font-size: 1.55rem;
-  line-height: 1;
-  backdrop-filter: blur(10px);
 }
 
-.lightboxClose:hover,
-.lightboxClose:focus-visible,
 .lightboxNav:hover,
 .lightboxNav:focus-visible {
   background: rgb(47 51 54 / 92%);
