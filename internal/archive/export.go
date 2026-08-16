@@ -234,7 +234,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			return write(entryRecord{
 				ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
 				CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
-				PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, Media: media, Location: portableLocation(value.Location),
+				PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: media, Location: portableLocation(value.Location),
 			})
 		})
 	})
@@ -517,16 +517,17 @@ type usageRecord struct {
 }
 
 type entryRecord struct {
-	ID            string          `json:"id"`
-	Kind          string          `json:"kind"`
-	ContentMD     string          `json:"content_md"`
-	CreatedAt     string          `json:"created_at"`
-	UpdatedAt     string          `json:"updated_at"`
-	PublishedAt   string          `json:"published_at"`
-	RepostedAt    *string         `json:"reposted_at,omitempty"`
-	QuotedEntryID *string         `json:"quoted_entry_id,omitempty"`
-	Media         []usageRecord   `json:"media"`
-	Location      *locationRecord `json:"location,omitempty"`
+	ID               string          `json:"id"`
+	Kind             string          `json:"kind"`
+	ContentMD        string          `json:"content_md"`
+	CreatedAt        string          `json:"created_at"`
+	UpdatedAt        string          `json:"updated_at"`
+	PublishedAt      string          `json:"published_at"`
+	RepostedAt       *string         `json:"reposted_at,omitempty"`
+	QuotedEntryID    *string         `json:"quoted_entry_id,omitempty"`
+	QuoteUnavailable bool            `json:"quote_unavailable,omitempty"`
+	Media            []usageRecord   `json:"media"`
+	Location         *locationRecord `json:"location,omitempty"`
 }
 
 func portableOptionalTime(value *int64) *string {
@@ -771,6 +772,9 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 			return errors.New("entry quote is invalid")
 		}
 	}
+	if value.QuoteUnavailable && value.QuotedEntryID != nil {
+		return errors.New("entry quote cannot be available and unavailable")
+	}
 	if value.Location != nil {
 		return value.Location.Validate()
 	}
@@ -930,7 +934,7 @@ func mediaArchivePath(value sqlitestore.ArchiveMedia) (string, error) {
 	if err != nil || hex.EncodeToString(decoded) != value.SHA256 {
 		return "", errors.New("media SHA-256 is not canonical lowercase hex")
 	}
-	extension := map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif"}[value.MIMEType]
+	extension := map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/heic": "heic", "video/mp4": "mp4"}[value.MIMEType]
 	if extension == "" {
 		return "", errors.New("media MIME type is not portable")
 	}
@@ -1350,7 +1354,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, Media: usages, Location: location,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location,
 		}); err != nil {
 			return err
 		}

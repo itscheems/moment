@@ -152,7 +152,7 @@ func TestCommentHTTPGuestMediaUploadCreateAndReadContract(t *testing.T) {
 	usage := mediaItems[0].(map[string]any)
 	width, widthOK := usage["width"].(float64)
 	height, heightOK := usage["height"].(float64)
-	if usage["media_id"] != mediaID || usage["position"] != float64(0) || usage["alt_text"] != "night sky" || !widthOK || width <= 0 || !heightOK || height <= 0 || len(usage) != 5 {
+	if usage["media_id"] != mediaID || usage["position"] != float64(0) || usage["alt_text"] != "night sky" || usage["mime_type"] != "image/gif" || !widthOK || width <= 0 || !heightOK || height <= 0 || len(usage) != 6 {
 		t.Fatalf("usage = %#v", usage)
 	}
 	listed := performRequest(fixture.engine, commentRequest(http.MethodGet, path, ""))

@@ -244,7 +244,7 @@ func expectedMediaProjections(inputs []domain.EntryMediaUsage) []app.MediaUsageP
 	for index, input := range inputs {
 		projections[index] = app.MediaUsageProjection{
 			MediaID: input.MediaID, Position: input.Position, AltText: input.AltText,
-			Width: 32, Height: 32,
+			MIMEType: "image/jpeg", Width: 32, Height: 32,
 		}
 	}
 	return projections

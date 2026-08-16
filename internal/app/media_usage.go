@@ -12,6 +12,7 @@ type MediaUsageProjection struct {
 	MediaID  domain.ID
 	Position int
 	AltText  *string
+	MIMEType string
 	Width    uint32
 	Height   uint32
 }
@@ -56,7 +57,7 @@ func validateCommentMediaProjections(usages []MediaUsageProjection) error {
 
 func validateMediaProjectionDimensions(usages []MediaUsageProjection) error {
 	for index, usage := range usages {
-		if usage.Width == 0 || usage.Height == 0 {
+		if usage.Width == 0 || usage.Height == 0 || (usage.MIMEType != "image/jpeg" && usage.MIMEType != "image/png" && usage.MIMEType != "image/webp" && usage.MIMEType != "image/gif" && usage.MIMEType != "image/heic" && usage.MIMEType != "video/mp4") {
 			return domain.NewError(domain.CodeDataIntegrityFailed, "stored media dimensions are invalid", map[string]any{
 				"field":    "media",
 				"index":    index,

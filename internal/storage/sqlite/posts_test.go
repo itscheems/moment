@@ -433,6 +433,22 @@ func TestPostRepostAddsLinkedTimelineItemAndUndoRemovesIt(t *testing.T) {
 	if len(page.Items) != 2 || page.Items[0].Entry.ID != second.Post.Entry.ID {
 		t.Fatalf("restored timeline = %+v", page.Items)
 	}
+
+	if _, err := service.SetReposted(ctx, first.Post.Entry.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Delete(ctx, first.Post.Entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	page, err = service.List(ctx, app.ListPostsInput{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range page.Items {
+		if item.Entry.ID == first.Post.Entry.ID {
+			t.Fatalf("deleting the source retained a linked repost projection: %+v", page.Items)
+		}
+	}
 }
 
 func TestPostConcurrentCreatesAndDeletesPreserveOrdering(t *testing.T) {

@@ -270,7 +270,8 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	}
 	quoteAfterDelete := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts/"+quotedID, ""))
 	quoteAfterDeleteData := decodeDataMap(t, quoteAfterDelete)
-	if quoteAfterDelete.Code != http.StatusOK || quoteAfterDeleteData["content_md"] != "my take" || quoteAfterDeleteData["quoted_post"] != nil {
+	quoteTombstone, _ := quoteAfterDeleteData["quoted_post"].(map[string]any)
+	if quoteAfterDelete.Code != http.StatusOK || quoteAfterDeleteData["content_md"] != "my take" || quoteTombstone["unavailable"] != true || quoteTombstone["id"] != nil {
 		t.Fatalf("quote after target delete = %d %#v", quoteAfterDelete.Code, quoteAfterDeleteData)
 	}
 }
@@ -589,10 +590,10 @@ func assertCanonicalHTTPMedia(t *testing.T, raw any, expectedAlts []any, expecte
 	}
 	for index, rawItem := range items {
 		item, ok := rawItem.(map[string]any)
-		if !ok || len(item) != 5 || item["media_id"] != expectedIDs[index] || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) || item["width"] != float64(8) || item["height"] != float64(8) {
+		if !ok || len(item) != 6 || item["media_id"] != expectedIDs[index] || item["position"] != float64(index) || item["mime_type"] != "image/jpeg" || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) || item["width"] != float64(8) || item["height"] != float64(8) {
 			t.Fatalf("media[%d] = %#v", index, rawItem)
 		}
-		for _, field := range []string{"media_id", "position", "alt_text", "width", "height"} {
+		for _, field := range []string{"media_id", "position", "alt_text", "mime_type", "width", "height"} {
 			if _, present := item[field]; !present {
 				t.Fatalf("media[%d] omitted %s: %#v", index, field, item)
 			}

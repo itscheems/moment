@@ -234,7 +234,7 @@ func (store postStore) CommentCounts(ctx context.Context, ids []domain.ID) (map[
 
 func (store postStore) EntryMediaUsages(ctx context.Context, entryID domain.ID) ([]app.MediaUsageProjection, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT usage.media_id, usage.position, usage.alt_text, media.width, media.height
+SELECT usage.media_id, usage.position, usage.alt_text, media.mime_type, media.width, media.height
 FROM entry_media AS usage
 LEFT JOIN media ON media.id = usage.media_id
 WHERE usage.entry_id = ?
@@ -248,18 +248,19 @@ ORDER BY usage.position`, entryID.String())
 		var rawID string
 		var position int
 		var alt sql.NullString
+		var mimeType sql.NullString
 		var width, height sql.NullInt64
-		if err := rows.Scan(&rawID, &position, &alt, &width, &height); err != nil {
+		if err := rows.Scan(&rawID, &position, &alt, &mimeType, &width, &height); err != nil {
 			return nil, fmt.Errorf("scan entry media usage: %w", err)
 		}
 		id, err := domain.ParseID(rawID)
 		if err != nil {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry media ID is invalid", map[string]any{"post_id": entryID.String()})
 		}
-		if !validStoredMediaDimension(width) || !validStoredMediaDimension(height) {
+		if !mimeType.Valid || mimeType.String == "" || !validStoredMediaDimension(width) || !validStoredMediaDimension(height) {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry media dimensions are invalid", map[string]any{"post_id": entryID.String(), "media_id": id.String()})
 		}
-		usage := app.MediaUsageProjection{MediaID: id, Position: position, Width: uint32(width.Int64), Height: uint32(height.Int64)}
+		usage := app.MediaUsageProjection{MediaID: id, Position: position, MIMEType: mimeType.String, Width: uint32(width.Int64), Height: uint32(height.Int64)}
 		if alt.Valid {
 			value := alt.String
 			usage.AltText = &value
@@ -278,8 +279,9 @@ ORDER BY usage.position`, entryID.String())
 func (store postStore) ProjectMediaUsages(ctx context.Context, inputs []domain.EntryMediaUsage) ([]app.MediaUsageProjection, error) {
 	usages := make([]app.MediaUsageProjection, 0, len(inputs))
 	for _, input := range inputs {
+		var mimeType string
 		var width, height int64
-		if err := store.queries.QueryRowContext(ctx, `SELECT width, height FROM media WHERE id = ?`, input.MediaID.String()).Scan(&width, &height); err != nil {
+		if err := store.queries.QueryRowContext(ctx, `SELECT mime_type, width, height FROM media WHERE id = ?`, input.MediaID.String()).Scan(&mimeType, &width, &height); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", input.MediaID), map[string]any{"media_id": input.MediaID.String()})
 			}
@@ -292,6 +294,7 @@ func (store postStore) ProjectMediaUsages(ctx context.Context, inputs []domain.E
 			MediaID:  input.MediaID,
 			Position: input.Position,
 			AltText:  input.AltText,
+			MIMEType: mimeType,
 			Width:    uint32(width),
 			Height:   uint32(height),
 		}
@@ -424,20 +427,23 @@ INSERT INTO entry_location (
 	return nil
 }
 
-func (store postStore) EntryQuote(ctx context.Context, entryID domain.ID) (*domain.ID, error) {
+func (store postStore) EntryQuote(ctx context.Context, entryID domain.ID) (app.EntryQuoteReference, error) {
 	var raw sql.NullString
 	err := store.queries.QueryRowContext(ctx, `SELECT quoted_entry_id FROM entry_quotes WHERE entry_id = ?`, entryID.String()).Scan(&raw)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !raw.Valid) {
-		return nil, nil
+	if errors.Is(err, sql.ErrNoRows) {
+		return app.EntryQuoteReference{}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("query entry quote: %w", err)
+		return app.EntryQuoteReference{}, fmt.Errorf("query entry quote: %w", err)
+	}
+	if !raw.Valid {
+		return app.EntryQuoteReference{Present: true}, nil
 	}
 	id, err := domain.ParseID(raw.String)
 	if err != nil {
-		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored quote target is invalid", map[string]any{"post_id": entryID.String()})
+		return app.EntryQuoteReference{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored quote target is invalid", map[string]any{"post_id": entryID.String()})
 	}
-	return &id, nil
+	return app.EntryQuoteReference{Present: true, TargetID: &id}, nil
 }
 
 func (store postStore) ReplaceEntryQuote(ctx context.Context, entryID domain.ID, quotedID *domain.ID) error {

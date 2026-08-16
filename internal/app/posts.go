@@ -28,7 +28,7 @@ type PostStore interface {
 	ProjectMediaUsages(context.Context, []domain.EntryMediaUsage) ([]MediaUsageProjection, error)
 	ReplaceEntryMediaUsages(context.Context, domain.ID, []domain.EntryMediaUsage) error
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
-	EntryQuote(context.Context, domain.ID) (*domain.ID, error)
+	EntryQuote(context.Context, domain.ID) (EntryQuoteReference, error)
 	ReplaceEntryQuote(context.Context, domain.ID, *domain.ID) error
 	ReplaceEntryLocation(context.Context, domain.ID, *domain.Location) error
 	UpdateEntry(context.Context, domain.Entry, string) (bool, error)
@@ -95,10 +95,19 @@ func (item TimelineEntry) TimelineAt() time.Time {
 
 // QuotedPost is the non-recursive public projection embedded by a quote Moment.
 type QuotedPost struct {
+	Unavailable bool
 	Entry       domain.Entry
 	ContentHTML string
 	Media       []MediaUsageProjection
 	Location    *domain.Location
+}
+
+// EntryQuoteReference preserves the difference between an entry that never
+// quoted another Moment and a quote whose target has since been deleted.
+// TargetID is nil only for the latter state.
+type EntryQuoteReference struct {
+	Present  bool
+	TargetID *domain.ID
 }
 
 // CreatePostInput contains only application semantics. Authentication,
@@ -697,7 +706,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if mediaErr != nil {
 			return mediaErr
 		}
-		quoteID, mediaErr := store.EntryQuote(ctx, input.ID)
+		quoteReference, mediaErr := store.EntryQuote(ctx, input.ID)
 		if mediaErr != nil {
 			return mediaErr
 		}
@@ -760,8 +769,8 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			}
 		}
 		updated = entry
-		if quoteID != nil {
-			updatedQuoted, mediaErr = loadQuotedPost(ctx, store, *quoteID)
+		if quoteReference.Present {
+			updatedQuoted, mediaErr = loadEntryQuote(ctx, store, input.ID)
 			if mediaErr != nil {
 				return mediaErr
 			}
@@ -912,11 +921,21 @@ func validRequestHash(value string) bool {
 }
 
 func loadEntryQuote(ctx context.Context, store PostStore, entryID domain.ID) (*QuotedPost, error) {
-	quotedID, err := store.EntryQuote(ctx, entryID)
-	if err != nil || quotedID == nil {
+	reference, err := store.EntryQuote(ctx, entryID)
+	if err != nil || !reference.Present {
 		return nil, err
 	}
-	return loadQuotedPost(ctx, store, *quotedID)
+	if reference.TargetID == nil {
+		return &QuotedPost{Unavailable: true}, nil
+	}
+	quoted, err := loadQuotedPost(ctx, store, *reference.TargetID)
+	if err != nil {
+		return nil, err
+	}
+	if quoted == nil {
+		return &QuotedPost{Unavailable: true}, nil
+	}
+	return quoted, nil
 }
 
 func loadQuotedPost(ctx context.Context, store PostStore, id domain.ID) (*QuotedPost, error) {

@@ -44,7 +44,7 @@ func FromComment(comment app.Comment) Comment {
 	}
 	media := make([]MediaUsage, len(comment.Media))
 	for index, usage := range comment.Media {
-		media[index] = MediaUsage{MediaID: usage.MediaID.String(), Position: usage.Position, AltText: usage.AltText, Width: usage.Width, Height: usage.Height}
+		media[index] = MediaUsage{MediaID: usage.MediaID.String(), Position: usage.Position, AltText: usage.AltText, MIMEType: usage.MIMEType, Width: usage.Width, Height: usage.Height}
 	}
 	return Comment{
 		ID: comment.Comment.ID.String(), PostID: comment.Comment.EntryID.String(), ParentID: parentID, Depth: depth,
@@ -89,8 +89,8 @@ func ValidateComment(comment Comment) error {
 	}
 	usages := make([]domain.EntryMediaUsage, len(comment.Media))
 	for index, usage := range comment.Media {
-		if usage.Width == 0 || usage.Height == 0 {
-			return errors.New("comment media dimensions must be positive")
+		if usage.Width == 0 || usage.Height == 0 || !validProjectionMIMEType(usage.MIMEType) {
+			return errors.New("comment media projection is invalid")
 		}
 		mediaID, parseErr := domain.ParseID(usage.MediaID)
 		if parseErr != nil {
@@ -106,6 +106,15 @@ func ValidateComment(comment Comment) error {
 		return errors.New("comment content_html does not match content_md")
 	}
 	return nil
+}
+
+func validProjectionMIMEType(value string) bool {
+	switch value {
+	case "image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "video/mp4":
+		return true
+	default:
+		return false
+	}
 }
 
 // ValidateThread verifies adjacency, identity uniqueness and stable ordering.

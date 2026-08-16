@@ -30,11 +30,13 @@ type Post struct {
 	QuotedPost   *QuotedPost       `json:"quoted_post"`
 }
 
+// QuotedPost is either a complete embedded target or an explicit unavailable tombstone.
 type QuotedPost struct {
-	ID          string            `json:"id"`
-	ContentMD   string            `json:"content_md"`
-	ContentHTML string            `json:"content_html"`
-	PublishedAt time.Time         `json:"published_at"`
+	Unavailable bool              `json:"unavailable"`
+	ID          *string           `json:"id"`
+	ContentMD   *string           `json:"content_md"`
+	ContentHTML *string           `json:"content_html"`
+	PublishedAt *time.Time        `json:"published_at"`
 	Media       []MediaProjection `json:"media"`
 	Location    *Location         `json:"location"`
 }
@@ -60,6 +62,7 @@ type MediaProjection struct {
 	MediaID  string  `json:"media_id"`
 	Position int     `json:"position"`
 	AltText  *string `json:"alt_text"`
+	MIMEType string  `json:"mime_type"`
 	Width    uint32  `json:"width"`
 	Height   uint32  `json:"height"`
 }
@@ -101,6 +104,10 @@ func (usage *MediaProjection) UnmarshalJSON(data []byte) error {
 				}
 				usage.AltText = &alt
 			}
+		case "mime_type":
+			if err := decoder.Decode(&usage.MIMEType); err != nil {
+				return errors.New("mime_type must be a string")
+			}
 		case "width":
 			if err := decoder.Decode(&usage.Width); err != nil {
 				return errors.New("width must be a non-negative integer")
@@ -114,8 +121,8 @@ func (usage *MediaProjection) UnmarshalJSON(data []byte) error {
 		}
 	}
 	if token, err := decoder.Token(); err != nil || token != json.Delim('}') ||
-		!seen["media_id"] || !seen["position"] || !seen["alt_text"] || !seen["width"] || !seen["height"] {
-		return errors.New("media projection requires media_id, position, alt_text, width, and height")
+		!seen["media_id"] || !seen["position"] || !seen["alt_text"] || !seen["mime_type"] || !seen["width"] || !seen["height"] {
+		return errors.New("media projection requires media_id, position, alt_text, mime_type, width, and height")
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return errors.New("media projection contains trailing data")
@@ -184,7 +191,7 @@ type Page struct {
 func FromPost(post app.Post) Post {
 	media := make([]MediaProjection, 0, len(post.Media))
 	for _, usage := range post.Media {
-		mapped := MediaProjection{MediaID: usage.MediaID.String(), Position: usage.Position, Width: usage.Width, Height: usage.Height}
+		mapped := MediaProjection{MediaID: usage.MediaID.String(), Position: usage.Position, MIMEType: usage.MIMEType, Width: usage.Width, Height: usage.Height}
 		if usage.AltText != nil {
 			alt := *usage.AltText
 			mapped.AltText = &alt
@@ -219,12 +226,20 @@ func FromPost(post app.Post) Post {
 		}(),
 	}
 	if post.Quoted != nil {
+		if post.Quoted.Unavailable {
+			mapped.QuotedPost = &QuotedPost{Unavailable: true}
+			return mapped
+		}
 		quotedMedia := make([]MediaProjection, 0, len(post.Quoted.Media))
 		for _, usage := range post.Quoted.Media {
-			item := MediaProjection{MediaID: usage.MediaID.String(), Position: usage.Position, AltText: usage.AltText, Width: usage.Width, Height: usage.Height}
+			item := MediaProjection{MediaID: usage.MediaID.String(), Position: usage.Position, AltText: usage.AltText, MIMEType: usage.MIMEType, Width: usage.Width, Height: usage.Height}
 			quotedMedia = append(quotedMedia, item)
 		}
-		mapped.QuotedPost = &QuotedPost{ID: post.Quoted.Entry.ID.String(), ContentMD: post.Quoted.Entry.ContentMD, ContentHTML: post.Quoted.ContentHTML, PublishedAt: post.Quoted.Entry.PublishedAt.UTC(), Media: quotedMedia}
+		id := post.Quoted.Entry.ID.String()
+		contentMD := post.Quoted.Entry.ContentMD
+		contentHTML := post.Quoted.ContentHTML
+		publishedAt := post.Quoted.Entry.PublishedAt.UTC()
+		mapped.QuotedPost = &QuotedPost{ID: &id, ContentMD: &contentMD, ContentHTML: &contentHTML, PublishedAt: &publishedAt, Media: quotedMedia}
 		if post.Quoted.Location != nil {
 			mapped.QuotedPost.Location = &Location{Name: post.Quoted.Location.Name, DisplayName: post.Quoted.Location.DisplayName}
 		}
@@ -289,7 +304,7 @@ func ValidatePost(post Post) error {
 	}
 	usages := make([]domain.EntryMediaUsage, 0, len(post.Media))
 	for _, usage := range post.Media {
-		if usage.Width == 0 || usage.Height == 0 {
+		if usage.Width == 0 || usage.Height == 0 || !validProjectionMIMEType(usage.MIMEType) {
 			return errors.New("post media dimensions must be positive")
 		}
 		id, err := domain.ParseID(usage.MediaID)
@@ -312,13 +327,22 @@ func ValidatePost(post Post) error {
 		return errors.New("post content_html does not match content_md")
 	}
 	if post.QuotedPost != nil {
-		if _, err := domain.ParseID(post.QuotedPost.ID); err != nil {
+		if post.QuotedPost.Unavailable {
+			if post.QuotedPost.ID != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.Location != nil {
+				return errors.New("unavailable quoted post must not contain target data")
+			}
+			return nil
+		}
+		if post.QuotedPost.ID == nil || post.QuotedPost.ContentMD == nil || post.QuotedPost.ContentHTML == nil || post.QuotedPost.PublishedAt == nil || post.QuotedPost.Media == nil {
+			return errors.New("available quoted post requires complete target data")
+		}
+		if _, err := domain.ParseID(*post.QuotedPost.ID); err != nil {
 			return err
 		}
-		if post.QuotedPost.ID == post.ID {
+		if *post.QuotedPost.ID == post.ID {
 			return errors.New("post cannot quote itself")
 		}
-		if !wireInstant(post.QuotedPost.PublishedAt) || post.QuotedPost.Media == nil {
+		if !wireInstant(*post.QuotedPost.PublishedAt) {
 			return errors.New("quoted post is not canonical")
 		}
 		if err := validateQuotedPost(*post.QuotedPost); err != nil {
@@ -329,11 +353,14 @@ func ValidatePost(post Post) error {
 }
 
 func validateQuotedPost(post QuotedPost) error {
-	if err := domain.ValidateMarkdown(post.ContentMD); err != nil {
+	if post.ID == nil || post.ContentMD == nil || post.ContentHTML == nil || post.PublishedAt == nil {
+		return errors.New("quoted post target data is incomplete")
+	}
+	if err := domain.ValidateMarkdown(*post.ContentMD); err != nil {
 		return err
 	}
-	html, err := domain.RenderMarkdown(post.ContentMD)
-	if err != nil || html != post.ContentHTML {
+	html, err := domain.RenderMarkdown(*post.ContentMD)
+	if err != nil || html != *post.ContentHTML {
 		return errors.New("quoted post content_html does not match content_md")
 	}
 	if post.Location != nil {
@@ -344,7 +371,7 @@ func validateQuotedPost(post QuotedPost) error {
 	}
 	usages := make([]domain.EntryMediaUsage, 0, len(post.Media))
 	for _, usage := range post.Media {
-		if usage.Width == 0 || usage.Height == 0 {
+		if usage.Width == 0 || usage.Height == 0 || !validProjectionMIMEType(usage.MIMEType) {
 			return errors.New("quoted post media is not canonical")
 		}
 		id, err := domain.ParseID(usage.MediaID)
@@ -357,6 +384,15 @@ func validateQuotedPost(post QuotedPost) error {
 		return err
 	}
 	return nil
+}
+
+func validProjectionMIMEType(value string) bool {
+	switch value {
+	case "image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "video/mp4":
+		return true
+	default:
+		return false
+	}
 }
 
 // ValidatePage requires an array, including for the empty timeline, and

@@ -19,7 +19,12 @@ type PortableImporter struct {
 	entries       int64
 	comments      int64
 	media         int64
-	pendingQuotes [][2]string
+	pendingQuotes []pendingQuote
+}
+
+type pendingQuote struct {
+	entryID  string
+	targetID *string
 }
 
 // BeginPortableImport starts one isolated current-schema rebuild.
@@ -93,8 +98,11 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
 	}
-	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil && value.QuotedEntryID == nil {
+	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil && value.QuotedEntryID == nil && !value.QuoteUnavailable {
 		return err
+	}
+	if value.QuoteUnavailable && value.QuotedEntryID != nil {
+		return errors.New("portable entry quote cannot be both available and unavailable")
 	}
 	if value.QuotedEntryID != nil {
 		if _, err := domain.ParseID(*value.QuotedEntryID); err != nil {
@@ -103,7 +111,10 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 		if *value.QuotedEntryID == value.ID {
 			return errors.New("portable entry cannot quote itself")
 		}
-		importer.pendingQuotes = append(importer.pendingQuotes, [2]string{value.ID, *value.QuotedEntryID})
+		target := *value.QuotedEntryID
+		importer.pendingQuotes = append(importer.pendingQuotes, pendingQuote{entryID: value.ID, targetID: &target})
+	} else if value.QuoteUnavailable {
+		importer.pendingQuotes = append(importer.pendingQuotes, pendingQuote{entryID: value.ID})
 	}
 	if value.Location != nil {
 		if err := value.Location.Validate(); err != nil {
@@ -273,7 +284,7 @@ func (importer *PortableImporter) Commit(ctx context.Context, expected ArchiveCo
 		return errors.New("portable import counts do not match the manifest")
 	}
 	for _, quote := range importer.pendingQuotes {
-		if _, err := importer.tx.ExecContext(ctx, `INSERT INTO entry_quotes (entry_id, quoted_entry_id) VALUES (?, ?)`, quote[0], quote[1]); err != nil {
+		if _, err := importer.tx.ExecContext(ctx, `INSERT INTO entry_quotes (entry_id, quoted_entry_id) VALUES (?, ?)`, quote.entryID, quote.targetID); err != nil {
 			return fmt.Errorf("insert portable entry quote: %w", err)
 		}
 	}

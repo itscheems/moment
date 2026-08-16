@@ -183,7 +183,7 @@ ORDER BY
 
 func (store commentStore) CommentMediaUsages(ctx context.Context, commentID domain.ID) ([]app.MediaUsageProjection, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT usage.media_id, usage.position, usage.alt_text, media.width, media.height
+SELECT usage.media_id, usage.position, usage.alt_text, media.mime_type, media.width, media.height
 FROM comment_media AS usage
 LEFT JOIN media ON media.id = usage.media_id
 WHERE usage.comment_id = ?
@@ -197,18 +197,19 @@ ORDER BY usage.position`, commentID.String())
 		var rawID string
 		var position int
 		var alt sql.NullString
+		var mimeType sql.NullString
 		var width, height sql.NullInt64
-		if err := rows.Scan(&rawID, &position, &alt, &width, &height); err != nil {
+		if err := rows.Scan(&rawID, &position, &alt, &mimeType, &width, &height); err != nil {
 			return nil, fmt.Errorf("scan comment media usage: %w", err)
 		}
 		id, err := domain.ParseID(rawID)
 		if err != nil {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media ID is invalid", map[string]any{"comment_id": commentID.String()})
 		}
-		if !validStoredMediaDimension(width) || !validStoredMediaDimension(height) {
+		if !mimeType.Valid || mimeType.String == "" || !validStoredMediaDimension(width) || !validStoredMediaDimension(height) {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media dimensions are invalid", map[string]any{"comment_id": commentID.String(), "media_id": id.String()})
 		}
-		usage := app.MediaUsageProjection{MediaID: id, Position: position, Width: uint32(width.Int64), Height: uint32(height.Int64)}
+		usage := app.MediaUsageProjection{MediaID: id, Position: position, MIMEType: mimeType.String, Width: uint32(width.Int64), Height: uint32(height.Int64)}
 		if alt.Valid {
 			value := alt.String
 			usage.AltText = &value

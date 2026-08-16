@@ -1232,7 +1232,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		}
 		return importer.InsertEntry(ctx, sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, Media: usages, Location: location,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location,
 		})
 	})
 	if err != nil {
@@ -1306,7 +1306,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 }
 
 func portableStoragePath(sha, mimeType string) (string, error) {
-	extension := map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}[mimeType]
+	extension := map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", "image/heic": ".heic", "video/mp4": ".mp4"}[mimeType]
 	if len(sha) != 64 || !isLowerHex(sha) || extension == "" {
 		return "", errors.New("portable media storage identity is invalid")
 	}
@@ -1711,7 +1711,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		}
 		actualEntries = append(actualEntries, entryRecord{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS), PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, Media: usages, Location: portableLocation(value.Location),
+			CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS), PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: portableLocation(value.Location),
 		})
 		return nil
 	})

@@ -533,6 +533,9 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	if !reflect.DeepEqual(local.QuotedEntryID, incoming.QuotedEntryID) {
 		fields = append(fields, "quoted_entry_id")
 	}
+	if local.QuoteUnavailable != incoming.QuoteUnavailable {
+		fields = append(fields, "quote_unavailable")
+	}
 	if !reflect.DeepEqual(usageSignature(local.Media, localSHA), usageSignature(incoming.Media, incomingSHA)) {
 		fields = append(fields, "media")
 	}

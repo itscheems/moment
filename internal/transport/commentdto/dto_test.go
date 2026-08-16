@@ -27,7 +27,7 @@ func TestCommentMediaReadProjectionCarriesPositiveDimensions(t *testing.T) {
 			AuthorName: "Guest", ContentMD: "image comment", CreatedAt: time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC),
 		},
 		ContentHTML: "<p>image comment</p>\n",
-		Media:       []app.MediaUsageProjection{{MediaID: mediaID, Position: 0, Width: 640, Height: 480}},
+		Media:       []app.MediaUsageProjection{{MediaID: mediaID, Position: 0, MIMEType: "image/jpeg", Width: 640, Height: 480}},
 	})
 	if len(wire.Media) != 1 || wire.Media[0].Width != 640 || wire.Media[0].Height != 480 {
 		t.Fatalf("comment media = %#v", wire.Media)
