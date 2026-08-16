@@ -172,7 +172,7 @@ export function PostPresentation({
       </div>
     ) : null;
   const byline = (
-    <header className={styles.byline}>
+    <header className={`${styles.byline} ${detail ? styles.detailByline : ""}`}>
       <div className={styles.bylineIdentity}>
         <SiteIdentityPreview
           site={site}
@@ -185,18 +185,29 @@ export function PostPresentation({
             </InternalLink>
           }
         />
-        <span aria-hidden="true">·</span>
-        <ExactTimeTooltip
-          exact={published.absolute}
-          children={
-            <InternalLink
-              data-focus-key={`${timelineKey}:relative-time`}
-              href={detailHref}
-            >
-              <time dateTime={post.publishedAt}>{published.relative}</time>
-            </InternalLink>
-          }
-        />
+        <InternalLink
+          className={styles.usernameLink}
+          href={`/@${site.username}`}
+        >
+          @{site.username}
+        </InternalLink>
+        {!detail ? (
+          <>
+            <span aria-hidden="true">·</span>
+            <ExactTimeTooltip
+              exact={published.absolute}
+              children={
+                <InternalLink
+                  className={styles.timeLink}
+                  data-focus-key={`${timelineKey}:relative-time`}
+                  href={detailHref}
+                >
+                  <time dateTime={post.publishedAt}>{published.relative}</time>
+                </InternalLink>
+              }
+            />
+          </>
+        ) : null}
       </div>
       {owner ? (
         <OwnerPostActions

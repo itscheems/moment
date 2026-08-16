@@ -184,9 +184,13 @@ describe("shared post presentation", () => {
     expect(
       screen.getByRole("link", { name: "打开完整 Moment" }),
     ).toContainElement(document.querySelector('svg[data-icon="reply"]'));
+    expect(screen.getByRole("link", { name: "@owner" })).toHaveAttribute(
+      "href",
+      "/@owner",
+    );
   });
 
-  it("shows the full body and explicit absolute publication time in detail", () => {
+  it("stacks the username below the display name in detail", () => {
     const onReply = vi.fn();
     render(
       <NavigationProvider>
@@ -197,6 +201,14 @@ describe("shared post presentation", () => {
           site={site}
         />
       </NavigationProvider>,
+    );
+    const username = screen.getByRole("link", { name: "@owner" });
+    const byline = username.closest("header");
+    expect(byline).toContainElement(
+      screen.getByRole("link", { name: "Moment" }),
+    );
+    expect(byline).not.toContainElement(
+      screen.queryByRole("link", { name: /前|刚刚|小时/ }),
     );
     expect(screen.getByRole("heading", { name: "标题" })).toBeInTheDocument();
     expect(screen.getByText("完整正文")).toBeInTheDocument();
@@ -211,6 +223,9 @@ describe("shared post presentation", () => {
       screen.queryByRole("link", { name: "阅读全文" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("条回复")).not.toBeInTheDocument();
+    expect(postCss).toMatch(
+      /\._detailByline_[^{]+\s+\._bylineIdentity_[^{]+\{[^}]*flex-direction:\s*column;/s,
+    );
   });
 
   it("uses a restrained density for long detail reading", () => {
