@@ -482,10 +482,10 @@ describe("App shell and public routes", () => {
     expect(archiveLink).toHaveAttribute("aria-current", "page");
     expect(
       archiveLink.querySelector('svg[data-icon="archive"] use'),
-    ).toHaveAttribute("href", "/icons/ui-symbols-v2.svg#nav-archive-active");
+    ).toHaveAttribute("href", "/icons/ui-symbols-v3.svg#nav-archive-active");
     expect(homeLink.querySelector('svg[data-icon="home"] use')).toHaveAttribute(
       "href",
-      "/icons/ui-symbols-v2.svg#nav-home",
+      "/icons/ui-symbols-v3.svg#nav-home",
     );
   });
 

@@ -348,6 +348,8 @@
 .editorRemove svg {
   inline-size: 1.25rem;
   block-size: 1.25rem;
+  color: #fff;
+  fill: currentColor;
 }
 
 .editorRemove:hover:not(:disabled) {

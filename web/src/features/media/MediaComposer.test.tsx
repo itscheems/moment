@@ -103,6 +103,13 @@ describe("media editor", () => {
 
     const remove = screen.getByRole("button", { name: "移除第 1 张图片" });
     expect(remove.querySelector('svg[data-icon="media-remove"]')).not.toBeNull();
+    expect(remove.querySelector('svg[data-icon="media-remove"]')).toHaveAttribute(
+      "fill",
+      "currentColor",
+    );
+    expect(
+      remove.querySelector('svg[data-icon="media-remove"] use'),
+    ).toHaveAttribute("href", "/icons/ui-symbols-v3.svg#media-remove");
     expect(remove).not.toHaveTextContent("×");
     expect(mediaCss).toMatch(
       /\._editorRemove_[\w-]+\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 75%\)[^}]*backdrop-filter:\s*blur\(4px\)/,

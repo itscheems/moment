@@ -52,14 +52,14 @@ describe("ThemeMenu", () => {
     const iconUse = trigger.querySelector('svg[data-icon="more"] use');
     expect(iconUse).toHaveAttribute(
       "href",
-      "/icons/ui-symbols-v2.svg#nav-more",
+      "/icons/ui-symbols-v3.svg#nav-more",
     );
 
     fireEvent.click(trigger);
     await waitFor(() =>
       expect(iconUse).toHaveAttribute(
         "href",
-        "/icons/ui-symbols-v2.svg#nav-more-active",
+        "/icons/ui-symbols-v3.svg#nav-more-active",
       ),
     );
   });

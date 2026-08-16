@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-const iconSprite = "/icons/ui-symbols-v2.svg";
+const iconSprite = "/icons/ui-symbols-v3.svg";
 
 export type IconName =
   | "home"

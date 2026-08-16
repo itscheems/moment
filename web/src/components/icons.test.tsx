@@ -20,12 +20,12 @@ describe("Icon", () => {
 
       expect(icon?.getAttribute("fill")).toBe("currentColor");
       expect(icon?.querySelector("use")?.getAttribute("href")).toBe(
-        `/icons/ui-symbols-v2.svg#${idleSymbol}`,
+        `/icons/ui-symbols-v3.svg#${idleSymbol}`,
       );
 
       rerender(<Icon name={name} variant="navigation-active" />);
       expect(icon?.querySelector("use")?.getAttribute("href")).toBe(
-        `/icons/ui-symbols-v2.svg#${activeSymbol}`,
+        `/icons/ui-symbols-v3.svg#${activeSymbol}`,
       );
     },
   );
@@ -37,7 +37,7 @@ describe("Icon", () => {
 
     expect(icon?.getAttribute("fill")).toBe("currentColor");
     expect(use?.getAttribute("href")).toBe(
-      "/icons/ui-symbols-v2.svg#profile-camera",
+      "/icons/ui-symbols-v3.svg#profile-camera",
     );
   });
 
@@ -47,7 +47,7 @@ describe("Icon", () => {
     const use = icon?.querySelector("use");
 
     expect(icon?.getAttribute("fill")).toBe("currentColor");
-    expect(use?.getAttribute("href")).toBe("/icons/ui-symbols-v2.svg#trash");
+    expect(use?.getAttribute("href")).toBe("/icons/ui-symbols-v3.svg#trash");
   });
 
   it("renders the media removal artwork from the shared sprite", () => {
@@ -56,7 +56,7 @@ describe("Icon", () => {
 
     expect(icon?.getAttribute("fill")).toBe("currentColor");
     expect(icon?.querySelector("use")?.getAttribute("href")).toBe(
-      "/icons/ui-symbols-v2.svg#media-remove",
+      "/icons/ui-symbols-v3.svg#media-remove",
     );
   });
 });
