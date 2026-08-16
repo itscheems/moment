@@ -220,7 +220,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         mediaItems.length > 0 ||
         quotedPost !== null) &&
       count <= MAX_CONTENT &&
-      mediaError === null;
+      mediaError === null &&
+      mediaItems.every((item) => item.state === "ready");
     const hasUnpublishedChange =
       dirty &&
       (content !== initialContent || mediaChanged || locationChanged) &&
@@ -400,11 +401,83 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       idempotencyKey.current = createIdempotencyKey();
     };
 
+    const uploadOne = async (key: string, csrfToken: string) => {
+      const current = mediaItemsRef.current.find((item) => item.key === key);
+      if (!current || current.mediaId || !current.file) return;
+      const controller = new AbortController();
+      mediaUploadsRef.current.get(key)?.abort();
+      mediaUploadsRef.current.set(key, controller);
+      replaceMedia(
+        mediaItemsRef.current.map((item) =>
+          item.key === key
+            ? { ...item, state: "uploading", progress: 0, error: null }
+            : item,
+        ),
+      );
+      try {
+        const uploaded = await api.uploadMedia(
+          csrfToken,
+          current.file,
+          (progress) => {
+            if (
+              !mountedRef.current ||
+              mediaUploadsRef.current.get(key) !== controller
+            ) {
+              return;
+            }
+            replaceMedia(
+              mediaItemsRef.current.map((item) =>
+                item.key === key && item.state === "uploading"
+                  ? { ...item, progress }
+                  : item,
+              ),
+            );
+          },
+          controller.signal,
+        );
+        if (
+          !mountedRef.current ||
+          mediaUploadsRef.current.get(key) !== controller ||
+          !mediaItemsRef.current.some((item) => item.key === key)
+        ) {
+          return;
+        }
+        replaceMedia(
+          mediaItemsRef.current.map((item) =>
+            item.key === key ? applyUpload(item, uploaded) : item,
+          ),
+        );
+      } catch (nextError) {
+        if (
+          !mountedRef.current ||
+          mediaUploadsRef.current.get(key) !== controller ||
+          !mediaItemsRef.current.some((item) => item.key === key)
+        ) {
+          throw nextError;
+        }
+        const message = uploadMessage(nextError);
+        replaceMedia(
+          mediaItemsRef.current.map((item) =>
+            item.key === key
+              ? { ...item, state: "failed", progress: 0, error: message }
+              : item,
+          ),
+        );
+        throw nextError;
+      } finally {
+        if (mediaUploadsRef.current.get(key) === controller) {
+          mediaUploadsRef.current.delete(key);
+        }
+      }
+    };
+
     const addMedia = (files: File[], source: "picker" | "paste" = "picker") => {
       const next = [...mediaItemsRef.current];
+      const addedKeys: string[] = [];
       for (const file of files) {
         const item = newMediaItem(file);
         next.push(item);
+        addedKeys.push(item.key);
         void readLocalPreview(file)
           .then((localPreviewUrl) => {
             if (
@@ -446,6 +519,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           ? `已从剪贴板加入 ${files.length} 张图片。`
           : `已加入 ${files.length} 张图片。`,
       );
+      if (session) {
+        for (const key of addedKeys) {
+          void uploadOne(key, session.csrfToken).catch((nextError) => {
+            if (!mountedRef.current) return;
+            if (expireIfInvalidSession(nextError)) {
+              setAuthExpired(true);
+              setError(
+                "当前写入会话已失效。文字、媒体和上传结果已保留，刷新身份后可以重试。",
+              );
+            }
+          });
+        }
+      }
     };
 
     const pasteMedia = (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
@@ -679,76 +765,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       window.queueMicrotask(() => resume?.());
     };
 
-    const uploadOne = async (key: string, csrfToken: string) => {
-      const current = mediaItemsRef.current.find((item) => item.key === key);
-      if (!current || current.mediaId || !current.file) return;
-      const controller = new AbortController();
-      mediaUploadsRef.current.get(key)?.abort();
-      mediaUploadsRef.current.set(key, controller);
-      replaceMedia(
-        mediaItemsRef.current.map((item) =>
-          item.key === key
-            ? { ...item, state: "uploading", progress: 0, error: null }
-            : item,
-        ),
-      );
-      try {
-        const uploaded = await api.uploadMedia(
-          csrfToken,
-          current.file,
-          (progress) => {
-            if (
-              !mountedRef.current ||
-              mediaUploadsRef.current.get(key) !== controller
-            ) {
-              return;
-            }
-            replaceMedia(
-              mediaItemsRef.current.map((item) =>
-                item.key === key && item.state === "uploading"
-                  ? { ...item, progress }
-                  : item,
-              ),
-            );
-          },
-          controller.signal,
-        );
-        if (
-          !mountedRef.current ||
-          mediaUploadsRef.current.get(key) !== controller ||
-          !mediaItemsRef.current.some((item) => item.key === key)
-        ) {
-          return;
-        }
-        replaceMedia(
-          mediaItemsRef.current.map((item) =>
-            item.key === key ? applyUpload(item, uploaded) : item,
-          ),
-        );
-      } catch (nextError) {
-        if (
-          !mountedRef.current ||
-          mediaUploadsRef.current.get(key) !== controller ||
-          !mediaItemsRef.current.some((item) => item.key === key)
-        ) {
-          throw nextError;
-        }
-        const message = uploadMessage(nextError);
-        replaceMedia(
-          mediaItemsRef.current.map((item) =>
-            item.key === key
-              ? { ...item, state: "failed", progress: 0, error: message }
-              : item,
-          ),
-        );
-        throw nextError;
-      } finally {
-        if (mediaUploadsRef.current.get(key) === controller) {
-          mediaUploadsRef.current.delete(key);
-        }
-      }
-    };
-
     const retryUpload = async (key: string) => {
       if (!session || pendingRef.current) return;
       setError(null);
@@ -879,7 +895,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         } else {
           setError(
             mediaItemsRef.current.some((item) => item.state === "failed")
-              ? uploadMessage(nextError)
+              ? null
               : messageFor(nextError),
           );
         }

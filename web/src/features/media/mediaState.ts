@@ -165,6 +165,7 @@ export function applyUpload(
 ): ComposerMediaItem {
   return {
     ...item,
+    file: null,
     localPreviewUrl: null,
     mediaId: upload.id,
     previewUrl: upload.previewUrl,

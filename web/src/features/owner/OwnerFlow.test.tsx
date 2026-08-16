@@ -672,11 +672,14 @@ describe("owner composing flow", () => {
     fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: { files: [file] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发布" }));
     await waitFor(() =>
       expect(ControlledUploadRequest.requests).toHaveLength(1),
     );
     ControlledUploadRequest.requests[0].succeed(uploadEnvelope);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "发布" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
     expect(await screen.findByText(/操作没有完成/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "发布" }));
@@ -701,6 +704,7 @@ describe("owner composing flow", () => {
   it("keeps text paste native and manages image or mixed clipboard ingress", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");
+    vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
     installApi();
     render(<App />);
 
@@ -819,12 +823,13 @@ describe("owner composing flow", () => {
       },
     });
     const publish = screen.getByRole("button", { name: "发布" });
-    expect(publish).toBeEnabled();
-    fireEvent.click(publish);
+    expect(publish).toBeDisabled();
     await waitFor(() =>
       expect(ControlledUploadRequest.requests).toHaveLength(1),
     );
     ControlledUploadRequest.requests[0].succeed(uploadEnvelope);
+    await waitFor(() => expect(publish).toBeEnabled());
+    fireEvent.click(publish);
 
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     const create = fetcher.mock.calls.find(
@@ -846,6 +851,7 @@ describe("owner composing flow", () => {
   it("renders an openable local preview without extending the text draft", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");
+    vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
     installApi();
     render(<App />);
 
@@ -888,7 +894,6 @@ describe("owner composing flow", () => {
         files: [new File(["image"], "rain.png", { type: "image/png" })],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: "发布" }));
     await waitFor(() =>
       expect(ControlledUploadRequest.requests).toHaveLength(1),
     );
@@ -1151,6 +1156,7 @@ describe("owner composing flow", () => {
 
   it("uses the in-app discard dialog when closing the desktop composer", async () => {
     preauthenticate();
+    vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
     vi.mocked(window.matchMedia).mockImplementation((query) => ({
       matches: query === "(min-width: 720px)",
       media: query,

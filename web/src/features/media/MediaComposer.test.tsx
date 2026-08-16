@@ -152,6 +152,39 @@ describe("media editor", () => {
     expect(screen.getAllByRole("button", { name: /移除/ })[1]).toBeEnabled();
   });
 
+  it("reserves a stable processing tile for browser-undecodable media", () => {
+    render(
+      <MediaComposer
+        disabled={false}
+        items={[
+          {
+            ...item("00"),
+            file: new File(["heic"], "camera.heic", { type: "image/heic" }),
+            mediaId: null,
+            previewUrl: "",
+            originalUrl: "",
+            mimeType: "image/heic",
+            state: "uploading",
+            progress: 38,
+          },
+        ]}
+        onAdd={vi.fn()}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("正在处理 38%")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "预览第 1 张图片，共 1 张" }),
+    ).toHaveAttribute("data-preview-pending");
+    expect(screen.getByRole("button", { name: /移除/ })).toBeEnabled();
+    expect(mediaCss).toMatch(
+      /\[data-preview-pending\]\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3[^}]*min-block-size:\s*12rem/,
+    );
+  });
+
   it("opens attached images in a keyboard-navigable preview and restores focus", async () => {
     vi.spyOn(window, "scrollY", "get").mockReturnValue(360);
     render(<FocusHarness initial={[item("00"), item("01")]} />);

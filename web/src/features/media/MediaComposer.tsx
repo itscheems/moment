@@ -247,6 +247,7 @@ export function MediaComposer({
                       disabled={!editorPreviewUrl || !present}
                       onClick={() => setSelectedKey(item.key)}
                       type="button"
+                      data-preview-pending={editorPreviewUrl ? undefined : ""}
                     >
                       {editorPreviewUrl && isVideo ? (
                         <video
@@ -265,7 +266,12 @@ export function MediaComposer({
                         <img alt="" decoding="async" src={editorPreviewUrl} />
                       ) : (
                         <span className={styles.editorPreviewPending}>
-                          正在准备预览
+                          <span aria-hidden="true" />
+                          {item.state === "uploading"
+                            ? `正在处理 ${item.progress}%`
+                            : item.state === "failed"
+                              ? "处理未完成"
+                              : "等待处理"}
                         </span>
                       )}
                     </button>
