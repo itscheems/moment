@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 
 import type { PublicMediaUsage } from "../../api/public";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
@@ -103,6 +103,14 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
             className={styles.imageTile}
             key={`${usage.position}-${usage.mediaId}`}
             onClick={() => setSelected(index)}
+            style={
+              media.length === 1
+                ? ({
+                    "--single-media-ratio": `${usage.width} / ${usage.height}`,
+                    "--single-media-max-width": `${34 * (usage.width / usage.height)}rem`,
+                  } as CSSProperties)
+                : undefined
+            }
             type="button"
           >
             {failed.has(usageKey(usage)) ? (

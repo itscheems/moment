@@ -557,17 +557,16 @@
 }
 
 .imageGrid[data-media-count="1"] .imageTile {
-  inline-size: auto;
+  inline-size: min(100%, var(--single-media-max-width));
   block-size: auto;
+  aspect-ratio: var(--single-media-ratio);
   max-inline-size: 100%;
   max-block-size: 34rem;
 }
 
 .imageGrid[data-media-count="1"] .imageTile img {
-  inline-size: auto;
-  block-size: auto;
-  max-inline-size: 100%;
-  max-block-size: 34rem;
+  inline-size: 100%;
+  block-size: 100%;
   object-fit: contain;
 }
 

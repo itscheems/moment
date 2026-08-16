@@ -80,10 +80,16 @@ describe("public image grid", () => {
 
     expect(image).toHaveAttribute("width", "1200");
     expect(image).toHaveAttribute("height", "800");
-    expect(tile).not.toHaveAttribute("style");
+    expect(tile).toHaveStyle({
+      "--single-media-ratio": "1200 / 800",
+      "--single-media-max-width": "51rem",
+    });
 
     fireEvent.load(image);
-    expect(tile).not.toHaveAttribute("style");
+    expect(tile).toHaveStyle({
+      "--single-media-ratio": "1200 / 800",
+      "--single-media-max-width": "51rem",
+    });
     expect(container.querySelector('[data-media-order="1"]')).toBeNull();
   });
 
