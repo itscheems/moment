@@ -292,7 +292,7 @@ export function MediaComposer({
                       }}
                       type="button"
                     >
-                      <span aria-hidden="true">×</span>
+                      <Icon name="media-remove" />
                     </button>
                     {item.state === "uploading" ? (
                       <progress

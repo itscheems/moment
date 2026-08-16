@@ -332,17 +332,30 @@
   block-size: var(--target-size);
   min-inline-size: var(--target-size);
   justify-content: center;
+  border: 1px solid transparent;
   border-radius: 50%;
   padding: 0;
   color: #fff;
-  background: rgb(15 20 25 / 82%);
-  font-size: 1.35rem;
-  line-height: 1;
+  background: rgb(15 20 25 / 75%);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
-.editorRemove:hover:not(:disabled),
+.editorRemove svg {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+
+.editorRemove:hover:not(:disabled) {
+  background: rgb(15 20 25 / 88%);
+}
+
 .editorRemove:focus-visible {
-  background: rgb(15 20 25 / 96%);
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+  background: rgb(15 20 25 / 88%);
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .editorPreview progress {

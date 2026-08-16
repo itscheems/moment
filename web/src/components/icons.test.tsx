@@ -49,4 +49,14 @@ describe("Icon", () => {
     expect(icon?.getAttribute("fill")).toBe("currentColor");
     expect(use?.getAttribute("href")).toBe("/icons/ui-symbols-v2.svg#trash");
   });
+
+  it("renders the media removal artwork from the shared sprite", () => {
+    const { container } = render(<Icon name="media-remove" />);
+    const icon = container.querySelector('svg[data-icon="media-remove"]');
+
+    expect(icon?.getAttribute("fill")).toBe("currentColor");
+    expect(icon?.querySelector("use")?.getAttribute("href")).toBe(
+      "/icons/ui-symbols-v2.svg#media-remove",
+    );
+  });
 });

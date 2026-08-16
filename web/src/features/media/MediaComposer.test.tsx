@@ -89,6 +89,26 @@ describe("media editor", () => {
     expect(icon?.querySelectorAll("path")).toHaveLength(2);
   });
 
+  it("uses the shared compact removal artwork on media previews", () => {
+    render(
+      <MediaComposer
+        disabled={false}
+        items={[item("00")]}
+        onAdd={vi.fn()}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    const remove = screen.getByRole("button", { name: "移除第 1 张图片" });
+    expect(remove.querySelector('svg[data-icon="media-remove"]')).not.toBeNull();
+    expect(remove).not.toHaveTextContent("×");
+    expect(mediaCss).toMatch(
+      /\._editorRemove_[\w-]+\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 75%\)[^}]*backdrop-filter:\s*blur\(4px\)/,
+    );
+  });
+
   it("preserves duplicate selections as two ordered usages", () => {
     const onAdd = vi.fn();
     render(

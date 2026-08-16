@@ -17,6 +17,7 @@ export type IconName =
   | "share"
   | "media"
   | "media-picker"
+  | "media-remove"
   | "more"
   | "edit"
   | "delete"
@@ -109,6 +110,7 @@ const paths: Record<IconName, React.ReactNode> = {
       />
     </>
   ),
+  "media-remove": <use href={`${iconSprite}#media-remove`} />,
   more: (
     <>
       <circle cx="5" cy="12" r="1" />
@@ -177,6 +179,7 @@ const filledIcons = new Set<IconName>([
   "delete",
   "camera",
   "media-picker",
+  "media-remove",
   "location-picker",
   "repost",
 ]);
