@@ -245,12 +245,70 @@
 
 .editorPreviewButton img,
 .editorPreviewButton video,
+.editorVideoPreview,
+.editorVideoPreview video,
 .editorPreview > img,
 .editorPreview > video {
   inline-size: 100%;
   block-size: 100%;
   display: block;
   object-fit: cover;
+}
+
+.editorVideoPreview {
+  position: relative;
+  overflow: hidden;
+  background: #111820;
+}
+
+.editorVideoPreview video {
+  position: relative;
+  z-index: 1;
+  opacity: 0;
+  transition:
+    opacity 180ms var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.editorVideoPreview[data-video-frame="ready"] video {
+  opacity: 1;
+}
+
+.videoCoverFallback {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  color: rgb(255 255 255 / 88%);
+  background:
+    radial-gradient(circle at 68% 24%, rgb(42 167 255 / 22%), transparent 36%),
+    linear-gradient(145deg, #202a35, #10161d 58%, #18232e);
+  text-align: center;
+}
+
+.videoCoverFallback svg {
+  inline-size: 2rem;
+  block-size: 2rem;
+}
+
+.videoCoverFallback span {
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.videoCoverFallback small {
+  max-inline-size: min(100%, 22rem);
+  overflow: hidden;
+  color: rgb(255 255 255 / 58%);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mediaEditorList[data-media-count="1"] .editorPreviewButton,
@@ -367,16 +425,100 @@
   inset-inline-end: var(--space-2);
 }
 
-.editorPreview progress {
+.mediaUploadStatus,
+.mediaUploadSuccess {
   position: absolute;
-  z-index: 2;
-  inset-block-end: 0;
-  inset-inline: 0;
+  z-index: 3;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transform: translate(-50%, -50%);
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 1rem;
+  padding: var(--space-2) var(--space-3);
+  color: #fff;
+  background: rgb(15 20 25 / 76%);
+  box-shadow: 0 0.3rem 1.2rem rgb(0 0 0 / 24%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: var(--text-xs);
+  font-weight: 750;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.uploadProgressRing {
+  position: relative;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.uploadProgressRing svg {
+  position: absolute;
+  inset: 0;
   inline-size: 100%;
-  block-size: 0.35rem;
-  border: 0;
-  margin: 0;
-  accent-color: var(--accent);
+  block-size: 100%;
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+
+.uploadProgressRing circle {
+  fill: none;
+  stroke: rgb(255 255 255 / 24%);
+  stroke-width: 3;
+}
+
+.uploadProgressRing circle + circle {
+  stroke: #fff;
+  stroke-dasharray: var(--upload-progress) 100;
+  stroke-linecap: round;
+  transition: stroke-dasharray 180ms var(--ease-out);
+}
+
+.uploadProgressRing strong {
+  font-family: var(--font-utility);
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.mediaUploadStatus[data-processing="true"] .uploadProgressRing svg {
+  animation: media-processing-spin 900ms linear infinite;
+}
+
+.mediaUploadStatus[data-processing="true"] .uploadProgressRing circle + circle {
+  stroke-dasharray: 28 72;
+}
+
+.mediaUploadSuccess {
+  animation: media-upload-success 1.6s var(--ease-out) both;
+}
+
+.mediaUploadSuccess svg {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+  stroke-width: 2.3;
+}
+
+@keyframes media-upload-success {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 0.4rem)) scale(0.96);
+  }
+  12%,
+  78% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% - 0.25rem)) scale(0.98);
+  }
 }
 
 .mediaFailures {
@@ -932,6 +1074,7 @@
   .imageTile video,
   .editorPreviewButton img,
   .editorPreviewButton video,
+  .editorVideoPreview video,
   .mediaToolbar button,
   .editorRemove,
   .lightboxBackdrop,
@@ -946,6 +1089,11 @@
   }
 
   .editorPreviewPending > span {
+    animation: none;
+  }
+
+  .mediaUploadStatus[data-processing="true"] .uploadProgressRing svg,
+  .mediaUploadSuccess {
     animation: none;
   }
 }

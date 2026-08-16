@@ -184,6 +184,91 @@ describe("media editor", () => {
     ).toHaveValue(47);
     expect(screen.getByRole("button", { name: /重试上传/ })).toBeEnabled();
     expect(screen.getAllByRole("button", { name: /移除/ })[1]).toBeEnabled();
+    expect(screen.getByRole("status")).toHaveTextContent("上传 47%");
+    expect(mediaCss).toContain("inset-block-start: 50%");
+    expect(mediaCss).toContain("backdrop-filter: blur(8px)");
+  });
+
+  it("shows a local video cover with processing feedback instead of a blank tile", () => {
+    const video = {
+      ...item("00"),
+      file: new File(["video"], "climb.mov", { type: "video/quicktime" }),
+      localPreviewUrl: "blob:http://localhost/local-video",
+      mediaId: null,
+      previewUrl: "",
+      originalUrl: "",
+      mimeType: "video/quicktime",
+      previewMimeType: "",
+      state: "uploading" as const,
+      progress: 99,
+    };
+    const { container } = render(
+      <MediaComposer
+        disabled={false}
+        items={[video]}
+        onAdd={vi.fn()}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("正在读取视频封面")).toBeInTheDocument();
+    expect(screen.getByText("climb.mov")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("正在处理视频");
+    const preview = container.querySelector("video");
+    expect(preview).not.toBeNull();
+    Object.defineProperty(preview, "duration", { value: 10 });
+    fireEvent.loadedMetadata(preview!);
+    expect(preview).toHaveProperty("currentTime", 0.25);
+    fireEvent.loadedData(preview!);
+    expect(container.querySelector("[data-video-frame]")).toHaveAttribute(
+      "data-video-frame",
+      "ready",
+    );
+  });
+
+  it("briefly confirms a completed video upload", async () => {
+    const uploading = {
+      ...item("00"),
+      file: new File(["video"], "climb.mp4", { type: "video/mp4" }),
+      localPreviewUrl: "blob:http://localhost/local-video",
+      mediaId: null,
+      previewUrl: "",
+      originalUrl: "",
+      mimeType: "video/mp4",
+      previewMimeType: "",
+      state: "uploading" as const,
+      progress: 80,
+    };
+    const ready = {
+      ...uploading,
+      file: null,
+      localPreviewUrl: null,
+      mediaId: "01K2ABCDEF0123456789ABCD00",
+      previewUrl: "/api/v1/media/00/preview",
+      originalUrl: "/api/v1/media/00",
+      previewMimeType: "video/mp4",
+      state: "ready" as const,
+      progress: 100,
+    };
+    const props = {
+      disabled: false,
+      onAdd: vi.fn(),
+      onChange: vi.fn(),
+      onRemove: vi.fn(),
+      onRetry: vi.fn(),
+    };
+    const { rerender } = render(
+      <MediaComposer {...props} items={[uploading]} />,
+    );
+
+    rerender(<MediaComposer {...props} items={[ready]} />);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("视频已上传");
+    expect(
+      screen.getByRole("status").querySelector('svg[data-icon="check"]'),
+    ).not.toBeNull();
   });
 
   it("reserves a stable processing tile for browser-undecodable media", () => {

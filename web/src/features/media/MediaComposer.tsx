@@ -3,6 +3,7 @@ import {
   type ChangeEvent,
   forwardRef,
   type ReactNode,
+  type SyntheticEvent,
   useEffect,
   useId,
   useRef,
@@ -31,6 +32,70 @@ const MEDIA_SPRING = {
   duration: 0.5,
   bounce: 0.3,
 };
+
+const UPLOAD_SUCCESS_DURATION_MS = 1_600;
+
+function VideoEditorPreview({
+  fileName,
+  height,
+  poster,
+  src,
+  width,
+}: {
+  fileName: string | null;
+  height?: number;
+  poster?: string;
+  src: string;
+  width?: number;
+}) {
+  const [frameState, setFrameState] = useState<
+    "loading" | "ready" | "unavailable"
+  >(poster ? "ready" : "loading");
+
+  useEffect(() => {
+    setFrameState(poster ? "ready" : "loading");
+  }, [poster, src]);
+
+  const revealFrame = () => setFrameState("ready");
+  const seekIntoVideo = (event: SyntheticEvent<HTMLVideoElement>) => {
+    const video = event.currentTarget;
+    if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+    try {
+      video.currentTime = Math.min(0.25, video.duration / 20);
+    } catch {
+      // Some browser/container combinations reject seeking before their first
+      // decoded frame. loadedData still reveals that first usable frame.
+    }
+  };
+
+  return (
+    <span className={styles.editorVideoPreview} data-video-frame={frameState}>
+      <span className={styles.videoCoverFallback} aria-hidden="true">
+        <Icon name="media" />
+        <span>
+          {frameState === "unavailable"
+            ? "视频封面将在处理后显示"
+            : "正在读取视频封面"}
+        </span>
+        {fileName ? <small>{fileName}</small> : null}
+      </span>
+      <video
+        aria-hidden="true"
+        height={height}
+        muted
+        onError={() => setFrameState("unavailable")}
+        onLoadedData={revealFrame}
+        onLoadedMetadata={seekIntoVideo}
+        onSeeked={revealFrame}
+        playsInline
+        poster={poster}
+        preload="metadata"
+        src={src}
+        width={width}
+      />
+    </span>
+  );
+}
 
 const MediaPresenceItem = forwardRef<
   HTMLLIElement,
@@ -107,6 +172,13 @@ export function MediaComposer({
   const pickerRef = useRef<HTMLButtonElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
   const focusAfterChange = useRef<string | null | undefined>(undefined);
+  const previousUploadStates = useRef(
+    new Map(items.map((item) => [item.key, item.state])),
+  );
+  const uploadSuccessTimers = useRef(new Map<string, number>());
+  const [recentlyUploaded, setRecentlyUploaded] = useState<Set<string>>(
+    () => new Set(),
+  );
   const containsVideo = items.some((item) => isVideoMimeType(item.mimeType));
 
   const selectedItemIndex = items.findIndex((item) => item.key === selectedKey);
@@ -163,6 +235,50 @@ export function MediaComposer({
       else pickerRef.current?.focus();
     });
   }, [items]);
+
+  useEffect(() => {
+    const completed = items.filter(
+      (item) =>
+        previousUploadStates.current.get(item.key) === "uploading" &&
+        item.state === "ready",
+    );
+    previousUploadStates.current = new Map(
+      items.map((item) => [item.key, item.state]),
+    );
+    if (completed.length === 0) return;
+
+    setRecentlyUploaded((current) => {
+      const next = new Set(current);
+      for (const item of completed) next.add(item.key);
+      return next;
+    });
+    for (const item of completed) {
+      const existing = uploadSuccessTimers.current.get(item.key);
+      if (existing !== undefined) window.clearTimeout(existing);
+      uploadSuccessTimers.current.set(
+        item.key,
+        window.setTimeout(() => {
+          uploadSuccessTimers.current.delete(item.key);
+          setRecentlyUploaded((current) => {
+            if (!current.has(item.key)) return current;
+            const next = new Set(current);
+            next.delete(item.key);
+            return next;
+          });
+        }, UPLOAD_SUCCESS_DURATION_MS),
+      );
+    }
+  }, [items]);
+
+  useEffect(
+    () => () => {
+      for (const timer of uploadSuccessTimers.current.values()) {
+        window.clearTimeout(timer);
+      }
+      uploadSuccessTimers.current.clear();
+    },
+    [],
+  );
 
   const selectionError =
     controlledSelectionError === undefined
@@ -242,6 +358,13 @@ export function MediaComposer({
               item.mimeType === "image/heic" && !item.previewUrl
                 ? null
                 : item.localPreviewUrl || item.previewUrl || null;
+            const processing =
+              item.state === "uploading" && item.progress >= 99;
+            const uploadStatus = processing
+              ? isVideo
+                ? "正在处理视频"
+                : "正在处理媒体"
+              : `上传 ${item.progress}%`;
             return (
               <MediaPresenceItem
                 itemKey={item.key}
@@ -264,17 +387,14 @@ export function MediaComposer({
                       data-preview-pending={editorPreviewUrl ? undefined : ""}
                     >
                       {editorPreviewUrl && isVideo ? (
-                        <video
-                          aria-hidden="true"
+                        <VideoEditorPreview
+                          fileName={item.file?.name ?? null}
                           height={item.height ?? undefined}
-                          muted
-                          playsInline
                           poster={
                             item.mediaId
                               ? `/api/v1/media/${encodeURIComponent(item.mediaId)}/poster`
                               : undefined
                           }
-                          preload="metadata"
                           src={editorPreviewUrl}
                           width={item.width ?? undefined}
                         />
@@ -317,15 +437,52 @@ export function MediaComposer({
                       <Icon name="media-remove" />
                     </button>
                     {item.state === "uploading" ? (
-                      <progress
-                        aria-label={
-                          isVideo
-                            ? `第 ${index + 1} 项上传进度`
-                            : `第 ${index + 1} 张上传进度`
-                        }
-                        max="100"
-                        value={item.progress}
-                      />
+                      <>
+                        <div
+                          aria-live="polite"
+                          className={styles.mediaUploadStatus}
+                          data-processing={processing ? "true" : undefined}
+                          role="status"
+                        >
+                          <span
+                            aria-hidden="true"
+                            className={styles.uploadProgressRing}
+                            style={
+                              {
+                                "--upload-progress": item.progress,
+                              } as CSSProperties
+                            }
+                          >
+                            <svg viewBox="0 0 44 44">
+                              <circle cx="22" cy="22" r="18" />
+                              <circle cx="22" cy="22" pathLength="100" r="18" />
+                            </svg>
+                            <strong>
+                              {processing ? "…" : `${item.progress}%`}
+                            </strong>
+                          </span>
+                          <span>{uploadStatus}</span>
+                        </div>
+                        <progress
+                          aria-label={
+                            isVideo
+                              ? `第 ${index + 1} 项上传进度`
+                              : `第 ${index + 1} 张上传进度`
+                          }
+                          className={styles.srOnly}
+                          max="100"
+                          value={item.progress}
+                        />
+                      </>
+                    ) : recentlyUploaded.has(item.key) ? (
+                      <div
+                        aria-live="polite"
+                        className={styles.mediaUploadSuccess}
+                        role="status"
+                      >
+                        <Icon name="check" />
+                        <span>{isVideo ? "视频已上传" : "媒体已上传"}</span>
+                      </div>
                     ) : null}
                   </div>
                 )}
