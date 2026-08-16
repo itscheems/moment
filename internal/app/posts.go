@@ -22,7 +22,7 @@ type PostStore interface {
 	EntryMediaReferenceStore
 	InsertEntry(context.Context, domain.Entry, string) error
 	EntryByID(context.Context, domain.ID) (domain.Entry, bool, error)
-	ListEntries(context.Context, TimelineQuery, int) ([]domain.Entry, error)
+	ListEntries(context.Context, TimelineQuery, int) ([]TimelineEntry, error)
 	CommentCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
 	EntryMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
 	ProjectMediaUsages(context.Context, []domain.EntryMediaUsage) ([]MediaUsageProjection, error)
@@ -58,11 +58,39 @@ type IdempotencyRecord struct {
 // the canonical domain authority; ContentHTML is always rebuilt from ContentMD.
 type Post struct {
 	Entry        domain.Entry
+	TimelineKind TimelineItemKind
 	ContentHTML  string
 	Media        []MediaUsageProjection
 	Location     *domain.Location
 	CommentCount int
 	Quoted       *QuotedPost
+}
+
+// TimelineItemKind distinguishes the canonical publication from the owner's
+// later repost activity. Both projections point at the same authoritative
+// Entry and therefore share media, comments, detail URL, and undo state.
+type TimelineItemKind string
+
+const (
+	// TimelineItemOriginal is the canonical publication surface.
+	TimelineItemOriginal TimelineItemKind = "original"
+	// TimelineItemRepost is the linked owner repost activity surface.
+	TimelineItemRepost TimelineItemKind = "repost"
+)
+
+// TimelineEntry is the repository projection used only by chronological
+// lists. Repost does not clone an Entry; it creates a second activity surface.
+type TimelineEntry struct {
+	Entry domain.Entry
+	Kind  TimelineItemKind
+}
+
+// TimelineAt returns the ordering instant for this specific list projection.
+func (item TimelineEntry) TimelineAt() time.Time {
+	if item.Kind == TimelineItemRepost && item.Entry.RepostedAt != nil {
+		return *item.Entry.RepostedAt
+	}
+	return item.Entry.PublishedAt
 }
 
 // QuotedPost is the non-recursive public projection embedded by a quote Moment.
@@ -523,7 +551,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		return PostPage{}, err
 	}
 
-	var entries []domain.Entry
+	var entries []TimelineEntry
 	mediaByEntry := make(map[domain.ID][]MediaUsageProjection)
 	locationByEntry := make(map[domain.ID]*domain.Location)
 	commentCounts := make(map[domain.ID]int)
@@ -534,7 +562,15 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		if storeErr != nil {
 			return storeErr
 		}
-		for _, entry := range entries {
+		ids := make([]domain.ID, 0, len(entries))
+		loadedEntries := make(map[domain.ID]struct{}, len(entries))
+		for _, item := range entries {
+			entry := item.Entry
+			if _, loaded := loadedEntries[entry.ID]; loaded {
+				continue
+			}
+			loadedEntries[entry.ID] = struct{}{}
+			ids = append(ids, entry.ID)
 			mediaByEntry[entry.ID], storeErr = store.EntryMediaUsages(ctx, entry.ID)
 			if storeErr != nil {
 				return storeErr
@@ -548,10 +584,6 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 				return storeErr
 			}
 		}
-		ids := make([]domain.ID, 0, len(entries))
-		for _, entry := range entries {
-			ids = append(ids, entry.ID)
-		}
 		commentCounts, storeErr = store.CommentCounts(ctx, ids)
 		return storeErr
 	})
@@ -564,19 +596,22 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		entries = entries[:limit]
 	}
 	page := PostPage{Items: make([]Post, 0, len(entries))}
-	for _, entry := range entries {
+	for _, item := range entries {
+		entry := item.Entry
 		post, renderErr := renderPost(entry, mediaByEntry[entry.ID], locationByEntry[entry.ID], commentCounts[entry.ID])
 		if renderErr != nil {
 			return PostPage{}, renderErr
 		}
 		post.Quoted = quotedByEntry[entry.ID]
+		post.TimelineKind = item.Kind
 		page.Items = append(page.Items, post)
 	}
 	if hasNext {
 		last := entries[len(entries)-1]
 		page.NextCursor = encodeTimelineCursor(TimelinePosition{
 			TimelineAtMS: domain.TimeToMillis(last.TimelineAt()),
-			ID:           last.ID,
+			Kind:         last.Kind,
+			ID:           last.Entry.ID,
 		}, fromMS, toMS)
 	}
 	return page, nil

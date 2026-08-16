@@ -15,19 +15,21 @@ const (
 	DefaultPostPageSize = 20
 	// MaxPostPageSize bounds repository work for one timeline request.
 	MaxPostPageSize  = 100
-	timelineCursorV3 = 3
+	timelineCursorV4 = 4
 	maxCursorBytes   = 512
 )
 
 // TimelinePosition is the private keyset boundary passed to repositories.
 type TimelinePosition struct {
 	TimelineAtMS int64
+	Kind         TimelineItemKind
 	ID           domain.ID
 }
 
 type timelineCursorPayload struct {
 	Version      int    `json:"v"`
 	TimelineAtMS int64  `json:"timeline_at_ms"`
+	Kind         string `json:"kind"`
 	ID           string `json:"id"`
 	FromMS       *int64 `json:"from_ms"`
 	ToMS         *int64 `json:"to_ms"`
@@ -35,8 +37,9 @@ type timelineCursorPayload struct {
 
 func encodeTimelineCursor(position TimelinePosition, fromMS, toMS *int64) string {
 	payload, err := json.Marshal(timelineCursorPayload{
-		Version:      timelineCursorV3,
+		Version:      timelineCursorV4,
 		TimelineAtMS: position.TimelineAtMS,
+		Kind:         string(position.Kind),
 		ID:           position.ID.String(),
 		FromMS:       fromMS,
 		ToMS:         toMS,
@@ -67,7 +70,11 @@ func decodeTimelineCursor(value string, fromMS, toMS *int64) (*TimelinePosition,
 	if err := requireJSONEOF(decoder); err != nil {
 		return nil, invalidCursor()
 	}
-	if payload.Version != timelineCursorV3 || !equalOptionalMillis(payload.FromMS, fromMS) || !equalOptionalMillis(payload.ToMS, toMS) {
+	if payload.Version != timelineCursorV4 || !equalOptionalMillis(payload.FromMS, fromMS) || !equalOptionalMillis(payload.ToMS, toMS) {
+		return nil, invalidCursor()
+	}
+	kind := TimelineItemKind(payload.Kind)
+	if kind != TimelineItemOriginal && kind != TimelineItemRepost {
 		return nil, invalidCursor()
 	}
 	canonical, err := json.Marshal(payload)
@@ -78,7 +85,7 @@ func decodeTimelineCursor(value string, fromMS, toMS *int64) (*TimelinePosition,
 	if err != nil {
 		return nil, invalidCursor()
 	}
-	return &TimelinePosition{TimelineAtMS: payload.TimelineAtMS, ID: id}, nil
+	return &TimelinePosition{TimelineAtMS: payload.TimelineAtMS, Kind: kind, ID: id}, nil
 }
 
 func equalOptionalMillis(left, right *int64) bool {

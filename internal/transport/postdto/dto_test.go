@@ -30,6 +30,9 @@ func TestPostMediaReadProjectionCarriesStrictPositiveDimensions(t *testing.T) {
 	if err := ValidatePost(wire); err != nil {
 		t.Fatal(err)
 	}
+	if wire.TimelineKind != string(app.TimelineItemOriginal) {
+		t.Fatalf("canonical timeline kind = %q", wire.TimelineKind)
+	}
 	encoded, err := json.Marshal(wire.Media[0])
 	if err != nil {
 		t.Fatal(err)
@@ -57,6 +60,32 @@ func TestPostMediaReadProjectionCarriesStrictPositiveDimensions(t *testing.T) {
 	wire.Media[0].Height = 0
 	if err := ValidatePost(wire); err == nil {
 		t.Fatal("accepted zero media height")
+	}
+}
+
+func TestRepostTimelineProjectionRequiresActiveRepost(t *testing.T) {
+	instant := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
+	id, err := domain.ParseID("01ARZ3NDEKTSV4RRFFQ69G5FAV")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := FromPost(app.Post{
+		Entry: domain.Entry{
+			ID: id, Kind: domain.KindMoment, ContentMD: "reposted",
+			CreatedAt: instant, UpdatedAt: instant, PublishedAt: instant,
+		},
+		TimelineKind: app.TimelineItemRepost,
+		ContentHTML:  "<p>reposted</p>\n",
+		Media:        []app.MediaUsageProjection{},
+	})
+	if err := ValidatePost(wire); err == nil {
+		t.Fatal("accepted repost projection without reposted_at")
+	}
+	repostedAt := instant.Add(time.Minute)
+	wire.RepostedAt = &repostedAt
+	wire.UpdatedAt = repostedAt
+	if err := ValidatePost(wire); err != nil {
+		t.Fatal(err)
 	}
 }
 

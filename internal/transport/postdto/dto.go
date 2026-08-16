@@ -23,6 +23,7 @@ type Post struct {
 	UpdatedAt    time.Time         `json:"updated_at"`
 	PublishedAt  time.Time         `json:"published_at"`
 	RepostedAt   *time.Time        `json:"reposted_at"`
+	TimelineKind string            `json:"timeline_item_kind"`
 	CommentCount int               `json:"comment_count"`
 	Media        []MediaProjection `json:"media"`
 	Location     *Location         `json:"location"`
@@ -195,6 +196,10 @@ func FromPost(post app.Post) Post {
 		value := post.Entry.RepostedAt.UTC()
 		repostedAt = &value
 	}
+	timelineKind := post.TimelineKind
+	if timelineKind == "" {
+		timelineKind = app.TimelineItemOriginal
+	}
 	mapped := Post{
 		ID:           post.Entry.ID.String(),
 		ContentMD:    post.Entry.ContentMD,
@@ -203,6 +208,7 @@ func FromPost(post app.Post) Post {
 		UpdatedAt:    post.Entry.UpdatedAt.UTC(),
 		PublishedAt:  post.Entry.PublishedAt.UTC(),
 		RepostedAt:   repostedAt,
+		TimelineKind: string(timelineKind),
 		CommentCount: post.CommentCount,
 		Media:        media,
 		Location: func() *Location {
@@ -256,6 +262,12 @@ func ValidatePost(post Post) error {
 	}
 	if post.RepostedAt != nil && (!wireInstant(*post.RepostedAt) || post.RepostedAt.Before(post.PublishedAt) || post.UpdatedAt.Before(*post.RepostedAt)) {
 		return errors.New("post reposted_at is not canonical")
+	}
+	if post.TimelineKind != string(app.TimelineItemOriginal) && post.TimelineKind != string(app.TimelineItemRepost) {
+		return errors.New("post timeline_item_kind is invalid")
+	}
+	if post.TimelineKind == string(app.TimelineItemRepost) && post.RepostedAt == nil {
+		return errors.New("repost timeline item requires reposted_at")
 	}
 	if post.UpdatedAt.Before(post.CreatedAt) {
 		return errors.New("post updated_at precedes created_at")

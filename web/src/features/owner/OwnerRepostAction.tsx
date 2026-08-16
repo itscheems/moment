@@ -56,7 +56,7 @@ export function OwnerRepostAction({ post }: { post: PublicPost }) {
           aria-label="转发这条 Moment"
           aria-pressed={active}
           className={`${postStyles.postAction} ${postStyles.repostAction} ${active ? postStyles.repostActive : ""}`}
-          data-focus-key={`${post.id}:repost`}
+          data-focus-key={`${post.id}:${post.timelineItemKind}:repost`}
           disabled={pending}
           onClick={(event) => event.stopPropagation()}
         >

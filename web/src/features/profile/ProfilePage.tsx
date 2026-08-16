@@ -40,6 +40,10 @@ import {
   validateCursorPage,
   withoutLoadedProgress,
 } from "../timeline/cursorContinuity";
+import {
+  reconcileTimelineEvent,
+  timelineItemKey,
+} from "../timeline/timelineItems";
 import styles from "./ProfilePage.module.css";
 import { ProfileEditor } from "./ProfileEditor";
 
@@ -185,7 +189,7 @@ export function ProfilePage({
         combined = appendUnique(
           combined,
           page.items,
-          (post) => post.id,
+          timelineItemKey,
           "profile",
         );
       }
@@ -211,25 +215,7 @@ export function ProfilePage({
   useEffect(
     () =>
       listenForOwnerPosts((event) => {
-        setPosts((current) => {
-          if (event.kind === "deleted")
-            return current.filter((post) => post.id !== event.post.id);
-          if (event.kind === "created")
-            return [
-              event.post,
-              ...current.filter((post) => post.id !== event.post.id),
-            ];
-          const next = current.map((post) =>
-            post.id === event.post.id ? event.post : post,
-          );
-          if (event.kind !== "reordered") return next;
-          return next.sort(
-            (left, right) =>
-              Date.parse(right.repostedAt ?? right.publishedAt) -
-                Date.parse(left.repostedAt ?? left.publishedAt) ||
-              right.id.localeCompare(left.id),
-          );
-        });
+        setPosts((current) => reconcileTimelineEvent(current, event));
         setPinnedPost((current) =>
           current?.id === event.post.id
             ? event.kind === "deleted"
@@ -267,11 +253,13 @@ export function ProfilePage({
       const visited = new Set(visitedCursors.current);
       visited.add(requestedCursor);
       validateCursorPage(page, requestedCursor, visited, "profile");
-      const firstNew = page.items[0]?.id;
+      const firstNew = page.items[0]
+        ? timelineItemKey(page.items[0])
+        : undefined;
       const combined = appendUnique(
         posts,
         page.items,
-        (post) => post.id,
+        timelineItemKey,
         "profile",
       );
       visitedCursors.current = visited;
@@ -280,8 +268,10 @@ export function ProfilePage({
       navigation.replaceTimelineProgress(requestedCursor);
       if (source === "manual" && firstNew) {
         window.requestAnimationFrame(() => {
-          document
-            .querySelector<HTMLElement>(`[data-post-id="${firstNew}"]`)
+          Array.from(
+            document.querySelectorAll<HTMLElement>("[data-timeline-item-key]"),
+          )
+            .find((element) => element.dataset.timelineItemKey === firstNew)
             ?.focus({ preventScroll: true });
         });
       }
@@ -388,10 +378,14 @@ export function ProfilePage({
               />
             ) : null}
             {posts
-              .filter((post) => post.id !== pinnedPost?.id)
+              .filter(
+                (post) =>
+                  post.id !== pinnedPost?.id ||
+                  post.timelineItemKind === "repost",
+              )
               .map((post) => (
                 <PostPresentation
-                  key={post.id}
+                  key={timelineItemKey(post)}
                   onReply={(event) => openReply(post, event)}
                   onSiteChanged={onSiteSaved}
                   owner={owner.state === "owner"}

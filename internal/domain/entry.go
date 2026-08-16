@@ -67,15 +67,6 @@ func (entry Entry) Validate() error {
 	return nil
 }
 
-// TimelineAt is the activity instant used only for public timeline ordering.
-// Original publication and archive dates remain anchored to PublishedAt.
-func (entry Entry) TimelineAt() time.Time {
-	if entry.RepostedAt != nil {
-		return *entry.RepostedAt
-	}
-	return entry.PublishedAt
-}
-
 // SetReposted applies or removes the owner's single repost activity while
 // preserving the original publication instant.
 func (entry *Entry) SetReposted(active bool, now time.Time) {

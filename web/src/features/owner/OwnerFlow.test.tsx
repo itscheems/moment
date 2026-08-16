@@ -219,6 +219,7 @@ function post(
     updated_at: "2026-08-10T01:00:00.000Z",
     published_at: "2026-08-10T01:00:00.000Z",
     reposted_at: null,
+    timeline_item_kind: "original",
     quoted_post: null,
     comment_count: 0,
     media,
@@ -539,6 +540,7 @@ describe("owner composing flow", () => {
           data: {
             ...post("原始 Moment", quotedId),
             reposted_at: "2026-08-10T02:00:00.000Z",
+            timeline_item_kind: "original",
           },
           meta: { request_id: "req_repost" },
         });

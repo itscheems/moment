@@ -129,6 +129,7 @@ export function PostPresentation({
   const collapsed = !detail && longInTimeline(post);
   const longDetail = detail && longInTimeline(post);
   const detailHref = `/m/${encodeURIComponent(post.id)}`;
+  const timelineKey = `${post.id}:${post.timelineItemKind}`;
 
   const openFromSurface = (event: MouseEvent<HTMLElement>) => {
     if (
@@ -161,12 +162,13 @@ export function PostPresentation({
       <span>已置顶</span>
     </div>
   ) : null;
-  const repostLabel = post.repostedAt ? (
-    <div className={styles.repostedLabel}>
-      <Icon name="repost" />
-      <span>已转发</span>
-    </div>
-  ) : null;
+  const repostLabel =
+    post.timelineItemKind === "repost" ? (
+      <div className={styles.repostedLabel}>
+        <Icon name="repost" />
+        <span>已转发</span>
+      </div>
+    ) : null;
   const byline = (
     <header className={styles.byline}>
       <div className={styles.bylineIdentity}>
@@ -186,7 +188,7 @@ export function PostPresentation({
           exact={published.absolute}
           children={
             <InternalLink
-              data-focus-key={`${post.id}:relative-time`}
+              data-focus-key={`${timelineKey}:relative-time`}
               href={detailHref}
             >
               <time dateTime={post.publishedAt}>{published.relative}</time>
@@ -269,6 +271,7 @@ export function PostPresentation({
         aria-label={`${title}发布的 Moment，${published.absolute}`}
         className={`${styles.post} ${styles.detail} ${fresh ? styles.fresh : ""}`}
         data-post-id={post.id}
+        data-timeline-item-key={timelineKey}
         tabIndex={-1}
       >
         {repostLabel}
@@ -325,13 +328,14 @@ export function PostPresentation({
       aria-label={`${title}发布的 Moment，${published.absolute}`}
       className={`${styles.post} ${detail ? styles.detail : ""} ${fresh ? styles.fresh : ""}`}
       data-post-id={post.id}
+      data-timeline-item-key={timelineKey}
       onClick={openFromSurface}
       tabIndex={-1}
     >
       <InternalLink
         aria-label="打开这条 Moment 详情"
         className={styles.surfaceLink}
-        data-focus-key={`${post.id}:surface-link`}
+        data-focus-key={`${timelineKey}:surface-link`}
         href={detailHref}
       >
         <span className={styles.srOnly}>打开这条 Moment 详情</span>
@@ -352,7 +356,7 @@ export function PostPresentation({
         {collapsed ? (
           <InternalLink
             className={styles.readMore}
-            data-focus-key={`${post.id}:read-more`}
+            data-focus-key={`${timelineKey}:read-more`}
             href={detailHref}
           >
             阅读全文
@@ -364,7 +368,7 @@ export function PostPresentation({
               <button
                 aria-label="回复这条 Moment"
                 className={`${styles.postAction} ${styles.replyAction}`}
-                data-focus-key={`${post.id}:reply`}
+                data-focus-key={`${timelineKey}:reply`}
                 onClick={onReply}
                 type="button"
               >
@@ -379,7 +383,7 @@ export function PostPresentation({
               <InternalLink
                 aria-label={`打开完整 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
                 className={`${styles.postAction} ${styles.replyAction}`}
-                data-focus-key={`${post.id}:open-post`}
+                data-focus-key={`${timelineKey}:open-post`}
                 href={detailHref}
               >
                 <Icon name="reply" />

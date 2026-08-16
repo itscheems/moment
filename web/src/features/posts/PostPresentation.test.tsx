@@ -54,6 +54,7 @@ function makePost(
     updatedAt: "2026-08-10T01:00:00.000Z",
     publishedAt: "2026-08-10T01:00:00.000Z",
     repostedAt: null,
+    timelineItemKind: "original",
     commentCount,
     media: [],
   };
@@ -64,6 +65,7 @@ describe("shared post presentation", () => {
     const reposted = {
       ...makePost("再次分享", "<p>再次分享</p>"),
       repostedAt: "2026-08-10T02:00:00.000Z",
+      timelineItemKind: "repost" as const,
     };
     const { rerender } = render(
       <NavigationProvider>
@@ -143,7 +145,7 @@ describe("shared post presentation", () => {
     );
     expect(screen.getByRole("link", { name: "阅读全文" })).toHaveAttribute(
       "data-focus-key",
-      "01K2ABCDEF0123456789ABCDE0:read-more",
+      "01K2ABCDEF0123456789ABCDE0:original:read-more",
     );
     const time = screen.getByRole("link", { name: "1小时前" });
     expect(time).not.toHaveAttribute("title");
@@ -340,7 +342,7 @@ describe("shared post presentation", () => {
     expect(link).toHaveAttribute("href", "/m/01K2ABCDEF0123456789ABCDE0");
     expect(link).toHaveAttribute(
       "data-focus-key",
-      "01K2ABCDEF0123456789ABCDE0:surface-link",
+      "01K2ABCDEF0123456789ABCDE0:original:surface-link",
     );
     link.focus();
     expect(link).toHaveFocus();
@@ -591,6 +593,7 @@ describe("shared post presentation", () => {
                 updated_at: "2026-08-10T02:00:00.000Z",
                 published_at: "2026-08-10T01:00:00.000Z",
                 reposted_at: "2026-08-10T02:00:00.000Z",
+                timeline_item_kind: "original",
                 quoted_post: null,
                 comment_count: 0,
                 media: [],

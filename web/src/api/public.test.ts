@@ -17,6 +17,7 @@ const post = {
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
   reposted_at: null,
+  timeline_item_kind: "original",
   quoted_post: null,
   comment_count: 0,
   media: [],
@@ -311,6 +312,7 @@ describe("public API client", () => {
           updatedAt: post.updated_at,
           publishedAt: post.published_at,
           repostedAt: post.reposted_at,
+          timelineItemKind: "original",
           commentCount: post.comment_count,
           media: [],
           location: null,
@@ -624,6 +626,40 @@ describe("public API client", () => {
     );
     await expect(duplicate.timeline()).rejects.toMatchObject({
       code: "API_RESPONSE_INVALID",
+    });
+  });
+
+  it("accepts linked original and repost projections of the same Moment", async () => {
+    const repostedAt = "2026-08-10T02:00:00.000Z";
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            items: [
+              {
+                ...post,
+                updated_at: repostedAt,
+                reposted_at: repostedAt,
+                timeline_item_kind: "repost",
+              },
+              {
+                ...post,
+                updated_at: repostedAt,
+                reposted_at: repostedAt,
+                timeline_item_kind: "original",
+              },
+            ],
+          },
+          meta: { next_cursor: null },
+        }),
+      ) as typeof fetch,
+    );
+
+    await expect(api.timeline()).resolves.toMatchObject({
+      items: [
+        { id: post.id, timelineItemKind: "repost", repostedAt },
+        { id: post.id, timelineItemKind: "original", repostedAt },
+      ],
     });
   });
 

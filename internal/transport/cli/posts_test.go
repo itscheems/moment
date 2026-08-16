@@ -533,6 +533,26 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 		}
 	}
 
+	repostOutput := execute(application, "", "post", "repost", ids[1].String(), "--data-dir", fixture.dataDir, "--json")
+	if repostOutput.exit != ExitSuccess || commandData(t, repostOutput)["timeline_item_kind"] != "original" {
+		t.Fatalf("repost = %#v", repostOutput)
+	}
+	linked := commandData(t, execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--from", "2026-08-10", "--to", "2026-08-11", "--json"))["items"].([]any)
+	linkedKinds := map[string]bool{}
+	for _, raw := range linked {
+		item := raw.(map[string]any)
+		if item["id"] == ids[1].String() {
+			linkedKinds[item["timeline_item_kind"].(string)] = true
+		}
+	}
+	if len(linkedKinds) != 2 || !linkedKinds["original"] || !linkedKinds["repost"] {
+		t.Fatalf("linked CLI timeline = %#v", linked)
+	}
+	unrepostOutput := execute(application, "", "post", "unrepost", ids[1].String(), "--data-dir", fixture.dataDir, "--json")
+	if unrepostOutput.exit != ExitSuccess || commandData(t, unrepostOutput)["reposted_at"] != nil {
+		t.Fatalf("unrepost = %#v", unrepostOutput)
+	}
+
 	cancelledContext, cancel := context.WithCancel(context.Background())
 	cancel()
 	var stdout, stderr bytes.Buffer

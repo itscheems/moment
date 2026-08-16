@@ -25,6 +25,7 @@ import {
   validateCursorPage,
   withoutLoadedProgress,
 } from "./cursorContinuity";
+import { reconcileTimelineEvent, timelineItemKey } from "./timelineItems";
 import styles from "./TimelinePage.module.css";
 
 const MAX_REPLAY_PAGES = 1_000;
@@ -111,24 +112,9 @@ export function TimelinePage({
   const reconcileOwnerEvents = useCallback((items: PublicPost[]) => {
     let reconciled = items;
     for (const event of ownerEvents.current.values()) {
-      if (event.kind === "created") {
-        reconciled = [
-          event.post,
-          ...reconciled.filter((post) => post.id !== event.post.id),
-        ];
-      } else if (event.kind === "updated" || event.kind === "reordered") {
-        reconciled = reconciled.map((post) =>
-          post.id === event.post.id ? event.post : post,
-        );
-      } else {
-        reconciled = reconciled.filter((post) => post.id !== event.post.id);
-      }
+      reconciled = reconcileTimelineEvent(reconciled, event);
     }
-    return reconciled.sort((left, right) => {
-      const leftTime = Date.parse(left.repostedAt ?? left.publishedAt);
-      const rightTime = Date.parse(right.repostedAt ?? right.publishedAt);
-      return rightTime - leftTime || right.id.localeCompare(left.id);
-    });
+    return reconciled;
   }, []);
 
   const loadInitial = useCallback(async () => {
@@ -181,7 +167,7 @@ export function TimelinePage({
         combined = appendUnique(
           combined,
           page.items,
-          (post) => post.id,
+          timelineItemKey,
           "timeline",
         );
       }
@@ -210,34 +196,11 @@ export function TimelinePage({
       listenForOwnerPosts((event) => {
         ownerEvents.current.set(event.post.id, event);
         setPosts((current) => {
-          let next: PublicPost[];
           if (event.kind === "created") {
-            next = [
-              event.post,
-              ...current.filter((post) => post.id !== event.post.id),
-            ];
             setFreshId(event.post.id);
             window.setTimeout(() => setFreshId(null), 700);
-          } else if (event.kind === "updated") {
-            next = current.map((post) =>
-              post.id === event.post.id ? event.post : post,
-            );
-          } else if (event.kind === "reordered") {
-            next = current
-              .map((post) => (post.id === event.post.id ? event.post : post))
-              .sort((left, right) => {
-                const leftTime = Date.parse(
-                  left.repostedAt ?? left.publishedAt,
-                );
-                const rightTime = Date.parse(
-                  right.repostedAt ?? right.publishedAt,
-                );
-                return rightTime - leftTime || right.id.localeCompare(left.id);
-              });
-          } else {
-            next = current.filter((post) => post.id !== event.post.id);
           }
-          return next;
+          return reconcileTimelineEvent(current, event);
         });
       }),
     [],
@@ -289,11 +252,13 @@ export function TimelinePage({
       const visited = new Set(visitedCursors.current);
       visited.add(requestedCursor);
       validateCursorPage(page, requestedCursor, visited, "timeline");
-      const firstNew = page.items[0]?.id;
+      const firstNew = page.items[0]
+        ? timelineItemKey(page.items[0])
+        : undefined;
       const combined = appendUnique(
         posts,
         page.items,
-        (post) => post.id,
+        timelineItemKey,
         "timeline",
       );
       visitedCursors.current = visited;
@@ -302,8 +267,10 @@ export function TimelinePage({
       replaceTimelineProgress(requestedCursor);
       if (source === "manual" && firstNew) {
         window.requestAnimationFrame(() => {
-          Array.from(document.querySelectorAll<HTMLElement>("[data-post-id]"))
-            .find((element) => element.dataset.postId === firstNew)
+          Array.from(
+            document.querySelectorAll<HTMLElement>("[data-timeline-item-key]"),
+          )
+            .find((element) => element.dataset.timelineItemKey === firstNew)
             ?.focus({ preventScroll: true });
         });
       }
@@ -350,7 +317,7 @@ export function TimelinePage({
         {posts.map((post) => (
           <PostPresentation
             fresh={post.id === freshId}
-            key={post.id}
+            key={timelineItemKey(post)}
             owner={owner}
             onReply={(event) => openReply(post, event)}
             onSiteChanged={onSiteChanged}

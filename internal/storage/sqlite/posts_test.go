@@ -374,7 +374,7 @@ func TestPostTimelineUsesStableDualKeyCursor(t *testing.T) {
 	}
 }
 
-func TestPostRepostMovesMomentToTopAndUndoRestoresChronology(t *testing.T) {
+func TestPostRepostAddsLinkedTimelineItemAndUndoRemovesIt(t *testing.T) {
 	t.Parallel()
 	db, _ := openTestDatabase(t, Options{})
 	base := time.UnixMilli(1_700_000_000_000)
@@ -401,8 +401,22 @@ func TestPostRepostMovesMomentToTopAndUndoRestoresChronology(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Items) != 2 || page.Items[0].Entry.ID != first.Post.Entry.ID {
+	if len(page.Items) != 3 ||
+		page.Items[0].Entry.ID != first.Post.Entry.ID || page.Items[0].TimelineKind != app.TimelineItemRepost ||
+		page.Items[1].Entry.ID != second.Post.Entry.ID || page.Items[1].TimelineKind != app.TimelineItemOriginal ||
+		page.Items[2].Entry.ID != first.Post.Entry.ID || page.Items[2].TimelineKind != app.TimelineItemOriginal {
 		t.Fatalf("reposted timeline = %+v", page.Items)
+	}
+	if page.Items[0].Entry.RepostedAt == nil || page.Items[2].Entry.RepostedAt == nil {
+		t.Fatalf("linked repost state missing from timeline = %+v", page.Items)
+	}
+	firstPage, err := service.List(ctx, app.ListPostsInput{Limit: 1})
+	if err != nil || len(firstPage.Items) != 1 || firstPage.NextCursor == "" {
+		t.Fatalf("first repost page = %+v, %v", firstPage, err)
+	}
+	secondPage, err := service.List(ctx, app.ListPostsInput{Limit: 1, Cursor: firstPage.NextCursor})
+	if err != nil || len(secondPage.Items) != 1 || secondPage.Items[0].Entry.ID != second.Post.Entry.ID {
+		t.Fatalf("continued repost page = %+v, %v", secondPage, err)
 	}
 
 	unreposted, err := service.SetReposted(ctx, first.Post.Entry.ID, false)

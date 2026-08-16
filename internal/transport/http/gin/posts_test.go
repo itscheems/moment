@@ -190,14 +190,36 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	repostRequest := ownerRequest(http.MethodPut, "/api/v1/owner/posts/"+id+"/repost", "")
 	repostRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	reposted := performRequest(fixture.engine, repostRequest)
-	if reposted.Code != http.StatusOK || decodeDataMap(t, reposted)["reposted_at"] == nil {
+	repostedData := decodeDataMap(t, reposted)
+	if reposted.Code != http.StatusOK || repostedData["reposted_at"] == nil || repostedData["timeline_item_kind"] != "original" {
 		t.Fatalf("repost = %d %s", reposted.Code, reposted.Body.String())
+	}
+	timeline := decodeDataMap(t, performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts?limit=10", "")))["items"].([]any)
+	linkedKinds := map[string]bool{}
+	for _, raw := range timeline {
+		item := raw.(map[string]any)
+		if item["id"] == id {
+			linkedKinds[item["timeline_item_kind"].(string)] = true
+		}
+	}
+	if len(linkedKinds) != 2 || !linkedKinds["original"] || !linkedKinds["repost"] {
+		t.Fatalf("repost timeline = %#v", timeline)
 	}
 	unrepostRequest := ownerRequest(http.MethodDelete, "/api/v1/owner/posts/"+id+"/repost", "")
 	unrepostRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	unreposted := performRequest(fixture.engine, unrepostRequest)
 	if unreposted.Code != http.StatusOK || decodeDataMap(t, unreposted)["reposted_at"] != nil {
 		t.Fatalf("unrepost = %d %s", unreposted.Code, unreposted.Body.String())
+	}
+	timeline = decodeDataMap(t, performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts?limit=10", "")))["items"].([]any)
+	linkedCount := 0
+	for _, raw := range timeline {
+		if raw.(map[string]any)["id"] == id {
+			linkedCount++
+		}
+	}
+	if linkedCount != 1 {
+		t.Fatalf("unrepost timeline = %#v", timeline)
 	}
 
 	pinRequest := ownerRequest(http.MethodPut, "/api/v1/owner/posts/"+id+"/pin", "")

@@ -30,6 +30,7 @@ export interface PublicPost {
   updatedAt: string;
   publishedAt: string;
   repostedAt: string | null;
+  timelineItemKind: "original" | "repost";
   commentCount: number;
   media: PublicMediaUsage[];
   location?: PublicPostLocation | null;
@@ -594,6 +595,7 @@ export function parsePost(value: unknown): PublicPost {
     "updated_at",
     "published_at",
     "reposted_at",
+    "timeline_item_kind",
     "comment_count",
     "media",
   ];
@@ -673,6 +675,16 @@ export function parsePost(value: unknown): PublicPost {
       nullableStringField(value, "reposted_at") === null
         ? null
         : instantField(value, "reposted_at"),
+    timelineItemKind: (() => {
+      const kind = stringField(value, "timeline_item_kind");
+      if (kind !== "original" && kind !== "repost") {
+        throw invalidResponse("post timeline item kind is invalid");
+      }
+      if (kind === "repost" && value.reposted_at === null) {
+        throw invalidResponse("repost timeline item requires reposted_at");
+      }
+      return kind;
+    })(),
     commentCount: nonNegativeIntegerField(value, "comment_count"),
     media,
     location,
@@ -703,6 +715,7 @@ function parseSearchHit(value: unknown): SearchHit {
     "updated_at",
     "published_at",
     "reposted_at",
+    "timeline_item_kind",
     "comment_count",
     "media",
     "snippet",
@@ -1128,12 +1141,13 @@ export class PublicApi {
       throw invalidResponse("next_cursor must be a string or null");
     }
     const items = data.items.map(parsePost);
-    const ids = new Set<string>();
+    const timelineKeys = new Set<string>();
     for (const item of items) {
-      if (ids.has(item.id)) {
-        throw invalidResponse("timeline page contains a duplicate post");
+      const key = `${item.id}:${item.timelineItemKind}`;
+      if (timelineKeys.has(key)) {
+        throw invalidResponse("timeline page contains a duplicate item");
       }
-      ids.add(item.id);
+      timelineKeys.add(key);
     }
     return { items, nextCursor };
   }

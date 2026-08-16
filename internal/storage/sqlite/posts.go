@@ -163,12 +163,24 @@ WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment)))
 	return entry, true, nil
 }
 
-func (store postStore) ListEntries(ctx context.Context, query app.TimelineQuery, limit int) ([]domain.Entry, error) {
+func (store postStore) ListEntries(ctx context.Context, query app.TimelineQuery, limit int) ([]app.TimelineEntry, error) {
 	statement := `
-SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms
-FROM entries
-WHERE kind = ?`
-	arguments := []any{string(domain.KindMoment)}
+WITH timeline_entries AS (
+  SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms,
+         published_at_ms AS timeline_at_ms, 0 AS timeline_kind
+  FROM entries
+  WHERE kind = ?
+  UNION ALL
+  SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms,
+         reposted_at_ms AS timeline_at_ms, 1 AS timeline_kind
+  FROM entries
+  WHERE kind = ? AND reposted_at_ms IS NOT NULL
+)
+SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms,
+       timeline_at_ms, timeline_kind
+FROM timeline_entries
+WHERE 1 = 1`
+	arguments := []any{string(domain.KindMoment), string(domain.KindMoment)}
 	if query.FromMS != nil {
 		statement += "\n  AND published_at_ms >= ?"
 		arguments = append(arguments, *query.FromMS)
@@ -178,10 +190,16 @@ WHERE kind = ?`
 		arguments = append(arguments, *query.ToMS)
 	}
 	if query.Position != nil {
-		statement += "\n  AND (COALESCE(reposted_at_ms, published_at_ms) < ? OR (COALESCE(reposted_at_ms, published_at_ms) = ? AND id < ?))"
-		arguments = append(arguments, query.Position.TimelineAtMS, query.Position.TimelineAtMS, query.Position.ID.String())
+		kind := timelineKindRank(query.Position.Kind)
+		statement += `
+  AND (timeline_at_ms < ? OR (
+    timeline_at_ms = ? AND (
+      timeline_kind < ? OR (timeline_kind = ? AND id < ?)
+    )
+  ))`
+		arguments = append(arguments, query.Position.TimelineAtMS, query.Position.TimelineAtMS, kind, kind, query.Position.ID.String())
 	}
-	statement += "\nORDER BY COALESCE(reposted_at_ms, published_at_ms) DESC, id DESC\nLIMIT ?"
+	statement += "\nORDER BY timeline_at_ms DESC, timeline_kind DESC, id DESC\nLIMIT ?"
 	arguments = append(arguments, limit)
 	rows, err := store.queries.QueryContext(ctx, statement, arguments...)
 	if err != nil {
@@ -189,9 +207,9 @@ WHERE kind = ?`
 	}
 	defer func() { _ = rows.Close() }()
 
-	entries := make([]domain.Entry, 0, limit)
+	entries := make([]app.TimelineEntry, 0, limit)
 	for rows.Next() {
-		entry, scanErr := scanEntry(rows)
+		entry, scanErr := scanTimelineEntry(rows)
 		if scanErr != nil {
 			return nil, fmt.Errorf("scan timeline entry: %w", scanErr)
 		}
@@ -201,6 +219,13 @@ WHERE kind = ?`
 		return nil, fmt.Errorf("iterate timeline entries: %w", err)
 	}
 	return entries, nil
+}
+
+func timelineKindRank(kind app.TimelineItemKind) int {
+	if kind == app.TimelineItemRepost {
+		return 1
+	}
+	return 0
 }
 
 func (store postStore) CommentCounts(ctx context.Context, ids []domain.ID) (map[domain.ID]int, error) {
@@ -537,6 +562,51 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 		return domain.Entry{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry violates the domain contract", map[string]any{"post_id": id.String()})
 	}
 	return entry, nil
+}
+
+func scanTimelineEntry(scanner entryScanner) (app.TimelineEntry, error) {
+	var (
+		idString                          string
+		kind                              string
+		content                           string
+		createdAt, updatedAt, publishedAt int64
+		repostedAt                        sql.NullInt64
+		timelineAt                        int64
+		timelineKind                      int
+	)
+	if err := scanner.Scan(&idString, &kind, &content, &createdAt, &updatedAt, &publishedAt, &repostedAt, &timelineAt, &timelineKind); err != nil {
+		return app.TimelineEntry{}, err
+	}
+	id, err := domain.ParseID(idString)
+	if err != nil {
+		return app.TimelineEntry{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry has an invalid ID", nil)
+	}
+	entry := domain.Entry{
+		ID:          id,
+		Kind:        domain.EntryKind(kind),
+		ContentMD:   content,
+		CreatedAt:   domain.TimeFromMillis(createdAt),
+		UpdatedAt:   domain.TimeFromMillis(updatedAt),
+		PublishedAt: domain.TimeFromMillis(publishedAt),
+	}
+	if repostedAt.Valid {
+		value := domain.TimeFromMillis(repostedAt.Int64)
+		entry.RepostedAt = &value
+	}
+	if err := entry.Validate(); err != nil {
+		return app.TimelineEntry{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry violates the domain contract", map[string]any{"post_id": id.String()})
+	}
+	itemKind := app.TimelineItemOriginal
+	if timelineKind == 1 {
+		itemKind = app.TimelineItemRepost
+	} else if timelineKind != 0 {
+		return app.TimelineEntry{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored timeline item has an invalid kind", map[string]any{"post_id": id.String()})
+	}
+	item := app.TimelineEntry{Entry: entry, Kind: itemKind}
+	if domain.TimeToMillis(item.TimelineAt()) != timelineAt {
+		return app.TimelineEntry{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored timeline item has an invalid activity time", map[string]any{"post_id": id.String()})
+	}
+	return item, nil
 }
 
 func exactlyOneChanged(result sql.Result, operation string) (bool, error) {
