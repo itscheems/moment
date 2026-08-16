@@ -114,6 +114,12 @@ describe("media editor", () => {
     expect(mediaCss).toMatch(
       /\._editorRemove_[\w-]+\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 75%\)[^}]*backdrop-filter:\s*blur\(4px\)/,
     );
+    expect(mediaCss).toMatch(
+      /\._editorRemove_[\w-]+:hover:not\(:disabled\)\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 55%\)/,
+    );
+    expect(mediaCss).toMatch(
+      /\._editorRemove_[\w-]+\s*\{[^}]*transition:\s*background-color 140ms ease/,
+    );
   });
 
   it("preserves duplicate selections as two ordered usages", () => {
