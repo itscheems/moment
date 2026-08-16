@@ -3,6 +3,7 @@ import { useState, type CSSProperties } from "react";
 import type { PublicMediaUsage } from "../../api/public";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import { ViewportVideo } from "./ViewportVideo";
+import { isVideoMimeType } from "./mediaState";
 import styles from "./Media.module.css";
 
 function mediaAlt(
@@ -12,7 +13,7 @@ function mediaAlt(
 ): string {
   if (usage.altText === "") return "";
   if (usage.altText !== null) return usage.altText;
-  return usage.mimeType === "video/mp4"
+  return isVideoMimeType(usage.mimeType)
     ? `未提供视频描述，第 ${index + 1} 项，共 ${total} 项`
     : `未提供图片描述，第 ${index + 1} 张，共 ${total} 张`;
 }
@@ -24,13 +25,13 @@ function tileName(
 ): string {
   const state =
     usage.altText === null
-      ? usage.mimeType === "video/mp4"
+      ? isVideoMimeType(usage.mimeType)
         ? "尚未提供视频描述"
         : "尚未提供图片描述"
       : usage.altText === ""
         ? "明确标记为纯装饰"
         : usage.altText;
-  return usage.mimeType === "video/mp4"
+  return isVideoMimeType(usage.mimeType)
     ? `打开第 ${index + 1} 项视频，共 ${total} 项：${state}`
     : `打开第 ${index + 1} 张图片，共 ${total} 张：${state}`;
 }
@@ -62,7 +63,7 @@ function MediaAsset({
   eagerVideo: boolean;
   onError: () => void;
 }) {
-  if (usage.mimeType === "video/mp4") {
+  if (isVideoMimeType(usage.mimeType)) {
     return (
       <ViewportVideo
         eager={eagerVideo}
@@ -96,7 +97,7 @@ export function ImageGrid({
   const [selected, setSelected] = useState<number | null>(null);
   const [failed, setFailed] = useState(() => new Set<string>());
   if (media.length === 0) return null;
-  const containsVideo = media.some((usage) => usage.mimeType === "video/mp4");
+  const containsVideo = media.some((usage) => isVideoMimeType(usage.mimeType));
   const lightboxItems: MediaLightboxItem[] = media.map((usage, index) => ({
     key: usageKey(usage),
     previewSrc: previewUrl(usage.mediaId),
@@ -104,21 +105,20 @@ export function ImageGrid({
     alt: mediaAlt(usage, index, media.length),
     description:
       usage.altText === null
-        ? usage.mimeType === "video/mp4"
+        ? isVideoMimeType(usage.mimeType)
           ? "这段视频尚未填写描述。"
           : "这张图片尚未填写描述。"
         : usage.altText === ""
-          ? usage.mimeType === "video/mp4"
+          ? isVideoMimeType(usage.mimeType)
             ? "这是一段明确标记为装饰用途的视频。"
             : "这是一张明确标记为装饰用途的图片。"
           : usage.altText,
     width: usage.width,
     height: usage.height,
-    kind: usage.mimeType === "video/mp4" ? "video" : "image",
-    posterSrc:
-      usage.mimeType === "video/mp4"
-        ? `/api/v1/media/${encodeURIComponent(usage.mediaId)}/poster`
-        : null,
+    kind: isVideoMimeType(usage.mimeType) ? "video" : "image",
+    posterSrc: isVideoMimeType(usage.mimeType)
+      ? `/api/v1/media/${encodeURIComponent(usage.mediaId)}/poster`
+      : null,
   }));
 
   const markFailed = (usage: PublicMediaUsage) => {

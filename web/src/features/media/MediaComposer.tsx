@@ -20,6 +20,7 @@ import type { ComposerMediaItem } from "./mediaState";
 import {
   MAX_MEDIA_COUNT,
   MAX_ALT_CODE_POINTS,
+  isVideoMimeType,
   selectMediaFiles,
 } from "./mediaState";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
@@ -106,7 +107,7 @@ export function MediaComposer({
   const pickerRef = useRef<HTMLButtonElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
   const focusAfterChange = useRef<string | null | undefined>(undefined);
-  const containsVideo = items.some((item) => item.mimeType === "video/mp4");
+  const containsVideo = items.some((item) => isVideoMimeType(item.mimeType));
 
   const selectedItemIndex = items.findIndex((item) => item.key === selectedKey);
   const selectedIndex =
@@ -123,22 +124,22 @@ export function MediaComposer({
           ? item.altText
           : item.altMode === "decorative"
             ? ""
-            : item.mimeType === "video/mp4"
+            : isVideoMimeType(item.mimeType)
               ? `未提供视频描述，第 ${index + 1} 项，共 ${items.length} 项`
               : `未提供图片描述，第 ${index + 1} 张，共 ${items.length} 张`,
       description:
         item.altMode === "provided"
           ? item.altText
           : item.altMode === "decorative"
-            ? item.mimeType === "video/mp4"
+            ? isVideoMimeType(item.mimeType)
               ? "这是一段明确标记为装饰用途的视频。"
               : "这是一张明确标记为装饰用途的图片。"
-            : item.mimeType === "video/mp4"
+            : isVideoMimeType(item.mimeType)
               ? "这段视频尚未填写描述。"
               : "这张图片尚未填写描述。",
-      kind: item.mimeType === "video/mp4" ? "video" : "image",
+      kind: isVideoMimeType(item.mimeType) ? "video" : "image",
       posterSrc:
-        item.mimeType === "video/mp4" && item.mediaId
+        isVideoMimeType(item.mimeType) && item.mediaId
           ? `/api/v1/media/${encodeURIComponent(item.mediaId)}/poster`
           : null,
     };
@@ -206,7 +207,7 @@ export function MediaComposer({
       className={`${styles.composerMedia} ${compact ? styles.compactComposer : ""} ${className ?? ""}`}
     >
       <input
-        accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,.heic,.heif,.mp4,.m4v"
+        accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/quicktime,.heic,.heif,.mp4,.m4v,.mov,.qt"
         aria-describedby={`${inputId}-guidance`}
         aria-label="媒体文件"
         disabled={disabled || items.length >= maximum}
@@ -226,7 +227,7 @@ export function MediaComposer({
       >
         <AnimatePresence initial={false} mode="popLayout">
           {items.map((item, index) => {
-            const isVideo = item.mimeType === "video/mp4";
+            const isVideo = isVideoMimeType(item.mimeType);
             const intrinsicWidth = item.width ?? 0;
             const intrinsicHeight = item.height ?? 0;
             const hasIntrinsicSize =
@@ -367,7 +368,7 @@ export function MediaComposer({
           </summary>
           <ol className={styles.mediaOptionList}>
             {items.map((item, index) => {
-              const isVideo = item.mimeType === "video/mp4";
+              const isVideo = isVideoMimeType(item.mimeType);
               const itemLabel = isVideo
                 ? `第 ${index + 1} 项视频`
                 : `第 ${index + 1} 张图片`;
@@ -500,8 +501,8 @@ export function MediaComposer({
         {footerAction}
       </div>
       <p className={styles.srOnly} id={`${inputId}-guidance`}>
-        支持 JPEG、PNG、WebP、GIF、HEIC 或 MP4，单个原文件最大 30 MiB，最多
-        {maximum} 项。媒体不会写入本地文字草稿。
+        支持 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV；图片原件最大 30
+        MiB，视频原件最大 100 MiB，最多 {maximum} 项。媒体不会写入本地文字草稿。
       </p>
       {selectionError ? (
         <p className={styles.mediaError} role="alert">

@@ -1468,6 +1468,7 @@ function mediaMimeTypeField(
       "image/gif",
       "image/heic",
       "video/mp4",
+      "video/quicktime",
     ].includes(value)
   ) {
     throw invalidResponse(`${key} is not a supported media MIME type`);

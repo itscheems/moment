@@ -112,7 +112,7 @@ describe("media composer contract", () => {
     expect(
       current.reduce((sum, value) => sum + (value.file?.size ?? 0), 0),
     ).toBe(MAX_TOTAL_BYTES);
-    expect(fileValidation(duplicate, current)).toContain("50 MiB");
+    expect(fileValidation(duplicate, current)).toContain("150 MiB");
     expect(
       fileValidation(sizedFile("vector.svg", "image/svg+xml", 100), []),
     ).toContain("不是支持的");
@@ -128,5 +128,14 @@ describe("media composer contract", () => {
         [],
       ),
     ).toContain("30 MiB");
+    expect(
+      fileValidation(
+        sizedFile("IMG_1337.MOV", "video/quicktime", 44 * 1024 * 1024),
+        [],
+      ),
+    ).toBeNull();
+    expect(
+      fileValidation(sizedFile("camera.mov", "", 44 * 1024 * 1024), []),
+    ).toBeNull();
   });
 });

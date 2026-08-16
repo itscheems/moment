@@ -26,8 +26,10 @@ export interface ComposerMediaItem {
 }
 
 export const MAX_MEDIA_COUNT = 9;
-export const MAX_FILE_BYTES = 30 * 1024 * 1024;
-export const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
+export const MAX_IMAGE_FILE_BYTES = 30 * 1024 * 1024;
+export const MAX_VIDEO_FILE_BYTES = 100 * 1024 * 1024;
+export const MAX_FILE_BYTES = MAX_IMAGE_FILE_BYTES;
+export const MAX_TOTAL_BYTES = 150 * 1024 * 1024;
 export const MAX_ALT_CODE_POINTS = 1_000;
 export const MEDIA_TYPES = new Set([
   "image/jpeg",
@@ -37,13 +39,19 @@ export const MEDIA_TYPES = new Set([
   "image/heic",
   "image/heif",
   "video/mp4",
+  "video/quicktime",
 ]);
+
+export function isVideoMimeType(mimeType: string): boolean {
+  return mimeType === "video/mp4" || mimeType === "video/quicktime";
+}
 
 function inferredMediaType(file: File): string {
   if (MEDIA_TYPES.has(file.type)) return file.type;
   const name = file.name.toLowerCase();
   if (name.endsWith(".heic") || name.endsWith(".heif")) return "image/heic";
   if (name.endsWith(".mp4") || name.endsWith(".m4v")) return "video/mp4";
+  if (name.endsWith(".mov") || name.endsWith(".qt")) return "video/quicktime";
   return file.type;
 }
 
@@ -115,7 +123,7 @@ export function uploadMessage(error: unknown): string {
     return "媒体没有上传完成。文字和已完成的媒体都已保留，可以重试。";
   switch (error.code) {
     case "MEDIA_TYPE_UNSUPPORTED":
-      return "媒体格式不受支持，请选择 JPEG、PNG、WebP、GIF、HEIC 或 MP4。";
+      return "媒体格式不受支持，请选择 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV。";
     case "MEDIA_TOO_LARGE":
       return "媒体超过大小限制，请移除或压缩后重试。";
     case "MEDIA_DIMENSIONS_EXCEEDED":
@@ -145,8 +153,9 @@ export function itemsFromPost(media: PublicMediaUsage[]): ComposerMediaItem[] {
     previewUrl: `/api/v1/media/${encodeURIComponent(usage.mediaId)}/preview`,
     originalUrl: `/api/v1/media/${encodeURIComponent(usage.mediaId)}`,
     mimeType: usage.mimeType,
-    previewMimeType:
-      usage.mimeType === "video/mp4" ? "video/mp4" : "image/jpeg",
+    previewMimeType: isVideoMimeType(usage.mimeType)
+      ? "video/mp4"
+      : "image/jpeg",
     width: usage.width,
     height: usage.height,
     byteSize: null,
@@ -222,10 +231,14 @@ export function fileValidation(
   maximumTotalBytes = MAX_TOTAL_BYTES,
 ): string | null {
   if (!MEDIA_TYPES.has(inferredMediaType(file))) {
-    return `${file.name || "所选文件"} 不是支持的 JPEG、PNG、WebP、GIF、HEIC 或 MP4。`;
+    return `${file.name || "所选文件"} 不是支持的 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV。`;
   }
-  if (file.size <= 0 || file.size > MAX_FILE_BYTES) {
-    return `${file.name || "所选文件"} 超过单个媒体 30 MiB 限制或为空。`;
+  const mimeType = inferredMediaType(file);
+  const maximumFileBytes = isVideoMimeType(mimeType)
+    ? MAX_VIDEO_FILE_BYTES
+    : MAX_IMAGE_FILE_BYTES;
+  if (file.size <= 0 || file.size > maximumFileBytes) {
+    return `${file.name || "所选文件"} 超过单个${isVideoMimeType(mimeType) ? "视频 100" : "图片 30"} MiB 限制或为空。`;
   }
   const currentBytes = current.reduce(
     (total, item) => total + (item.file?.size ?? 0),

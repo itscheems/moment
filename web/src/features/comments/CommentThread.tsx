@@ -856,12 +856,12 @@ function CommentForm({
             }
             items={mediaItems}
             maximum={4}
-            maximumTotalBytes={40 * 1024 * 1024}
+            maximumTotalBytes={120 * 1024 * 1024}
             subject="回复"
             onAdd={(files) => {
               const next = [...mediaItemsRef.current];
               for (const file of files) {
-                if (fileValidation(file, next, 40 * 1024 * 1024)) continue;
+                if (fileValidation(file, next, 120 * 1024 * 1024)) continue;
                 const item = newMediaItem(file);
                 next.push(item);
                 void readLocalPreview(file)
