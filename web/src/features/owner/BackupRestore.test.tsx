@@ -467,16 +467,11 @@ describe("owner backup and restore", () => {
     expect(screen.getByText("导出备份后新发布的 Moment")).toBeInTheDocument();
     expect(screen.getByText("当前站点修改后的正文")).toBeInTheDocument();
     expect(screen.getByText("备份文件中的旧正文")).toBeInTheDocument();
-    fireEvent.change(
-      screen.getByRole("combobox", {
-        name: "Moment post-conflict 的冲突处理",
-      }),
-      { target: { value: "keep_both" } },
-    );
-    fireEvent.change(
-      screen.getByRole("combobox", { name: "站点标题的冲突处理" }),
-      { target: { value: "use_incoming" } },
-    );
+    fireEvent.click(screen.getByRole("radio", { name: "两者都保留" }));
+    fireEvent.click(screen.getByRole("radio", { name: "使用备份值" }));
+    expect(
+      screen.queryByRole("combobox", { name: /冲突处理/ }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "提交合并" }));
     expect(
       await screen.findByRole("heading", {

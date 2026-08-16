@@ -416,7 +416,7 @@
 .mergeConflict {
   min-inline-size: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(10rem, auto);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: var(--space-4);
   border-block-end: 1px solid var(--border-subtle);
@@ -578,14 +578,77 @@
   font-size: var(--text-xs);
 }
 
-.mergeConflict select {
-  min-block-size: var(--target-size);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-action);
-  padding-inline: var(--space-3);
-  color: var(--text-primary);
+.mergeDecisionGrid {
+  min-inline-size: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.mergeDecisionChoice {
+  position: relative;
+  min-inline-size: 0;
+  border: 2px solid transparent;
+  border-radius: var(--radius-panel);
+  cursor: pointer;
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.mergeDecisionChoice:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border-subtle));
+}
+
+.mergeDecisionChoice:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.mergeDecisionChoice[aria-checked="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.mergeDecisionChoice > .reviewEntity,
+.mergeDecisionChoice > .reviewProfileValue {
+  block-size: 100%;
+  border: 0;
+}
+
+.mergeDecisionMark {
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline-end: var(--space-3);
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
   background: var(--surface);
-  font: inherit;
+}
+
+.mergeDecisionChoice[aria-checked="true"] .mergeDecisionMark {
+  border: 0.34rem solid var(--accent);
+}
+
+.mergeDecisionChoice:nth-child(3):last-child {
+  grid-column: 1 / -1;
+}
+
+.mergeKeepBoth {
+  min-block-size: 4.75rem;
+  display: grid;
+  align-content: center;
+  gap: 0.2rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: calc(var(--radius-panel) - 0.25rem);
+  padding: var(--space-4);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+}
+
+.mergeKeepBoth small {
+  color: var(--text-secondary);
 }
 
 .mergeClear {
@@ -1338,6 +1401,10 @@
 
   .mergeSummary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mergeDecisionGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

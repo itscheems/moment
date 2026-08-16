@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import {
   type ChangeEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useRef,
@@ -129,6 +130,7 @@ function mergeChangedFieldLabel(field: string): string {
     created_at: "创建时间",
     updated_at: "更新时间",
     published_at: "发布时间",
+    quoted_entry_id: "引用的 Moment",
     media: "媒体与图片描述",
     location: "位置",
     entry_id: "所属 Moment",
@@ -298,6 +300,37 @@ function ReviewItem({
             : undefined
       }
     />
+  );
+}
+
+function DecisionChoice({
+  checked,
+  children,
+  label,
+  onChoose,
+}: {
+  checked: boolean;
+  children: ReactNode;
+  label: string;
+  onChoose: () => void;
+}) {
+  return (
+    <div
+      aria-checked={checked}
+      aria-label={label}
+      className={styles.mergeDecisionChoice}
+      onClick={onChoose}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onChoose();
+      }}
+      role="radio"
+      tabIndex={0}
+    >
+      {children}
+      <span aria-hidden="true" className={styles.mergeDecisionMark} />
+    </div>
   );
 }
 
@@ -1601,28 +1634,66 @@ export function BackupRestore({
                             .join("、") || "内容"}
                         </small>
                       </div>
-                      <ReviewItem
-                        inspection={mergeInspection}
-                        item={item}
-                        restoreMode={importMode === "restore"}
-                      />
                       {importMode === "merge" ? (
-                        <select
+                        <div
                           aria-label={`${mergeKindLabel(item.kind)} ${item.id} 的冲突处理`}
-                          onChange={(event) =>
-                            chooseMergeItem(
-                              item.kind,
-                              item.id,
-                              event.currentTarget.value as MergeAction,
-                            )
-                          }
-                          value={decision?.action ?? "keep_local"}
+                          className={styles.mergeDecisionGrid}
+                          role="radiogroup"
                         >
-                          <option value="keep_local">保留当前版本</option>
-                          <option value="use_incoming">使用备份版本</option>
-                          <option value="keep_both">两者都保留</option>
-                        </select>
-                      ) : null}
+                          <DecisionChoice
+                            checked={
+                              (decision?.action ?? "keep_local") ===
+                              "keep_local"
+                            }
+                            label="保留当前版本"
+                            onChoose={() =>
+                              chooseMergeItem(item.kind, item.id, "keep_local")
+                            }
+                          >
+                            <ReviewEntityCard
+                              entity={item.local!}
+                              inspection={mergeInspection}
+                              label="当前站点"
+                            />
+                          </DecisionChoice>
+                          <DecisionChoice
+                            checked={decision?.action === "use_incoming"}
+                            label="使用备份版本"
+                            onChoose={() =>
+                              chooseMergeItem(
+                                item.kind,
+                                item.id,
+                                "use_incoming",
+                              )
+                            }
+                          >
+                            <ReviewEntityCard
+                              entity={item.incoming!}
+                              inspection={mergeInspection}
+                              label="备份文件"
+                              tone="incoming"
+                            />
+                          </DecisionChoice>
+                          <DecisionChoice
+                            checked={decision?.action === "keep_both"}
+                            label="两者都保留"
+                            onChoose={() =>
+                              chooseMergeItem(item.kind, item.id, "keep_both")
+                            }
+                          >
+                            <span className={styles.mergeKeepBoth}>
+                              <strong>两者都保留</strong>
+                              <small>备份版本会作为另一条内容加入站点</small>
+                            </span>
+                          </DecisionChoice>
+                        </div>
+                      ) : (
+                        <ReviewItem
+                          inspection={mergeInspection}
+                          item={item}
+                          restoreMode
+                        />
+                      )}
                     </div>
                   );
                 })}
@@ -1653,58 +1724,65 @@ export function BackupRestore({
                       <div className={styles.reviewConflictHeading}>
                         <strong>{mergeSiteFieldLabel(field.field)}</strong>
                       </div>
-                      <div className={styles.reviewComparison}>
-                        <div className={styles.reviewProfileValue}>
-                          <span>当前站点</span>
-                          {field.local_media ? (
-                            <ReviewMediaPreview
-                              inspection={mergeInspection}
-                              media={field.local_media}
-                            />
-                          ) : field.local_entry ? (
-                            <ReviewEntityCard
-                              entity={field.local_entry}
-                              inspection={mergeInspection}
-                              label="当前置顶"
-                            />
-                          ) : (
-                            <p>{mergeValue(field.local_value)}</p>
-                          )}
-                        </div>
-                        <div className={styles.reviewProfileValue}>
-                          <span>备份文件</span>
-                          {field.incoming_media ? (
-                            <ReviewMediaPreview
-                              inspection={mergeInspection}
-                              media={field.incoming_media}
-                            />
-                          ) : field.incoming_entry ? (
-                            <ReviewEntityCard
-                              entity={field.incoming_entry}
-                              inspection={mergeInspection}
-                              label="备份置顶"
-                              tone="incoming"
-                            />
-                          ) : (
-                            <p>{mergeValue(field.incoming_value)}</p>
-                          )}
-                        </div>
-                      </div>
-                      {importMode === "merge" ? (
-                        <select
-                          aria-label={`${mergeSiteFieldLabel(field.field)}的冲突处理`}
-                          onChange={(event) =>
-                            chooseMergeSiteField(
-                              field.field,
-                              event.currentTarget.value as MergeAction,
-                            )
+                      <div
+                        aria-label={`${mergeSiteFieldLabel(field.field)}的冲突处理`}
+                        className={styles.mergeDecisionGrid}
+                        role="radiogroup"
+                      >
+                        <DecisionChoice
+                          checked={
+                            (decision?.action ?? "keep_local") === "keep_local"
                           }
-                          value={decision?.action ?? "keep_local"}
+                          label="保留当前值"
+                          onChoose={() =>
+                            chooseMergeSiteField(field.field, "keep_local")
+                          }
                         >
-                          <option value="keep_local">保留当前值</option>
-                          <option value="use_incoming">使用备份值</option>
-                        </select>
-                      ) : null}
+                          <div className={styles.reviewProfileValue}>
+                            <span>当前站点</span>
+                            {field.local_media ? (
+                              <ReviewMediaPreview
+                                inspection={mergeInspection}
+                                media={field.local_media}
+                              />
+                            ) : field.local_entry ? (
+                              <ReviewEntityCard
+                                entity={field.local_entry}
+                                inspection={mergeInspection}
+                                label="当前置顶"
+                              />
+                            ) : (
+                              <p>{mergeValue(field.local_value)}</p>
+                            )}
+                          </div>
+                        </DecisionChoice>
+                        <DecisionChoice
+                          checked={decision?.action === "use_incoming"}
+                          label="使用备份值"
+                          onChoose={() =>
+                            chooseMergeSiteField(field.field, "use_incoming")
+                          }
+                        >
+                          <div className={styles.reviewProfileValue}>
+                            <span>备份文件</span>
+                            {field.incoming_media ? (
+                              <ReviewMediaPreview
+                                inspection={mergeInspection}
+                                media={field.incoming_media}
+                              />
+                            ) : field.incoming_entry ? (
+                              <ReviewEntityCard
+                                entity={field.incoming_entry}
+                                inspection={mergeInspection}
+                                label="备份置顶"
+                                tone="incoming"
+                              />
+                            ) : (
+                              <p>{mergeValue(field.incoming_value)}</p>
+                            )}
+                          </div>
+                        </DecisionChoice>
+                      </div>
                     </div>
                   );
                 })}
