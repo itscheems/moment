@@ -11,7 +11,7 @@ data/site.json
 data/entries.jsonl
 data/comments.jsonl
 data/media.jsonl
-media/<lowercase-sha256>.<jpg|png|webp|gif> (zero or more, SHA order)
+media/<lowercase-sha256>.<jpg|png|webp|gif|heic|mp4> (zero or more, SHA order)
 manifest.json
 checksums.sha256
 ```
@@ -23,6 +23,12 @@ authority; values with sub-millisecond precision are rejected. Entry media recor
 order and nullable `alt_text`: `null` is missing, `""` is decorative, and a
 non-empty string is provided. Derived search text, FTS, previews, caches,
 runtime state, credentials, sessions, local drafts, and GC state are excluded.
+An entry quote whose source was deleted is preserved as
+`quote_unavailable=true` without a `quoted_entry_id`; this tombstone keeps the
+quote wrapper portable without exposing or inventing deleted target content.
+HEIC and MP4 members are immutable originals. Their JPEG/H.264 display
+derivatives and MP4 poster images remain replaceable cache artifacts and are
+therefore not exported.
 
 `manifest.json` has `format="moment-export"` and `format_version=1`. Its
 `source.instance_id` is the stable 32-character lowercase hexadecimal ID read
