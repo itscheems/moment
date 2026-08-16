@@ -81,7 +81,8 @@ Moment uses this pipeline for an HLG/BT.2020 source:
 
 ```text
 immutable HLG/BT.2020 original
-  -> HDR-aware conversion and tone mapping
+  -> short color-managed SDR segment -> upload-time JPEG poster
+  -> full HDR-aware conversion and tone mapping
   -> managed SDR BT.709 intermediate
   -> bounded H.264 yuv420p display asset
   -> JPEG poster from the same managed intermediate
@@ -93,6 +94,16 @@ path only when the installed runtime supports the required filters. Neither
 path may emulate conversion by rewriting color tags. The original remains
 byte-for-byte unchanged and available through the original-quality action.
 
+The upload-time poster is a separate, deliberately short conversion around
+the representative frame. It is published before the full movie conversion,
+then replaced by the durable poster generated from the final browser display
+asset. The editor pins that managed poster while the original is still being
+processed; it must not reveal a locally decoded HLG frame above the poster.
+This distinction matters because a browser may render the local HDR source as
+overexposed while a correctly tone-mapped SDR rendition can look less vivid
+than the HDR original. Those are different observations, not reasons to add
+CSS brightness, contrast, or saturation compensation.
+
 Inspect a suspected source before changing a recipe:
 
 ```sh
@@ -102,8 +113,10 @@ ffprobe -v error -select_streams v:0 \
 ```
 
 After a recipe change, verify that the display asset reports SDR BT.709 and
-`yuv420p`, and compare its poster with the paused first frame in both Safari
-and Chromium. Rebuild stale derived assets with
+`yuv420p`, compare an upload-time poster with the durable poster, and compare
+the durable poster with the paused display-video frame in both Safari and
+Chromium. The local HLG original is not a valid SDR visual reference. Rebuild
+stale derived assets with
 `moment media rebuild-previews`; the operation must not rewrite originals.
 
 References:

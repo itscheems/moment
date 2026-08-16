@@ -429,6 +429,9 @@ func videoPosterTime(durationSeconds float64) float64 {
 }
 
 func (store *Store) generateEarlyVideoPosterFile(ctx context.Context, input, output string, inspection inspected) error {
+	if runtime.GOOS == "darwin" && inspection.isHDRVideo() {
+		return store.generateDarwinHDRPosterFile(ctx, input, output, inspection)
+	}
 	plan := videoDisplayFilterPlan(inspection, store.options.Limits.PreviewMaxEdge)
 	seek := strconv.FormatFloat(videoPosterTime(inspection.durationSeconds), 'f', 3, 64)
 	arguments := []string{"-nostdin", "-y", "-v", "error"}
@@ -438,6 +441,40 @@ func (store *Store) generateEarlyVideoPosterFile(ctx context.Context, input, out
 	return err
 }
 
+// generateDarwinHDRPosterFile makes the upload-time poster independently of
+// the full display transcode. AVFoundation first renders only a short segment
+// around the representative frame to SDR BT.709; FFmpeg then extracts the
+// JPEG from that managed segment. This publishes a trustworthy poster within
+// seconds without decoding the HLG original in the browser or waiting for the
+// complete movie conversion.
+func (store *Store) generateDarwinHDRPosterFile(ctx context.Context, input, output string, inspection inspected) error {
+	segment := filepath.Join(filepath.Dir(output), "early-poster-sdr.mov")
+	posterTime := videoPosterTime(inspection.durationSeconds)
+	start := strconv.FormatFloat(posterTime, 'f', 3, 64)
+	duration := max(0.01, min(0.35, inspection.durationSeconds-posterTime))
+	if _, err := store.runTool(
+		ctx,
+		store.options.AVConvertPath,
+		"avconvert",
+		"--source", input,
+		"--preset", "PresetHighestQuality",
+		"--output", segment,
+		"--start", start,
+		"--duration", strconv.FormatFloat(duration, 'f', 3, 64),
+		"--replace",
+	); err != nil {
+		return err
+	}
+	converted, err := store.probeVideoFileUnlocked(ctx, segment, formatQuickTime)
+	if err != nil {
+		return err
+	}
+	if converted.isHDRVideo() || converted.colorPrimaries != "bt709" || converted.colorTransfer != "bt709" || converted.colorSpace != "bt709" {
+		return domain.NewError(domain.CodeMediaPreviewFailed, "AVFoundation did not produce an SDR BT.709 poster source", nil)
+	}
+	return store.generateDisplayPosterFrameFile(ctx, segment, output, 0)
+}
+
 // generateDisplayPosterFile extracts the durable poster from the browser-ready
 // SDR display rendition instead of independently converting the original. A
 // JPEG uses full-range BT.601 samples, so the final scale explicitly performs
@@ -445,8 +482,13 @@ func (store *Store) generateEarlyVideoPosterFile(ctx context.Context, input, out
 // both branches on the same decoded display frame prevents HDR source posters
 // from drifting away from playback in saturation and luminance.
 func (store *Store) generateDisplayPosterFile(ctx context.Context, input, output string, durationSeconds float64) error {
-	seek := strconv.FormatFloat(videoPosterTime(durationSeconds), 'f', 3, 64)
-	filter := "scale=in_color_matrix=bt709:out_color_matrix=bt601:in_range=tv:out_range=pc,format=yuvj420p"
+	return store.generateDisplayPosterFrameFile(ctx, input, output, videoPosterTime(durationSeconds))
+}
+
+func (store *Store) generateDisplayPosterFrameFile(ctx context.Context, input, output string, posterTime float64) error {
+	seek := strconv.FormatFloat(posterTime, 'f', 3, 64)
+	maxEdge := strconv.FormatUint(uint64(store.options.Limits.PreviewMaxEdge), 10)
+	filter := "scale=w='min(" + maxEdge + ",iw)':h='min(" + maxEdge + ",ih)':force_original_aspect_ratio=decrease:in_color_matrix=bt709:out_color_matrix=bt601:in_range=tv:out_range=pc,format=yuvj420p"
 	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg",
 		"-nostdin", "-y", "-v", "error", "-ss", seek, "-i", input,
 		"-frames:v", "1", "-vf", filter, "-q:v", "3", output,

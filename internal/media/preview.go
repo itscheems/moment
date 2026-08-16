@@ -167,19 +167,11 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 	if err != nil {
 		return preparedPreview{}, previewFailure(err)
 	}
-	displayInput := input
-	displayInspection := inspection
-	if !displayReady {
-		displayInput, displayInspection, err = store.prepareVideoDisplaySource(ctx, input, directory, inspection)
-		if err != nil {
-			return preparedPreview{}, previewFailure(err)
-		}
-	}
 	prepared := preparedPreview{preview: Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}}
 	if !posterReady && observer.VideoPosterReady != nil {
 		earlyPoster := filepath.Join(directory, "early-poster.jpg")
-		earlyInput := displayInput
-		earlyInspection := displayInspection
+		earlyInput := input
+		earlyInspection := inspection
 		if displayReady {
 			earlyInput = path
 			earlyInspection, err = store.probeVideoFile(ctx, path)
@@ -198,6 +190,14 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 			return preparedPreview{}, previewFailure(errors.New("video poster is not a JPEG image"))
 		}
 		observer.VideoPosterReady(earlyContents)
+	}
+	displayInput := input
+	displayInspection := inspection
+	if !displayReady {
+		displayInput, displayInspection, err = store.prepareVideoDisplaySource(ctx, input, directory, inspection)
+		if err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
 	}
 	displayPath := path
 	if !displayReady {

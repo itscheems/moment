@@ -234,7 +234,15 @@ func TestIngestQuickTimeRealFixturePreservesOriginalAndBuildsMP4Display(t *testi
 		t.Fatal(err)
 	}
 	store, _, _ := newTestStoreWithOptions(t, Options{FFmpegPath: ffmpeg, FFprobePath: ffprobe})
-	value, preview, err := store.Ingest(context.Background(), "IMG_1337.MOV", bytes.NewReader(contents))
+	var earlyPoster []byte
+	value, preview, err := store.IngestObserved(
+		context.Background(),
+		"IMG_1337.MOV",
+		bytes.NewReader(contents),
+		IngestObserver{VideoPosterReady: func(contents []byte) {
+			earlyPoster = bytes.Clone(contents)
+		}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,6 +284,16 @@ func TestIngestQuickTimeRealFixturePreservesOriginalAndBuildsMP4Display(t *testi
 	posterImage, _, err := image.Decode(bytes.NewReader(poster.Contents))
 	if err != nil {
 		t.Fatal(err)
+	}
+	earlyPosterImage, _, err := image.Decode(bytes.NewReader(earlyPoster))
+	if err != nil {
+		t.Fatalf("decode early QuickTime poster: %v", err)
+	}
+	if earlyPosterImage.Bounds() != posterImage.Bounds() {
+		t.Fatalf("early QuickTime poster bounds = %v, durable poster bounds = %v", earlyPosterImage.Bounds(), posterImage.Bounds())
+	}
+	if delta := averageRGBDifference(earlyPosterImage, posterImage); delta > 8 {
+		t.Fatalf("early/durable QuickTime poster average RGB difference = %.2f, want <= 8", delta)
 	}
 	if posterImage.Bounds() != reference.Bounds() {
 		t.Fatalf("QuickTime poster bounds = %v, display frame bounds = %v", posterImage.Bounds(), reference.Bounds())

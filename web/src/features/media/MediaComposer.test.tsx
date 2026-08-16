@@ -215,24 +215,20 @@ describe("media editor", () => {
       />,
     );
 
-    expect(screen.getByText("正在读取视频封面")).toBeInTheDocument();
+    expect(screen.getByText("正在准备视频封面")).toBeInTheDocument();
     expect(screen.getByText("climb.mov")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("正在处理视频");
-    const preview = container.querySelector("video");
+    const preview = container.querySelector("img");
     expect(preview).not.toBeNull();
     expect(preview).toHaveAttribute(
-      "poster",
+      "src",
       "blob:http://localhost/server-video-poster",
     );
-    Object.defineProperty(preview, "duration", { value: 10 });
-    fireEvent.loadedMetadata(preview!);
-    expect(preview).toHaveProperty("currentTime", 1);
-    fireEvent.loadedData(preview!);
+    expect(container.querySelector("video")).toBeNull();
     expect(container.querySelector("[data-video-frame]")).toHaveAttribute(
       "data-video-frame",
       "ready",
     );
-    expect(preview).toHaveAttribute("preload", "auto");
     expect(
       container.querySelector("[class*='processingSpinner']"),
     ).not.toBeNull();

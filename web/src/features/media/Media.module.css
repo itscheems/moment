@@ -246,6 +246,7 @@
 .editorPreviewButton img,
 .editorPreviewButton video,
 .editorVideoPreview,
+.editorVideoPreview img,
 .editorVideoPreview video,
 .editorPreview > img,
 .editorPreview > video {
@@ -270,7 +271,14 @@
     transform var(--motion-fast) var(--ease-out);
 }
 
+.editorVideoPreview[data-video-frame="ready"] img,
 .editorVideoPreview[data-video-frame="ready"] video {
+  opacity: 1;
+}
+
+.editorVideoPreview img {
+  position: relative;
+  z-index: 1;
   opacity: 1;
 }
 

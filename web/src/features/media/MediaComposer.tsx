@@ -39,12 +39,14 @@ function VideoEditorPreview({
   fileName,
   height,
   poster,
+  posterOnly,
   src,
   width,
 }: {
   fileName: string | null;
   height?: number;
   poster?: string;
+  posterOnly?: boolean;
   src: string;
   width?: number;
 }) {
@@ -98,24 +100,38 @@ function VideoEditorPreview({
         <span>
           {frameState === "unavailable"
             ? "视频封面将在处理后显示"
-            : "正在读取视频封面"}
+            : posterOnly
+              ? "正在准备视频封面"
+              : "正在读取视频封面"}
         </span>
         {fileName ? <small>{fileName}</small> : null}
       </span>
-      <video
-        aria-hidden="true"
-        height={height}
-        muted
-        onError={() => setFrameState("unavailable")}
-        onLoadedData={revealDecodedFrame}
-        onLoadedMetadata={seekToCoverFrame}
-        onSeeked={revealDecodedFrame}
-        playsInline
-        poster={poster}
-        preload="auto"
-        src={src}
-        width={width}
-      />
+      {posterOnly ? (
+        poster ? (
+          <img
+            alt=""
+            decoding="async"
+            height={height}
+            src={poster}
+            width={width}
+          />
+        ) : null
+      ) : (
+        <video
+          aria-hidden="true"
+          height={height}
+          muted
+          onError={() => setFrameState("unavailable")}
+          onLoadedData={revealDecodedFrame}
+          onLoadedMetadata={seekToCoverFrame}
+          onSeeked={revealDecodedFrame}
+          playsInline
+          poster={poster}
+          preload="auto"
+          src={src}
+          width={width}
+        />
+      )}
     </span>
   );
 }
@@ -419,6 +435,7 @@ export function MediaComposer({
                               ? `/api/v1/media/${encodeURIComponent(item.mediaId)}/poster`
                               : undefined)
                           }
+                          posterOnly={Boolean(item.localPreviewUrl)}
                           src={editorPreviewUrl}
                           width={item.width ?? undefined}
                         />
