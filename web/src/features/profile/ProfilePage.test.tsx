@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -12,6 +13,7 @@ import { PublicApi, type SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { OwnerProvider } from "../owner/OwnerProvider";
+import { announceOwnerPost } from "../owner/postEvents";
 import { ProfilePage } from "./ProfilePage";
 
 const pinnedId = "01K2ABCDEF0123456789ABCDE0";
@@ -75,6 +77,48 @@ afterEach(() => {
 });
 
 describe("profile page", () => {
+  it("adds a newly published owner Moment without reloading the profile", async () => {
+    const existing = post(otherId, "原有内容");
+    const fetcher = vi.fn(async () => page([existing], null));
+    const api = new PublicApi(fetcher as typeof fetch);
+
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={api}
+              onSiteSaved={vi.fn()}
+              site={{ ...site, pinnedPostId: null }}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    expect(await screen.findByText("原有内容")).toBeInTheDocument();
+    act(() => {
+      announceOwnerPost({
+        kind: "created",
+        post: {
+          id: pinnedId,
+          contentMd: "刚刚发布的引用",
+          contentHtml: "<p>刚刚发布的引用</p>",
+          createdAt: "2026-08-16T02:00:00.000Z",
+          updatedAt: "2026-08-16T02:00:00.000Z",
+          publishedAt: "2026-08-16T02:00:00.000Z",
+          repostedAt: null,
+          quotedPost: null,
+          commentCount: 0,
+          media: [],
+        },
+      });
+    });
+
+    expect(screen.getByText("刚刚发布的引用")).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("opens the reply dialog from a profile Moment and restores the trigger", async () => {
     const item = post(otherId, "从个人资料直接回复");
     vi.stubGlobal(

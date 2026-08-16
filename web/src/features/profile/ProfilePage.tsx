@@ -25,6 +25,7 @@ import {
 } from "../../components/TimelineInteractions";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { useOwner } from "../owner/OwnerProvider";
+import { listenForOwnerPosts } from "../owner/postEvents";
 import { PostPresentation } from "../posts/PostPresentation";
 import { formatMomentDate } from "../posts/dates";
 import {
@@ -206,6 +207,39 @@ export function ProfilePage({
       activeMore.current?.abort();
     };
   }, [load]);
+
+  useEffect(
+    () =>
+      listenForOwnerPosts((event) => {
+        setPosts((current) => {
+          if (event.kind === "deleted")
+            return current.filter((post) => post.id !== event.post.id);
+          if (event.kind === "created")
+            return [
+              event.post,
+              ...current.filter((post) => post.id !== event.post.id),
+            ];
+          const next = current.map((post) =>
+            post.id === event.post.id ? event.post : post,
+          );
+          if (event.kind !== "reordered") return next;
+          return next.sort(
+            (left, right) =>
+              Date.parse(right.repostedAt ?? right.publishedAt) -
+                Date.parse(left.repostedAt ?? left.publishedAt) ||
+              right.id.localeCompare(left.id),
+          );
+        });
+        setPinnedPost((current) =>
+          current?.id === event.post.id
+            ? event.kind === "deleted"
+              ? null
+              : event.post
+            : current,
+        );
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (loadingInitial || initialError || entryRestored.current) return;

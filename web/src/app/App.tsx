@@ -87,6 +87,9 @@ function PublicApp() {
   const overlayCompose =
     requestedRoute.id === "owner-compose" && location.overlayFrom !== null;
   const displayLocation = overlayCompose ? location.overlayFrom! : location;
+  const quotedPostId = hasValidRawQueryEncoding(location.search)
+    ? (new URLSearchParams(location.search).get("quote") ?? undefined)
+    : undefined;
   const route = resolveRoute(displayLocation.pathname);
   const state =
     route.id === "search" ||
@@ -355,7 +358,7 @@ function PublicApp() {
         ) : null}
         {siteIdentityReady && route.id === "owner-compose" ? (
           owner.state === "owner" || owner.state === "expired" ? (
-            <Composer site={site} variant="page" />
+            <Composer quotedPostId={quotedPostId} site={site} variant="page" />
           ) : (
             <OwnerLogin embedded site={site} />
           )
@@ -397,7 +400,12 @@ function PublicApp() {
                   发布 Moment
                 </Dialog.Title>
                 {owner.state === "owner" || owner.state === "expired" ? (
-                  <Composer ref={overlayComposer} site={site} variant="page" />
+                  <Composer
+                    quotedPostId={quotedPostId}
+                    ref={overlayComposer}
+                    site={site}
+                    variant="page"
+                  />
                 ) : (
                   <OwnerLogin embedded site={site} />
                 )}

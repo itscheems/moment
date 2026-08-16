@@ -213,7 +213,7 @@ export function PostPresentation({
       trigger={
         <button
           aria-label="分享这条 Moment"
-          className={styles.postAction}
+          className={`${styles.postAction} ${styles.shareAction}`}
           type="button"
         >
           <Icon name="share" />
@@ -221,6 +221,47 @@ export function PostPresentation({
       }
     />
   );
+  const quoted = post.quotedPost;
+  const quoteCard = quoted ? (
+    <div
+      aria-label="打开被引用的 Moment"
+      className={styles.quoteCard}
+      onClick={(event) => {
+        event.stopPropagation();
+        const interactive =
+          event.target instanceof Element
+            ? event.target.closest(interactiveSurfaceSelector)
+            : null;
+        if (interactive && interactive !== event.currentTarget) return;
+        navigate(`/m/${encodeURIComponent(quoted.id)}`);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          navigate(`/m/${encodeURIComponent(quoted.id)}`);
+        }
+      }}
+      role="link"
+      tabIndex={0}
+    >
+      <header className={styles.quoteByline}>
+        <SiteAvatar site={site} />
+        <strong>{site.displayName}</strong>
+        <span>@{site.username}</span>
+        <span>·</span>
+        <time dateTime={quoted.publishedAt}>
+          {formatMomentDate(quoted.publishedAt, site.timezone, now).relative}
+        </time>
+      </header>
+      <MarkdownContent
+        className={styles.quoteMarkdown}
+        html={quoted.contentHtml}
+        mentionUsername={site.username}
+      />
+      {quoted.location ? <PostLocation location={quoted.location} /> : null}
+      <ImageGrid media={quoted.media} />
+    </div>
+  ) : null;
 
   if (detail) {
     return (
@@ -249,6 +290,7 @@ export function PostPresentation({
           />
           {post.location ? <PostLocation location={post.location} /> : null}
           <ImageGrid media={post.media} />
+          {quoteCard}
           <p className={styles.publishedLine}>
             <span>发布于</span>
             <time dateTime={post.publishedAt}>{published.absolute}</time>
@@ -306,6 +348,7 @@ export function PostPresentation({
         />
         {post.location ? <PostLocation location={post.location} /> : null}
         <ImageGrid media={post.media} />
+        {quoteCard}
         {collapsed ? (
           <InternalLink
             className={styles.readMore}

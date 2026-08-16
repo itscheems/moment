@@ -395,6 +395,67 @@
   clip-path: inset(50%);
 }
 
+.quoteComposerPreview {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4);
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+.quoteComposerPreview > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-2);
+}
+
+.quoteComposerPreview > header img,
+.quoteComposerPreview > header > :first-child {
+  inline-size: 2rem;
+  block-size: 2rem;
+}
+
+.quoteComposerPreview > header span {
+  color: var(--text-secondary);
+}
+
+.quoteComposerPreview > header button {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  margin-inline-start: auto;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.quoteComposerPreview > header button:hover:not(:disabled),
+.quoteComposerPreview > header button:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.quoteComposerPreview > header button svg,
+.quoteComposerLocation svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.quoteComposerLocation {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
 .composerCount {
   justify-self: end;
   margin: 0 0 var(--space-1);

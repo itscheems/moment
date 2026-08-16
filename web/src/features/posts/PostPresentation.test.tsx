@@ -60,6 +60,34 @@ function makePost(
 }
 
 describe("shared post presentation", () => {
+  it("renders a quoted Moment as a nested interactive card", () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...makePost("补充说明", "<p>补充说明</p>"),
+            quotedPost: {
+              id: "01K2ABCDEF0123456789ABCDE9",
+              contentMd: "原始内容",
+              contentHtml: "<p>原始内容</p>",
+              publishedAt: "2026-08-09T01:00:00.000Z",
+              media: [],
+              location: null,
+            },
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    const quote = screen.getByRole("link", { name: "打开被引用的 Moment" });
+    expect(quote).toHaveTextContent("原始内容");
+    fireEvent.click(quote);
+    expect(window.location.pathname).toBe("/m/01K2ABCDEF0123456789ABCDE9");
+    expect(postCss).toContain("#f7f7f7");
+    expect(postCss).toContain("#efefef");
+  });
+
   it("renders accepted HTML, absolute time, and a long-form timeline affordance", async () => {
     const longText = "一段很长的记忆。".repeat(70);
     render(
@@ -236,10 +264,14 @@ describe("shared post presentation", () => {
     );
   });
 
-  it("aligns timeline sharing with the owner action while keeping detail compact", () => {
+  it("aligns timeline and detail actions with sharing at the far edge", () => {
     expect(postCss).toMatch(/\._postActions_[\w-]+\s*\{[^}]*inline-size: 100%/);
     expect(postCss).toMatch(
-      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*max-inline-size: 18rem/,
+      /\._postActions_[\w-]+\s*\{[^}]*grid-template-columns: 2\.75rem 2\.75rem minmax\(0, 1fr\) 2\.75rem/,
+    );
+    expect(postCss).toMatch(/\._shareAction_[\w-]+\s*\{[^}]*grid-column: 4/);
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*max-inline-size: none/,
     );
   });
 
@@ -523,6 +555,7 @@ describe("shared post presentation", () => {
                 updated_at: "2026-08-10T02:00:00.000Z",
                 published_at: "2026-08-10T01:00:00.000Z",
                 reposted_at: "2026-08-10T02:00:00.000Z",
+                quoted_post: null,
                 comment_count: 0,
                 media: [],
               },
@@ -553,9 +586,10 @@ describe("shared post presentation", () => {
       name: "转发这条 Moment",
     });
     fireEvent.click(repost);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "转发" }));
     await waitFor(() =>
       expect(
-        screen.getByRole("button", { name: "取消转发这条 Moment" }),
+        screen.getByRole("button", { name: "转发这条 Moment" }),
       ).toHaveAttribute("aria-pressed", "true"),
     );
     expect(requests).toContainEqual({
@@ -565,6 +599,14 @@ describe("shared post presentation", () => {
     expect(screen.getByText("已转发到时间流顶部")).toBeInTheDocument();
     expect(postCss).toContain("#07ba7c");
     expect(postCss).toContain("#e3f1eb");
+    fireEvent.click(screen.getByRole("button", { name: "转发这条 Moment" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "引用 Moment" }),
+    );
+    expect(window.location.pathname).toBe("/owner/compose");
+    expect(new URLSearchParams(window.location.search).get("quote")).toBe(
+      "01K2ABCDEF0123456789ABCDE0",
+    );
     window.sessionStorage.removeItem("moment.owner.session.v1");
   });
 });

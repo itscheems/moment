@@ -22,7 +22,9 @@ import {
 import type { OwnerLocation } from "../../api/owner";
 import { useNavigation } from "../../app/navigation";
 import { notify } from "../../components/Feedback";
+import { MarkdownContent } from "../../components/MarkdownContent";
 import { MediaComposer } from "../media/MediaComposer";
+import { ImageGrid } from "../media/ImageGrid";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
@@ -131,10 +133,11 @@ interface ComposerProps {
   variant: "inline" | "page" | "edit";
   post?: PublicPost;
   active?: boolean;
+  quotedPostId?: string;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(
-  function Composer({ site, variant, post, active = true }, ref) {
+  function Composer({ site, variant, post, active = true, quotedPostId }, ref) {
     const { navigate, setNavigationBlocker } = useNavigation();
     const { api, session, expireIfInvalidSession } = useOwner();
     const publicApi = useMemo(() => new PublicApi(), []);
@@ -152,6 +155,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     );
     const [activeDraft, setActiveDraft] = useState<ComposeDraft | null>(draft);
     const [announcement, setAnnouncement] = useState("");
+    const [quotedPost, setQuotedPost] = useState<PublicPost | null>(null);
+    const [quoteError, setQuoteError] = useState(false);
     const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>(() =>
       itemsFromPost(post?.media ?? []),
     );
@@ -214,6 +219,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       dirty &&
       (content !== initialContent || mediaChanged || locationChanged) &&
       !allowLeaveRef.current;
+
+    useEffect(() => {
+      if (!quotedPostId || variant === "edit") {
+        setQuotedPost(null);
+        setQuoteError(false);
+        return;
+      }
+      const controller = new AbortController();
+      setQuoteError(false);
+      void publicApi
+        .post(quotedPostId, controller.signal)
+        .then(setQuotedPost)
+        .catch(() => {
+          if (!controller.signal.aborted) setQuoteError(true);
+        });
+      return () => controller.abort();
+    }, [publicApi, quotedPostId, variant]);
 
     useEffect(() => {
       if (!mention) {
@@ -786,6 +808,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               idempotencyKey.current,
               usages,
               location ?? undefined,
+              quotedPost?.id,
             );
         allowLeaveRef.current = true;
         dirtyRef.current = false;
@@ -1057,6 +1080,45 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   <Icon name="close" />
                 </button>
               </div>
+            ) : null}
+            {quotedPost ? (
+              <article className={styles.quoteComposerPreview}>
+                <header>
+                  <SiteAvatar site={site} />
+                  <strong>{site.displayName}</strong>
+                  <span>@{site.username}</span>
+                  <button
+                    aria-label="移除引用的 Moment"
+                    disabled={pending}
+                    onClick={() => {
+                      setQuotedPost(null);
+                      setError(null);
+                      dirtyRef.current = true;
+                      setDirty(true);
+                      idempotencyKey.current = createIdempotencyKey();
+                    }}
+                    type="button"
+                  >
+                    <Icon name="close" />
+                  </button>
+                </header>
+                <MarkdownContent
+                  html={quotedPost.contentHtml}
+                  mentionUsername={site.username}
+                />
+                {quotedPost.location ? (
+                  <p className={styles.quoteComposerLocation}>
+                    <Icon name="location" />
+                    <span>{quotedPost.location.name}</span>
+                  </p>
+                ) : null}
+                <ImageGrid media={quotedPost.media} />
+              </article>
+            ) : null}
+            {quoteError ? (
+              <p className={styles.formError}>
+                无法载入要引用的 Moment，请返回后重试。
+              </p>
             ) : null}
             <MediaComposer
               compact={variant === "inline"}
