@@ -187,9 +187,12 @@ describe("public image grid", () => {
     render(<ImageGrid media={[video()]} />);
 
     const element = screen.getByLabelText("一段测试视频");
-    expect(
-      element.parentElement?.querySelector('[data-icon="video-play"]'),
-    ).toBeInTheDocument();
+    const playIcon = element.parentElement?.querySelector(
+      '[data-icon="video-play"]',
+    );
+    expect(playIcon).toBeInTheDocument();
+    expect(playIcon?.querySelector("path")).toBeInTheDocument();
+    expect(playIcon?.querySelector("use")).toBeNull();
     expect(element).not.toHaveAttribute("src");
     expect(element).not.toHaveAttribute("poster");
     expect(element).toHaveAttribute("preload", "none");

@@ -113,7 +113,9 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   "media-remove": <use href={`${iconSprite}#media-remove`} />,
-  "video-play": <use href={`${iconSprite}#video-play`} />,
+  "video-play": (
+    <path d="M8.5 5.42v13.16c0 .86.94 1.39 1.68.95l10.16-6.58a1.12 1.12 0 0 0 0-1.9L10.18 4.47a1.11 1.11 0 0 0-1.68.95z" />
+  ),
   more: (
     <>
       <circle cx="5" cy="12" r="1" />
