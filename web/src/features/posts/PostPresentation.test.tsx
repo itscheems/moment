@@ -86,6 +86,12 @@ describe("shared post presentation", () => {
     expect(window.location.pathname).toBe("/m/01K2ABCDEF0123456789ABCDE9");
     expect(postCss).toContain("#f7f7f7");
     expect(postCss).toContain("#efefef");
+    expect(postCss).toMatch(
+      /\._quoteCard_[^{]+\{[^}]*background:\s*transparent;/s,
+    );
+    expect(postCss).toMatch(
+      /\._quoteCard_[^:]+:hover,[\s\S]*?background:\s*#efefef;/,
+    );
   });
 
   it("renders accepted HTML, absolute time, and a long-form timeline affordance", async () => {
