@@ -814,6 +814,48 @@ func TestAlphaWebPHeaderScanAndWeightedPreviewBudget(t *testing.T) {
 	assertCode(t, err, domain.CodeMediaDimensionsExceeded)
 }
 
+func TestOpenOriginalStreamsFromFileAndRetainsMediaLease(t *testing.T) {
+	store, runtimeState, _ := newTestStore(t, Limits{})
+	original := encodeJPEG(t, image.NewRGBA(image.Rect(0, 0, 12, 8)))
+	value, _, err := store.Ingest(context.Background(), "stream.jpg", bytes.NewReader(original))
+	if err != nil {
+		t.Fatal(err)
+	}
+	asset, err := store.OpenOriginal(context.Background(), value.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := asset.Reader.(*os.File); !ok {
+		t.Fatalf("stream reader = %T, want *os.File", asset.Reader)
+	}
+	prefix := make([]byte, 7)
+	if _, err := asset.Reader.Read(prefix); err != nil || !bytes.Equal(prefix, original[:len(prefix)]) {
+		t.Fatalf("stream prefix = %x, %v", prefix, err)
+	}
+
+	blockedContext, cancelBlocked := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancelBlocked()
+	if lease, err := runtimeState.Locks.Acquire(blockedContext, runtimefs.MediaLock, runtimefs.Exclusive); !errors.Is(err, context.DeadlineExceeded) {
+		if lease != nil {
+			_ = lease.Release()
+		}
+		t.Fatalf("exclusive media lock while stream open = %v, want deadline", err)
+	}
+	if err := asset.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := asset.Close(); err != nil {
+		t.Fatalf("idempotent close = %v", err)
+	}
+	availableContext, cancelAvailable := context.WithTimeout(context.Background(), time.Second)
+	defer cancelAvailable()
+	lease, err := runtimeState.Locks.Acquire(availableContext, runtimefs.MediaLock, runtimefs.Exclusive)
+	if err != nil {
+		t.Fatalf("exclusive media lock after close = %v", err)
+	}
+	_ = lease.Release()
+}
+
 func TestPixelStagesHonorMidFlightCancellation(t *testing.T) {
 	t.Parallel()
 	opaque := image.NewNRGBA(image.Rect(0, 0, 1_000, 500))

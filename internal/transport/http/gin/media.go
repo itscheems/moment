@@ -1,7 +1,6 @@
 package ginhttp
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -66,19 +65,20 @@ func getMediaAsset(store *media.Store, kind string) gin.HandlerFunc {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "media id must be a canonical ULID", map[string]any{"field": "id"})
 			return
 		}
-		var asset media.Asset
+		var asset *media.StreamAsset
 		switch kind {
 		case "preview":
-			asset, err = store.ReadPreview(ctx.Request.Context(), id)
+			asset, err = store.OpenPreview(ctx.Request.Context(), id)
 		case "poster":
-			asset, err = store.ReadPoster(ctx.Request.Context(), id)
+			asset, err = store.OpenPoster(ctx.Request.Context(), id)
 		default:
-			asset, err = store.ReadOriginal(ctx.Request.Context(), id)
+			asset, err = store.OpenOriginal(ctx.Request.Context(), id)
 		}
 		if err != nil {
 			writeMediaError(ctx, err)
 			return
 		}
+		defer func() { _ = asset.Close() }()
 		ctx.Header("Content-Type", asset.MIMEType)
 		ctx.Header("Cache-Control", "public, max-age=31536000, immutable")
 		ctx.Header("ETag", asset.ETag)
@@ -87,7 +87,7 @@ func getMediaAsset(store *media.Store, kind string) gin.HandlerFunc {
 			ctx.Status(http.StatusNotModified)
 			return
 		}
-		http.ServeContent(ctx.Writer, ctx.Request, "", time.Time{}, bytes.NewReader(asset.Contents))
+		http.ServeContent(ctx.Writer, ctx.Request, "", time.Time{}, asset.Reader)
 	}
 }
 

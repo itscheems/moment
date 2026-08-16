@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"image/color"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/moment/moment/internal/domain"
@@ -212,6 +213,40 @@ type Asset struct {
 	Contents []byte
 	MIMEType string
 	ETag     string
+}
+
+// StreamAsset keeps a safe seekable file and its media lease alive for the
+// complete delivery operation. Callers must close it on every response path.
+// The close operation is idempotent so transport cleanup can be defensive.
+type StreamAsset struct {
+	Media    Media
+	Reader   io.ReadSeekCloser
+	MIMEType string
+	ETag     string
+
+	closeOnce sync.Once
+	closeErr  error
+	lease     releasableLease
+}
+
+// Close releases the file before the shared media lease. This order prevents
+// prune or import from replacing authority while the file descriptor is live.
+func (asset *StreamAsset) Close() error {
+	if asset == nil {
+		return nil
+	}
+	asset.closeOnce.Do(func() {
+		if asset.Reader != nil {
+			asset.closeErr = asset.Reader.Close()
+		}
+		if asset.lease != nil {
+			if err := asset.lease.Release(); asset.closeErr == nil {
+				asset.closeErr = err
+			}
+			asset.lease = nil
+		}
+	})
+	return asset.closeErr
 }
 
 // ListItem joins media metadata with the one authoritative resolver state and

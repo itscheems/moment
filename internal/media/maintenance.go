@@ -2,9 +2,12 @@ package media
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,6 +65,36 @@ func (store *Store) ReadOriginal(ctx context.Context, id domain.ID) (Asset, erro
 	return Asset{Media: value, Contents: contents, MIMEType: value.MIMEType, ETag: `"sha256-` + value.SHA256 + `"`}, nil
 }
 
+// OpenOriginal verifies and opens an immutable original without retaining its
+// bytes in memory. The returned asset owns the shared media lease until Close.
+func (store *Store) OpenOriginal(ctx context.Context, id domain.ID) (*StreamAsset, error) {
+	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
+	if err != nil {
+		return nil, fmt.Errorf("coordinate original delivery: %w", err)
+	}
+	asset := &StreamAsset{lease: lease}
+	fail := func(err error) (*StreamAsset, error) {
+		_ = asset.Close()
+		return nil, err
+	}
+	value, err := store.getLocked(ctx, id)
+	if err != nil {
+		return fail(err)
+	}
+	file, err := store.openOriginalFile(value)
+	if err != nil {
+		return fail(err)
+	}
+	asset.Reader = file
+	if err := verifyOpenOriginal(ctx, file, value); err != nil {
+		return fail(err)
+	}
+	asset.Media = value
+	asset.MIMEType = value.MIMEType
+	asset.ETag = `"sha256-` + value.SHA256 + `"`
+	return asset, nil
+}
+
 // ReadPreview reads only a complete current-recipe artifact. A cache miss is
 // rebuilt through EnsurePreview; errors never fall back to original bytes.
 func (store *Store) ReadPreview(ctx context.Context, id domain.ID) (Asset, error) {
@@ -96,6 +129,40 @@ func (store *Store) ReadPreview(ctx context.Context, id domain.ID) (Asset, error
 	return Asset{Contents: contents, MIMEType: preview.MIMEType, ETag: `"preview-` + RecipeVersion + `-` + preview.SHA256 + `"`}, nil
 }
 
+// OpenPreview opens a complete recipe artifact as a seekable file. A cache
+// miss is rebuilt first; preview failures never select original bytes.
+func (store *Store) OpenPreview(ctx context.Context, id domain.ID) (*StreamAsset, error) {
+	preview, err := store.EnsurePreview(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
+	if err != nil {
+		return nil, fmt.Errorf("coordinate preview delivery: %w", err)
+	}
+	asset := &StreamAsset{lease: lease}
+	fail := func(err error) (*StreamAsset, error) {
+		_ = asset.Close()
+		return nil, err
+	}
+	value, err := store.getLocked(ctx, id)
+	if err != nil {
+		return fail(err)
+	}
+	if value.SHA256 != preview.SHA256 {
+		return fail(domain.NewError(domain.CodeDataIntegrityFailed, "preview cache key does not match media authority", map[string]any{"media_id": id.String()}))
+	}
+	file, err := store.openCacheFile(preview.Path, store.options.Limits.PreviewMaxBytes)
+	if err != nil {
+		return fail(domain.NewError(domain.CodeMediaPreviewFailed, "preview cache could not be opened", map[string]any{"media_id": id.String()}))
+	}
+	asset.Reader = file
+	asset.Media = value
+	asset.MIMEType = preview.MIMEType
+	asset.ETag = `"preview-` + RecipeVersion + `-` + preview.SHA256 + `"`
+	return asset, nil
+}
+
 // ReadPoster returns the replaceable JPEG poster for video media only.
 func (store *Store) ReadPoster(ctx context.Context, id domain.ID) (Asset, error) {
 	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
@@ -123,6 +190,125 @@ func (store *Store) ReadPoster(ctx context.Context, id domain.ID) (Asset, error)
 		return Asset{}, domain.NewError(domain.CodeMediaPreviewFailed, "video poster cache is corrupt", map[string]any{"media_id": id.String()})
 	}
 	return Asset{Contents: poster, MIMEType: "image/jpeg", ETag: `"poster-` + RecipeVersion + `-` + value.SHA256 + `"`}, nil
+}
+
+// OpenPoster opens the replaceable video poster while retaining the media
+// lease for the whole HTTP response.
+func (store *Store) OpenPoster(ctx context.Context, id domain.ID) (*StreamAsset, error) {
+	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
+	if err != nil {
+		return nil, fmt.Errorf("coordinate poster delivery: %w", err)
+	}
+	asset := &StreamAsset{lease: lease}
+	fail := func(err error) (*StreamAsset, error) {
+		_ = asset.Close()
+		return nil, err
+	}
+	value, err := store.getLocked(ctx, id)
+	if err != nil {
+		return fail(err)
+	}
+	if value.MIMEType != "video/mp4" {
+		return fail(domain.NewError(domain.CodeMediaTypeUnsupported, "poster is available only for video media", map[string]any{"media_id": id.String()}))
+	}
+	contents, err := store.readOriginal(ctx, value)
+	if err != nil {
+		return fail(err)
+	}
+	path, err := store.ensureVideoPoster(ctx, value, contents)
+	if err != nil {
+		return fail(err)
+	}
+	file, err := store.openCacheFile(path, store.options.Limits.PreviewMaxBytes)
+	if err != nil {
+		return fail(domain.NewError(domain.CodeMediaPreviewFailed, "video poster cache is corrupt", map[string]any{"media_id": id.String()}))
+	}
+	asset.Reader = file
+	asset.Media = value
+	asset.MIMEType = "image/jpeg"
+	asset.ETag = `"poster-` + RecipeVersion + `-` + value.SHA256 + `"`
+	return asset, nil
+}
+
+func (store *Store) openOriginalFile(value Media) (*os.File, error) {
+	path, err := store.resolveOriginal(value)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		info os.FileInfo
+		file *os.File
+	)
+	if store.generationRoot != nil {
+		relative := filepath.FromSlash(value.StoragePath)
+		info, err = store.generationRoot.Lstat(relative)
+		if err == nil {
+			file, err = store.generationRoot.Open(relative)
+		}
+	} else {
+		info, err = os.Lstat(path)
+		if err == nil {
+			file, err = os.Open(path)
+		}
+	}
+	if err != nil || info == nil || file == nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() != value.ByteSize {
+		if file != nil {
+			_ = file.Close()
+		}
+		return nil, domain.NewError(domain.CodeMediaCorrupt, "immutable original is missing or invalid", map[string]any{"media_id": value.ID.String()})
+	}
+	return file, nil
+}
+
+func verifyOpenOriginal(ctx context.Context, file *os.File, value Media) error {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original cannot be read", map[string]any{"media_id": value.ID.String()})
+	}
+	hash := sha256.New()
+	if _, err := io.Copy(hash, &contextReader{ctx: ctx, reader: io.LimitReader(file, value.ByteSize+1)}); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original cannot be read", map[string]any{"media_id": value.ID.String()})
+	}
+	position, err := file.Seek(0, io.SeekCurrent)
+	if err != nil || position != value.ByteSize || hex.EncodeToString(hash.Sum(nil)) != value.SHA256 {
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original checksum does not match", map[string]any{"media_id": value.ID.String()})
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original cannot be rewound", map[string]any{"media_id": value.ID.String()})
+	}
+	return nil
+}
+
+func (store *Store) openCacheFile(path string, maxBytes int64) (*os.File, error) {
+	var (
+		info os.FileInfo
+		file *os.File
+		err  error
+	)
+	if store.rootAuthority != nil {
+		relative, relativeErr := filepath.Rel(store.storageRoot, path)
+		if relativeErr != nil || filepath.IsAbs(relative) || relative == "." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return nil, errors.New("cache path escaped authority")
+		}
+		info, err = store.rootAuthority.Lstat(relative)
+		if err == nil {
+			file, err = store.rootAuthority.Open(relative)
+		}
+	} else {
+		info, err = os.Lstat(path)
+		if err == nil {
+			file, err = os.Open(path)
+		}
+	}
+	if err != nil || info == nil || file == nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > maxBytes {
+		if file != nil {
+			_ = file.Close()
+		}
+		return nil, errors.New("cache file is missing or invalid")
+	}
+	return file, nil
 }
 
 // List joins metadata, the resolver, and derived cache status without treating
