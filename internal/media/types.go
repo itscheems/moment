@@ -34,7 +34,7 @@ const (
 	DefaultMaxVideoDuration          = 5 * time.Minute
 
 	// RecipeVersion changes whenever any output byte semantics change.
-	RecipeVersion = "v6-max1600-display10m-heic-mp4-h264-hdr-bt709"
+	RecipeVersion = "v7-max1600-display10m-heic-mp4-h264-hdr-bt709-poster-parity"
 
 	// Nine bytes cover the largest supported 16-bit RGBA decode plus bounded
 	// preview intermediates; fixed bytes cover compressed input and encoders.

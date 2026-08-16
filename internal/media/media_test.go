@@ -269,6 +269,55 @@ func TestIngestQuickTimeRealFixturePreservesOriginalAndBuildsMP4Display(t *testi
 	if err != nil || poster.MIMEType != "image/jpeg" {
 		t.Fatalf("QuickTime poster = %q, %v", poster.MIMEType, err)
 	}
+	referencePath := filepath.Join(t.TempDir(), "display-frame.png")
+	seek := strconv.FormatFloat(videoPosterTime(derived.durationSeconds), 'f', 3, 64)
+	if output, err := exec.Command(ffmpeg, "-nostdin", "-y", "-v", "error", "-ss", seek, "-i", preview.Path, "-frames:v", "1", referencePath).CombinedOutput(); err != nil {
+		t.Fatalf("extract display frame: %v: %s", err, output)
+	}
+	referenceFile, err := os.Open(referencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, _, decodeErr := image.Decode(referenceFile)
+	closeErr := referenceFile.Close()
+	if decodeErr != nil || closeErr != nil {
+		t.Fatalf("decode display frame: %v", errors.Join(decodeErr, closeErr))
+	}
+	posterImage, _, err := image.Decode(bytes.NewReader(poster.Contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if posterImage.Bounds() != reference.Bounds() {
+		t.Fatalf("QuickTime poster bounds = %v, display frame bounds = %v", posterImage.Bounds(), reference.Bounds())
+	}
+	if delta := averageRGBDifference(posterImage, reference); delta > 6 {
+		t.Fatalf("QuickTime poster/display average RGB difference = %.2f, want <= 6", delta)
+	}
+}
+
+func averageRGBDifference(left, right image.Image) float64 {
+	bounds := left.Bounds().Intersect(right.Bounds())
+	if bounds.Empty() {
+		return 255
+	}
+	var total uint64
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			leftPixel := color.NRGBAModel.Convert(left.At(x, y)).(color.NRGBA)
+			rightPixel := color.NRGBAModel.Convert(right.At(x, y)).(color.NRGBA)
+			total += uint64(absInt(int(leftPixel.R) - int(rightPixel.R)))
+			total += uint64(absInt(int(leftPixel.G) - int(rightPixel.G)))
+			total += uint64(absInt(int(leftPixel.B) - int(rightPixel.B)))
+		}
+	}
+	return float64(total) / float64(bounds.Dx()*bounds.Dy()*3)
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func TestConvertHEICFallsBackToFFmpegWhenLibheifIsUnavailable(t *testing.T) {

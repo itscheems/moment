@@ -433,13 +433,29 @@ func videoPosterTime(durationSeconds float64) float64 {
 	return min(3, max(0.5, durationSeconds*0.1), latestUsableFrame)
 }
 
-func (store *Store) generateVideoPosterFile(ctx context.Context, input, output string, inspection inspected) error {
+func (store *Store) generateEarlyVideoPosterFile(ctx context.Context, input, output string, inspection inspected) error {
 	plan := videoDisplayFilterPlan(inspection, store.options.Limits.PreviewMaxEdge, runtime.GOOS)
 	seek := strconv.FormatFloat(videoPosterTime(inspection.durationSeconds), 'f', 3, 64)
 	arguments := []string{"-nostdin", "-y", "-v", "error"}
 	arguments = append(arguments, plan.inputArguments...)
 	arguments = append(arguments, "-ss", seek, "-i", input, "-frames:v", "1", "-vf", plan.filter, "-q:v", "3", output)
 	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", arguments...)
+	return err
+}
+
+// generateDisplayPosterFile extracts the durable poster from the browser-ready
+// SDR display rendition instead of independently converting the original. A
+// JPEG uses full-range BT.601 samples, so the final scale explicitly performs
+// the BT.709 limited-range video to BT.601 full-range JPEG conversion. Keeping
+// both branches on the same decoded display frame prevents HDR source posters
+// from drifting away from playback in saturation and luminance.
+func (store *Store) generateDisplayPosterFile(ctx context.Context, input, output string, durationSeconds float64) error {
+	seek := strconv.FormatFloat(videoPosterTime(durationSeconds), 'f', 3, 64)
+	filter := "scale=in_color_matrix=bt709:out_color_matrix=bt601:in_range=tv:out_range=pc,format=yuvj420p"
+	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg",
+		"-nostdin", "-y", "-v", "error", "-ss", seek, "-i", input,
+		"-frames:v", "1", "-vf", filter, "-q:v", "3", output,
+	)
 	return err
 }
 

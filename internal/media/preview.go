@@ -168,9 +168,36 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 		return preparedPreview{}, previewFailure(err)
 	}
 	prepared := preparedPreview{preview: Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}}
+	if !posterReady && observer.VideoPosterReady != nil {
+		earlyPoster := filepath.Join(directory, "early-poster.jpg")
+		if err := store.generateEarlyVideoPosterFile(ctx, input, earlyPoster, inspection); err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+		earlyContents, err := readBoundedFile(ctx, earlyPoster, store.options.Limits.PreviewMaxBytes)
+		if err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+		if _, decodedFormat, err := image.DecodeConfig(bytes.NewReader(earlyContents)); err != nil || decodedFormat != "jpeg" {
+			return preparedPreview{}, previewFailure(errors.New("video poster is not a JPEG image"))
+		}
+		observer.VideoPosterReady(earlyContents)
+	}
+	displayPath := path
+	if !displayReady {
+		displayPath = filepath.Join(directory, "display.mp4")
+		derived, err := store.transcodeVideoFile(ctx, input, inspection, displayPath)
+		if err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+		prepared.preview.Width, prepared.preview.Height = displayDimensions(derived)
+		prepared.contents, err = readBoundedFile(ctx, displayPath, store.options.Limits.PreviewMaxBytes)
+		if err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+	}
 	if !posterReady {
 		partialPoster := filepath.Join(directory, "poster.jpg")
-		if err := store.generateVideoPosterFile(ctx, input, partialPoster, inspection); err != nil {
+		if err := store.generateDisplayPosterFile(ctx, displayPath, partialPoster, inspection.durationSeconds); err != nil {
 			return preparedPreview{}, previewFailure(err)
 		}
 		prepared.posterContents, err = readBoundedFile(ctx, partialPoster, store.options.Limits.PreviewMaxBytes)
@@ -181,21 +208,6 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 			return preparedPreview{}, previewFailure(errors.New("video poster is not a JPEG image"))
 		}
 		prepared.posterPath = posterPath
-		if observer.VideoPosterReady != nil {
-			observer.VideoPosterReady(prepared.posterContents)
-		}
-	}
-	if !displayReady {
-		displayPath := filepath.Join(directory, "display.mp4")
-		derived, err := store.transcodeVideoFile(ctx, input, inspection, displayPath)
-		if err != nil {
-			return preparedPreview{}, previewFailure(err)
-		}
-		prepared.preview.Width, prepared.preview.Height = displayDimensions(derived)
-		prepared.contents, err = readBoundedFile(ctx, displayPath, store.options.Limits.PreviewMaxBytes)
-		if err != nil {
-			return preparedPreview{}, previewFailure(err)
-		}
 	}
 	return prepared, nil
 }
