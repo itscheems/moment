@@ -30,70 +30,89 @@ const (
 	previewScaleDenominator = 5
 )
 
+type preparedPreview struct {
+	preview        Preview
+	contents       []byte
+	posterPath     string
+	posterContents []byte
+}
+
 func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, inspection inspected, sha string) (Preview, error) {
+	prepared, err := store.preparePreviewBytes(ctx, contents, inspection, sha, false)
+	if err != nil {
+		return Preview{}, err
+	}
+	if err := store.commitPreparedPreview(ctx, prepared); err != nil {
+		return Preview{}, err
+	}
+	return prepared.preview, nil
+}
+
+func (store *Store) preparePreviewBytes(ctx context.Context, contents []byte, inspection inspected, sha string, force bool) (preparedPreview, error) {
 	if inspection.format == formatHEIC {
 		converted := inspection.decodedSource
 		if len(converted) == 0 {
 			var err error
 			converted, err = store.convertHEIC(ctx, contents)
 			if err != nil {
-				return Preview{}, previewFailure(err)
+				return preparedPreview{}, previewFailure(err)
 			}
 		}
 		decoded, err := inspectImage(converted, store.options.Limits)
 		if err != nil {
-			return Preview{}, previewFailure(err)
+			return preparedPreview{}, previewFailure(err)
 		}
-		return store.ensurePreviewBytes(ctx, converted, decoded, sha)
+		return store.preparePreviewBytes(ctx, converted, decoded, sha, force)
 	}
 	if inspection.format == formatMP4 {
-		return store.ensureVideoPreview(ctx, contents, inspection, sha)
+		return store.prepareVideoPreview(ctx, contents, inspection, sha, force)
 	}
-	if preview, ok := store.existingPreview(sha); ok {
+	if preview, ok := store.existingPreview(sha); ok && !force {
 		preview.AnimatedOriginal = inspection.format == formatGIF
-		return preview, nil
+		return preparedPreview{preview: preview}, nil
 	}
 	select {
-	case store.workers <- struct{}{}:
-		defer func() { <-store.workers }()
+	case store.imageWorkers <- struct{}{}:
+		defer func() { <-store.imageWorkers }()
 	case <-ctx.Done():
-		return Preview{}, ctx.Err()
+		return preparedPreview{}, ctx.Err()
 	}
+	store.noteProcessor("image")
 	memoryWeight := previewMemoryWeight(uint64(inspection.width) * uint64(inspection.height))
 	if memoryWeight > store.memoryCapacity {
-		return Preview{}, domain.NewError(domain.CodeMediaDimensionsExceeded, "image exceeds the preview memory budget", map[string]any{
+		return preparedPreview{}, domain.NewError(domain.CodeMediaDimensionsExceeded, "image exceeds the preview memory budget", map[string]any{
 			"estimated_bytes": memoryWeight,
 			"budget_bytes":    store.memoryCapacity,
 		})
 	}
 	if err := store.memory.Acquire(ctx, memoryWeight); err != nil {
-		return Preview{}, err
+		return preparedPreview{}, err
 	}
 	defer store.memory.Release(memoryWeight)
 	if store.generateHook != nil {
 		store.generateHook()
 	}
 	if err := ctx.Err(); err != nil {
-		return Preview{}, err
+		return preparedPreview{}, err
 	}
 	decoded, err := decodeFull(ctx, inspection, contents)
 	if err != nil {
-		return Preview{}, previewFailure(err)
+		return preparedPreview{}, previewFailure(err)
 	}
 	if err := ctx.Err(); err != nil {
-		return Preview{}, err
+		return preparedPreview{}, err
 	}
 	alpha, err := imageHasTransparency(ctx, decoded)
 	if err != nil {
-		return Preview{}, err
+		return preparedPreview{}, err
 	}
 	resized, err := resize(ctx, decoded, store.options.Limits.PreviewMaxEdge)
 	if err != nil {
-		return Preview{}, err
+		return preparedPreview{}, err
 	}
 	oriented, err := orient(ctx, resized, inspection.orientation)
 	if err != nil {
-		return Preview{}, err
+		return preparedPreview{}, err
 	}
 	encoded, outputImage, mimeType, extension, err := encodePreviewWithinBudget(
 		ctx,
@@ -102,17 +121,14 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 		store.options.Limits.PreviewMaxBytes,
 	)
 	if err != nil {
-		return Preview{}, err
+		return preparedPreview{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return Preview{}, err
+		return preparedPreview{}, err
 	}
 	path := store.previewPath(sha, extension)
-	if err := store.writeCacheAtomic(ctx, path, encoded, store.beforePreviewCommit); err != nil {
-		return Preview{}, previewFailure(err)
-	}
 	bounds := outputImage.Bounds()
-	return Preview{
+	return preparedPreview{preview: Preview{
 		Path:             path,
 		RecipeVersion:    RecipeVersion,
 		SHA256:           sha,
@@ -120,74 +136,110 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 		Width:            uint32(bounds.Dx()),
 		Height:           uint32(bounds.Dy()),
 		AnimatedOriginal: inspection.format == formatGIF,
-	}, nil
+	}, contents: encoded}, nil
 }
 
-func (store *Store) ensureVideoPreview(ctx context.Context, contents []byte, inspection inspected, sha string) (Preview, error) {
+func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, inspection inspected, sha string, force bool) (preparedPreview, error) {
 	path := store.previewPath(sha, "mp4")
-	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= store.options.Limits.PreviewMaxBytes {
-		return Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}, nil
+	posterPath := store.previewPath(sha, "poster.jpg")
+	displayReady := !force && store.existingVideoPreview(sha)
+	posterReady := !force && store.existingVideoPoster(sha)
+	if displayReady && posterReady {
+		return preparedPreview{preview: Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}}, nil
 	}
 	select {
-	case store.workers <- struct{}{}:
-		defer func() { <-store.workers }()
+	case store.videoWorkers <- struct{}{}:
+		defer func() { <-store.videoWorkers }()
 	case <-ctx.Done():
-		return Preview{}, ctx.Err()
+		return preparedPreview{}, ctx.Err()
 	}
+	store.noteProcessor("video")
 	directory, err := store.privateTempDir()
 	if err != nil {
-		return Preview{}, previewFailure(err)
+		return preparedPreview{}, previewFailure(err)
 	}
 	defer func() { _ = os.RemoveAll(directory) }()
-	partialPath := filepath.Join(directory, "display.mp4")
-	if err := store.transcodeVideo(ctx, contents, inspection, partialPath); err != nil {
-		return Preview{}, previewFailure(err)
-	}
-	partial, err := os.Open(partialPath)
+	input, err := writePrivateInput(directory, "original.mp4", contents)
 	if err != nil {
-		return Preview{}, previewFailure(err)
+		return preparedPreview{}, previewFailure(err)
 	}
-	encoded, readErr := readBounded(ctx, partial, store.options.Limits.PreviewMaxBytes)
-	closeErr := partial.Close()
-	if readErr != nil || closeErr != nil {
-		return Preview{}, previewFailure(errors.Join(readErr, closeErr))
+	prepared := preparedPreview{preview: Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}}
+	if !displayReady {
+		displayPath := filepath.Join(directory, "display.mp4")
+		derived, err := store.transcodeVideoFile(ctx, input, inspection, displayPath)
+		if err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+		prepared.preview.Width, prepared.preview.Height = displayDimensions(derived)
+		prepared.contents, err = readBoundedFile(ctx, displayPath, store.options.Limits.PreviewMaxBytes)
+		if err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
 	}
-	if err := store.writeCacheAtomic(ctx, path, encoded, store.beforePreviewCommit); err != nil {
-		return Preview{}, previewFailure(err)
+	if !posterReady {
+		partialPoster := filepath.Join(directory, "poster.jpg")
+		if err := store.generateVideoPosterFile(ctx, input, partialPoster); err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+		prepared.posterContents, err = readBoundedFile(ctx, partialPoster, store.options.Limits.PreviewMaxBytes)
+		if err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+		if _, decodedFormat, err := image.DecodeConfig(bytes.NewReader(prepared.posterContents)); err != nil || decodedFormat != "jpeg" {
+			return preparedPreview{}, previewFailure(errors.New("video poster is not a JPEG image"))
+		}
+		prepared.posterPath = posterPath
 	}
-	return Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}, nil
+	return prepared, nil
 }
 
 func (store *Store) ensureVideoPoster(ctx context.Context, media Media, contents []byte) (string, error) {
 	path := store.previewPath(media.SHA256, "poster.jpg")
-	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= store.options.Limits.PreviewMaxBytes {
+	if store.existingVideoPoster(media.SHA256) {
 		return path, nil
 	}
-	directory, err := store.privateTempDir()
+	value, err := store.flight.Do(ctx, "poster:"+media.ID.String(), func() (Preview, error) {
+		if store.existingVideoPoster(media.SHA256) {
+			return Preview{Path: path}, nil
+		}
+		inspection, err := store.probeVideoBytes(ctx, contents)
+		if err != nil {
+			return Preview{}, previewFailure(err)
+		}
+		prepared, err := store.prepareVideoPreview(ctx, contents, inspection, media.SHA256, false)
+		if err != nil {
+			return Preview{}, err
+		}
+		if err := store.commitPreparedPreview(ctx, prepared); err != nil {
+			return Preview{}, err
+		}
+		return Preview{Path: path}, nil
+	})
+	return value.Path, err
+}
+
+func (store *Store) commitPreparedPreview(ctx context.Context, prepared preparedPreview) error {
+	if len(prepared.contents) > 0 {
+		if err := store.writeCacheAtomic(ctx, prepared.preview.Path, prepared.contents, store.beforePreviewCommit); err != nil {
+			return previewFailure(err)
+		}
+	}
+	if len(prepared.posterContents) > 0 {
+		if err := store.writeCacheAtomic(ctx, prepared.posterPath, prepared.posterContents, nil); err != nil {
+			return previewFailure(err)
+		}
+	}
+	return nil
+}
+
+func readBoundedFile(ctx context.Context, path string, maxBytes int64) ([]byte, error) {
+	file, err := os.Open(path)
 	if err != nil {
-		return "", previewFailure(err)
+		return nil, err
 	}
-	defer func() { _ = os.RemoveAll(directory) }()
-	partialPath := filepath.Join(directory, "poster.jpg")
-	if err := store.generateVideoPoster(ctx, contents, partialPath); err != nil {
-		return "", previewFailure(err)
-	}
-	partial, err := os.Open(partialPath)
-	if err != nil {
-		return "", previewFailure(err)
-	}
-	encoded, readErr := readBounded(ctx, partial, store.options.Limits.PreviewMaxBytes)
-	closeErr := partial.Close()
-	if readErr != nil || closeErr != nil {
-		return "", previewFailure(errors.Join(readErr, closeErr))
-	}
-	if _, decodedFormat, err := image.DecodeConfig(bytes.NewReader(encoded)); err != nil || decodedFormat != "jpeg" {
-		return "", previewFailure(errors.New("video poster is not a JPEG image"))
-	}
-	if err := store.writeCacheAtomic(ctx, path, encoded, nil); err != nil {
-		return "", previewFailure(err)
-	}
-	return path, nil
+	contents, readErr := readBounded(ctx, file, maxBytes)
+	closeErr := file.Close()
+	return contents, errors.Join(readErr, closeErr)
 }
 
 func encodePreviewWithinBudget(ctx context.Context, source image.Image, alpha bool, maxBytes int64) ([]byte, image.Image, string, string, error) {
@@ -363,6 +415,36 @@ func (store *Store) existingVideoPreview(sha string) bool {
 	header, readErr := io.ReadAll(io.LimitReader(file, 64))
 	closeErr := file.Close()
 	return readErr == nil && closeErr == nil && detectExtendedFormat(header) == formatMP4
+}
+
+func (store *Store) existingVideoPoster(sha string) bool {
+	path := store.previewPath(sha, "poster.jpg")
+	var (
+		info os.FileInfo
+		file *os.File
+		err  error
+	)
+	if store.rootAuthority != nil {
+		relative := filepath.Join("cache", "previews", RecipeVersion, sha[:2], sha+".poster.jpg")
+		info, err = store.rootAuthority.Lstat(relative)
+		if err == nil {
+			file, err = store.rootAuthority.Open(relative)
+		}
+	} else {
+		info, err = os.Lstat(path)
+		if err == nil {
+			file, err = os.Open(path)
+		}
+	}
+	if err != nil || info == nil || file == nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > store.options.Limits.PreviewMaxBytes {
+		if file != nil {
+			_ = file.Close()
+		}
+		return false
+	}
+	_, decodedFormat, decodeErr := image.DecodeConfig(file)
+	closeErr := file.Close()
+	return decodeErr == nil && closeErr == nil && decodedFormat == "jpeg"
 }
 
 func (store *Store) writeCacheAtomic(ctx context.Context, final string, contents []byte, beforeCommit func() error) error {

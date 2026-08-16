@@ -32,12 +32,14 @@ type Store struct {
 	storageRoot    string
 	rootAuthority  *os.Root
 	generationRoot *os.Root
-	workers        chan struct{}
+	imageWorkers   chan struct{}
+	videoWorkers   chan struct{}
 	memory         *semaphore.Weighted
 	memoryCapacity int64
 	flight         flightGroup
 	// generateHook is test-only instrumentation used to prove singleflight.
 	generateHook         func()
+	processorHook        func(string)
 	beforeOriginalCommit func() error
 	beforePreviewCommit  func() error
 	beforePruneDelete    func() error
@@ -101,7 +103,8 @@ func newStore(runtimeState *runtimefs.Runtime, database sqlite.Transactor, optio
 		options:        normalized,
 		references:     references,
 		maintenance:    maintenance,
-		workers:        make(chan struct{}, normalized.Limits.PreviewWorkers),
+		imageWorkers:   make(chan struct{}, normalized.Limits.PreviewWorkers),
+		videoWorkers:   make(chan struct{}, normalized.Limits.VideoWorkers),
 		memory:         semaphore.NewWeighted(memoryCapacity),
 		memoryCapacity: memoryCapacity,
 		removeFile:     os.Remove,
@@ -141,6 +144,23 @@ func (store *Store) acquireMaintenanceAndMedia(ctx context.Context, mode runtime
 	)
 }
 
+func (store *Store) acquireMaintenance(ctx context.Context) (releasableLease, error) {
+	if store.development != nil {
+		if !store.development.BelongsTo(store.runtime.Root) ||
+			!store.development.Holds(runtimefs.MaintenanceLock, runtimefs.Exclusive) {
+			return nil, runtimefs.ErrInsufficientLocks
+		}
+		return noOpLease{}, nil
+	}
+	if store.maintenance != nil {
+		if !store.maintenance.Holds(runtimefs.MaintenanceLock, runtimefs.Shared) {
+			return nil, errors.New("media maintenance lease is no longer held")
+		}
+		return noOpLease{}, nil
+	}
+	return store.runtime.Locks.Acquire(ctx, runtimefs.MaintenanceLock, runtimefs.Shared)
+}
+
 type noOpLease struct{}
 
 func (noOpLease) Release() error { return nil }
@@ -167,9 +187,22 @@ func (store *Store) Ingest(ctx context.Context, originalName string, input io.Re
 	sha := hex.EncodeToString(digest[:])
 	storagePath := canonicalStoragePath(sha, inspection.format)
 
-	lease, err := store.acquireMaintenanceAndMedia(ctx, runtimefs.Exclusive)
+	maintenance, err := store.acquireMaintenance(ctx)
 	if err != nil {
 		return Media{}, Preview{}, fmt.Errorf("coordinate media ingest: %w", err)
+	}
+	defer func() { _ = maintenance.Release() }()
+
+	// Ingest always prepares fresh bytes. A prune may remove an otherwise valid
+	// cache entry before the later exclusive commit, so trusting an unlocked
+	// cache hit here could publish authority without a ready display artifact.
+	prepared, err := store.preparePreviewBytes(ctx, contents, inspection, sha, true)
+	if err != nil {
+		return Media{}, Preview{}, err
+	}
+	lease, err := store.acquireMedia(ctx, runtimefs.Exclusive)
+	if err != nil {
+		return Media{}, Preview{}, fmt.Errorf("coordinate media ingest commit: %w", err)
 	}
 	defer func() { _ = lease.Release() }()
 
@@ -179,12 +212,13 @@ func (store *Store) Ingest(ctx context.Context, originalName string, input io.Re
 		if err := store.verifyOriginal(ctx, existing, contents); err != nil {
 			return Media{}, Preview{}, err
 		}
-		preview, err := store.ensurePreviewBytes(ctx, contents, inspection, sha)
-		return existing, preview, err
+		if err := store.commitPreparedPreview(ctx, prepared); err != nil {
+			return Media{}, Preview{}, err
+		}
+		return existing, prepared.preview, nil
 	}
 
-	preview, err := store.ensurePreviewBytes(ctx, contents, inspection, sha)
-	if err != nil {
+	if err := store.commitPreparedPreview(ctx, prepared); err != nil {
 		return Media{}, Preview{}, err
 	}
 	createdOriginal, err := store.publishOriginal(ctx, storagePath, contents)
@@ -222,12 +256,12 @@ func (store *Store) Ingest(ctx context.Context, originalName string, input io.Re
 		// platform that cannot share advisory locks. Recover deterministically.
 		if existing, found, lookupErr := store.findBySHA(ctx, sha); lookupErr == nil && found {
 			cleanupOriginal = false
-			return existing, preview, nil
+			return existing, prepared.preview, nil
 		}
 		return Media{}, Preview{}, err
 	}
 	cleanupOriginal = false
-	return media, preview, nil
+	return media, prepared.preview, nil
 }
 
 // EnsurePreview returns a complete recipe artifact, regenerating a missing
@@ -236,7 +270,7 @@ func (store *Store) EnsurePreview(ctx context.Context, id domain.ID) (Preview, e
 	if _, err := domain.ParseID(id.String()); err != nil {
 		return Preview{}, err
 	}
-	value, err := store.flight.Do(ctx, id.String(), func() (Preview, error) {
+	value, err := store.flight.Do(ctx, "preview:"+id.String(), func() (Preview, error) {
 		lease, err := store.acquireMaintenanceAndMedia(ctx, runtimefs.Shared)
 		if err != nil {
 			return Preview{}, fmt.Errorf("coordinate preview generation: %w", err)

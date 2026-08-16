@@ -26,9 +26,11 @@ const (
 	DefaultPreviewMaxBytes    int64  = 10 << 20
 	DefaultPreviewMaxEdge     uint32 = 1_600
 	DefaultPreviewConcurrency        = 2
+	DefaultVideoConcurrency          = 1
+	DefaultMaxVideoDuration          = 5 * time.Minute
 
 	// RecipeVersion changes whenever any output byte semantics change.
-	RecipeVersion = "v4-max1600-display10m-heic-libheif-mp4-h264-faststart"
+	RecipeVersion = "v5-max1600-display10m-heic-libheif-mp4-h264-crf-faststart"
 
 	// Nine bytes cover the largest supported 16-bit RGBA decode plus bounded
 	// preview intermediates; fixed bytes cover compressed input and encoders.
@@ -48,7 +50,10 @@ type Limits struct {
 	// PreviewMaxBytes is the hard cap for every derived display artifact.
 	PreviewMaxBytes int64
 	PreviewMaxEdge  uint32
-	PreviewWorkers  int
+	// PreviewWorkers bounds image decode/encode work, including HEIC conversion.
+	PreviewWorkers int
+	// VideoWorkers independently bounds ffprobe and FFmpeg work.
+	VideoWorkers int
 }
 
 func (limits Limits) normalized() (Limits, error) {
@@ -61,6 +66,7 @@ func (limits Limits) normalized() (Limits, error) {
 		PreviewMaxBytes:   DefaultPreviewMaxBytes,
 		PreviewMaxEdge:    DefaultPreviewMaxEdge,
 		PreviewWorkers:    DefaultPreviewConcurrency,
+		VideoWorkers:      DefaultVideoConcurrency,
 	}
 	if limits.MaxBytes == 0 {
 		limits.MaxBytes = defaults.MaxBytes
@@ -86,6 +92,9 @@ func (limits Limits) normalized() (Limits, error) {
 	if limits.PreviewWorkers == 0 {
 		limits.PreviewWorkers = defaults.PreviewWorkers
 	}
+	if limits.VideoWorkers == 0 {
+		limits.VideoWorkers = defaults.VideoWorkers
+	}
 	if limits.MaxBytes < 1 || limits.MaxBytes > defaults.MaxBytes ||
 		limits.MaxDimension < 1 || limits.MaxDimension > defaults.MaxDimension ||
 		limits.MaxPixels < 1 || limits.MaxPixels > defaults.MaxPixels ||
@@ -93,7 +102,8 @@ func (limits Limits) normalized() (Limits, error) {
 		limits.MaxGIFFramePixels < 1 || limits.MaxGIFFramePixels > defaults.MaxGIFFramePixels ||
 		limits.PreviewMaxBytes < 1 || limits.PreviewMaxBytes > defaults.PreviewMaxBytes ||
 		limits.PreviewMaxEdge < 1 || limits.PreviewMaxEdge > defaults.PreviewMaxEdge ||
-		limits.PreviewWorkers < 1 || limits.PreviewWorkers > 8 {
+		limits.PreviewWorkers < 1 || limits.PreviewWorkers > 8 ||
+		limits.VideoWorkers < 1 || limits.VideoWorkers > 4 {
 		return Limits{}, domain.NewError(domain.CodeInvalidArgument, "media limits must be positive and no greater than product ceilings", nil)
 	}
 	return limits, nil
@@ -159,6 +169,8 @@ type inspected struct {
 	gifFirstTransparent bool
 	durationSeconds     float64
 	decodedSource       []byte
+	codec               string
+	pixelFormat         string
 }
 
 // Media is the authoritative metadata persisted beside an immutable original.

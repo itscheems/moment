@@ -17,10 +17,17 @@ import (
 
 type probeDocument struct {
 	Streams []struct {
-		Width    uint32 `json:"width"`
-		Height   uint32 `json:"height"`
-		Duration string `json:"duration"`
-		Codec    string `json:"codec_name"`
+		Width       uint32 `json:"width"`
+		Height      uint32 `json:"height"`
+		Duration    string `json:"duration"`
+		Codec       string `json:"codec_name"`
+		PixelFormat string `json:"pix_fmt"`
+		Tags        struct {
+			Rotate string `json:"rotate"`
+		} `json:"tags"`
+		SideData []struct {
+			Rotation float64 `json:"rotation"`
+		} `json:"side_data_list"`
 	} `json:"streams"`
 	Format struct {
 		Duration string `json:"duration"`
@@ -95,6 +102,22 @@ func processorUnavailable(name string) error {
 	return domain.NewError(domain.CodeMediaProcessorUnavailable, "required media processor is unavailable", map[string]any{"processor": name})
 }
 
+func (store *Store) noteProcessor(kind string) {
+	if store.processorHook != nil {
+		store.processorHook(kind)
+	}
+}
+
+func (store *Store) acquireProcessor(ctx context.Context, lane chan struct{}, kind string) (func(), error) {
+	select {
+	case lane <- struct{}{}:
+		store.noteProcessor(kind)
+		return func() { <-lane }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func (store *Store) runTool(ctx context.Context, configured, name string, arguments ...string) ([]byte, error) {
 	path, err := store.toolPath(configured, name)
 	if err != nil {
@@ -141,6 +164,11 @@ func writePrivateInput(directory, name string, contents []byte) (string, error) 
 }
 
 func (store *Store) convertHEIC(ctx context.Context, contents []byte) ([]byte, error) {
+	release, err := store.acquireProcessor(ctx, store.imageWorkers, "heic")
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	directory, err := store.privateTempDir()
 	if err != nil {
 		return nil, err
@@ -175,7 +203,16 @@ func (store *Store) probeVideoBytes(ctx context.Context, contents []byte) (inspe
 }
 
 func (store *Store) probeVideoFile(ctx context.Context, input string) (inspected, error) {
-	output, err := store.runTool(ctx, store.options.FFprobePath, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration,codec_name:format=duration", "-of", "json", input)
+	release, err := store.acquireProcessor(ctx, store.videoWorkers, "ffprobe")
+	if err != nil {
+		return inspected{}, err
+	}
+	defer release()
+	return store.probeVideoFileUnlocked(ctx, input)
+}
+
+func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string) (inspected, error) {
+	output, err := store.runTool(ctx, store.options.FFprobePath, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration,codec_name,pix_fmt:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", input)
 	if err != nil {
 		return inspected{}, err
 	}
@@ -188,7 +225,21 @@ func (store *Store) probeVideoFile(ctx context.Context, input string) (inspected
 	if stream.Width == 0 || stream.Height == 0 {
 		return inspected{}, domain.NewError(domain.CodeMediaCorrupt, "MP4 video dimensions are missing", nil)
 	}
-	if err := validateDimensions(stream.Width, stream.Height, store.options.Limits); err != nil {
+	width, height := stream.Width, stream.Height
+	rotation := 0.0
+	if len(stream.SideData) > 0 {
+		rotation = stream.SideData[0].Rotation
+	} else if stream.Tags.Rotate != "" {
+		rotation, _ = strconv.ParseFloat(stream.Tags.Rotate, 64)
+	}
+	quarterTurns := int(rotation/90) % 4
+	if quarterTurns < 0 {
+		quarterTurns += 4
+	}
+	if quarterTurns == 1 || quarterTurns == 3 {
+		width, height = height, width
+	}
+	if err := validateDimensions(width, height, store.options.Limits); err != nil {
 		return inspected{}, err
 	}
 	durationText := stream.Duration
@@ -196,54 +247,84 @@ func (store *Store) probeVideoFile(ctx context.Context, input string) (inspected
 		durationText = document.Format.Duration
 	}
 	duration, err := strconv.ParseFloat(durationText, 64)
-	if err != nil || duration <= 0 || duration > 24*60*60 {
+	if err != nil || duration <= 0 {
 		return inspected{}, domain.NewError(domain.CodeMediaCorrupt, "MP4 video duration is invalid", nil)
 	}
-	return inspected{format: formatMP4, width: stream.Width, height: stream.Height, durationSeconds: duration}, nil
+	if duration > DefaultMaxVideoDuration.Seconds() {
+		return inspected{}, domain.NewError(domain.CodeMediaTooLarge, "video exceeds the supported duration", map[string]any{"max_duration_seconds": int(DefaultMaxVideoDuration.Seconds())})
+	}
+	return inspected{format: formatMP4, width: width, height: height, durationSeconds: duration, codec: stream.Codec, pixelFormat: stream.PixelFormat}, nil
 }
 
-func (store *Store) transcodeVideo(ctx context.Context, contents []byte, inspection inspected, output string) error {
-	directory, err := store.privateTempDir()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.RemoveAll(directory) }()
-	input, err := writePrivateInput(directory, "original.mp4", contents)
-	if err != nil {
-		return err
-	}
-	targetBits := float64(store.options.Limits.PreviewMaxBytes-256*1024) * 8
-	videoRate := int64(targetBits/inspection.durationSeconds) - 128_000
-	if videoRate < 160_000 {
-		videoRate = 160_000
-	}
-	if videoRate > 6_000_000 {
-		videoRate = 6_000_000
-	}
+func (store *Store) transcodeVideoFile(ctx context.Context, input string, inspection inspected, output string) (inspected, error) {
 	filter := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", store.options.Limits.PreviewMaxEdge, store.options.Limits.PreviewMaxEdge)
-	_, err = store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", "-nostdin", "-y", "-v", "error", "-i", input, "-map", "0:v:0", "-map", "0:a?", "-vf", filter, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-b:v", strconv.FormatInt(videoRate, 10), "-maxrate", strconv.FormatInt(videoRate, 10), "-bufsize", strconv.FormatInt(videoRate*2, 10), "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", output)
-	if err != nil {
-		return err
+	targetBits := float64(store.options.Limits.PreviewMaxBytes-256*1024) * 8
+	videoRate := int64(targetBits/inspection.durationSeconds) - 96_000
+	videoRate = max(96_000, min(videoRate, 4_000_000))
+	attempts := [][]string{
+		{"-crf", "23"},
+		{"-crf", "28"},
+		{"-b:v", strconv.FormatInt(videoRate, 10), "-maxrate", strconv.FormatInt(videoRate, 10), "-bufsize", strconv.FormatInt(videoRate*2, 10)},
 	}
+	var lastErr error
+	for index, rateArguments := range attempts {
+		attempt := fmt.Sprintf("%s.attempt-%d.mp4", output, index+1)
+		arguments := []string{"-nostdin", "-y", "-v", "error", "-i", input, "-map", "0:v:0", "-map", "0:a?", "-map_metadata", "-1", "-vf", filter + ",setsar=1", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium"}
+		arguments = append(arguments, rateArguments...)
+		arguments = append(arguments, "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", attempt)
+		if _, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", arguments...); err != nil {
+			lastErr = err
+			continue
+		}
+		derived, err := store.validateDerivedVideo(ctx, attempt, inspection)
+		if err != nil {
+			lastErr = err
+			_ = os.Remove(attempt)
+			continue
+		}
+		if err := os.Rename(attempt, output); err != nil {
+			return inspected{}, err
+		}
+		return derived, nil
+	}
+	if lastErr != nil {
+		return inspected{}, lastErr
+	}
+	return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display version exceeds the byte budget", map[string]any{"max_bytes": store.options.Limits.PreviewMaxBytes})
+}
+
+func (store *Store) validateDerivedVideo(ctx context.Context, output string, source inspected) (inspected, error) {
 	info, err := os.Stat(output)
 	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > store.options.Limits.PreviewMaxBytes {
-		return domain.NewError(domain.CodeMediaPreviewFailed, "video display version exceeds the byte budget", map[string]any{"max_bytes": store.options.Limits.PreviewMaxBytes})
+		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display version exceeds the byte budget", map[string]any{"max_bytes": store.options.Limits.PreviewMaxBytes})
 	}
-	return nil
+	derived, err := store.probeVideoFileUnlocked(ctx, output)
+	if err != nil {
+		return inspected{}, err
+	}
+	if derived.codec != "h264" || derived.pixelFormat != "yuv420p" || derived.width > store.options.Limits.PreviewMaxEdge || derived.height > store.options.Limits.PreviewMaxEdge {
+		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display version is not browser compatible", nil)
+	}
+	tolerance := max(1.0, source.durationSeconds*0.03)
+	if difference := derived.durationSeconds - source.durationSeconds; difference > tolerance || difference < -tolerance {
+		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display duration does not match the original", nil)
+	}
+	header, err := os.ReadFile(output)
+	if err != nil || !mp4HasFastStart(header) {
+		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display version is not optimized for progressive playback", nil)
+	}
+	return derived, nil
 }
 
-func (store *Store) generateVideoPoster(ctx context.Context, contents []byte, output string) error {
-	directory, err := store.privateTempDir()
-	if err != nil {
-		return err
-	}
-	defer func() { _ = os.RemoveAll(directory) }()
-	input, err := writePrivateInput(directory, "original.mp4", contents)
-	if err != nil {
-		return err
-	}
+func mp4HasFastStart(contents []byte) bool {
+	moov := bytes.Index(contents, []byte("moov"))
+	mdat := bytes.Index(contents, []byte("mdat"))
+	return moov >= 0 && mdat >= 0 && moov < mdat
+}
+
+func (store *Store) generateVideoPosterFile(ctx context.Context, input, output string) error {
 	filter := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease", store.options.Limits.PreviewMaxEdge, store.options.Limits.PreviewMaxEdge)
-	_, err = store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", "-nostdin", "-y", "-v", "error", "-ss", "0", "-i", input, "-frames:v", "1", "-vf", filter, "-q:v", "3", output)
+	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", "-nostdin", "-y", "-v", "error", "-ss", "0", "-i", input, "-frames:v", "1", "-vf", filter, "-q:v", "3", output)
 	return err
 }
 

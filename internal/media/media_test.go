@@ -153,6 +153,13 @@ func TestIngestMP4RealProcessorPreservesOriginalBuildsBoundedDisplayAndPoster(t 
 	if value.MIMEType != "video/mp4" || preview.MIMEType != "video/mp4" || int64(fileSize(t, preview.Path)) > DefaultPreviewMaxBytes {
 		t.Fatalf("MP4 result = media(%q) preview(%q,%d)", value.MIMEType, preview.MIMEType, fileSize(t, preview.Path))
 	}
+	if !store.existingVideoPoster(value.SHA256) {
+		t.Fatal("MP4 ingest returned before its poster was ready")
+	}
+	derived, err := store.probeVideoFile(context.Background(), preview.Path)
+	if err != nil || derived.codec != "h264" || derived.pixelFormat != "yuv420p" || derived.width > DefaultPreviewMaxEdge || derived.height > DefaultPreviewMaxEdge {
+		t.Fatalf("derived MP4 contract = %+v, %v", derived, err)
+	}
 	original, err := store.ReadOriginal(context.Background(), value.ID)
 	if err != nil || !bytes.Equal(original.Contents, contents) {
 		t.Fatalf("MP4 original changed: err=%v equal=%v", err, bytes.Equal(original.Contents, contents))
@@ -187,6 +194,17 @@ func TestExtendedMediaReportsMissingProcessorWithoutPublishing(t *testing.T) {
 		t.Fatalf("missing processor error = %v", err)
 	}
 	assertMediaAuthorityEmpty(t, database, runtimeState.Current.OriginalsDir)
+}
+
+func TestVideoDurationLimitRejectsLongMediaBeforeTranscode(t *testing.T) {
+	probe := filepath.Join(t.TempDir(), "ffprobe")
+	script := "#!/bin/sh\nprintf '%s\\n' '{\"streams\":[{\"width\":640,\"height\":360,\"duration\":\"301\",\"codec_name\":\"h264\",\"pix_fmt\":\"yuv420p\"}],\"format\":{\"duration\":\"301\"}}'\n"
+	if err := os.WriteFile(probe, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	store, _, _ := newTestStoreWithOptions(t, Options{FFprobePath: probe})
+	_, err := store.probeVideoFile(context.Background(), "ignored.mp4")
+	assertCode(t, err, domain.CodeMediaTooLarge)
 }
 
 func TestRebuildPreviewsRepairsPartialCacheAndIsDryRunCancelableAndIdempotent(t *testing.T) {
@@ -854,6 +872,73 @@ func TestOpenOriginalStreamsFromFileAndRetainsMediaLease(t *testing.T) {
 		t.Fatalf("exclusive media lock after close = %v", err)
 	}
 	_ = lease.Release()
+}
+
+func TestIngestPreparesDerivedMediaWithoutExclusiveMediaLock(t *testing.T) {
+	store, runtimeState, _ := newTestStore(t, Limits{})
+	contents := encodeJPEG(t, image.NewRGBA(image.Rect(0, 0, 64, 32)))
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	store.generateHook = func() {
+		close(entered)
+		<-release
+	}
+	result := make(chan error, 1)
+	go func() {
+		_, _, err := store.Ingest(context.Background(), "outside-lock.jpg", bytes.NewReader(contents))
+		result <- err
+	}()
+	<-entered
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	lease, err := runtimeState.Locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+	if err != nil {
+		t.Fatalf("shared media read during derived preparation = %v", err)
+	}
+	_ = lease.Release()
+	close(release)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVideoProcessorLaneBoundsConcurrentExternalWork(t *testing.T) {
+	store, _, _ := newTestStore(t, Limits{VideoWorkers: 1})
+	entered := make(chan struct{}, 2)
+	releaseFirst := make(chan struct{})
+	var calls atomic.Int32
+	store.processorHook = func(kind string) {
+		if kind != "video-test" {
+			return
+		}
+		entered <- struct{}{}
+		if calls.Add(1) == 1 {
+			<-releaseFirst
+		}
+	}
+	finished := make(chan struct{}, 2)
+	for range 2 {
+		go func() {
+			release, err := store.acquireProcessor(context.Background(), store.videoWorkers, "video-test")
+			if err == nil {
+				release()
+			}
+			finished <- struct{}{}
+		}()
+	}
+	<-entered
+	select {
+	case <-entered:
+		t.Fatal("second video processor bypassed the configured lane")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(releaseFirst)
+	<-finished
+	<-finished
+	if calls.Load() != 2 {
+		t.Fatalf("processor entries = %d, want 2", calls.Load())
+	}
 }
 
 func TestPixelStagesHonorMidFlightCancellation(t *testing.T) {
