@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/mediatype"
 )
 
 // VerifyPortableOriginal validates authoritative metadata and immutable bytes
@@ -48,12 +49,13 @@ func verifyPortableOriginal(ctx context.Context, input io.Reader, value Media, r
 	if !ok || requireStoragePath && value.StoragePath != expectedPath {
 		return domain.NewError(domain.CodeMediaCorrupt, "media storage path is not canonical", map[string]any{"media_id": value.ID.String()})
 	}
-	if value.ByteSize < 1 || value.ByteSize > DefaultMaxBytes || value.Width == 0 || value.Height == 0 ||
+	maxBytes, supported := mediatype.MaxBytes(value.MIMEType)
+	if !supported || value.ByteSize < 1 || value.ByteSize > maxBytes || value.Width == 0 || value.Height == 0 ||
 		value.Width > DefaultMaxDimension || value.Height > DefaultMaxDimension || uint64(value.Width)*uint64(value.Height) > DefaultMaxPixels ||
 		value.CreatedAt.IsZero() {
 		return domain.NewError(domain.CodeMediaCorrupt, "media metadata exceeds portable limits", map[string]any{"media_id": value.ID.String()})
 	}
-	contents, err := readBounded(ctx, input, DefaultMaxBytes)
+	contents, err := readBounded(ctx, input, maxBytes)
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			return contextErr

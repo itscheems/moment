@@ -10,13 +10,14 @@ replaceable cache entries produced by a versioned recipe.
 | -------------------- | ---------------------- | ------------------------------------------------------- |
 | JPEG, PNG, WebP, GIF | retained byte-for-byte | JPEG or PNG, longest edge 1600 px                       |
 | HEIC                 | retained byte-for-byte | bounded JPEG decoded with libheif, with FFmpeg fallback |
-| MP4, up to 5 minutes | retained byte-for-byte | H.264/AAC MP4 plus JPEG poster                          |
+| MP4 or QuickTime MOV, up to 5 minutes | retained byte-for-byte | H.264/AAC MP4 plus JPEG poster               |
 
-- A source file may be at most 30 MiB.
+- An image original may be at most 30 MiB; a video original may be at most
+  100 MiB.
 - Every display artifact and poster is at most 10 MiB.
 - GIF animation remains available only through explicit original access; the
   normal timeline uses a bounded first-frame preview.
-- MP4 output is `yuv420p`, strips source metadata, uses fast-start layout, and
+- Video output is `yuv420p`, strips source metadata, uses fast-start layout, and
   is re-probed before publication.
 
 The server identifies media from its signature and processor inspection. A
@@ -88,7 +89,7 @@ original-quality action loads the immutable original only when requested.
 ## Runtime dependencies and repair
 
 Container images install FFmpeg, ffprobe, and libheif tools. Native deployments
-that accept MP4 must expose `ffmpeg` and `ffprobe` on `PATH`. HEIC prefers
+that accept video must expose `ffmpeg` and `ffprobe` on `PATH`. HEIC prefers
 `heif-convert` when available and otherwise uses the same bounded FFmpeg
 runtime. If neither decoder exists, ingestion returns
 `MEDIA_PROCESSOR_UNAVAILABLE` before authority is published. A present decoder
@@ -140,7 +141,7 @@ can be run explicitly:
 ```sh
 MOMENT_TEST_FFMPEG="$(command -v ffmpeg)" \
 MOMENT_TEST_FFPROBE="$(command -v ffprobe)" \
-go test ./internal/media -run 'TestIngest(HEIC|MP4)Real' -count=1
+go test ./internal/media -run 'TestIngest(HEIC|MP4|QuickTime)Real' -count=1
 ```
 
 Set `MOMENT_TEST_HEIF_CONVERT` as well to exercise the preferred libheif path;

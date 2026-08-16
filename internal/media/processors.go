@@ -52,6 +52,8 @@ func detectExtendedFormat(contents []byte) format {
 		switch brand {
 		case "isom", "iso2", "mp41", "mp42", "avc1", "M4V ", "MSNV":
 			return formatMP4
+		case "qt  ":
+			return formatQuickTime
 		}
 	}
 	return 0
@@ -76,8 +78,8 @@ func (store *Store) inspectMedia(ctx context.Context, contents []byte) (inspecte
 		decoded.format = formatHEIC
 		decoded.decodedSource = converted
 		return decoded, nil
-	case formatMP4:
-		return store.probeVideoBytes(ctx, contents)
+	case formatMP4, formatQuickTime:
+		return store.probeVideoBytes(ctx, contents, detectExtendedFormat(contents))
 	default:
 		return inspected{}, domain.NewError(domain.CodeMediaTypeUnsupported, "media signature is not supported", nil)
 	}
@@ -202,35 +204,39 @@ func (store *Store) convertHEIC(ctx context.Context, contents []byte) ([]byte, e
 		}
 	}
 	converted, err := os.ReadFile(output)
-	if err != nil || len(converted) == 0 || int64(len(converted)) > store.options.Limits.MaxBytes {
+	if err != nil || len(converted) == 0 || int64(len(converted)) > store.options.Limits.MaxImageBytes {
 		return nil, domain.NewError(domain.CodeMediaCorrupt, "HEIC conversion did not produce a bounded image", nil)
 	}
 	return converted, nil
 }
 
-func (store *Store) probeVideoBytes(ctx context.Context, contents []byte) (inspected, error) {
+func (store *Store) probeVideoBytes(ctx context.Context, contents []byte, sourceFormat format) (inspected, error) {
 	directory, err := store.privateTempDir()
 	if err != nil {
 		return inspected{}, err
 	}
 	defer func() { _ = os.RemoveAll(directory) }()
-	input, err := writePrivateInput(directory, "original.mp4", contents)
+	input, err := writePrivateInput(directory, "original."+sourceFormat.extension(), contents)
 	if err != nil {
 		return inspected{}, err
 	}
-	return store.probeVideoFile(ctx, input)
+	return store.probeVideoFileAs(ctx, input, sourceFormat)
 }
 
 func (store *Store) probeVideoFile(ctx context.Context, input string) (inspected, error) {
+	return store.probeVideoFileAs(ctx, input, formatMP4)
+}
+
+func (store *Store) probeVideoFileAs(ctx context.Context, input string, sourceFormat format) (inspected, error) {
 	release, err := store.acquireProcessor(ctx, store.videoWorkers, "ffprobe")
 	if err != nil {
 		return inspected{}, err
 	}
 	defer release()
-	return store.probeVideoFileUnlocked(ctx, input)
+	return store.probeVideoFileUnlocked(ctx, input, sourceFormat)
 }
 
-func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string) (inspected, error) {
+func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string, sourceFormat format) (inspected, error) {
 	output, err := store.runTool(ctx, store.options.FFprobePath, "ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,duration,codec_name,pix_fmt:stream_tags=rotate:stream_side_data=rotation:format=duration", "-of", "json", input)
 	if err != nil {
 		return inspected{}, err
@@ -238,17 +244,21 @@ func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string) (i
 	var document probeDocument
 	decoder := json.NewDecoder(bytes.NewReader(output))
 	if err := decoder.Decode(&document); err != nil || len(document.Streams) != 1 {
-		return inspected{}, domain.NewError(domain.CodeMediaCorrupt, "MP4 probe did not return one video stream", nil)
+		return inspected{}, domain.NewError(domain.CodeMediaCorrupt, "video probe did not return one video stream", nil)
 	}
 	stream := document.Streams[0]
 	if stream.Width == 0 || stream.Height == 0 {
-		return inspected{}, domain.NewError(domain.CodeMediaCorrupt, "MP4 video dimensions are missing", nil)
+		return inspected{}, domain.NewError(domain.CodeMediaCorrupt, "video dimensions are missing", nil)
 	}
 	width, height := stream.Width, stream.Height
 	rotation := 0.0
-	if len(stream.SideData) > 0 {
-		rotation = stream.SideData[0].Rotation
-	} else if stream.Tags.Rotate != "" {
+	for _, sideData := range stream.SideData {
+		if sideData.Rotation != 0 {
+			rotation = sideData.Rotation
+			break
+		}
+	}
+	if rotation == 0 && stream.Tags.Rotate != "" {
 		rotation, _ = strconv.ParseFloat(stream.Tags.Rotate, 64)
 	}
 	quarterTurns := int(rotation/90) % 4
@@ -267,12 +277,12 @@ func (store *Store) probeVideoFileUnlocked(ctx context.Context, input string) (i
 	}
 	duration, err := strconv.ParseFloat(durationText, 64)
 	if err != nil || duration <= 0 {
-		return inspected{}, domain.NewError(domain.CodeMediaCorrupt, "MP4 video duration is invalid", nil)
+		return inspected{}, domain.NewError(domain.CodeMediaCorrupt, "video duration is invalid", nil)
 	}
 	if duration > DefaultMaxVideoDuration.Seconds() {
 		return inspected{}, domain.NewError(domain.CodeMediaTooLarge, "video exceeds the supported duration", map[string]any{"max_duration_seconds": int(DefaultMaxVideoDuration.Seconds())})
 	}
-	return inspected{format: formatMP4, width: width, height: height, durationSeconds: duration, codec: stream.Codec, pixelFormat: stream.PixelFormat}, nil
+	return inspected{format: sourceFormat, width: width, height: height, durationSeconds: duration, codec: stream.Codec, pixelFormat: stream.PixelFormat}, nil
 }
 
 func (store *Store) transcodeVideoFile(ctx context.Context, input string, inspection inspected, output string) (inspected, error) {
@@ -317,7 +327,7 @@ func (store *Store) validateDerivedVideo(ctx context.Context, output string, sou
 	if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > store.options.Limits.PreviewMaxBytes {
 		return inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "video display version exceeds the byte budget", map[string]any{"max_bytes": store.options.Limits.PreviewMaxBytes})
 	}
-	derived, err := store.probeVideoFileUnlocked(ctx, output)
+	derived, err := store.probeVideoFileUnlocked(ctx, output, formatMP4)
 	if err != nil {
 		return inspected{}, err
 	}

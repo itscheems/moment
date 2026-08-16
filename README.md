@@ -98,14 +98,16 @@ place.
 
 ## Media originals and display versions
 
-Moment accepts JPEG, PNG, WebP, GIF, HEIC, and MP4 originals up to 30 MiB;
-MP4 is currently a short-video format with a five-minute limit.
+Moment accepts JPEG, PNG, WebP, GIF, and HEIC image originals up to 30 MiB,
+plus MP4 and QuickTime MOV video originals up to 100 MiB. Video is currently
+limited to five minutes.
 Original bytes are retained for explicit original-quality access. Timeline and
 lightbox views use replaceable display artifacts capped at 10 MiB: HEIC is
-decoded to a bounded JPEG, while MP4 is normalized to H.264/AAC with a JPEG
+decoded to a bounded JPEG, while accepted video containers are normalized to
+H.264/AAC MP4 with a JPEG
 poster and file-backed HTTP byte-range delivery. Processor work is bounded and
 runs outside the short exclusive media commit boundary. The container image installs FFmpeg and
-libheif tools. Native installations that need HEIC or MP4 ingestion must make
+libheif tools. Native installations that need HEIC or video ingestion must make
 `ffmpeg`, `ffprobe`, and `heif-convert` available on `PATH`; otherwise ingestion
 fails clearly with `MEDIA_PROCESSOR_UNAVAILABLE` and does not publish a partial
 media record.

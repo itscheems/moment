@@ -10,15 +10,19 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/mediatype"
 )
 
 // Product ceilings and recipe identity are exported for transport diagnostics
 // and deterministic maintenance tooling.
 const (
-	// DefaultMaxBytes bounds immutable originals. Previews have a separate,
-	// smaller delivery budget so accepting a large source never makes timeline
+	// Images and videos have separate immutable-original budgets. Previews have
+	// a smaller delivery budget so accepting a large source never makes timeline
 	// rendering load the same bytes implicitly.
-	DefaultMaxBytes           int64  = 30 << 20
+	DefaultMaxImageBytes      int64  = mediatype.MaxImageBytes
+	DefaultMaxVideoBytes      int64  = mediatype.MaxVideoBytes
+	DefaultMaxInputBytes      int64  = mediatype.MaxInputBytes
+	DefaultMaxBytes           int64  = DefaultMaxImageBytes // Deprecated: use the kind-specific ceiling.
 	DefaultMaxDimension       uint32 = 16_384
 	DefaultMaxPixels          uint64 = 80_000_000
 	DefaultMaxGIFFrames       uint32 = 300
@@ -41,8 +45,11 @@ const (
 // Limits are hard resource ceilings. Zero values select the bounded defaults.
 // Values may be lowered by callers but cannot exceed the product ceilings.
 type Limits struct {
-	// MaxBytes applies to the authoritative original read during ingestion.
+	// MaxBytes is a compatibility override that lowers both kind-specific
+	// ceilings. New callers should configure MaxImageBytes and MaxVideoBytes.
 	MaxBytes          int64
+	MaxImageBytes     int64
+	MaxVideoBytes     int64
 	MaxDimension      uint32
 	MaxPixels         uint64
 	MaxGIFFrames      uint32
@@ -58,7 +65,8 @@ type Limits struct {
 
 func (limits Limits) normalized() (Limits, error) {
 	defaults := Limits{
-		MaxBytes:          DefaultMaxBytes,
+		MaxImageBytes:     DefaultMaxImageBytes,
+		MaxVideoBytes:     DefaultMaxVideoBytes,
 		MaxDimension:      DefaultMaxDimension,
 		MaxPixels:         DefaultMaxPixels,
 		MaxGIFFrames:      DefaultMaxGIFFrames,
@@ -68,9 +76,21 @@ func (limits Limits) normalized() (Limits, error) {
 		PreviewWorkers:    DefaultPreviewConcurrency,
 		VideoWorkers:      DefaultVideoConcurrency,
 	}
-	if limits.MaxBytes == 0 {
-		limits.MaxBytes = defaults.MaxBytes
+	if limits.MaxBytes != 0 {
+		if limits.MaxImageBytes == 0 {
+			limits.MaxImageBytes = limits.MaxBytes
+		}
+		if limits.MaxVideoBytes == 0 {
+			limits.MaxVideoBytes = limits.MaxBytes
+		}
 	}
+	if limits.MaxImageBytes == 0 {
+		limits.MaxImageBytes = defaults.MaxImageBytes
+	}
+	if limits.MaxVideoBytes == 0 {
+		limits.MaxVideoBytes = defaults.MaxVideoBytes
+	}
+	limits.MaxBytes = max(limits.MaxImageBytes, limits.MaxVideoBytes)
 	if limits.MaxDimension == 0 {
 		limits.MaxDimension = defaults.MaxDimension
 	}
@@ -95,7 +115,8 @@ func (limits Limits) normalized() (Limits, error) {
 	if limits.VideoWorkers == 0 {
 		limits.VideoWorkers = defaults.VideoWorkers
 	}
-	if limits.MaxBytes < 1 || limits.MaxBytes > defaults.MaxBytes ||
+	if limits.MaxImageBytes < 1 || limits.MaxImageBytes > defaults.MaxImageBytes ||
+		limits.MaxVideoBytes < 1 || limits.MaxVideoBytes > defaults.MaxVideoBytes ||
 		limits.MaxDimension < 1 || limits.MaxDimension > defaults.MaxDimension ||
 		limits.MaxPixels < 1 || limits.MaxPixels > defaults.MaxPixels ||
 		limits.MaxGIFFrames < 1 || limits.MaxGIFFrames > defaults.MaxGIFFrames ||
@@ -118,6 +139,7 @@ const (
 	formatGIF
 	formatHEIC
 	formatMP4
+	formatQuickTime
 )
 
 func (f format) mimeType() string {
@@ -133,7 +155,9 @@ func (f format) mimeType() string {
 	case formatHEIC:
 		return "image/heic"
 	case formatMP4:
-		return "video/mp4"
+		return mediatype.MP4
+	case formatQuickTime:
+		return mediatype.QuickTime
 	default:
 		return ""
 	}
@@ -153,8 +177,42 @@ func (f format) extension() string {
 		return "heic"
 	case formatMP4:
 		return "mp4"
+	case formatQuickTime:
+		return "mov"
 	default:
 		return ""
+	}
+}
+
+func (f format) isVideo() bool {
+	return f == formatMP4 || f == formatQuickTime
+}
+
+func (f format) maxOriginalBytes(limits Limits) int64 {
+	if f.isVideo() {
+		return limits.MaxVideoBytes
+	}
+	return limits.MaxImageBytes
+}
+
+func formatFromMIMEType(mimeType string) (format, bool) {
+	switch mimeType {
+	case mediatype.JPEG:
+		return formatJPEG, true
+	case mediatype.PNG:
+		return formatPNG, true
+	case mediatype.WebP:
+		return formatWebP, true
+	case mediatype.GIF:
+		return formatGIF, true
+	case mediatype.HEIC:
+		return formatHEIC, true
+	case mediatype.MP4:
+		return formatMP4, true
+	case mediatype.QuickTime:
+		return formatQuickTime, true
+	default:
+		return 0, false
 	}
 }
 

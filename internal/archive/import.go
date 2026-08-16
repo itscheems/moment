@@ -25,6 +25,7 @@ import (
 
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
+	"github.com/moment/moment/internal/mediatype"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
@@ -1306,11 +1307,11 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 }
 
 func portableStoragePath(sha, mimeType string) (string, error) {
-	extension := map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif", "image/heic": ".heic", "video/mp4": ".mp4"}[mimeType]
-	if len(sha) != 64 || !isLowerHex(sha) || extension == "" {
+	extension, ok := mediatype.Extension(mimeType)
+	if len(sha) != 64 || !isLowerHex(sha) || !ok {
 		return "", errors.New("portable media storage identity is invalid")
 	}
-	return "media/original/" + sha[:2] + "/" + sha + extension, nil
+	return "media/original/" + sha[:2] + "/" + sha + "." + extension, nil
 }
 
 func materializePortableOriginal(ctx context.Context, member *zip.File, generation runtimefs.Generation, value media.Media) (resultErr error) {

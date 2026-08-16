@@ -64,7 +64,7 @@ func (store *Store) preparePreviewBytes(ctx context.Context, contents []byte, in
 		}
 		return store.preparePreviewBytes(ctx, converted, decoded, sha, force)
 	}
-	if inspection.format == formatMP4 {
+	if inspection.format.isVideo() {
 		return store.prepareVideoPreview(ctx, contents, inspection, sha, force)
 	}
 	if preview, ok := store.existingPreview(sha); ok && !force {
@@ -159,7 +159,7 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 		return preparedPreview{}, previewFailure(err)
 	}
 	defer func() { _ = os.RemoveAll(directory) }()
-	input, err := writePrivateInput(directory, "original.mp4", contents)
+	input, err := writePrivateInput(directory, "original."+inspection.format.extension(), contents)
 	if err != nil {
 		return preparedPreview{}, previewFailure(err)
 	}
@@ -202,7 +202,11 @@ func (store *Store) ensureVideoPoster(ctx context.Context, media Media, contents
 		if store.existingVideoPoster(media.SHA256) {
 			return Preview{Path: path}, nil
 		}
-		inspection, err := store.probeVideoBytes(ctx, contents)
+		sourceFormat, ok := formatFromMIMEType(media.MIMEType)
+		if !ok || !sourceFormat.isVideo() {
+			return Preview{}, domain.NewError(domain.CodeMediaTypeUnsupported, "poster is available only for video media", map[string]any{"media_id": media.ID.String()})
+		}
+		inspection, err := store.probeVideoBytes(ctx, contents, sourceFormat)
 		if err != nil {
 			return Preview{}, previewFailure(err)
 		}

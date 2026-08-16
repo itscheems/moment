@@ -8,6 +8,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/mediatype"
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
@@ -109,12 +110,7 @@ func ValidateComment(comment Comment) error {
 }
 
 func validProjectionMIMEType(value string) bool {
-	switch value {
-	case "image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "video/mp4":
-		return true
-	default:
-		return false
-	}
+	return mediatype.IsSupported(value)
 }
 
 // ValidateThread verifies adjacency, identity uniqueness and stable ordering.

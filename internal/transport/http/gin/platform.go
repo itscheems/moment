@@ -68,7 +68,10 @@ type Config struct {
 const (
 	defaultJSONLimit      = int64(1 << 20)
 	defaultMergeJSONLimit = int64(64 << 20)
-	defaultMultipartLimit = int64(64 << 20)
+	// One multipart request carries one managed original plus bounded framing.
+	// Video originals may be 100 MiB, so the transport ceiling stays slightly
+	// above that product limit without widening JSON or default bodies.
+	defaultMultipartLimit = int64(101 << 20)
 	defaultArchiveLimit   = int64(64 << 30)
 	defaultBodyLimit      = int64(1 << 20)
 )

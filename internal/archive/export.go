@@ -28,6 +28,7 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
+	"github.com/moment/moment/internal/mediatype"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
@@ -918,7 +919,8 @@ func validateArchiveMedia(value sqlitestore.ArchiveMedia) error {
 	if !utf8.ValidString(value.OriginalName) || value.OriginalName == "" || strings.ContainsRune(value.OriginalName, 0) {
 		return errors.New("media original name is not canonical UTF-8")
 	}
-	if value.ByteSize <= 0 || value.ByteSize > media.DefaultMaxBytes || value.Width == 0 || value.Height == 0 || value.CreatedAtMS <= 0 ||
+	maxBytes, supported := mediatype.MaxBytes(value.MIMEType)
+	if !supported || value.ByteSize <= 0 || value.ByteSize > maxBytes || value.Width == 0 || value.Height == 0 || value.CreatedAtMS <= 0 ||
 		value.Width > media.DefaultMaxDimension || value.Height > media.DefaultMaxDimension || uint64(value.Width)*uint64(value.Height) > media.DefaultMaxPixels {
 		return errors.New("media dimensions, size, and creation time must be positive")
 	}
@@ -934,8 +936,8 @@ func mediaArchivePath(value sqlitestore.ArchiveMedia) (string, error) {
 	if err != nil || hex.EncodeToString(decoded) != value.SHA256 {
 		return "", errors.New("media SHA-256 is not canonical lowercase hex")
 	}
-	extension := map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/heic": "heic", "video/mp4": "mp4"}[value.MIMEType]
-	if extension == "" {
+	extension, ok := mediatype.Extension(value.MIMEType)
+	if !ok {
 		return "", errors.New("media MIME type is not portable")
 	}
 	return "media/" + value.SHA256 + "." + extension, nil
@@ -1164,7 +1166,8 @@ func ValidateFileContext(ctx context.Context, name string) error {
 		var mediaContents bytes.Buffer
 		mediaMetadata, isMedia := portableMedia[file.Name]
 		if isMedia {
-			if file.UncompressedSize64 > uint64(media.DefaultMaxBytes) {
+			maxBytes, supported := mediatype.MaxBytes(mediaMetadata.MIMEType)
+			if !supported || file.UncompressedSize64 > uint64(maxBytes) {
 				_ = source.Close()
 				return archiveInvalid("prepared ZIP media member exceeds the byte budget", nil)
 			}

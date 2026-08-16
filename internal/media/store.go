@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/mediatype"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/storage/sqlite"
 	"golang.org/x/sync/semaphore"
@@ -175,13 +176,19 @@ func (store *Store) Ingest(ctx context.Context, originalName string, input io.Re
 	if input == nil {
 		return Media{}, Preview{}, domain.NewError(domain.CodeInvalidArgument, "media input is required", map[string]any{"field": "file"})
 	}
-	contents, err := readBounded(ctx, input, store.options.Limits.MaxBytes)
+	contents, err := readBounded(ctx, input, store.options.Limits.MaxVideoBytes)
 	if err != nil {
 		return Media{}, Preview{}, err
 	}
 	inspection, err := store.inspectMedia(ctx, contents)
 	if err != nil {
 		return Media{}, Preview{}, err
+	}
+	if int64(len(contents)) > inspection.format.maxOriginalBytes(store.options.Limits) {
+		return Media{}, Preview{}, domain.NewError(domain.CodeMediaTooLarge, "media exceeds the configured byte budget", map[string]any{
+			"max_bytes":  inspection.format.maxOriginalBytes(store.options.Limits),
+			"media_kind": map[bool]string{true: "video", false: "image"}[inspection.format.isVideo()],
+		})
 	}
 	digest := sha256.Sum256(contents)
 	sha := hex.EncodeToString(digest[:])
@@ -356,21 +363,8 @@ func canonicalStoragePath(sha string, imageFormat format) string {
 }
 
 func expectedStoragePath(sha, mimeType string) (string, bool) {
-	var imageFormat format
-	switch mimeType {
-	case "image/jpeg":
-		imageFormat = formatJPEG
-	case "image/png":
-		imageFormat = formatPNG
-	case "image/webp":
-		imageFormat = formatWebP
-	case "image/gif":
-		imageFormat = formatGIF
-	case "image/heic":
-		imageFormat = formatHEIC
-	case "video/mp4":
-		imageFormat = formatMP4
-	default:
+	extension, ok := mediatype.Extension(mimeType)
+	if !ok {
 		return "", false
 	}
 	if len(sha) != sha256.Size*2 || strings.IndexFunc(sha, func(value rune) bool {
@@ -380,7 +374,7 @@ func expectedStoragePath(sha, mimeType string) (string, bool) {
 	}) >= 0 {
 		return "", false
 	}
-	return canonicalStoragePath(sha, imageFormat), true
+	return "media/original/" + sha[:2] + "/" + sha + "." + extension, true
 }
 
 func (store *Store) resolveOriginal(media Media) (string, error) {
@@ -413,7 +407,7 @@ func (store *Store) readOriginal(ctx context.Context, media Media) ([]byte, erro
 		return nil, domain.NewError(domain.CodeMediaCorrupt, "immutable original cannot be opened", map[string]any{"media_id": media.ID.String()})
 	}
 	defer func() { _ = file.Close() }()
-	contents, err := readBounded(ctx, file, store.options.Limits.MaxBytes)
+	contents, err := readBounded(ctx, file, maxOriginalBytesForMIME(media.MIMEType, store.options.Limits))
 	if err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {
 			return nil, contextErr
@@ -438,7 +432,7 @@ func (store *Store) readRootedOriginal(ctx context.Context, media Media) ([]byte
 		return nil, domain.NewError(domain.CodeMediaCorrupt, "immutable original cannot be opened", map[string]any{"media_id": media.ID.String()})
 	}
 	defer func() { _ = file.Close() }()
-	contents, err := readBounded(ctx, file, store.options.Limits.MaxBytes)
+	contents, err := readBounded(ctx, file, maxOriginalBytesForMIME(media.MIMEType, store.options.Limits))
 	if err != nil {
 		return nil, err
 	}
@@ -447,6 +441,13 @@ func (store *Store) readRootedOriginal(ctx context.Context, media Media) ([]byte
 		return nil, domain.NewError(domain.CodeMediaCorrupt, "immutable original checksum does not match", map[string]any{"media_id": media.ID.String()})
 	}
 	return contents, nil
+}
+
+func maxOriginalBytesForMIME(mimeType string, limits Limits) int64 {
+	if mediatype.IsVideo(mimeType) {
+		return limits.MaxVideoBytes
+	}
+	return limits.MaxImageBytes
 }
 
 func (store *Store) verifyOriginal(ctx context.Context, media Media, expected []byte) error {

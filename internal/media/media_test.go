@@ -186,6 +186,52 @@ func TestIngestMP4RealProcessorPreservesOriginalBuildsBoundedDisplayAndPoster(t 
 	}
 }
 
+func TestDetectQuickTimeContainerBySignature(t *testing.T) {
+	header := make([]byte, 24)
+	binary.BigEndian.PutUint32(header[0:4], uint32(len(header)))
+	copy(header[4:8], "ftyp")
+	copy(header[8:12], "qt  ")
+	copy(header[16:20], "qt  ")
+	if detected := detectExtendedFormat(header); detected != formatQuickTime {
+		t.Fatalf("detected format = %v, want QuickTime", detected)
+	}
+}
+
+func TestIngestQuickTimeRealFixturePreservesOriginalAndBuildsMP4Display(t *testing.T) {
+	ffmpeg := os.Getenv("MOMENT_TEST_FFMPEG")
+	ffprobe := os.Getenv("MOMENT_TEST_FFPROBE")
+	if ffmpeg == "" || ffprobe == "" {
+		t.Skip("set MOMENT_TEST_FFMPEG and MOMENT_TEST_FFPROBE to run the real QuickTime integration")
+	}
+	fixture := filepath.Join("..", "..", "work", "v0.0.1", "resources", "IMG_1337.MOV")
+	contents, err := os.ReadFile(fixture)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skip("real QuickTime fixture is not available")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, _, _ := newTestStoreWithOptions(t, Options{FFmpegPath: ffmpeg, FFprobePath: ffprobe})
+	value, preview, err := store.Ingest(context.Background(), "IMG_1337.MOV", bytes.NewReader(contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.MIMEType != "video/quicktime" || value.ByteSize != int64(len(contents)) || preview.MIMEType != "video/mp4" {
+		t.Fatalf("QuickTime result = media(%q,%d) preview(%q)", value.MIMEType, value.ByteSize, preview.MIMEType)
+	}
+	if value.Width != 1080 || value.Height != 1920 {
+		t.Fatalf("QuickTime dimensions = %dx%d, want display-oriented 1080x1920", value.Width, value.Height)
+	}
+	original, err := store.ReadOriginal(context.Background(), value.ID)
+	if err != nil || !bytes.Equal(original.Contents, contents) {
+		t.Fatalf("QuickTime original changed: err=%v equal=%v", err, bytes.Equal(original.Contents, contents))
+	}
+	poster, err := store.ReadPoster(context.Background(), value.ID)
+	if err != nil || poster.MIMEType != "image/jpeg" {
+		t.Fatalf("QuickTime poster = %q, %v", poster.MIMEType, err)
+	}
+}
+
 func TestConvertHEICFallsBackToFFmpegWhenLibheifIsUnavailable(t *testing.T) {
 	jpegPath := filepath.Join(t.TempDir(), "decoded.jpg")
 	if err := os.WriteFile(jpegPath, encodeJPEG(t, image.NewRGBA(image.Rect(0, 0, 24, 12))), 0o600); err != nil {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/mediatype"
 )
 
 // Post is the stable plain-text post representation used by HTTP and CLI.
@@ -387,12 +388,7 @@ func validateQuotedPost(post QuotedPost) error {
 }
 
 func validProjectionMIMEType(value string) bool {
-	switch value {
-	case "image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "video/mp4":
-		return true
-	default:
-		return false
-	}
+	return mediatype.IsSupported(value)
 }
 
 // ValidatePage requires an array, including for the empty timeline, and

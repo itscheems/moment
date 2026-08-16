@@ -26,8 +26,8 @@ runtime state, credentials, sessions, local drafts, and GC state are excluded.
 An entry quote whose source was deleted is preserved as
 `quote_unavailable=true` without a `quoted_entry_id`; this tombstone keeps the
 quote wrapper portable without exposing or inventing deleted target content.
-HEIC and MP4 members are immutable originals. Their JPEG/H.264 display
-derivatives and MP4 poster images remain replaceable cache artifacts and are
+HEIC, MP4, and QuickTime MOV members are immutable originals. Their JPEG/H.264
+display derivatives and video poster images remain replaceable cache artifacts and are
 therefore not exported.
 
 `manifest.json` has `format="moment-export"` and `format_version=1`. Its

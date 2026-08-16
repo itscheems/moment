@@ -1009,10 +1009,10 @@ func openPostMediaFile(path string) (*os.File, string, error) {
 		return nil, "", mediaCLIError(err)
 	}
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, "", invalidArgument("post media paths must name regular non-symlink files", "provide a regular JPEG, PNG, WebP, GIF, HEIC, or MP4 file")
+		return nil, "", invalidArgument("post media paths must name regular non-symlink files", "provide a regular JPEG, PNG, WebP, GIF, HEIC, MP4, or QuickTime MOV file")
 	}
-	if info.Size() > media.DefaultMaxBytes {
-		return nil, "", mediaCLIError(domain.NewError(domain.CodeMediaTooLarge, "media exceeds the configured byte budget", map[string]any{"max_bytes": media.DefaultMaxBytes}))
+	if info.Size() > media.DefaultMaxInputBytes {
+		return nil, "", mediaCLIError(domain.NewError(domain.CodeMediaTooLarge, "media exceeds the configured byte budget", map[string]any{"max_bytes": media.DefaultMaxInputBytes}))
 	}
 	file, err := os.Open(clean)
 	if err != nil {

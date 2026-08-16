@@ -15,6 +15,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/mediatype"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/storage/sqlite"
 )
@@ -174,7 +175,7 @@ func (store *Store) ReadPoster(ctx context.Context, id domain.ID) (Asset, error)
 	if err != nil {
 		return Asset{}, err
 	}
-	if value.MIMEType != "video/mp4" {
+	if !mediatype.IsVideo(value.MIMEType) {
 		return Asset{}, domain.NewError(domain.CodeMediaTypeUnsupported, "poster is available only for video media", map[string]any{"media_id": id.String()})
 	}
 	contents, err := store.readOriginal(ctx, value)
@@ -208,7 +209,7 @@ func (store *Store) OpenPoster(ctx context.Context, id domain.ID) (*StreamAsset,
 	if err != nil {
 		return fail(err)
 	}
-	if value.MIMEType != "video/mp4" {
+	if !mediatype.IsVideo(value.MIMEType) {
 		return fail(domain.NewError(domain.CodeMediaTypeUnsupported, "poster is available only for video media", map[string]any{"media_id": id.String()}))
 	}
 	contents, err := store.readOriginal(ctx, value)
