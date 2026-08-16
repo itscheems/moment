@@ -432,6 +432,22 @@ function CommentForm({
               current.file,
               progress,
               controller.signal,
+              (processingPosterUrl) => {
+                if (
+                  !mountedRef.current ||
+                  mediaUploadsRef.current.get(key) !== controller
+                ) {
+                  URL.revokeObjectURL(processingPosterUrl);
+                  return;
+                }
+                replaceMedia(
+                  mediaItemsRef.current.map((item) =>
+                    item.key === key && item.state === "uploading"
+                      ? { ...item, processingPosterUrl }
+                      : item,
+                  ),
+                );
+              },
             )
           : await api.uploadCommentMedia(
               postId,

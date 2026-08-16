@@ -169,6 +169,13 @@ func (noOpLease) Release() error { return nil }
 // Ingest validates and fully renders a preview before publishing an immutable
 // original and its row. Filename extensions and claimed MIME are never used.
 func (store *Store) Ingest(ctx context.Context, originalName string, input io.Reader) (Media, Preview, error) {
+	return store.IngestObserved(ctx, originalName, input, IngestObserver{})
+}
+
+// IngestObserved is Ingest with optional early derived-artifact feedback.
+// Interactive transports use it to reveal a video poster while the display
+// rendition continues processing from the same upload.
+func (store *Store) IngestObserved(ctx context.Context, originalName string, input io.Reader, observer IngestObserver) (Media, Preview, error) {
 	name, err := normalizeOriginalName(originalName)
 	if err != nil {
 		return Media{}, Preview{}, err
@@ -203,7 +210,7 @@ func (store *Store) Ingest(ctx context.Context, originalName string, input io.Re
 	// Ingest always prepares fresh bytes. A prune may remove an otherwise valid
 	// cache entry before the later exclusive commit, so trusting an unlocked
 	// cache hit here could publish authority without a ready display artifact.
-	prepared, err := store.preparePreviewBytes(ctx, contents, inspection, sha, true)
+	prepared, err := store.preparePreviewBytesObserved(ctx, contents, inspection, sha, true, observer)
 	if err != nil {
 		return Media{}, Preview{}, err
 	}

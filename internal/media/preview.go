@@ -49,6 +49,10 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 }
 
 func (store *Store) preparePreviewBytes(ctx context.Context, contents []byte, inspection inspected, sha string, force bool) (preparedPreview, error) {
+	return store.preparePreviewBytesObserved(ctx, contents, inspection, sha, force, IngestObserver{})
+}
+
+func (store *Store) preparePreviewBytesObserved(ctx context.Context, contents []byte, inspection inspected, sha string, force bool, observer IngestObserver) (preparedPreview, error) {
 	if inspection.format == formatHEIC {
 		converted := inspection.decodedSource
 		if len(converted) == 0 {
@@ -62,10 +66,10 @@ func (store *Store) preparePreviewBytes(ctx context.Context, contents []byte, in
 		if err != nil {
 			return preparedPreview{}, previewFailure(err)
 		}
-		return store.preparePreviewBytes(ctx, converted, decoded, sha, force)
+		return store.preparePreviewBytesObserved(ctx, converted, decoded, sha, force, observer)
 	}
 	if inspection.format.isVideo() {
-		return store.prepareVideoPreview(ctx, contents, inspection, sha, force)
+		return store.prepareVideoPreview(ctx, contents, inspection, sha, force, observer)
 	}
 	if preview, ok := store.existingPreview(sha); ok && !force {
 		preview.AnimatedOriginal = inspection.format == formatGIF
@@ -139,7 +143,7 @@ func (store *Store) preparePreviewBytes(ctx context.Context, contents []byte, in
 	}, contents: encoded}, nil
 }
 
-func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, inspection inspected, sha string, force bool) (preparedPreview, error) {
+func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, inspection inspected, sha string, force bool, observer IngestObserver) (preparedPreview, error) {
 	path := store.previewPath(sha, "mp4")
 	posterPath := store.previewPath(sha, "poster.jpg")
 	displayReady := !force && store.existingVideoPreview(sha)
@@ -164,6 +168,23 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 		return preparedPreview{}, previewFailure(err)
 	}
 	prepared := preparedPreview{preview: Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}}
+	if !posterReady {
+		partialPoster := filepath.Join(directory, "poster.jpg")
+		if err := store.generateVideoPosterFile(ctx, input, partialPoster, inspection.durationSeconds); err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+		prepared.posterContents, err = readBoundedFile(ctx, partialPoster, store.options.Limits.PreviewMaxBytes)
+		if err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+		if _, decodedFormat, err := image.DecodeConfig(bytes.NewReader(prepared.posterContents)); err != nil || decodedFormat != "jpeg" {
+			return preparedPreview{}, previewFailure(errors.New("video poster is not a JPEG image"))
+		}
+		prepared.posterPath = posterPath
+		if observer.VideoPosterReady != nil {
+			observer.VideoPosterReady(prepared.posterContents)
+		}
+	}
 	if !displayReady {
 		displayPath := filepath.Join(directory, "display.mp4")
 		derived, err := store.transcodeVideoFile(ctx, input, inspection, displayPath)
@@ -175,20 +196,6 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 		if err != nil {
 			return preparedPreview{}, previewFailure(err)
 		}
-	}
-	if !posterReady {
-		partialPoster := filepath.Join(directory, "poster.jpg")
-		if err := store.generateVideoPosterFile(ctx, input, partialPoster); err != nil {
-			return preparedPreview{}, previewFailure(err)
-		}
-		prepared.posterContents, err = readBoundedFile(ctx, partialPoster, store.options.Limits.PreviewMaxBytes)
-		if err != nil {
-			return preparedPreview{}, previewFailure(err)
-		}
-		if _, decodedFormat, err := image.DecodeConfig(bytes.NewReader(prepared.posterContents)); err != nil || decodedFormat != "jpeg" {
-			return preparedPreview{}, previewFailure(errors.New("video poster is not a JPEG image"))
-		}
-		prepared.posterPath = posterPath
 	}
 	return prepared, nil
 }
@@ -210,7 +217,7 @@ func (store *Store) ensureVideoPoster(ctx context.Context, media Media, contents
 		if err != nil {
 			return Preview{}, previewFailure(err)
 		}
-		prepared, err := store.prepareVideoPreview(ctx, contents, inspection, media.SHA256, false)
+		prepared, err := store.prepareVideoPreview(ctx, contents, inspection, media.SHA256, false, IngestObserver{})
 		if err != nil {
 			return Preview{}, err
 		}

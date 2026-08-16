@@ -560,6 +560,56 @@ describe("owner API client", () => {
     expect(progress).toHaveBeenLastCalledWith(100);
   });
 
+  it("reveals an early server video poster while the primary upload keeps processing", async () => {
+    vi.stubGlobal("XMLHttpRequest", FakeUploadRequest);
+    const posterFetch = vi.fn(
+      async () =>
+        new Response(new Blob(["jpeg"]), {
+          status: 200,
+          headers: { "Content-Type": "image/jpeg" },
+        }),
+    );
+    vi.stubGlobal("fetch", posterFetch);
+    const objectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:http://localhost/video-poster");
+    const onPoster = vi.fn();
+    const api = new OwnerApi(vi.fn() as typeof fetch);
+    const promise = api.uploadMedia(
+      "csrf-upload",
+      new File(["video"], "climb.mov", { type: "video/quicktime" }),
+      vi.fn(),
+      undefined,
+      onPoster,
+    );
+    const request = FakeUploadRequest.last;
+    expect(request?.headers.get("X-Moment-Upload-ID")).toMatch(
+      /^[\w-]{16,64}$/,
+    );
+    request?.upload.dispatchEvent(
+      new ProgressEvent("progress", {
+        lengthComputable: true,
+        loaded: 2,
+        total: 2,
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(onPoster).toHaveBeenCalledWith(
+        "blob:http://localhost/video-poster",
+      ),
+    );
+    expect(posterFetch).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/api\/v1\/owner\/media-uploads\/.+\/poster$/),
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+    request?.respond(201, {
+      data: uploaded,
+      meta: { request_id: "req_upload" },
+    });
+    await expect(promise).resolves.toMatchObject({ id: uploaded.media.id });
+    objectURL.mockRestore();
+  });
+
   it.each([
     {
       name: "wrong success status",

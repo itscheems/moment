@@ -2326,10 +2326,18 @@ export class OwnerApi {
     file: File,
     onProgress: (percent: number) => void = () => undefined,
     signal?: AbortSignal,
+    onProcessingPoster?: (objectUrl: string) => void,
   ): Promise<UploadedMedia> {
-    return uploadMediaXHR("/api/v1/owner/media", file, onProgress, signal, {
-      "X-CSRF-Token": csrfToken,
-    });
+    return uploadMediaXHR(
+      "/api/v1/owner/media",
+      file,
+      onProgress,
+      signal,
+      {
+        "X-CSRF-Token": csrfToken,
+      },
+      onProcessingPoster,
+    );
   }
 
   async delete(csrfToken: string, id: string): Promise<PublicPost> {

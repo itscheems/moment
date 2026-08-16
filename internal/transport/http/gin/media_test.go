@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
@@ -97,6 +98,28 @@ func TestOwnerMediaUploadRequiresAuthenticationAndReturnsManagedURLs(t *testing.
 	data := decodeDataMap(t, response)
 	if !strings.HasPrefix(data["original_url"].(string), "/api/v1/media/") || !strings.HasSuffix(data["preview_url"].(string), "/preview") {
 		t.Fatalf("upload data = %#v", data)
+	}
+}
+
+func TestOwnerCanReadEarlyVideoPosterWithoutCachingIt(t *testing.T) {
+	engine, _, _, _ := newMediaHTTPFixture(t)
+	posters := newUploadPosterCache()
+	const uploadID = "upload-0123456789abcdef"
+	poster := []byte{0xff, 0xd8, 0xff, 0xd9}
+	posters.put(uploadID, poster)
+
+	router := gin.New()
+	router.GET("/poster/:uploadID", getUploadPoster(posters))
+	request := httptest.NewRequest(http.MethodGet, "/poster/"+uploadID, nil)
+	response := performRequest(router, request)
+	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/jpeg" ||
+		response.Header().Get("Cache-Control") != "no-store" || !bytes.Equal(response.Body.Bytes(), poster) {
+		t.Fatalf("early poster response = %d headers=%v equal=%v", response.Code, response.Header(), bytes.Equal(response.Body.Bytes(), poster))
+	}
+
+	missing := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/owner/media-uploads/another-0123456789/poster", nil))
+	if missing.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated early poster = %d", missing.Code)
 	}
 }
 

@@ -1,11 +1,13 @@
 package ginhttp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	gin "github.com/gin-gonic/gin"
@@ -30,11 +32,87 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, manager *auth.M
 	}
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
-	owner.POST("/media", uploadMedia(store))
+	posters := newUploadPosterCache()
+	owner.POST("/media", uploadMedia(store, posters))
+	owner.GET("/media-uploads/:uploadID/poster", getUploadPoster(posters))
 }
 
-func uploadMedia(store *media.Store) gin.HandlerFunc {
+const uploadIDHeader = "X-Moment-Upload-ID"
+
+type uploadPosterEntry struct {
+	contents  []byte
+	expiresAt time.Time
+}
+
+type uploadPosterCache struct {
+	mu      sync.RWMutex
+	entries map[string]uploadPosterEntry
+}
+
+func newUploadPosterCache() *uploadPosterCache {
+	return &uploadPosterCache{entries: make(map[string]uploadPosterEntry)}
+}
+
+func validUploadID(value string) bool {
+	if len(value) < 16 || len(value) > 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || character == '-' || character == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func (cache *uploadPosterCache) put(id string, contents []byte) {
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	now := time.Now()
+	for key, entry := range cache.entries {
+		if now.After(entry.expiresAt) {
+			delete(cache.entries, key)
+		}
+	}
+	cache.entries[id] = uploadPosterEntry{contents: bytes.Clone(contents), expiresAt: now.Add(5 * time.Minute)}
+}
+
+func (cache *uploadPosterCache) get(id string) ([]byte, bool) {
+	cache.mu.RLock()
+	entry, found := cache.entries[id]
+	cache.mu.RUnlock()
+	if !found {
+		return nil, false
+	}
+	if time.Now().After(entry.expiresAt) {
+		cache.remove(id)
+		return nil, false
+	}
+	return entry.contents, true
+}
+
+func (cache *uploadPosterCache) remove(id string) {
+	cache.mu.Lock()
+	delete(cache.entries, id)
+	cache.mu.Unlock()
+}
+
+func uploadMedia(store *media.Store, posterCaches ...*uploadPosterCache) gin.HandlerFunc {
+	var posters *uploadPosterCache
+	if len(posterCaches) > 0 {
+		posters = posterCaches[0]
+	}
 	return func(ctx *gin.Context) {
+		uploadID := strings.TrimSpace(ctx.GetHeader(uploadIDHeader))
+		if posters == nil {
+			uploadID = ""
+		}
+		if uploadID != "" && !validUploadID(uploadID) {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "media upload id is invalid", map[string]any{"header": uploadIDHeader})
+			return
+		}
 		fileHeader, err := ctx.FormFile("file")
 		if err != nil {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "multipart field 'file' is required", map[string]any{"field": "file"})
@@ -49,12 +127,39 @@ func uploadMedia(store *media.Store) gin.HandlerFunc {
 			return
 		}
 		defer func() { _ = file.Close() }()
-		value, preview, err := store.Ingest(ctx.Request.Context(), fileHeader.Filename, file)
+		observer := media.IngestObserver{}
+		if uploadID != "" {
+			observer.VideoPosterReady = func(contents []byte) { posters.put(uploadID, contents) }
+		}
+		value, preview, err := store.IngestObserved(ctx.Request.Context(), fileHeader.Filename, file, observer)
 		if err != nil {
+			if uploadID != "" {
+				posters.remove(uploadID)
+			}
 			writeMediaError(ctx, err)
 			return
 		}
 		Success(ctx, http.StatusCreated, media.NewUploadResult(value, preview), nil)
+	}
+}
+
+func getUploadPoster(posters *uploadPosterCache) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		uploadID := ctx.Param("uploadID")
+		if !validUploadID(uploadID) {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "media upload id is invalid", map[string]any{"path": "uploadID"})
+			return
+		}
+		contents, ready := posters.get(uploadID)
+		if !ready {
+			ctx.Header("Cache-Control", "no-store")
+			ctx.Status(http.StatusNotFound)
+			return
+		}
+		ctx.Header("Content-Type", "image/jpeg")
+		ctx.Header("Cache-Control", "no-store")
+		ctx.Header("X-Content-Type-Options", "nosniff")
+		ctx.Data(http.StatusOK, "image/jpeg", contents)
 	}
 }
 

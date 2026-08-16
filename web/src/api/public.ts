@@ -1332,6 +1332,7 @@ export function uploadMediaXHR(
   onProgress: (percent: number) => void = () => undefined,
   signal?: AbortSignal,
   headers: Record<string, string> = {},
+  onProcessingPoster?: (objectUrl: string) => void,
 ): Promise<UploadedMedia> {
   return new Promise((resolve, reject) => {
     let settled = false;
@@ -1346,16 +1347,61 @@ export function uploadMediaXHR(
       reject(reason);
     };
     const request = new XMLHttpRequest();
+    const uploadID = onProcessingPoster
+      ? typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) =>
+            value.toString(16).padStart(2, "0"),
+          ).join("")
+      : null;
+    let posterPoll: ReturnType<typeof setTimeout> | null = null;
+    let posterPolling = false;
+    const stopPosterPoll = () => {
+      posterPolling = false;
+      if (posterPoll !== null) clearTimeout(posterPoll);
+      posterPoll = null;
+    };
+    const pollPoster = async () => {
+      if (!posterPolling || !uploadID || signal?.aborted) return;
+      try {
+        const response = await fetch(
+          `/api/v1/owner/media-uploads/${encodeURIComponent(uploadID)}/poster`,
+          { credentials: "same-origin", headers: { Accept: "image/jpeg" } },
+        );
+        if (
+          response.ok &&
+          response.headers.get("Content-Type") === "image/jpeg"
+        ) {
+          const objectUrl = URL.createObjectURL(await response.blob());
+          stopPosterPoll();
+          onProcessingPoster?.(objectUrl);
+          return;
+        }
+      } catch {
+        // The primary upload owns error reporting. Poster feedback is best-effort.
+      }
+      if (posterPolling) posterPoll = setTimeout(() => void pollPoster(), 300);
+    };
+    const startPosterPoll = () => {
+      if (posterPolling || !uploadID) return;
+      posterPolling = true;
+      void pollPoster();
+    };
     request.open("POST", endpoint);
     request.withCredentials = true;
     request.setRequestHeader("Accept", "application/json");
     for (const [name, value] of Object.entries(headers))
       request.setRequestHeader(name, value);
+    if (uploadID) request.setRequestHeader("X-Moment-Upload-ID", uploadID);
     request.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable && event.total > 0)
-        onProgress(
-          Math.min(99, Math.round((event.loaded / event.total) * 100)),
+      if (event.lengthComputable && event.total > 0) {
+        const progress = Math.min(
+          99,
+          Math.round((event.loaded / event.total) * 100),
         );
+        onProgress(progress);
+        if (progress === 99) startPosterPoll();
+      }
     });
     request.addEventListener("error", () =>
       rejectOnce(
@@ -1410,8 +1456,9 @@ export function uploadMediaXHR(
       return;
     }
     signal?.addEventListener("abort", abort, { once: true });
-    request.addEventListener("loadend", () =>
-      signal?.removeEventListener("abort", abort),
+    request.addEventListener(
+      "loadend",
+      () => (signal?.removeEventListener("abort", abort), stopPosterPoll()),
     );
     const body = new FormData();
     body.append("file", file, file.name);

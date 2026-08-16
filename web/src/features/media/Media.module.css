@@ -365,8 +365,12 @@
 }
 
 @keyframes media-processing-spin {
+  from {
+    transform: translateZ(0) rotate(0deg);
+  }
+
   to {
-    transform: rotate(1turn);
+    transform: translateZ(0) rotate(360deg);
   }
 }
 
@@ -487,12 +491,18 @@
   font-variant-numeric: tabular-nums;
 }
 
-.mediaUploadStatus[data-processing="true"] .uploadProgressRing svg {
-  animation: media-processing-spin 900ms linear infinite;
-}
-
-.mediaUploadStatus[data-processing="true"] .uploadProgressRing circle + circle {
-  stroke-dasharray: 28 72;
+.processingSpinner {
+  inline-size: 2.15rem;
+  block-size: 2.15rem;
+  display: block;
+  border: 3px solid rgb(255 255 255 / 28%);
+  border-block-start-color: #fff;
+  border-inline-end-color: rgb(255 255 255 / 82%);
+  border-radius: 50%;
+  backface-visibility: hidden;
+  contain: paint;
+  will-change: transform;
+  animation: media-processing-spin 760ms linear infinite;
 }
 
 .mediaUploadSuccess {
@@ -1092,7 +1102,7 @@
     animation: none;
   }
 
-  .mediaUploadStatus[data-processing="true"] .uploadProgressRing svg,
+  .processingSpinner,
   .mediaUploadSuccess {
     animation: none;
   }

@@ -28,6 +28,7 @@ function item(key: string): ComposerMediaItem {
     key,
     file: null,
     localPreviewUrl: null,
+    processingPosterUrl: null,
     mediaId: `01K2ABCDEF0123456789ABCD${key}`,
     previewUrl: `/api/v1/media/${key}/preview`,
     originalUrl: `/api/v1/media/${key}`,
@@ -194,6 +195,7 @@ describe("media editor", () => {
       ...item("00"),
       file: new File(["video"], "climb.mov", { type: "video/quicktime" }),
       localPreviewUrl: "blob:http://localhost/local-video",
+      processingPosterUrl: "blob:http://localhost/server-video-poster",
       mediaId: null,
       previewUrl: "",
       originalUrl: "",
@@ -218,13 +220,25 @@ describe("media editor", () => {
     expect(screen.getByRole("status")).toHaveTextContent("正在处理视频");
     const preview = container.querySelector("video");
     expect(preview).not.toBeNull();
+    expect(preview).toHaveAttribute(
+      "poster",
+      "blob:http://localhost/server-video-poster",
+    );
     Object.defineProperty(preview, "duration", { value: 10 });
     fireEvent.loadedMetadata(preview!);
-    expect(preview).toHaveProperty("currentTime", 0.25);
+    expect(preview).toHaveProperty("currentTime", 1);
     fireEvent.loadedData(preview!);
     expect(container.querySelector("[data-video-frame]")).toHaveAttribute(
       "data-video-frame",
       "ready",
+    );
+    expect(preview).toHaveAttribute("preload", "auto");
+    expect(
+      container.querySelector("[class*='processingSpinner']"),
+    ).not.toBeNull();
+    expect(mediaCss).toContain("transform: translateZ(0) rotate(360deg)");
+    expect(mediaCss).not.toContain(
+      '.mediaUploadStatus[data-processing="true"] .uploadProgressRing svg',
     );
   });
 

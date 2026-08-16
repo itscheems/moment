@@ -20,6 +20,7 @@ function item(overrides: Partial<ComposerMediaItem> = {}): ComposerMediaItem {
     key: "media-1",
     file: null,
     localPreviewUrl: null,
+    processingPosterUrl: null,
     mediaId: "01K2ABCDEF0123456789ABCDE1",
     previewUrl: "/api/v1/media/01K2ABCDEF0123456789ABCDE1/preview",
     originalUrl: "/api/v1/media/01K2ABCDEF0123456789ABCDE1",
@@ -58,8 +59,13 @@ describe("media composer contract", () => {
     expect(createObjectURL).toHaveBeenCalledWith(file);
     expect(localPreviewUrl).toBe("blob:http://localhost/local-original");
 
-    releaseDiscardedLocalPreviews([item({ file, localPreviewUrl })], []);
+    const processingPosterUrl = "blob:http://localhost/video-poster";
+    releaseDiscardedLocalPreviews(
+      [item({ file, localPreviewUrl, processingPosterUrl })],
+      [],
+    );
     expect(revokeObjectURL).toHaveBeenCalledWith(localPreviewUrl);
+    expect(revokeObjectURL).toHaveBeenCalledWith(processingPosterUrl);
   });
 
   it("preserves missing, decorative, and provided alt values without trimming", () => {

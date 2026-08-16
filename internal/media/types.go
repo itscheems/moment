@@ -266,6 +266,13 @@ type UploadResult struct {
 	PreviewURL  string  `json:"preview_url"`
 }
 
+// IngestObserver receives bounded derived artifacts while an ingest is still
+// running. Callbacks must return quickly; they are advisory and never become
+// part of the media authority transaction.
+type IngestObserver struct {
+	VideoPosterReady func([]byte)
+}
+
 // NewUploadResult adds the explicit public original and preview routes.
 func NewUploadResult(value Media, preview Preview) UploadResult {
 	id := value.ID.String()

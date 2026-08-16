@@ -434,6 +434,22 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             );
           },
           controller.signal,
+          (processingPosterUrl) => {
+            if (
+              !mountedRef.current ||
+              mediaUploadsRef.current.get(key) !== controller
+            ) {
+              URL.revokeObjectURL(processingPosterUrl);
+              return;
+            }
+            replaceMedia(
+              mediaItemsRef.current.map((item) =>
+                item.key === key && item.state === "uploading"
+                  ? { ...item, processingPosterUrl }
+                  : item,
+              ),
+            );
+          },
         );
         if (
           !mountedRef.current ||

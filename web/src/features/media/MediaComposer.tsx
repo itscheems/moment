@@ -48,23 +48,46 @@ function VideoEditorPreview({
   src: string;
   width?: number;
 }) {
+  const coverTimeRef = useRef(0);
   const [frameState, setFrameState] = useState<
     "loading" | "ready" | "unavailable"
   >(poster ? "ready" : "loading");
 
   useEffect(() => {
+    coverTimeRef.current = 0;
     setFrameState(poster ? "ready" : "loading");
   }, [poster, src]);
 
-  const revealFrame = () => setFrameState("ready");
-  const seekIntoVideo = (event: SyntheticEvent<HTMLVideoElement>) => {
+  const revealDecodedFrame = (event: SyntheticEvent<HTMLVideoElement>) => {
+    const video = event.currentTarget;
+    if (
+      coverTimeRef.current === 0 ||
+      video.currentTime > 0 ||
+      Math.abs(video.currentTime - coverTimeRef.current) < 0.1
+    ) {
+      setFrameState("ready");
+    }
+  };
+  const seekToCoverFrame = (event: SyntheticEvent<HTMLVideoElement>) => {
     const video = event.currentTarget;
     if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+    const latestUsableFrame = Math.max(0, video.duration - 0.05);
+    const representativeFrame = Math.min(
+      3,
+      Math.max(0.5, video.duration * 0.1),
+      latestUsableFrame,
+    );
+    coverTimeRef.current = representativeFrame;
+    if (representativeFrame <= 0) {
+      setFrameState("ready");
+      return;
+    }
     try {
-      video.currentTime = Math.min(0.25, video.duration / 20);
+      video.currentTime = representativeFrame;
     } catch {
       // Some browser/container combinations reject seeking before their first
       // decoded frame. loadedData still reveals that first usable frame.
+      coverTimeRef.current = 0;
     }
   };
 
@@ -84,12 +107,12 @@ function VideoEditorPreview({
         height={height}
         muted
         onError={() => setFrameState("unavailable")}
-        onLoadedData={revealFrame}
-        onLoadedMetadata={seekIntoVideo}
-        onSeeked={revealFrame}
+        onLoadedData={revealDecodedFrame}
+        onLoadedMetadata={seekToCoverFrame}
+        onSeeked={revealDecodedFrame}
         playsInline
         poster={poster}
-        preload="metadata"
+        preload="auto"
         src={src}
         width={width}
       />
@@ -391,9 +414,10 @@ export function MediaComposer({
                           fileName={item.file?.name ?? null}
                           height={item.height ?? undefined}
                           poster={
-                            item.mediaId
+                            item.processingPosterUrl ??
+                            (item.mediaId
                               ? `/api/v1/media/${encodeURIComponent(item.mediaId)}/poster`
-                              : undefined
+                              : undefined)
                           }
                           src={editorPreviewUrl}
                           width={item.width ?? undefined}
@@ -453,13 +477,22 @@ export function MediaComposer({
                               } as CSSProperties
                             }
                           >
-                            <svg viewBox="0 0 44 44">
-                              <circle cx="22" cy="22" r="18" />
-                              <circle cx="22" cy="22" pathLength="100" r="18" />
-                            </svg>
-                            <strong>
-                              {processing ? "…" : `${item.progress}%`}
-                            </strong>
+                            {processing ? (
+                              <span className={styles.processingSpinner} />
+                            ) : (
+                              <>
+                                <svg viewBox="0 0 44 44">
+                                  <circle cx="22" cy="22" r="18" />
+                                  <circle
+                                    cx="22"
+                                    cy="22"
+                                    pathLength="100"
+                                    r="18"
+                                  />
+                                </svg>
+                                <strong>{item.progress}%</strong>
+                              </>
+                            )}
                           </span>
                           <span>{uploadStatus}</span>
                         </div>

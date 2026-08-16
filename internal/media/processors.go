@@ -351,9 +351,15 @@ func mp4HasFastStart(contents []byte) bool {
 	return moov >= 0 && mdat >= 0 && moov < mdat
 }
 
-func (store *Store) generateVideoPosterFile(ctx context.Context, input, output string) error {
+func videoPosterTime(durationSeconds float64) float64 {
+	latestUsableFrame := max(0, durationSeconds-0.05)
+	return min(3, max(0.5, durationSeconds*0.1), latestUsableFrame)
+}
+
+func (store *Store) generateVideoPosterFile(ctx context.Context, input, output string, durationSeconds float64) error {
 	filter := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease", store.options.Limits.PreviewMaxEdge, store.options.Limits.PreviewMaxEdge)
-	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", "-nostdin", "-y", "-v", "error", "-ss", "0", "-i", input, "-frames:v", "1", "-vf", filter, "-q:v", "3", output)
+	seek := strconv.FormatFloat(videoPosterTime(durationSeconds), 'f', 3, 64)
+	_, err := store.runTool(ctx, store.options.FFmpegPath, "ffmpeg", "-nostdin", "-y", "-v", "error", "-ss", seek, "-i", input, "-frames:v", "1", "-vf", filter, "-q:v", "3", output)
 	return err
 }
 

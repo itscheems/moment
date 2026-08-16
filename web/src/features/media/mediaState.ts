@@ -9,6 +9,7 @@ export interface ComposerMediaItem {
   key: string;
   file: File | null;
   localPreviewUrl: string | null;
+  processingPosterUrl: string | null;
   mediaId: string | null;
   previewUrl: string;
   originalUrl: string;
@@ -67,6 +68,7 @@ export function newMediaItem(file: File): ComposerMediaItem {
     key: `local-${createMediaKey()}`,
     file,
     localPreviewUrl: null,
+    processingPosterUrl: null,
     mediaId: null,
     previewUrl: "",
     originalUrl: "",
@@ -107,13 +109,15 @@ export function releaseDiscardedLocalPreviews(
   next: ComposerMediaItem[],
 ): void {
   const retained = new Set(
-    next
-      .map((item) => item.localPreviewUrl)
-      .filter((url): url is string => Boolean(url)),
+    next.flatMap((item) =>
+      [item.localPreviewUrl, item.processingPosterUrl].filter(
+        (url): url is string => Boolean(url),
+      ),
+    ),
   );
   for (const item of current) {
-    if (item.localPreviewUrl && !retained.has(item.localPreviewUrl)) {
-      releaseLocalPreview(item.localPreviewUrl);
+    for (const url of [item.localPreviewUrl, item.processingPosterUrl]) {
+      if (url && !retained.has(url)) releaseLocalPreview(url);
     }
   }
 }
@@ -149,6 +153,7 @@ export function itemsFromPost(media: PublicMediaUsage[]): ComposerMediaItem[] {
     key: `stored-${usage.position}-${usage.mediaId}`,
     file: null,
     localPreviewUrl: null,
+    processingPosterUrl: null,
     mediaId: usage.mediaId,
     previewUrl: `/api/v1/media/${encodeURIComponent(usage.mediaId)}/preview`,
     originalUrl: `/api/v1/media/${encodeURIComponent(usage.mediaId)}`,
@@ -176,6 +181,7 @@ export function applyUpload(
     ...item,
     file: null,
     localPreviewUrl: null,
+    processingPosterUrl: null,
     mediaId: upload.id,
     previewUrl: upload.previewUrl,
     originalUrl: upload.originalUrl,
