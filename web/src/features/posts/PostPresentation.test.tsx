@@ -61,6 +61,12 @@ function makePost(
 }
 
 describe("shared post presentation", () => {
+  it("lets the browser skip offscreen timeline rendering with a stable estimate", () => {
+    expect(postCss).toMatch(
+      /@supports\s*\(content-visibility:\s*auto\)[\s\S]*?\._post_[^}]+:not\(\._detail_[^)]+\)\s*\{[^}]*content-visibility:\s*auto;[^}]*contain-intrinsic-size:\s*auto 22rem;/,
+    );
+  });
+
   it("places repost attribution above an aligned avatar and byline row", () => {
     const reposted = {
       ...makePost("再次分享", "<p>再次分享</p>"),

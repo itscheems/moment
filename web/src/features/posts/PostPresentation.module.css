@@ -14,6 +14,13 @@
   cursor: pointer;
 }
 
+@supports (content-visibility: auto) {
+  .post:not(.detail) {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 22rem;
+  }
+}
+
 .post:not(.detail):hover {
   background: #f7f7f7;
 }

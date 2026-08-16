@@ -1,17 +1,68 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PublicMediaUsage } from "../../api/public";
 import { ImageGrid } from "./ImageGrid";
 
-afterEach(cleanup);
+class TestIntersectionObserver {
+  static instances: TestIntersectionObserver[] = [];
+
+  readonly root = null;
+  readonly rootMargin: string;
+  readonly thresholds: readonly number[];
+  private readonly callback: IntersectionObserverCallback;
+  private target: Element | null = null;
+
+  constructor(
+    callback: IntersectionObserverCallback,
+    options: IntersectionObserverInit = {},
+  ) {
+    this.callback = callback;
+    this.rootMargin = options.rootMargin ?? "0px";
+    this.thresholds = Array.isArray(options.threshold)
+      ? options.threshold
+      : [options.threshold ?? 0];
+    TestIntersectionObserver.instances.push(this);
+  }
+
+  observe = (target: Element) => {
+    this.target = target;
+  };
+
+  unobserve = () => undefined;
+  disconnect = () => undefined;
+  takeRecords = () => [];
+
+  setIntersecting(isIntersecting: boolean) {
+    if (!this.target) throw new Error("observer has no target");
+    this.callback(
+      [
+        {
+          isIntersecting,
+          target: this.target,
+          intersectionRatio: isIntersecting ? 1 : 0,
+        } as IntersectionObserverEntry,
+      ],
+      this as unknown as IntersectionObserver,
+    );
+  }
+}
+
+afterEach(() => {
+  cleanup();
+  TestIntersectionObserver.instances = [];
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 function media(count: number): PublicMediaUsage[] {
   return Array.from({ length: count }, (_, position) => ({
@@ -23,6 +74,17 @@ function media(count: number): PublicMediaUsage[] {
     width: 1_200 + position,
     height: 800 + position,
   }));
+}
+
+function video(): PublicMediaUsage {
+  return {
+    mediaId: "01K2ABCDEF0123456789ABCDV0",
+    position: 0,
+    mimeType: "video/mp4",
+    altText: "一段测试视频",
+    width: 1_920,
+    height: 1_080,
+  };
 }
 
 describe("public image grid", () => {
@@ -114,6 +176,50 @@ describe("public image grid", () => {
     render(<ImageGrid media={media(1)} />);
     fireEvent.error(screen.getByRole("img", { name: /未提供图片描述/ }));
     expect(screen.getByText("图片暂不可用")).toBeInTheDocument();
+  });
+
+  it("attaches video resources near the viewport and releases them after leaving", () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
+    const pause = vi
+      .spyOn(HTMLMediaElement.prototype, "pause")
+      .mockImplementation(() => undefined);
+    render(<ImageGrid media={[video()]} />);
+
+    const element = screen.getByLabelText("一段测试视频");
+    expect(element).not.toHaveAttribute("src");
+    expect(element).not.toHaveAttribute("poster");
+    expect(element).toHaveAttribute("preload", "none");
+    expect(TestIntersectionObserver.instances[0].rootMargin).toBe("600px 0px");
+
+    act(() => TestIntersectionObserver.instances[0].setIntersecting(true));
+    expect(element).toHaveAttribute(
+      "src",
+      "/api/v1/media/01K2ABCDEF0123456789ABCDV0/preview",
+    );
+    expect(element).toHaveAttribute(
+      "poster",
+      "/api/v1/media/01K2ABCDEF0123456789ABCDV0/poster",
+    );
+    expect(element).toHaveAttribute("preload", "metadata");
+
+    act(() => TestIntersectionObserver.instances[0].setIntersecting(false));
+    expect(pause).toHaveBeenCalled();
+    expect(element).toHaveAttribute("src");
+    act(() => vi.advanceTimersByTime(3_000));
+    expect(element).not.toHaveAttribute("src");
+    expect(element).not.toHaveAttribute("poster");
+  });
+
+  it("attaches detail video resources immediately", () => {
+    vi.stubGlobal("IntersectionObserver", TestIntersectionObserver);
+    render(<ImageGrid eagerVideo media={[video()]} />);
+
+    expect(screen.getByLabelText("一段测试视频")).toHaveAttribute(
+      "src",
+      "/api/v1/media/01K2ABCDEF0123456789ABCDV0/preview",
+    );
+    expect(TestIntersectionObserver.instances).toHaveLength(0);
   });
 
   it("does not carry a failed preview across reordered or replaced usages", () => {

@@ -2,6 +2,7 @@ import { useState, type CSSProperties } from "react";
 
 import type { PublicMediaUsage } from "../../api/public";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
+import { ViewportVideo } from "./ViewportVideo";
 import styles from "./Media.module.css";
 
 function mediaAlt(
@@ -51,23 +52,23 @@ function MediaAsset({
   index,
   total,
   original,
+  eagerVideo,
   onError,
 }: {
   usage: PublicMediaUsage;
   index: number;
   total: number;
   original: boolean;
+  eagerVideo: boolean;
   onError: () => void;
 }) {
   if (usage.mimeType === "video/mp4") {
     return (
-      <video
-        aria-label={mediaAlt(usage, index, total)}
-        muted
+      <ViewportVideo
+        eager={eagerVideo}
+        label={mediaAlt(usage, index, total)}
         onError={onError}
-        playsInline
         poster={`/api/v1/media/${encodeURIComponent(usage.mediaId)}/poster`}
-        preload="metadata"
         src={original ? originalUrl(usage.mediaId) : previewUrl(usage.mediaId)}
       />
     );
@@ -85,7 +86,13 @@ function MediaAsset({
   );
 }
 
-export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
+export function ImageGrid({
+  media,
+  eagerVideo = false,
+}: {
+  media: PublicMediaUsage[];
+  eagerVideo?: boolean;
+}) {
   const [selected, setSelected] = useState<number | null>(null);
   const [failed, setFailed] = useState(() => new Set<string>());
   if (media.length === 0) return null;
@@ -158,6 +165,7 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
               </span>
             ) : (
               <MediaAsset
+                eagerVideo={eagerVideo}
                 index={index}
                 onError={() => markFailed(usage)}
                 original={false}

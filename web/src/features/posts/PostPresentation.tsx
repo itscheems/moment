@@ -296,7 +296,7 @@ export function PostPresentation({
             mentionUsername={site.username}
           />
           {post.location ? <PostLocation location={post.location} /> : null}
-          <ImageGrid media={post.media} />
+          <ImageGrid eagerVideo media={post.media} />
           {quoteCard}
           <p className={styles.publishedLine}>
             <span>发布于</span>
