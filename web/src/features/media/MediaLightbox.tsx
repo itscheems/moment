@@ -93,6 +93,7 @@ export function MediaLightbox({
               {item && source && !failed && item.kind === "video" ? (
                 <video
                   aria-label={item.alt}
+                  autoPlay
                   controls
                   key={item.key}
                   onError={() => setFailed(true)}

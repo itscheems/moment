@@ -187,6 +187,9 @@ describe("public image grid", () => {
     render(<ImageGrid media={[video()]} />);
 
     const element = screen.getByLabelText("一段测试视频");
+    expect(
+      element.parentElement?.querySelector('[data-icon="video-play"]'),
+    ).toBeInTheDocument();
     expect(element).not.toHaveAttribute("src");
     expect(element).not.toHaveAttribute("poster");
     expect(element).toHaveAttribute("preload", "none");
@@ -220,6 +223,20 @@ describe("public image grid", () => {
       "/api/v1/media/01K2ABCDEF0123456789ABCDV0/preview",
     );
     expect(TestIntersectionObserver.instances).toHaveLength(0);
+  });
+
+  it("opens video playback with controls in one action", async () => {
+    render(<ImageGrid eagerVideo media={[video()]} />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "打开第 1 项视频，共 1 项：一段测试视频",
+      }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.querySelector("video")).toHaveAttribute("autoplay");
+    expect(dialog.querySelector("video")).toHaveAttribute("controls");
   });
 
   it("does not carry a failed preview across reordered or replaced usages", () => {

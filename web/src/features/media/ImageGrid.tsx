@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from "react";
 
 import type { PublicMediaUsage } from "../../api/public";
+import { Icon } from "../../components/icons";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import { ViewportVideo } from "./ViewportVideo";
 import { isVideoMimeType } from "./mediaState";
@@ -173,6 +174,11 @@ export function ImageGrid({
                 usage={usage}
               />
             )}
+            {isVideoMimeType(usage.mimeType) && !failed.has(usageKey(usage)) ? (
+              <span aria-hidden="true" className={styles.videoPlayIndicator}>
+                <Icon name="video-play" />
+              </span>
+            ) : null}
             {media.length >= 5 ? (
               <span
                 aria-hidden="true"

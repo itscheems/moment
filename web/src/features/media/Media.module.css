@@ -760,6 +760,39 @@
   transition: transform var(--motion-fast) var(--ease-out);
 }
 
+.videoPlayIndicator {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 50%;
+  color: #fff;
+  background: rgb(15 20 25 / 78%);
+  box-shadow: 0 0.25rem 1rem rgb(0 0 0 / 22%);
+  backdrop-filter: blur(4px);
+  transform: translate(-50%, -50%);
+  transition:
+    background-color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+  pointer-events: none;
+}
+
+.videoPlayIndicator svg {
+  inline-size: 1.6rem;
+  block-size: 1.6rem;
+  margin-inline-start: 0.15rem;
+}
+
+.imageTile:hover .videoPlayIndicator,
+.imageTile:focus-visible .videoPlayIndicator {
+  background: rgb(15 20 25 / 90%);
+  transform: translate(-50%, -50%) scale(1.04);
+}
+
 .imageGrid[data-media-count="1"] {
   inline-size: fit-content;
   max-inline-size: 100%;
@@ -1045,6 +1078,11 @@
 }
 
 @media (max-width: 719px) {
+  .videoPlayIndicator {
+    inline-size: 3rem;
+    block-size: 3rem;
+  }
+
   .imageGrid[data-media-count="5"],
   .imageGrid[data-media-count="6"],
   .imageGrid[data-media-count="7"],
@@ -1096,6 +1134,10 @@
   .lightboxOriginal {
     transition: none;
     animation: none;
+  }
+
+  .videoPlayIndicator {
+    transition: none;
   }
 
   .editorPreviewPending > span {

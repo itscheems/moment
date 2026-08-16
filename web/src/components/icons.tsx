@@ -18,6 +18,7 @@ export type IconName =
   | "media"
   | "media-picker"
   | "media-remove"
+  | "video-play"
   | "more"
   | "edit"
   | "delete"
@@ -112,6 +113,7 @@ const paths: Record<IconName, React.ReactNode> = {
     </>
   ),
   "media-remove": <use href={`${iconSprite}#media-remove`} />,
+  "video-play": <use href={`${iconSprite}#video-play`} />,
   more: (
     <>
       <circle cx="5" cy="12" r="1" />
@@ -182,6 +184,7 @@ const filledIcons = new Set<IconName>([
   "camera",
   "media-picker",
   "media-remove",
+  "video-play",
   "location-picker",
   "repost",
 ]);
