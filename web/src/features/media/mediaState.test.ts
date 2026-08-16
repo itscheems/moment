@@ -105,14 +105,14 @@ describe("media composer contract", () => {
   });
 
   it("validates logical duplicate usage bytes and browser-declared types", () => {
-    const duplicate = sizedFile("same.png", "image/png", MAX_TOTAL_BYTES / 5);
-    const current = Array.from({ length: 5 }, (_, index) =>
+    const duplicate = sizedFile("same.png", "image/png", MAX_TOTAL_BYTES / 10);
+    const current = Array.from({ length: 10 }, (_, index) =>
       item({ key: `copy-${index}`, file: duplicate }),
     );
     expect(
       current.reduce((sum, value) => sum + (value.file?.size ?? 0), 0),
     ).toBe(MAX_TOTAL_BYTES);
-    expect(fileValidation(duplicate, current)).toContain("150 MiB");
+    expect(fileValidation(duplicate, current)).toContain("300 MiB");
     expect(
       fileValidation(sizedFile("vector.svg", "image/svg+xml", 100), []),
     ).toContain("不是支持的");
@@ -137,5 +137,17 @@ describe("media composer contract", () => {
     expect(
       fileValidation(sizedFile("camera.mov", "", 44 * 1024 * 1024), []),
     ).toBeNull();
+    expect(
+      fileValidation(
+        sizedFile("maximum.mov", "video/quicktime", 300 * 1024 * 1024),
+        [],
+      ),
+    ).toBeNull();
+    expect(
+      fileValidation(
+        sizedFile("too-large.mp4", "video/mp4", 300 * 1024 * 1024 + 1),
+        [],
+      ),
+    ).toContain("视频 300 MiB");
   });
 });

@@ -99,7 +99,7 @@ place.
 ## Media originals and display versions
 
 Moment accepts JPEG, PNG, WebP, GIF, and HEIC image originals up to 30 MiB,
-plus MP4 and QuickTime MOV video originals up to 100 MiB. Video is currently
+plus MP4 and QuickTime MOV video originals up to 300 MiB. Video is currently
 limited to five minutes.
 Original bytes are retained for explicit original-quality access. Timeline and
 lightbox views use replaceable display artifacts capped at 10 MiB: HEIC is

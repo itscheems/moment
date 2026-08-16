@@ -14,7 +14,7 @@ const (
 	QuickTime = "video/quicktime"
 
 	MaxImageBytes int64 = 30 << 20
-	MaxVideoBytes int64 = 100 << 20
+	MaxVideoBytes int64 = 300 << 20
 	MaxInputBytes int64 = MaxVideoBytes
 )
 

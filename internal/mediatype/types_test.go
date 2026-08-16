@@ -31,6 +31,14 @@ func TestCapabilitiesKeepContainerSpecificOriginalContracts(t *testing.T) {
 	}
 }
 
+func TestVideoOriginalBudgetIs300MiB(t *testing.T) {
+	t.Parallel()
+
+	if MaxVideoBytes != 300<<20 || MaxInputBytes != MaxVideoBytes {
+		t.Fatalf("video budget = %d input budget = %d", MaxVideoBytes, MaxInputBytes)
+	}
+}
+
 func TestUnknownCapabilityIsRejected(t *testing.T) {
 	t.Parallel()
 

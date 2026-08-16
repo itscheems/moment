@@ -27,9 +27,9 @@ export interface ComposerMediaItem {
 
 export const MAX_MEDIA_COUNT = 9;
 export const MAX_IMAGE_FILE_BYTES = 30 * 1024 * 1024;
-export const MAX_VIDEO_FILE_BYTES = 100 * 1024 * 1024;
+export const MAX_VIDEO_FILE_BYTES = 300 * 1024 * 1024;
 export const MAX_FILE_BYTES = MAX_IMAGE_FILE_BYTES;
-export const MAX_TOTAL_BYTES = 150 * 1024 * 1024;
+export const MAX_TOTAL_BYTES = 300 * 1024 * 1024;
 export const MAX_ALT_CODE_POINTS = 1_000;
 export const MEDIA_TYPES = new Set([
   "image/jpeg",
@@ -238,7 +238,7 @@ export function fileValidation(
     ? MAX_VIDEO_FILE_BYTES
     : MAX_IMAGE_FILE_BYTES;
   if (file.size <= 0 || file.size > maximumFileBytes) {
-    return `${file.name || "所选文件"} 超过单个${isVideoMimeType(mimeType) ? "视频 100" : "图片 30"} MiB 限制或为空。`;
+    return `${file.name || "所选文件"} 超过单个${isVideoMimeType(mimeType) ? "视频 300" : "图片 30"} MiB 限制或为空。`;
   }
   const currentBytes = current.reduce(
     (total, item) => total + (item.file?.size ?? 0),

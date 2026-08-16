@@ -13,7 +13,7 @@ replaceable cache entries produced by a versioned recipe.
 | MP4 or QuickTime MOV, up to 5 minutes | retained byte-for-byte | H.264/AAC MP4 plus JPEG poster               |
 
 - An image original may be at most 30 MiB; a video original may be at most
-  100 MiB.
+  300 MiB.
 - Every display artifact and poster is at most 10 MiB.
 - GIF animation remains available only through explicit original access; the
   normal timeline uses a bounded first-frame preview.
@@ -113,9 +113,9 @@ cache without changing originals.
 
 These are thresholds, not roadmap promises:
 
-- **tus:** introduce resumable upload when the source ceiling grows beyond
-  roughly 100 MiB, mobile weak-network upload failure is observed, or uploads
-  regularly take long enough that restarting is material. It also requires a
+- **tus:** introduce resumable upload when mobile weak-network failure is
+  observed at the current 300 MiB ceiling, or uploads regularly take long
+  enough that restarting is material. It also requires a
   staged-upload lifecycle, quotas, authentication, expiry cleanup, and Web/CLI
   parity; adding only the protocol endpoint would create incomplete authority.
 - **HLS/DASH and hls.js/Shaka:** introduce adaptive delivery only when Moment

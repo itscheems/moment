@@ -31,7 +31,7 @@ func registerMedia(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"media", "add"}, ArgsUsage: "<path>", Short: "Add one managed media file",
 		Long:    "Validate one local JPEG, PNG, WebP, GIF, HEIC, MP4, or QuickTime MOV, store its immutable original, and build the current display recipe through the selected transport.",
-		Inputs:  "One readable local image up to 30 MiB or video up to 100 MiB; video duration is limited to five minutes. API mode authenticates through MOMENT_TOKEN or --token-file.",
+		Inputs:  "One readable local image up to 30 MiB or video up to 300 MiB; video duration is limited to five minutes. API mode authenticates through MOMENT_TOKEN or --token-file.",
 		Output:  "Managed media metadata, preview metadata, and explicit original/preview URLs.",
 		Errors:  "Invalid media uses stable MEDIA_* codes; missing HEIC/video processors return MEDIA_PROCESSOR_UNAVAILABLE; filesystem failures use exit code 6; cancellation uses exit code 9.",
 		Example: "moment media add ./fixtures/cat.jpg --data-dir ./moment-data --json",

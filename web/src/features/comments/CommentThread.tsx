@@ -35,6 +35,7 @@ import { MediaComposer } from "../media/MediaComposer";
 import {
   applyUpload,
   fileValidation,
+  MAX_TOTAL_BYTES,
   mediaInput,
   mediaValidation,
   newMediaItem,
@@ -856,12 +857,12 @@ function CommentForm({
             }
             items={mediaItems}
             maximum={4}
-            maximumTotalBytes={120 * 1024 * 1024}
+            maximumTotalBytes={MAX_TOTAL_BYTES}
             subject="回复"
             onAdd={(files) => {
               const next = [...mediaItemsRef.current];
               for (const file of files) {
-                if (fileValidation(file, next, 120 * 1024 * 1024)) continue;
+                if (fileValidation(file, next, MAX_TOTAL_BYTES)) continue;
                 const item = newMediaItem(file);
                 next.push(item);
                 void readLocalPreview(file)

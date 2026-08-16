@@ -502,7 +502,7 @@ export function MediaComposer({
       </div>
       <p className={styles.srOnly} id={`${inputId}-guidance`}>
         支持 JPEG、PNG、WebP、GIF、HEIC、MP4 或 QuickTime MOV；图片原件最大 30
-        MiB，视频原件最大 100 MiB，最多 {maximum} 项。媒体不会写入本地文字草稿。
+        MiB，视频原件最大 300 MiB，最多 {maximum} 项。媒体不会写入本地文字草稿。
       </p>
       {selectionError ? (
         <p className={styles.mediaError} role="alert">

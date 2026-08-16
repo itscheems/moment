@@ -19,6 +19,7 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/media"
+	"github.com/moment/moment/internal/mediatype"
 )
 
 // LogFunc receives only bounded, preselected event fields.
@@ -69,9 +70,9 @@ const (
 	defaultJSONLimit      = int64(1 << 20)
 	defaultMergeJSONLimit = int64(64 << 20)
 	// One multipart request carries one managed original plus bounded framing.
-	// Video originals may be 100 MiB, so the transport ceiling stays slightly
+	// Video originals may be 300 MiB, so the transport ceiling stays slightly
 	// above that product limit without widening JSON or default bodies.
-	defaultMultipartLimit = int64(101 << 20)
+	defaultMultipartLimit = mediatype.MaxInputBytes + (1 << 20)
 	defaultArchiveLimit   = int64(64 << 30)
 	defaultBodyLimit      = int64(1 << 20)
 )
