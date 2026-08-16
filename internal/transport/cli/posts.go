@@ -608,7 +608,7 @@ type postMediaSource struct {
 }
 
 func registerPostMediaFlags(flags *pflag.FlagSet) {
-	flags.Var(&onceStringFlag{name: "--media"}, "media", "one local image path (mutually exclusive with --media-manifest)")
+	flags.Var(&onceStringFlag{name: "--media"}, "media", "one local media path (mutually exclusive with --media-manifest)")
 	flags.Var(&onceStringFlag{name: "--media-alt"}, "media-alt", "non-empty provided alt text for --media")
 	flags.Bool("media-decorative", false, "encode --media with explicit decorative alt text")
 	flags.Var(&onceStringFlag{name: "--media-manifest"}, "media-manifest", "ordered JSON manifest path or - for stdin")
@@ -767,7 +767,7 @@ func postMediaInputFromFlags(ctx context.Context, input CommandInput) (postMedia
 	decorativeChanged := input.Changed("media-decorative")
 	manifestChanged := input.Changed("media-manifest")
 	if manifestChanged && (mediaChanged || altChanged || decorativeChanged) {
-		return postMediaInput{}, invalidArgument("--media-manifest is mutually exclusive with single-image media flags", "use either --media-manifest or --media with one alt mode")
+		return postMediaInput{}, invalidArgument("--media-manifest is mutually exclusive with single-media flags", "use either --media-manifest or --media with one alt mode")
 	}
 	if altChanged && decorativeChanged {
 		return postMediaInput{}, invalidArgument("--media-alt and --media-decorative are mutually exclusive", "choose provided alt text or the decorative flag")
@@ -789,7 +789,7 @@ func postMediaInputFromFlags(ctx context.Context, input CommandInput) (postMedia
 		return postMediaInput{}, nil
 	}
 	if strings.TrimSpace(mediaPath) == "" || strings.ContainsRune(mediaPath, 0) {
-		return postMediaInput{}, invalidArgument("--media requires a non-empty local path", "provide one regular image file path")
+		return postMediaInput{}, invalidArgument("--media requires a non-empty local path", "provide one regular media file path")
 	}
 	item := postMediaSource{Path: mediaPath}
 	switch {
@@ -918,7 +918,7 @@ func decodePostMediaManifestItem(data []byte) (postMediaSource, error) {
 		switch key {
 		case "path":
 			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &item.Path) != nil || strings.TrimSpace(item.Path) == "" || strings.ContainsRune(item.Path, 0) {
-				return postMediaSource{}, invalidArgument("manifest path must be a non-empty string", "provide one regular local image path")
+				return postMediaSource{}, invalidArgument("manifest path must be a non-empty string", "provide one regular local media path")
 			}
 		case "media_id":
 			var value string
@@ -1009,10 +1009,10 @@ func openPostMediaFile(path string) (*os.File, string, error) {
 		return nil, "", mediaCLIError(err)
 	}
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, "", invalidArgument("post media paths must name regular non-symlink files", "provide a regular JPEG, PNG, WebP, or GIF file")
+		return nil, "", invalidArgument("post media paths must name regular non-symlink files", "provide a regular JPEG, PNG, WebP, GIF, HEIC, or MP4 file")
 	}
 	if info.Size() > media.DefaultMaxBytes {
-		return nil, "", mediaCLIError(domain.NewError(domain.CodeMediaTooLarge, "image exceeds the configured byte budget", map[string]any{"max_bytes": media.DefaultMaxBytes}))
+		return nil, "", mediaCLIError(domain.NewError(domain.CodeMediaTooLarge, "media exceeds the configured byte budget", map[string]any{"max_bytes": media.DefaultMaxBytes}))
 	}
 	file, err := os.Open(clean)
 	if err != nil {
@@ -1025,7 +1025,7 @@ func openPostMediaFile(path string) (*os.File, string, error) {
 	}
 	if !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
 		_ = file.Close()
-		return nil, "", invalidArgument("post media path changed while it was being opened", "retry with a stable regular non-symlink image file")
+		return nil, "", invalidArgument("post media path changed while it was being opened", "retry with a stable regular non-symlink media file")
 	}
 	return file, filepath.Base(clean), nil
 }

@@ -13,6 +13,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -82,6 +83,110 @@ func TestIngestSupportedFormatsUsesSignaturesAndCanonicalAuthority(t *testing.T)
 			}
 		})
 	}
+}
+
+func TestIngestHEICRealFixturePreservesOriginalAndBuildsDisplayImage(t *testing.T) {
+	converter := os.Getenv("MOMENT_TEST_HEIF_CONVERT")
+	if converter == "" {
+		t.Skip("set MOMENT_TEST_HEIF_CONVERT to run the real libheif integration")
+	}
+	fixture := filepath.Join("..", "..", "work", "v0.0.1", "resources", "IMG_1336.HEIC")
+	contents, err := os.ReadFile(fixture)
+	if errors.Is(err, os.ErrNotExist) {
+		t.Skip("real HEIC fixture is not available")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, runtimeState, _ := newTestStoreWithOptions(t, Options{HEIFConvertPath: converter})
+	value, preview, err := store.Ingest(context.Background(), "IMG_1336.HEIC", bytes.NewReader(contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.MIMEType != "image/heic" || value.ByteSize != int64(len(contents)) || preview.MIMEType != "image/jpeg" {
+		t.Fatalf("HEIC result = media(%q,%d) preview(%q)", value.MIMEType, value.ByteSize, preview.MIMEType)
+	}
+	original, err := store.ReadOriginal(context.Background(), value.ID)
+	if err != nil || !bytes.Equal(original.Contents, contents) {
+		t.Fatalf("HEIC original changed: err=%v equal=%v", err, bytes.Equal(original.Contents, contents))
+	}
+	display, err := store.ReadPreview(context.Background(), value.ID)
+	if err != nil || int64(len(display.Contents)) > DefaultPreviewMaxBytes {
+		t.Fatalf("HEIC display = %d bytes, %v", len(display.Contents), err)
+	}
+	listed, err := store.List(context.Background())
+	if err != nil || len(listed.Items) != 1 || listed.Items[0].PreviewStatus != "ready" {
+		t.Fatalf("HEIC preview status = %#v, %v", listed.Items, err)
+	}
+	status, err := DiagnosePreview(context.Background(), runtimeState.Root, value.SHA256)
+	if err != nil || status != "ready" {
+		t.Fatalf("HEIC diagnostic status = %q, %v", status, err)
+	}
+}
+
+func TestIngestMP4RealProcessorPreservesOriginalBuildsBoundedDisplayAndPoster(t *testing.T) {
+	ffmpeg := os.Getenv("MOMENT_TEST_FFMPEG")
+	ffprobe := os.Getenv("MOMENT_TEST_FFPROBE")
+	if ffmpeg == "" || ffprobe == "" {
+		t.Skip("set MOMENT_TEST_FFMPEG and MOMENT_TEST_FFPROBE to run the real FFmpeg integration")
+	}
+	inputPath := filepath.Join(t.TempDir(), "camera.mp4")
+	command := exec.Command(ffmpeg,
+		"-nostdin", "-y", "-v", "error",
+		"-f", "lavfi", "-i", "testsrc2=size=640x360:rate=30",
+		"-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000",
+		"-t", "2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+		"-c:a", "aac", "-movflags", "+faststart", inputPath,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("generate MP4: %v: %s", err, output)
+	}
+	contents, err := os.ReadFile(inputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, runtimeState, _ := newTestStoreWithOptions(t, Options{FFmpegPath: ffmpeg, FFprobePath: ffprobe})
+	value, preview, err := store.Ingest(context.Background(), "camera.mp4", bytes.NewReader(contents))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.MIMEType != "video/mp4" || preview.MIMEType != "video/mp4" || int64(fileSize(t, preview.Path)) > DefaultPreviewMaxBytes {
+		t.Fatalf("MP4 result = media(%q) preview(%q,%d)", value.MIMEType, preview.MIMEType, fileSize(t, preview.Path))
+	}
+	original, err := store.ReadOriginal(context.Background(), value.ID)
+	if err != nil || !bytes.Equal(original.Contents, contents) {
+		t.Fatalf("MP4 original changed: err=%v equal=%v", err, bytes.Equal(original.Contents, contents))
+	}
+	poster, err := store.ReadPoster(context.Background(), value.ID)
+	if err != nil || poster.MIMEType != "image/jpeg" {
+		t.Fatalf("MP4 poster = %q, %v", poster.MIMEType, err)
+	}
+	if _, format, err := image.DecodeConfig(bytes.NewReader(poster.Contents)); err != nil || format != "jpeg" {
+		t.Fatalf("poster is not JPEG: %q, %v", format, err)
+	}
+	listed, err := store.List(context.Background())
+	if err != nil || len(listed.Items) != 1 || listed.Items[0].PreviewStatus != "ready" {
+		t.Fatalf("MP4 preview status = %#v, %v", listed.Items, err)
+	}
+	status, err := DiagnosePreview(context.Background(), runtimeState.Root, value.SHA256)
+	if err != nil || status != "ready" {
+		t.Fatalf("MP4 diagnostic status = %q, %v", status, err)
+	}
+}
+
+func TestExtendedMediaReportsMissingProcessorWithoutPublishing(t *testing.T) {
+	header := make([]byte, 24)
+	binary.BigEndian.PutUint32(header[0:4], uint32(len(header)))
+	copy(header[4:8], "ftyp")
+	copy(header[8:12], "heic")
+	copy(header[16:20], "heic")
+	store, runtimeState, database := newTestStoreWithOptions(t, Options{HEIFConvertPath: filepath.Join(t.TempDir(), "missing-heif-convert")})
+	_, _, err := store.Ingest(context.Background(), "untrusted.heic", bytes.NewReader(header))
+	var domainErr *domain.Error
+	if !errors.As(err, &domainErr) || domainErr.Code != domain.CodeMediaProcessorUnavailable {
+		t.Fatalf("missing processor error = %v", err)
+	}
+	assertMediaAuthorityEmpty(t, database, runtimeState.Current.OriginalsDir)
 }
 
 func TestRebuildPreviewsRepairsPartialCacheAndIsDryRunCancelableAndIdempotent(t *testing.T) {
@@ -321,7 +426,7 @@ func TestIngestDeduplicatesBytesAndProducesBoundedOrientedPreview(t *testing.T) 
 func TestIngestRetainsThirtyMiBOriginalAndServesBoundedPreview(t *testing.T) {
 	store, _, _ := newTestStore(t, Limits{})
 	original := encodeJPEG(t, image.NewNRGBA(image.Rect(0, 0, 24, 12)))
-	original = append(original, make([]byte, 30<<20)...)
+	original = append(original, make([]byte, int(DefaultMaxBytes)-len(original))...)
 
 	value, preview, err := store.Ingest(context.Background(), "large-source.jpg", bytes.NewReader(original))
 	if err != nil {
@@ -908,6 +1013,11 @@ func assertNoPartials(t *testing.T, root string) {
 
 func newTestStore(t *testing.T, limits Limits) (*Store, *runtimefs.Runtime, *sqlite.Database) {
 	t.Helper()
+	return newTestStoreWithOptions(t, Options{Limits: limits})
+}
+
+func newTestStoreWithOptions(t *testing.T, options Options) (*Store, *runtimefs.Runtime, *sqlite.Database) {
+	t.Helper()
 	runtimeState, err := runtimefs.Initialize(context.Background(), runtimefs.Config{
 		DataDir:     t.TempDir(),
 		Environment: runtimefs.EnvironmentDevelopment,
@@ -920,15 +1030,26 @@ func newTestStore(t *testing.T, limits Limits) (*Store, *runtimefs.Runtime, *sql
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	store, err := NewStore(runtimeState, database, Options{
-		Limits:  limits,
-		Clock:   func() time.Time { return time.Date(2026, 8, 10, 12, 0, 0, 123_000_000, time.UTC) },
-		Entropy: bytes.NewReader(bytes.Repeat([]byte{0x42}, 1_024)),
-	})
+	if options.Clock == nil {
+		options.Clock = func() time.Time { return time.Date(2026, 8, 10, 12, 0, 0, 123_000_000, time.UTC) }
+	}
+	if options.Entropy == nil {
+		options.Entropy = bytes.NewReader(bytes.Repeat([]byte{0x42}, 1_024))
+	}
+	store, err := NewStore(runtimeState, database, options)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return store, runtimeState, database
+}
+
+func fileSize(t *testing.T, path string) int64 {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Size()
 }
 
 func encodeTransparentPNG(t *testing.T, width, height int) []byte {

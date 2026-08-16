@@ -159,7 +159,7 @@ func (store *Store) Ingest(ctx context.Context, originalName string, input io.Re
 	if err != nil {
 		return Media{}, Preview{}, err
 	}
-	inspection, err := inspectImage(contents, store.options.Limits)
+	inspection, err := store.inspectMedia(ctx, contents)
 	if err != nil {
 		return Media{}, Preview{}, err
 	}
@@ -257,7 +257,7 @@ func (store *Store) EnsurePreview(ctx context.Context, id domain.ID) (Preview, e
 		if err != nil {
 			return Preview{}, err
 		}
-		inspection, err := inspectImage(contents, store.options.Limits)
+		inspection, err := store.inspectMedia(ctx, contents)
 		if err != nil {
 			return Preview{}, domain.NewError(domain.CodeMediaCorrupt, "stored original is corrupt", map[string]any{"media_id": id.String()})
 		}
@@ -287,13 +287,13 @@ func readBounded(ctx context.Context, input io.Reader, maxBytes int64) ([]byte, 
 		if contextErr := ctx.Err(); contextErr != nil {
 			return nil, contextErr
 		}
-		return nil, domain.NewError(domain.CodeMediaCorrupt, "could not read image", nil)
+		return nil, domain.NewError(domain.CodeMediaCorrupt, "could not read media", nil)
 	}
 	if int64(len(contents)) > maxBytes {
-		return nil, domain.NewError(domain.CodeMediaTooLarge, "image exceeds the configured byte budget", map[string]any{"max_bytes": maxBytes})
+		return nil, domain.NewError(domain.CodeMediaTooLarge, "media exceeds the configured byte budget", map[string]any{"max_bytes": maxBytes})
 	}
 	if len(contents) == 0 {
-		return nil, corrupt("image is empty")
+		return nil, corrupt("media is empty")
 	}
 	return contents, nil
 }
@@ -332,6 +332,10 @@ func expectedStoragePath(sha, mimeType string) (string, bool) {
 		imageFormat = formatWebP
 	case "image/gif":
 		imageFormat = formatGIF
+	case "image/heic":
+		imageFormat = formatHEIC
+	case "video/mp4":
+		imageFormat = formatMP4
 	default:
 		return "", false
 	}

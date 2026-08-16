@@ -73,7 +73,10 @@ func verifyPortableOriginal(ctx context.Context, input io.Reader, value Media, r
 	}
 	inspection, err := inspectImage(contents, limits)
 	if err != nil {
-		return domain.NewError(domain.CodeMediaCorrupt, "immutable original image structure is invalid", map[string]any{"media_id": value.ID.String()})
+		if extendedErr := verifyExtendedSignature(contents, value); extendedErr == nil {
+			return nil
+		}
+		return domain.NewError(domain.CodeMediaCorrupt, "immutable original media structure is invalid", map[string]any{"media_id": value.ID.String()})
 	}
 	width, height := displayDimensions(inspection)
 	if inspection.format.mimeType() != value.MIMEType || width != value.Width || height != value.Height {

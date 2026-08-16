@@ -17,7 +17,7 @@ const (
 	// DefaultMaxBytes bounds immutable originals. Previews have a separate,
 	// smaller delivery budget so accepting a large source never makes timeline
 	// rendering load the same bytes implicitly.
-	DefaultMaxBytes           int64  = 32 << 20
+	DefaultMaxBytes           int64  = 30 << 20
 	DefaultMaxDimension       uint32 = 16_384
 	DefaultMaxPixels          uint64 = 80_000_000
 	DefaultMaxGIFFrames       uint32 = 300
@@ -27,7 +27,7 @@ const (
 	DefaultPreviewConcurrency        = 2
 
 	// RecipeVersion changes whenever any output byte semantics change.
-	RecipeVersion = "v3-max1600-jpeg90-preview10m-orient-all-alpha-png-gif-canvas-first"
+	RecipeVersion = "v4-max1600-display10m-heic-libheif-mp4-h264-faststart"
 
 	// Nine bytes cover the largest supported 16-bit RGBA decode plus bounded
 	// preview intermediates; fixed bytes cover compressed input and encoders.
@@ -105,6 +105,8 @@ const (
 	formatPNG
 	formatWebP
 	formatGIF
+	formatHEIC
+	formatMP4
 )
 
 func (f format) mimeType() string {
@@ -117,6 +119,10 @@ func (f format) mimeType() string {
 		return "image/webp"
 	case formatGIF:
 		return "image/gif"
+	case formatHEIC:
+		return "image/heic"
+	case formatMP4:
+		return "video/mp4"
 	default:
 		return ""
 	}
@@ -132,6 +138,10 @@ func (f format) extension() string {
 		return "webp"
 	case formatGIF:
 		return "gif"
+	case formatHEIC:
+		return "heic"
+	case formatMP4:
+		return "mp4"
 	default:
 		return ""
 	}
@@ -146,6 +156,8 @@ type inspected struct {
 	gifBackground       color.NRGBA
 	gifBackgroundSet    bool
 	gifFirstTransparent bool
+	durationSeconds     float64
+	decodedSource       []byte
 }
 
 // Media is the authoritative metadata persisted beside an immutable original.
@@ -265,9 +277,13 @@ type PruneResult struct {
 
 // Options supplies deterministic test seams and bounded production resources.
 type Options struct {
-	Limits  Limits
-	Clock   func() time.Time
-	Entropy io.Reader
+	Limits           Limits
+	Clock            func() time.Time
+	Entropy          io.Reader
+	HEIFConvertPath  string
+	FFmpegPath       string
+	FFprobePath      string
+	ProcessorTimeout time.Duration
 }
 
 func normalizeOptions(options Options) (Options, error) {
@@ -281,6 +297,12 @@ func normalizeOptions(options Options) (Options, error) {
 	}
 	if options.Entropy == nil {
 		options.Entropy = rand.Reader
+	}
+	if options.ProcessorTimeout == 0 {
+		options.ProcessorTimeout = 2 * time.Minute
+	}
+	if options.ProcessorTimeout < time.Second || options.ProcessorTimeout > 10*time.Minute {
+		return Options{}, domain.NewError(domain.CodeInvalidArgument, "media processor timeout must be between one second and ten minutes", nil)
 	}
 	return options, nil
 }

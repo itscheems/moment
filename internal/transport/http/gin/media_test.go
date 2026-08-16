@@ -43,6 +43,13 @@ func TestMediaDeliveryHeadersConditionalsAndExplicitGIFOriginal(t *testing.T) {
 	if bytes.Equal(previewResponse.Body.Bytes(), original) || previewResponse.Header().Get("Content-Length") != stringInt(len(previewResponse.Body.Bytes())) {
 		t.Fatal("preview silently used original bytes or wrong length")
 	}
+	rangeRequest := httptest.NewRequest(http.MethodGet, "/api/v1/media/"+value.ID.String()+"/preview", nil)
+	rangeRequest.Header.Set("Range", "bytes=0-9")
+	partial := performRequest(engine, rangeRequest)
+	if partial.Code != http.StatusPartialContent || partial.Body.Len() != 10 || partial.Header().Get("Accept-Ranges") != "bytes" ||
+		partial.Header().Get("Content-Range") != "bytes 0-9/"+stringInt(len(previewResponse.Body.Bytes())) {
+		t.Fatalf("range response = %d headers=%v body=%d", partial.Code, partial.Header(), partial.Body.Len())
+	}
 
 	head := performRequest(engine, httptest.NewRequest(http.MethodHead, "/api/v1/media/"+value.ID.String()+"/preview", nil))
 	if head.Code != http.StatusOK || head.Body.Len() != 0 || head.Header().Get("Content-Length") != previewResponse.Header().Get("Content-Length") {

@@ -1,12 +1,13 @@
 package ginhttp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
+	"time"
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/auth"
@@ -17,10 +18,16 @@ import (
 // RegisterMediaRoutes installs explicit immutable original/preview delivery
 // and owner-authenticated ingestion. Preview failures never route to originals.
 func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, manager *auth.Manager) {
-	for _, path := range []string{"/api/v1/media/:id", "/api/v1/media/:id/preview"} {
-		preview := strings.HasSuffix(path, "/preview")
-		engine.GET(path, getMediaAsset(store, preview))
-		engine.HEAD(path, getMediaAsset(store, preview))
+	for _, path := range []string{"/api/v1/media/:id", "/api/v1/media/:id/preview", "/api/v1/media/:id/poster"} {
+		kind := "original"
+		if strings.HasSuffix(path, "/preview") {
+			kind = "preview"
+		}
+		if strings.HasSuffix(path, "/poster") {
+			kind = "poster"
+		}
+		engine.GET(path, getMediaAsset(store, kind))
+		engine.HEAD(path, getMediaAsset(store, kind))
 	}
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
@@ -52,7 +59,7 @@ func uploadMedia(store *media.Store) gin.HandlerFunc {
 	}
 }
 
-func getMediaAsset(store *media.Store, preview bool) gin.HandlerFunc {
+func getMediaAsset(store *media.Store, kind string) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		id, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
@@ -60,9 +67,12 @@ func getMediaAsset(store *media.Store, preview bool) gin.HandlerFunc {
 			return
 		}
 		var asset media.Asset
-		if preview {
+		switch kind {
+		case "preview":
 			asset, err = store.ReadPreview(ctx.Request.Context(), id)
-		} else {
+		case "poster":
+			asset, err = store.ReadPoster(ctx.Request.Context(), id)
+		default:
 			asset, err = store.ReadOriginal(ctx.Request.Context(), id)
 		}
 		if err != nil {
@@ -77,11 +87,7 @@ func getMediaAsset(store *media.Store, preview bool) gin.HandlerFunc {
 			ctx.Status(http.StatusNotModified)
 			return
 		}
-		ctx.Header("Content-Length", strconv.Itoa(len(asset.Contents)))
-		ctx.Status(http.StatusOK)
-		if ctx.Request.Method != http.MethodHead {
-			_, _ = ctx.Writer.Write(asset.Contents)
-		}
+		http.ServeContent(ctx.Writer, ctx.Request, "", time.Time{}, bytes.NewReader(asset.Contents))
 	}
 }
 
@@ -109,6 +115,8 @@ func writeMediaError(ctx *gin.Context, err error) {
 	switch domainErr.Code {
 	case domain.CodeInvalidArgument, domain.CodeMediaTypeUnsupported, domain.CodeMediaTooLarge, domain.CodeMediaDimensionsExceeded:
 		status = http.StatusBadRequest
+	case domain.CodeMediaProcessorUnavailable:
+		status = http.StatusServiceUnavailable
 	case domain.CodeMediaNotFound:
 		status = http.StatusNotFound
 	case domain.CodeMediaCorrupt, domain.CodeMediaPreviewFailed, domain.CodeDataIntegrityFailed:

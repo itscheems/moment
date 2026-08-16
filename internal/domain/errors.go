@@ -26,6 +26,7 @@ const (
 	CodeMediaDimensionsExceeded     Code = "MEDIA_DIMENSIONS_EXCEEDED"
 	CodeMediaCorrupt                Code = "MEDIA_CORRUPT"
 	CodeMediaPreviewFailed          Code = "MEDIA_PREVIEW_FAILED"
+	CodeMediaProcessorUnavailable   Code = "MEDIA_PROCESSOR_UNAVAILABLE"
 	CodeMediaNotFound               Code = "MEDIA_NOT_FOUND"
 	CodeLocationProviderUnavailable Code = "LOCATION_PROVIDER_UNAVAILABLE"
 	CodeUnauthorized                Code = "UNAUTHORIZED"

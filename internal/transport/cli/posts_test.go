@@ -730,7 +730,7 @@ func assertCLIPostMedia(t *testing.T, post map[string]any, expectedAlts []any) [
 		item, ok := rawItem.(map[string]any)
 		width, widthOK := item["width"].(float64)
 		height, heightOK := item["height"].(float64)
-		if !ok || len(item) != 5 || item["position"] != float64(index) || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) || !widthOK || width <= 0 || !heightOK || height <= 0 {
+		if !ok || len(item) != 6 || item["position"] != float64(index) || item["mime_type"] == "" || !reflect.DeepEqual(item["alt_text"], expectedAlts[index]) || !widthOK || width <= 0 || !heightOK || height <= 0 {
 			t.Fatalf("media[%d] = %#v", index, rawItem)
 		}
 		if _, err := domain.ParseID(item["media_id"].(string)); err != nil {

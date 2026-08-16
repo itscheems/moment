@@ -28,11 +28,11 @@ import (
 
 func registerMedia(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
-		Path: []string{"media", "add"}, ArgsUsage: "<path>", Short: "Add one managed image",
-		Long:    "Validate one local JPEG, PNG, WebP, or GIF, store its immutable original, and build the current preview recipe through the selected transport.",
-		Inputs:  "One readable local file path up to 32 MiB. API mode authenticates through MOMENT_TOKEN or --token-file.",
+		Path: []string{"media", "add"}, ArgsUsage: "<path>", Short: "Add one managed media file",
+		Long:    "Validate one local JPEG, PNG, WebP, GIF, HEIC, or MP4, store its immutable original, and build the current display recipe through the selected transport.",
+		Inputs:  "One readable local file path up to 30 MiB. API mode authenticates through MOMENT_TOKEN or --token-file.",
 		Output:  "Managed media metadata, preview metadata, and explicit original/preview URLs.",
-		Errors:  "Invalid images use stable MEDIA_* codes; filesystem failures use exit code 6; cancellation uses exit code 9.",
+		Errors:  "Invalid media uses stable MEDIA_* codes; missing HEIC/video processors return MEDIA_PROCESSOR_UNAVAILABLE; filesystem failures use exit code 6; cancellation uses exit code 9.",
 		Example: "moment media add ./fixtures/cat.jpg --data-dir ./moment-data --json",
 		Args:    exactArgs(1), Capability: CapabilityBoth, Run: runMediaAdd,
 	})
@@ -305,7 +305,7 @@ func mediaAPIUpload(ctx context.Context, invocation Invocation, filename string,
 		return nil, err
 	}
 	if body.Len() > int(media.DefaultMaxBytes)+(1<<20) {
-		return nil, domain.NewError(domain.CodeMediaTooLarge, "image exceeds the configured byte budget", map[string]any{"max_bytes": media.DefaultMaxBytes})
+		return nil, domain.NewError(domain.CodeMediaTooLarge, "media exceeds the configured byte budget", map[string]any{"max_bytes": media.DefaultMaxBytes})
 	}
 	if err := writer.Close(); err != nil {
 		return nil, err
@@ -478,7 +478,7 @@ func mediaAPIDownload(ctx context.Context, invocation Invocation, id domain.ID) 
 
 func controlledMediaType(value string) bool {
 	switch strings.TrimSpace(strings.Split(value, ";")[0]) {
-	case "image/jpeg", "image/png", "image/webp", "image/gif":
+	case "image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "video/mp4":
 		return true
 	default:
 		return false

@@ -173,7 +173,7 @@ func DiagnosePreview(ctx context.Context, root, sha string) (string, error) {
 	for _, candidate := range []struct {
 		extension string
 		format    string
-	}{{extension: "png", format: "png"}, {extension: "jpg", format: "jpeg"}} {
+	}{{extension: "png", format: "png"}, {extension: "jpg", format: "jpeg"}, {extension: "mp4", format: "mp4"}} {
 		path := filepath.Join(root, "cache", "previews", RecipeVersion, sha[:2], sha+"."+candidate.extension)
 		present, ready, inspectErr := diagnosePreviewFile(ctx, path, candidate.format, limits)
 		if inspectErr != nil {
@@ -210,7 +210,7 @@ func DiagnosePreview(ctx context.Context, root, sha string) (string, error) {
 		if version.Name() == RecipeVersion {
 			continue
 		}
-		for _, extension := range []string{"png", "jpg"} {
+		for _, extension := range []string{"png", "jpg", "mp4"} {
 			if _, err := os.Lstat(filepath.Join(previewRoot, version.Name(), sha[:2], sha+"."+extension)); err == nil {
 				return "stale", nil
 			}
@@ -236,7 +236,7 @@ func DiagnosePreviewWithinRoot(ctx context.Context, root *os.Root, sha string) (
 	for _, candidate := range []struct {
 		extension string
 		format    string
-	}{{extension: "png", format: "png"}, {extension: "jpg", format: "jpeg"}} {
+	}{{extension: "png", format: "png"}, {extension: "jpg", format: "jpeg"}, {extension: "mp4", format: "mp4"}} {
 		path := filepath.Join("cache", "previews", RecipeVersion, sha[:2], sha+"."+candidate.extension)
 		present, ready, inspectErr := diagnosePreviewFileWithinRoot(ctx, root, path, candidate.format, limits)
 		if inspectErr != nil {
@@ -261,7 +261,7 @@ func DiagnosePreviewWithinRoot(ctx context.Context, root *os.Root, sha string) (
 		if !version.IsDir() || version.Name() == RecipeVersion {
 			continue
 		}
-		for _, extension := range []string{"png", "jpg"} {
+		for _, extension := range []string{"png", "jpg", "mp4"} {
 			if _, err := root.Lstat(filepath.Join("cache", "previews", version.Name(), sha[:2], sha+"."+extension)); err == nil {
 				return "stale", nil
 			}
@@ -290,6 +290,14 @@ func diagnosePreviewFileWithinRoot(ctx context.Context, root *os.Root, path, exp
 		_ = file.Close()
 		return true, false, nil
 	}
+	if expectedFormat == "mp4" {
+		header, readErr := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: file}, 64))
+		closeErr := file.Close()
+		if err := ctx.Err(); err != nil {
+			return true, false, errors.Join(err, closeErr)
+		}
+		return true, readErr == nil && closeErr == nil && detectExtendedFormat(header) == formatMP4, errors.Join(readErr, closeErr)
+	}
 	config, decodedFormat, decodeErr := image.DecodeConfig(io.LimitReader(&contextReader{ctx: ctx, reader: file}, limits.PreviewMaxBytes+1))
 	closeErr := file.Close()
 	if err := ctx.Err(); err != nil {
@@ -313,6 +321,14 @@ func diagnosePreviewFile(ctx context.Context, path, expectedFormat string, limit
 	file, err := os.Open(path)
 	if err != nil {
 		return true, false, nil
+	}
+	if expectedFormat == "mp4" {
+		header, readErr := io.ReadAll(io.LimitReader(&contextReader{ctx: ctx, reader: file}, 64))
+		closeErr := file.Close()
+		if err := ctx.Err(); err != nil {
+			return true, false, errors.Join(err, closeErr)
+		}
+		return true, readErr == nil && closeErr == nil && detectExtendedFormat(header) == formatMP4, errors.Join(readErr, closeErr)
 	}
 	config, decodedFormat, decodeErr := image.DecodeConfig(io.LimitReader(&contextReader{ctx: ctx, reader: file}, limits.PreviewMaxBytes+1))
 	closeErr := file.Close()

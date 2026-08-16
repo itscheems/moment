@@ -96,6 +96,35 @@ func (store *Store) ReadPreview(ctx context.Context, id domain.ID) (Asset, error
 	return Asset{Contents: contents, MIMEType: preview.MIMEType, ETag: `"preview-` + RecipeVersion + `-` + preview.SHA256 + `"`}, nil
 }
 
+// ReadPoster returns the replaceable JPEG poster for video media only.
+func (store *Store) ReadPoster(ctx context.Context, id domain.ID) (Asset, error) {
+	lease, err := store.acquireMedia(ctx, runtimefs.Shared)
+	if err != nil {
+		return Asset{}, fmt.Errorf("coordinate poster delivery: %w", err)
+	}
+	defer func() { _ = lease.Release() }()
+	value, err := store.getLocked(ctx, id)
+	if err != nil {
+		return Asset{}, err
+	}
+	if value.MIMEType != "video/mp4" {
+		return Asset{}, domain.NewError(domain.CodeMediaTypeUnsupported, "poster is available only for video media", map[string]any{"media_id": id.String()})
+	}
+	contents, err := store.readOriginal(ctx, value)
+	if err != nil {
+		return Asset{}, err
+	}
+	path, err := store.ensureVideoPoster(ctx, value, contents)
+	if err != nil {
+		return Asset{}, err
+	}
+	poster, err := os.ReadFile(path)
+	if err != nil || len(poster) == 0 || int64(len(poster)) > store.options.Limits.PreviewMaxBytes {
+		return Asset{}, domain.NewError(domain.CodeMediaPreviewFailed, "video poster cache is corrupt", map[string]any{"media_id": id.String()})
+	}
+	return Asset{Contents: poster, MIMEType: "image/jpeg", ETag: `"poster-` + RecipeVersion + `-` + value.SHA256 + `"`}, nil
+}
+
 // List joins metadata, the resolver, and derived cache status without treating
 // a stale preview as authority corruption.
 func (store *Store) List(ctx context.Context) (ListResult, error) {
@@ -358,6 +387,9 @@ func scanMedia(row mediaScanner) (Media, error) {
 
 func (store *Store) previewStatus(sha string) string {
 	if _, ok := store.existingPreview(sha); ok {
+		return "ready"
+	}
+	if store.existingVideoPreview(sha) {
 		return "ready"
 	}
 	current := filepath.Join(store.storageRoot, "cache", "previews", RecipeVersion, sha[:2])

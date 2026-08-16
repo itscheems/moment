@@ -31,6 +31,24 @@ const (
 )
 
 func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, inspection inspected, sha string) (Preview, error) {
+	if inspection.format == formatHEIC {
+		converted := inspection.decodedSource
+		if len(converted) == 0 {
+			var err error
+			converted, err = store.convertHEIC(ctx, contents)
+			if err != nil {
+				return Preview{}, previewFailure(err)
+			}
+		}
+		decoded, err := inspectImage(converted, store.options.Limits)
+		if err != nil {
+			return Preview{}, previewFailure(err)
+		}
+		return store.ensurePreviewBytes(ctx, converted, decoded, sha)
+	}
+	if inspection.format == formatMP4 {
+		return store.ensureVideoPreview(ctx, contents, inspection, sha)
+	}
 	if preview, ok := store.existingPreview(sha); ok {
 		preview.AnimatedOriginal = inspection.format == formatGIF
 		return preview, nil
@@ -103,6 +121,73 @@ func (store *Store) ensurePreviewBytes(ctx context.Context, contents []byte, ins
 		Height:           uint32(bounds.Dy()),
 		AnimatedOriginal: inspection.format == formatGIF,
 	}, nil
+}
+
+func (store *Store) ensureVideoPreview(ctx context.Context, contents []byte, inspection inspected, sha string) (Preview, error) {
+	path := store.previewPath(sha, "mp4")
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= store.options.Limits.PreviewMaxBytes {
+		return Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}, nil
+	}
+	select {
+	case store.workers <- struct{}{}:
+		defer func() { <-store.workers }()
+	case <-ctx.Done():
+		return Preview{}, ctx.Err()
+	}
+	directory, err := store.privateTempDir()
+	if err != nil {
+		return Preview{}, previewFailure(err)
+	}
+	defer func() { _ = os.RemoveAll(directory) }()
+	partialPath := filepath.Join(directory, "display.mp4")
+	if err := store.transcodeVideo(ctx, contents, inspection, partialPath); err != nil {
+		return Preview{}, previewFailure(err)
+	}
+	partial, err := os.Open(partialPath)
+	if err != nil {
+		return Preview{}, previewFailure(err)
+	}
+	encoded, readErr := readBounded(ctx, partial, store.options.Limits.PreviewMaxBytes)
+	closeErr := partial.Close()
+	if readErr != nil || closeErr != nil {
+		return Preview{}, previewFailure(errors.Join(readErr, closeErr))
+	}
+	if err := store.writeCacheAtomic(ctx, path, encoded, store.beforePreviewCommit); err != nil {
+		return Preview{}, previewFailure(err)
+	}
+	return Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}, nil
+}
+
+func (store *Store) ensureVideoPoster(ctx context.Context, media Media, contents []byte) (string, error) {
+	path := store.previewPath(media.SHA256, "poster.jpg")
+	if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() && info.Size() > 0 && info.Size() <= store.options.Limits.PreviewMaxBytes {
+		return path, nil
+	}
+	directory, err := store.privateTempDir()
+	if err != nil {
+		return "", previewFailure(err)
+	}
+	defer func() { _ = os.RemoveAll(directory) }()
+	partialPath := filepath.Join(directory, "poster.jpg")
+	if err := store.generateVideoPoster(ctx, contents, partialPath); err != nil {
+		return "", previewFailure(err)
+	}
+	partial, err := os.Open(partialPath)
+	if err != nil {
+		return "", previewFailure(err)
+	}
+	encoded, readErr := readBounded(ctx, partial, store.options.Limits.PreviewMaxBytes)
+	closeErr := partial.Close()
+	if readErr != nil || closeErr != nil {
+		return "", previewFailure(errors.Join(readErr, closeErr))
+	}
+	if _, decodedFormat, err := image.DecodeConfig(bytes.NewReader(encoded)); err != nil || decodedFormat != "jpeg" {
+		return "", previewFailure(errors.New("video poster is not a JPEG image"))
+	}
+	if err := store.writeCacheAtomic(ctx, path, encoded, nil); err != nil {
+		return "", previewFailure(err)
+	}
+	return path, nil
 }
 
 func encodePreviewWithinBudget(ctx context.Context, source image.Image, alpha bool, maxBytes int64) ([]byte, image.Image, string, string, error) {
@@ -203,9 +288,10 @@ func decodeFull(ctx context.Context, inspection inspected, contents []byte) (ima
 
 func (store *Store) existingPreview(sha string) (Preview, bool) {
 	for _, candidate := range []struct {
-		extension string
-		mimeType  string
-	}{{"png", "image/png"}, {"jpg", "image/jpeg"}} {
+		extension     string
+		decodedFormat string
+		mimeType      string
+	}{{"png", "png", "image/png"}, {"jpg", "jpeg", "image/jpeg"}} {
 		path := store.previewPath(sha, candidate.extension)
 		if store.rootAuthority != nil {
 			relative := filepath.Join("cache", "previews", RecipeVersion, sha[:2], sha+"."+candidate.extension)
@@ -219,7 +305,7 @@ func (store *Store) existingPreview(sha string) (Preview, bool) {
 			}
 			config, decodedFormat, decodeErr := image.DecodeConfig(file)
 			closeErr := file.Close()
-			if decodeErr == nil && closeErr == nil && info.Size() <= store.options.Limits.PreviewMaxBytes && decodedFormat == candidate.extension && config.Width > 0 && config.Height > 0 && config.Width <= int(store.options.Limits.PreviewMaxEdge) && config.Height <= int(store.options.Limits.PreviewMaxEdge) {
+			if decodeErr == nil && closeErr == nil && info.Size() <= store.options.Limits.PreviewMaxBytes && decodedFormat == candidate.decodedFormat && config.Width > 0 && config.Height > 0 && config.Width <= int(store.options.Limits.PreviewMaxEdge) && config.Height <= int(store.options.Limits.PreviewMaxEdge) {
 				return Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: candidate.mimeType, Width: uint32(config.Width), Height: uint32(config.Height)}, true
 			}
 			continue
@@ -234,7 +320,7 @@ func (store *Store) existingPreview(sha string) (Preview, bool) {
 		}
 		config, decodedFormat, decodeErr := image.DecodeConfig(file)
 		closeErr := file.Close()
-		if decodeErr != nil || closeErr != nil || decodedFormat != candidate.extension || config.Width <= 0 || config.Height <= 0 || config.Width > int(store.options.Limits.PreviewMaxEdge) || config.Height > int(store.options.Limits.PreviewMaxEdge) {
+		if decodeErr != nil || closeErr != nil || decodedFormat != candidate.decodedFormat || config.Width <= 0 || config.Height <= 0 || config.Width > int(store.options.Limits.PreviewMaxEdge) || config.Height > int(store.options.Limits.PreviewMaxEdge) {
 			continue
 		}
 		return Preview{
@@ -247,6 +333,36 @@ func (store *Store) existingPreview(sha string) (Preview, bool) {
 		}, true
 	}
 	return Preview{}, false
+}
+
+func (store *Store) existingVideoPreview(sha string) bool {
+	path := store.previewPath(sha, "mp4")
+	var (
+		info os.FileInfo
+		file *os.File
+		err  error
+	)
+	if store.rootAuthority != nil {
+		relative := filepath.Join("cache", "previews", RecipeVersion, sha[:2], sha+".mp4")
+		info, err = store.rootAuthority.Lstat(relative)
+		if err == nil {
+			file, err = store.rootAuthority.Open(relative)
+		}
+	} else {
+		info, err = os.Lstat(path)
+		if err == nil {
+			file, err = os.Open(path)
+		}
+	}
+	if err != nil || info == nil || file == nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() <= 0 || info.Size() > store.options.Limits.PreviewMaxBytes {
+		if file != nil {
+			_ = file.Close()
+		}
+		return false
+	}
+	header, readErr := io.ReadAll(io.LimitReader(file, 64))
+	closeErr := file.Close()
+	return readErr == nil && closeErr == nil && detectExtendedFormat(header) == formatMP4
 }
 
 func (store *Store) writeCacheAtomic(ctx context.Context, final string, contents []byte, beforeCommit func() error) error {
