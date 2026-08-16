@@ -106,6 +106,7 @@ export function PostPresentation({
   owner = false,
   fresh = false,
   onDeleted,
+  onReposted,
   onSiteChanged,
   pinned = false,
   contentHtml,
@@ -118,6 +119,7 @@ export function PostPresentation({
   owner?: boolean;
   fresh?: boolean;
   onDeleted?: (post: PublicPost) => void;
+  onReposted?: (post: PublicPost) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
   pinned?: boolean;
   contentHtml?: string;
@@ -319,7 +321,9 @@ export function PostPresentation({
                 <Icon name="reply" />
               </button>
             </ActionTooltip>
-            {owner ? <OwnerRepostAction post={post} /> : null}
+            {owner ? (
+              <OwnerRepostAction onChanged={onReposted} post={post} />
+            ) : null}
             {share("start")}
           </div>
         </div>
@@ -399,7 +403,9 @@ export function PostPresentation({
               </InternalLink>
             )}
           </ActionTooltip>
-          {owner ? <OwnerRepostAction post={post} /> : null}
+          {owner ? (
+            <OwnerRepostAction onChanged={onReposted} post={post} />
+          ) : null}
           {share("end")}
         </div>
       </div>

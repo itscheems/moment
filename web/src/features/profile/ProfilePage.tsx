@@ -25,7 +25,7 @@ import {
 } from "../../components/TimelineInteractions";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { useOwner } from "../owner/OwnerProvider";
-import { listenForOwnerPosts } from "../owner/postEvents";
+import { listenForOwnerPosts, type OwnerPostEvent } from "../owner/postEvents";
 import { PostPresentation } from "../posts/PostPresentation";
 import { formatMomentDate } from "../posts/dates";
 import {
@@ -133,6 +133,22 @@ export function ProfilePage({
     site,
   });
 
+  const handleOwnerPostEvent = useCallback((event: OwnerPostEvent) => {
+    setPosts((current) => reconcileTimelineEvent(current, event));
+    setPinnedPost((current) =>
+      current?.id === event.post.id
+        ? event.kind === "deleted"
+          ? null
+          : event.post
+        : current,
+    );
+  }, []);
+
+  const handleReposted = useCallback(
+    (post: PublicPost) => handleOwnerPostEvent({ kind: "reordered", post }),
+    [handleOwnerPostEvent],
+  );
+
   const load = useCallback(async () => {
     activeInitial.current?.abort();
     activeMore.current?.abort();
@@ -213,18 +229,8 @@ export function ProfilePage({
   }, [load]);
 
   useEffect(
-    () =>
-      listenForOwnerPosts((event) => {
-        setPosts((current) => reconcileTimelineEvent(current, event));
-        setPinnedPost((current) =>
-          current?.id === event.post.id
-            ? event.kind === "deleted"
-              ? null
-              : event.post
-            : current,
-        );
-      }),
-    [],
+    () => listenForOwnerPosts(handleOwnerPostEvent),
+    [handleOwnerPostEvent],
   );
 
   useEffect(() => {
@@ -370,6 +376,7 @@ export function ProfilePage({
               <PostPresentation
                 onDeleted={() => setPinnedPost(null)}
                 onReply={(event) => openReply(pinnedPost, event)}
+                onReposted={handleReposted}
                 onSiteChanged={onSiteSaved}
                 owner={owner.state === "owner"}
                 pinned
@@ -387,6 +394,7 @@ export function ProfilePage({
                 <PostPresentation
                   key={timelineItemKey(post)}
                   onReply={(event) => openReply(post, event)}
+                  onReposted={handleReposted}
                   onSiteChanged={onSiteSaved}
                   owner={owner.state === "owner"}
                   post={post}

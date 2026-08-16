@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PublicApi, type SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
+import { FeedbackProvider } from "../../components/Feedback";
 import { OwnerProvider } from "../owner/OwnerProvider";
 import { TimelinePage } from "./TimelinePage";
 
@@ -130,7 +131,97 @@ describe("public timeline", () => {
   afterEach(async () => {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     cleanup();
+    window.sessionStorage.clear();
     vi.unstubAllGlobals();
+  });
+
+  it("adds a linked repost at the top, keeps the original, and removes the projection on undo", async () => {
+    const id = "01K2ABCDEF0123456789ABCDE0";
+    const original = post(id, "一条会被转发的 Moment");
+    const repostedAt = "2026-08-16T06:00:00.000Z";
+    let active = false;
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-repost",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/v1/owner/status") return ownerStatus();
+        if (url === `/api/v1/owner/posts/${id}/repost`) {
+          active = init?.method === "PUT";
+          return new Response(
+            JSON.stringify({
+              data: {
+                ...original,
+                updated_at: repostedAt,
+                reposted_at: active ? repostedAt : null,
+              },
+              meta: { request_id: "req_repost" },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response("{}", { status: 404 });
+      }),
+    );
+
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <TimelinePage
+              api={
+                new PublicApi(
+                  vi.fn(async () => page([original], null)) as typeof fetch,
+                )
+              }
+              initialSearch=""
+              owner
+              site={site}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    await screen.findByText("一条会被转发的 Moment");
+    const originalAction = await screen.findByRole("button", {
+      name: "转发这条 Moment",
+    });
+    fireEvent.click(originalAction);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "转发" }));
+
+    await waitFor(() =>
+      expect(
+        Array.from(
+          document.querySelectorAll<HTMLElement>("[data-timeline-item-key]"),
+        ).map((element) => element.dataset.timelineItemKey),
+      ).toEqual([`${id}:repost`, `${id}:original`]),
+    );
+    expect(screen.getByText("已转发")).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("button", { name: "转发这条 Moment" })
+        .every((button) => button.getAttribute("aria-pressed") === "true"),
+    ).toBe(true);
+
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "转发这条 Moment" })[0],
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "取消转发" }));
+    await waitFor(() =>
+      expect(
+        Array.from(
+          document.querySelectorAll<HTMLElement>("[data-timeline-item-key]"),
+        ).map((element) => element.dataset.timelineItemKey),
+      ).toEqual([`${id}:original`]),
+    );
+    expect(active).toBe(false);
   });
 
   it("continues the opaque cursor in server order and focuses new content", async () => {

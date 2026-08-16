@@ -121,6 +121,82 @@ describe("profile page", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("inserts a linked repost above the original from the profile action", async () => {
+    const original = post(otherId, "个人资料里的原帖");
+    const repostedAt = "2026-08-16T06:00:00.000Z";
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-repost",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/v1/owner/status") {
+          return json({
+            data: {
+              initialized: true,
+              password_enabled: false,
+              session_epoch: 1,
+              initialized_at: "2026-08-01T00:00:00Z",
+            },
+            meta: { request_id: "req_owner" },
+          });
+        }
+        if (
+          url === `/api/v1/owner/posts/${otherId}/repost` &&
+          init?.method === "PUT"
+        ) {
+          return json({
+            data: {
+              ...original,
+              updated_at: repostedAt,
+              reposted_at: repostedAt,
+            },
+            meta: { request_id: "req_repost" },
+          });
+        }
+        return json({}, 404);
+      }),
+    );
+
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={
+                new PublicApi(
+                  vi.fn(async () => page([original], null)) as typeof fetch,
+                )
+              }
+              onSiteSaved={vi.fn()}
+              site={{ ...site, pinnedPostId: null }}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    await screen.findByText("个人资料里的原帖");
+    fireEvent.click(
+      await screen.findByRole("button", { name: "转发这条 Moment" }),
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "转发" }));
+
+    await waitFor(() =>
+      expect(
+        Array.from(
+          document.querySelectorAll<HTMLElement>("[data-timeline-item-key]"),
+        ).map((element) => element.dataset.timelineItemKey),
+      ).toEqual([`${otherId}:repost`, `${otherId}:original`]),
+    );
+    expect(screen.getByText("已转发")).toBeInTheDocument();
+  });
+
   it("opens the reply dialog from a profile Moment and restores the trigger", async () => {
     const item = post(otherId, "从个人资料直接回复");
     vi.stubGlobal(

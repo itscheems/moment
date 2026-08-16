@@ -11,7 +11,13 @@ import styles from "./Owner.module.css";
 import { useOwner } from "./OwnerProvider";
 import { announceOwnerPost } from "./postEvents";
 
-export function OwnerRepostAction({ post }: { post: PublicPost }) {
+export function OwnerRepostAction({
+  onChanged,
+  post,
+}: {
+  onChanged?: (post: PublicPost) => void;
+  post: PublicPost;
+}) {
   const { navigateOverlay } = useNavigation();
   const { api, session, expireIfInvalidSession } = useOwner();
   const [current, setCurrent] = useState(post);
@@ -34,7 +40,11 @@ export function OwnerRepostAction({ post }: { post: PublicPost }) {
         nextActive,
       );
       setCurrent(updated);
-      announceOwnerPost({ kind: "reordered", post: updated });
+      if (onChanged) {
+        onChanged(updated);
+      } else {
+        announceOwnerPost({ kind: "reordered", post: updated });
+      }
       notify(nextActive ? "已转发到时间流顶部" : "已取消转发");
     } catch (error) {
       notify(

@@ -82,6 +82,7 @@ export function DetailPage({
           replyTriggerRef.current = event.currentTarget;
           setReplyDialogOpen(true);
         }}
+        onReposted={setPost}
         onSiteChanged={onSiteChanged}
         owner={owner}
         post={post}

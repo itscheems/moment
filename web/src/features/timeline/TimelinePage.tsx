@@ -117,6 +117,22 @@ export function TimelinePage({
     return reconciled;
   }, []);
 
+  const handleOwnerPostEvent = useCallback((event: OwnerPostEvent) => {
+    ownerEvents.current.set(event.post.id, event);
+    setPosts((current) => {
+      if (event.kind === "created") {
+        setFreshId(event.post.id);
+        window.setTimeout(() => setFreshId(null), 700);
+      }
+      return reconcileTimelineEvent(current, event);
+    });
+  }, []);
+
+  const handleReposted = useCallback(
+    (post: PublicPost) => handleOwnerPostEvent({ kind: "reordered", post }),
+    [handleOwnerPostEvent],
+  );
+
   const loadInitial = useCallback(async () => {
     activeInitial.current?.abort();
     const controller = new AbortController();
@@ -192,18 +208,8 @@ export function TimelinePage({
   }, [loadInitial]);
 
   useEffect(
-    () =>
-      listenForOwnerPosts((event) => {
-        ownerEvents.current.set(event.post.id, event);
-        setPosts((current) => {
-          if (event.kind === "created") {
-            setFreshId(event.post.id);
-            window.setTimeout(() => setFreshId(null), 700);
-          }
-          return reconcileTimelineEvent(current, event);
-        });
-      }),
-    [],
+    () => listenForOwnerPosts(handleOwnerPostEvent),
+    [handleOwnerPostEvent],
   );
 
   useEffect(() => {
@@ -320,6 +326,7 @@ export function TimelinePage({
             key={timelineItemKey(post)}
             owner={owner}
             onReply={(event) => openReply(post, event)}
+            onReposted={handleReposted}
             onSiteChanged={onSiteChanged}
             post={post}
             site={site}
