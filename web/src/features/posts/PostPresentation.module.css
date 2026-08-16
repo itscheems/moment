@@ -2,7 +2,8 @@
   position: relative;
   display: grid;
   grid-template-columns: 3rem minmax(0, 1fr);
-  gap: var(--space-3);
+  column-gap: var(--space-3);
+  row-gap: 0.2rem;
   border-block-end: 1px solid var(--border-subtle);
   padding: 0.75rem var(--space-4);
   background: var(--surface);
@@ -419,18 +420,27 @@
 }
 
 .repostedLabel {
-  display: inline-flex;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-1);
-  margin-block-end: var(--space-1);
+  column-gap: var(--space-3);
+  margin: 0;
   color: #07865d;
   font-size: 0.8125rem;
   font-weight: 650;
+  line-height: 1.25;
 }
 
 .repostedLabel svg {
+  grid-column: 1;
+  justify-self: end;
   inline-size: 0.95rem;
   block-size: 0.95rem;
+}
+
+.repostedLabel span {
+  grid-column: 2;
 }
 
 .actionCount {
@@ -605,8 +615,14 @@
 @media (max-width: 719px) {
   .post {
     grid-template-columns: 2.5rem minmax(0, 1fr);
-    gap: 0.7rem;
+    column-gap: 0.7rem;
+    row-gap: 0.2rem;
     padding-inline: var(--space-3);
+  }
+
+  .repostedLabel {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    column-gap: 0.7rem;
   }
 
   .markdown {

@@ -271,10 +271,10 @@ export function PostPresentation({
         data-post-id={post.id}
         tabIndex={-1}
       >
+        {repostLabel}
         <div className={styles.detailIdentity}>
           <div className={styles.avatarColumn}>{avatar}</div>
           <div className={styles.detailHeading}>
-            {repostLabel}
             {pinLabel}
             {byline}
           </div>
@@ -336,9 +336,9 @@ export function PostPresentation({
       >
         <span className={styles.srOnly}>打开这条 Moment 详情</span>
       </InternalLink>
+      {repostLabel}
       <div className={styles.avatarColumn}>{avatar}</div>
       <div className={styles.postMain}>
-        {repostLabel}
         {pinLabel}
         {byline}
         <MarkdownContent

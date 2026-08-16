@@ -60,6 +60,36 @@ function makePost(
 }
 
 describe("shared post presentation", () => {
+  it("places repost attribution above an aligned avatar and byline row", () => {
+    const reposted = {
+      ...makePost("再次分享", "<p>再次分享</p>"),
+      repostedAt: "2026-08-10T02:00:00.000Z",
+    };
+    const { rerender } = render(
+      <NavigationProvider>
+        <PostPresentation post={reposted} site={site} />
+      </NavigationProvider>,
+    );
+
+    const timelineLabel = screen.getByText("已转发").parentElement;
+    const timelineArticle = timelineLabel?.closest("article");
+    expect(timelineLabel?.parentElement).toBe(timelineArticle);
+    expect(timelineArticle?.children.item(1)).toBe(timelineLabel);
+
+    rerender(
+      <NavigationProvider>
+        <PostPresentation detail post={reposted} site={site} />
+      </NavigationProvider>,
+    );
+    const detailLabel = screen.getByText("已转发").parentElement;
+    const detailArticle = detailLabel?.closest("article");
+    expect(detailLabel?.parentElement).toBe(detailArticle);
+    expect(detailArticle?.firstElementChild).toBe(detailLabel);
+    expect(postCss).toMatch(
+      /\._repostedLabel_[^{]+\{[^}]*grid-column:\s*1\s*\/\s*-1;[^}]*grid-template-columns:\s*3rem\s+minmax\(0,\s*1fr\);/s,
+    );
+  });
+
   it("renders a quoted Moment as a nested interactive card", () => {
     render(
       <NavigationProvider>
