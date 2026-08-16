@@ -224,7 +224,11 @@ export function PostPresentation({
     />
   );
   const quoted = post.quotedPost;
-  const quoteCard = quoted ? (
+  const quoteCard = quoted?.unavailable ? (
+    <div className={styles.quoteUnavailable} role="status">
+      This post is unavailable.
+    </div>
+  ) : quoted ? (
     <div
       aria-label="打开被引用的 Moment"
       className={styles.quoteCard}

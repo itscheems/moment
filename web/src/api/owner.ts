@@ -61,6 +61,8 @@ export interface UploadedMedia {
   byteSize: number;
   width: number;
   height: number;
+  mimeType: string;
+  previewMimeType: string;
   animatedOriginal: boolean;
   previewUrl: string;
   originalUrl: string;

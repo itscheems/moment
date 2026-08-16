@@ -12,6 +12,8 @@ export interface ComposerMediaItem {
   mediaId: string | null;
   previewUrl: string;
   originalUrl: string;
+  mimeType: string;
+  previewMimeType: string;
   width: number | null;
   height: number | null;
   byteSize: number | null;
@@ -24,7 +26,7 @@ export interface ComposerMediaItem {
 }
 
 export const MAX_MEDIA_COUNT = 9;
-export const MAX_FILE_BYTES = 32 * 1024 * 1024;
+export const MAX_FILE_BYTES = 30 * 1024 * 1024;
 export const MAX_TOTAL_BYTES = 50 * 1024 * 1024;
 export const MAX_ALT_CODE_POINTS = 1_000;
 export const MEDIA_TYPES = new Set([
@@ -32,7 +34,18 @@ export const MEDIA_TYPES = new Set([
   "image/png",
   "image/webp",
   "image/gif",
+  "image/heic",
+  "image/heif",
+  "video/mp4",
 ]);
+
+function inferredMediaType(file: File): string {
+  if (MEDIA_TYPES.has(file.type)) return file.type;
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".heic") || name.endsWith(".heif")) return "image/heic";
+  if (name.endsWith(".mp4") || name.endsWith(".m4v")) return "video/mp4";
+  return file.type;
+}
 
 function createMediaKey(): string {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -49,6 +62,8 @@ export function newMediaItem(file: File): ComposerMediaItem {
     mediaId: null,
     previewUrl: "",
     originalUrl: "",
+    mimeType: inferredMediaType(file),
+    previewMimeType: "",
     width: null,
     height: null,
     byteSize: null,
@@ -97,20 +112,22 @@ export function releaseDiscardedLocalPreviews(
 
 export function uploadMessage(error: unknown): string {
   if (!(error instanceof PublicApiError))
-    return "图片没有上传完成。文字和已完成的图片都已保留，可以重试。";
+    return "媒体没有上传完成。文字和已完成的媒体都已保留，可以重试。";
   switch (error.code) {
     case "MEDIA_TYPE_UNSUPPORTED":
-      return "图片格式不受支持，请选择 JPEG、PNG、WebP 或 GIF。";
+      return "媒体格式不受支持，请选择 JPEG、PNG、WebP、GIF、HEIC 或 MP4。";
     case "MEDIA_TOO_LARGE":
-      return "图片超过大小限制，请移除或压缩后重试。";
+      return "媒体超过大小限制，请移除或压缩后重试。";
     case "MEDIA_DIMENSIONS_EXCEEDED":
       return "图片尺寸或 GIF 帧数超过安全限制。";
     case "MEDIA_CORRUPT":
-      return "图片内容无效或与文件类型不一致，请重新选择。";
+      return "媒体内容无效或与文件类型不一致，请重新选择。";
+    case "MEDIA_PROCESSOR_UNAVAILABLE":
+      return "服务器暂时无法处理 HEIC 或视频，请稍后重试。";
     case "RATE_LIMITED":
-      return "图片上传得有点快，请稍后重试。";
+      return "媒体上传得有点快，请稍后重试。";
     default:
-      return "图片没有上传完成。文字和已完成的图片都已保留，可以重试。";
+      return "媒体没有上传完成。文字和已完成的媒体都已保留，可以重试。";
   }
 }
 
@@ -127,8 +144,11 @@ export function itemsFromPost(media: PublicMediaUsage[]): ComposerMediaItem[] {
     mediaId: usage.mediaId,
     previewUrl: `/api/v1/media/${encodeURIComponent(usage.mediaId)}/preview`,
     originalUrl: `/api/v1/media/${encodeURIComponent(usage.mediaId)}`,
-    width: null,
-    height: null,
+    mimeType: usage.mimeType,
+    previewMimeType:
+      usage.mimeType === "video/mp4" ? "video/mp4" : "image/jpeg",
+    width: usage.width,
+    height: usage.height,
     byteSize: null,
     animatedOriginal: false,
     altMode: altMode(usage.altText),
@@ -152,6 +172,8 @@ export function applyUpload(
     width: upload.width,
     height: upload.height,
     byteSize: upload.byteSize,
+    mimeType: upload.mimeType,
+    previewMimeType: upload.previewMimeType,
     animatedOriginal: upload.animatedOriginal,
     state: "ready",
     progress: 100,
@@ -198,18 +220,18 @@ export function fileValidation(
   current: Array<Pick<ComposerMediaItem, "file">>,
   maximumTotalBytes = MAX_TOTAL_BYTES,
 ): string | null {
-  if (!MEDIA_TYPES.has(file.type)) {
-    return `${file.name || "所选文件"} 不是支持的 JPEG、PNG、WebP 或 GIF。`;
+  if (!MEDIA_TYPES.has(inferredMediaType(file))) {
+    return `${file.name || "所选文件"} 不是支持的 JPEG、PNG、WebP、GIF、HEIC 或 MP4。`;
   }
   if (file.size <= 0 || file.size > MAX_FILE_BYTES) {
-    return `${file.name || "所选文件"} 超过单图 32 MiB 限制或为空。`;
+    return `${file.name || "所选文件"} 超过单个媒体 30 MiB 限制或为空。`;
   }
   const currentBytes = current.reduce(
     (total, item) => total + (item.file?.size ?? 0),
     0,
   );
   if (currentBytes + file.size > maximumTotalBytes) {
-    return `本次选择的图片总量超过 ${Math.round(maximumTotalBytes / 1024 / 1024)} MiB，请移除一些图片后重试。`;
+    return `本次选择的媒体总量超过 ${Math.round(maximumTotalBytes / 1024 / 1024)} MiB，请移除一些媒体后重试。`;
   }
   return null;
 }

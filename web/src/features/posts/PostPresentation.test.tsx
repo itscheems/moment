@@ -99,6 +99,7 @@ describe("shared post presentation", () => {
           post={{
             ...makePost("补充说明", "<p>补充说明</p>"),
             quotedPost: {
+              unavailable: false,
               id: "01K2ABCDEF0123456789ABCDE9",
               contentMd: "原始内容",
               contentHtml: "<p>原始内容</p>",
@@ -123,6 +124,29 @@ describe("shared post presentation", () => {
     );
     expect(postCss).toMatch(
       /\._quoteCard_[^:]+:hover,[\s\S]*?background:\s*#efefef;/,
+    );
+  });
+
+  it("keeps a quote wrapper when its source is deleted", () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...makePost("引用外层仍然存在", "<p>引用外层仍然存在</p>"),
+            quotedPost: { unavailable: true },
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    expect(screen.getByText("引用外层仍然存在")).toBeInTheDocument();
+    expect(screen.getByText("This post is unavailable.")).toHaveAttribute(
+      "role",
+      "status",
+    );
+    expect(postCss).toMatch(
+      /\._quoteUnavailable_[^{]+\{[^}]*background:\s*#efefef;/s,
     );
   });
 

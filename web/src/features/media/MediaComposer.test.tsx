@@ -31,6 +31,8 @@ function item(key: string): ComposerMediaItem {
     mediaId: `01K2ABCDEF0123456789ABCD${key}`,
     previewUrl: `/api/v1/media/${key}/preview`,
     originalUrl: `/api/v1/media/${key}`,
+    mimeType: "image/jpeg",
+    previewMimeType: "image/jpeg",
     width: null,
     height: null,
     byteSize: null,
@@ -81,7 +83,7 @@ describe("media editor", () => {
       />,
     );
     const icon = screen
-      .getByRole("button", { name: "选择图片" })
+      .getByRole("button", { name: "选择媒体" })
       .querySelector('svg[data-icon="media-picker"]');
     expect(icon).toHaveAttribute("fill", "currentColor");
     expect(icon?.querySelectorAll("path")).toHaveLength(2);
@@ -100,7 +102,7 @@ describe("media editor", () => {
       />,
     );
     const duplicate = new File(["same"], "same.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("图片文件"), {
+    fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: { files: [duplicate, duplicate] },
     });
     expect(onAdd).toHaveBeenCalledWith([duplicate, duplicate]);
@@ -239,7 +241,7 @@ describe("media editor", () => {
     render(<FocusHarness initial={[item("00")]} />);
     fireEvent.click(screen.getByRole("button", { name: /移除/ }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "选择图片" })).toHaveFocus(),
+      expect(screen.getByRole("button", { name: "选择媒体" })).toHaveFocus(),
     );
   });
 

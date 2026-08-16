@@ -207,6 +207,7 @@ function post(
     media_id: string;
     position: number;
     alt_text: string | null;
+    mime_type?: string;
     width: number;
     height: number;
   }> = [],
@@ -222,7 +223,10 @@ function post(
     timeline_item_kind: "original",
     quoted_post: null,
     comment_count: 0,
-    media,
+    media: media.map((usage) => ({
+      ...usage,
+      mime_type: usage.mime_type ?? "image/png",
+    })),
   };
 }
 
@@ -587,6 +591,7 @@ describe("owner composing flow", () => {
             data: {
               ...post("我的补充", "01K2ABCDEF0123456789ABCDE8"),
               quoted_post: {
+                unavailable: false,
                 id: quotedId,
                 content_md: "原始 Moment",
                 content_html: "<p>原始 Moment</p>",
@@ -664,7 +669,7 @@ describe("owner composing flow", () => {
       target: { value: "雨落下来" },
     });
     const file = new File(["image"], "rain.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("图片文件"), {
+    fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: { files: [file] },
     });
     fireEvent.click(screen.getByRole("button", { name: "发布" }));
@@ -808,7 +813,7 @@ describe("owner composing flow", () => {
     render(<App />);
 
     await screen.findByLabelText("此刻想到什么？");
-    fireEvent.change(screen.getByLabelText("图片文件"), {
+    fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: {
         files: [new File(["image"], "only.png", { type: "image/png" })],
       },
@@ -848,7 +853,7 @@ describe("owner composing flow", () => {
       target: { value: "预览仍不进入草稿" },
     });
     const file = new File(["image"], "rain.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("图片文件"), {
+    fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: { files: [file] },
     });
 
@@ -878,7 +883,7 @@ describe("owner composing flow", () => {
     fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
       target: { value: "不会被迟到上传污染" },
     });
-    fireEvent.change(screen.getByLabelText("图片文件"), {
+    fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: {
         files: [new File(["image"], "rain.png", { type: "image/png" })],
       },
@@ -1073,13 +1078,13 @@ describe("owner composing flow", () => {
     const inline = await screen.findByLabelText("此刻想到什么？");
     expect(inline).toHaveAttribute("rows", "1");
     expect(
-      screen.getByRole("button", { name: "选择图片" }),
+      screen.getByRole("button", { name: "选择媒体" }),
     ).toBeInTheDocument();
 
     fireEvent.focus(inline);
     expect(inline).toHaveAttribute("rows", "1");
     expect(
-      screen.getByRole("button", { name: "选择图片" }),
+      screen.getByRole("button", { name: "选择媒体" }),
     ).toBeInTheDocument();
 
     fireEvent.change(inline, { target: { value: "正在记录" } });
@@ -1088,7 +1093,7 @@ describe("owner composing flow", () => {
     fireEvent.blur(inline, { relatedTarget: null });
     await waitFor(() => expect(inline).toHaveAttribute("rows", "1"));
     expect(
-      screen.getByRole("button", { name: "选择图片" }),
+      screen.getByRole("button", { name: "选择媒体" }),
     ).toBeInTheDocument();
   });
 
@@ -1163,7 +1168,7 @@ describe("owner composing flow", () => {
     const composer = await screen.findByRole("dialog", {
       name: "发布 Moment",
     });
-    fireEvent.change(within(composer).getByLabelText("图片文件"), {
+    fireEvent.change(within(composer).getByLabelText("媒体文件"), {
       target: {
         files: [new File(["image"], "draft.png", { type: "image/png" })],
       },

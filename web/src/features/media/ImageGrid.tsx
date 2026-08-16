@@ -11,7 +11,9 @@ function mediaAlt(
 ): string {
   if (usage.altText === "") return "";
   if (usage.altText !== null) return usage.altText;
-  return `未提供图片描述，第 ${index + 1} 张，共 ${total} 张`;
+  return usage.mimeType === "video/mp4"
+    ? `未提供视频描述，第 ${index + 1} 项，共 ${total} 项`
+    : `未提供图片描述，第 ${index + 1} 张，共 ${total} 张`;
 }
 
 function tileName(
@@ -21,11 +23,15 @@ function tileName(
 ): string {
   const state =
     usage.altText === null
-      ? "尚未提供图片描述"
+      ? usage.mimeType === "video/mp4"
+        ? "尚未提供视频描述"
+        : "尚未提供图片描述"
       : usage.altText === ""
         ? "明确标记为纯装饰"
         : usage.altText;
-  return `打开第 ${index + 1} 张图片，共 ${total} 张：${state}`;
+  return usage.mimeType === "video/mp4"
+    ? `打开第 ${index + 1} 项视频，共 ${total} 项：${state}`
+    : `打开第 ${index + 1} 张图片，共 ${total} 张：${state}`;
 }
 
 function previewUrl(mediaId: string) {
@@ -40,7 +46,7 @@ function usageKey(usage: PublicMediaUsage): string {
   return `${usage.position}:${usage.mediaId}`;
 }
 
-function MediaImage({
+function MediaAsset({
   usage,
   index,
   total,
@@ -53,6 +59,19 @@ function MediaImage({
   original: boolean;
   onError: () => void;
 }) {
+  if (usage.mimeType === "video/mp4") {
+    return (
+      <video
+        aria-label={mediaAlt(usage, index, total)}
+        muted
+        onError={onError}
+        playsInline
+        poster={`/api/v1/media/${encodeURIComponent(usage.mediaId)}/poster`}
+        preload="metadata"
+        src={original ? originalUrl(usage.mediaId) : previewUrl(usage.mediaId)}
+      />
+    );
+  }
   return (
     <img
       alt={mediaAlt(usage, index, total)}
@@ -70,6 +89,7 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [failed, setFailed] = useState(() => new Set<string>());
   if (media.length === 0) return null;
+  const containsVideo = media.some((usage) => usage.mimeType === "video/mp4");
   const lightboxItems: MediaLightboxItem[] = media.map((usage, index) => ({
     key: usageKey(usage),
     previewSrc: previewUrl(usage.mediaId),
@@ -77,12 +97,21 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
     alt: mediaAlt(usage, index, media.length),
     description:
       usage.altText === null
-        ? "这张图片尚未填写描述。"
+        ? usage.mimeType === "video/mp4"
+          ? "这段视频尚未填写描述。"
+          : "这张图片尚未填写描述。"
         : usage.altText === ""
-          ? "这是一张明确标记为装饰用途的图片。"
+          ? usage.mimeType === "video/mp4"
+            ? "这是一段明确标记为装饰用途的视频。"
+            : "这是一张明确标记为装饰用途的图片。"
           : usage.altText,
     width: usage.width,
     height: usage.height,
+    kind: usage.mimeType === "video/mp4" ? "video" : "image",
+    posterSrc:
+      usage.mimeType === "video/mp4"
+        ? `/api/v1/media/${encodeURIComponent(usage.mediaId)}/poster`
+        : null,
   }));
 
   const markFailed = (usage: PublicMediaUsage) => {
@@ -92,7 +121,9 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
   return (
     <>
       <div
-        aria-label={`${media.length} 张图片`}
+        aria-label={
+          containsVideo ? `${media.length} 项媒体` : `${media.length} 张图片`
+        }
         className={styles.imageGrid}
         data-media-count={media.length}
         role="group"
@@ -118,14 +149,15 @@ export function ImageGrid({ media }: { media: PublicMediaUsage[] }) {
                 className={styles.mediaFallback}
                 role="img"
                 aria-label={
-                  mediaAlt(usage, index, media.length) || "装饰图片不可用"
+                  mediaAlt(usage, index, media.length) ||
+                  (containsVideo ? "装饰媒体不可用" : "装饰图片不可用")
                 }
               >
                 <span aria-hidden="true">×</span>
-                图片暂不可用
+                {containsVideo ? "媒体暂不可用" : "图片暂不可用"}
               </span>
             ) : (
-              <MediaImage
+              <MediaAsset
                 index={index}
                 onError={() => markFailed(usage)}
                 original={false}

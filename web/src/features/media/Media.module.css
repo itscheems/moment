@@ -236,7 +236,9 @@
 }
 
 .editorPreviewButton img,
-.editorPreview > img {
+.editorPreviewButton video,
+.editorPreview > img,
+.editorPreview > video {
   inline-size: 100%;
   block-size: 100%;
   display: block;
@@ -245,24 +247,31 @@
 
 .mediaEditorList[data-media-count="1"] .editorPreviewButton,
 .mediaEditorList[data-media-count="1"] .editorPreviewButton img,
-.mediaEditorList[data-media-count="1"] .editorPreview > img {
+.mediaEditorList[data-media-count="1"] .editorPreviewButton video,
+.mediaEditorList[data-media-count="1"] .editorPreview > img,
+.mediaEditorList[data-media-count="1"] .editorPreview > video {
   block-size: auto;
   max-block-size: 32rem;
 }
 
 .mediaEditorList[data-media-count="1"] .editorPreviewButton img,
-.mediaEditorList[data-media-count="1"] .editorPreview > img {
+.mediaEditorList[data-media-count="1"] .editorPreviewButton video,
+.mediaEditorList[data-media-count="1"] .editorPreview > img,
+.mediaEditorList[data-media-count="1"] .editorPreview > video {
   inline-size: 100%;
   max-inline-size: 100%;
   object-fit: contain;
 }
 
-.editorPreviewButton img {
+.editorPreviewButton img,
+.editorPreviewButton video {
   transition: transform var(--motion-fast) var(--ease-out);
 }
 
 .editorPreviewButton:hover:not(:disabled) img,
-.editorPreviewButton:focus-visible img {
+.editorPreviewButton:hover:not(:disabled) video,
+.editorPreviewButton:focus-visible img,
+.editorPreviewButton:focus-visible video {
   transform: scale(1.015);
 }
 
@@ -533,7 +542,9 @@
 }
 
 .imageTile img,
-.lightboxStage img {
+.imageTile video,
+.lightboxStage img,
+.lightboxStage video {
   inline-size: 100%;
   block-size: 100%;
   display: block;
@@ -541,11 +552,14 @@
 }
 
 .imageTile:hover img,
-.imageTile:focus-visible img {
+.imageTile:hover video,
+.imageTile:focus-visible img,
+.imageTile:focus-visible video {
   transform: scale(1.015);
 }
 
-.imageTile img {
+.imageTile img,
+.imageTile video {
   transition: transform var(--motion-fast) var(--ease-out);
 }
 
@@ -564,7 +578,8 @@
   max-block-size: 34rem;
 }
 
-.imageGrid[data-media-count="1"] .imageTile img {
+.imageGrid[data-media-count="1"] .imageTile img,
+.imageGrid[data-media-count="1"] .imageTile video {
   inline-size: 100%;
   block-size: 100%;
   object-fit: contain;
@@ -758,7 +773,8 @@
   background: transparent;
 }
 
-.lightboxStage img {
+.lightboxStage img,
+.lightboxStage video {
   inline-size: auto;
   block-size: auto;
   max-inline-size: min(52rem, calc(100vw - 8rem));
@@ -857,7 +873,8 @@
     padding-inline: var(--space-2);
   }
 
-  .lightboxStage img {
+  .lightboxStage img,
+  .lightboxStage video {
     max-inline-size: calc(100vw - 1rem);
     max-block-size: 74dvh;
   }
@@ -880,12 +897,15 @@
 
 @media (prefers-reduced-motion: reduce) {
   .imageTile img,
+  .imageTile video,
   .editorPreviewButton img,
+  .editorPreviewButton video,
   .mediaToolbar button,
   .editorRemove,
   .lightboxBackdrop,
   .lightboxPopup,
   .lightboxStage img,
+  .lightboxStage video,
   .lightboxClose,
   .lightboxNav,
   .lightboxOriginal {

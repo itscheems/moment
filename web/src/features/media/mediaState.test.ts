@@ -23,6 +23,8 @@ function item(overrides: Partial<ComposerMediaItem> = {}): ComposerMediaItem {
     mediaId: "01K2ABCDEF0123456789ABCDE1",
     previewUrl: "/api/v1/media/01K2ABCDEF0123456789ABCDE1/preview",
     originalUrl: "/api/v1/media/01K2ABCDEF0123456789ABCDE1",
+    mimeType: "image/jpeg",
+    previewMimeType: "image/jpeg",
     width: 800,
     height: 600,
     byteSize: 100,
@@ -125,6 +127,6 @@ describe("media composer contract", () => {
         sizedFile("large.jpg", "image/jpeg", MAX_FILE_BYTES + 1),
         [],
       ),
-    ).toContain("32 MiB");
+    ).toContain("30 MiB");
   });
 });

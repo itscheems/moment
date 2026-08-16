@@ -55,6 +55,7 @@ describe("public API client", () => {
       content_md: "写一点新的想法",
       content_html: "<p>写一点新的想法</p>",
       quoted_post: {
+        unavailable: false,
         id: "01K2ABCDEF0123456789ABCDE9",
         content_md: "被引用的正文",
         content_html: "<p>被引用的正文</p>",
@@ -73,10 +74,50 @@ describe("public API client", () => {
     await expect(api.post(quoted.id)).resolves.toMatchObject({
       contentMd: "写一点新的想法",
       quotedPost: {
+        unavailable: false,
         id: "01K2ABCDEF0123456789ABCDE9",
         contentMd: "被引用的正文",
         location: { name: "陆悦天地" },
       },
+    });
+  });
+
+  it("maps an unavailable quote only when every deleted target field is null", async () => {
+    const tombstone = {
+      ...post,
+      content_md: "引用外层仍然存在",
+      content_html: "<p>引用外层仍然存在</p>",
+      quoted_post: {
+        unavailable: true,
+        id: null,
+        content_md: null,
+        content_html: null,
+        published_at: null,
+        media: null,
+        location: null,
+      },
+    };
+    const api = new PublicApi(
+      vi.fn(async () => json({ data: tombstone, meta: {} })) as typeof fetch,
+    );
+    await expect(api.post(tombstone.id)).resolves.toMatchObject({
+      contentMd: "引用外层仍然存在",
+      quotedPost: { unavailable: true },
+    });
+
+    const invalidApi = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            ...tombstone,
+            quoted_post: { ...tombstone.quoted_post, id: post.id },
+          },
+          meta: {},
+        }),
+      ) as typeof fetch,
+    );
+    await expect(invalidApi.post(tombstone.id)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
     });
   });
 
@@ -106,6 +147,7 @@ describe("public API client", () => {
         media_id: "01K2ABCDEF0123456789ABCDE1",
         position: 0,
         alt_text: null,
+        mime_type: "image/jpeg",
         width: 1_200,
         height: 800,
       },
@@ -113,6 +155,7 @@ describe("public API client", () => {
         media_id: "01K2ABCDEF0123456789ABCDE1",
         position: 1,
         alt_text: "",
+        mime_type: "image/png",
         width: 800,
         height: 1_200,
       },
@@ -120,6 +163,7 @@ describe("public API client", () => {
         media_id: "01K2ABCDEF0123456789ABCDE2",
         position: 2,
         alt_text: "  雨后的街道  ",
+        mime_type: "image/webp",
         width: 1_600,
         height: 900,
       },

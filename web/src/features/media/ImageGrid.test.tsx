@@ -17,6 +17,7 @@ function media(count: number): PublicMediaUsage[] {
   return Array.from({ length: count }, (_, position) => ({
     mediaId: `01K2ABCDEF0123456789ABCD${String(position).padStart(2, "0")}`,
     position,
+    mimeType: "image/jpeg",
     altText:
       position === 0 ? null : position === 1 ? "" : `第 ${position + 1} 张描述`,
     width: 1_200 + position,
@@ -129,6 +130,7 @@ describe("public image grid", () => {
             mediaId: "01K2ABCDEF0123456789ABCD09",
             position: 1,
             altText: "替换后的图片",
+            mimeType: "image/jpeg",
             width: 1_000,
             height: 750,
           },

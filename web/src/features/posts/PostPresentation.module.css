@@ -501,6 +501,14 @@
   background: #efefef;
 }
 
+.quoteUnavailable {
+  margin-block-start: var(--space-3);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4);
+  background: #efefef;
+  color: #536471;
+}
+
 .quoteCard:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;

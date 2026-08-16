@@ -69,6 +69,7 @@ function comment(
       media_id: string;
       position: number;
       alt_text: string | null;
+      mime_type?: string;
       width: number;
       height: number;
     }>;
@@ -85,7 +86,10 @@ function comment(
     content_md: content,
     content_html: `<p>${content}</p>\n`,
     created_at: options.createdAt ?? "2026-08-10T01:03:00Z",
-    media: options.media ?? [],
+    media: (options.media ?? []).map((usage) => ({
+      ...usage,
+      mime_type: usage.mime_type ?? "image/png",
+    })),
   };
 }
 
@@ -361,7 +365,7 @@ describe("public comment thread", () => {
     ).toBeVisible();
     expect(within(form).getByLabelText("显示名")).not.toBeVisible();
     expect(
-      within(form).getByRole("button", { name: "选择图片", hidden: true }),
+      within(form).getByRole("button", { name: "选择媒体", hidden: true }),
     ).not.toBeVisible();
 
     fireEvent.focus(content);
@@ -374,7 +378,7 @@ describe("public comment thread", () => {
     );
     expect(within(form).getByLabelText("显示名")).toBeVisible();
     expect(
-      within(form).getByRole("button", { name: "选择图片" }),
+      within(form).getByRole("button", { name: "选择媒体" }),
     ).toBeVisible();
 
     fireEvent.blur(content, { relatedTarget: document.body });
@@ -382,7 +386,7 @@ describe("public comment thread", () => {
       "正在回复 @owner",
     );
     expect(
-      within(form).getByRole("button", { name: "选择图片" }),
+      within(form).getByRole("button", { name: "选择媒体" }),
     ).toBeVisible();
   });
 
@@ -413,7 +417,7 @@ describe("public comment thread", () => {
     expect(frame?.style.blockSize).toBe("254.625px");
 
     measuredHeight = 337.25;
-    fireEvent.change(within(form).getByLabelText("图片文件"), {
+    fireEvent.change(within(form).getByLabelText("媒体文件"), {
       target: {
         files: [new File(["image"], "layout.png", { type: "image/png" })],
       },
@@ -507,7 +511,7 @@ describe("public comment thread", () => {
     );
     expect(within(form).queryByText(/正在回复/)).not.toBeInTheDocument();
     expect(
-      within(dialog).getByRole("button", { name: "选择图片" }),
+      within(dialog).getByRole("button", { name: "选择媒体" }),
     ).toBeVisible();
     expect(within(dialog).getByLabelText("回复内容")).toHaveAttribute(
       "id",
@@ -747,7 +751,7 @@ describe("public comment thread", () => {
       target: { value: "带图回应" },
     });
     const file = new File(["image"], "night.png", { type: "image/png" });
-    fireEvent.change(screen.getByLabelText("图片文件"), {
+    fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: { files: [file] },
     });
     fireEvent.click(screen.getByText("图片选项"));
@@ -839,7 +843,7 @@ describe("public comment thread", () => {
     fireEvent.change(screen.getByLabelText("回复内容"), {
       target: { value: "失败后重试" },
     });
-    fireEvent.change(screen.getByLabelText("图片文件"), {
+    fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: {
         files: [new File(["image"], "retry.png", { type: "image/png" })],
       },

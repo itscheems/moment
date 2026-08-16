@@ -385,7 +385,7 @@ export function ProfileEditor({
                 </section>
 
                 <input
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
                   className={styles.fileInput}
                   data-profile-media-input="cover"
                   onChange={(event) => pick("cover", event)}
@@ -393,7 +393,7 @@ export function ProfileEditor({
                   type="file"
                 />
                 <input
-                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
                   className={styles.fileInput}
                   data-profile-media-input="avatar"
                   onChange={(event) => pick("avatar", event)}

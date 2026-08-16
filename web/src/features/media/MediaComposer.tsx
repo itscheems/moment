@@ -104,6 +104,7 @@ export function MediaComposer({
   const pickerRef = useRef<HTMLButtonElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
   const focusAfterChange = useRef<string | null | undefined>(undefined);
+  const containsVideo = items.some((item) => item.mimeType === "video/mp4");
 
   const selectedItemIndex = items.findIndex((item) => item.key === selectedKey);
   const selectedIndex =
@@ -120,13 +121,24 @@ export function MediaComposer({
           ? item.altText
           : item.altMode === "decorative"
             ? ""
-            : `未提供图片描述，第 ${index + 1} 张，共 ${items.length} 张`,
+            : item.mimeType === "video/mp4"
+              ? `未提供视频描述，第 ${index + 1} 项，共 ${items.length} 项`
+              : `未提供图片描述，第 ${index + 1} 张，共 ${items.length} 张`,
       description:
         item.altMode === "provided"
           ? item.altText
           : item.altMode === "decorative"
-            ? "这是一张明确标记为装饰用途的图片。"
-            : "这张图片尚未填写描述。",
+            ? item.mimeType === "video/mp4"
+              ? "这是一段明确标记为装饰用途的视频。"
+              : "这是一张明确标记为装饰用途的图片。"
+            : item.mimeType === "video/mp4"
+              ? "这段视频尚未填写描述。"
+              : "这张图片尚未填写描述。",
+      kind: item.mimeType === "video/mp4" ? "video" : "image",
+      posterSrc:
+        item.mimeType === "video/mp4" && item.mediaId
+          ? `/api/v1/media/${encodeURIComponent(item.mediaId)}/poster`
+          : null,
     };
   });
 
@@ -188,13 +200,13 @@ export function MediaComposer({
 
   return (
     <section
-      aria-label="图片"
+      aria-label={containsVideo ? "媒体" : "图片"}
       className={`${styles.composerMedia} ${compact ? styles.compactComposer : ""} ${className ?? ""}`}
     >
       <input
-        accept="image/jpeg,image/png,image/webp,image/gif"
+        accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,.heic,.heif,.mp4,.m4v"
         aria-describedby={`${inputId}-guidance`}
-        aria-label="图片文件"
+        aria-label="媒体文件"
         disabled={disabled || items.length >= maximum}
         id={inputId}
         multiple
@@ -204,14 +216,19 @@ export function MediaComposer({
         type="file"
       />
       <ol
-        aria-label="待发布图片，按发布顺序"
+        aria-label={
+          containsVideo ? "待发布媒体，按发布顺序" : "待发布图片，按发布顺序"
+        }
         className={styles.mediaEditorList}
         data-media-count={items.length}
       >
         <AnimatePresence initial={false} mode="popLayout">
           {items.map((item, index) => {
+            const isVideo = item.mimeType === "video/mp4";
             const editorPreviewUrl =
-              item.localPreviewUrl || item.previewUrl || null;
+              item.mimeType === "image/heic" && !item.previewUrl
+                ? null
+                : item.localPreviewUrl || item.previewUrl || null;
             return (
               <MediaPresenceItem
                 itemKey={item.key}
@@ -221,13 +238,30 @@ export function MediaComposer({
                 {(present) => (
                   <div className={styles.editorPreview}>
                     <button
-                      aria-label={`预览第 ${index + 1} 张图片，共 ${items.length} 张`}
+                      aria-label={
+                        isVideo
+                          ? `预览第 ${index + 1} 项视频，共 ${items.length} 项`
+                          : `预览第 ${index + 1} 张图片，共 ${items.length} 张`
+                      }
                       className={styles.editorPreviewButton}
                       disabled={!editorPreviewUrl || !present}
                       onClick={() => setSelectedKey(item.key)}
                       type="button"
                     >
-                      {editorPreviewUrl ? (
+                      {editorPreviewUrl && isVideo ? (
+                        <video
+                          aria-hidden="true"
+                          muted
+                          playsInline
+                          poster={
+                            item.mediaId
+                              ? `/api/v1/media/${encodeURIComponent(item.mediaId)}/poster`
+                              : undefined
+                          }
+                          preload="metadata"
+                          src={editorPreviewUrl}
+                        />
+                      ) : editorPreviewUrl ? (
                         <img alt="" decoding="async" src={editorPreviewUrl} />
                       ) : (
                         <span className={styles.editorPreviewPending}>
@@ -236,7 +270,11 @@ export function MediaComposer({
                       )}
                     </button>
                     <button
-                      aria-label={`移除第 ${index + 1} 张图片`}
+                      aria-label={
+                        isVideo
+                          ? `移除第 ${index + 1} 项视频`
+                          : `移除第 ${index + 1} 张图片`
+                      }
                       className={styles.editorRemove}
                       data-media-key={item.key}
                       disabled={disabled || !present}
@@ -252,7 +290,11 @@ export function MediaComposer({
                     </button>
                     {item.state === "uploading" ? (
                       <progress
-                        aria-label={`第 ${index + 1} 张上传进度`}
+                        aria-label={
+                          isVideo
+                            ? `第 ${index + 1} 项上传进度`
+                            : `第 ${index + 1} 张上传进度`
+                        }
                         max="100"
                         value={item.progress}
                       />
@@ -270,7 +312,7 @@ export function MediaComposer({
             item.state === "failed" ? (
               <div key={item.key}>
                 <p role="alert">
-                  第 {index + 1} 张上传失败
+                  第 {index + 1} 项上传失败
                   {item.error ? `：${item.error}` : ""}
                 </p>
                 <button
@@ -279,7 +321,7 @@ export function MediaComposer({
                   type="button"
                 >
                   重试上传
-                  <span className={styles.srOnly}>第 {index + 1} 张图片</span>
+                  <span className={styles.srOnly}>第 {index + 1} 项媒体</span>
                 </button>
               </div>
             ) : null,
@@ -289,15 +331,19 @@ export function MediaComposer({
       {items.length > 0 ? (
         <details className={styles.mediaOptions}>
           <summary>
-            图片选项
+            {containsVideo ? "媒体选项" : "图片选项"}
             <span>
               {items.filter((item) => item.altMode === "missing").length > 0
-                ? `${items.filter((item) => item.altMode === "missing").length} 张未描述`
+                ? `${items.filter((item) => item.altMode === "missing").length} 项未描述`
                 : "描述已处理"}
             </span>
           </summary>
           <ol className={styles.mediaOptionList}>
             {items.map((item, index) => {
+              const isVideo = item.mimeType === "video/mp4";
+              const itemLabel = isVideo
+                ? `第 ${index + 1} 项视频`
+                : `第 ${index + 1} 张图片`;
               const providedInvalid =
                 item.altMode === "provided" &&
                 (!item.altText.trim() ||
@@ -306,7 +352,7 @@ export function MediaComposer({
                 <li className={styles.mediaOptionItem} key={item.key}>
                   <header>
                     <div>
-                      <strong>第 {index + 1} 张</strong>
+                      <strong>{itemLabel}</strong>
                       <span>
                         {item.state === "queued" ? "等待上传" : null}
                         {item.state === "uploading"
@@ -325,9 +371,7 @@ export function MediaComposer({
                             type="button"
                           >
                             上移
-                            <span className={styles.srOnly}>
-                              第 {index + 1} 张图片
-                            </span>
+                            <span className={styles.srOnly}>{itemLabel}</span>
                           </button>
                           <button
                             disabled={disabled || index === items.length - 1}
@@ -335,16 +379,14 @@ export function MediaComposer({
                             type="button"
                           >
                             下移
-                            <span className={styles.srOnly}>
-                              第 {index + 1} 张图片
-                            </span>
+                            <span className={styles.srOnly}>{itemLabel}</span>
                           </button>
                         </>
                       ) : null}
                     </div>
                   </header>
                   <fieldset className={styles.altFieldset} disabled={disabled}>
-                    <legend>第 {index + 1} 张图片描述（可选）</legend>
+                    <legend>{itemLabel}描述（可选）</legend>
                     <div className={styles.altModes}>
                       {(
                         [
@@ -363,10 +405,7 @@ export function MediaComposer({
                                   ? { ...candidate, altMode: mode, error: null }
                                   : candidate,
                               );
-                              onChange(
-                                next,
-                                `第 ${index + 1} 张已设为${label}。`,
-                              );
+                              onChange(next, `${itemLabel}已设为${label}。`);
                             }}
                             type="radio"
                           />
@@ -376,7 +415,7 @@ export function MediaComposer({
                     </div>
                     {item.altMode === "provided" ? (
                       <label className={styles.altInput}>
-                        <span>描述图片内容</span>
+                        <span>{isVideo ? "描述视频内容" : "描述图片内容"}</span>
                         <textarea
                           aria-invalid={providedInvalid}
                           onChange={(event) =>
@@ -390,10 +429,12 @@ export function MediaComposer({
                                     }
                                   : candidate,
                               ),
-                              `已更新第 ${index + 1} 张图片描述。`,
+                              `已更新${itemLabel}描述。`,
                             )
                           }
-                          placeholder="简要描述图片内容"
+                          placeholder={
+                            isVideo ? "简要描述视频内容" : "简要描述图片内容"
+                          }
                           rows={2}
                           value={item.altText}
                         />
@@ -413,11 +454,11 @@ export function MediaComposer({
       <div className={styles.mediaControls}>
         <div className={styles.mediaToolbar}>
           <button
-            aria-label="选择图片"
+            aria-label="选择媒体"
             disabled={disabled || items.length >= maximum}
             onClick={() => fileInputRef.current?.click()}
             ref={pickerRef}
-            title="添加图片"
+            title="添加媒体"
             type="button"
           >
             <Icon name="media-picker" />
@@ -432,8 +473,8 @@ export function MediaComposer({
         {footerAction}
       </div>
       <p className={styles.srOnly} id={`${inputId}-guidance`}>
-        支持 JPEG、PNG、WebP 或 GIF，原图单张最大 32 MiB，最多 {maximum} 张。
-        图片不会写入本地文字草稿。
+        支持 JPEG、PNG、WebP、GIF、HEIC 或 MP4，单个原文件最大 30 MiB，最多
+        {maximum} 项。媒体不会写入本地文字草稿。
       </p>
       {selectionError ? (
         <p className={styles.mediaError} role="alert">

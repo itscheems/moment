@@ -37,7 +37,8 @@ export interface PublicPost {
   quotedPost?: PublicQuotedPost | null;
 }
 
-export interface PublicQuotedPost {
+export interface PublicAvailableQuotedPost {
+  unavailable: false;
   id: string;
   contentMd: string;
   contentHtml: string;
@@ -45,6 +46,13 @@ export interface PublicQuotedPost {
   media: PublicMediaUsage[];
   location: PublicPostLocation | null;
 }
+
+export interface PublicUnavailableQuotedPost {
+  unavailable: true;
+}
+
+export type PublicQuotedPost =
+  PublicAvailableQuotedPost | PublicUnavailableQuotedPost;
 
 export interface PublicPostLocation {
   name: string;
@@ -55,6 +63,7 @@ export interface PublicMediaUsage {
   mediaId: string;
   position: number;
   altText: string | null;
+  mimeType: string;
   width: number;
   height: number;
 }
@@ -143,6 +152,8 @@ export interface UploadedMedia {
   byteSize: number;
   width: number;
   height: number;
+  mimeType: string;
+  previewMimeType: string;
   animatedOriginal: boolean;
   previewUrl: string;
   originalUrl: string;
@@ -516,6 +527,7 @@ function parseMediaUsages(
         "media_id",
         "position",
         "alt_text",
+        "mime_type",
         "width",
         "height",
       ]) ||
@@ -535,6 +547,7 @@ function parseMediaUsages(
     return {
       mediaId: stringField(item, "media_id"),
       position: index,
+      mimeType: mediaMimeTypeField(item, "mime_type"),
       altText,
       width: positiveIntegerField(item, "width"),
       height: positiveIntegerField(item, "height"),
@@ -631,6 +644,7 @@ export function parsePost(value: unknown): PublicPost {
     if (
       !isRecord(quoted) ||
       !hasExactKeys(quoted, [
+        "unavailable",
         "id",
         "content_md",
         "content_html",
@@ -641,28 +655,49 @@ export function parsePost(value: unknown): PublicPost {
     ) {
       throw invalidResponse("quoted post is invalid");
     }
-    let quotedLocation: PublicPostLocation | null = null;
-    if (quoted.location !== null) {
+    const unavailable = booleanField(quoted, "unavailable");
+    if (unavailable) {
       if (
-        !isRecord(quoted.location) ||
-        !hasExactKeys(quoted.location, ["name", "display_name"])
-      )
-        throw invalidResponse("quoted post location is invalid");
-      const quotedName = stringField(quoted.location, "name");
-      const quotedDisplayName = stringField(quoted.location, "display_name");
-      if (!quotedName.trim() || !quotedDisplayName.trim()) {
-        throw invalidResponse("quoted post location cannot be empty");
+        quoted.id !== null ||
+        quoted.content_md !== null ||
+        quoted.content_html !== null ||
+        quoted.published_at !== null ||
+        quoted.media !== null ||
+        quoted.location !== null
+      ) {
+        throw invalidResponse(
+          "unavailable quoted post must not expose deleted target data",
+        );
       }
-      quotedLocation = { name: quotedName, displayName: quotedDisplayName };
+      quotedPost = { unavailable: true };
+    } else {
+      if (quoted.media === null) {
+        throw invalidResponse("available quoted post media must be an array");
+      }
+      let quotedLocation: PublicPostLocation | null = null;
+      if (quoted.location !== null) {
+        if (
+          !isRecord(quoted.location) ||
+          !hasExactKeys(quoted.location, ["name", "display_name"])
+        )
+          throw invalidResponse("quoted post location is invalid");
+        const quotedName = stringField(quoted.location, "name");
+        const quotedDisplayName = stringField(quoted.location, "display_name");
+        if (!quotedName.trim() || !quotedDisplayName.trim()) {
+          throw invalidResponse("quoted post location cannot be empty");
+        }
+        quotedLocation = { name: quotedName, displayName: quotedDisplayName };
+      }
+      quotedPost = {
+        unavailable: false,
+        id: stringField(quoted, "id"),
+        contentMd: stringField(quoted, "content_md"),
+        contentHtml: stringField(quoted, "content_html"),
+        publishedAt: instantField(quoted, "published_at"),
+        media: parseMediaUsages(quoted.media, 9, "quoted post"),
+        location: quotedLocation,
+      };
     }
-    quotedPost = {
-      id: stringField(quoted, "id"),
-      contentMd: stringField(quoted, "content_md"),
-      contentHtml: stringField(quoted, "content_html"),
-      publishedAt: instantField(quoted, "published_at"),
-      media: parseMediaUsages(quoted.media, 9, "quoted post"),
-      location: quotedLocation,
-    };
   }
   return {
     id: stringField(value, "id"),
@@ -1412,10 +1447,43 @@ function parseUploadedMedia(data: unknown): UploadedMedia {
     byteSize: positiveIntegerField(data.media, "byte_size"),
     width: positiveIntegerField(data.media, "width"),
     height: positiveIntegerField(data.media, "height"),
+    mimeType: mediaMimeTypeField(data.media, "mime_type"),
+    previewMimeType: mediaPreviewMimeTypeField(data.preview, "mime_type"),
     animatedOriginal,
     previewUrl,
     originalUrl,
   };
+}
+
+function mediaMimeTypeField(
+  record: Record<string, unknown>,
+  key: string,
+): string {
+  const value = stringField(record, key);
+  if (
+    ![
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+      "image/heic",
+      "video/mp4",
+    ].includes(value)
+  ) {
+    throw invalidResponse(`${key} is not a supported media MIME type`);
+  }
+  return value;
+}
+
+function mediaPreviewMimeTypeField(
+  record: Record<string, unknown>,
+  key: string,
+): string {
+  const value = stringField(record, key);
+  if (!["image/jpeg", "image/png", "video/mp4"].includes(value)) {
+    throw invalidResponse(`${key} is not a supported preview MIME type`);
+  }
+  return value;
 }
 
 export async function decodeCreatedComment(

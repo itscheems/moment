@@ -126,6 +126,7 @@ describe("owner API client", () => {
             content_md: "我的补充",
             content_html: "<p>我的补充</p>",
             quoted_post: {
+              unavailable: false,
               id: "01K2ABCDEF0123456789ABCDE9",
               content_md: "原始内容",
               content_html: "<p>原始内容</p>",
@@ -495,6 +496,7 @@ describe("owner API client", () => {
                 media_id: usage.mediaId,
                 position,
                 alt_text: usage.altText,
+                mime_type: "image/jpeg",
                 width: 1_200,
                 height: 800,
               })),

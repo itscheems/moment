@@ -10,6 +10,8 @@ export interface MediaLightboxItem {
   originalSrc?: string | null;
   alt: string;
   description: string;
+  kind?: "image" | "video";
+  posterSrc?: string | null;
   width?: number | null;
   height?: number | null;
 }
@@ -26,6 +28,7 @@ export function MediaLightbox({
   const [failed, setFailed] = useState(false);
   const item = selected === null ? null : (items[selected] ?? null);
   const open = selected !== null && item !== null;
+  const containsVideo = items.some((candidate) => candidate.kind === "video");
 
   useDocumentScrollLock(open);
 
@@ -71,10 +74,11 @@ export function MediaLightbox({
             }}
           >
             <Dialog.Title className={styles.srOnly}>
-              图片 {selected === null ? "" : selected + 1} / {items.length}
+              {containsVideo ? "媒体" : "图片"}{" "}
+              {selected === null ? "" : selected + 1} / {items.length}
             </Dialog.Title>
             <Dialog.Close
-              aria-label="关闭图片预览"
+              aria-label={containsVideo ? "关闭媒体预览" : "关闭图片预览"}
               className={styles.lightboxClose}
             >
               <span aria-hidden="true">×</span>
@@ -85,7 +89,18 @@ export function MediaLightbox({
               </span>
             ) : null}
             <div className={styles.lightboxStage}>
-              {item && source && !failed ? (
+              {item && source && !failed && item.kind === "video" ? (
+                <video
+                  aria-label={item.alt}
+                  controls
+                  key={item.key}
+                  onError={() => setFailed(true)}
+                  playsInline
+                  poster={item.posterSrc ?? undefined}
+                  preload="metadata"
+                  src={source}
+                />
+              ) : item && source && !failed ? (
                 <img
                   alt={item.alt}
                   decoding="async"
@@ -97,13 +112,13 @@ export function MediaLightbox({
                 />
               ) : (
                 <div className={styles.lightboxFallback} role="alert">
-                  图片暂时无法显示。
+                  {containsVideo ? "媒体暂时无法显示。" : "图片暂时无法显示。"}
                 </div>
               )}
               {items.length > 1 ? (
                 <>
                   <button
-                    aria-label="上一张图片"
+                    aria-label={containsVideo ? "上一项媒体" : "上一张图片"}
                     className={`${styles.lightboxNav} ${styles.lightboxPrevious}`}
                     onClick={() => select((selected ?? 0) - 1)}
                     type="button"
@@ -111,7 +126,7 @@ export function MediaLightbox({
                     <span aria-hidden="true">‹</span>
                   </button>
                   <button
-                    aria-label="下一张图片"
+                    aria-label={containsVideo ? "下一项媒体" : "下一张图片"}
                     className={`${styles.lightboxNav} ${styles.lightboxNext}`}
                     onClick={() => select((selected ?? 0) + 1)}
                     type="button"
@@ -132,7 +147,7 @@ export function MediaLightbox({
                   rel="noreferrer"
                   target="_blank"
                 >
-                  打开原图
+                  {item.kind === "video" ? "打开原画质视频" : "打开原图"}
                 </a>
               ) : null}
             </div>
