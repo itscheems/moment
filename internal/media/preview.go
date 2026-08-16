@@ -167,10 +167,27 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 	if err != nil {
 		return preparedPreview{}, previewFailure(err)
 	}
+	displayInput := input
+	displayInspection := inspection
+	if !displayReady {
+		displayInput, displayInspection, err = store.prepareVideoDisplaySource(ctx, input, directory, inspection)
+		if err != nil {
+			return preparedPreview{}, previewFailure(err)
+		}
+	}
 	prepared := preparedPreview{preview: Preview{Path: path, RecipeVersion: RecipeVersion, SHA256: sha, MIMEType: "video/mp4", Width: inspection.width, Height: inspection.height}}
 	if !posterReady && observer.VideoPosterReady != nil {
 		earlyPoster := filepath.Join(directory, "early-poster.jpg")
-		if err := store.generateEarlyVideoPosterFile(ctx, input, earlyPoster, inspection); err != nil {
+		earlyInput := displayInput
+		earlyInspection := displayInspection
+		if displayReady {
+			earlyInput = path
+			earlyInspection, err = store.probeVideoFile(ctx, path)
+			if err != nil {
+				return preparedPreview{}, previewFailure(err)
+			}
+		}
+		if err := store.generateEarlyVideoPosterFile(ctx, earlyInput, earlyPoster, earlyInspection); err != nil {
 			return preparedPreview{}, previewFailure(err)
 		}
 		earlyContents, err := readBoundedFile(ctx, earlyPoster, store.options.Limits.PreviewMaxBytes)
@@ -185,7 +202,7 @@ func (store *Store) prepareVideoPreview(ctx context.Context, contents []byte, in
 	displayPath := path
 	if !displayReady {
 		displayPath = filepath.Join(directory, "display.mp4")
-		derived, err := store.transcodeVideoFile(ctx, input, inspection, displayPath)
+		derived, err := store.transcodeVideoFile(ctx, displayInput, displayInspection, displayPath)
 		if err != nil {
 			return preparedPreview{}, previewFailure(err)
 		}

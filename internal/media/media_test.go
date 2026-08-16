@@ -206,24 +206,14 @@ func TestVideoDisplayFilterPlanToneMapsHDRAndKeepsSDRPortable(t *testing.T) {
 		colorPrimaries:  "bt2020",
 		rotationDegrees: -90,
 	}
-	darwin := videoDisplayFilterPlan(hdr, 1600, "darwin")
-	if strings.Join(darwin.inputArguments, " ") != "-hwaccel videotoolbox -hwaccel_output_format videotoolbox_vld" {
-		t.Fatalf("darwin input arguments = %q", darwin.inputArguments)
-	}
-	for _, fragment := range []string{"transpose_vt=clock", "scale_vt=w=900:h=1600", "color_primaries=bt709", "color_transfer=bt709", "format=yuv420p"} {
-		if !strings.Contains(darwin.filter, fragment) {
-			t.Fatalf("darwin HDR filter %q does not contain %q", darwin.filter, fragment)
-		}
-	}
-
-	linux := videoDisplayFilterPlan(hdr, 1600, "linux")
+	linux := videoDisplayFilterPlan(hdr, 1600)
 	for _, fragment := range []string{"zscale=transfer=linear", "tonemap=mobius", "primaries=bt709", "transfer=bt709", "format=yuv420p"} {
 		if !strings.Contains(linux.filter, fragment) {
 			t.Fatalf("linux HDR filter %q does not contain %q", linux.filter, fragment)
 		}
 	}
 
-	sdr := videoDisplayFilterPlan(inspected{width: 1920, height: 1080, colorPrimaries: "bt709", colorTransfer: "bt709"}, 1600, "darwin")
+	sdr := videoDisplayFilterPlan(inspected{width: 1920, height: 1080, colorPrimaries: "bt709", colorTransfer: "bt709"}, 1600)
 	if len(sdr.inputArguments) != 0 || strings.Contains(sdr.filter, "tonemap") || !strings.Contains(sdr.filter, "force_original_aspect_ratio=decrease") {
 		t.Fatalf("SDR filter plan = %#v", sdr)
 	}

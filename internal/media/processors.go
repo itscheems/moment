@@ -311,54 +311,49 @@ type videoFilterPlan struct {
 	filter         string
 }
 
-func scaledEvenDimensions(width, height, maxEdge uint32) (uint32, uint32) {
-	if width == 0 || height == 0 || maxEdge == 0 {
-		return width, height
-	}
-	if width <= maxEdge && height <= maxEdge {
-		return width - width%2, height - height%2
-	}
-	scale := float64(maxEdge) / float64(max(width, height))
-	scaledWidth := max(uint32(2), uint32(float64(width)*scale))
-	scaledHeight := max(uint32(2), uint32(float64(height)*scale))
-	return scaledWidth - scaledWidth%2, scaledHeight - scaledHeight%2
-}
-
-func videoToolboxRotationFilter(rotation int) string {
-	switch ((rotation % 360) + 360) % 360 {
-	case 270:
-		return "transpose_vt=clock,"
-	case 90:
-		return "transpose_vt=cclock,"
-	case 180:
-		return "transpose_vt=reversal,"
-	default:
-		return ""
-	}
-}
-
-func videoDisplayFilterPlan(inspection inspected, maxEdge uint32, goos string) videoFilterPlan {
+func videoDisplayFilterPlan(inspection inspected, maxEdge uint32) videoFilterPlan {
 	scale := fmt.Sprintf("scale='min(%d,iw)':'min(%d,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", maxEdge, maxEdge)
 	if !inspection.isHDRVideo() {
 		return videoFilterPlan{filter: scale + ",setsar=1"}
 	}
-	if goos == "darwin" {
-		width, height := scaledEvenDimensions(inspection.width, inspection.height, maxEdge)
-		filter := videoToolboxRotationFilter(inspection.rotationDegrees) + fmt.Sprintf(
-			"scale_vt=w=%d:h=%d:color_matrix=bt709:color_primaries=bt709:color_transfer=bt709,hwdownload,format=p010le,format=yuv420p,setsar=1",
-			width,
-			height,
-		)
-		return videoFilterPlan{
-			inputArguments: []string{"-hwaccel", "videotoolbox", "-hwaccel_output_format", "videotoolbox_vld"},
-			filter:         filter,
-		}
-	}
 	return videoFilterPlan{filter: "zscale=transfer=linear:npl=100,format=gbrpf32le,tonemap=mobius:desat=0,zscale=primaries=bt709:transfer=bt709:matrix=bt709:range=limited,format=yuv420p," + scale + ",setsar=1"}
 }
 
+// prepareVideoDisplaySource delegates Apple HLG/PQ color management to
+// AVFoundation on macOS. Merely retagging a VideoToolbox frame as BT.709 does
+// not preserve the HDR source's intended appearance; AVAssetExportSession
+// performs the platform color-managed HDR-to-SDR render first. The resulting
+// SDR intermediate is then handled by the same bounded H.264 path as every
+// other browser display rendition. Other platforms retain the explicit
+// zscale/tonemap pipeline above.
+func (store *Store) prepareVideoDisplaySource(ctx context.Context, input, directory string, inspection inspected) (string, inspected, error) {
+	if runtime.GOOS != "darwin" || !inspection.isHDRVideo() {
+		return input, inspection, nil
+	}
+	output := filepath.Join(directory, "avfoundation-sdr.mov")
+	if _, err := store.runTool(
+		ctx,
+		store.options.AVConvertPath,
+		"avconvert",
+		"--source", input,
+		"--preset", "PresetHighestQuality",
+		"--output", output,
+		"--replace",
+	); err != nil {
+		return "", inspected{}, err
+	}
+	converted, err := store.probeVideoFileUnlocked(ctx, output, formatQuickTime)
+	if err != nil {
+		return "", inspected{}, err
+	}
+	if converted.isHDRVideo() || converted.colorPrimaries != "bt709" || converted.colorTransfer != "bt709" || converted.colorSpace != "bt709" {
+		return "", inspected{}, domain.NewError(domain.CodeMediaPreviewFailed, "AVFoundation did not produce an SDR BT.709 display source", nil)
+	}
+	return output, converted, nil
+}
+
 func (store *Store) transcodeVideoFile(ctx context.Context, input string, inspection inspected, output string) (inspected, error) {
-	plan := videoDisplayFilterPlan(inspection, store.options.Limits.PreviewMaxEdge, runtime.GOOS)
+	plan := videoDisplayFilterPlan(inspection, store.options.Limits.PreviewMaxEdge)
 	targetBits := float64(store.options.Limits.PreviewMaxBytes-256*1024) * 8
 	videoRate := int64(targetBits/inspection.durationSeconds) - 96_000
 	videoRate = max(96_000, min(videoRate, 4_000_000))
@@ -434,7 +429,7 @@ func videoPosterTime(durationSeconds float64) float64 {
 }
 
 func (store *Store) generateEarlyVideoPosterFile(ctx context.Context, input, output string, inspection inspected) error {
-	plan := videoDisplayFilterPlan(inspection, store.options.Limits.PreviewMaxEdge, runtime.GOOS)
+	plan := videoDisplayFilterPlan(inspection, store.options.Limits.PreviewMaxEdge)
 	seek := strconv.FormatFloat(videoPosterTime(inspection.durationSeconds), 'f', 3, 64)
 	arguments := []string{"-nostdin", "-y", "-v", "error"}
 	arguments = append(arguments, plan.inputArguments...)
