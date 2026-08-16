@@ -520,6 +520,104 @@ describe("owner composing flow", () => {
     expect(window.location.pathname).toBe("/m/01K2ABCDEF0123456789ABCDE0");
   });
 
+  it("turns an empty quote into a repost instead of creating an empty wrapper", async () => {
+    preauthenticate();
+    const quotedId = "01K2ABCDEF0123456789ABCDE9";
+    window.history.replaceState({}, "", `/owner/compose?quote=${quotedId}`);
+    const fetcher = installApi((url, init) => {
+      if (url === `/api/v1/posts/${quotedId}` && !init?.method) {
+        return json({
+          data: post("原始 Moment", quotedId),
+          meta: { request_id: "req_quote" },
+        });
+      }
+      if (
+        url === `/api/v1/owner/posts/${quotedId}/repost` &&
+        init?.method === "PUT"
+      ) {
+        return json({
+          data: {
+            ...post("原始 Moment", quotedId),
+            reposted_at: "2026-08-10T02:00:00.000Z",
+          },
+          meta: { request_id: "req_repost" },
+        });
+      }
+    });
+    render(<App />);
+
+    expect(await screen.findByText("原始 Moment")).toBeInTheDocument();
+    const publish = screen.getByRole("button", { name: "发布" });
+    expect(publish).toBeEnabled();
+    fireEvent.click(publish);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(
+      fetcher.mock.calls.filter(
+        ([url, init]) =>
+          String(url) === `/api/v1/owner/posts/${quotedId}/repost` &&
+          init?.method === "PUT",
+      ),
+    ).toHaveLength(1);
+    expect(
+      fetcher.mock.calls.some(
+        ([url, init]) =>
+          String(url) === "/api/v1/owner/posts" && init?.method === "POST",
+      ),
+    ).toBe(false);
+    expect(screen.getByText("已转发到时间流顶部")).toBeInTheDocument();
+  });
+
+  it("keeps a quote with commentary as a new nested Moment", async () => {
+    preauthenticate();
+    const quotedId = "01K2ABCDEF0123456789ABCDE9";
+    window.history.replaceState({}, "", `/owner/compose?quote=${quotedId}`);
+    const fetcher = installApi((url, init) => {
+      if (url === `/api/v1/posts/${quotedId}` && !init?.method) {
+        return json({
+          data: post("原始 Moment", quotedId),
+          meta: { request_id: "req_quote" },
+        });
+      }
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        return json(
+          {
+            data: {
+              ...post("我的补充", "01K2ABCDEF0123456789ABCDE8"),
+              quoted_post: {
+                id: quotedId,
+                content_md: "原始 Moment",
+                content_html: "<p>原始 Moment</p>",
+                published_at: "2026-08-10T01:00:00.000Z",
+                location: null,
+                media: [],
+              },
+            },
+            meta: { request_id: "req_create_quote" },
+          },
+          201,
+        );
+      }
+    });
+    render(<App />);
+
+    expect(await screen.findByText("原始 Moment")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("此刻想到什么？"), {
+      target: { value: "我的补充" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    const create = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url) === "/api/v1/owner/posts" && init?.method === "POST",
+    );
+    expect(JSON.parse(String(create?.[1]?.body))).toMatchObject({
+      content_md: "我的补充",
+      quoted_post_id: quotedId,
+    });
+  });
+
   it("reuses an uploaded media ID when post submission fails and retries", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");

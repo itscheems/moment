@@ -211,8 +211,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           altValue(item) !== initial.altText
         );
       });
+    const repostOnly =
+      quotedPost !== null &&
+      content.trim().length === 0 &&
+      mediaItems.length === 0;
     const valid =
-      (content.trim().length > 0 || mediaItems.length > 0) &&
+      (content.trim().length > 0 ||
+        mediaItems.length > 0 ||
+        quotedPost !== null) &&
       count <= MAX_CONTENT &&
       mediaError === null;
     const hasUnpublishedChange =
@@ -769,7 +775,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       setPending(true);
       setError(null);
       setAuthExpired(false);
-      setAnnouncement(variant === "edit" ? "正在保存…" : "正在发布…");
+      setAnnouncement(
+        variant === "edit"
+          ? "正在保存…"
+          : repostOnly
+            ? "正在转发…"
+            : "正在发布…",
+      );
       let submittedDraft: ComposeDraft | null = null;
       if (!post) {
         const active = activeDraftRef.current;
@@ -793,7 +805,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           }
         }
         const usages = mediaInput(mediaItemsRef.current);
-        setAnnouncement(variant === "edit" ? "正在保存…" : "正在发布…");
+        setAnnouncement(
+          variant === "edit"
+            ? "正在保存…"
+            : repostOnly
+              ? "正在转发…"
+              : "正在发布…",
+        );
         const saved = post
           ? await api.update(
               session.csrfToken,
@@ -802,14 +820,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               usages,
               locationChanged ? location : undefined,
             )
-          : await api.create(
-              session.csrfToken,
-              content,
-              idempotencyKey.current,
-              usages,
-              location ?? undefined,
-              quotedPost?.id,
-            );
+          : repostOnly && quotedPost
+            ? await api.setReposted(session.csrfToken, quotedPost.id, true)
+            : await api.create(
+                session.csrfToken,
+                content,
+                idempotencyKey.current,
+                usages,
+                location ?? undefined,
+                quotedPost?.id,
+              );
         allowLeaveRef.current = true;
         dirtyRef.current = false;
         setDirty(false);
@@ -819,14 +839,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             draft: submittedDraft,
           });
         }
-        announceOwnerPost({ kind: post ? "updated" : "created", post: saved });
-        setAnnouncement(post ? "已保存" : "已发布");
-        notify(post ? "Moment 已保存" : "Moment 已发布", {
-          action: {
-            label: "查看 Moment",
-            onAction: () => navigate(`/m/${encodeURIComponent(saved.id)}`),
-          },
+        announceOwnerPost({
+          kind: post ? "updated" : repostOnly ? "reordered" : "created",
+          post: saved,
         });
+        setAnnouncement(post ? "已保存" : repostOnly ? "已转发" : "已发布");
+        notify(
+          post
+            ? "Moment 已保存"
+            : repostOnly
+              ? "已转发到时间流顶部"
+              : "Moment 已发布",
+          {
+            action: {
+              label: "查看 Moment",
+              onAction: () => navigate(`/m/${encodeURIComponent(saved.id)}`),
+            },
+          },
+        );
         clearMedia();
         if (variant === "inline") {
           setContent("");
