@@ -6,11 +6,11 @@ replaceable cache entries produced by a versioned recipe.
 
 ## Supported product envelope
 
-| Input                | Original               | Default browser asset                                   |
-| -------------------- | ---------------------- | ------------------------------------------------------- |
-| JPEG, PNG, WebP, GIF | retained byte-for-byte | JPEG or PNG, longest edge 1600 px                       |
-| HEIC                 | retained byte-for-byte | bounded JPEG decoded with libheif, with FFmpeg fallback |
-| MP4 or QuickTime MOV, up to 5 minutes | retained byte-for-byte | H.264/AAC MP4 plus JPEG poster               |
+| Input                                 | Original               | Default browser asset                                   |
+| ------------------------------------- | ---------------------- | ------------------------------------------------------- |
+| JPEG, PNG, WebP, GIF                  | retained byte-for-byte | JPEG or PNG, longest edge 1600 px                       |
+| HEIC                                  | retained byte-for-byte | bounded JPEG decoded with libheif, with FFmpeg fallback |
+| MP4 or QuickTime MOV, up to 5 minutes | retained byte-for-byte | H.264/AAC MP4 plus JPEG poster                          |
 
 - An image original may be at most 30 MiB; a video original may be at most
   300 MiB.
@@ -58,6 +58,59 @@ artificially approach 10 MiB.
 The three-attempt ceiling keeps request cost bounded. The five-minute source
 limit makes the 10 MiB delivery budget honest; longer video belongs to a
 different product and delivery architecture.
+
+## Apple HLG HDR color management
+
+Recent iPhone QuickTime recordings may contain 10-bit HLG HDR rather than SDR
+video. A common source signature is:
+
+```text
+pix_fmt=yuv420p10le
+color_primaries=bt2020
+color_transfer=arib-std-b67
+color_space=bt2020nc
+```
+
+These values are a processing contract, not metadata that can be relabeled.
+Converting the pixels directly to `yuv420p`, tagging the result as BT.709, or
+compensating with browser saturation and contrast filters produces washed-out
+or inconsistent color. Generating the poster through a different color path
+also makes the paused frame visibly change when playback starts.
+
+Moment uses this pipeline for an HLG/BT.2020 source:
+
+```text
+immutable HLG/BT.2020 original
+  -> HDR-aware conversion and tone mapping
+  -> managed SDR BT.709 intermediate
+  -> bounded H.264 yuv420p display asset
+  -> JPEG poster from the same managed intermediate
+```
+
+On Darwin, AVFoundation performs the HDR-to-SDR conversion before the bounded
+FFmpeg encode. Other platforms may use an explicit FFmpeg color-management
+path only when the installed runtime supports the required filters. Neither
+path may emulate conversion by rewriting color tags. The original remains
+byte-for-byte unchanged and available through the original-quality action.
+
+Inspect a suspected source before changing a recipe:
+
+```sh
+ffprobe -v error -select_streams v:0 \
+  -show_entries stream=pix_fmt,color_space,color_transfer,color_primaries \
+  -of default=noprint_wrappers=1 input.mov
+```
+
+After a recipe change, verify that the display asset reports SDR BT.709 and
+`yuv420p`, and compare its poster with the paused first frame in both Safari
+and Chromium. Rebuild stale derived assets with
+`moment media rebuild-previews`; the operation must not rewrite originals.
+
+References:
+
+- [Apple: Export HDR media](https://developer.apple.com/videos/play/wwdc2020/10010/)
+- [Apple: Incorporating HDR video with Dolby Vision into your apps](https://developer.apple.com/av-foundation/Incorporating-HDR-video-with-Dolby-Vision-into-your-apps.pdf)
+- [Apple: Setting color properties for a specific resolution](https://developer.apple.com/documentation/avfoundation/setting-color-properties-for-a-specific-resolution)
 
 ## Browser delivery and loading
 
@@ -145,4 +198,7 @@ go test ./internal/media -run 'TestIngest(HEIC|MP4|QuickTime)Real' -count=1
 ```
 
 Set `MOMENT_TEST_HEIF_CONVERT` as well to exercise the preferred libheif path;
-the HEIC integration deliberately also runs with FFmpeg alone.
+the HEIC integration deliberately also runs with FFmpeg alone. The QuickTime
+fixture additionally asserts that an HLG/BT.2020 source preserves its original
+bytes while producing a color-managed SDR BT.709 display asset and a poster
+derived from the same managed source.
