@@ -11,6 +11,7 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
+// Location is the exact portable wire projection of a location snapshot.
 type Location struct {
 	Name             string   `json:"name"`
 	DisplayName      string   `json:"display_name"`
@@ -27,6 +28,7 @@ type Location struct {
 	CoordinateSystem *string  `json:"coordinate_system"`
 }
 
+// Results wraps a non-null array of canonical location projections.
 type Results struct {
 	Items []Location `json:"items"`
 }
@@ -130,6 +132,7 @@ func decodeNullableString(decoder *json.Decoder, destination **string) error {
 	return nil
 }
 
+// FromDomain projects a domain location without changing coordinate authority.
 func FromDomain(location domain.Location) Location {
 	wire := Location{
 		Name: location.Name, DisplayName: location.DisplayName,
@@ -149,6 +152,7 @@ func FromDomain(location domain.Location) Location {
 	return wire
 }
 
+// FromDomains projects a collection while preserving its order.
 func FromDomains(locations []domain.Location) Results {
 	items := make([]Location, 0, len(locations))
 	for _, location := range locations {
@@ -157,6 +161,7 @@ func FromDomains(locations []domain.Location) Results {
 	return Results{Items: items}
 }
 
+// Domain validates and converts one exact wire projection.
 func (wire Location) Domain() (domain.Location, error) {
 	location := domain.Location{
 		Name: wire.Name, DisplayName: wire.DisplayName,
@@ -181,11 +186,13 @@ func (wire Location) Domain() (domain.Location, error) {
 	return location, nil
 }
 
+// Validate checks one canonical wire projection.
 func Validate(wire Location) error {
 	_, err := wire.Domain()
 	return err
 }
 
+// ValidateResults checks a complete, non-null result collection.
 func ValidateResults(results Results) error {
 	if results.Items == nil {
 		return errors.New("location results items must be an array")

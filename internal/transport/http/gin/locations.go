@@ -13,6 +13,7 @@ import (
 	"github.com/moment/moment/internal/transport/locationdto"
 )
 
+// RegisterLocationRoutes mounts owner-authenticated place discovery endpoints.
 func RegisterLocationRoutes(engine *gin.Engine, locations *app.LocationService, manager *auth.Manager) {
 	owner := engine.Group("/api/v1/owner/locations")
 	owner.Use(RequireOwner(manager))

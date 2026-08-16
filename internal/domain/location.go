@@ -7,10 +7,15 @@ import (
 )
 
 const (
-	MaxLocationNameCodePoints        = 160
+	// MaxLocationNameCodePoints and related ceilings bound portable location
+	// snapshot text independently of provider-specific limits.
+	MaxLocationNameCodePoints = 160
+	// MaxLocationDisplayNameCodePoints bounds a human-readable full address.
 	MaxLocationDisplayNameCodePoints = 500
-	MaxLocationPartCodePoints        = 120
-	MaxLocationProviderIDCodePoints  = 512
+	// MaxLocationPartCodePoints bounds each normalized address component.
+	MaxLocationPartCodePoints = 120
+	// MaxLocationProviderIDCodePoints bounds an opaque provider identifier.
+	MaxLocationProviderIDCodePoints = 512
 )
 
 // CoordinateSystem names the authority used by a stored coordinate. Browser
@@ -18,7 +23,10 @@ const (
 type CoordinateSystem string
 
 const (
+	// CoordinateWGS84 and CoordinateGCJ02 are the coordinate authorities Moment
+	// can persist without silently converting values.
 	CoordinateWGS84 CoordinateSystem = "wgs84"
+	// CoordinateGCJ02 identifies coordinates returned by domestic AMap APIs.
 	CoordinateGCJ02 CoordinateSystem = "gcj02"
 )
 
@@ -30,6 +38,7 @@ type GeoPoint struct {
 	System      CoordinateSystem
 }
 
+// NewGeoPoint validates decimal coordinates and stores them without float drift.
 func NewGeoPoint(latitude, longitude float64, system CoordinateSystem) (*GeoPoint, error) {
 	if math.IsNaN(latitude) || math.IsInf(latitude, 0) || latitude < -90 || latitude > 90 {
 		return nil, NewError(CodeInvalidArgument, "latitude must be between -90 and 90", map[string]any{"field": "latitude"})
@@ -48,9 +57,13 @@ func NewGeoPoint(latitude, longitude float64, system CoordinateSystem) (*GeoPoin
 	return point, nil
 }
 
-func (point GeoPoint) Latitude() float64  { return float64(point.LatitudeE7) / 1e7 }
+// Latitude returns the stored E7 latitude as decimal degrees.
+func (point GeoPoint) Latitude() float64 { return float64(point.LatitudeE7) / 1e7 }
+
+// Longitude returns the stored E7 longitude as decimal degrees.
 func (point GeoPoint) Longitude() float64 { return float64(point.LongitudeE7) / 1e7 }
 
+// Validate enforces coordinate range and authority invariants.
 func (point GeoPoint) Validate() error {
 	if point.LatitudeE7 < -900000000 || point.LatitudeE7 > 900000000 {
 		return NewError(CodeInvalidArgument, "latitude must be between -90 and 90", map[string]any{"field": "latitude"})
@@ -80,6 +93,7 @@ type Location struct {
 	Point           *GeoPoint
 }
 
+// Validate enforces the canonical provider-independent location contract.
 func (location Location) Validate() error {
 	if err := validateLocationText("name", location.Name, MaxLocationNameCodePoints, true); err != nil {
 		return err
@@ -122,6 +136,7 @@ func (location Location) Validate() error {
 	return nil
 }
 
+// CloneLocation returns a deep copy suitable for immutable projections.
 func CloneLocation(location *Location) *Location {
 	if location == nil {
 		return nil

@@ -144,8 +144,8 @@ func TestPostLocationLifecycleAndIdempotency(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(updated.Location, manual) {
 		t.Fatalf("updated = %#v, %v", updated, err)
 	}
-	var clear *domain.Location
-	cleared, err := service.Update(ctx, app.UpdatePostInput{ID: stored.Entry.ID, PreserveContent: true, Location: &clear})
+	var clearedLocation *domain.Location
+	cleared, err := service.Update(ctx, app.UpdatePostInput{ID: stored.Entry.ID, PreserveContent: true, Location: &clearedLocation})
 	if err != nil || cleared.Location != nil {
 		t.Fatalf("cleared = %#v, %v", cleared, err)
 	}

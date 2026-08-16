@@ -17,8 +17,8 @@ type locationHTTPResolver struct {
 
 func (resolver *locationHTTPResolver) Search(_ context.Context, _ string, bias *domain.GeoPoint, _ int) ([]domain.Location, error) {
 	if bias != nil {
-		copy := *bias
-		resolver.searchBias = &copy
+		biasCopy := *bias
+		resolver.searchBias = &biasCopy
 	}
 	return []domain.Location{{Name: "静安寺", DisplayName: "上海市静安区", CountryCode: "CN", Country: "中国", Provider: "amap"}}, nil
 }

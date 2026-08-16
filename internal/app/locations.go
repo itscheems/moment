@@ -11,18 +11,25 @@ import (
 )
 
 const (
+	// DefaultLocationResultLimit and related ceilings bound provider work and
+	// the exact number of suggestions accepted at the application boundary.
 	DefaultLocationResultLimit = 8
-	MaxLocationResultLimit     = 20
+	// MaxLocationResultLimit is the hard provider result ceiling.
+	MaxLocationResultLimit = 20
+	// MaxLocationQueryCodePoints bounds normalized user search text.
 	MaxLocationQueryCodePoints = 120
 )
 
+// LocationResolver is the provider-independent application port for places.
 type LocationResolver interface {
 	Search(context.Context, string, *domain.GeoPoint, int) ([]domain.Location, error)
 	Nearby(context.Context, domain.GeoPoint, int) ([]domain.Location, error)
 }
 
+// LocationService validates and normalizes owner location searches.
 type LocationService struct{ resolver LocationResolver }
 
+// NewLocationService constructs a location service with one required resolver.
 func NewLocationService(resolver LocationResolver) (*LocationService, error) {
 	if resolver == nil {
 		return nil, errors.New("location resolver is required")
@@ -30,6 +37,7 @@ func NewLocationService(resolver LocationResolver) (*LocationService, error) {
 	return &LocationService{resolver: resolver}, nil
 }
 
+// Search returns validated place snapshots for a normalized text query.
 func (service *LocationService) Search(ctx context.Context, query string, bias *domain.GeoPoint, limit int) ([]domain.Location, error) {
 	if err := contextError(ctx); err != nil {
 		return nil, err
@@ -54,6 +62,7 @@ func (service *LocationService) Search(ctx context.Context, query string, bias *
 	return validateLocationResults(items, limit)
 }
 
+// Nearby returns validated place snapshots around an explicit coordinate.
 func (service *LocationService) Nearby(ctx context.Context, point domain.GeoPoint, limit int) ([]domain.Location, error) {
 	if err := contextError(ctx); err != nil {
 		return nil, err

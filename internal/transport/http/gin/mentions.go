@@ -8,6 +8,7 @@ import (
 	"github.com/moment/moment/internal/app"
 )
 
+// RegisterMentionRoutes mounts the bounded public mention suggestion endpoint.
 func RegisterMentionRoutes(engine *gin.Engine, service *app.SiteService) {
 	engine.GET("/api/v1/users/mention-suggestions", func(ctx *gin.Context) {
 		limit := 8

@@ -18,7 +18,10 @@ const mergeReviewLimitPerClassification = 200
 type MergeReviewSource string
 
 const (
-	MergeReviewLocal    MergeReviewSource = "local"
+	// MergeReviewLocal and MergeReviewIncoming identify the side that owns a
+	// display-only media projection during conflict review.
+	MergeReviewLocal MergeReviewSource = "local"
+	// MergeReviewIncoming marks an archive-owned review projection.
 	MergeReviewIncoming MergeReviewSource = "incoming"
 )
 

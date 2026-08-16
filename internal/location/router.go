@@ -13,12 +13,15 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
+// ErrUnavailable reports that no configured provider produced a result.
 var ErrUnavailable = errors.New("location provider unavailable")
 
+// HTTPClient is the minimal injectable client used by geocoding providers.
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
+// Options configures provider credentials, transport, timeout, and test URLs.
 type Options struct {
 	AMapAPIKey      string
 	GeoapifyAPIKey  string
@@ -33,11 +36,13 @@ type provider interface {
 	Nearby(context.Context, domain.GeoPoint, int) ([]domain.Location, error)
 }
 
+// Router selects a primary geocoding provider and bounded fallback by region.
 type Router struct {
 	amap     provider
 	geoapify provider
 }
 
+// NewFromEnvironment reads only the documented provider credential variables.
 func NewFromEnvironment() *Router {
 	return New(Options{
 		AMapAPIKey:     os.Getenv("AMAP_API_KEY"),
@@ -45,6 +50,7 @@ func NewFromEnvironment() *Router {
 	})
 }
 
+// New constructs a location router from explicit options.
 func New(options Options) *Router {
 	client := options.Client
 	if client == nil {
@@ -60,6 +66,7 @@ func New(options Options) *Router {
 	return router
 }
 
+// Search resolves a text query through the regional provider order.
 func (router *Router) Search(ctx context.Context, query string, bias *domain.GeoPoint, limit int) ([]domain.Location, error) {
 	primary, fallback := router.amap, router.geoapify
 	if bias != nil && !inMainlandChina(*bias) {
@@ -72,6 +79,7 @@ func (router *Router) Search(ctx context.Context, query string, bias *domain.Geo
 	})
 }
 
+// Nearby resolves places around a point through the regional provider order.
 func (router *Router) Nearby(ctx context.Context, point domain.GeoPoint, limit int) ([]domain.Location, error) {
 	primary, fallback := router.geoapify, router.amap
 	if inMainlandChina(point) {

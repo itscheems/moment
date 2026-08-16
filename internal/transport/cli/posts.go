@@ -632,15 +632,15 @@ func postLocationInputFromFlags(ctx context.Context, input CommandInput, allowCl
 		return postLocationInput{}, err
 	}
 	nameChanged, pathChanged := input.Changed("location-name"), input.Changed("location-json")
-	clear := false
+	clearLocation := false
 	if allowClear {
-		clear, err = input.Bool("clear-location")
+		clearLocation, err = input.Bool("clear-location")
 		if err != nil {
 			return postLocationInput{}, err
 		}
 	}
 	selected := 0
-	for _, value := range []bool{nameChanged, pathChanged, clear} {
+	for _, value := range []bool{nameChanged, pathChanged, clearLocation} {
 		if value {
 			selected++
 		}
@@ -651,7 +651,7 @@ func postLocationInputFromFlags(ctx context.Context, input CommandInput, allowCl
 	if selected == 0 {
 		return postLocationInput{}, nil
 	}
-	if clear {
+	if clearLocation {
 		return postLocationInput{Present: true}, nil
 	}
 	if nameChanged {
