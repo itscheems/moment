@@ -87,8 +87,9 @@ func TestIngestSupportedFormatsUsesSignaturesAndCanonicalAuthority(t *testing.T)
 
 func TestIngestHEICRealFixturePreservesOriginalAndBuildsDisplayImage(t *testing.T) {
 	converter := os.Getenv("MOMENT_TEST_HEIF_CONVERT")
-	if converter == "" {
-		t.Skip("set MOMENT_TEST_HEIF_CONVERT to run the real libheif integration")
+	ffmpeg := os.Getenv("MOMENT_TEST_FFMPEG")
+	if converter == "" && ffmpeg == "" {
+		t.Skip("set MOMENT_TEST_HEIF_CONVERT or MOMENT_TEST_FFMPEG to run the real HEIC integration")
 	}
 	fixture := filepath.Join("..", "..", "work", "v0.0.1", "resources", "IMG_1336.HEIC")
 	contents, err := os.ReadFile(fixture)
@@ -98,7 +99,11 @@ func TestIngestHEICRealFixturePreservesOriginalAndBuildsDisplayImage(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	store, runtimeState, _ := newTestStoreWithOptions(t, Options{HEIFConvertPath: converter})
+	options := Options{HEIFConvertPath: converter, FFmpegPath: ffmpeg}
+	if converter == "" {
+		options.HEIFConvertPath = filepath.Join(t.TempDir(), "missing-heif-convert")
+	}
+	store, runtimeState, _ := newTestStoreWithOptions(t, options)
 	value, preview, err := store.Ingest(context.Background(), "IMG_1336.HEIC", bytes.NewReader(contents))
 	if err != nil {
 		t.Fatal(err)
@@ -181,13 +186,40 @@ func TestIngestMP4RealProcessorPreservesOriginalBuildsBoundedDisplayAndPoster(t 
 	}
 }
 
+func TestConvertHEICFallsBackToFFmpegWhenLibheifIsUnavailable(t *testing.T) {
+	jpegPath := filepath.Join(t.TempDir(), "decoded.jpg")
+	if err := os.WriteFile(jpegPath, encodeJPEG(t, image.NewRGBA(image.Rect(0, 0, 24, 12))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ffmpeg := filepath.Join(t.TempDir(), "ffmpeg")
+	script := "#!/bin/sh\nfor last do :; done\ncp \"$MOMENT_TEST_HEIC_JPEG\" \"$last\"\n"
+	if err := os.WriteFile(ffmpeg, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MOMENT_TEST_HEIC_JPEG", jpegPath)
+	store, _, _ := newTestStoreWithOptions(t, Options{
+		HEIFConvertPath: filepath.Join(t.TempDir(), "missing-heif-convert"),
+		FFmpegPath:      ffmpeg,
+	})
+	converted, err := store.convertHEIC(context.Background(), []byte("synthetic-heic"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, format, err := image.DecodeConfig(bytes.NewReader(converted)); err != nil || format != "jpeg" {
+		t.Fatalf("fallback output is not JPEG: %q, %v", format, err)
+	}
+}
+
 func TestExtendedMediaReportsMissingProcessorWithoutPublishing(t *testing.T) {
 	header := make([]byte, 24)
 	binary.BigEndian.PutUint32(header[0:4], uint32(len(header)))
 	copy(header[4:8], "ftyp")
 	copy(header[8:12], "heic")
 	copy(header[16:20], "heic")
-	store, runtimeState, database := newTestStoreWithOptions(t, Options{HEIFConvertPath: filepath.Join(t.TempDir(), "missing-heif-convert")})
+	store, runtimeState, database := newTestStoreWithOptions(t, Options{
+		HEIFConvertPath: filepath.Join(t.TempDir(), "missing-heif-convert"),
+		FFmpegPath:      filepath.Join(t.TempDir(), "missing-ffmpeg"),
+	})
 	_, _, err := store.Ingest(context.Background(), "untrusted.heic", bytes.NewReader(header))
 	var domainErr *domain.Error
 	if !errors.As(err, &domainErr) || domainErr.Code != domain.CodeMediaProcessorUnavailable {

@@ -102,6 +102,11 @@ func processorUnavailable(name string) error {
 	return domain.NewError(domain.CodeMediaProcessorUnavailable, "required media processor is unavailable", map[string]any{"processor": name})
 }
 
+func isProcessorUnavailable(err error) bool {
+	var domainErr *domain.Error
+	return errors.As(err, &domainErr) && domainErr.Code == domain.CodeMediaProcessorUnavailable
+}
+
 func (store *Store) noteProcessor(kind string) {
 	if store.processorHook != nil {
 		store.processorHook(kind)
@@ -180,7 +185,21 @@ func (store *Store) convertHEIC(ctx context.Context, contents []byte) ([]byte, e
 	}
 	output := filepath.Join(directory, "decoded.jpg")
 	if _, err := store.runTool(ctx, store.options.HEIFConvertPath, "heif-convert", "-q", "95", input, output); err != nil {
-		return nil, err
+		if !isProcessorUnavailable(err) {
+			return nil, err
+		}
+		if _, fallbackErr := store.runTool(
+			ctx,
+			store.options.FFmpegPath,
+			"ffmpeg",
+			"-nostdin", "-y", "-v", "error",
+			"-i", input,
+			"-frames:v", "1",
+			"-q:v", "2",
+			output,
+		); fallbackErr != nil {
+			return nil, fallbackErr
+		}
 	}
 	converted, err := os.ReadFile(output)
 	if err != nil || len(converted) == 0 || int64(len(converted)) > store.options.Limits.MaxBytes {
