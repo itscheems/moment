@@ -413,6 +413,7 @@ describe("public comment thread", () => {
     expect(locationPicker).toBeDisabled();
     expect(locationPicker).toHaveAttribute("data-picker-tooltip", "位置");
     expect(locationPicker).not.toHaveAttribute("title");
+    expect(locationPicker).not.toHaveTextContent("位置");
 
     fireEvent.blur(content, { relatedTarget: document.body });
     expect(frame).toHaveAttribute("data-comment-layout-state", "expanded");

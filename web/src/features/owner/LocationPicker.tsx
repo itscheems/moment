@@ -255,7 +255,6 @@ export function LocationPicker({
         title={pickerTooltip ? undefined : value ? "更改位置" : "添加位置"}
       >
         <Icon name="location-picker" />
-        {pickerTooltip ? <span aria-hidden="true">{pickerTooltip}</span> : null}
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.locationBackdrop} />
