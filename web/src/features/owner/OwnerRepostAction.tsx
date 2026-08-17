@@ -71,6 +71,11 @@ export function OwnerRepostAction({
           onClick={(event) => event.stopPropagation()}
         >
           <Icon name="repost" />
+          {active ? (
+            <span className={postStyles.actionCount} data-repost-count>
+              1
+            </span>
+          ) : null}
         </Menu.Trigger>
       </ActionTooltip>
       <Menu.Portal>

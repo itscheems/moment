@@ -77,22 +77,37 @@
 }
 
 .mediaToolbar button {
-  inline-size: var(--target-size);
-  block-size: var(--target-size);
-  min-inline-size: var(--target-size);
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  min-inline-size: 2.25rem;
+  min-block-size: 2.25rem;
   justify-content: center;
   border-radius: 50%;
   padding: 0;
-  color: var(--accent);
+  color: #829aab;
   background: transparent;
+  transition:
+    transform 0.15s ease,
+    background-color 0.2s ease,
+    filter 0.15s ease;
+  will-change: transform, filter;
 }
 
 .mediaToolbar button:hover:not(:disabled),
-.mediaToolbar button:focus-visible {
-  background: var(--accent-soft);
+.mediaToolbar button:focus-visible,
+.mediaToolbar button[data-popup-open] {
+  color: #829aab;
+  background: rgb(15 20 25 / 10%);
+  transform: scale(1.12);
 }
 
-.mediaToolbar button:active:not(:disabled),
+.mediaToolbar button:active:not(:disabled) {
+  color: #829aab;
+  background: rgb(15 20 25 / 7%);
+  filter: brightness(0.7);
+  transform: scale(1.12);
+}
+
 .editorRemove:active:not(:disabled),
 .lightboxClose:active,
 .lightboxNav:active:not(:disabled),
@@ -101,8 +116,8 @@
 }
 
 .mediaToolbar button svg {
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
+  inline-size: 1.453125rem;
+  block-size: 1.453125rem;
 }
 
 .mediaToolbar button:disabled,
@@ -1216,5 +1231,12 @@
   .processingSpinner,
   .mediaUploadSuccess {
     animation: none;
+  }
+
+  .mediaToolbar button:hover:not(:disabled),
+  .mediaToolbar button:focus-visible,
+  .mediaToolbar button[data-popup-open],
+  .mediaToolbar button:active:not(:disabled) {
+    transform: none;
   }
 }

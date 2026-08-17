@@ -210,6 +210,11 @@ describe("public timeline", () => {
         .getAllByRole("button", { name: "转发这条 Moment" })
         .every((button) => button.getAttribute("aria-pressed") === "true"),
     ).toBe(true);
+    expect(
+      screen
+        .getAllByRole("button", { name: "转发这条 Moment" })
+        .every((button) => within(button).getByText("1")),
+    ).toBe(true);
 
     fireEvent.click(
       screen.getAllByRole("button", { name: "转发这条 Moment" })[0],
@@ -223,6 +228,11 @@ describe("public timeline", () => {
       ).toEqual([`${id}:original`]),
     );
     expect(active).toBe(false);
+    expect(
+      within(
+        screen.getByRole("button", { name: "转发这条 Moment" }),
+      ).queryByText("1"),
+    ).not.toBeInTheDocument();
   });
 
   it("attaches the lead video poster immediately and keeps later videos lazy", async () => {

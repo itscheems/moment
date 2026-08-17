@@ -780,7 +780,7 @@ describe("shared post presentation", () => {
     window.sessionStorage.removeItem("moment.owner.session.v1");
   });
 
-  it("reposts from the owner toolbar and exposes the green active state", async () => {
+  it("reposts from the owner toolbar and exposes the persisted count", async () => {
     window.sessionStorage.setItem(
       "moment.owner.session.v1",
       JSON.stringify({
@@ -860,6 +860,11 @@ describe("shared post presentation", () => {
         screen.getByRole("button", { name: "转发这条 Moment" }),
       ).toHaveAttribute("aria-pressed", "true"),
     );
+    expect(
+      within(screen.getByRole("button", { name: "转发这条 Moment" })).getByText(
+        "1",
+      ),
+    ).toHaveAttribute("data-repost-count");
     expect(requests).toContainEqual({
       url: "/api/v1/owner/posts/01K2ABCDEF0123456789ABCDE0/repost",
       method: "PUT",

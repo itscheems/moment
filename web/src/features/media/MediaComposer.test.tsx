@@ -64,12 +64,35 @@ function FocusHarness({ initial }: { initial: ComposerMediaItem[] }) {
 }
 
 describe("media editor", () => {
-  it("optically aligns the leading media action without shrinking its target", () => {
+  it("uses consistent composer tool geometry and leading alignment", () => {
     expect(mediaCss).toContain(
       "margin-inline-start: calc(0px - var(--space-3))",
     );
     expect(mediaCss).toMatch(
-      /\._mediaToolbar_[\w-]+ button\s*\{[^}]*inline-size: var\(--target-size\)[^}]*block-size: var\(--target-size\)/,
+      /\._mediaToolbar_[\w-]+ button\s*\{[^}]*inline-size: 2\.25rem;[^}]*block-size: 2\.25rem;[^}]*min-inline-size: 2\.25rem;[^}]*min-block-size: 2\.25rem;/,
+    );
+    expect(mediaCss).toMatch(
+      /\._mediaToolbar_[\w-]+ button svg\s*\{[^}]*inline-size: 1\.453125rem;[^}]*block-size: 1\.453125rem;/,
+    );
+  });
+
+  it("keeps composer tools neutral with hover and reduced-motion states", () => {
+    const buttonBlock = mediaCss.match(
+      /\._mediaToolbar_[\w-]+ button\s*\{([^}]*)\}/,
+    )?.[1];
+    expect(buttonBlock).toContain("color: #829aab");
+    expect(buttonBlock).not.toContain("var(--accent)");
+    expect(buttonBlock).toContain("transform 0.15s ease");
+    expect(buttonBlock).toContain("background-color 0.2s ease");
+    expect(buttonBlock).toContain("filter 0.15s ease");
+    expect(mediaCss).toMatch(
+      /\._mediaToolbar_[\w-]+ button:hover:not\(:disabled\),[\s\S]*?button\[data-popup-open\]\s*\{[^}]*color: #829aab;[^}]*background: rgb\(15 20 25 \/ 10%\);[^}]*transform: scale\(1\.12\);/,
+    );
+    expect(mediaCss).toMatch(
+      /\._mediaToolbar_[\w-]+ button:active:not\(:disabled\)\s*\{[^}]*background: rgb\(15 20 25 \/ 7%\);[^}]*filter: brightness\(0\.7\);[^}]*transform: scale\(1\.12\);/,
+    );
+    expect(mediaCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\._mediaToolbar_[\w-]+ button:hover:not\(:disabled\),[\s\S]*?transform: none;/,
     );
   });
 
