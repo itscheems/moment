@@ -792,6 +792,52 @@ describe("owner API client", () => {
     ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
   });
 
+  it("pins and unpins one comment through the owner CSRF contract", async () => {
+    const fetcher = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) =>
+        json({
+          data: {
+            post_id: post.id,
+            pinned_comment_id: init?.method === "PUT" ? comment.id : null,
+          },
+          meta: { request_id: "req_pin" },
+        }),
+    );
+    const api = new OwnerApi(fetcher as typeof fetch);
+
+    await expect(api.pinComment("csrf", post.id, comment.id)).resolves.toEqual({
+      postId: post.id,
+      pinnedCommentId: comment.id,
+    });
+    await expect(
+      api.unpinComment("csrf", post.id, comment.id),
+    ).resolves.toEqual({ postId: post.id, pinnedCommentId: null });
+    expect(fetcher.mock.calls.map(([, init]) => init?.method)).toEqual([
+      "PUT",
+      "DELETE",
+    ]);
+    for (const [url, init] of fetcher.mock.calls) {
+      expect(String(url)).toBe(
+        `/api/v1/owner/posts/${post.id}/comments/${comment.id}/pin`,
+      );
+      expect(new Headers(init?.headers).get("X-CSRF-Token")).toBe("csrf");
+    }
+  });
+
+  it("fails closed on contradictory comment pin selections", async () => {
+    const api = new OwnerApi(
+      vi.fn(async () =>
+        json({
+          data: { post_id: post.id, pinned_comment_id: null },
+          meta: { request_id: "req_pin" },
+        }),
+      ) as typeof fetch,
+    );
+    await expect(
+      api.pinComment("csrf", post.id, comment.id),
+    ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
+  });
+
   it.each([
     {
       name: "wrong delete status",

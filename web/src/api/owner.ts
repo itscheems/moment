@@ -56,6 +56,11 @@ export interface DeletedComment {
   repliesAffected: number;
 }
 
+export interface CommentPin {
+  postId: string;
+  pinnedCommentId: string | null;
+}
+
 export interface UploadedMedia {
   id: string;
   byteSize: number;
@@ -2448,5 +2453,49 @@ export class OwnerApi {
       throw invalidResponse("a reply deletion cannot affect child comments");
     }
     return { comment, repliesAffected: result.repliesAffected };
+  }
+
+  async pinComment(
+    csrfToken: string,
+    postId: string,
+    commentId: string,
+  ): Promise<CommentPin> {
+    return this.commentPinChange(csrfToken, postId, commentId, "PUT");
+  }
+
+  async unpinComment(
+    csrfToken: string,
+    postId: string,
+    commentId: string,
+  ): Promise<CommentPin> {
+    return this.commentPinChange(csrfToken, postId, commentId, "DELETE");
+  }
+
+  private async commentPinChange(
+    csrfToken: string,
+    postId: string,
+    commentId: string,
+    method: "PUT" | "DELETE",
+  ): Promise<CommentPin> {
+    const response = await this.fetcher(
+      `/api/v1/owner/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}/pin`,
+      requestInit(method, csrfToken),
+    );
+    const data = await decodeExactOwnerSuccess(response, [
+      "post_id",
+      "pinned_comment_id",
+    ]);
+    const responsePostId = data.post_id;
+    const pinnedCommentId = data.pinned_comment_id;
+    if (
+      typeof responsePostId !== "string" ||
+      responsePostId !== postId ||
+      (pinnedCommentId !== null && typeof pinnedCommentId !== "string") ||
+      (method === "PUT" && pinnedCommentId !== commentId) ||
+      (method === "DELETE" && pinnedCommentId !== null)
+    ) {
+      throw invalidResponse("comment pin response is invalid");
+    }
+    return { postId: responsePostId, pinnedCommentId };
   }
 }

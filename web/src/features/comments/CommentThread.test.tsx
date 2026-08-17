@@ -205,7 +205,18 @@ function success(
   meta: Record<string, unknown> = {},
   status = 200,
 ) {
-  return json({ data, meta: { request_id: "req_test", ...meta } }, status);
+  const canonicalData =
+    typeof data === "object" &&
+    data !== null &&
+    !Array.isArray(data) &&
+    "items" in data &&
+    !("pinned_comment_id" in data)
+      ? { ...data, pinned_comment_id: null }
+      : data;
+  return json(
+    { data: canonicalData, meta: { request_id: "req_test", ...meta } },
+    status,
+  );
 }
 
 function failure(code: string, status: number, details = {}) {
@@ -291,6 +302,13 @@ function renderThread(
         />
       </OwnerProvider>
     </NavigationProvider>,
+  );
+}
+
+async function chooseFirstCommentAction(name: string) {
+  fireEvent.click(screen.getAllByRole("button", { name: "回复操作" })[0]);
+  fireEvent.click(
+    await screen.findByRole("menuitem", { name }, { timeout: 3_000 }),
   );
 }
 
@@ -695,6 +713,69 @@ describe("public comment thread", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps owner location selection available in dialog and inline comment replies", async () => {
+    preauthenticate();
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/status") {
+        return success({
+          initialized: true,
+          password_enabled: false,
+          session_epoch: 1,
+          initialized_at: "2026-08-01T00:00:00Z",
+        });
+      }
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [root] });
+      }
+    });
+    render(
+      <NavigationProvider>
+        <OwnerProvider>
+          <ReplyDialogHarness />
+        </OwnerProvider>
+      </NavigationProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "打开回复窗口" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "回复这条 Moment",
+    });
+    expect(
+      within(dialog).getByRole("button", { name: "添加位置" }),
+    ).toBeEnabled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "关闭回复窗口" }),
+    );
+
+    const rootArticle = await screen.findByRole("article", {
+      name: "访客的回复",
+    });
+    fireEvent.click(
+      within(rootArticle).getByRole("button", { name: "回复 访客" }),
+    );
+    const replyForm = screen.getByRole("form", { name: "回复 访客" });
+    const locationPicker = within(replyForm).getByRole("button", {
+      name: "添加位置",
+    });
+    expect(locationPicker).toBeEnabled();
+    fireEvent.click(locationPicker);
+    const locationDialog = await screen.findByRole("dialog", {
+      name: "添加位置",
+    });
+    fireEvent.click(
+      within(locationDialog).getByRole("button", { name: "手动添加地点" }),
+    );
+    fireEvent.change(within(locationDialog).getByLabelText("地点名称"), {
+      target: { value: "书房" },
+    });
+    fireEvent.click(
+      within(locationDialog).getByRole("button", { name: "添加" }),
+    );
+    expect(
+      within(replyForm).getByRole("button", { name: "更改位置：书房" }),
+    ).toBeVisible();
+  });
+
   it("keeps the reply dialog avatars on one mobile alignment rail", () => {
     expect(commentsCss).toMatch(
       /\._replyContext_[\w-]+::after\s*\{[^}]*inset-inline-start: calc\(\s*var\(--space-4\) \+ \(var\(--target-size\) \/ 2\) - 1px\s*\)/,
@@ -704,6 +785,24 @@ describe("public comment thread", () => {
     );
     expect(commentsCss).toMatch(
       /\._replyContextTarget_[\w-]+\s*\{[^}]*margin: var\(--space-3\) 0 var\(--space-1\)/,
+    );
+  });
+
+  it("uses consistent connector, divider, hover, and motion contracts for comment rows", () => {
+    const itemRule = commentsCss.match(
+      /\._commentItem_[\w-]+\s*\{[^}]*\}/s,
+    )?.[0];
+    expect(itemRule).toBeDefined();
+    expect(itemRule).not.toContain("border-block");
+    expect(itemRule).toContain("transition: background-color 0.2s ease");
+    expect(commentsCss).toMatch(
+      /\._commentItem_[\w-]+:hover\s*\{[^}]*#f7f7f7/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._commentItem_[\w-]+:has\(\+ \._replyComment_[\w-]+\)::after\s*\{[^}]*inset-block-start: calc\(var\(--space-3\) \+ var\(--target-size\)\);[^}]*inset-block-end: 0;/s,
+    );
+    expect(commentsCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\._commentItem_[\w-]+\s*\{[^}]*transition: none;/s,
     );
   });
 
@@ -1434,7 +1533,7 @@ describe("public comment thread", () => {
     await screen.findByText("已有一级回复");
     expect(screen.getAllByText("所有者")).toHaveLength(2);
     expect(screen.getByText("Moment")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "删除" })[0]);
+    await chooseFirstCommentAction("删除");
     expect(await screen.findByRole("dialog")).toHaveTextContent(
       "下面的 1 条回复",
     );
@@ -1453,6 +1552,59 @@ describe("public comment thread", () => {
     expect(document.documentElement.style.overflowY).toBe("");
     expect(document.body.style.position).toBe("");
     expect(window.scrollTo).toHaveBeenCalledWith(0, 615);
+  });
+
+  it("moves a pinned root with its replies as one group and restores chronology after unpin", async () => {
+    preauthenticate();
+    const earlierRoot = comment(createdId, "更早的顶级回应", {
+      createdAt: "2026-08-10T01:02:00Z",
+    });
+    const fetcher = installApi((url, init) => {
+      if (url === "/api/v1/owner/status") {
+        return success({
+          initialized: true,
+          password_enabled: false,
+          session_epoch: 1,
+          initialized_at: "2026-08-01T00:00:00Z",
+        });
+      }
+      if (
+        url.endsWith(`/comments/${rootId}/pin`) &&
+        init?.method === "DELETE"
+      ) {
+        return success({ post_id: postId, pinned_comment_id: null });
+      }
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({
+          items: [earlierRoot, root, reply],
+          pinned_comment_id: rootId,
+        });
+      }
+    });
+    renderThread();
+
+    await screen.findByText("已有一级回复");
+    const order = () =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>("[data-comment-id]"),
+      ).map((item) => item.dataset.commentId);
+    expect(order()).toEqual([rootId, replyId, createdId]);
+    expect(screen.getByText("已置顶")).toBeVisible();
+
+    await chooseFirstCommentAction("取消置顶");
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("回到这段对话中的原始时间位置");
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消置顶" }));
+
+    await waitFor(() => expect(order()).toEqual([createdId, rootId, replyId]));
+    expect(screen.queryByText("已置顶")).not.toBeInTheDocument();
+    expect(
+      fetcher.mock.calls.some(
+        ([url, init]) =>
+          String(url).endsWith(`/comments/${rootId}/pin`) &&
+          init?.method === "DELETE",
+      ),
+    ).toBe(true);
   });
 
   it("keeps the delete dialog mounted for inline reauthentication and retries with new CSRF", async () => {
@@ -1492,7 +1644,7 @@ describe("public comment thread", () => {
     renderThread();
 
     await screen.findByText("顶级回应");
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    await chooseFirstCommentAction("删除");
     fireEvent.click(await screen.findByRole("button", { name: "删除回复" }));
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
@@ -1546,7 +1698,7 @@ describe("public comment thread", () => {
 
     await screen.findByText("顶级回应");
     fireEvent.click(screen.getByRole("button", { name: "使会话过期" }));
-    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    await chooseFirstCommentAction("删除");
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
     expect(

@@ -233,6 +233,46 @@ func TestCommentHTTPGuestOwnerThreadAndModerationContract(t *testing.T) {
 	}
 }
 
+func TestCommentHTTPPinContractExposesOneTopLevelSelection(t *testing.T) {
+	fixture := newCommentHTTPFixture(t, 100, nil)
+	publicPath := "/api/v1/posts/" + fixture.postID.String() + "/comments"
+	rootResponse := performRequest(fixture.engine, commentRequest(http.MethodPost, publicPath, `{"author_name":"Guest","content_md":"root"}`))
+	rootID := commentData(t, rootResponse)["id"].(string)
+	replyResponse := performRequest(fixture.engine, commentRequest(http.MethodPost, publicPath, `{"author_name":"Guest","content_md":"reply","parent_id":"`+rootID+`"}`))
+	replyID := commentData(t, replyResponse)["id"].(string)
+	pinPath := "/api/v1/owner/posts/" + fixture.postID.String() + "/comments/" + rootID + "/pin"
+
+	unauthorized := performRequest(fixture.engine, commentRequest(http.MethodPut, pinPath, ""))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized pin = %d %s", unauthorized.Code, unauthorized.Body.String())
+	}
+	pinRequest := commentRequest(http.MethodPut, pinPath, "")
+	pinRequest.Header.Set("Authorization", "Bearer "+fixture.token)
+	pinned := performRequest(fixture.engine, pinRequest)
+	data := commentData(t, pinned)
+	if pinned.Code != http.StatusOK || data["post_id"] != fixture.postID.String() || data["pinned_comment_id"] != rootID {
+		t.Fatalf("pin = %d %s", pinned.Code, pinned.Body.String())
+	}
+	listed := performRequest(fixture.engine, commentRequest(http.MethodGet, publicPath, ""))
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"pinned_comment_id":"`+rootID+`"`) {
+		t.Fatalf("listed pin = %d %s", listed.Code, listed.Body.String())
+	}
+
+	replyPin := commentRequest(http.MethodPut, "/api/v1/owner/posts/"+fixture.postID.String()+"/comments/"+replyID+"/pin", "")
+	replyPin.Header.Set("Authorization", "Bearer "+fixture.token)
+	rejected := performRequest(fixture.engine, replyPin)
+	if rejected.Code != http.StatusBadRequest || decodeError(t, rejected.Body).Error.Code != "INVALID_ARGUMENT" {
+		t.Fatalf("reply pin = %d %s", rejected.Code, rejected.Body.String())
+	}
+
+	unpinRequest := commentRequest(http.MethodDelete, pinPath, "")
+	unpinRequest.Header.Set("Authorization", "Bearer "+fixture.token)
+	unpinned := performRequest(fixture.engine, unpinRequest)
+	if unpinned.Code != http.StatusOK || commentData(t, unpinned)["pinned_comment_id"] != nil {
+		t.Fatalf("unpin = %d %s", unpinned.Code, unpinned.Body.String())
+	}
+}
+
 func TestCommentHTTPAbuseSafetyStrictJSONAndClosedComments(t *testing.T) {
 	var logsMu sync.Mutex
 	logs := make([]map[string]any, 0)

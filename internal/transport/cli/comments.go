@@ -58,6 +58,31 @@ func registerComments(application *Application) {
 		Policy: SafetyPolicy{Destructive: true, SupportsDryRun: true, Confirmation: "Delete this comment and any direct replies permanently?"},
 		Run:    runCommentDelete,
 	})
+	application.MustRegisterLeaf(commentPinSpec("pin", "Pin one top-level comment", true))
+	application.MustRegisterLeaf(commentPinSpec("unpin", "Remove the pinned comment", false))
+}
+
+func commentPinSpec(verb, short string, active bool) LeafSpec {
+	action := "Pin this comment to the top of its post?"
+	long := "Atomically select one top-level comment for emphasis in its post. A prior selection is replaced."
+	if !active {
+		action = "Remove this pinned comment from its post?"
+		long = "Atomically clear the selected top-level comment while preserving the comment thread."
+	}
+	return LeafSpec{
+		Path: []string{"comment", verb}, ArgsUsage: "<post-id> <comment-id>", Short: short,
+		Long:    long,
+		Inputs:  "Provide one post ULID and one top-level comment ULID. The mutation always uses owner identity.",
+		Output:  "The canonical post_id and nullable pinned_comment_id selection.",
+		Errors:  "Invalid IDs, missing or cross-post comments, non-root targets, declined confirmation, and authentication failures use stable codes.",
+		Safety:  "Presentation mutation only; no comment content or timestamp is changed.",
+		Example: fmt.Sprintf("moment comment %s 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --yes --json", verb),
+		Args:    cobra.ExactArgs(2), Capability: CapabilityBoth,
+		Policy: SafetyPolicy{Destructive: true, Confirmation: action},
+		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+			return runCommentPinChange(ctx, invocation, input, active)
+		},
+	}
 }
 
 func commentCreateSpec(verb, short, long, example string, run Handler) LeafSpec {
@@ -260,6 +285,60 @@ func runCommentDelete(ctx context.Context, invocation Invocation, input CommandI
 	return commentResult(action, comment, meta), nil
 }
 
+func runCommentPinChange(ctx context.Context, invocation Invocation, input CommandInput, active bool) (Result, error) {
+	postID, err := domain.ParseID(input.Args()[0])
+	if err != nil {
+		return Result{}, commentCLIError(err)
+	}
+	commentID, err := domain.ParseID(input.Args()[1])
+	if err != nil {
+		return Result{}, commentCLIError(err)
+	}
+	var pin commentdto.Pin
+	var meta map[string]any
+	switch invocation.Mode() {
+	case ModeDirect:
+		direct, openErr := openDirectCommentWrite(ctx, invocation)
+		if openErr != nil {
+			return Result{}, commentCLIError(openErr)
+		}
+		defer func() { _ = direct.Close() }()
+		var result app.CommentPin
+		if active {
+			result, err = direct.service.Pin(ctx, postID, commentID)
+		} else {
+			result, err = direct.service.Unpin(ctx, postID, commentID)
+		}
+		if err != nil {
+			return Result{}, commentCLIError(err)
+		}
+		pin = commentdto.FromPin(result)
+	case ModeAPI:
+		method := http.MethodPut
+		if !active {
+			method = http.MethodDelete
+		}
+		var status int
+		meta, status, err = commentAPIRequest(ctx, invocation, method, "/api/v1/owner/posts/"+url.PathEscape(postID.String())+"/comments/"+url.PathEscape(commentID.String())+"/pin", nil, nil, "", true, &pin)
+		if err != nil {
+			return Result{}, commentCLIError(err)
+		}
+		if status != http.StatusOK {
+			return Result{}, invalidAPIResponse()
+		}
+	default:
+		return Result{}, errors.New("unsupported comment pin transport")
+	}
+	if err := commentdto.ValidatePin(pin); err != nil || pin.PostID != postID.String() || (active && (pin.PinnedCommentID == nil || *pin.PinnedCommentID != commentID.String())) || (!active && pin.PinnedCommentID != nil) {
+		return Result{}, invalidAPIResponse()
+	}
+	action := "Comment pinned"
+	if !active {
+		action = "Comment unpinned"
+	}
+	return Result{Data: pin, Text: fmt.Sprintf("%s %s in post %s.", action, commentID, postID), Meta: meta}, nil
+}
+
 func commentDeleteMeta(result app.DeleteCommentResult) map[string]any {
 	return map[string]any{"deleted": result.Deleted, "dry_run": result.DryRun, "replies_affected": result.RepliesAffected}
 }
@@ -359,6 +438,10 @@ func commentAPIRequest(ctx context.Context, invocation Invocation, method, endpo
 		}
 	case *commentdto.Thread:
 		if err := commentdto.ValidateThread(*typed); err != nil {
+			return nil, status, invalidAPIResponse()
+		}
+	case *commentdto.Pin:
+		if err := commentdto.ValidatePin(*typed); err != nil {
 			return nil, status, invalidAPIResponse()
 		}
 	}

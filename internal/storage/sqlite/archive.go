@@ -73,6 +73,7 @@ type ArchiveComment struct {
 	CreatedAtMS int64
 	Media       []ArchiveUsage
 	Location    *domain.Location
+	Pinned      bool
 }
 
 // ArchiveMedia contains portable metadata plus the private source path needed
@@ -352,10 +353,12 @@ SELECT comment.id, comment.entry_id, comment.parent_id, comment.author_kind,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
        location.latitude_e7, location.longitude_e7, location.coordinate_system,
-       usage.media_id, usage.position, usage.alt_text
+       usage.media_id, usage.position, usage.alt_text,
+       pin.comment_id IS NOT NULL
 FROM comments AS comment
 LEFT JOIN comment_media AS usage ON usage.comment_id = comment.id
 LEFT JOIN comment_location AS location ON location.comment_id = comment.id
+LEFT JOIN comment_pins AS pin ON pin.comment_id = comment.id
 ORDER BY comment.entry_id,
          CASE WHEN comment.parent_id IS NULL THEN comment.id ELSE comment.parent_id END,
          CASE WHEN comment.parent_id IS NULL THEN 0 ELSE 1 END,
@@ -380,7 +383,7 @@ ORDER BY comment.entry_id,
 			&value.ContentMD, &value.CreatedAtMS, &locationName, &locationDisplayName,
 			&countryCode, &country, &region, &city, &district, &category, &provider,
 			&providerPlaceID, &latitude, &longitude, &coordinateSystem,
-			&mediaID, &position, &alt,
+			&mediaID, &position, &alt, &value.Pinned,
 		); err != nil {
 			return fmt.Errorf("scan archive comment: %w", err)
 		}

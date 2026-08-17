@@ -258,7 +258,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 				ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
 				AuthorKind: value.AuthorKind, AuthorName: value.AuthorName,
 				ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS), Media: media,
-				Location: portableLocation(value.Location),
+				Location: portableLocation(value.Location), Pinned: value.Pinned,
 			})
 		})
 	})
@@ -566,6 +566,7 @@ type commentRecord struct {
 	CreatedAt  string          `json:"created_at"`
 	Media      []usageRecord   `json:"media"`
 	Location   *locationRecord `json:"location,omitempty"`
+	Pinned     bool            `json:"pinned,omitempty"`
 }
 
 type mediaRecord struct {
@@ -843,6 +844,9 @@ func validateArchiveComment(value sqlitestore.ArchiveComment) error {
 	}
 	if value.CreatedAtMS <= 0 {
 		return errors.New("comment timestamp must be positive")
+	}
+	if value.Pinned && value.ParentID != nil {
+		return errors.New("only a top-level comment can be pinned")
 	}
 	if err := (domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
@@ -1383,6 +1387,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		parent  *string
 	}
 	commentIDs := make(map[string]commentReference)
+	pinnedEntries := make(map[string]struct{})
 	var previousComment *commentOrder
 	comments, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
 		if int64(len(commentIDs)) >= document.Counts.Comments {
@@ -1422,6 +1427,12 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 				return errors.New("comment reply parent is absent, not a root, or belongs to another entry")
 			}
 		}
+		if value.Pinned {
+			if _, exists := pinnedEntries[value.EntryID]; exists {
+				return errors.New("an entry contains multiple pinned comments")
+			}
+			pinnedEntries[value.EntryID] = struct{}{}
+		}
 		order := commentOrder{entryID: value.EntryID, group: group, rank: rank, createdAtMS: created.UnixMilli(), id: value.ID}
 		if previousComment != nil && compareCommentOrder(*previousComment, order) >= 0 {
 			return errors.New("comment records are not in canonical thread order")
@@ -1429,7 +1440,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if err := validateArchiveComment(sqlitestore.ArchiveComment{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
 			AuthorKind: value.AuthorKind, AuthorName: value.AuthorName,
-			ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(), Media: usages, Location: location,
+			ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(), Media: usages, Location: location, Pinned: value.Pinned,
 		}); err != nil {
 			return err
 		}

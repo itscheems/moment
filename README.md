@@ -96,6 +96,15 @@ location nearby`, `moment post create --location-name`, and `moment post create
 --location-json`. Use `moment post update --clear-location` to remove a stored
 place.
 
+## Comment moderation
+
+Comment threads stay one level deep. The owner can delete any comment from its
+overflow menu and can pin one top-level comment per post; the pinned root and
+its direct replies move together while their timestamps remain unchanged.
+Deleting that root also clears its pin. The same moderation contract is
+available to agents through `moment comment pin`, `moment comment unpin`, and
+`moment comment delete` in direct or API mode.
+
 ## Media originals and display versions
 
 Moment accepts JPEG, PNG, WebP, GIF, and HEIC image originals up to 30 MiB,

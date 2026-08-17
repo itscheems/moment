@@ -140,6 +140,7 @@ export interface PublicComment {
 
 export interface CommentThread {
   items: PublicComment[];
+  pinnedCommentId: string | null;
 }
 
 export interface CreateGuestCommentInput {
@@ -602,10 +603,16 @@ function commentOrder(left: PublicComment, right: PublicComment): number {
 function parseCommentThread(value: unknown, postId: string): CommentThread {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ["items"]) ||
+    !hasExactKeys(value, ["items", "pinned_comment_id"]) ||
     !Array.isArray(value.items)
   ) {
-    throw invalidResponse("comment thread must contain only an items array");
+    throw invalidResponse(
+      "comment thread must contain items and pinned_comment_id",
+    );
+  }
+  const pinnedCommentId = nullableStringField(value, "pinned_comment_id");
+  if (pinnedCommentId !== null && !isCanonicalUlid(pinnedCommentId)) {
+    throw invalidResponse("pinned_comment_id must be a comment ID");
   }
   const items = value.items.map((item) => parseComment(item, postId));
   const ids = new Set<string>();
@@ -634,7 +641,13 @@ function parseCommentThread(value: unknown, postId: string): CommentThread {
       previousReply = comment;
     }
   }
-  return { items };
+  if (pinnedCommentId !== null) {
+    const pinned = items.find((comment) => comment.id === pinnedCommentId);
+    if (!pinned || pinned.parentId !== null) {
+      throw invalidResponse("pinned_comment_id must identify a root comment");
+    }
+  }
+  return { items, pinnedCommentId };
 }
 
 export function parsePost(value: unknown): PublicPost {

@@ -7,6 +7,31 @@ import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import styles from "./Owner.module.css";
 
+export function SelectedLocationChip({
+  disabled,
+  location,
+  onRemove,
+}: {
+  disabled: boolean;
+  location: OwnerLocation;
+  onRemove: () => void;
+}) {
+  return (
+    <div className={styles.selectedLocation}>
+      <Icon name="location" />
+      <span>{location.name}</span>
+      <button
+        aria-label={`移除位置：${location.name}`}
+        disabled={disabled}
+        onClick={onRemove}
+        type="button"
+      >
+        <Icon name="close" />
+      </button>
+    </div>
+  );
+}
+
 function locationError(error: unknown): string {
   if (
     typeof error === "object" &&

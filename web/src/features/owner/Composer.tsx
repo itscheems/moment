@@ -43,7 +43,7 @@ import {
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { LocationPicker } from "./LocationPicker";
+import { LocationPicker, SelectedLocationChip } from "./LocationPicker";
 import { MentionSuggestions } from "./MentionSuggestions";
 import {
   activeMention,
@@ -1123,25 +1123,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               </p>
             ) : null}
             {location ? (
-              <div className={styles.selectedLocation}>
-                <Icon name="location" />
-                <span>{location.name}</span>
-                <button
-                  aria-label={`移除位置：${location.name}`}
-                  disabled={pending}
-                  onClick={() => {
-                    setLocation(null);
-                    setLocationChanged(true);
-                    dirtyRef.current = true;
-                    setDirty(true);
-                    setAnnouncement("位置已移除");
-                    idempotencyKey.current = createIdempotencyKey();
-                  }}
-                  type="button"
-                >
-                  <Icon name="close" />
-                </button>
-              </div>
+              <SelectedLocationChip
+                disabled={pending}
+                location={location}
+                onRemove={() => {
+                  setLocation(null);
+                  setLocationChanged(true);
+                  dirtyRef.current = true;
+                  setDirty(true);
+                  setAnnouncement("位置已移除");
+                  idempotencyKey.current = createIdempotencyKey();
+                }}
+              />
             ) : null}
             {quotedPost ? (
               <article className={styles.quoteComposerPreview}>

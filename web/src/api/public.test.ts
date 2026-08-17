@@ -788,7 +788,10 @@ describe("public API client", () => {
           );
         }
         return json({
-          data: { items: [rootComment, replyComment] },
+          data: {
+            items: [rootComment, replyComment],
+            pinned_comment_id: rootComment.id,
+          },
           meta: { request_id: "req_comments" },
         });
       },
@@ -796,6 +799,7 @@ describe("public API client", () => {
     const api = new PublicApi(fetcher as typeof fetch);
 
     await expect(api.comments(post.id)).resolves.toMatchObject({
+      pinnedCommentId: rootComment.id,
       items: [
         { id: rootComment.id, depth: 0, parentId: null },
         { id: replyComment.id, depth: 1, parentId: rootComment.id },
@@ -829,6 +833,23 @@ describe("public API client", () => {
     );
   });
 
+  it("rejects a pinned reply instead of a top-level comment", async () => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            items: [rootComment, replyComment],
+            pinned_comment_id: replyComment.id,
+          },
+          meta: { request_id: "req_bad_pin" },
+        }),
+      ) as typeof fetch,
+    );
+    await expect(api.comments(post.id)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+  });
+
   it("accepts a location-only owner comment with the post location projection", async () => {
     const located = {
       ...rootComment,
@@ -843,7 +864,10 @@ describe("public API client", () => {
     };
     const api = new PublicApi(
       vi.fn(async () =>
-        json({ data: { items: [located] }, meta: { request_id: "req" } }),
+        json({
+          data: { items: [located], pinned_comment_id: null },
+          meta: { request_id: "req" },
+        }),
       ) as typeof fetch,
     );
 

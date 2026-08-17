@@ -70,6 +70,63 @@ func TestCommentServiceOneLevelOrderingIdentityAndCascade(t *testing.T) {
 	}
 }
 
+func TestCommentPinIsSingletonRootScopedAndCascadesWithDeletion(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "one")
+	insertEntry(t, db, entryTwo, "two")
+	base := time.UnixMilli(1_700_000_000_000)
+	service := newTestCommentService(t, db, runtimeState, func() time.Time { return base }, commentIDs(commentOne, commentTwo, commentThree, commentFour))
+	one, _ := domain.ParseID(entryOne)
+	two, _ := domain.ParseID(entryTwo)
+	rootOne := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: one, ContentMD: "first"})
+	reply := mustGuestComment(t, service, app.CreateCommentInput{EntryID: one, ParentID: &rootOne.Comment.Comment.ID, AuthorName: "Guest", ContentMD: "reply"})
+	rootTwo := mustGuestComment(t, service, app.CreateCommentInput{EntryID: one, AuthorName: "Guest", ContentMD: "second"})
+	otherPostRoot := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: two, ContentMD: "other"})
+
+	pinned, err := service.Pin(context.Background(), one, rootOne.Comment.Comment.ID)
+	if err != nil || pinned.PinnedCommentID == nil || *pinned.PinnedCommentID != rootOne.Comment.Comment.ID {
+		t.Fatalf("pin first root = %+v, %v", pinned, err)
+	}
+	pinned, err = service.Pin(context.Background(), one, rootTwo.Comment.Comment.ID)
+	if err != nil || pinned.PinnedCommentID == nil || *pinned.PinnedCommentID != rootTwo.Comment.Comment.ID {
+		t.Fatalf("replace pinned root = %+v, %v", pinned, err)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM comment_pins WHERE entry_id = ? AND comment_id = ?`, 1, entryOne, commentThree)
+	thread, err := service.List(context.Background(), one)
+	if err != nil || thread.PinnedCommentID == nil || *thread.PinnedCommentID != rootTwo.Comment.Comment.ID {
+		t.Fatalf("listed pin = %+v, %v", thread, err)
+	}
+
+	if _, err := service.Pin(context.Background(), one, reply.Comment.Comment.ID); !domain.HasCode(err, domain.CodeInvalidArgument) {
+		t.Fatalf("pin reply = %v", err)
+	}
+	if _, err := service.Pin(context.Background(), one, otherPostRoot.Comment.Comment.ID); !domain.HasCode(err, domain.CodeCommentNotFound) {
+		t.Fatalf("pin cross-post root = %v", err)
+	}
+	if _, err := service.Unpin(context.Background(), one, rootOne.Comment.Comment.ID); !domain.HasCode(err, domain.CodeCommentNotFound) {
+		t.Fatalf("unpin non-selected root = %v", err)
+	}
+	if _, err := service.Unpin(context.Background(), one, rootTwo.Comment.Comment.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Unpin(context.Background(), one, rootTwo.Comment.Comment.ID); err != nil {
+		t.Fatalf("idempotent unpin = %v", err)
+	}
+
+	if _, err := service.Pin(context.Background(), one, rootOne.Comment.Comment.ID); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := service.Delete(context.Background(), rootOne.Comment.Comment.ID, false)
+	if err != nil || !deleted.Deleted || deleted.RepliesAffected != 1 {
+		t.Fatalf("delete pinned conversation = %+v, %v", deleted, err)
+	}
+	thread, err = service.List(context.Background(), one)
+	if err != nil || thread.PinnedCommentID != nil || len(thread.Items) != 1 || thread.Items[0].Comment.ID != rootTwo.Comment.Comment.ID {
+		t.Fatalf("thread after pinned cascade = %+v, %v", thread, err)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM comment_pins`, 0)
+}
+
 func TestCommentLocationOnlyRoundTripsAndParticipatesInIdempotency(t *testing.T) {
 	db, runtimeState := openTestDatabase(t, Options{})
 	insertEntry(t, db, entryOne, "post")

@@ -26,6 +26,7 @@ type CommentStore interface {
 	CommentsEnabled(context.Context) (bool, error)
 	CommentByID(context.Context, domain.ID) (domain.Comment, bool, error)
 	ListComments(context.Context, domain.ID) ([]domain.Comment, error)
+	PinnedCommentID(context.Context, domain.ID) (*domain.ID, error)
 	CommentMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
 	ProjectMediaUsages(context.Context, []domain.EntryMediaUsage) ([]MediaUsageProjection, error)
 	InsertComment(context.Context, domain.Comment) error
@@ -34,6 +35,7 @@ type CommentStore interface {
 	CommentCascadeMediaIDs(context.Context, domain.ID) ([]domain.ID, error)
 	CountCommentReplies(context.Context, domain.ID) (int, error)
 	DeleteComment(context.Context, domain.ID) (bool, error)
+	ReplacePinnedComment(context.Context, domain.ID, *domain.ID) error
 	IdempotencyRecord(context.Context, string, string) (IdempotencyRecord, bool, error)
 	InsertIdempotencyRecord(context.Context, IdempotencyRecord) error
 }
@@ -55,7 +57,14 @@ type Comment struct {
 // creation time and ID; each root is immediately followed by similarly ordered
 // direct replies.
 type CommentThread struct {
-	Items []Comment
+	Items           []Comment
+	PinnedCommentID *domain.ID
+}
+
+// CommentPin is the singleton top-level comment selected for one post.
+type CommentPin struct {
+	EntryID         domain.ID
+	PinnedCommentID *domain.ID
 }
 
 // CreateCommentInput contains owner/guest application identity, never network
@@ -366,6 +375,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 		return CommentThread{}, err
 	}
 	var records []domain.Comment
+	var pinnedCommentID *domain.ID
 	mediaByComment := make(map[domain.ID][]MediaUsageProjection)
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		exists, storeErr := store.EntryExists(ctx, entryID)
@@ -376,6 +386,10 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 			return postNotFound(entryID)
 		}
 		records, storeErr = store.ListComments(ctx, entryID)
+		if storeErr != nil {
+			return storeErr
+		}
+		pinnedCommentID, storeErr = store.PinnedCommentID(ctx, entryID)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -390,7 +404,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 	if err != nil {
 		return CommentThread{}, normalizeCommentRepositoryError(err)
 	}
-	thread := CommentThread{Items: make([]Comment, 0, len(records))}
+	thread := CommentThread{Items: make([]Comment, 0, len(records)), PinnedCommentID: cloneCommentID(pinnedCommentID)}
 	roots := make(map[domain.ID]struct{})
 	for _, record := range records {
 		if record.EntryID != entryID {
@@ -407,7 +421,81 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 		}
 		thread.Items = append(thread.Items, comment)
 	}
+	if thread.PinnedCommentID != nil {
+		if _, found := roots[*thread.PinnedCommentID]; !found {
+			return CommentThread{}, corruptCommentThread(entryID)
+		}
+	}
 	return thread, nil
+}
+
+// Pin atomically selects one top-level comment for emphasis in its post.
+// Assigning the current root is an idempotent success.
+func (service *CommentService) Pin(ctx context.Context, entryID, commentID domain.ID) (CommentPin, error) {
+	return service.changePin(ctx, entryID, commentID, true)
+}
+
+// Unpin clears the selected root. Repeating the same clear is safe.
+func (service *CommentService) Unpin(ctx context.Context, entryID, commentID domain.ID) (CommentPin, error) {
+	return service.changePin(ctx, entryID, commentID, false)
+}
+
+func (service *CommentService) changePin(ctx context.Context, entryID, commentID domain.ID, active bool) (CommentPin, error) {
+	if err := contextError(ctx); err != nil {
+		return CommentPin{}, err
+	}
+	if err := validateCommentID(entryID); err != nil {
+		return CommentPin{}, err
+	}
+	if err := validateCommentID(commentID); err != nil {
+		return CommentPin{}, err
+	}
+	result := CommentPin{EntryID: entryID}
+	err := service.transactions.Write(ctx, func(store CommentStore) error {
+		exists, err := store.EntryExists(ctx, entryID)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return postNotFound(entryID)
+		}
+		current, err := store.PinnedCommentID(ctx, entryID)
+		if err != nil {
+			return err
+		}
+		if !active {
+			if current != nil && *current != commentID {
+				return commentNotFound(commentID)
+			}
+			if current != nil {
+				if err := store.ReplacePinnedComment(ctx, entryID, nil); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		record, found, err := store.CommentByID(ctx, commentID)
+		if err != nil {
+			return err
+		}
+		if !found || record.EntryID != entryID {
+			return commentNotFound(commentID)
+		}
+		if record.ParentID != nil {
+			return domain.NewError(domain.CodeInvalidArgument, "only a top-level comment can be pinned", map[string]any{"field": "comment_id"})
+		}
+		if current == nil || *current != commentID {
+			if err := store.ReplacePinnedComment(ctx, entryID, &commentID); err != nil {
+				return err
+			}
+		}
+		result.PinnedCommentID = &commentID
+		return nil
+	})
+	if err != nil {
+		return CommentPin{}, normalizeCommentRepositoryError(err)
+	}
+	return result, nil
 }
 
 // Delete previews or executes owner moderation. SQLite owns reply cascade.

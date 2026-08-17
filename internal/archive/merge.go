@@ -571,6 +571,9 @@ func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, 
 	if !reflect.DeepEqual(local.Location, incoming.Location) {
 		fields = append(fields, "location")
 	}
+	if local.Pinned != incoming.Pinned {
+		fields = append(fields, "pinned")
+	}
 	return fields
 }
 

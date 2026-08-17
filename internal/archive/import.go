@@ -1255,7 +1255,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		}
 		return importer.InsertComment(ctx, sqlitestore.ArchiveComment{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorKind: value.AuthorKind,
-			AuthorName: value.AuthorName, ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(), Media: usages, Location: location,
+			AuthorName: value.AuthorName, ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(), Media: usages, Location: location, Pinned: value.Pinned,
 		})
 	})
 	if err != nil {

@@ -43,7 +43,39 @@ func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, medi
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
 	owner.POST("/posts/:id/comments", createOwnerComment(service))
+	owner.PUT("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, true))
+	owner.DELETE("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, false))
 	owner.DELETE("/comments/:id", deleteOwnerComment(service))
+}
+
+func changeOwnerCommentPin(service *app.CommentService, active bool) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		if ctx.Request.URL.RawQuery != "" {
+			writeCommentError(ctx, invalidCommentArgument("comment pin does not accept query parameters", "query"))
+			return
+		}
+		postID, err := domain.ParseID(ctx.Param("id"))
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		commentID, err := domain.ParseID(ctx.Param("comment_id"))
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		var result app.CommentPin
+		if active {
+			result, err = service.Pin(ctx.Request.Context(), postID, commentID)
+		} else {
+			result, err = service.Unpin(ctx.Request.Context(), postID, commentID)
+		}
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, commentdto.FromPin(result), nil)
+	}
 }
 
 func listComments(service *app.CommentService) gin.HandlerFunc {

@@ -66,7 +66,9 @@ expected, malformed UTF-8, multiple JSON values, and non-LF record endings.
 Manifest counts must equal the three JSONL record counts. Entry and media
 records use their specified strict order; comments use entry, root group,
 root-first, then reply creation/ID order. Entry usages, comments, replies, and
-the site avatar must resolve within the exported record graph, and
+the site avatar must resolve within the exported record graph. At most one
+top-level comment per entry may carry the optional `pinned` selection, which is
+restored with the thread during import. The
 `data/media.jsonl` `archive_path` values match `media/` members one-to-one.
 Validation streams member bodies, bounds individual record memory, and uses
 only ID maps proportional to the record graph.

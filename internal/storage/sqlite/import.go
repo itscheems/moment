@@ -253,6 +253,14 @@ VALUES (?, ?, ?, ?)`, value.ID, usage.MediaID, usage.Position, usage.AltText); e
 			return fmt.Errorf("insert portable comment media usage: %w", err)
 		}
 	}
+	if value.Pinned {
+		if value.ParentID != nil {
+			return errors.New("only a top-level portable comment can be pinned")
+		}
+		if _, err := importer.tx.ExecContext(ctx, `INSERT INTO comment_pins (entry_id, comment_id) VALUES (?, ?)`, value.EntryID, value.ID); err != nil {
+			return fmt.Errorf("insert portable pinned comment %s: %w", value.ID, err)
+		}
+	}
 	importer.comments++
 	return nil
 }

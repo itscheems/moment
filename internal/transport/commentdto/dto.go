@@ -32,7 +32,14 @@ type MediaUsage = postdto.MediaProjection
 
 // Thread is a non-null flattened comment array.
 type Thread struct {
-	Items []Comment `json:"items"`
+	Items           []Comment `json:"items"`
+	PinnedCommentID *string   `json:"pinned_comment_id"`
+}
+
+// Pin is the canonical owner mutation result for one post comment pin.
+type Pin struct {
+	PostID          string  `json:"post_id"`
+	PinnedCommentID *string `json:"pinned_comment_id"`
 }
 
 // FromComment maps one application result to the public DTO.
@@ -65,7 +72,22 @@ func FromThread(thread app.CommentThread) Thread {
 	for _, comment := range thread.Items {
 		items = append(items, FromComment(comment))
 	}
-	return Thread{Items: items}
+	var pinnedCommentID *string
+	if thread.PinnedCommentID != nil {
+		value := thread.PinnedCommentID.String()
+		pinnedCommentID = &value
+	}
+	return Thread{Items: items, PinnedCommentID: pinnedCommentID}
+}
+
+// FromPin maps one canonical owner pin result.
+func FromPin(pin app.CommentPin) Pin {
+	var pinnedCommentID *string
+	if pin.PinnedCommentID != nil {
+		value := pin.PinnedCommentID.String()
+		pinnedCommentID = &value
+	}
+	return Pin{PostID: pin.EntryID.String(), PinnedCommentID: pinnedCommentID}
 }
 
 // ValidateComment rejects a superficially successful non-canonical API DTO.
@@ -167,6 +189,30 @@ func ValidateThread(thread Thread) error {
 		}
 		replyCopy := comment
 		lastReply = &replyCopy
+	}
+	if thread.PinnedCommentID != nil {
+		_, found := seen[*thread.PinnedCommentID]
+		if !found {
+			return errors.New("pinned comment is missing from the thread")
+		}
+		for _, comment := range thread.Items {
+			if comment.ID == *thread.PinnedCommentID && comment.ParentID != nil {
+				return errors.New("pinned comment must be a root")
+			}
+		}
+	}
+	return nil
+}
+
+// ValidatePin rejects a non-canonical owner mutation result.
+func ValidatePin(pin Pin) error {
+	if _, err := domain.ParseID(pin.PostID); err != nil {
+		return err
+	}
+	if pin.PinnedCommentID != nil {
+		if _, err := domain.ParseID(*pin.PinnedCommentID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

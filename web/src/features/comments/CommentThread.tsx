@@ -1,4 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
+import { Menu } from "@base-ui/react/menu";
 import {
   Fragment,
   type FormEvent,
@@ -28,6 +29,7 @@ import {
   SiteIdentityPreview,
 } from "../../components/TimelineInteractions";
 import { Icon } from "../../components/icons";
+import { notify } from "../../components/Feedback";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatMomentDate } from "../posts/dates";
@@ -48,10 +50,11 @@ import {
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { useOwner } from "../owner/OwnerProvider";
-import { LocationPicker } from "../owner/LocationPicker";
+import { LocationPicker, SelectedLocationChip } from "../owner/LocationPicker";
 import { MentionSuggestions } from "../owner/MentionSuggestions";
 import { activeMention, type ActiveMention } from "../owner/mentions";
 import styles from "./Comments.module.css";
+import ownerStyles from "../owner/Owner.module.css";
 
 const MAX_AUTHOR_NAME = 40;
 const MAX_COMMENT = 2_000;
@@ -185,6 +188,26 @@ export function reconcileDeletedComment(
   let end = rootIndex + 1;
   while (end < current.length && current[end].parentId === deleted.id) end += 1;
   return [...current.slice(0, rootIndex), ...current.slice(end)];
+}
+
+export function orderPinnedConversation(
+  current: PublicComment[],
+  pinnedCommentId: string | null,
+): PublicComment[] {
+  if (!pinnedCommentId) return current;
+  const start = current.findIndex(
+    (comment) => comment.id === pinnedCommentId && comment.parentId === null,
+  );
+  if (start <= 0) return current;
+  let end = start + 1;
+  while (end < current.length && current[end].parentId === pinnedCommentId) {
+    end += 1;
+  }
+  return [
+    ...current.slice(start, end),
+    ...current.slice(0, start),
+    ...current.slice(end),
+  ];
 }
 
 function messageFor(error: unknown, replying: boolean): string {
@@ -840,6 +863,17 @@ function CommentForm({
               {contentCount}/{MAX_COMMENT}
             </span>
           </div>
+          {commentLocation ? (
+            <SelectedLocationChip
+              disabled={pending}
+              location={commentLocation}
+              onRemove={() => {
+                setCommentLocation(null);
+                setActivated(true);
+                setError(null);
+              }}
+            />
+          ) : null}
           <MediaComposer
             className={styles.commentMediaComposer}
             disabled={pending || !commentsEnabled}
@@ -889,24 +923,22 @@ function CommentForm({
             pickerTooltip={inlineTopLevel ? "媒体" : undefined}
             subject="回复"
             toolbarAction={
-              inlineTopLevel ? (
-                <LocationPicker
-                  api={owner.api}
-                  disabled={
-                    pending ||
-                    !commentsEnabled ||
-                    mode !== "owner" ||
-                    !owner.session
-                  }
-                  onChange={(nextLocation) => {
-                    setCommentLocation(nextLocation);
-                    setActivated(true);
-                    setError(null);
-                  }}
-                  pickerTooltip="位置"
-                  value={commentLocation}
-                />
-              ) : undefined
+              <LocationPicker
+                api={owner.api}
+                disabled={
+                  pending ||
+                  !commentsEnabled ||
+                  mode !== "owner" ||
+                  !owner.session
+                }
+                onChange={(nextLocation) => {
+                  setCommentLocation(nextLocation);
+                  setActivated(true);
+                  setError(null);
+                }}
+                pickerTooltip="位置"
+                value={commentLocation}
+              />
             }
             onAdd={(files) => {
               const next = [...mediaItemsRef.current];
@@ -1001,22 +1033,26 @@ function DeleteCommentDialog({
   comment,
   replyCount,
   focusTarget,
+  open,
+  onOpenChange,
+  triggerRef,
   onDeleted,
 }: {
   postId: string;
   comment: PublicComment;
   replyCount: number;
   focusTarget: RefObject<HTMLElement | null>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  triggerRef: RefObject<HTMLButtonElement | null>;
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
 }) {
   const owner = useOwner();
   const { api, session, expireIfInvalidSession } = owner;
-  const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authExpired, setAuthExpired] = useState(false);
   const pendingRef = useRef(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
   const deletedRef = useRef(false);
   const root = comment.parentId === null;
   const displayReauth = authExpired || (owner.state === "expired" && !session);
@@ -1045,7 +1081,7 @@ function DeleteCommentDialog({
       );
       deletedRef.current = true;
       onDeleted(result.comment, result.repliesAffected);
-      setOpen(false);
+      onOpenChange(false);
       window.requestAnimationFrame(() => focusTarget.current?.focus());
     } catch (nextError) {
       if (expireIfInvalidSession(nextError)) {
@@ -1071,19 +1107,10 @@ function DeleteCommentDialog({
         if (pending) return;
         deletedRef.current = false;
         setError(null);
-        setOpen(nextOpen);
+        onOpenChange(nextOpen);
       }}
       open={open}
     >
-      <ActionTooltip label="删除">
-        <Dialog.Trigger
-          aria-label="删除"
-          className={styles.commentAction}
-          ref={triggerRef}
-        >
-          <Icon name="delete" />
-        </Dialog.Trigger>
-      </ActionTooltip>
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
         <Dialog.Viewport className={styles.dialogViewport}>
@@ -1146,24 +1173,225 @@ function DeleteCommentDialog({
   );
 }
 
+function CommentOwnerMenu({
+  comment,
+  focusTarget,
+  pinned,
+  replyCount,
+  onDeleted,
+  onPinChange,
+}: {
+  comment: PublicComment;
+  focusTarget: RefObject<HTMLElement | null>;
+  pinned: boolean;
+  replyCount: number;
+  onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
+  onPinChange: (pinnedCommentId: string | null) => void;
+}) {
+  const owner = useOwner();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [authExpired, setAuthExpired] = useState(false);
+  const pendingRef = useRef(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const root = comment.parentId === null;
+  const displayReauth =
+    authExpired || (owner.state === "expired" && !owner.session);
+
+  useDocumentScrollLock(pinOpen);
+
+  useEffect(() => {
+    if (!authExpired || !owner.session) return;
+    setAuthExpired(false);
+    setError(null);
+  }, [authExpired, owner.session]);
+
+  const changePin = async () => {
+    if (!owner.session || pendingRef.current) {
+      setAuthExpired(true);
+      return;
+    }
+    pendingRef.current = true;
+    setPending(true);
+    setError(null);
+    try {
+      const result = pinned
+        ? await owner.api.unpinComment(
+            owner.session.csrfToken,
+            comment.postId,
+            comment.id,
+          )
+        : await owner.api.pinComment(
+            owner.session.csrfToken,
+            comment.postId,
+            comment.id,
+          );
+      onPinChange(result.pinnedCommentId);
+      setPinOpen(false);
+      notify(pinned ? "已取消置顶回复" : "已置顶回复");
+    } catch (nextError) {
+      if (owner.expireIfInvalidSession(nextError)) {
+        setAuthExpired(true);
+        setError("所有者会话已过期。刷新身份后可在这里重试。");
+      } else {
+        setError("置顶状态没有改变，可以安全重试。");
+      }
+    } finally {
+      pendingRef.current = false;
+      setPending(false);
+    }
+  };
+
+  return (
+    <div className={styles.commentOwnerMenu}>
+      <Menu.Root onOpenChange={setMenuOpen} open={menuOpen}>
+        <Menu.Trigger
+          aria-label="回复操作"
+          className={ownerStyles.ownerMenuTrigger}
+          ref={triggerRef}
+        >
+          <Icon name="more" />
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Positioner
+            align="end"
+            className={ownerStyles.ownerMenuPositioner}
+            side="bottom"
+            sideOffset={4}
+          >
+            <Menu.Popup
+              aria-label="回复操作"
+              className={ownerStyles.ownerMenuPopup}
+            >
+              {root ? (
+                <Menu.Item
+                  className={ownerStyles.ownerMenuItem}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setError(null);
+                    setPinOpen(true);
+                  }}
+                >
+                  <Icon name="pin" />
+                  <span>{pinned ? "取消置顶" : "置顶回复"}</span>
+                </Menu.Item>
+              ) : null}
+              <Menu.Item
+                className={`${ownerStyles.ownerMenuItem} ${ownerStyles.ownerMenuDanger}`}
+                onClick={() => {
+                  setMenuOpen(false);
+                  setDeleteOpen(true);
+                }}
+              >
+                <Icon name="delete" />
+                <span>删除</span>
+              </Menu.Item>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
+
+      <DeleteCommentDialog
+        comment={comment}
+        focusTarget={focusTarget}
+        onDeleted={onDeleted}
+        onOpenChange={setDeleteOpen}
+        open={deleteOpen}
+        postId={comment.postId}
+        replyCount={replyCount}
+        triggerRef={triggerRef}
+      />
+
+      <Dialog.Root
+        onOpenChange={(open) => {
+          if (pending) return;
+          setPinOpen(open);
+          if (!open) {
+            setError(null);
+            window.requestAnimationFrame(() => triggerRef.current?.focus());
+          }
+        }}
+        open={pinOpen}
+      >
+        <Dialog.Portal>
+          <Dialog.Backdrop className={styles.dialogBackdrop} />
+          <Dialog.Viewport className={styles.dialogViewport}>
+            <Dialog.Popup
+              className={styles.dialogPopup}
+              finalFocus={() => triggerRef.current}
+            >
+              <Dialog.Title className={styles.dialogTitle}>
+                {pinned ? "取消置顶这条回复？" : "置顶这条回复？"}
+              </Dialog.Title>
+              <Dialog.Description className={styles.dialogDescription}>
+                {pinned
+                  ? "它会回到这段对话中的原始时间位置。"
+                  : "它和下面的直接回复会显示在评论区最前；已有置顶会被替换。"}
+              </Dialog.Description>
+              {error ? (
+                <p className={styles.dialogError} role="alert">
+                  {error}
+                </p>
+              ) : null}
+              {displayReauth ? (
+                <Reauthenticate
+                  inputId={`pin-${comment.id}-owner-token`}
+                  onReady={() => {
+                    setAuthExpired(false);
+                    setError(null);
+                  }}
+                />
+              ) : null}
+              <div className={styles.dialogActions}>
+                <Dialog.Close
+                  className={styles.secondaryAction}
+                  disabled={pending}
+                >
+                  取消
+                </Dialog.Close>
+                <button
+                  aria-busy={pending || undefined}
+                  className={styles.primaryAction}
+                  disabled={pending || !owner.session}
+                  onClick={() => void changePin()}
+                  type="button"
+                >
+                  {pending ? "正在处理…" : pinned ? "取消置顶" : "置顶"}
+                </button>
+              </div>
+            </Dialog.Popup>
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </div>
+  );
+}
+
 function CommentItem({
   comment,
   site,
   owner,
+  pinned,
   replyRoot,
   replyCount,
   focusTarget,
   onReply,
   onDeleted,
+  onPinChange,
 }: {
   comment: PublicComment;
   site: SiteIdentity;
   owner: boolean;
+  pinned: boolean;
   replyRoot: PublicComment | null;
   replyCount: number;
   focusTarget: RefObject<HTMLElement | null>;
   onReply: (root: PublicComment, target: PublicComment) => void;
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
+  onPinChange: (pinnedCommentId: string | null) => void;
 }) {
   const created = formatMomentDate(comment.createdAt, site.timezone);
   const root = comment.parentId === null;
@@ -1179,6 +1407,16 @@ function CommentItem({
       tabIndex={-1}
     >
       <article aria-label={`${authorName}的回复`}>
+        {owner ? (
+          <CommentOwnerMenu
+            comment={comment}
+            focusTarget={focusTarget}
+            onDeleted={onDeleted}
+            onPinChange={onPinChange}
+            pinned={pinned}
+            replyCount={replyCount}
+          />
+        ) : null}
         {comment.authorKind === "owner" ? (
           <SiteIdentityPreview site={site}>
             <InternalLink
@@ -1194,6 +1432,12 @@ function CommentItem({
             {Array.from(authorName)[0]?.toLocaleUpperCase() ?? "M"}
           </span>
         )}
+        {pinned ? (
+          <p className={styles.pinnedCommentMark}>
+            <Icon name="pin" />
+            <span>已置顶</span>
+          </p>
+        ) : null}
         <header className={styles.commentByline}>
           {comment.authorKind === "owner" ? (
             <SiteIdentityPreview site={site}>
@@ -1239,15 +1483,6 @@ function CommentItem({
           ) : (
             <span />
           )}
-          {owner ? (
-            <DeleteCommentDialog
-              comment={comment}
-              focusTarget={focusTarget}
-              onDeleted={onDeleted}
-              postId={comment.postId}
-              replyCount={replyCount}
-            />
-          ) : null}
         </footer>
       </article>
     </li>
@@ -1398,6 +1633,7 @@ export function CommentThread({
 }) {
   const owner = useOwner();
   const [items, setItems] = useState<PublicComment[] | null>(null);
+  const [pinnedCommentId, setPinnedCommentId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
   const [guestName, setGuestName] = useState("");
@@ -1422,7 +1658,10 @@ export function CommentThread({
     void api
       .comments(postId, controller.signal)
       .then((thread) => {
-        if (!controller.signal.aborted) setItems(thread.items);
+        if (!controller.signal.aborted) {
+          setItems(thread.items);
+          setPinnedCommentId(thread.pinnedCommentId);
+        }
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setLoadError(error);
@@ -1462,6 +1701,7 @@ export function CommentThread({
     );
     if (reply?.rootId === comment.id || reply?.targetId === comment.id)
       setReply(null);
+    if (pinnedCommentId === comment.id) setPinnedCommentId(null);
     setAnnouncement(
       repliesAffected > 0
         ? `回复和 ${repliesAffected} 条后续回复已删除`
@@ -1487,6 +1727,11 @@ export function CommentThread({
           .map((comment) => [comment.id, comment]),
       ),
     [items],
+  );
+
+  const displayedItems = useMemo(
+    () => orderPinnedConversation(items ?? [], pinnedCommentId),
+    [items, pinnedCommentId],
   );
 
   return (
@@ -1575,12 +1820,18 @@ export function CommentThread({
 
           {items.length > 0 ? (
             <ol className={styles.commentList}>
-              {items.map((comment) => (
+              {displayedItems.map((comment) => (
                 <Fragment key={comment.id}>
                   <CommentItem
                     comment={comment}
                     focusTarget={headingRef}
                     onDeleted={deleted}
+                    onPinChange={(nextPinnedCommentId) => {
+                      setPinnedCommentId(nextPinnedCommentId);
+                      setAnnouncement(
+                        nextPinnedCommentId ? "回复已置顶" : "已取消置顶回复",
+                      );
+                    }}
                     onReply={(root, target) => {
                       const targetAuthor =
                         target.authorKind === "owner"
@@ -1601,6 +1852,7 @@ export function CommentThread({
                       );
                     }}
                     owner={owner.state === "owner" || owner.state === "expired"}
+                    pinned={comment.id === pinnedCommentId}
                     replyRoot={
                       comment.parentId === null
                         ? comment

@@ -191,6 +191,22 @@ ORDER BY
 	return records, nil
 }
 
+func (store commentStore) PinnedCommentID(ctx context.Context, entryID domain.ID) (*domain.ID, error) {
+	var raw string
+	err := store.queries.QueryRowContext(ctx, `SELECT comment_id FROM comment_pins WHERE entry_id = ?`, entryID.String()).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query pinned comment: %w", err)
+	}
+	id, err := domain.ParseID(raw)
+	if err != nil {
+		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored pinned comment ID is invalid", map[string]any{"entry_id": entryID.String()})
+	}
+	return &id, nil
+}
+
 func (store commentStore) CommentMediaUsages(ctx context.Context, commentID domain.ID) ([]app.MediaUsageProjection, error) {
 	rows, err := store.queries.QueryContext(ctx, `
 SELECT usage.media_id, usage.position, usage.alt_text, media.mime_type, media.width, media.height
@@ -365,6 +381,22 @@ func (store commentStore) DeleteComment(ctx context.Context, id domain.ID) (bool
 		return false, fmt.Errorf("delete comment: %w", err)
 	}
 	return exactlyOneChanged(result, "delete comment")
+}
+
+func (store commentStore) ReplacePinnedComment(ctx context.Context, entryID domain.ID, commentID *domain.ID) error {
+	if _, err := store.queries.ExecContext(ctx, `DELETE FROM comment_pins WHERE entry_id = ?`, entryID.String()); err != nil {
+		return fmt.Errorf("clear pinned comment: %w", err)
+	}
+	if commentID == nil {
+		return nil
+	}
+	if _, err := store.queries.ExecContext(ctx, `INSERT INTO comment_pins (entry_id, comment_id) VALUES (?, ?)`, entryID.String(), commentID.String()); err != nil {
+		if strings.Contains(err.Error(), "pinned comment must be a root in the same entry") {
+			return domain.NewError(domain.CodeInvalidArgument, "only a top-level comment on the same post can be pinned", map[string]any{"field": "comment_id"})
+		}
+		return fmt.Errorf("insert pinned comment: %w", err)
+	}
+	return nil
 }
 
 func (store commentStore) IdempotencyRecord(ctx context.Context, scope, key string) (app.IdempotencyRecord, bool, error) {
