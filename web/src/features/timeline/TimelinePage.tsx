@@ -322,6 +322,7 @@ export function TimelinePage({
         </p>
         {posts.map((post, index) => (
           <PostPresentation
+            compactTallVideo
             eagerVideo={index === 0}
             fresh={post.id === freshId}
             key={timelineItemKey(post)}

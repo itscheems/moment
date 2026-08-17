@@ -178,13 +178,13 @@ describe("visual foundation contract", () => {
 
   it("crops only extra-tall single videos on mobile without letterboxing", () => {
     expect(mediaCss).toMatch(
-      /@media \(max-width: 719px\)[\s\S]*?\._imageGrid_[\w-]+\[data-media-count="1"\][\s\S]*?\._videoTile_[\w-]+\[data-media-shape="tall"\]\s*\{[^}]*aspect-ratio: 2 \/ 3;[^}]*max-block-size: none;/,
+      /@media \(max-width: 719px\)[\s\S]*?\._imageGrid_[\w-]+\[data-media-count="1"\]\[data-compact-tall-video\][\s\S]*?\._videoTile_[\w-]+\[data-media-shape="tall"\]\s*\{[^}]*aspect-ratio: 2 \/ 3;[^}]*max-block-size: none;/,
     );
     expect(mediaCss).toMatch(
       /\._imageGrid_[\w-]+\[data-media-count="1"\]\[data-media-shape="tall"\]\s*\{[^}]*inline-size: min\(100%, var\(--single-media-max-width\)\);/,
     );
     expect(mediaCss).toMatch(
-      /\._videoTile_[\w-]+\[data-media-shape="tall"\][\s\S]*?video,[\s\S]*?\._videoPoster_[\w-]+\s*\{[^}]*object-fit: cover;/,
+      /\[data-compact-tall-video\][\s\S]*?\._videoTile_[\w-]+\[data-media-shape="tall"\][\s\S]*?video,[\s\S]*?\._videoPoster_[\w-]+\s*\{[^}]*object-fit: cover;/,
     );
   });
 

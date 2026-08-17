@@ -1135,7 +1135,8 @@
     block-size: 3rem;
   }
 
-  .imageGrid[data-media-count="1"] .videoTile[data-media-shape="tall"] {
+  .imageGrid[data-media-count="1"][data-compact-tall-video]
+    .videoTile[data-media-shape="tall"] {
     aspect-ratio: 2 / 3;
     max-block-size: none;
   }
@@ -1144,8 +1145,10 @@
     inline-size: min(100%, var(--single-media-max-width));
   }
 
-  .imageGrid[data-media-count="1"] .videoTile[data-media-shape="tall"] video,
-  .imageGrid[data-media-count="1"]
+  .imageGrid[data-media-count="1"][data-compact-tall-video]
+    .videoTile[data-media-shape="tall"]
+    video,
+  .imageGrid[data-media-count="1"][data-compact-tall-video]
     .videoTile[data-media-shape="tall"]
     .videoPoster {
     object-fit: cover;

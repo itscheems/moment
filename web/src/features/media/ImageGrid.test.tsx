@@ -249,10 +249,13 @@ describe("public image grid", () => {
   });
 
   it("marks only videos taller than the mobile 2:3 presentation window", () => {
-    const { rerender } = render(<ImageGrid eagerVideo media={[tallVideo()]} />);
+    const { rerender } = render(
+      <ImageGrid compactTallVideo eagerVideo media={[tallVideo()]} />,
+    );
     const group = screen.getByRole("group", { name: "1 项媒体" });
 
     expect(group).toHaveAttribute("data-media-shape", "tall");
+    expect(group).toHaveAttribute("data-compact-tall-video", "true");
     expect(group).toHaveStyle({
       "--single-media-max-width": "19.125rem",
     });
@@ -260,8 +263,15 @@ describe("public image grid", () => {
       screen.getByLabelText("一段测试视频").closest("[data-media-shape]"),
     ).toHaveAttribute("data-media-shape", "tall");
 
-    rerender(<ImageGrid eagerVideo media={[tallVideo(1_440)]} />);
+    rerender(<ImageGrid eagerVideo media={[tallVideo()]} />);
+    expect(group).toHaveAttribute("data-media-shape", "tall");
+    expect(group).not.toHaveAttribute("data-compact-tall-video");
+
+    rerender(
+      <ImageGrid compactTallVideo eagerVideo media={[tallVideo(1_440)]} />,
+    );
     expect(group).not.toHaveAttribute("data-media-shape");
+    expect(group).not.toHaveAttribute("data-compact-tall-video");
     expect(
       screen.getByLabelText("一段测试视频").closest("[data-media-shape]"),
     ).toBeNull();

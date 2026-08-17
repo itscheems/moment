@@ -95,9 +95,11 @@ function MediaAsset({
 export function ImageGrid({
   media,
   eagerVideo = false,
+  compactTallVideo = false,
 }: {
   media: PublicMediaUsage[];
   eagerVideo?: boolean;
+  compactTallVideo?: boolean;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [failed, setFailed] = useState(() => new Set<string>());
@@ -148,6 +150,9 @@ export function ImageGrid({
           containsVideo ? `${media.length} 项媒体` : `${media.length} 张图片`
         }
         className={styles.imageGrid}
+        data-compact-tall-video={
+          compactTallVideo && singleMediaShape === "tall" ? true : undefined
+        }
         data-media-count={media.length}
         data-media-shape={singleMediaShape}
         role="group"

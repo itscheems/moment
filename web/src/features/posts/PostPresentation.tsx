@@ -112,6 +112,7 @@ export function PostPresentation({
   contentHtml,
   onReply,
   eagerVideo = false,
+  compactTallVideo = false,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -126,6 +127,7 @@ export function PostPresentation({
   contentHtml?: string;
   onReply?: MouseEventHandler<HTMLButtonElement>;
   eagerVideo?: boolean;
+  compactTallVideo?: boolean;
 }) {
   const { navigate } = useNavigation();
   const title = siteDisplayName(site);
@@ -372,7 +374,11 @@ export function PostPresentation({
           mentionUsername={site.username}
         />
         {post.location ? <PostLocation location={post.location} /> : null}
-        <ImageGrid eagerVideo={eagerVideo} media={post.media} />
+        <ImageGrid
+          compactTallVideo={compactTallVideo}
+          eagerVideo={eagerVideo}
+          media={post.media}
+        />
         {quoteCard}
         {collapsed ? (
           <InternalLink
