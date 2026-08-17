@@ -633,9 +633,7 @@
   font-size: 0.9375rem;
   line-height: 1.25rem;
   letter-spacing: normal;
-  transition:
-    background-color 0.2s,
-    box-shadow 0.2s;
+  transition: box-shadow 0.2s;
 }
 
 .inlineTopLevelForm .primaryAction:hover:not(:disabled) {
