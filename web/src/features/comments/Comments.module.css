@@ -628,8 +628,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--surface);
-  background: var(--text-primary);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
   font-size: 0.9375rem;
   line-height: 1.25rem;
   letter-spacing: normal;
@@ -639,14 +639,17 @@
 }
 
 .inlineTopLevelForm .primaryAction:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text-primary) 85%, var(--surface));
+  background: var(--button-primary-hover);
 }
 
 .inlineTopLevelForm .primaryAction:disabled {
+  color: var(--surface);
+  background: var(--text-primary);
   opacity: 0.25;
 }
 
 .inlineTopLevelForm .primaryAction:active:not(:disabled) {
+  background: var(--button-primary-pressed);
   transform: none;
 }
 
