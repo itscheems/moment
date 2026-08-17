@@ -185,7 +185,7 @@ describe("App shell and public routes", () => {
       await screen.findByRole("heading", { name: "还没有 Moment" }),
     ).toBeInTheDocument();
     expect(screen.getAllByText("乔乔的 Moment").length).toBeGreaterThan(0);
-    expect(document.title).toBe("乔乔的 Moment");
+    await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
   });
 
   it("starts the timeline while site identity is still pending and does not refetch after identity arrives", async () => {
@@ -233,6 +233,54 @@ describe("App shell and public routes", () => {
     );
     expect(screen.getByText("身份之前已经可读")).toBeInTheDocument();
     expect(timelineRequests).toBe(1);
+  });
+
+  it("animates the active timeline tab to the top without navigating", async () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn((callback: FrameRequestCallback) => {
+        const id = ++nextFrame;
+        frames.set(id, callback);
+        return id;
+      }),
+    );
+    vi.stubGlobal(
+      "cancelAnimationFrame",
+      vi.fn((id: number) => frames.delete(id)),
+    );
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(800);
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "还没有 Moment" });
+    frames.clear();
+    nextFrame = 0;
+    vi.mocked(window.scrollTo).mockClear();
+    const pushState = vi.spyOn(window.history, "pushState");
+
+    fireEvent.click(screen.getByRole("link", { name: "时间流" }));
+    expect(pushState).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/");
+
+    act(() => frames.get(1)?.(1_000));
+    expect(window.scrollTo).toHaveBeenLastCalledWith({
+      top: 800,
+      behavior: "auto",
+    });
+
+    act(() => frames.get(2)?.(1_130));
+    expect(window.scrollTo).toHaveBeenLastCalledWith({
+      top: 400,
+      behavior: "auto",
+    });
+
+    act(() => frames.get(3)?.(1_260));
+    expect(window.scrollTo).toHaveBeenLastCalledWith({
+      top: 0,
+      behavior: "auto",
+    });
+    expect(frames.has(4)).toBe(false);
   });
 
   it("keeps independently loaded content readable while identity retry repairs the shell", async () => {
@@ -345,7 +393,7 @@ describe("App shell and public routes", () => {
       Array.from(mobileNavigation?.querySelectorAll("a") ?? [], (link) =>
         link.getAttribute("aria-label"),
       ),
-    ).toEqual(["时间流", "搜索", "归档", "发布", "所有者"]);
+    ).toEqual(["首页", "搜索", "归档", "发布", "所有者"]);
     expect(
       mobileNavigation?.querySelector('a[aria-label="发布"]'),
     ).toHaveAttribute("href", "/owner/compose");
@@ -478,7 +526,7 @@ describe("App shell and public routes", () => {
     window.history.replaceState({}, "", "/archive");
     render(<App />);
     const archiveLink = screen.getAllByRole("link", { name: "归档" })[0]!;
-    const homeLink = screen.getAllByRole("link", { name: "时间流" })[0]!;
+    const homeLink = screen.getAllByRole("link", { name: "首页" })[0]!;
     expect(archiveLink).toHaveAttribute("aria-current", "page");
     expect(
       archiveLink.querySelector('svg[data-icon="archive"] use'),

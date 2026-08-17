@@ -111,6 +111,7 @@ export function PostPresentation({
   pinned = false,
   contentHtml,
   onReply,
+  eagerVideo = false,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -124,6 +125,7 @@ export function PostPresentation({
   pinned?: boolean;
   contentHtml?: string;
   onReply?: MouseEventHandler<HTMLButtonElement>;
+  eagerVideo?: boolean;
 }) {
   const { navigate } = useNavigation();
   const title = siteDisplayName(site);
@@ -370,7 +372,7 @@ export function PostPresentation({
           mentionUsername={site.username}
         />
         {post.location ? <PostLocation location={post.location} /> : null}
-        <ImageGrid media={post.media} />
+        <ImageGrid eagerVideo={eagerVideo} media={post.media} />
         {quoteCard}
         {collapsed ? (
           <InternalLink

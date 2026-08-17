@@ -11,6 +11,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PublicApi, type SiteIdentity } from "../../api/public";
+import { mediaPosterUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { OwnerProvider } from "../owner/OwnerProvider";
@@ -222,6 +223,65 @@ describe("public timeline", () => {
       ).toEqual([`${id}:original`]),
     );
     expect(active).toBe(false);
+  });
+
+  it("attaches the lead video poster immediately and keeps later videos lazy", async () => {
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        readonly root = null;
+        readonly rootMargin = "600px 0px";
+        readonly thresholds = [0.01];
+        observe = vi.fn();
+        unobserve = vi.fn();
+        disconnect = vi.fn();
+        takeRecords = () => [];
+      },
+    );
+    const firstMediaId = "01K2ABCDEF0123456789ABCDE1";
+    const secondMediaId = "01K2ABCDEF0123456789ABCDE2";
+    const first = {
+      ...post("01K2ABCDEF0123456789ABCDE0", "首屏视频"),
+      media: [
+        {
+          media_id: firstMediaId,
+          position: 0,
+          alt_text: "首屏视频画面",
+          mime_type: "video/mp4",
+          width: 1080,
+          height: 1920,
+        },
+      ],
+    };
+    const second = {
+      ...post("01K2ABCDEF0123456789ABCDE3", "下方视频"),
+      media: [
+        {
+          media_id: secondMediaId,
+          position: 0,
+          alt_text: "下方视频画面",
+          mime_type: "video/mp4",
+          width: 1080,
+          height: 1920,
+        },
+      ],
+    };
+
+    renderTimeline(
+      new PublicApi(
+        vi.fn(async () => page([first, second], null)) as typeof fetch,
+      ),
+    );
+
+    const leadVideo = await screen.findByLabelText("首屏视频画面");
+    const laterVideo = screen.getByLabelText("下方视频画面");
+    expect(leadVideo).toHaveAttribute("src", mediaPreviewUrl(firstMediaId));
+    expect(leadVideo).toHaveAttribute("poster", mediaPosterUrl(firstMediaId));
+    expect(
+      document.querySelector(`img[src="${mediaPosterUrl(firstMediaId)}"]`),
+    ).not.toBeNull();
+    expect(laterVideo).not.toHaveAttribute("src");
+    expect(laterVideo).not.toHaveAttribute("poster");
   });
 
   it("continues the opaque cursor in server order and focuses new content", async () => {

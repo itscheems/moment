@@ -320,8 +320,9 @@ export function TimelinePage({
         <p aria-live="polite" className={styles.srOnly}>
           已加载 {posts.length} 条 Moment
         </p>
-        {posts.map((post) => (
+        {posts.map((post, index) => (
           <PostPresentation
+            eagerVideo={index === 0}
             fresh={post.id === freshId}
             key={timelineItemKey(post)}
             owner={owner}

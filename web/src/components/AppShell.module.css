@@ -189,6 +189,52 @@
   line-height: 1.2;
 }
 
+.homeHeader {
+  gap: 0;
+  padding-inline: 0;
+}
+
+.homeHeaderNav {
+  min-inline-size: 0;
+  align-self: stretch;
+  flex: 1 1 auto;
+}
+
+.homeHeaderTab {
+  position: relative;
+  block-size: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-inline: var(--space-4);
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.homeHeaderTab:hover,
+.homeHeaderTab:focus-visible {
+  background: var(--surface-hover);
+}
+
+.homeHeaderTab h1 {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.25rem;
+}
+
+.homeHeaderTab > span {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-start: 50%;
+  inline-size: 3.5rem;
+  block-size: 0.25rem;
+  border-radius: 999px;
+  background: var(--accent);
+  transform: translateX(-50%);
+}
+
 .backLink {
   inline-size: 2.75rem;
   block-size: 2.75rem;
@@ -471,7 +517,11 @@
     padding-inline: var(--space-4);
   }
 
-  .timelineHeader h1 {
+  .homeHeader {
+    padding-inline: 0;
+  }
+
+  .timelineHeader:not(.homeHeader) h1 {
     font-size: 1.0625rem;
   }
 

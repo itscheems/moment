@@ -78,6 +78,24 @@ describe("visual foundation contract", () => {
     expect(shellCss).toContain("env(safe-area-inset-bottom)");
   });
 
+  it("uses the compact centered timeline tab on the home header", () => {
+    expect(shellCss).toMatch(
+      /\._timelineHeader_[\w-]+\s*\{[^}]*block-size: 3\.3125rem;/s,
+    );
+    expect(shellCss).toMatch(
+      /\._homeHeaderTab_[\w-]+\s*\{[^}]*align-items: center;[^}]*justify-content: center;/s,
+    );
+    expect(shellCss).toMatch(
+      /\._homeHeaderTab_[\w-]+ h1\s*\{[^}]*font-size: 0\.9375rem;[^}]*font-weight: 700;/s,
+    );
+    expect(shellCss).toMatch(
+      /\._timelineHeader_[\w-]+:not\(\._homeHeader_[\w-]+\) h1/,
+    );
+    expect(shellCss).toMatch(
+      /\._homeHeaderTab_[\w-]+ > span\s*\{[^}]*block-size: 0\.25rem;[^}]*background: var\(--accent\);/s,
+    );
+  });
+
   it("removes nonessential motion when the operating system requests it", () => {
     expect(globalCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(stateCss).toContain("@media (prefers-reduced-motion: reduce)");

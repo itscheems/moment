@@ -1,5 +1,12 @@
 import { Menu } from "@base-ui/react/menu";
-import { type ReactNode, useEffect, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import type { SiteIdentity } from "../api/public";
 import { InternalLink, useNavigation } from "../app/navigation";
@@ -19,7 +26,7 @@ interface NavItem {
 }
 
 const primaryNav: NavItem[] = [
-  { label: "时间流", href: "/", icon: "home", active: ["home", "detail"] },
+  { label: "首页", href: "/", icon: "home", active: ["home", "detail"] },
   { label: "搜索", href: "/search", icon: "search", active: ["search"] },
   { label: "归档", href: "/archive", icon: "archive", active: ["archive"] },
   {
@@ -36,6 +43,70 @@ const publishNav: NavItem = {
   icon: "compose",
   active: ["owner-compose"],
 };
+
+const HOME_SCROLL_DURATION_MS = 260;
+
+function easeInOutCubic(progress: number): number {
+  return progress < 0.5
+    ? 4 * progress * progress * progress
+    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+}
+
+function useHomeScrollToTop() {
+  const animationFrame = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (animationFrame.current !== null) {
+        window.cancelAnimationFrame(animationFrame.current);
+      }
+    },
+    [],
+  );
+
+  return useCallback((event: ReactMouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    if (animationFrame.current !== null) {
+      window.cancelAnimationFrame(animationFrame.current);
+      animationFrame.current = null;
+    }
+
+    const startY = window.scrollY;
+    if (startY <= 0) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      window.scrollTo({ top: 0, behavior: "auto" });
+      return;
+    }
+
+    let startedAt: number | null = null;
+    const step = (timestamp: number) => {
+      startedAt ??= timestamp;
+      const progress = Math.min(
+        (timestamp - startedAt) / HOME_SCROLL_DURATION_MS,
+        1,
+      );
+      const top = Math.max(0, startY * (1 - easeInOutCubic(progress)));
+      window.scrollTo({ top, behavior: "auto" });
+      if (progress < 1) {
+        animationFrame.current = window.requestAnimationFrame(step);
+      } else {
+        animationFrame.current = null;
+      }
+    };
+
+    animationFrame.current = window.requestAnimationFrame(step);
+  }, []);
+}
 
 function ownerNav(settingsAvailable: boolean): NavItem {
   return {
@@ -317,6 +388,7 @@ export function AppShell({
   ownerSettingsAvailable?: boolean;
 }) {
   const { goBack } = useNavigation();
+  const scrollHomeToTop = useHomeScrollToTop();
   return (
     <div className={styles.viewport}>
       <a className={styles.skipLink} href="#main-content">
@@ -329,7 +401,11 @@ export function AppShell({
           site={site}
         />
         <main className={styles.timeline} id="main-content" tabIndex={-1}>
-          <header className={styles.timelineHeader}>
+          <header
+            className={`${styles.timelineHeader} ${
+              route.id === "home" ? styles.homeHeader : ""
+            }`}
+          >
             {route.id === "detail" ||
             route.id === "owner-edit" ||
             route.id === "owner-compose" ? (
@@ -350,12 +426,26 @@ export function AppShell({
                 site={site}
               />
             )}
-            <div>
-              <p>{route.eyebrow}</p>
-              <h1>
-                {route.id === "profile" ? siteDisplayName(site) : route.title}
-              </h1>
-            </div>
+            {route.id === "home" ? (
+              <nav aria-label="首页时间流" className={styles.homeHeaderNav}>
+                <InternalLink
+                  aria-current="page"
+                  className={styles.homeHeaderTab}
+                  href="/"
+                  onClick={scrollHomeToTop}
+                >
+                  <h1>{route.title}</h1>
+                  <span aria-hidden="true" />
+                </InternalLink>
+              </nav>
+            ) : (
+              <div>
+                <p>{route.eyebrow}</p>
+                <h1>
+                  {route.id === "profile" ? siteDisplayName(site) : route.title}
+                </h1>
+              </div>
+            )}
             {route.id !== "detail" && route.id !== "owner-edit" ? (
               <span className={styles.headerTheme}>
                 <ThemeMenu site={site} />
