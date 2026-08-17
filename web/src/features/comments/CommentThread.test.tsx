@@ -435,7 +435,7 @@ describe("public comment thread", () => {
     expect(commentsCss).toMatch(
       /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+\s*\{[^}]*padding-block:\s*0\.25rem 0\.75rem;/s,
     );
-    expect(commentsCss).toMatch(
+    expect(commentsCss).not.toMatch(
       /\._inlineTopLevelForm_[\w-]+\._commentLayoutFrame_[\w-]+\s*\{[^}]*transition:\s*none;/s,
     );
     expect(commentsCss).toMatch(

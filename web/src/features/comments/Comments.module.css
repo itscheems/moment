@@ -85,10 +85,6 @@
   padding-block: 0.25rem 0.75rem;
 }
 
-.inlineTopLevelForm.commentLayoutFrame {
-  transition: none;
-}
-
 .commentComposerLayout {
   display: grid;
   grid-template-columns: var(--target-size) minmax(0, 1fr);
