@@ -181,6 +181,11 @@
   flex: 1 1 auto;
 }
 
+.bylineIdentity .usernameLink:hover,
+.bylineIdentity .usernameLink:focus-visible {
+  text-decoration: none;
+}
+
 .timeLink {
   flex: 0 0 auto;
 }

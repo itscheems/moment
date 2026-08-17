@@ -67,6 +67,12 @@ describe("shared post presentation", () => {
     );
   });
 
+  it("keeps the byline username free of hover and focus underlines", () => {
+    expect(postCss).toMatch(
+      /\._bylineIdentity_[\w-]+ \._usernameLink_[\w-]+:hover,\s*\._bylineIdentity_[\w-]+ \._usernameLink_[\w-]+:focus-visible\s*\{[^}]*text-decoration: none;/,
+    );
+  });
+
   it("places repost attribution above an aligned avatar and byline row", () => {
     const reposted = {
       ...makePost("再次分享", "<p>再次分享</p>"),
