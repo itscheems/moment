@@ -189,6 +189,20 @@
   line-height: 1.2;
 }
 
+.detailHeader,
+.detailHeader h1 {
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  letter-spacing: normal;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+}
+
+.detailHeader h1 {
+  font-size: 1.25rem;
+  line-height: 1.5rem;
+}
+
 .homeHeader {
   gap: 0;
   padding-inline: 0;
@@ -523,6 +537,11 @@
 
   .timelineHeader:not(.homeHeader) h1 {
     font-size: 1.0625rem;
+  }
+
+  .detailHeader h1 {
+    font-size: 1.0625rem;
+    line-height: 1.25rem;
   }
 
   .mobileAvatar {

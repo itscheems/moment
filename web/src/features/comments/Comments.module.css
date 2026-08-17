@@ -1,6 +1,11 @@
 .thread {
   border-block-end: 1px solid var(--border-subtle);
   background: var(--surface);
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  letter-spacing: normal;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
 }
 
 .threadHeader {
@@ -234,8 +239,12 @@
   outline: 0;
   color: var(--text-primary);
   background: transparent;
-  font-size: 1.2rem;
-  line-height: 1.4;
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  font-size: 1.25rem;
+  letter-spacing: normal;
+  line-height: 1.5rem;
+  text-rendering: auto;
 }
 
 .commentForm textarea::placeholder,
@@ -636,7 +645,12 @@
   align-items: center;
   gap: 0.3rem;
   color: var(--text-secondary);
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
   font-size: 0.9375rem;
+  letter-spacing: normal;
+  line-height: 1.25rem;
+  text-rendering: auto;
 }
 
 .commentByline strong {
@@ -655,8 +669,21 @@
   grid-column: 2;
   margin-block-start: 0.2rem;
   color: var(--text-primary);
-  font-size: 0.98rem;
-  line-height: 1.5;
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  font-size: 0.9375rem;
+  letter-spacing: normal;
+  line-height: 1.25rem;
+  overflow-wrap: break-word;
+  text-rendering: auto;
+}
+
+.commentMarkdown :where(h1, h2, h3, h4, h5, h6),
+.commentByline :where(strong, time) {
+  font-family: inherit;
+  font-feature-settings: inherit;
+  letter-spacing: inherit;
+  text-rendering: inherit;
 }
 
 .commentMarkdown > :first-child {

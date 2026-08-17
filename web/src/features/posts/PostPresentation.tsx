@@ -135,7 +135,6 @@ export function PostPresentation({
   const title = siteDisplayName(site);
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
   const collapsed = !detail && longInTimeline(post);
-  const longDetail = detail && longInTimeline(post);
   const detailHref = `/m/${encodeURIComponent(post.id)}`;
   const timelineKey = `${post.id}:${post.timelineItemKind}`;
   const useTimelineDensity = timelineDensity && !detail;
@@ -306,10 +305,7 @@ export function PostPresentation({
             {byline}
           </div>
         </div>
-        <div
-          className={`${styles.detailBody} ${longDetail ? styles.detailLong : ""}`}
-          data-content-density={longDetail ? "long" : "short"}
-        >
+        <div className={styles.detailBody}>
           <MarkdownContent
             className={styles.markdown}
             html={contentHtml ?? post.contentHtml}

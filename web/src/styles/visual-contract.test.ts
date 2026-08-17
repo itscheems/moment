@@ -142,11 +142,52 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain('"PingFang TC"');
     expect(globalCss).toContain('"PingFang HK"');
     expect(globalCss).toContain('"Noto Sans CJK SC"');
+    expect(globalCss).toMatch(
+      /--font-timeline:\s*"TwitterChirp", -apple-system, "system-ui", "Segoe UI", Roboto, Helvetica,/,
+    );
+    expect(globalCss.match(/font-family: "TwitterChirp"/g)).toHaveLength(4);
+    expect(globalCss).toContain(
+      'url("/fonts/twitter-chirp-regular.woff") format("woff")',
+    );
+    expect(globalCss).toContain(
+      'url("/fonts/twitter-chirp-medium.woff") format("woff")',
+    );
+    expect(globalCss).toContain(
+      'url("/fonts/twitter-chirp-bold.woff") format("woff")',
+    );
+    expect(globalCss).toContain(
+      'url("/fonts/twitter-chirp-heavy.woff") format("woff")',
+    );
+    expect(globalCss.match(/font-display: swap/g)).toHaveLength(4);
     expect(globalCss).toContain("font-optical-sizing: auto");
     expect(globalCss).toContain('"calt" 1');
     expect(globalCss).toContain("--tracking-display: -0.022em");
     expect(globalCss).toContain("--tracking-body: -0.006em");
     expect(globalCss).toContain("--tracking-utility: 0.006em");
+  });
+
+  it("keeps the measured detail hierarchy separate from timeline density", () => {
+    expect(postCss).toMatch(
+      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-size:\s*0\.9375rem;[^}]*line-height:\s*1\.25rem;/s,
+    );
+    expect(postCss).toMatch(
+      /\._detailBody_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-size:\s*1\.0625rem;[^}]*line-height:\s*1\.5rem;/s,
+    );
+    expect(shellCss).toMatch(
+      /\._detailHeader_[\w-]+,[\s\S]*?\._detailHeader_[\w-]+ h1\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;/,
+    );
+    expect(shellCss).toMatch(
+      /\._detailHeader_[\w-]+ h1\s*\{[^}]*font-size:\s*1\.25rem;[^}]*line-height:\s*1\.5rem;/s,
+    );
+    expect(shellCss).toMatch(
+      /@media \(max-width: 719px\)[\s\S]*?\._detailHeader_[\w-]+ h1\s*\{[^}]*font-size:\s*1\.0625rem;[^}]*line-height:\s*1\.25rem;/,
+    );
+    expect(commentsCss).toMatch(
+      /\._commentForm_[\w-]+ textarea\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*font-size:\s*1\.25rem;[^}]*letter-spacing:\s*normal;[^}]*line-height:\s*1\.5rem;[^}]*text-rendering:\s*auto;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._commentMarkdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-size:\s*0\.9375rem;[^}]*line-height:\s*1\.25rem;[^}]*overflow-wrap:\s*break-word;/s,
+    );
   });
 
   it("keeps lights-out elevated surfaces and secondary actions visible", () => {

@@ -13,6 +13,7 @@ import type { PublicPost, SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { OwnerProvider } from "../owner/OwnerProvider";
+import ownerCss from "../owner/Owner.module.css?inline";
 import { PostPresentation } from "./PostPresentation";
 import postCss from "./PostPresentation.module.css?inline";
 
@@ -102,7 +103,10 @@ describe("shared post presentation", () => {
       "timelineDensity",
     );
     expect(postCss).toMatch(
-      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*margin-block-start:\s*0;[^}]*overflow-wrap:\s*break-word;[^}]*font-size:\s*0\.9375rem;[^}]*font-weight:\s*400;[^}]*letter-spacing:\s*normal;[^}]*line-height:\s*1\.25rem;/s,
+      /\._timelineDensity_[\w-]+ \._byline_[\w-]+,\s*\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;[^}]*-webkit-font-smoothing:\s*auto;/s,
+    );
+    expect(postCss).toMatch(
+      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*margin-block-start:\s*0;[^}]*overflow-wrap:\s*break-word;[^}]*font-size:\s*0\.9375rem;[^}]*font-weight:\s*400;[^}]*line-height:\s*1\.25rem;/s,
     );
     expect(postCss).toMatch(
       /\._timelineDensity_[\w-]+ \._markdown_[\w-]+ p,[\s\S]*?\._timelineDensity_[\w-]+ \._markdown_[\w-]+ h4\s*\{[^}]*white-space:\s*pre-wrap;/,
@@ -263,7 +267,7 @@ describe("shared post presentation", () => {
     const article = screen.getByText("完整正文").closest("article");
     const body = article?.querySelector("[class*='detailBody']");
     expect(body).toContainElement(screen.getByText("完整正文"));
-    expect(body).toHaveAttribute("data-content-density", "short");
+    expect(body).not.toHaveAttribute("data-content-density");
     expect(
       screen.queryByRole("link", { name: "阅读全文" }),
     ).not.toBeInTheDocument();
@@ -273,7 +277,13 @@ describe("shared post presentation", () => {
     );
   });
 
-  it("uses a restrained density for long detail reading", () => {
+  it("uses the local Chirp family throughout the detail post", () => {
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;[^}]*-webkit-font-smoothing:\s*auto;/s,
+    );
+  });
+
+  it("keeps one detail contract for short and long reading", () => {
     const longText = "一段需要慢慢读完的长内容。".repeat(60);
     render(
       <NavigationProvider>
@@ -285,13 +295,43 @@ describe("shared post presentation", () => {
       </NavigationProvider>,
     );
 
-    expect(
-      screen.getByText(longText).closest("[data-content-density]"),
-    ).toHaveAttribute("data-content-density", "long");
-    expect(postCss).toContain("font-size: 1.375rem");
-    expect(postCss).toContain("font-size: 1.1875rem");
-    expect(postCss).toContain("font-size: 1.25rem");
-    expect(postCss).toContain("font-size: 1.125rem");
+    const detailBody = screen
+      .getByText(longText)
+      .closest("[class*='detailBody']");
+    expect(detailBody).not.toHaveAttribute("data-content-density");
+    expect(postCss).toMatch(
+      /\._detailByline_[\w-]+\s*\{[^}]*line-height:\s*1\.25rem/,
+    );
+    expect(postCss).toMatch(
+      /\._detailByline_[\w-]+ \._bylineIdentity_[\w-]+\s*\{[^}]*gap:\s*0;/,
+    );
+    expect(postCss).toMatch(
+      /\._detailBody_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*margin-block-start:\s*var\(--space-3\);[^}]*overflow-wrap:\s*break-word;[^}]*font-size:\s*1\.0625rem;[^}]*font-weight:\s*400;[^}]*line-height:\s*1\.5rem;/s,
+    );
+    expect(postCss).toMatch(
+      /\._publishedLine_[\w-]+\s*\{[^}]*margin:\s*var\(--space-4\) 0 0;[^}]*font-size:\s*0\.9375rem;[^}]*line-height:\s*1\.25rem;/s,
+    );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._usernameLink_[\w-]+\s*\{[^}]*font-feature-settings:\s*"ss01";/,
+    );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._publishedLine_[\w-]+,[\s\S]*?\._detail_[\w-]+ \._publishedLine_[\w-]+ :where\(span, time\)\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-feature-settings:\s*normal;[^}]*letter-spacing:\s*normal;[^}]*text-rendering:\s*auto;/,
+    );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*min-block-size:\s*3rem;[^}]*border-block-start:\s*1px solid var\(--border-subtle\);[^}]*margin-block-start:\s*var\(--space-4\);[^}]*padding-inline:\s*var\(--space-1\);/s,
+    );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._replyAction_[\w-]+\s*\{[^}]*margin-inline-start:\s*0;/,
+    );
+    expect(postCss).not.toMatch(/\._detailLong_[\w-]+/);
+    expect(postCss).not.toContain("data-content-density");
+    const mobileRules = postCss
+      .split("@media (max-width: 719px)")[1]
+      ?.split("@media (prefers-reduced-motion")[0];
+    expect(mobileRules).toBeDefined();
+    expect(mobileRules).not.toMatch(
+      /\._detailBody_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-size:/,
+    );
   });
 
   it("keeps the selected place name primary and discloses its address on focus or press", async () => {
@@ -388,16 +428,27 @@ describe("shared post presentation", () => {
       /\._replyAction_[\w-]+\s*\{[^}]*margin-inline-start: calc\(0px - var\(--space-3\)\)/,
     );
     expect(postCss).toMatch(
-      /\._postAction_[\w-]+\s*\{[^}]*inline-size: 2\.75rem[^}]*block-size: 2\.75rem/,
+      /\._postAction_[\w-]+\s*\{[^}]*inline-size: var\(--post-edge-action-size\)[^}]*block-size: var\(--post-edge-action-size\)/,
     );
   });
 
-  it("aligns timeline and detail actions with sharing at the far edge", () => {
+  it("keeps owner and share actions on one far-edge axis in lists and detail", () => {
+    expect(postCss).toMatch(
+      /\._post_[\w-]+\s*\{[^}]*--post-edge-action-size: 2\.75rem/,
+    );
     expect(postCss).toMatch(/\._postActions_[\w-]+\s*\{[^}]*inline-size: 100%/);
     expect(postCss).toMatch(
-      /\._postActions_[\w-]+\s*\{[^}]*grid-template-columns: 2\.75rem 2\.75rem minmax\(0, 1fr\) 2\.75rem/,
+      /\._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*var\(--post-edge-action-size\)\s+var\(--post-edge-action-size\)\s+minmax\(0, 1fr\)\s+var\(--post-edge-action-size\)/,
     );
-    expect(postCss).toMatch(/\._shareAction_[\w-]+\s*\{[^}]*grid-column: 4/);
+    expect(postCss).toMatch(
+      /\._shareAction_[\w-]+\s*\{[^}]*grid-column: 4;[^}]*justify-self: end/,
+    );
+    expect(ownerCss).toMatch(
+      /\._ownerPostMenu_[\w-]+\s*\{[^}]*margin-inline-start: auto/,
+    );
+    expect(ownerCss).toMatch(
+      /\._ownerMenuTrigger_[\w-]+\s*\{[^}]*inline-size: var\(--post-edge-action-size, 2\.75rem\);[^}]*block-size: var\(--post-edge-action-size, 2\.75rem\)/,
+    );
     expect(postCss).toMatch(
       /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*max-inline-size: none/,
     );

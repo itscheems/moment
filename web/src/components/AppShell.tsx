@@ -404,7 +404,7 @@ export function AppShell({
           <header
             className={`${styles.timelineHeader} ${
               route.id === "home" ? styles.homeHeader : ""
-            }`}
+            } ${route.id === "detail" ? styles.detailHeader : ""}`}
           >
             {route.id === "detail" ||
             route.id === "owner-edit" ||
