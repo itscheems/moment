@@ -176,6 +176,18 @@ describe("visual foundation contract", () => {
     expect(ownerCss).toContain("min-block-size: var(--target-size)");
   });
 
+  it("crops only extra-tall single videos on mobile without letterboxing", () => {
+    expect(mediaCss).toMatch(
+      /@media \(max-width: 719px\)[\s\S]*?\._imageGrid_[\w-]+\[data-media-count="1"\][\s\S]*?\._videoTile_[\w-]+\[data-media-shape="tall"\]\s*\{[^}]*aspect-ratio: 2 \/ 3;[^}]*max-block-size: none;/,
+    );
+    expect(mediaCss).toMatch(
+      /\._imageGrid_[\w-]+\[data-media-count="1"\]\[data-media-shape="tall"\]\s*\{[^}]*inline-size: min\(100%, var\(--single-media-max-width\)\);/,
+    );
+    expect(mediaCss).toMatch(
+      /\._videoTile_[\w-]+\[data-media-shape="tall"\][\s\S]*?video,[\s\S]*?\._videoPoster_[\w-]+\s*\{[^}]*object-fit: cover;/,
+    );
+  });
+
   it("keeps the inline composer avatar on the timeline avatar rail", () => {
     expect(identityCss).toMatch(
       /\._avatar_[\w-]+,\s*\._avatarFallback_[\w-]+\s*\{[^}]*inline-size: 2\.5rem;[^}]*block-size: 2\.5rem;/s,

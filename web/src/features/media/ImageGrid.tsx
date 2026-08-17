@@ -41,6 +41,10 @@ function usageKey(usage: PublicMediaUsage): string {
   return `${usage.position}:${usage.mediaId}`;
 }
 
+function mediaShape(usage: PublicMediaUsage): "tall" | undefined {
+  return usage.width * 3 < usage.height * 2 ? "tall" : undefined;
+}
+
 function MediaAsset({
   usage,
   index,
@@ -99,6 +103,17 @@ export function ImageGrid({
   const [failed, setFailed] = useState(() => new Set<string>());
   if (media.length === 0) return null;
   const containsVideo = media.some((usage) => isVideoMimeType(usage.mimeType));
+  const singleUsage = media.length === 1 ? media[0] : null;
+  const singleMediaStyle = singleUsage
+    ? ({
+        "--single-media-ratio": `${singleUsage.width} / ${singleUsage.height}`,
+        "--single-media-max-width": `${34 * (singleUsage.width / singleUsage.height)}rem`,
+      } as CSSProperties)
+    : undefined;
+  const singleMediaShape =
+    singleUsage && isVideoMimeType(singleUsage.mimeType)
+      ? mediaShape(singleUsage)
+      : undefined;
   const lightboxItems: MediaLightboxItem[] = media.map((usage, index) => ({
     key: usageKey(usage),
     previewSrc: mediaPreviewUrl(usage.mediaId),
@@ -134,17 +149,12 @@ export function ImageGrid({
         }
         className={styles.imageGrid}
         data-media-count={media.length}
+        data-media-shape={singleMediaShape}
         role="group"
+        style={singleMediaStyle}
       >
         {media.map((usage, index) => {
           const videoUsage = isVideoMimeType(usage.mimeType);
-          const tileStyle =
-            media.length === 1
-              ? ({
-                  "--single-media-ratio": `${usage.width} / ${usage.height}`,
-                  "--single-media-max-width": `${34 * (usage.width / usage.height)}rem`,
-                } as CSSProperties)
-              : undefined;
           const contents = failed.has(usageKey(usage)) ? (
             <span
               className={styles.mediaFallback}
@@ -182,8 +192,9 @@ export function ImageGrid({
             return (
               <div
                 className={`${styles.imageTile} ${styles.videoTile}`}
+                data-media-shape={mediaShape(usage)}
                 key={`${usage.position}-${usage.mediaId}`}
-                style={tileStyle}
+                style={singleMediaStyle}
               >
                 {contents}
                 {orderMark}
@@ -196,7 +207,7 @@ export function ImageGrid({
               className={`${styles.imageTile} ${styles.imageButton}`}
               key={`${usage.position}-${usage.mediaId}`}
               onClick={() => setSelected(index)}
-              style={tileStyle}
+              style={singleMediaStyle}
               type="button"
             >
               {contents}

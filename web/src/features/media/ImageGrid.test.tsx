@@ -88,6 +88,14 @@ function video(): PublicMediaUsage {
   };
 }
 
+function tallVideo(height = 1_920): PublicMediaUsage {
+  return {
+    ...video(),
+    width: 1_080,
+    height,
+  };
+}
+
 describe("public image grid", () => {
   it.each([0, 1, 2, 3, 4, 9])(
     "renders the deliberate %i-image layout",
@@ -238,6 +246,25 @@ describe("public image grid", () => {
       mediaPreviewUrl("01K2ABCDEF0123456789ABCDV0"),
     );
     expect(TestIntersectionObserver.instances).toHaveLength(0);
+  });
+
+  it("marks only videos taller than the mobile 2:3 presentation window", () => {
+    const { rerender } = render(<ImageGrid eagerVideo media={[tallVideo()]} />);
+    const group = screen.getByRole("group", { name: "1 项媒体" });
+
+    expect(group).toHaveAttribute("data-media-shape", "tall");
+    expect(group).toHaveStyle({
+      "--single-media-max-width": "19.125rem",
+    });
+    expect(
+      screen.getByLabelText("一段测试视频").closest("[data-media-shape]"),
+    ).toHaveAttribute("data-media-shape", "tall");
+
+    rerender(<ImageGrid eagerVideo media={[tallVideo(1_440)]} />);
+    expect(group).not.toHaveAttribute("data-media-shape");
+    expect(
+      screen.getByLabelText("一段测试视频").closest("[data-media-shape]"),
+    ).toBeNull();
   });
 
   it("starts inline video playback in one action", async () => {

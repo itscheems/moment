@@ -1135,6 +1135,22 @@
     block-size: 3rem;
   }
 
+  .imageGrid[data-media-count="1"] .videoTile[data-media-shape="tall"] {
+    aspect-ratio: 2 / 3;
+    max-block-size: none;
+  }
+
+  .imageGrid[data-media-count="1"][data-media-shape="tall"] {
+    inline-size: min(100%, var(--single-media-max-width));
+  }
+
+  .imageGrid[data-media-count="1"] .videoTile[data-media-shape="tall"] video,
+  .imageGrid[data-media-count="1"]
+    .videoTile[data-media-shape="tall"]
+    .videoPoster {
+    object-fit: cover;
+  }
+
   .imageGrid[data-media-count="5"],
   .imageGrid[data-media-count="6"],
   .imageGrid[data-media-count="7"],
