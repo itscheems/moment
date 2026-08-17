@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -502,11 +503,81 @@ describe("shared post presentation", () => {
       await screen.findByRole("heading", { name: "Moment" }),
     ).toBeInTheDocument();
     expect(screen.getByText("一些正在发生的事")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "查看个人资料" })).toHaveAttribute(
-      "href",
-      "/@owner",
+    const avatarLinks = screen.getAllByRole("link", {
+      name: "查看 Moment 的个人资料",
+    });
+    expect(avatarLinks).toHaveLength(2);
+    avatarLinks.forEach((link) =>
+      expect(link).toHaveAttribute("href", "/@owner"),
     );
+    expect(
+      within(screen.getByRole("heading", { name: "Moment" })).getByRole(
+        "link",
+        { name: "Moment" },
+      ),
+    ).toHaveAttribute("href", "/@owner");
+    expect(
+      screen.queryByRole("link", { name: "查看个人资料" }),
+    ).not.toBeInTheDocument();
   });
+
+  it("opens the same site profile preview from the author display name", async () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={makePost("查看作者昵称", "<p>查看作者昵称</p>")}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    fireEvent.focus(screen.getByRole("link", { name: "Moment" }));
+
+    const previewHeading = await screen.findByRole("heading", {
+      name: "Moment",
+    });
+    const previewBody = previewHeading.parentElement;
+    expect(previewBody).not.toBeNull();
+    expect(within(previewBody!).getByText("@owner")).toBeInTheDocument();
+    expect(
+      within(previewBody!).getByText("一些正在发生的事"),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["avatar", "查看 Moment 的个人资料"],
+    ["display name", "Moment"],
+  ])(
+    "unmounts the site profile preview before navigating from its %s",
+    async (_surface, accessibleName) => {
+      render(
+        <NavigationProvider>
+          <PostPresentation
+            post={makePost("打开作者主页", "<p>打开作者主页</p>")}
+            site={site}
+          />
+        </NavigationProvider>,
+      );
+
+      fireEvent.focus(
+        screen.getByRole("link", { name: "查看 Moment 的个人资料" }),
+      );
+      const previewHeading = await screen.findByRole("heading", {
+        name: "Moment",
+      });
+      const previewBody = previewHeading.parentElement;
+      expect(previewBody).not.toBeNull();
+
+      fireEvent.click(
+        within(previewBody!).getByRole("link", { name: accessibleName }),
+      );
+
+      expect(window.location.pathname).toBe("/@owner");
+      expect(
+        screen.queryByRole("heading", { name: "Moment" }),
+      ).not.toBeInTheDocument();
+    },
+  );
 
   it("confirms and publishes a singleton profile pin from the owner menu", async () => {
     window.sessionStorage.setItem(

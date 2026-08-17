@@ -58,8 +58,13 @@ export function SiteIdentityPreview({
   site: SiteIdentity;
 }) {
   const title = site.displayName.trim() || site.title.trim() || "Moment";
+  const profileHref = `/@${site.username}`;
+  const previewActionsRef = useRef<PreviewCard.Root.Actions>(null);
+  const unmountBeforeNavigation = () => {
+    previewActionsRef.current?.unmount();
+  };
   return (
-    <PreviewCard.Root>
+    <PreviewCard.Root actionsRef={previewActionsRef}>
       <PreviewCard.Trigger closeDelay={160} delay={450} render={children} />
       <PreviewCard.Portal>
         <PreviewCard.Positioner
@@ -73,18 +78,29 @@ export function SiteIdentityPreview({
               <SiteCover eager site={site} />
             </div>
             <div className={styles.identityBody}>
-              <div className={styles.identityAvatar}>
-                <SiteAvatar eager site={site} />
-              </div>
-              <h2>{title}</h2>
-              <p>@{site.username}</p>
-              {site.bio.trim() ? <p>{site.bio.trim()}</p> : null}
               <InternalLink
-                className={styles.identityProfileLink}
-                href={`/@${site.username}`}
+                aria-label={`查看 ${title} 的个人资料`}
+                className={styles.identityAvatarLink}
+                href={profileHref}
+                onClick={unmountBeforeNavigation}
               >
-                查看个人资料
+                <span className={styles.identityAvatar}>
+                  <SiteAvatar eager site={site} />
+                </span>
               </InternalLink>
+              <h2>
+                <InternalLink
+                  className={styles.identityNameLink}
+                  href={profileHref}
+                  onClick={unmountBeforeNavigation}
+                >
+                  {title}
+                </InternalLink>
+              </h2>
+              <p className={styles.identityHandle}>@{site.username}</p>
+              {site.bio.trim() ? (
+                <p className={styles.identityBio}>{site.bio.trim()}</p>
+              ) : null}
             </div>
           </PreviewCard.Popup>
         </PreviewCard.Positioner>

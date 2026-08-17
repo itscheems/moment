@@ -167,10 +167,16 @@ describe("visual foundation contract", () => {
     expect(postCss).toContain("var(--motion-content)");
   });
 
-  it("keeps high-frequency action boxes on the shared 44px target", () => {
+  it("lets the profile preview cover reach the rounded card edge", () => {
+    expect(interactionsCss).not.toMatch(
+      /\._identityCard_[^{]+\{[^}]*\bborder:\s/,
+    );
+  });
+
+  it("keeps high-frequency action boxes at least as large as the shared target", () => {
     expect(globalCss).toContain("--target-size: 2.75rem");
     expect(themeMenuCss).toContain("inline-size: var(--target-size)");
-    expect(interactionsCss).toContain("min-block-size: var(--target-size)");
+    expect(interactionsCss).toContain("min-block-size: 3rem");
     expect(mediaCss).toContain("min-block-size: var(--target-size)");
     expect(commentsCss).toContain("min-block-size: var(--target-size)");
     expect(ownerCss).toContain("min-block-size: var(--target-size)");
