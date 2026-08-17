@@ -430,6 +430,9 @@ describe("shared post presentation", () => {
     expect(postCss).toMatch(
       /\._postAction_[\w-]+\s*\{[^}]*inline-size: var\(--post-edge-action-size\)[^}]*block-size: var\(--post-edge-action-size\)/,
     );
+    expect(postCss).toMatch(
+      /\._postAction_[\w-]+ svg\s*\{[^}]*inline-size:\s*1\.171875rem;[^}]*block-size:\s*1\.171875rem;/s,
+    );
   });
 
   it("keeps owner and share actions on one far-edge axis in lists and detail", () => {

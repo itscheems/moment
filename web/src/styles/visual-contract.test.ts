@@ -201,6 +201,9 @@ describe("visual foundation contract", () => {
       /\._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*var\(--post-edge-action-size\)\s+var\(--post-edge-action-size\)\s+minmax\(0, 1fr\)\s+var\(--post-edge-action-size\)/,
     );
     expect(postCss).toMatch(
+      /\._postAction_[\w-]+ svg\s*\{[^}]*inline-size:\s*1\.171875rem;[^}]*block-size:\s*1\.171875rem;/s,
+    );
+    expect(postCss).toMatch(
       /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*min-block-size:\s*3rem;[^}]*grid-template-columns:\s*1\.90625rem 1\.90625rem 1\.90625rem 1\.90625rem 1\.40625rem;[^}]*padding-inline:\s*var\(--space-1\);/s,
     );
     expect(commentsCss).toMatch(
@@ -234,7 +237,7 @@ describe("visual foundation contract", () => {
       /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+ \._commentForm_[\w-]+ textarea\s*\{[^}]*min-block-size:\s*3\.5rem;[^}]*border:\s*0\.125rem solid transparent;[^}]*padding-block:\s*0\.75rem;/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+[\s\S]*?\._commentMediaComposer_[\w-]+[\s\S]*?button:hover:not\(:disabled\),[\s\S]*?button:focus-visible\s*\{[^}]*color:\s*#829aab;[^}]*background:\s*rgb\(15 20 25 \/ 8%\);/s,
+      /\._inlineTopLevelForm_[\w-]+[\s\S]*?\._commentMediaComposer_[\w-]+[\s\S]*?button:hover:not\(:disabled\),[\s\S]*?button:focus-visible\s*\{[^}]*color:\s*#829aab;[^}]*background:\s*rgb\(15 20 25 \/ 10%\);[^}]*transform:\s*scale\(1\.12\);/s,
     );
     expect(commentsCss).toMatch(
       /\._replyDialogPopup_[\w-]+ > \._formSurface_[\w-]+\s*\{[^}]*padding-block-start:\s*var\(--space-2\);/s,

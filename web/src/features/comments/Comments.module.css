@@ -442,7 +442,8 @@
   > div:first-child
   button:focus-visible {
   color: #829aab;
-  background: rgb(15 20 25 / 8%);
+  background: rgb(15 20 25 / 10%);
+  transform: scale(1.12);
 }
 
 .inlineTopLevelForm
@@ -453,7 +454,7 @@
   color: #829aab;
   background: rgb(15 20 25 / 7%);
   filter: brightness(0.7);
-  transform: scale(1.1);
+  transform: scale(1.12);
 }
 
 .inlineTopLevelForm
@@ -1318,5 +1319,15 @@
   .commentMediaComposer {
     animation: none;
     transition: none;
+  }
+
+  .commentMediaComposer > div > div:first-child button {
+    transition: none;
+  }
+
+  .commentMediaComposer > div > div:first-child button:hover:not(:disabled),
+  .commentMediaComposer > div > div:first-child button:focus-visible,
+  .commentMediaComposer > div > div:first-child button:active:not(:disabled) {
+    transform: none;
   }
 }

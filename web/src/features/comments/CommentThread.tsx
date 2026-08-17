@@ -19,6 +19,7 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
+import type { OwnerLocation } from "../../api/owner";
 import { InternalLink } from "../../app/navigation";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import {
@@ -46,12 +47,42 @@ import {
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { useOwner } from "../owner/OwnerProvider";
+import { LocationPicker } from "../owner/LocationPicker";
 import { MentionSuggestions } from "../owner/MentionSuggestions";
 import { activeMention, type ActiveMention } from "../owner/mentions";
 import styles from "./Comments.module.css";
 
 const MAX_AUTHOR_NAME = 40;
 const MAX_COMMENT = 2_000;
+
+function locationTag(location: OwnerLocation): string {
+  return `📍 ${location.name.trim()}`;
+}
+
+function replaceLocationTag(
+  content: string,
+  previousTag: string | null,
+  nextTag: string | null,
+): string {
+  let nextContent = content;
+  if (previousTag) {
+    const tagIndex = nextContent.lastIndexOf(previousTag);
+    if (tagIndex >= 0) {
+      const before = nextContent
+        .slice(0, tagIndex)
+        .replace(/\n{1,2}$/, "")
+        .trimEnd();
+      const after = nextContent
+        .slice(tagIndex + previousTag.length)
+        .replace(/^\n{1,2}/, "")
+        .trimStart();
+      nextContent = [before, after].filter(Boolean).join("\n\n");
+    }
+  }
+  if (!nextTag) return nextContent;
+  const body = nextContent.trimEnd();
+  return body ? `${body}\n\n${nextTag}` : nextTag;
+}
 
 function CommentProgress({ count }: { count: number }) {
   const radius = 9;
@@ -329,6 +360,9 @@ function CommentForm({
     parentId !== null || initialExpanded,
   );
   const [mediaItems, setMediaItems] = useState<ComposerMediaItem[]>([]);
+  const [commentLocation, setCommentLocation] = useState<OwnerLocation | null>(
+    null,
+  );
   const [mention, setMention] = useState<ActiveMention | null>(null);
   const [mentionItems, setMentionItems] = useState<MentionSuggestion[]>([]);
   const [mentionActive, setMentionActive] = useState(0);
@@ -338,6 +372,7 @@ function CommentForm({
   const pendingRef = useRef(false);
   const idempotencyRef = useRef("");
   const signatureRef = useRef("");
+  const locationTagRef = useRef<string | null>(null);
   const localTextareaRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = suppliedTextareaRef ?? localTextareaRef;
   const contentCount = useMemo(() => Array.from(content).length, [content]);
@@ -368,6 +403,7 @@ function CommentForm({
     activated ||
     content.trim().length > 0 ||
     mediaItems.length > 0 ||
+    commentLocation !== null ||
     pending ||
     displayedError !== null ||
     rateLimited ||
@@ -376,6 +412,7 @@ function CommentForm({
     mode,
     expanded,
     mediaItems.length,
+    commentLocation?.name ?? "",
     displayedError !== null,
     rateLimited,
     displayReauth,
@@ -619,6 +656,8 @@ function CommentForm({
       idempotencyRef.current = "";
       setRetryUntil(0);
       replaceMedia([]);
+      setCommentLocation(null);
+      locationTagRef.current = null;
       setActivated(parentId !== null || initialExpanded);
     } catch (nextError) {
       if (mode === "owner" && owner.expireIfInvalidSession(nextError)) {
@@ -875,6 +914,37 @@ function CommentForm({
             maximumTotalBytes={MAX_TOTAL_BYTES}
             pickerTooltip={inlineTopLevel ? "媒体" : undefined}
             subject="回复"
+            toolbarAction={
+              inlineTopLevel ? (
+                <LocationPicker
+                  api={owner.api}
+                  disabled={
+                    pending ||
+                    !commentsEnabled ||
+                    mode !== "owner" ||
+                    !owner.session
+                  }
+                  onChange={(nextLocation) => {
+                    const nextTag = nextLocation
+                      ? locationTag(nextLocation)
+                      : null;
+                    setContent(
+                      replaceLocationTag(
+                        content,
+                        locationTagRef.current,
+                        nextTag,
+                      ),
+                    );
+                    locationTagRef.current = nextTag;
+                    setCommentLocation(nextLocation);
+                    setActivated(true);
+                    setError(null);
+                  }}
+                  pickerTooltip="位置"
+                  value={commentLocation}
+                />
+              ) : undefined
+            }
             onAdd={(files) => {
               const next = [...mediaItemsRef.current];
               for (const file of files) {

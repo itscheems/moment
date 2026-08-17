@@ -105,11 +105,13 @@ export function LocationPicker({
   api,
   disabled,
   onChange,
+  pickerTooltip,
   value,
 }: {
   api: OwnerApi;
   disabled: boolean;
   onChange: (location: OwnerLocation | null) => void;
+  pickerTooltip?: string;
   value: OwnerLocation | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -223,10 +225,12 @@ export function LocationPicker({
       <Dialog.Trigger
         aria-label={value ? `更改位置：${value.name}` : "添加位置"}
         className={styles.locationTrigger}
+        data-picker-tooltip={pickerTooltip}
         disabled={disabled}
-        title={value ? "更改位置" : "添加位置"}
+        title={pickerTooltip ? undefined : value ? "更改位置" : "添加位置"}
       >
         <Icon name="location-picker" />
+        {pickerTooltip ? <span aria-hidden="true">{pickerTooltip}</span> : null}
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.locationBackdrop} />
@@ -344,6 +348,7 @@ export function LocationPicker({
                 className={styles.locationManual}
                 onSubmit={(event) => {
                   event.preventDefault();
+                  event.stopPropagation();
                   addManual();
                 }}
               >

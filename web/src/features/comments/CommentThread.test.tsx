@@ -386,6 +386,13 @@ describe("public comment thread", () => {
     expect(mediaPicker).toBeVisible();
     expect(mediaPicker).toHaveAttribute("data-picker-tooltip", "媒体");
     expect(mediaPicker).not.toHaveAttribute("title");
+    const locationPicker = within(form).getByRole("button", {
+      name: "添加位置",
+    });
+    expect(locationPicker).toBeVisible();
+    expect(locationPicker).toBeDisabled();
+    expect(locationPicker).toHaveAttribute("data-picker-tooltip", "位置");
+    expect(locationPicker).not.toHaveAttribute("title");
 
     fireEvent.blur(content, { relatedTarget: document.body });
     expect(frame).toHaveAttribute("data-comment-layout-state", "expanded");
@@ -456,10 +463,59 @@ describe("public comment thread", () => {
       /\._inlineTopLevelForm_[\w-]+[\s\S]*?\._commentMediaComposer_[\w-]+[\s\S]*?button[\s\S]*?svg\s*\{[^}]*inline-size:\s*1\.453125rem;[^}]*block-size:\s*1\.453125rem;/s,
     );
     expect(commentsCss).toMatch(
-      /button:hover:not\(:disabled\),[\s\S]*?button:focus-visible\s*\{[^}]*color:\s*#829aab;[^}]*background:\s*rgb\(15 20 25 \/ 8%\);/s,
+      /button:hover:not\(:disabled\),[\s\S]*?button:focus-visible\s*\{[^}]*color:\s*#829aab;[^}]*background:\s*rgb\(15 20 25 \/ 10%\);[^}]*transform:\s*scale\(1\.12\);/s,
     );
     expect(commentsCss).toMatch(
-      /button:active:not\(:disabled\)\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 7%\);[^}]*filter:\s*brightness\(0\.7\);[^}]*transform:\s*scale\(1\.1\);/s,
+      /button:active:not\(:disabled\)\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 7%\);[^}]*filter:\s*brightness\(0\.7\);[^}]*transform:\s*scale\(1\.12\);/s,
+    );
+  });
+
+  it("lets the owner add a location tag from the active detail reply toolbar", async () => {
+    preauthenticate();
+    const fetcher = installApi((url, init) => {
+      if (url === "/api/v1/owner/status") {
+        return success({
+          initialized: true,
+          password_enabled: false,
+          session_epoch: 1,
+          initialized_at: "2026-08-01T00:00:00Z",
+        });
+      }
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+    });
+    renderThread();
+
+    const form = await screen.findByRole("form", { name: "发表回复" });
+    const content = within(form).getByLabelText("回复内容");
+    fireEvent.focus(content);
+    const locationPicker = within(form).getByRole("button", {
+      name: "添加位置",
+    });
+    expect(locationPicker).toBeEnabled();
+
+    fireEvent.click(locationPicker);
+    const dialog = await screen.findByRole("dialog", { name: "添加位置" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "手动添加地点" }),
+    );
+    fireEvent.change(within(dialog).getByLabelText("地点名称"), {
+      target: { value: "书房" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "添加" }));
+
+    expect(content).toHaveValue("📍 书房");
+    expect(
+      within(form).getByRole("button", { name: "更改位置：书房" }),
+    ).toHaveAttribute("data-picker-tooltip", "位置");
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.filter(
+          ([url, init]) =>
+            String(url).endsWith("/comments") && init?.method === "POST",
+        ),
+      ).toHaveLength(0),
     );
   });
 
