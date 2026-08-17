@@ -311,10 +311,9 @@ describe("profile page", () => {
       "datetime",
       site.instanceInitializedAt,
     );
-    expect(screen.getByRole("link", { name: "查看归档" })).toHaveAttribute(
-      "href",
-      "/archive",
-    );
+    expect(
+      screen.queryByRole("link", { name: "查看归档" }),
+    ).not.toBeInTheDocument();
     const timezone = screen.getByLabelText(/时区：.*（Asia\/Shanghai）/);
     expect(timezone).toHaveAttribute("title", "Asia/Shanghai");
     expect(timezone).not.toHaveTextContent(/^Asia\/Shanghai$/);

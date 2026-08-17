@@ -221,14 +221,28 @@
 }
 
 .timelineDensity .byline {
-  line-height: 1.3334;
+  line-height: 1.25rem;
 }
 
 .timelineDensity .markdown {
-  margin-block-start: 0.125rem;
+  min-inline-size: 0;
+  margin-block-start: 0;
+  overflow-wrap: break-word;
   font-size: 0.9375rem;
   font-weight: 400;
-  line-height: 1.3334;
+  letter-spacing: normal;
+  line-height: 1.25rem;
+  text-align: start;
+}
+
+.timelineDensity .markdown p,
+.timelineDensity .markdown li,
+.timelineDensity .markdown blockquote,
+.timelineDensity .markdown h1,
+.timelineDensity .markdown h2,
+.timelineDensity .markdown h3,
+.timelineDensity .markdown h4 {
+  white-space: pre-wrap;
 }
 
 .timelineDensity .markdown p,

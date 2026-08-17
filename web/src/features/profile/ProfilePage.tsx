@@ -7,7 +7,7 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { InternalLink, useNavigation } from "../../app/navigation";
+import { useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import {
   LoadMoreSentinel,
@@ -348,7 +348,6 @@ export function ProfilePage({
           >
             {publicTimezone}
           </span>
-          <InternalLink href="/archive">查看归档</InternalLink>
         </div>
         <header className={styles.contentHeading}>
           <h3>Moment</h3>

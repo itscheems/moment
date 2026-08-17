@@ -118,8 +118,7 @@
 }
 
 .profileMeta span,
-.profileMeta time,
-.profileMeta a {
+.profileMeta time {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -128,10 +127,6 @@
 .profileMeta svg {
   inline-size: 1.05rem;
   block-size: 1.05rem;
-}
-
-.profileMeta a {
-  color: var(--accent);
 }
 
 .profileMeta time {
