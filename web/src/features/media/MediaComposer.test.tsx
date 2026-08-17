@@ -69,6 +69,9 @@ describe("media editor", () => {
       "margin-inline-start: calc(0px - var(--space-3))",
     );
     expect(mediaCss).toMatch(
+      /\._compactComposer_[\w-]+ \._mediaToolbar_[\w-]+\s*\{[^}]*margin-inline-start: calc\(0px - var\(--space-2\)\);/,
+    );
+    expect(mediaCss).toMatch(
       /\._mediaToolbar_[\w-]+ button\s*\{[^}]*inline-size: 2\.25rem;[^}]*block-size: 2\.25rem;[^}]*min-inline-size: 2\.25rem;[^}]*min-block-size: 2\.25rem;/,
     );
     expect(mediaCss).toMatch(

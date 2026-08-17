@@ -562,11 +562,12 @@
   position: relative;
   flex: 0 0 auto;
   align-self: center;
+  margin-inline-start: auto;
 }
 
 .ownerMenuTrigger {
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
+  inline-size: var(--post-edge-action-size, 2.75rem);
+  block-size: var(--post-edge-action-size, 2.75rem);
   display: grid;
   place-items: center;
   border: 0;
