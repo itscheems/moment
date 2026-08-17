@@ -25,6 +25,10 @@
   background: #f7f7f7;
 }
 
+.post.timelineDensity {
+  padding-block: 0.75rem 0.25rem;
+}
+
 .surfaceLink {
   position: absolute;
   z-index: 1;
@@ -214,6 +218,38 @@
   color: var(--text-primary);
   font-size: 0.9375rem;
   line-height: 1.48;
+}
+
+.timelineDensity .byline {
+  line-height: 1.3334;
+}
+
+.timelineDensity .markdown {
+  margin-block-start: 0.125rem;
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.3334;
+}
+
+.timelineDensity .markdown p,
+.timelineDensity .markdown ul,
+.timelineDensity .markdown ol,
+.timelineDensity .markdown blockquote,
+.timelineDensity .markdown pre,
+.timelineDensity .markdown h2,
+.timelineDensity .markdown h3,
+.timelineDensity .markdown h4 {
+  margin-block: 0.55em;
+}
+
+.timelineDensity .postLocation {
+  min-block-size: 1.25rem;
+  margin-block-start: 0.25rem;
+  line-height: 1.25rem;
+}
+
+.timelineDensity .postActions {
+  margin-block-start: 0;
 }
 
 .markdown > :first-child {

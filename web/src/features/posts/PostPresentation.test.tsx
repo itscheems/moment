@@ -74,6 +74,41 @@ describe("shared post presentation", () => {
     );
   });
 
+  it("applies compact text rhythm only to explicitly marked timeline lists", () => {
+    const post = makePost("第一行\n\n第二行", "<p>第一行</p><p>第二行</p>");
+    const { rerender } = render(
+      <NavigationProvider>
+        <PostPresentation post={post} site={site} />
+      </NavigationProvider>,
+    );
+
+    expect(screen.getByRole("article").className).not.toContain(
+      "timelineDensity",
+    );
+
+    rerender(
+      <NavigationProvider>
+        <PostPresentation post={post} site={site} timelineDensity />
+      </NavigationProvider>,
+    );
+    expect(screen.getByRole("article").className).toContain("timelineDensity");
+
+    rerender(
+      <NavigationProvider>
+        <PostPresentation detail post={post} site={site} timelineDensity />
+      </NavigationProvider>,
+    );
+    expect(screen.getByRole("article").className).not.toContain(
+      "timelineDensity",
+    );
+    expect(postCss).toMatch(
+      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*font-size:\s*0\.9375rem;[^}]*font-weight:\s*400;[^}]*line-height:\s*1\.3334;/s,
+    );
+    expect(postCss).toMatch(
+      /\._timelineDensity_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*margin-block-start:\s*0;/,
+    );
+  });
+
   it("places repost attribution above an aligned avatar and byline row", () => {
     const reposted = {
       ...makePost("再次分享", "<p>再次分享</p>"),

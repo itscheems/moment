@@ -113,6 +113,7 @@ export function PostPresentation({
   onReply,
   eagerVideo = false,
   compactTallVideo = false,
+  timelineDensity = false,
 }: {
   post: PublicPost;
   site: SiteIdentity;
@@ -128,6 +129,7 @@ export function PostPresentation({
   onReply?: MouseEventHandler<HTMLButtonElement>;
   eagerVideo?: boolean;
   compactTallVideo?: boolean;
+  timelineDensity?: boolean;
 }) {
   const { navigate } = useNavigation();
   const title = siteDisplayName(site);
@@ -136,6 +138,7 @@ export function PostPresentation({
   const longDetail = detail && longInTimeline(post);
   const detailHref = `/m/${encodeURIComponent(post.id)}`;
   const timelineKey = `${post.id}:${post.timelineItemKind}`;
+  const useTimelineDensity = timelineDensity && !detail;
 
   const openFromSurface = (event: MouseEvent<HTMLElement>) => {
     if (
@@ -349,7 +352,7 @@ export function PostPresentation({
   return (
     <article
       aria-label={`${title}发布的 Moment，${published.absolute}`}
-      className={`${styles.post} ${detail ? styles.detail : ""} ${fresh ? styles.fresh : ""}`}
+      className={`${styles.post} ${useTimelineDensity ? styles.timelineDensity : ""} ${fresh ? styles.fresh : ""}`}
       data-post-id={post.id}
       data-timeline-item-key={timelineKey}
       onClick={openFromSurface}

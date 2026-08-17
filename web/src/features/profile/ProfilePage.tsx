@@ -382,6 +382,7 @@ export function ProfilePage({
                 pinned
                 post={pinnedPost}
                 site={site}
+                timelineDensity
               />
             ) : null}
             {posts
@@ -399,6 +400,7 @@ export function ProfilePage({
                   owner={owner.state === "owner"}
                   post={post}
                   site={site}
+                  timelineDensity
                 />
               ))}
             {moreError ? (

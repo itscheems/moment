@@ -332,6 +332,7 @@ export function TimelinePage({
             onSiteChanged={onSiteChanged}
             post={post}
             site={site}
+            timelineDensity
           />
         ))}
         {moreError ? (
