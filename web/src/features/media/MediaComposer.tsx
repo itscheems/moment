@@ -114,6 +114,7 @@ export function MediaComposer({
   footerAction,
   toolbarAction,
   compact = false,
+  pickerTooltip,
   selectionError: controlledSelectionError,
   onSelectionError,
   maximum = MAX_MEDIA_COUNT,
@@ -130,6 +131,7 @@ export function MediaComposer({
   footerAction?: ReactNode;
   toolbarAction?: ReactNode;
   compact?: boolean;
+  pickerTooltip?: string;
   selectionError?: string | null;
   onSelectionError?: (error: string | null) => void;
   maximum?: number;
@@ -642,13 +644,17 @@ export function MediaComposer({
         <div className={styles.mediaToolbar}>
           <button
             aria-label="选择媒体"
+            data-picker-tooltip={pickerTooltip}
             disabled={disabled || items.length >= maximum}
             onClick={() => fileInputRef.current?.click()}
             ref={pickerRef}
-            title="添加媒体"
+            title={pickerTooltip ? undefined : "添加媒体"}
             type="button"
           >
             <Icon name="media-picker" />
+            {pickerTooltip ? (
+              <span aria-hidden="true">{pickerTooltip}</span>
+            ) : null}
           </button>
           {toolbarAction}
           {items.length > 0 ? (

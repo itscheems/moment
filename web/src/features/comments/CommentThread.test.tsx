@@ -361,9 +361,12 @@ describe("public comment thread", () => {
 
     const form = await screen.findByRole("form", { name: "发表回复" });
     const content = within(form).getByLabelText("回复内容");
-    expect(
-      within(form).getByRole("button", { name: "展开回复编辑器" }),
-    ).toBeVisible();
+    const frame = form.closest<HTMLElement>("[data-comment-layout-frame]");
+    const initialReply = within(form).getByRole("button", { name: "回复" });
+    expect(frame).toHaveAttribute("data-comment-top-level", "true");
+    expect(frame).toHaveAttribute("data-comment-layout-state", "collapsed");
+    expect(initialReply).toBeVisible();
+    expect(initialReply).toBeDisabled();
     expect(within(form).getByLabelText("显示名")).not.toBeVisible();
     expect(
       within(form).getByRole("button", { name: "选择媒体", hidden: true }),
@@ -371,24 +374,81 @@ describe("public comment thread", () => {
 
     fireEvent.focus(content);
 
-    expect(
-      within(form).queryByRole("button", { name: "展开回复编辑器" }),
-    ).not.toBeInTheDocument();
+    expect(frame).toHaveAttribute("data-comment-layout-state", "expanded");
+    expect(initialReply).not.toBeInTheDocument();
     expect(within(form).getByText(/正在回复/)).toHaveTextContent(
       "正在回复 @owner",
     );
     expect(within(form).getByLabelText("显示名")).toBeVisible();
-    expect(
-      within(form).getByRole("button", { name: "选择媒体" }),
-    ).toBeVisible();
+    const mediaPicker = within(form).getByRole("button", {
+      name: "选择媒体",
+    });
+    expect(mediaPicker).toBeVisible();
+    expect(mediaPicker).toHaveAttribute("data-picker-tooltip", "媒体");
+    expect(mediaPicker).not.toHaveAttribute("title");
 
     fireEvent.blur(content, { relatedTarget: document.body });
+    expect(frame).toHaveAttribute("data-comment-layout-state", "expanded");
     expect(within(form).getByText(/正在回复/)).toHaveTextContent(
       "正在回复 @owner",
     );
     expect(
       within(form).getByRole("button", { name: "选择媒体" }),
     ).toBeVisible();
+    expect(
+      within(form).getByRole("button", { name: "发表回复" }),
+    ).toBeVisible();
+  });
+
+  it("keeps the inline reply geometry consistent in collapsed and expanded states", () => {
+    expect(commentsCss).toMatch(
+      /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*0;[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+\s*\{[^}]*padding-block:\s*0\.25rem 0\.75rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentLayoutFrame_[\w-]+\s*\{[^}]*transition:\s*none;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+ \._commentComposerLayout_[\w-]+\s*\{[^}]*grid-template-columns:\s*2\.5rem minmax\(0, 1fr\);[^}]*gap:\s*0\.5rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentInputRow_[\w-]+\s*\{[^}]*block-size:\s*3\.5rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentComposerLayout_[\w-]+\s*\{[^}]*align-items:\s*center;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentForm_[\w-]+\s*\{[^}]*block-size:\s*4\.25rem;[^}]*padding-block:\s*0\.25rem 0\.5rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentForm_[\w-]+ textarea\s*\{[^}]*block-size:\s*1\.75rem;[^}]*min-block-size:\s*1\.75rem;[^}]*max-block-size:\s*1\.75rem;[^}]*field-sizing:\s*fixed;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+ \._commentForm_[\w-]+ textarea\s*\{[^}]*min-block-size:\s*3\.5rem;[^}]*border:\s*0\.125rem solid transparent;[^}]*padding-block:\s*0\.75rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+ \._collapsedReplyAction_[\w-]+\s*\{[^}]*inline-size:\s*4\.671875rem;[^}]*block-size:\s*2\.25rem;[^}]*opacity:\s*0\.25;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+ \._commentMediaComposer_[\w-]+\s*\{[^}]*margin-block-start:\s*0;[^}]*animation:\s*none;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+ \._commentMediaComposer_[\w-]+ > div\s*\{[^}]*block-size:\s*3rem;[^}]*min-block-size:\s*3rem;[^}]*align-items:\s*flex-end;[^}]*padding-block-end:\s*0\.125rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:disabled\s*\{[^}]*opacity:\s*0\.25;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+[\s\S]*?\._commentMediaComposer_[\w-]+[\s\S]*?button[\s\S]*?svg\s*\{[^}]*inline-size:\s*1\.453125rem;[^}]*block-size:\s*1\.453125rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /button:hover:not\(:disabled\),[\s\S]*?button:focus-visible\s*\{[^}]*color:\s*#829aab;[^}]*background:\s*rgb\(15 20 25 \/ 8%\);/s,
+    );
+    expect(commentsCss).toMatch(
+      /button:active:not\(:disabled\)\s*\{[^}]*background:\s*rgb\(15 20 25 \/ 7%\);[^}]*filter:\s*brightness\(0\.7\);[^}]*transform:\s*scale\(1\.1\);/s,
+    );
   });
 
   it("retargets the guest composer's measured block size as activation and media change its real layout", async () => {

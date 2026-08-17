@@ -699,6 +699,11 @@
 
 .detail .postActions {
   min-block-size: 3rem;
+  display: grid;
+  grid-template-columns: 1.90625rem 1.90625rem 1.90625rem 1.90625rem 1.40625rem;
+  align-items: center;
+  justify-content: space-between;
+  column-gap: 0;
   max-inline-size: none;
   border-block-start: 1px solid var(--border-subtle);
   margin-block-start: var(--space-4);
@@ -710,12 +715,61 @@
 }
 
 .detail .postAction {
+  isolation: isolate;
+  inline-size: 1.90625rem;
+  block-size: 2.9375rem;
+  min-block-size: 2.9375rem;
+  border-radius: 0;
   font-feature-settings: normal;
   font-size: 0.9375rem;
   font-weight: 400;
   letter-spacing: normal;
   line-height: normal;
   text-rendering: auto;
+}
+
+.detail .postAction::before {
+  position: absolute;
+  z-index: 0;
+  inline-size: 2.171875rem;
+  block-size: 2.171875rem;
+  border-radius: 50%;
+  background: transparent;
+  content: "";
+  pointer-events: none;
+}
+
+.detail .postAction svg {
+  position: relative;
+  z-index: 1;
+  inline-size: 1.40625rem;
+  block-size: 1.40625rem;
+}
+
+.detail .postAction:hover,
+.detail .postAction:focus-visible {
+  background: transparent;
+}
+
+.detail .postAction:hover::before,
+.detail .postAction:focus-visible::before {
+  background: var(--accent-soft);
+}
+
+.detail .postAction.replyAction:hover::before,
+.detail .postAction.replyAction:focus-visible::before {
+  background: #e8f5fd;
+}
+
+.detail .postAction.repostAction:hover::before,
+.detail .postAction.repostAction:focus-visible::before {
+  background: #e3f1eb;
+}
+
+.detail .shareAction {
+  grid-column: 5;
+  inline-size: 1.40625rem;
+  justify-self: end;
 }
 
 .publishedLine {

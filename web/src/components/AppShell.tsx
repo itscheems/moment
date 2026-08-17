@@ -394,7 +394,9 @@ export function AppShell({
       <a className={styles.skipLink} href="#main-content">
         跳到主要内容
       </a>
-      <div className={styles.shell}>
+      <div
+        className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""}`}
+      >
         <LeftRail
           ownerSettingsAvailable={ownerSettingsAvailable}
           route={route}

@@ -68,8 +68,14 @@ describe("visual foundation contract", () => {
   it("locks the wide, tablet, and mobile shell boundaries", () => {
     expect(shellCss).toContain("grid-template-columns: 15.5rem 40rem 20rem");
     expect(shellCss).toContain("inline-size: min(100%, 75.5rem)");
+    expect(shellCss).toMatch(
+      /\._shell_[\w-]+\._detailShell_[\w-]+\s*\{[^}]*grid-template-columns:\s*15\.5rem 37\.5rem 22\.5rem;/s,
+    );
     expect(shellCss).toContain(
       "grid-template-columns: 5.5rem minmax(0, 40rem)",
+    );
+    expect(shellCss).toMatch(
+      /\._shell_[\w-]+\._detailShell_[\w-]+\s*\{[^}]*grid-template-columns:\s*5\.5rem minmax\(0, 37\.5rem\) 2\.5rem;/s,
     );
     expect(shellCss).toContain(
       "@media (min-width: 720px) and (max-width: 1279px)",
@@ -188,6 +194,42 @@ describe("visual foundation contract", () => {
     expect(commentsCss).toMatch(
       /\._commentMarkdown_[\w-]+\s*\{[^}]*font-family:\s*var\(--font-timeline\);[^}]*font-size:\s*0\.9375rem;[^}]*line-height:\s*1\.25rem;[^}]*overflow-wrap:\s*break-word;/s,
     );
+  });
+
+  it("keeps detail actions and inline replies separate from list and dialog contracts", () => {
+    expect(postCss).toMatch(
+      /\._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*var\(--post-edge-action-size\)\s+var\(--post-edge-action-size\)\s+minmax\(0, 1fr\)\s+var\(--post-edge-action-size\)/,
+    );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*min-block-size:\s*3rem;[^}]*grid-template-columns:\s*1\.90625rem 1\.90625rem 1\.90625rem 1\.90625rem 1\.40625rem;[^}]*padding-inline:\s*var\(--space-1\);/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._formSurface_[\w-]+\._inlineTopLevelForm_[\w-]+\s*\{[^}]*border-block-end:\s*0;[^}]*padding:\s*0\.25rem var\(--space-4\) 0\.75rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentForm_[\w-]+\s*\{[^}]*block-size:\s*4\.25rem;[^}]*padding-block:\s*0\.25rem 0\.5rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+ \._collapsedReplyAction_[\w-]+\s*\{[^}]*block-size:\s*2\.25rem;[^}]*opacity:\s*0\.25;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+ \._primaryAction_[\w-]+:disabled\s*\{[^}]*opacity:\s*0\.25;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+\s*\{[^}]*padding-block:\s*0\.25rem 0\.75rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+ \._commentForm_[\w-]+ textarea\s*\{[^}]*min-block-size:\s*3\.5rem;[^}]*border:\s*0\.125rem solid transparent;[^}]*padding-block:\s*0\.75rem;/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+[\s\S]*?\._commentMediaComposer_[\w-]+[\s\S]*?button:hover:not\(:disabled\),[\s\S]*?button:focus-visible\s*\{[^}]*color:\s*#829aab;[^}]*background:\s*rgb\(15 20 25 \/ 8%\);/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._replyDialogPopup_[\w-]+ > \._formSurface_[\w-]+\s*\{[^}]*padding-block-start:\s*var\(--space-2\);/s,
+    );
+    const mobileRules = commentsCss.split("@media (max-width: 719px)")[1];
+    expect(mobileRules).toBeDefined();
+    expect(mobileRules).not.toMatch(/\._inlineTopLevelForm_[\w-]+/);
   });
 
   it("keeps lights-out elevated surfaces and secondary actions visible", () => {

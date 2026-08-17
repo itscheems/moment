@@ -353,6 +353,8 @@ function CommentForm({
   const formId =
     suppliedFormId ??
     (parentId ? `reply-${replyTargetId ?? parentId}` : "top-level-comment");
+  const inlineTopLevel =
+    parentId === null && topLevelTargetUsername !== undefined;
   const displayReauth =
     mode === "owner" &&
     (authExpired || (owner.state === "expired" && !owner.session));
@@ -646,8 +648,10 @@ function CommentForm({
 
   return (
     <div
-      className={`${styles.formSurface} ${styles.commentLayoutFrame} ${parentId ? styles.replyForm : ""} ${expanded ? styles.commentExpanded : styles.commentCollapsed}`}
+      className={`${styles.formSurface} ${styles.commentLayoutFrame} ${inlineTopLevel ? styles.inlineTopLevelForm : ""} ${parentId ? styles.replyForm : ""} ${expanded ? styles.commentExpanded : styles.commentCollapsed}`}
       data-comment-layout-frame="true"
+      data-comment-layout-state={expanded ? "expanded" : "collapsed"}
+      data-comment-top-level={inlineTopLevel ? "true" : undefined}
       onFocusCapture={() => setActivated(true)}
       ref={layoutFrameRef}
     >
@@ -782,14 +786,9 @@ function CommentForm({
             />
             {!expanded ? (
               <button
-                aria-label="展开回复编辑器"
+                aria-label="回复"
                 className={styles.collapsedReplyAction}
-                onClick={() => {
-                  setActivated(true);
-                  window.requestAnimationFrame(() =>
-                    textareaRef.current?.focus(),
-                  );
-                }}
+                disabled
                 type="button"
               >
                 回复
@@ -874,6 +873,7 @@ function CommentForm({
             items={mediaItems}
             maximum={4}
             maximumTotalBytes={MAX_TOTAL_BYTES}
+            pickerTooltip={inlineTopLevel ? "媒体" : undefined}
             subject="回复"
             onAdd={(files) => {
               const next = [...mediaItemsRef.current];

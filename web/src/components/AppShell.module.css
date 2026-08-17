@@ -29,6 +29,10 @@
   margin-inline: auto;
 }
 
+.shell.detailShell {
+  grid-template-columns: 15.5rem 37.5rem 22.5rem;
+}
+
 .leftRail,
 .rightRail {
   position: sticky;
@@ -434,6 +438,10 @@
   .shell {
     inline-size: min(100%, 45.5rem);
     grid-template-columns: 5.5rem minmax(0, 40rem);
+  }
+
+  .shell.detailShell {
+    grid-template-columns: 5.5rem minmax(0, 37.5rem) 2.5rem;
   }
 
   .rightRail {

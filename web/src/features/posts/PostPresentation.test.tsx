@@ -452,6 +452,21 @@ describe("shared post presentation", () => {
     expect(postCss).toMatch(
       /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*max-inline-size: none/,
     );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*grid-template-columns:\s*1\.90625rem 1\.90625rem 1\.90625rem 1\.90625rem 1\.40625rem;[^}]*justify-content:\s*space-between;[^}]*column-gap:\s*0;/s,
+    );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._postAction_[\w-]+\s*\{[^}]*inline-size:\s*1\.90625rem;[^}]*block-size:\s*2\.9375rem;/s,
+    );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._postAction_[\w-]+ svg\s*\{[^}]*inline-size:\s*1\.40625rem;[^}]*block-size:\s*1\.40625rem;/s,
+    );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._postAction_[\w-]+::before\s*\{[^}]*inline-size:\s*2\.171875rem;[^}]*block-size:\s*2\.171875rem;[^}]*border-radius:\s*50%;/s,
+    );
+    expect(postCss).toMatch(
+      /\._detail_[\w-]+ \._shareAction_[\w-]+\s*\{[^}]*grid-column:\s*5;[^}]*inline-size:\s*1\.40625rem;[^}]*justify-self:\s*end;/s,
+    );
   });
 
   it("opens the detail from the post surface without hijacking post actions", () => {
