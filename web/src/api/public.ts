@@ -135,6 +135,7 @@ export interface PublicComment {
   contentHtml: string;
   createdAt: string;
   media: PublicMediaUsage[];
+  location: PublicPostLocation | null;
 }
 
 export interface CommentThread {
@@ -461,6 +462,19 @@ export function parseComment(
       "content_html",
       "created_at",
       "media",
+    ]) &&
+    !hasExactKeys(value, [
+      "id",
+      "post_id",
+      "parent_id",
+      "depth",
+      "author_kind",
+      "author_name",
+      "content_md",
+      "content_html",
+      "created_at",
+      "media",
+      "location",
     ])
   ) {
     throw invalidResponse("comment contains an unsupported or missing field");
@@ -500,6 +514,28 @@ export function parseComment(
     throw invalidResponse("comment author_name is not normalized");
   }
   const media = parseMediaUsages(value.media, 4, "comment");
+  let location: PublicPostLocation | null = null;
+  if (value.location !== undefined && value.location !== null) {
+    if (
+      !isRecord(value.location) ||
+      !hasExactKeys(value.location, ["name", "display_name"])
+    ) {
+      throw invalidResponse("comment location is invalid");
+    }
+    const name = stringField(value.location, "name");
+    const displayName = stringField(value.location, "display_name");
+    if (!name.trim() || !displayName.trim()) {
+      throw invalidResponse("comment location cannot be empty");
+    }
+    location = { name, displayName };
+  }
+  const contentMd = stringField(value, "content_md");
+  if (
+    Array.from(contentMd).length > 2_000 ||
+    (contentMd === "" ? location === null : !contentMd.trim())
+  ) {
+    throw invalidResponse("response field content_md violates comment limits");
+  }
   return {
     id,
     postId,
@@ -507,10 +543,11 @@ export function parseComment(
     depth: depth as 0 | 1,
     authorKind,
     authorName,
-    contentMd: commentTextField(value, "content_md", 2_000),
+    contentMd,
     contentHtml: safeCommentHtmlField(value, "content_html"),
     createdAt: instantField(value, "created_at"),
     media,
+    location,
   };
 }
 

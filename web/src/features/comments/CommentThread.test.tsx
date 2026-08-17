@@ -74,6 +74,7 @@ function comment(
       width: number;
       height: number;
     }>;
+    location?: { name: string; display_name: string } | null;
   } = {},
 ) {
   const parentId = options.parentId ?? null;
@@ -85,12 +86,13 @@ function comment(
     author_kind: options.owner ? "owner" : "guest",
     author_name: options.authorName ?? (options.owner ? "Owner" : "访客"),
     content_md: content,
-    content_html: `<p>${content}</p>\n`,
+    content_html: content ? `<p>${content}</p>\n` : "",
     created_at: options.createdAt ?? "2026-08-10T01:03:00Z",
     media: (options.media ?? []).map((usage) => ({
       ...usage,
       mime_type: usage.mime_type ?? "image/png",
     })),
+    location: options.location ?? null,
   };
 }
 
@@ -470,7 +472,7 @@ describe("public comment thread", () => {
     );
   });
 
-  it("lets the owner add a location tag from the active detail reply toolbar", async () => {
+  it("stores and renders an owner reply location as structured post-style data", async () => {
     preauthenticate();
     const fetcher = installApi((url, init) => {
       if (url === "/api/v1/owner/status") {
@@ -483,6 +485,16 @@ describe("public comment thread", () => {
       }
       if (url.endsWith("/comments") && init?.method !== "POST") {
         return success({ items: [] });
+      }
+      if (url.endsWith("/comments") && init?.method === "POST") {
+        return success(
+          comment(createdId, "", {
+            owner: true,
+            location: { name: "书房", display_name: "书房" },
+          }),
+          { replayed: false },
+          201,
+        );
       }
     });
     renderThread();
@@ -505,18 +517,46 @@ describe("public comment thread", () => {
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "添加" }));
 
-    expect(content).toHaveValue("📍 书房");
+    expect(content).toHaveValue("");
     expect(
       within(form).getByRole("button", { name: "更改位置：书房" }),
     ).toHaveAttribute("data-picker-tooltip", "位置");
+    const submit = within(form).getByRole("button", { name: "发表回复" });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
     await waitFor(() =>
       expect(
         fetcher.mock.calls.filter(
           ([url, init]) =>
             String(url).endsWith("/comments") && init?.method === "POST",
         ),
-      ).toHaveLength(0),
+      ).toHaveLength(1),
     );
+    const mutation = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith("/comments") && init?.method === "POST",
+    );
+    expect(JSON.parse(String(mutation?.[1]?.body))).toEqual({
+      content_md: "",
+      parent_id: null,
+      media: [],
+      location: {
+        name: "书房",
+        display_name: "书房",
+        country_code: "",
+        country: "",
+        region: "",
+        city: "",
+        district: "",
+        category: "",
+        provider: "manual",
+        provider_place_id: "",
+        latitude: null,
+        longitude: null,
+        coordinate_system: null,
+      },
+    });
+    expect(await screen.findByLabelText("地点：书房")).toBeInTheDocument();
   });
 
   it("retargets the guest composer's measured block size as activation and media change its real layout", async () => {
@@ -1356,7 +1396,12 @@ describe("public comment thread", () => {
       expect(await screen.findByText(content)).toBeInTheDocument();
       expect(createTokens).toEqual(["csrf-new"]);
       expect(createBodies).toEqual([
-        { content_md: content, parent_id: parentId, media: [] },
+        {
+          content_md: content,
+          parent_id: parentId,
+          media: [],
+          location: null,
+        },
       ]);
     },
   );

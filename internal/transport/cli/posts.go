@@ -1348,7 +1348,7 @@ func validRawAPIPostPage(data json.RawMessage, page postdto.Page) bool {
 }
 
 func validRawAPIComment(data json.RawMessage, comment commentdto.Comment) bool {
-	if !hasRequiredAPIDataFields(data, "id", "post_id", "parent_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at", "media") ||
+	if !hasRequiredAPIDataFields(data, "id", "post_id", "parent_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at", "media", "location") ||
 		!hasRequiredNonNullAPIDataFields(data, "id", "post_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at", "media") ||
 		!validCanonicalAPIInstantField(data, "created_at", comment.CreatedAt) {
 		return false

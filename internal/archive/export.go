@@ -258,6 +258,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 				ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
 				AuthorKind: value.AuthorKind, AuthorName: value.AuthorName,
 				ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS), Media: media,
+				Location: portableLocation(value.Location),
 			})
 		})
 	})
@@ -556,14 +557,15 @@ type locationRecord struct {
 }
 
 type commentRecord struct {
-	ID         string        `json:"id"`
-	EntryID    string        `json:"entry_id"`
-	ParentID   *string       `json:"parent_id"`
-	AuthorKind string        `json:"author_kind"`
-	AuthorName string        `json:"author_name"`
-	ContentMD  string        `json:"content_md"`
-	CreatedAt  string        `json:"created_at"`
-	Media      []usageRecord `json:"media"`
+	ID         string          `json:"id"`
+	EntryID    string          `json:"entry_id"`
+	ParentID   *string         `json:"parent_id"`
+	AuthorKind string          `json:"author_kind"`
+	AuthorName string          `json:"author_name"`
+	ContentMD  string          `json:"content_md"`
+	CreatedAt  string          `json:"created_at"`
+	Media      []usageRecord   `json:"media"`
+	Location   *locationRecord `json:"location,omitempty"`
 }
 
 type mediaRecord struct {
@@ -845,7 +847,7 @@ func validateArchiveComment(value sqlitestore.ArchiveComment) error {
 	if err := (domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
 		AuthorKind: domain.CommentAuthorKind(value.AuthorKind), AuthorName: value.AuthorName,
-		ContentMD: value.ContentMD, CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
+		ContentMD: value.ContentMD, Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
 	}).Validate(); err != nil {
 		return err
 	}
@@ -1406,6 +1408,10 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		for _, usage := range usages {
 			usageMediaIDs[usage.MediaID] = struct{}{}
 		}
+		location, err := domainLocation(value.Location)
+		if err != nil {
+			return err
+		}
 		group := value.ID
 		rank := 0
 		if value.ParentID != nil {
@@ -1423,7 +1429,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if err := validateArchiveComment(sqlitestore.ArchiveComment{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
 			AuthorKind: value.AuthorKind, AuthorName: value.AuthorName,
-			ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(), Media: usages,
+			ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(), Media: usages, Location: location,
 		}); err != nil {
 			return err
 		}

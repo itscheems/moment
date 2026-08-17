@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -126,6 +128,58 @@ func TestCommentCLIDirectAPIParityOwnerIdentityIdempotencyAndSafety(t *testing.T
 	missing := execute(application, "", "--url", fixture.server.URL, "comment", "delete", created["id"].(string), "--yes", "--json")
 	if missing.exit != ExitNotFound || decodeOneDocument(t, missing.stdout)["error"].(map[string]any)["code"] != "COMMENT_NOT_FOUND" {
 		t.Fatalf("missing = %#v", missing)
+	}
+}
+
+func TestCommentLocationCLIDirectAPIParityAndStrictInputs(t *testing.T) {
+	fixture := newCommentCLIFixture(t)
+	application := momentTestApplication()
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	location := `{"name":"静安寺","display_name":"上海市静安区南京西路1686号","country_code":"CN","country":"中国","region":"上海市","city":"上海市","district":"静安区","category":"风景名胜","provider":"amap","provider_place_id":"B0FFF","latitude":31.223186,"longitude":121.44526,"coordinate_system":"gcj02"}`
+	manifest := filepath.Join(t.TempDir(), "location.json")
+	if err := os.WriteFile(manifest, []byte(location), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	createdOutput := execute(application, "", "comment", "create", fixture.postID,
+		"--data-dir", fixture.dataDir, "--location-json", manifest, "--json")
+	if createdOutput.exit != ExitSuccess || createdOutput.stderr != "" {
+		t.Fatalf("direct location comment = %#v", createdOutput)
+	}
+	created := commandData(t, createdOutput)
+	if created["content_md"] != "" || created["content_html"] != "" {
+		t.Fatalf("location-only content = %#v", created)
+	}
+	if got := created["location"].(map[string]any); got["name"] != "静安寺" || got["display_name"] != "上海市静安区南京西路1686号" || len(got) != 2 {
+		t.Fatalf("public location = %#v", got)
+	}
+
+	apiReplyOutput := execute(application, "", "--url", fixture.server.URL, "comment", "reply",
+		fixture.postID, created["id"].(string), "--location-name", "书房", "--json")
+	if apiReplyOutput.exit != ExitSuccess || apiReplyOutput.stderr != "" {
+		t.Fatalf("API location reply = %#v", apiReplyOutput)
+	}
+	apiReply := commandData(t, apiReplyOutput)
+	if got := apiReply["location"].(map[string]any); got["name"] != "书房" || got["display_name"] != "书房" {
+		t.Fatalf("manual reply location = %#v", got)
+	}
+
+	apiList := commandData(t, execute(application, "", "--url", fixture.server.URL,
+		"comment", "list", fixture.postID, "--json"))
+	directList := commandData(t, execute(application, "", "comment", "list", fixture.postID,
+		"--data-dir", fixture.dataDir, "--json"))
+	if !reflect.DeepEqual(apiList, directList) {
+		t.Fatalf("comment location parity: api=%#v direct=%#v", apiList, directList)
+	}
+
+	for _, output := range []commandOutput{
+		execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--json"),
+		execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir,
+			"--location-name", "书房", "--location-json", manifest, "--json"),
+	} {
+		if output.exit != ExitInvalidInput || decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
+			t.Fatalf("invalid location flags = %#v", output)
+		}
 	}
 }
 

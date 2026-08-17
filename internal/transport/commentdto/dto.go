@@ -14,16 +14,17 @@ import (
 
 // Comment is the canonical one-level comment wire representation.
 type Comment struct {
-	ID          string       `json:"id"`
-	PostID      string       `json:"post_id"`
-	ParentID    *string      `json:"parent_id"`
-	Depth       int          `json:"depth"`
-	AuthorKind  string       `json:"author_kind"`
-	AuthorName  string       `json:"author_name"`
-	ContentMD   string       `json:"content_md"`
-	ContentHTML string       `json:"content_html"`
-	CreatedAt   time.Time    `json:"created_at"`
-	Media       []MediaUsage `json:"media"`
+	ID          string            `json:"id"`
+	PostID      string            `json:"post_id"`
+	ParentID    *string           `json:"parent_id"`
+	Depth       int               `json:"depth"`
+	AuthorKind  string            `json:"author_kind"`
+	AuthorName  string            `json:"author_name"`
+	ContentMD   string            `json:"content_md"`
+	ContentHTML string            `json:"content_html"`
+	CreatedAt   time.Time         `json:"created_at"`
+	Media       []MediaUsage      `json:"media"`
+	Location    *postdto.Location `json:"location"`
 }
 
 // MediaUsage is one ordered managed image attached to a comment read model.
@@ -47,10 +48,14 @@ func FromComment(comment app.Comment) Comment {
 	for index, usage := range comment.Media {
 		media[index] = MediaUsage{MediaID: usage.MediaID.String(), Position: usage.Position, AltText: usage.AltText, MIMEType: usage.MIMEType, Width: usage.Width, Height: usage.Height}
 	}
+	var location *postdto.Location
+	if comment.Comment.Location != nil {
+		location = &postdto.Location{Name: comment.Comment.Location.Name, DisplayName: comment.Comment.Location.DisplayName}
+	}
 	return Comment{
 		ID: comment.Comment.ID.String(), PostID: comment.Comment.EntryID.String(), ParentID: parentID, Depth: depth,
 		AuthorKind: string(comment.Comment.AuthorKind), AuthorName: comment.Comment.AuthorName,
-		ContentMD: comment.Comment.ContentMD, ContentHTML: comment.ContentHTML, CreatedAt: comment.Comment.CreatedAt.UTC(), Media: media,
+		ContentMD: comment.Comment.ContentMD, ContentHTML: comment.ContentHTML, CreatedAt: comment.Comment.CreatedAt.UTC(), Media: media, Location: location,
 	}
 }
 
@@ -84,7 +89,11 @@ func ValidateComment(comment Comment) error {
 	if (parentID == nil && comment.Depth != 0) || (parentID != nil && comment.Depth != 1) {
 		return errors.New("comment depth does not match parent_id")
 	}
-	record := domain.Comment{ID: id, EntryID: postID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(comment.AuthorKind), AuthorName: comment.AuthorName, ContentMD: comment.ContentMD, CreatedAt: comment.CreatedAt}
+	var location *domain.Location
+	if comment.Location != nil {
+		location = &domain.Location{Name: comment.Location.Name, DisplayName: comment.Location.DisplayName, Provider: "manual"}
+	}
+	record := domain.Comment{ID: id, EntryID: postID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(comment.AuthorKind), AuthorName: comment.AuthorName, ContentMD: comment.ContentMD, Location: location, CreatedAt: comment.CreatedAt}
 	if err := record.Validate(); err != nil {
 		return err
 	}
@@ -102,7 +111,10 @@ func ValidateComment(comment Comment) error {
 	if err := domain.ValidateCommentMediaUsages(usages); err != nil {
 		return err
 	}
-	html, err := domain.RenderCommentMarkdown(record.ContentMD)
+	html := ""
+	if record.ContentMD != "" {
+		html, err = domain.RenderCommentMarkdown(record.ContentMD)
+	}
 	if err != nil || html != comment.ContentHTML {
 		return errors.New("comment content_html does not match content_md")
 	}

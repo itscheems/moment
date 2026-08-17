@@ -140,8 +140,13 @@ func (store commentStore) CommentsEnabled(ctx context.Context) (bool, error) {
 func (store commentStore) CommentByID(ctx context.Context, id domain.ID) (domain.Comment, bool, error) {
 	record, err := scanComment(store.queries.QueryRowContext(ctx, `
 SELECT id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms
+     , location.name, location.display_name, location.country_code,
+       location.country, location.region, location.city, location.district,
+       location.category, location.provider, location.provider_place_id,
+       location.latitude_e7, location.longitude_e7, location.coordinate_system
 FROM comments
-WHERE id = ?`, id.String()))
+LEFT JOIN comment_location AS location ON location.comment_id = comments.id
+WHERE comments.id = ?`, id.String()))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Comment{}, false, nil
 	}
@@ -153,9 +158,14 @@ WHERE id = ?`, id.String()))
 
 func (store commentStore) ListComments(ctx context.Context, entryID domain.ID) ([]domain.Comment, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT child.id, child.entry_id, child.parent_id, child.author_kind, child.author_name, child.content_md, child.created_at_ms
+SELECT child.id, child.entry_id, child.parent_id, child.author_kind, child.author_name, child.content_md, child.created_at_ms,
+       location.name, location.display_name, location.country_code,
+       location.country, location.region, location.city, location.district,
+       location.category, location.provider, location.provider_place_id,
+       location.latitude_e7, location.longitude_e7, location.coordinate_system
 FROM comments AS child
 LEFT JOIN comments AS root ON root.id = child.parent_id
+LEFT JOIN comment_location AS location ON location.comment_id = child.id
 WHERE child.entry_id = ?
 ORDER BY
     COALESCE(root.created_at_ms, child.created_at_ms) ASC,
@@ -306,6 +316,41 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`, comment.ID.String(), comment.EntryID.String(), nu
 	return nil
 }
 
+func (store commentStore) ReplaceCommentLocation(ctx context.Context, commentID domain.ID, location *domain.Location) error {
+	if location != nil {
+		if err := location.Validate(); err != nil {
+			return err
+		}
+	}
+	if _, err := store.queries.ExecContext(ctx, `DELETE FROM comment_location WHERE comment_id = ?`, commentID.String()); err != nil {
+		return fmt.Errorf("delete comment location: %w", err)
+	}
+	if location == nil {
+		return nil
+	}
+	var latitude, longitude, system any
+	if location.Point != nil {
+		latitude = location.Point.LatitudeE7
+		longitude = location.Point.LongitudeE7
+		system = string(location.Point.System)
+	}
+	_, err := store.queries.ExecContext(ctx, `
+INSERT INTO comment_location (
+    comment_id, name, display_name, country_code, country, region, city,
+    district, category, provider, provider_place_id, latitude_e7,
+    longitude_e7, coordinate_system
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		commentID.String(), location.Name, location.DisplayName, location.CountryCode,
+		location.Country, location.Region, location.City, location.District,
+		location.Category, location.Provider, location.ProviderPlaceID,
+		latitude, longitude, system,
+	)
+	if err != nil {
+		return fmt.Errorf("insert comment location: %w", err)
+	}
+	return nil
+}
+
 func (store commentStore) CountCommentReplies(ctx context.Context, id domain.ID) (int, error) {
 	var count int
 	if err := store.queries.QueryRowContext(ctx, `SELECT count(*) FROM comments WHERE parent_id = ?`, id.String()).Scan(&count); err != nil {
@@ -361,7 +406,15 @@ func scanComment(scanner commentScanner) (domain.Comment, error) {
 	var idValue, entryValue, authorKind, authorName, content string
 	var parent sql.NullString
 	var createdAt int64
-	if err := scanner.Scan(&idValue, &entryValue, &parent, &authorKind, &authorName, &content, &createdAt); err != nil {
+	var locationName, locationDisplayName, countryCode, country, region, city, district, category, provider, providerPlaceID sql.NullString
+	var latitude, longitude sql.NullInt64
+	var coordinateSystem sql.NullString
+	if err := scanner.Scan(
+		&idValue, &entryValue, &parent, &authorKind, &authorName, &content, &createdAt,
+		&locationName, &locationDisplayName, &countryCode, &country, &region, &city,
+		&district, &category, &provider, &providerPlaceID, &latitude, &longitude,
+		&coordinateSystem,
+	); err != nil {
 		return domain.Comment{}, err
 	}
 	id, err := domain.ParseID(idValue)
@@ -380,7 +433,24 @@ func scanComment(scanner commentScanner) (domain.Comment, error) {
 		}
 		parentID = &parsed
 	}
-	record := domain.Comment{ID: id, EntryID: entryID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(authorKind), AuthorName: authorName, ContentMD: content, CreatedAt: domain.TimeFromMillis(createdAt)}
+	var location *domain.Location
+	if locationName.Valid {
+		if !locationDisplayName.Valid || !countryCode.Valid || !country.Valid || !region.Valid || !city.Valid ||
+			!district.Valid || !category.Valid || !provider.Valid || !providerPlaceID.Valid ||
+			latitude.Valid != longitude.Valid || latitude.Valid != coordinateSystem.Valid {
+			return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment location is incomplete", map[string]any{"comment_id": id.String()})
+		}
+		location = &domain.Location{
+			Name: locationName.String, DisplayName: locationDisplayName.String,
+			CountryCode: countryCode.String, Country: country.String, Region: region.String,
+			City: city.String, District: district.String, Category: category.String,
+			Provider: provider.String, ProviderPlaceID: providerPlaceID.String,
+		}
+		if latitude.Valid {
+			location.Point = &domain.GeoPoint{LatitudeE7: latitude.Int64, LongitudeE7: longitude.Int64, System: domain.CoordinateSystem(coordinateSystem.String)}
+		}
+	}
+	record := domain.Comment{ID: id, EntryID: entryID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(authorKind), AuthorName: authorName, ContentMD: content, Location: location, CreatedAt: domain.TimeFromMillis(createdAt)}
 	if err := record.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment violates the comment contract", map[string]any{"comment_id": id.String()})
 	}

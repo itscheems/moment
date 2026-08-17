@@ -31,6 +31,7 @@ import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { formatMomentDate } from "../posts/dates";
+import { PostLocation } from "../posts/PostPresentation";
 import { ImageGrid } from "../media/ImageGrid";
 import { MediaComposer } from "../media/MediaComposer";
 import {
@@ -54,35 +55,6 @@ import styles from "./Comments.module.css";
 
 const MAX_AUTHOR_NAME = 40;
 const MAX_COMMENT = 2_000;
-
-function locationTag(location: OwnerLocation): string {
-  return `📍 ${location.name.trim()}`;
-}
-
-function replaceLocationTag(
-  content: string,
-  previousTag: string | null,
-  nextTag: string | null,
-): string {
-  let nextContent = content;
-  if (previousTag) {
-    const tagIndex = nextContent.lastIndexOf(previousTag);
-    if (tagIndex >= 0) {
-      const before = nextContent
-        .slice(0, tagIndex)
-        .replace(/\n{1,2}$/, "")
-        .trimEnd();
-      const after = nextContent
-        .slice(tagIndex + previousTag.length)
-        .replace(/^\n{1,2}/, "")
-        .trimStart();
-      nextContent = [before, after].filter(Boolean).join("\n\n");
-    }
-  }
-  if (!nextTag) return nextContent;
-  const body = nextContent.trimEnd();
-  return body ? `${body}\n\n${nextTag}` : nextTag;
-}
 
 function CommentProgress({ count }: { count: number }) {
   const radius = 9;
@@ -372,7 +344,6 @@ function CommentForm({
   const pendingRef = useRef(false);
   const idempotencyRef = useRef("");
   const signatureRef = useRef("");
-  const locationTagRef = useRef<string | null>(null);
   const localTextareaRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = suppliedTextareaRef ?? localTextareaRef;
   const contentCount = useMemo(() => Array.from(content).length, [content]);
@@ -382,7 +353,9 @@ function CommentForm({
   );
   const validName =
     mode === "owner" || (nameCount > 0 && nameCount <= MAX_AUTHOR_NAME);
-  const validContent = content.trim().length > 0 && contentCount <= MAX_COMMENT;
+  const validContent =
+    (content.trim().length > 0 || commentLocation !== null) &&
+    contentCount <= MAX_COMMENT;
   const mediaError = mediaValidation(mediaItems, 4);
   const rateLimited = remaining > 0;
   const formId =
@@ -614,6 +587,7 @@ function CommentForm({
         item.altText,
         item.mediaId,
       ]),
+      commentLocation,
       mode === "guest" ? website : null,
     ]);
     if (signatureRef.current !== signature) {
@@ -637,6 +611,7 @@ function CommentForm({
               parentId,
               idempotencyRef.current,
               usages,
+              commentLocation,
             )
           : await api.createGuestComment(
               postId,
@@ -657,7 +632,6 @@ function CommentForm({
       setRetryUntil(0);
       replaceMedia([]);
       setCommentLocation(null);
-      locationTagRef.current = null;
       setActivated(parentId !== null || initialExpanded);
     } catch (nextError) {
       if (mode === "owner" && owner.expireIfInvalidSession(nextError)) {
@@ -819,7 +793,7 @@ function CommentForm({
               }}
               placeholder="发布你的回复"
               ref={textareaRef}
-              required
+              required={commentLocation === null}
               rows={parentId ? 1 : 2}
               value={content}
             />
@@ -925,17 +899,6 @@ function CommentForm({
                     !owner.session
                   }
                   onChange={(nextLocation) => {
-                    const nextTag = nextLocation
-                      ? locationTag(nextLocation)
-                      : null;
-                    setContent(
-                      replaceLocationTag(
-                        content,
-                        locationTagRef.current,
-                        nextTag,
-                      ),
-                    );
-                    locationTagRef.current = nextTag;
                     setCommentLocation(nextLocation);
                     setActivated(true);
                     setError(null);
@@ -1252,11 +1215,14 @@ function CommentItem({
             <time dateTime={comment.createdAt}>{created.relative}</time>
           </ExactTimeTooltip>
         </header>
-        <MarkdownContent
-          className={styles.commentMarkdown}
-          html={comment.contentHtml}
-          mentionUsername={site.username}
-        />
+        {comment.contentHtml ? (
+          <MarkdownContent
+            className={styles.commentMarkdown}
+            html={comment.contentHtml}
+            mentionUsername={site.username}
+          />
+        ) : null}
+        {comment.location ? <PostLocation location={comment.location} /> : null}
         <ImageGrid media={comment.media} />
         <footer className={styles.commentActions}>
           {replyRoot ? (

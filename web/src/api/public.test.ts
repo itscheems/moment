@@ -829,6 +829,67 @@ describe("public API client", () => {
     );
   });
 
+  it("accepts a location-only owner comment with the post location projection", async () => {
+    const located = {
+      ...rootComment,
+      author_kind: "owner",
+      author_name: "Owner",
+      content_md: "",
+      content_html: "",
+      location: {
+        name: "BANANA+香蕉攀岩",
+        display_name: "天目西路218号嘉里合集B1B103B104",
+      },
+    };
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({ data: { items: [located] }, meta: { request_id: "req" } }),
+      ) as typeof fetch,
+    );
+
+    await expect(api.comments(post.id)).resolves.toMatchObject({
+      items: [
+        {
+          contentMd: "",
+          contentHtml: "",
+          location: {
+            name: "BANANA+香蕉攀岩",
+            displayName: "天目西路218号嘉里合集B1B103B104",
+          },
+        },
+      ],
+    });
+  });
+
+  it("rejects whitespace-only comment content even when a location exists", async () => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            items: [
+              {
+                ...rootComment,
+                author_kind: "owner",
+                author_name: "Owner",
+                content_md: " ",
+                content_html: "",
+                location: {
+                  name: "静安寺",
+                  display_name: "上海市静安区南京西路1686号",
+                },
+              },
+            ],
+          },
+          meta: { request_id: "req" },
+        }),
+      ) as typeof fetch,
+    );
+
+    await expect(api.comments(post.id)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
+  });
+
   it.each([
     {
       name: "reply without adjacent root",

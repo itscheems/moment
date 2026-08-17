@@ -66,10 +66,10 @@ for local conventions; do not commit `.env` files or real instance data.
 
 ## Post locations
 
-Posts can carry a saved place snapshot selected from search, resolved from an
-explicit browser/device location request, or entered as a manual label. Comments
-do not carry locations. Provider credentials remain in the server process and
-are never sent to the browser:
+Posts and owner comments can carry a saved place snapshot selected from search,
+resolved from an explicit browser/device location request, or entered as a
+manual label. Provider credentials remain in the server process and are never
+sent to the browser:
 
 ```sh
 AMAP_API_KEY=... \

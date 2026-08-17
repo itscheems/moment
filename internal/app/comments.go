@@ -29,6 +29,7 @@ type CommentStore interface {
 	CommentMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
 	ProjectMediaUsages(context.Context, []domain.EntryMediaUsage) ([]MediaUsageProjection, error)
 	InsertComment(context.Context, domain.Comment) error
+	ReplaceCommentLocation(context.Context, domain.ID, *domain.Location) error
 	ReplaceCommentMediaUsages(context.Context, domain.ID, []domain.EntryMediaUsage) error
 	CommentCascadeMediaIDs(context.Context, domain.ID) ([]domain.ID, error)
 	CountCommentReplies(context.Context, domain.ID) (int, error)
@@ -66,6 +67,7 @@ type CreateCommentInput struct {
 	AuthorName     string
 	ContentMD      string
 	Media          []domain.EntryMediaUsage
+	Location       *domain.Location
 	IdempotencyKey string
 }
 
@@ -205,6 +207,12 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 		return CreateCommentResult{}, err
 	}
 	input.AuthorName = name
+	input.Location = domain.CloneLocation(input.Location)
+	if input.Location != nil {
+		if err := input.Location.Validate(); err != nil {
+			return CreateCommentResult{}, err
+		}
+	}
 	requestHash := hashCreateComment(input)
 	idempotencyScope := commentCreateIdempotencyScope(input.AuthorKind)
 	if input.IdempotencyKey != "" {
@@ -216,8 +224,12 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 			return replayed, nil
 		}
 	}
-	if _, err := domain.RenderCommentMarkdown(input.ContentMD); err != nil {
-		return CreateCommentResult{}, err
+	if input.ContentMD != "" {
+		if _, err := domain.RenderCommentMarkdown(input.ContentMD); err != nil {
+			return CreateCommentResult{}, err
+		}
+	} else if input.Location == nil {
+		return CreateCommentResult{}, domain.ValidateCommentMarkdown(input.ContentMD)
 	}
 	if err := domain.ValidateCommentMediaUsages(input.Media); err != nil {
 		return CreateCommentResult{}, err
@@ -275,11 +287,14 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 		if generateErr != nil {
 			return generateErr
 		}
-		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, ContentMD: input.ContentMD, CreatedAt: now}
+		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: now}
 		if validateErr := comment.Validate(); validateErr != nil {
 			return validateErr
 		}
 		if insertErr := store.InsertComment(ctx, comment); insertErr != nil {
+			return insertErr
+		}
+		if insertErr := store.ReplaceCommentLocation(ctx, comment.ID, comment.Location); insertErr != nil {
 			return insertErr
 		}
 		if insertErr := store.ReplaceCommentMediaUsages(ctx, comment.ID, input.Media); insertErr != nil {
@@ -462,7 +477,7 @@ func reconstructCommentReplay(input CreateCommentInput, scope, requestHash strin
 	if record.RequestHash != requestHash {
 		return domain.Comment{}, domain.NewError(domain.CodeIdempotencyKeyReused, "idempotency key was already used with different comment input", map[string]any{"field": "idempotency_key"})
 	}
-	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, ContentMD: input.ContentMD, CreatedAt: record.CreatedAt}
+	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: record.CreatedAt}
 	if err := comment.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
@@ -493,6 +508,12 @@ func hashCreateComment(input CreateCommentInput) string {
 			_, _ = digest.Write([]byte(value))
 		}
 	}
+	for _, value := range commentLocationHashValues(input.Location) {
+		var length [8]byte
+		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+		_, _ = digest.Write(length[:])
+		_, _ = digest.Write([]byte(value))
+	}
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
@@ -500,14 +521,38 @@ func renderComment(record domain.Comment, media []MediaUsageProjection) (Comment
 	if err := record.Validate(); err != nil {
 		return Comment{}, err
 	}
-	html, err := domain.RenderCommentMarkdown(record.ContentMD)
-	if err != nil {
-		return Comment{}, err
+	html := ""
+	if record.ContentMD != "" {
+		var err error
+		html, err = domain.RenderCommentMarkdown(record.ContentMD)
+		if err != nil {
+			return Comment{}, err
+		}
 	}
 	if err := validateCommentMediaProjections(media); err != nil {
 		return Comment{}, err
 	}
+	record.Location = domain.CloneLocation(record.Location)
 	return Comment{Comment: record, ContentHTML: html, Media: cloneMediaUsageProjections(media)}, nil
+}
+
+func commentLocationHashValues(location *domain.Location) []string {
+	if location == nil {
+		return nil
+	}
+	values := []string{
+		"<location>", location.Name, location.DisplayName, location.CountryCode,
+		location.Country, location.Region, location.City, location.District,
+		location.Category, location.Provider, location.ProviderPlaceID,
+	}
+	if location.Point == nil {
+		return append(values, "<no-point>")
+	}
+	return append(values,
+		fmt.Sprintf("%d", location.Point.LatitudeE7),
+		fmt.Sprintf("%d", location.Point.LongitudeE7),
+		string(location.Point.System),
+	)
 }
 
 func altPointerString(value *string) string {

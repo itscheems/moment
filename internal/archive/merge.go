@@ -568,6 +568,9 @@ func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, 
 	if !reflect.DeepEqual(usageSignature(local.Media, localSHA), usageSignature(incoming.Media, incomingSHA)) {
 		fields = append(fields, "media")
 	}
+	if !reflect.DeepEqual(local.Location, incoming.Location) {
+		fields = append(fields, "location")
+	}
 	return fields
 }
 
@@ -685,6 +688,7 @@ func cloneArchiveEntry(value sqlitestore.ArchiveEntry) sqlitestore.ArchiveEntry 
 func cloneArchiveComment(value sqlitestore.ArchiveComment) sqlitestore.ArchiveComment {
 	value.ParentID = cloneString(value.ParentID)
 	value.Media = cloneUsages(value.Media)
+	value.Location = domain.CloneLocation(value.Location)
 	return value
 }
 func cloneUsages(values []sqlitestore.ArchiveUsage) []sqlitestore.ArchiveUsage {

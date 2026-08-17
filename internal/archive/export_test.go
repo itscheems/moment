@@ -127,6 +127,9 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 		len(reply.Media) != 1 || reply.Media[0].MediaID != mediaTwoID || reply.Media[0].AltText == nil || *reply.Media[0].AltText != "" {
 		t.Fatalf("comment media = root %#v reply %#v", root.Media, reply.Media)
 	}
+	if root.Location != nil || reply.Location == nil || reply.Location.Name != "静安寺" || reply.Location.LatitudeE7 == nil || *reply.Location.LatitudeE7 != 312231860 || reply.Location.CoordinateSystem == nil || *reply.Location.CoordinateSystem != "gcj02" {
+		t.Fatalf("comment locations = root %#v reply %#v", root.Location, reply.Location)
+	}
 
 	var second bytes.Buffer
 	if _, err := fixture.exporter.Export(context.Background(), &second); err != nil {
@@ -856,6 +859,7 @@ func newExportFixture(t *testing.T, full bool) exportFixture {
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 2, '街景')`, []any{entryID, mediaTwoID}},
 			{`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'guest', '访客', 'root', ?)`, []any{rootCommentID, entryID, clock.UnixMilli()}},
 			{`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'owner', 'Owner', 'reply', ?)`, []any{replyID, entryID, rootCommentID, clock.UnixMilli()}},
+			{`INSERT INTO comment_location (comment_id, name, display_name, country_code, country, region, city, district, category, provider, provider_place_id, latitude_e7, longitude_e7, coordinate_system) VALUES (?, '静安寺', '上海市静安区南京西路1686号', 'CN', '中国', '上海市', '上海市', '静安区', '风景名胜', 'amap', 'B0FFF', 312231860, 1214452600, 'gcj02')`, []any{replyID}},
 			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, []any{rootCommentID, mediaOneID}},
 			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 1, '街景')`, []any{rootCommentID, mediaTwoID}},
 			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, '')`, []any{replyID, mediaTwoID}},

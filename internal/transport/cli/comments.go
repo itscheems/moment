@@ -14,6 +14,7 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	"github.com/moment/moment/internal/transport/commentdto"
+	"github.com/moment/moment/internal/transport/locationdto"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -32,7 +33,7 @@ func registerComments(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"comment", "reply"}, ArgsUsage: "<post-id> <parent-comment-id>", Short: "Reply as the owner",
 		Long:    "Create one owner reply to a top-level comment through the shared one-level comment service.",
-		Inputs:  "Provide a post ULID, top-level parent comment ULID, --content, and optional --idempotency-key. CLI mutations always use owner identity.",
+		Inputs:  "Provide a post ULID, top-level parent comment ULID, comment content or location, and optional --idempotency-key. CLI mutations always use owner identity.",
 		Output:  "The canonical created owner comment and replay metadata.",
 		Errors:  "Missing/deleted parents, depth violations, disabled comments, and authentication failures use stable codes.",
 		Example: "moment comment reply 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --content 'thanks' --json",
@@ -41,6 +42,7 @@ func registerComments(application *Application) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
 			registerPostMediaFlags(flags)
+			registerPostLocationFlags(flags, false)
 		},
 		Run: runCommentReply,
 	})
@@ -61,7 +63,7 @@ func registerComments(application *Application) {
 func commentCreateSpec(verb, short, long, example string, run Handler) LeafSpec {
 	return LeafSpec{
 		Path: []string{"comment", verb}, ArgsUsage: "<post-id>", Short: short, Long: long,
-		Inputs:  "Provide one post ULID, --content, and optional --idempotency-key. CLI mutations always create owner comments and never accept guest names or client IPs.",
+		Inputs:  "Provide one post ULID, comment content or location, and optional --idempotency-key. CLI mutations always create owner comments and never accept guest names or client IPs.",
 		Output:  "The canonical created owner comment and replay metadata.",
 		Errors:  "Content validation, disabled comments, missing posts, authentication, and idempotency conflicts use stable codes.",
 		Example: example, Args: cobra.ExactArgs(1), Capability: CapabilityBoth,
@@ -69,6 +71,7 @@ func commentCreateSpec(verb, short, long, example string, run Handler) LeafSpec 
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
 			registerPostMediaFlags(flags)
+			registerPostLocationFlags(flags, false)
 		},
 		Run: run,
 	}
@@ -125,12 +128,16 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 	if err != nil {
 		return Result{}, commentCLIError(err)
 	}
-	if !input.Changed("content") {
-		return Result{}, invalidArgument("--content is required", "provide the comment Markdown with --content")
-	}
 	content, err := input.String("content")
 	if err != nil {
 		return Result{}, err
+	}
+	locationInput, err := postLocationInputFromFlags(ctx, input, false)
+	if err != nil {
+		return Result{}, err
+	}
+	if !input.Changed("content") && !locationInput.Present {
+		return Result{}, invalidArgument("comment content or location is required", "provide --content, --location-name, or --location-json")
 	}
 	idempotencyKey, err := input.String("idempotency-key")
 	if err != nil {
@@ -158,7 +165,7 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 		if err != nil {
 			return Result{}, err
 		}
-		result, err := direct.service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ContentMD: content, Media: usages, IdempotencyKey: idempotencyKey})
+		result, err := direct.service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -172,6 +179,9 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 			return Result{}, err
 		}
 		payload := map[string]any{"content_md": content, "media": postMediaDTOs(usages)}
+		if locationInput.Location != nil {
+			payload["location"] = locationdto.FromDomain(*locationInput.Location)
+		}
 		if parentID != nil {
 			payload["parent_id"] = parentID.String()
 		}

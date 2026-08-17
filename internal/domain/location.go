@@ -77,8 +77,8 @@ func (point GeoPoint) Validate() error {
 	return nil
 }
 
-// Location is the immutable provider-independent snapshot attached to a post.
-// Provider requests are never needed to render a stored post.
+// Location is the immutable provider-independent snapshot attached to a post
+// or comment. Provider requests are never needed to render stored content.
 type Location struct {
 	Name            string
 	DisplayName     string

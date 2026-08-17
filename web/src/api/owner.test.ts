@@ -763,6 +763,7 @@ describe("owner API client", () => {
       content_md: "所有者回应",
       parent_id: null,
       media: [],
+      location: null,
     });
     expect(String(createInit.body)).not.toContain("author_name");
     expect(new Headers(createInit.headers).get("X-CSRF-Token")).toBe("csrf");

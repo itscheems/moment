@@ -70,6 +70,46 @@ func TestCommentServiceOneLevelOrderingIdentityAndCascade(t *testing.T) {
 	}
 }
 
+func TestCommentLocationOnlyRoundTripsAndParticipatesInIdempotency(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	postID, _ := domain.ParseID(entryOne)
+	service := newTestCommentService(t, db, runtimeState, func() time.Time { return time.UnixMilli(1_700_000_000_000) }, commentIDs(commentOne))
+	location := &domain.Location{
+		Name: "BANANA+香蕉攀岩", DisplayName: "天目西路218号嘉里合集B1B103B104",
+		CountryCode: "CN", Country: "中国", Region: "上海市", City: "上海市",
+		District: "静安区", Category: "体育场馆", Provider: "amap", ProviderPlaceID: "B0TEST",
+		Point: &domain.GeoPoint{LatitudeE7: 312231860, LongitudeE7: 1214452600, System: domain.CoordinateGCJ02},
+	}
+
+	created, err := service.CreateOwner(context.Background(), app.CreateCommentInput{
+		EntryID: postID, Location: location, IdempotencyKey: "located-comment",
+	})
+	if err != nil || created.Comment.Comment.ContentMD != "" || created.Comment.ContentHTML != "" ||
+		created.Comment.Comment.Location == nil || created.Comment.Comment.Location.DisplayName != location.DisplayName {
+		t.Fatalf("created location comment = %+v, %v", created, err)
+	}
+	location.Name = "caller mutation"
+	thread, err := service.List(context.Background(), postID)
+	if err != nil || len(thread.Items) != 1 || thread.Items[0].Comment.Location == nil || thread.Items[0].Comment.Location.Name != "BANANA+香蕉攀岩" {
+		t.Fatalf("stored location comment = %+v, %v", thread, err)
+	}
+	replayLocation := domain.CloneLocation(thread.Items[0].Comment.Location)
+	replayed, err := service.CreateOwner(context.Background(), app.CreateCommentInput{EntryID: postID, Location: replayLocation, IdempotencyKey: "located-comment"})
+	if err != nil || !replayed.Replayed || replayed.Comment.Comment.Location == nil {
+		t.Fatalf("location replay = %+v, %v", replayed, err)
+	}
+	replayLocation.DisplayName = "different"
+	if _, err := service.CreateOwner(context.Background(), app.CreateCommentInput{EntryID: postID, Location: replayLocation, IdempotencyKey: "located-comment"}); !domain.HasCode(err, domain.CodeIdempotencyKeyReused) {
+		t.Fatalf("location conflict = %v", err)
+	}
+
+	if _, err := service.Delete(context.Background(), created.Comment.Comment.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM comment_location`, 0)
+}
+
 func TestCommentServiceRejectsDepthCrossPostUnsafeContentAndDisabledWrites(t *testing.T) {
 	db, runtimeState := openTestDatabase(t, Options{})
 	insertEntry(t, db, entryOne, "one")

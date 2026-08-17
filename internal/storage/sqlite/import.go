@@ -196,7 +196,7 @@ func (importer *PortableImporter) InsertComment(ctx context.Context, value Archi
 	comment := domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
 		AuthorKind: domain.CommentAuthorKind(value.AuthorKind), AuthorName: value.AuthorName,
-		ContentMD: value.ContentMD, CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
+		ContentMD: value.ContentMD, Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
 	}
 	if err := comment.Validate(); err != nil {
 		return err
@@ -216,6 +216,26 @@ func (importer *PortableImporter) InsertComment(ctx context.Context, value Archi
 INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
 VALUES (?, ?, ?, ?, ?, ?, ?)`, value.ID, value.EntryID, value.ParentID, value.AuthorKind, value.AuthorName, value.ContentMD, value.CreatedAtMS); err != nil {
 		return fmt.Errorf("insert portable comment %s: %w", value.ID, err)
+	}
+	if value.Location != nil {
+		var latitude, longitude, coordinateSystem any
+		if value.Location.Point != nil {
+			latitude = value.Location.Point.LatitudeE7
+			longitude = value.Location.Point.LongitudeE7
+			coordinateSystem = string(value.Location.Point.System)
+		}
+		if _, err := importer.tx.ExecContext(ctx, `
+INSERT INTO comment_location (
+    comment_id, name, display_name, country_code, country, region, city, district,
+    category, provider, provider_place_id, latitude_e7, longitude_e7, coordinate_system
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			value.ID, value.Location.Name, value.Location.DisplayName, value.Location.CountryCode,
+			value.Location.Country, value.Location.Region, value.Location.City, value.Location.District,
+			value.Location.Category, value.Location.Provider, value.Location.ProviderPlaceID,
+			latitude, longitude, coordinateSystem,
+		); err != nil {
+			return fmt.Errorf("insert portable comment location: %w", err)
+		}
 	}
 	var aggregateBytes int64
 	for _, usage := range value.Media {

@@ -2402,11 +2402,13 @@ export class OwnerApi {
     parentId: string | null,
     idempotencyKey: string,
     media: PostMediaInput[] = [],
+    location: OwnerLocation | null = null,
   ): Promise<CreatedComment> {
     const init = requestInit("POST", csrfToken, {
       content_md: contentMd,
       parent_id: parentId,
       media: mediaPayload(media),
+      location: location === null ? null : locationPayload(location),
     });
     const headers = new Headers(init.headers);
     headers.set("Idempotency-Key", idempotencyKey);

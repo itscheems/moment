@@ -120,7 +120,7 @@ func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ContentMD: request.ContentMD, Media: request.Media, IdempotencyKey: key})
+		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -164,6 +164,7 @@ type commentWriteRequest struct {
 	ParentID   *domain.ID
 	Honeypot   string
 	Media      []domain.EntryMediaUsage
+	Location   *domain.Location
 }
 
 func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, error) {
@@ -222,6 +223,15 @@ func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, erro
 				return commentWriteRequest{}, decodeErr
 			}
 			request.Media = media
+		case "location":
+			if !owner {
+				return commentWriteRequest{}, invalidCommentArgument("location is not accepted for guest writes", key)
+			}
+			location, decodeErr := decodePostLocation(raw)
+			if decodeErr != nil {
+				return commentWriteRequest{}, decodeErr
+			}
+			request.Location = location
 		case "author_name":
 			if owner || decodeRequiredString(raw, &request.AuthorName) != nil {
 				return commentWriteRequest{}, invalidCommentArgument("author_name is not accepted for owner writes", key)

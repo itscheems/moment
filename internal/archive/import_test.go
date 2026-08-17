@@ -91,7 +91,9 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 		stagedComments[0].Media[0].MediaID != mediaOneID || stagedComments[0].Media[0].AltText != nil ||
 		stagedComments[0].Media[1].MediaID != mediaTwoID || stagedComments[0].Media[1].AltText == nil || *stagedComments[0].Media[1].AltText != "街景" ||
 		len(stagedComments[1].Media) != 1 || stagedComments[1].Media[0].MediaID != mediaTwoID ||
-		stagedComments[1].Media[0].AltText == nil || *stagedComments[1].Media[0].AltText != "" {
+		stagedComments[1].Media[0].AltText == nil || *stagedComments[1].Media[0].AltText != "" ||
+		stagedComments[0].Location != nil || stagedComments[1].Location == nil || stagedComments[1].Location.Name != "静安寺" ||
+		stagedComments[1].Location.Point == nil || stagedComments[1].Location.Point.System != domain.CoordinateGCJ02 {
 		t.Fatalf("staged comments = %#v", stagedComments)
 	}
 	if err := stagedSnapshot.Close(); err != nil {

@@ -40,7 +40,7 @@ function longInTimeline(post: PublicPost): boolean {
   );
 }
 
-function PostLocation({
+export function PostLocation({
   location,
 }: {
   location: NonNullable<PublicPost["location"]>;

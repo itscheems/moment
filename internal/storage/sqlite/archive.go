@@ -72,6 +72,7 @@ type ArchiveComment struct {
 	ContentMD   string
 	CreatedAtMS int64
 	Media       []ArchiveUsage
+	Location    *domain.Location
 }
 
 // ArchiveMedia contains portable metadata plus the private source path needed
@@ -347,9 +348,14 @@ func (snapshot *ArchiveSnapshot) Comments(ctx context.Context, yield func(Archiv
 	rows, err := snapshot.tx.QueryContext(ctx, `
 SELECT comment.id, comment.entry_id, comment.parent_id, comment.author_kind,
        comment.author_name, comment.content_md, comment.created_at_ms,
+       location.name, location.display_name, location.country_code,
+       location.country, location.region, location.city, location.district,
+       location.category, location.provider, location.provider_place_id,
+       location.latitude_e7, location.longitude_e7, location.coordinate_system,
        usage.media_id, usage.position, usage.alt_text
 FROM comments AS comment
 LEFT JOIN comment_media AS usage ON usage.comment_id = comment.id
+LEFT JOIN comment_location AS location ON location.comment_id = comment.id
 ORDER BY comment.entry_id,
          CASE WHEN comment.parent_id IS NULL THEN comment.id ELSE comment.parent_id END,
          CASE WHEN comment.parent_id IS NULL THEN 0 ELSE 1 END,
@@ -366,11 +372,39 @@ ORDER BY comment.entry_id,
 		var parent sql.NullString
 		var mediaID, alt sql.NullString
 		var position sql.NullInt64
-		if err := rows.Scan(&value.ID, &value.EntryID, &parent, &value.AuthorKind, &value.AuthorName, &value.ContentMD, &value.CreatedAtMS, &mediaID, &position, &alt); err != nil {
+		var locationName, locationDisplayName, countryCode, country, region, city, district, category, provider, providerPlaceID sql.NullString
+		var latitude, longitude sql.NullInt64
+		var coordinateSystem sql.NullString
+		if err := rows.Scan(
+			&value.ID, &value.EntryID, &parent, &value.AuthorKind, &value.AuthorName,
+			&value.ContentMD, &value.CreatedAtMS, &locationName, &locationDisplayName,
+			&countryCode, &country, &region, &city, &district, &category, &provider,
+			&providerPlaceID, &latitude, &longitude, &coordinateSystem,
+			&mediaID, &position, &alt,
+		); err != nil {
 			return fmt.Errorf("scan archive comment: %w", err)
 		}
 		if parent.Valid {
 			value.ParentID = &parent.String
+		}
+		if locationName.Valid {
+			if !locationDisplayName.Valid || !countryCode.Valid || !country.Valid || !region.Valid || !city.Valid ||
+				!district.Valid || !category.Valid || !provider.Valid || !providerPlaceID.Valid ||
+				latitude.Valid != longitude.Valid || latitude.Valid != coordinateSystem.Valid {
+				return errors.New("archive comment location is incomplete")
+			}
+			value.Location = &domain.Location{
+				Name: locationName.String, DisplayName: locationDisplayName.String,
+				CountryCode: countryCode.String, Country: country.String, Region: region.String,
+				City: city.String, District: district.String, Category: category.String,
+				Provider: provider.String, ProviderPlaceID: providerPlaceID.String,
+			}
+			if latitude.Valid {
+				value.Location.Point = &domain.GeoPoint{LatitudeE7: latitude.Int64, LongitudeE7: longitude.Int64, System: domain.CoordinateSystem(coordinateSystem.String)}
+			}
+			if err := value.Location.Validate(); err != nil {
+				return errors.New("archive comment location is invalid")
+			}
 		}
 		if current == nil || current.ID != value.ID {
 			if current != nil {

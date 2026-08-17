@@ -29,6 +29,7 @@ type Comment struct {
 	AuthorKind CommentAuthorKind
 	AuthorName string
 	ContentMD  string
+	Location   *Location
 	CreatedAt  time.Time
 }
 
@@ -77,8 +78,17 @@ func (comment Comment) Validate() error {
 		}
 		return NewError(CodeInvalidArgument, "comment author name is not normalized", map[string]any{"field": "author_name"})
 	}
-	if err := ValidateCommentMarkdown(comment.ContentMD); err != nil {
+	if comment.ContentMD == "" {
+		if comment.Location == nil {
+			return ValidateCommentMarkdown(comment.ContentMD)
+		}
+	} else if err := ValidateCommentMarkdown(comment.ContentMD); err != nil {
 		return err
+	}
+	if comment.Location != nil {
+		if err := comment.Location.Validate(); err != nil {
+			return err
+		}
 	}
 	if comment.CreatedAt.IsZero() || comment.CreatedAt != NormalizeTime(comment.CreatedAt) {
 		return NewError(CodeInvalidArgument, "comment creation time must be a canonical millisecond instant", map[string]any{"field": "created_at"})
