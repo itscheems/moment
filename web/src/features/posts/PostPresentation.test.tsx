@@ -409,6 +409,44 @@ describe("shared post presentation", () => {
       "href",
       "#comments",
     );
+    expect(
+      screen.getByRole("button", {
+        name: "回复这条 Moment，3 条回复",
+      }),
+    ).toHaveTextContent("3");
+  });
+
+  it("keeps the owner repost state and count visible in detail", () => {
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-detail-repost",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <PostPresentation
+              detail
+              owner
+              post={{
+                ...makePost("已转发", "<p>已转发</p>"),
+                repostedAt: "2026-08-10T02:00:00.000Z",
+              }}
+              site={site}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    const repost = screen.getByRole("button", { name: "转发这条 Moment" });
+    expect(repost).toHaveAttribute("aria-pressed", "true");
+    expect(within(repost).getByText("1")).toHaveAttribute("data-repost-count");
+    window.sessionStorage.removeItem("moment.owner.session.v1");
   });
 
   it("optically aligns the reply glyph without shrinking its hit target", () => {

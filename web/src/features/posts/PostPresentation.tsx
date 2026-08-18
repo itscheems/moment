@@ -327,12 +327,17 @@ export function PostPresentation({
           <div className={styles.postActions}>
             <ActionTooltip label="回复">
               <button
-                aria-label="回复这条 Moment"
+                aria-label={`回复这条 Moment${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
                 className={`${styles.postAction} ${styles.replyAction}`}
                 onClick={onReply}
                 type="button"
               >
                 <Icon name="reply" />
+                {post.commentCount > 0 ? (
+                  <span className={styles.actionCount}>
+                    {post.commentCount}
+                  </span>
+                ) : null}
               </button>
             </ActionTooltip>
             {owner ? (
