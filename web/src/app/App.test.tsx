@@ -568,6 +568,32 @@ describe("App shell and public routes", () => {
     expect(screen.queryByText("私人的公开时间流")).not.toBeInTheDocument();
   });
 
+  it("returns to the timeline from the profile header", async () => {
+    const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
+    window.history.replaceState({}, "", "/profile");
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url.startsWith("/api/v1/posts?")) {
+        return json(timelineEnvelope([item]));
+      }
+      return json({}, 404);
+    });
+
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "乔乔" }),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('button[aria-label="打开账户菜单"]'),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(screen.getByRole("heading", { name: "时间流" })).toBeInTheDocument();
+  });
+
   it("opens detail and returns to the preserved timeline without refetching it", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "可返回的 Moment");
     let timelineRequests = 0;

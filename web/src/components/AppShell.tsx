@@ -409,6 +409,7 @@ export function AppShell({
             } ${route.id === "detail" ? styles.detailHeader : ""}`}
           >
             {route.id === "detail" ||
+            route.id === "profile" ||
             route.id === "owner-edit" ||
             route.id === "owner-compose" ? (
               <InternalLink
