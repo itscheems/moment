@@ -248,6 +248,11 @@ WHERE e.id IS NULL`).Scan(&count); err != nil {
 func (store searchStore) SearchSources(ctx context.Context, after domain.ID, limit int) ([]app.SearchSource, error) {
 	rows, err := store.queries.QueryContext(ctx, `
 SELECT e.id, e.content_md, e.content_text,
+       coalesce((
+           SELECT group_concat(card.title || ' ' || card.site_name || ' ' || card.author_name || ' ' || card.canonical_url, ' ')
+           FROM entry_link_card AS card
+           WHERE card.entry_id = e.id
+       ), ''),
        count(f.rowid),
        coalesce(sum(CASE WHEN f.content_text = e.content_text THEN 1 ELSE 0 END), 0)
 FROM entries AS e
@@ -264,7 +269,7 @@ LIMIT ?`, string(domain.KindMoment), after.String(), after.String(), limit)
 	for rows.Next() {
 		var idString string
 		var source app.SearchSource
-		if err := rows.Scan(&idString, &source.ContentMD, &source.ContentText, &source.FTSCopies, &source.FTSStoredTextCopies); err != nil {
+		if err := rows.Scan(&idString, &source.ContentMD, &source.ContentText, &source.LinkCardText, &source.FTSCopies, &source.FTSStoredTextCopies); err != nil {
 			return nil, fmt.Errorf("scan search source: %w", err)
 		}
 		id, err := domain.ParseID(idString)

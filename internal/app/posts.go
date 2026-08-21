@@ -309,7 +309,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
 		return CreatePostResult{}, err
 	}
-	contentText, err := domain.NormalizeContentV2(input.ContentMD)
+	contentText, err := DerivedSearchText(input.ContentMD, input.LinkCards)
 	if err != nil {
 		return CreatePostResult{}, err
 	}
@@ -807,11 +807,15 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if input.Location != nil {
 			updatedLocation = domain.CloneLocation(*input.Location)
 		}
+		// The replacement set is authoritative for validation and for the
+		// derived search text. Projections are reloaded after the write so the
+		// response carries each thumbnail's stored geometry.
+		nextLinkCards := LinkCardsOf(currentLinkCards)
 		if input.LinkCards != nil {
 			if mediaErr := domain.ValidateLinkCards(*input.LinkCards); mediaErr != nil {
 				return mediaErr
 			}
-			updatedLinkCards = nil
+			nextLinkCards = *input.LinkCards
 		}
 		if mediaErr := validatePostAggregate(content, len(updatedMedia)); mediaErr != nil {
 			return mediaErr
@@ -819,7 +823,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if _, mediaErr := domain.RenderMarkdown(content); mediaErr != nil {
 			return mediaErr
 		}
-		contentText, mediaErr := domain.NormalizeContentV2(content)
+		contentText, mediaErr := DerivedSearchText(content, nextLinkCards)
 		if mediaErr != nil {
 			return mediaErr
 		}
@@ -860,6 +864,10 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			affectedCards := append(linkCardMediaIDs(LinkCardsOf(currentLinkCards)), linkCardMediaIDs(*input.LinkCards)...)
 			if updateErr := store.ReconcileMediaReferences(ctx, affectedCards, now); updateErr != nil {
 				return updateErr
+			}
+			updatedLinkCards, mediaErr = store.EntryLinkCards(ctx, input.ID)
+			if mediaErr != nil {
+				return mediaErr
 			}
 		}
 		updated = entry

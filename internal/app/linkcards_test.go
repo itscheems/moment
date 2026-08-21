@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -167,5 +168,41 @@ func TestLinkPreviewWithoutThumbnailStoreStillProducesCard(t *testing.T) {
 	}
 	if preview.Card.Title != "No processors" || preview.Card.ThumbnailMediaID != "" {
 		t.Fatalf("unexpected card: %#v", preview.Card)
+	}
+}
+
+func TestDerivedSearchTextMakesAWordlessPostFindable(t *testing.T) {
+	// A Moment whose body is only a link still has to be recallable months
+	// later by the video's own title.
+	cards := []domain.LinkCard{{
+		CanonicalURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		Title:        "Never Gonna Give You Up",
+		SiteName:     "YouTube",
+		AuthorName:   "Rick Astley",
+	}}
+	text, err := DerivedSearchText("https://www.youtube.com/watch?v=dQw4w9WgXcQ", cards)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, term := range []string{"never gonna give you up", "youtube", "rick astley", "youtube.com"} {
+		if !strings.Contains(text, term) {
+			t.Fatalf("expected %q in derived text %q", term, text)
+		}
+	}
+}
+
+func TestDerivedSearchTextIsUnchangedWithoutCards(t *testing.T) {
+	// The historical contract must hold for every existing entry so a rebuild
+	// does not rewrite text it did not need to.
+	withoutCards, err := DerivedSearchText("一段普通正文", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := domain.NormalizeContentV2("一段普通正文")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutCards != baseline {
+		t.Fatalf("card-free derived text drifted: %q vs %q", withoutCards, baseline)
 	}
 }

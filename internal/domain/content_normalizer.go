@@ -15,7 +15,7 @@ import (
 // ContentNormalizerVersion identifies the derived search text contract. The
 // version is persisted with the index so future normalizer changes require an
 // explicit rebuild rather than silently mixing representations.
-const ContentNormalizerVersion = 2
+const ContentNormalizerVersion = 3
 
 // NormalizeContentV2 converts Markdown-shaped input into deterministic search
 // text. It keeps visible link labels and code, drops destinations and invisible

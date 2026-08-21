@@ -212,3 +212,32 @@ func validateLinkCardURL(field, value string, required bool) error {
 	}
 	return nil
 }
+
+// LinkCardSearchText renders the searchable half of a card set.
+//
+// Only high-signal fields participate: the captured title, the site and author
+// names, and the canonical URL's host. The description is platform marketing
+// copy, and a full URL is mostly an opaque identifier that would dilute a
+// trigram index without making anything findable by a word a person would type.
+//
+// This is what makes a wordless post findable: a Moment whose body is just a
+// link can still be recalled months later by the video's own title.
+func LinkCardSearchText(cards []LinkCard) string {
+	if len(cards) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, card := range cards {
+		for _, value := range []string{card.Title, card.SiteName, card.AuthorName} {
+			if trimmed := strings.TrimSpace(value); trimmed != "" {
+				parts = append(parts, trimmed)
+			}
+		}
+		if parsed, err := url.Parse(card.CanonicalURL); err == nil {
+			if host := strings.TrimPrefix(strings.ToLower(parsed.Hostname()), "www."); host != "" {
+				parts = append(parts, host)
+			}
+		}
+	}
+	return strings.Join(parts, " ")
+}
