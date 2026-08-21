@@ -16,6 +16,7 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/transport/linkdto"
 	"github.com/moment/moment/internal/transport/locationdto"
 	"github.com/moment/moment/internal/transport/postdto"
 )
@@ -135,7 +136,7 @@ func createPost(posts *app.PostService) gin.HandlerFunc {
 			writePostError(ctx, err)
 			return
 		}
-		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Media: input.Media, Location: input.Location, QuotedPostID: input.QuotedPostID, IdempotencyKey: idempotencyKey})
+		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Media: input.Media, Location: input.Location, LinkCards: input.LinkCards, QuotedPostID: input.QuotedPostID, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -168,6 +169,13 @@ func updatePost(posts *app.PostService) gin.HandlerFunc {
 		if decoded.LocationPresent {
 			location := domain.CloneLocation(decoded.Location)
 			update.Location = &location
+		}
+		if decoded.LinkCardPresent {
+			cards := domain.CloneLinkCards(decoded.LinkCards)
+			if cards == nil {
+				cards = []domain.LinkCard{}
+			}
+			update.LinkCards = &cards
 		}
 		post, err := posts.Update(ctx.Request.Context(), update)
 		if err != nil {
@@ -242,6 +250,8 @@ type decodedPostWrite struct {
 	MediaPresent    bool
 	Location        *domain.Location
 	LocationPresent bool
+	LinkCards       []domain.LinkCard
+	LinkCardPresent bool
 	QuotedPostID    *domain.ID
 	QuotePresent    bool
 }
@@ -297,6 +307,13 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 			}
 			result.Location = location
 			result.LocationPresent = true
+		case "link_cards":
+			cards, err := decodePostLinkCards(raw)
+			if err != nil {
+				return decodedPostWrite{}, err
+			}
+			result.LinkCards = cards
+			result.LinkCardPresent = true
 		case "quoted_post_id":
 			if patch || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 				return decodedPostWrite{}, invalidPostArgument("quoted_post_id is only accepted for create and must be a canonical ULID", "quoted_post_id")
@@ -321,10 +338,37 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return decodedPostWrite{}, invalidPostArgument("request must contain exactly one JSON document", "body")
 	}
-	if (!patch && !result.ContentPresent && !result.MediaPresent && !result.QuotePresent) || (patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent) {
-		return decodedPostWrite{}, invalidPostArgument("request must contain content_md, media, or location", "body")
+	if (!patch && !result.ContentPresent && !result.MediaPresent && !result.QuotePresent && !result.LinkCardPresent) ||
+		(patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent && !result.LinkCardPresent) {
+		return decodedPostWrite{}, invalidPostArgument("request must contain content_md, media, location, or link_cards", "body")
 	}
 	return result, nil
+}
+
+// decodePostLinkCards accepts the ordered card list. An omitted key preserves
+// the existing cards on a patch, an empty array clears them, and array order
+// defines position -- the same convention media usages already follow.
+func decodePostLinkCards(raw json.RawMessage) ([]domain.LinkCard, error) {
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, invalidPostArgument("link_cards must be an array, not null", "link_cards")
+	}
+	var wire []linkdto.Card
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	if err := decoder.Decode(&wire); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return nil, invalidPostArgument("link_cards must be an array of canonical link cards", "link_cards")
+	}
+	cards := make([]domain.LinkCard, 0, len(wire))
+	for index, item := range wire {
+		card, err := item.Domain(index)
+		if err != nil {
+			return nil, err
+		}
+		cards = append(cards, card)
+	}
+	if err := domain.ValidateLinkCards(cards); err != nil {
+		return nil, err
+	}
+	return cards, nil
 }
 
 func decodePostLocation(raw json.RawMessage) (*domain.Location, error) {

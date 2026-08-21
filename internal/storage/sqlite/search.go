@@ -87,7 +87,7 @@ func (store searchStore) EntryMediaUsages(ctx context.Context, entryID domain.ID
 	return newPostStore(store.queries).EntryMediaUsages(ctx, entryID)
 }
 
-func (store searchStore) EntryLinkCards(ctx context.Context, entryID domain.ID) ([]domain.LinkCard, error) {
+func (store searchStore) EntryLinkCards(ctx context.Context, entryID domain.ID) ([]app.LinkCardProjection, error) {
 	return newPostStore(store.queries).EntryLinkCards(ctx, entryID)
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/linkfetch"
 	"github.com/moment/moment/internal/mediatype"
 )
 
@@ -28,6 +29,7 @@ type Post struct {
 	CommentCount int               `json:"comment_count"`
 	Media        []MediaProjection `json:"media"`
 	Location     *Location         `json:"location"`
+	LinkCards    []LinkCard        `json:"link_cards"`
 	QuotedPost   *QuotedPost       `json:"quoted_post"`
 }
 
@@ -40,6 +42,30 @@ type QuotedPost struct {
 	PublishedAt *time.Time        `json:"published_at"`
 	Media       []MediaProjection `json:"media"`
 	Location    *Location         `json:"location"`
+}
+
+// LinkCard is the deliberately narrow public card projection. It carries only
+// what a renderer needs. The originally typed source URL, the capture time, and
+// the recognizer label stay out of the public shape and survive only in the
+// portable archive, so removing a recognizer can never change what a stored
+// card renders as.
+type LinkCard struct {
+	Position          int     `json:"position"`
+	CanonicalURL      string  `json:"canonical_url"`
+	Kind              string  `json:"card_kind"`
+	Title             string  `json:"title"`
+	Description       string  `json:"description"`
+	SiteName          string  `json:"site_name"`
+	AuthorName        string  `json:"author_name"`
+	DurationSeconds   *int    `json:"duration_seconds"`
+	ThumbnailMediaID  *string `json:"thumbnail_media_id"`
+	ThumbnailMIMEType *string `json:"thumbnail_mime_type"`
+	ThumbnailWidth    *uint32 `json:"thumbnail_width"`
+	ThumbnailHeight   *uint32 `json:"thumbnail_height"`
+	// EmbedURL is emitted only while its origin is still allowlisted. A card
+	// whose embed origin has since been withdrawn renders as a static card
+	// instead of a frame the Content Security Policy would refuse.
+	EmbedURL *string `json:"embed_url"`
 }
 
 // Location is the deliberately coarse public location projection. Exact
@@ -189,6 +215,47 @@ type Page struct {
 
 // FromPost strips internal Entry fields while preserving the canonical
 // application result.
+// linkCardProjections narrows stored cards to the public shape. The embed URL
+// is re-checked against the allowlist here rather than trusted from storage, so
+// withdrawing an embed origin downgrades historical cards to static rather than
+// emitting a frame the Content Security Policy would refuse.
+func linkCardProjections(cards []app.LinkCardProjection) []LinkCard {
+	projections := make([]LinkCard, 0, len(cards))
+	for _, projection := range cards {
+		card := projection.Card
+		mapped := LinkCard{
+			Position:        card.Position,
+			CanonicalURL:    card.CanonicalURL,
+			Kind:            string(card.Kind),
+			Title:           card.Title,
+			Description:     card.Description,
+			SiteName:        card.SiteName,
+			AuthorName:      card.AuthorName,
+			DurationSeconds: card.DurationSeconds,
+		}
+		if card.ThumbnailMediaID != "" {
+			id := card.ThumbnailMediaID
+			mapped.ThumbnailMediaID = &id
+			if projection.ThumbnailMIMEType != "" {
+				mimeType := projection.ThumbnailMIMEType
+				width := projection.ThumbnailWidth
+				height := projection.ThumbnailHeight
+				mapped.ThumbnailMIMEType = &mimeType
+				mapped.ThumbnailWidth = &width
+				mapped.ThumbnailHeight = &height
+			}
+		}
+		if card.EmbedURL != "" && linkfetch.IsEmbeddable(card.EmbedURL) {
+			embed := card.EmbedURL
+			mapped.EmbedURL = &embed
+		} else {
+			mapped.Kind = string(domain.LinkKindLink)
+		}
+		projections = append(projections, mapped)
+	}
+	return projections
+}
+
 func FromPost(post app.Post) Post {
 	media := make([]MediaProjection, 0, len(post.Media))
 	for _, usage := range post.Media {
@@ -225,6 +292,7 @@ func FromPost(post app.Post) Post {
 			}
 			return &Location{Name: post.Location.Name, DisplayName: post.Location.DisplayName}
 		}(),
+		LinkCards: linkCardProjections(post.LinkCards),
 	}
 	if post.Quoted != nil {
 		if post.Quoted.Unavailable {

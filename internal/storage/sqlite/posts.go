@@ -427,29 +427,38 @@ INSERT INTO entry_location (
 	return nil
 }
 
-func (store postStore) EntryLinkCards(ctx context.Context, entryID domain.ID) ([]domain.LinkCard, error) {
+func (store postStore) EntryLinkCards(ctx context.Context, entryID domain.ID) ([]app.LinkCardProjection, error) {
+	// Join the thumbnail so the caller receives authoritative geometry in one
+	// read: the browser reserves layout space from it before the image loads.
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT position, source_url, canonical_url, provider, card_kind, title,
-       description, site_name, author_name, duration_seconds,
-       thumbnail_media_id, embed_url, captured_at_ms
-FROM entry_link_card
-WHERE entry_id = ?
-ORDER BY position`, entryID.String())
+SELECT card.position, card.source_url, card.canonical_url, card.provider,
+       card.card_kind, card.title, card.description, card.site_name,
+       card.author_name, card.duration_seconds, card.thumbnail_media_id,
+       card.embed_url, card.captured_at_ms,
+       thumbnail.mime_type, thumbnail.width, thumbnail.height
+FROM entry_link_card AS card
+LEFT JOIN media AS thumbnail ON thumbnail.id = card.thumbnail_media_id
+WHERE card.entry_id = ?
+ORDER BY card.position`, entryID.String())
 	if err != nil {
 		return nil, fmt.Errorf("query entry link cards: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
-	var cards []domain.LinkCard
+	var cards []app.LinkCardProjection
 	for rows.Next() {
 		var (
 			card      domain.LinkCard
 			duration  sql.NullInt64
 			thumbnail sql.NullString
+			mimeType  sql.NullString
+			width     sql.NullInt64
+			height    sql.NullInt64
 		)
 		if err := rows.Scan(
 			&card.Position, &card.SourceURL, &card.CanonicalURL, &card.Provider,
 			&card.Kind, &card.Title, &card.Description, &card.SiteName,
 			&card.AuthorName, &duration, &thumbnail, &card.EmbedURL, &card.CapturedAt,
+			&mimeType, &width, &height,
 		); err != nil {
 			return nil, fmt.Errorf("scan entry link card: %w", err)
 		}
@@ -461,7 +470,12 @@ ORDER BY position`, entryID.String())
 		if err := card.Validate(); err != nil {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored link card violates the domain contract", map[string]any{"post_id": entryID.String()})
 		}
-		cards = append(cards, card)
+		cards = append(cards, app.LinkCardProjection{
+			Card:              card,
+			ThumbnailMIMEType: mimeType.String,
+			ThumbnailWidth:    uint32(width.Int64),
+			ThumbnailHeight:   uint32(height.Int64),
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate entry link cards: %w", err)

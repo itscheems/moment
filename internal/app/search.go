@@ -64,7 +64,7 @@ type SearchStore interface {
 	CommentCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
 	EntryMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
-	EntryLinkCards(context.Context, domain.ID) ([]domain.LinkCard, error)
+	EntryLinkCards(context.Context, domain.ID) ([]LinkCardProjection, error)
 	SearchPublishedMillis(context.Context, SearchRepositoryQuery) ([]int64, error)
 	ArchivePublishedMillis(context.Context, *int64, *int64) ([]int64, error)
 	SearchNormalizerVersion(context.Context) (int, error)
@@ -201,7 +201,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 	var fromMS, toMS *int64
 	commentCounts := make(map[domain.ID]int)
 	locations := make(map[domain.ID]*domain.Location)
-	linkCards := make(map[domain.ID][]domain.LinkCard)
+	linkCards := make(map[domain.ID][]LinkCardProjection)
 	err = service.transactions.Read(ctx, func(store SearchStore) error {
 		var storeErr error
 		version, storeErr := store.SearchNormalizerVersion(ctx)
