@@ -28,6 +28,9 @@ type PostStore interface {
 	ProjectMediaUsages(context.Context, []domain.EntryMediaUsage) ([]MediaUsageProjection, error)
 	ReplaceEntryMediaUsages(context.Context, domain.ID, []domain.EntryMediaUsage) error
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
+	EntryLinkCards(context.Context, domain.ID) ([]LinkCardProjection, error)
+	ReplaceEntryLinkCards(context.Context, domain.ID, []domain.LinkCard) error
+	EntryLinkCardMediaIDs(context.Context, domain.ID) ([]string, error)
 	EntryQuote(context.Context, domain.ID) (EntryQuoteReference, error)
 	ReplaceEntryQuote(context.Context, domain.ID, *domain.ID) error
 	ReplaceEntryLocation(context.Context, domain.ID, *domain.Location) error
@@ -62,8 +65,45 @@ type Post struct {
 	ContentHTML  string
 	Media        []MediaUsageProjection
 	Location     *domain.Location
+	LinkCards    []LinkCardProjection
 	CommentCount int
 	Quoted       *QuotedPost
+}
+
+// LinkCardProjection pairs a stored card with its thumbnail's authoritative
+// geometry. Dimensions cross this boundary so the browser can reserve layout
+// space before the image loads, the same reason media projections carry width
+// and height while media writes do not.
+type LinkCardProjection struct {
+	Card              domain.LinkCard
+	ThumbnailMIMEType string
+	ThumbnailWidth    uint32
+	ThumbnailHeight   uint32
+}
+
+// LinkCardsOf extracts the stored cards from their projections.
+func LinkCardsOf(projections []LinkCardProjection) []domain.LinkCard {
+	if projections == nil {
+		return nil
+	}
+	cards := make([]domain.LinkCard, 0, len(projections))
+	for _, projection := range projections {
+		cards = append(cards, projection.Card)
+	}
+	return cards
+}
+
+func cloneLinkCardProjections(projections []LinkCardProjection) []LinkCardProjection {
+	if projections == nil {
+		return nil
+	}
+	clones := make([]LinkCardProjection, len(projections))
+	copy(clones, projections)
+	cards := domain.CloneLinkCards(LinkCardsOf(projections))
+	for index := range clones {
+		clones[index].Card = cards[index]
+	}
+	return clones
 }
 
 // TimelineItemKind distinguishes the canonical publication from the owner's
@@ -116,6 +156,7 @@ type CreatePostInput struct {
 	ContentMD      string
 	Media          []domain.EntryMediaUsage
 	Location       *domain.Location
+	LinkCards      []domain.LinkCard
 	QuotedPostID   *domain.ID
 	IdempotencyKey string
 }
@@ -138,6 +179,11 @@ type UpdatePostInput struct {
 	// Location nil preserves the current snapshot. A non-nil pointer whose
 	// value is nil clears it; every other value replaces it atomically.
 	Location **domain.Location
+	// LinkCards nil preserves the current cards. A non-nil empty slice clears
+	// them; every other non-nil value is the complete ordered replacement. This
+	// follows the media-usage list convention rather than the single-value
+	// double-pointer convention Location uses.
+	LinkCards *[]domain.LinkCard
 }
 
 // ListPostsInput requests one reverse-chronological timeline page. A zero
@@ -236,7 +282,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err := contextError(ctx); err != nil {
 		return CreatePostResult{}, err
 	}
-	requestHash := hashCreatePost(input.ContentMD, input.Media, input.Location, input.QuotedPostID)
+	requestHash := hashCreatePost(input.ContentMD, input.Media, input.Location, input.LinkCards, input.QuotedPostID)
 	if input.IdempotencyKey != "" {
 		replayed, found, err := service.loadCreateReplay(ctx, input, requestHash)
 		if err != nil {
@@ -254,13 +300,16 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 			return CreatePostResult{}, err
 		}
 	}
+	if err := domain.ValidateLinkCards(input.LinkCards); err != nil {
+		return CreatePostResult{}, err
+	}
 	if err := validatePostAggregate(input.ContentMD, len(input.Media)); err != nil {
 		return CreatePostResult{}, err
 	}
 	if _, err := domain.RenderMarkdown(input.ContentMD); err != nil {
 		return CreatePostResult{}, err
 	}
-	contentText, err := domain.NormalizeContentV2(input.ContentMD)
+	contentText, err := DerivedSearchText(input.ContentMD, input.LinkCards)
 	if err != nil {
 		return CreatePostResult{}, err
 	}
@@ -318,10 +367,14 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		if err := store.ReplaceEntryLocation(ctx, entry.ID, input.Location); err != nil {
 			return err
 		}
+		if err := store.ReplaceEntryLinkCards(ctx, entry.ID, input.LinkCards); err != nil {
+			return err
+		}
 		if err := store.ReplaceEntryQuote(ctx, entry.ID, input.QuotedPostID); err != nil {
 			return err
 		}
-		if err := store.ReconcileMediaReferences(ctx, mediaUsageIDs(input.Media), now); err != nil {
+		affected := append(mediaUsageIDs(input.Media), linkCardMediaIDs(input.LinkCards)...)
+		if err := store.ReconcileMediaReferences(ctx, affected, now); err != nil {
 			return err
 		}
 		if input.IdempotencyKey != "" {
@@ -342,6 +395,10 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		}
 		result.Post.Media = projectedMedia
 		result.Post.Location = domain.CloneLocation(input.Location)
+		result.Post.LinkCards, err = store.EntryLinkCards(ctx, entry.ID)
+		if err != nil {
+			return err
+		}
 		if input.QuotedPostID != nil {
 			quoted, quoteErr := loadQuotedPost(ctx, store, *input.QuotedPostID)
 			if quoteErr != nil {
@@ -354,7 +411,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err != nil {
 		return CreatePostResult{}, normalizePostRepositoryError(err)
 	}
-	result.Post.ContentHTML, err = domain.RenderMarkdown(result.Post.Entry.ContentMD)
+	result.Post.ContentHTML, err = domain.RenderMarkdownWithLinkCards(result.Post.Entry.ContentMD, LinkCardsOf(result.Post.LinkCards))
 	if err != nil {
 		return CreatePostResult{}, storedEntryError(result.Post.Entry.ID)
 	}
@@ -398,7 +455,7 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 		return CreatePostResult{}, false, nil
 	}
 	quoted := post.Quoted
-	post, err = renderPost(post.Entry, media, post.Location, commentCount)
+	post, err = renderPost(post.Entry, media, post.Location, post.LinkCards, commentCount)
 	if err != nil {
 		return CreatePostResult{}, false, idempotencySnapshotError()
 	}
@@ -449,6 +506,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 	var entry domain.Entry
 	var media []MediaUsageProjection
 	var location *domain.Location
+	var linkCards []LinkCardProjection
 	var commentCount int
 	var quoted *QuotedPost
 	var found bool
@@ -466,6 +524,10 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 		if storeErr != nil {
 			return storeErr
 		}
+		linkCards, storeErr = store.EntryLinkCards(ctx, id)
+		if storeErr != nil {
+			return storeErr
+		}
 		counts, storeErr := store.CommentCounts(ctx, []domain.ID{id})
 		commentCount = counts[id]
 		if storeErr != nil {
@@ -480,7 +542,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 	if !found {
 		return Post{}, postNotFound(id)
 	}
-	post, err := renderPost(entry, media, location, commentCount)
+	post, err := renderPost(entry, media, location, linkCards, commentCount)
 	post.Quoted = quoted
 	return post, err
 }
@@ -522,6 +584,10 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if storeErr != nil {
 			return storeErr
 		}
+		linkCards, storeErr := store.EntryLinkCards(ctx, id)
+		if storeErr != nil {
+			return storeErr
+		}
 		counts, storeErr := store.CommentCounts(ctx, []domain.ID{id})
 		if storeErr != nil {
 			return storeErr
@@ -530,14 +596,14 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if quoteErr != nil {
 			return quoteErr
 		}
-		result = Post{Entry: entry, Media: media, Location: location, CommentCount: counts[id], Quoted: quoted}
+		result = Post{Entry: entry, Media: media, Location: location, LinkCards: linkCards, CommentCount: counts[id], Quoted: quoted}
 		return nil
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
 	quoted := result.Quoted
-	result, err = renderPost(result.Entry, result.Media, result.Location, result.CommentCount)
+	result, err = renderPost(result.Entry, result.Media, result.Location, result.LinkCards, result.CommentCount)
 	result.Quoted = quoted
 	return result, err
 }
@@ -563,6 +629,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	var entries []TimelineEntry
 	mediaByEntry := make(map[domain.ID][]MediaUsageProjection)
 	locationByEntry := make(map[domain.ID]*domain.Location)
+	linkCardsByEntry := make(map[domain.ID][]LinkCardProjection)
 	commentCounts := make(map[domain.ID]int)
 	quotedByEntry := make(map[domain.ID]*QuotedPost)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
@@ -588,6 +655,10 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 			if storeErr != nil {
 				return storeErr
 			}
+			linkCardsByEntry[entry.ID], storeErr = store.EntryLinkCards(ctx, entry.ID)
+			if storeErr != nil {
+				return storeErr
+			}
 			quotedByEntry[entry.ID], storeErr = loadEntryQuote(ctx, store, entry.ID)
 			if storeErr != nil {
 				return storeErr
@@ -607,7 +678,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	page := PostPage{Items: make([]Post, 0, len(entries))}
 	for _, item := range entries {
 		entry := item.Entry
-		post, renderErr := renderPost(entry, mediaByEntry[entry.ID], locationByEntry[entry.ID], commentCounts[entry.ID])
+		post, renderErr := renderPost(entry, mediaByEntry[entry.ID], locationByEntry[entry.ID], linkCardsByEntry[entry.ID], commentCounts[entry.ID])
 		if renderErr != nil {
 			return PostPage{}, renderErr
 		}
@@ -672,8 +743,8 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if err := validatePostID(input.ID); err != nil {
 		return Post{}, err
 	}
-	if input.PreserveContent && input.Media == nil && input.Location == nil {
-		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md, media, or location", map[string]any{"field": "body"})
+	if input.PreserveContent && input.Media == nil && input.Location == nil && input.LinkCards == nil {
+		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md, media, location, or link cards", map[string]any{"field": "body"})
 	}
 	if input.Media != nil {
 		if err := domain.ValidateEntryMediaUsages(*input.Media); err != nil {
@@ -688,6 +759,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	var updated domain.Entry
 	var updatedMedia []MediaUsageProjection
 	var updatedLocation *domain.Location
+	var updatedLinkCards []LinkCardProjection
 	var updatedQuoted *QuotedPost
 	var commentCount int
 	err := service.transactions.Write(ctx, func(store PostStore) error {
@@ -706,6 +778,10 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if mediaErr != nil {
 			return mediaErr
 		}
+		currentLinkCards, mediaErr := store.EntryLinkCards(ctx, input.ID)
+		if mediaErr != nil {
+			return mediaErr
+		}
 		quoteReference, mediaErr := store.EntryQuote(ctx, input.ID)
 		if mediaErr != nil {
 			return mediaErr
@@ -721,6 +797,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		}
 		updatedMedia = currentMedia
 		updatedLocation = currentLocation
+		updatedLinkCards = currentLinkCards
 		if input.Media != nil {
 			updatedMedia, mediaErr = store.ProjectMediaUsages(ctx, *input.Media)
 			if mediaErr != nil {
@@ -730,13 +807,23 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if input.Location != nil {
 			updatedLocation = domain.CloneLocation(*input.Location)
 		}
+		// The replacement set is authoritative for validation and for the
+		// derived search text. Projections are reloaded after the write so the
+		// response carries each thumbnail's stored geometry.
+		nextLinkCards := LinkCardsOf(currentLinkCards)
+		if input.LinkCards != nil {
+			if mediaErr := domain.ValidateLinkCards(*input.LinkCards); mediaErr != nil {
+				return mediaErr
+			}
+			nextLinkCards = *input.LinkCards
+		}
 		if mediaErr := validatePostAggregate(content, len(updatedMedia)); mediaErr != nil {
 			return mediaErr
 		}
 		if _, mediaErr := domain.RenderMarkdown(content); mediaErr != nil {
 			return mediaErr
 		}
-		contentText, mediaErr := domain.NormalizeContentV2(content)
+		contentText, mediaErr := DerivedSearchText(content, nextLinkCards)
 		if mediaErr != nil {
 			return mediaErr
 		}
@@ -768,6 +855,21 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 				return updateErr
 			}
 		}
+		if input.LinkCards != nil {
+			if updateErr := store.ReplaceEntryLinkCards(ctx, input.ID, *input.LinkCards); updateErr != nil {
+				return updateErr
+			}
+			// Old and new thumbnails are reconciled together in this same
+			// transaction so a replaced card never leaves a stale clock.
+			affectedCards := append(linkCardMediaIDs(LinkCardsOf(currentLinkCards)), linkCardMediaIDs(*input.LinkCards)...)
+			if updateErr := store.ReconcileMediaReferences(ctx, affectedCards, now); updateErr != nil {
+				return updateErr
+			}
+			updatedLinkCards, mediaErr = store.EntryLinkCards(ctx, input.ID)
+			if mediaErr != nil {
+				return mediaErr
+			}
+		}
 		updated = entry
 		if quoteReference.Present {
 			updatedQuoted, mediaErr = loadEntryQuote(ctx, store, input.ID)
@@ -780,7 +882,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
-	result, err := renderPost(updated, updatedMedia, updatedLocation, commentCount)
+	result, err := renderPost(updated, updatedMedia, updatedLocation, updatedLinkCards, commentCount)
 	result.Quoted = updatedQuoted
 	return result, err
 }
@@ -811,6 +913,10 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if mediaErr != nil {
 			return mediaErr
 		}
+		linkCards, mediaErr := store.EntryLinkCards(ctx, id)
+		if mediaErr != nil {
+			return mediaErr
+		}
 		quoted, mediaErr := loadEntryQuote(ctx, store, id)
 		if mediaErr != nil {
 			return mediaErr
@@ -823,6 +929,9 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if mediaErr != nil {
 			return mediaErr
 		}
+		// Cascade removes the card rows, so its thumbnails must be reconciled
+		// alongside the entry's own media once the delete has committed.
+		affectedMedia = append(affectedMedia, linkCardMediaIDs(LinkCardsOf(linkCards))...)
 		changed, deleteErr := store.DeleteEntry(ctx, id)
 		if deleteErr != nil {
 			return deleteErr
@@ -833,19 +942,19 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if err := store.ReconcileMediaReferences(ctx, affectedMedia, domain.NormalizeTime(service.clock())); err != nil {
 			return err
 		}
-		deleted = Post{Entry: entry, Media: cloneMediaUsageProjections(mediaUsages), Location: domain.CloneLocation(location), CommentCount: counts[id], Quoted: quoted}
+		deleted = Post{Entry: entry, Media: cloneMediaUsageProjections(mediaUsages), Location: domain.CloneLocation(location), LinkCards: cloneLinkCardProjections(linkCards), CommentCount: counts[id], Quoted: quoted}
 		return nil
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
 	quoted := deleted.Quoted
-	deleted, err = renderPost(deleted.Entry, deleted.Media, deleted.Location, deleted.CommentCount)
+	deleted, err = renderPost(deleted.Entry, deleted.Media, deleted.Location, deleted.LinkCards, deleted.CommentCount)
 	deleted.Quoted = quoted
 	return deleted, err
 }
 
-func hashCreatePost(content string, media []domain.EntryMediaUsage, location *domain.Location, quotedPostID *domain.ID) string {
+func hashCreatePost(content string, media []domain.EntryMediaUsage, location *domain.Location, cards []domain.LinkCard, quotedPostID *domain.ID) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("moment-post-create-v1\x00"))
 	writeHashLength(digest, len(content))
@@ -888,6 +997,37 @@ func hashCreatePost(content string, media []domain.EntryMediaUsage, location *do
 			writeHashInt64(digest, location.Point.LatitudeE7)
 			writeHashInt64(digest, location.Point.LongitudeE7)
 			_, _ = digest.Write([]byte(location.Point.System))
+		}
+	}
+	// Keep the historical hash stable for card-free retries while binding a
+	// card-bearing retry to the exact snapshot it published.
+	if len(cards) > 0 {
+		_, _ = digest.Write([]byte("\x00link-card-v1\x00"))
+		writeHashLength(digest, len(cards))
+		for _, card := range cards {
+			writeHashLength(digest, card.Position)
+			for _, value := range []string{
+				card.SourceURL, card.CanonicalURL, string(card.Provider), string(card.Kind),
+				card.Title, card.Description, card.SiteName, card.AuthorName,
+				card.ThumbnailMediaID, card.EmbedURL,
+			} {
+				writeHashLength(digest, len(value))
+				_, _ = digest.Write([]byte(value))
+			}
+			if card.DurationSeconds == nil {
+				_, _ = digest.Write([]byte{0})
+			} else {
+				_, _ = digest.Write([]byte{1})
+				writeHashInt64(digest, int64(*card.DurationSeconds))
+			}
+			for _, count := range []*int64{card.ViewCount, card.CommentCount, card.LikeCount} {
+				if count == nil {
+					_, _ = digest.Write([]byte{0})
+					continue
+				}
+				_, _ = digest.Write([]byte{1})
+				writeHashInt64(digest, *count)
+			}
 		}
 	}
 	if quotedPostID != nil {
@@ -961,14 +1101,14 @@ func loadQuotedPost(ctx context.Context, store PostStore, id domain.ID) (*Quoted
 	return &QuotedPost{Entry: entry, ContentHTML: html, Media: media, Location: location}, nil
 }
 
-func renderPost(entry domain.Entry, media []MediaUsageProjection, location *domain.Location, commentCount int) (Post, error) {
+func renderPost(entry domain.Entry, media []MediaUsageProjection, location *domain.Location, cards []LinkCardProjection, commentCount int) (Post, error) {
 	if err := validatePostMediaProjections(media); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
 	if err := domain.ValidatePostMarkdown(entry.ContentMD, len(media)); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	html, err := domain.RenderMarkdown(entry.ContentMD)
+	html, err := domain.RenderMarkdownWithLinkCards(entry.ContentMD, LinkCardsOf(cards))
 	if err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
@@ -980,7 +1120,32 @@ func renderPost(entry domain.Entry, media []MediaUsageProjection, location *doma
 			return Post{}, storedEntryError(entry.ID)
 		}
 	}
-	return Post{Entry: entry, ContentHTML: html, Media: cloneMediaUsageProjections(media), Location: domain.CloneLocation(location), CommentCount: commentCount}, nil
+	if err := domain.ValidateLinkCards(LinkCardsOf(cards)); err != nil {
+		return Post{}, storedEntryError(entry.ID)
+	}
+	return Post{
+		Entry:        entry,
+		ContentHTML:  html,
+		Media:        cloneMediaUsageProjections(media),
+		Location:     domain.CloneLocation(location),
+		LinkCards:    cloneLinkCardProjections(cards),
+		CommentCount: commentCount,
+	}, nil
+}
+
+// linkCardMediaIDs collects the managed thumbnails a card set references so
+// reference reconciliation covers this source like any other.
+func linkCardMediaIDs(cards []domain.LinkCard) []domain.ID {
+	ids := make([]domain.ID, 0, len(cards))
+	for _, card := range cards {
+		if card.ThumbnailMediaID == "" {
+			continue
+		}
+		if id, err := domain.ParseID(card.ThumbnailMediaID); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 func mediaUsageIDs(usages []domain.EntryMediaUsage) []domain.ID {

@@ -12,6 +12,7 @@ import (
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/doctor"
+	"github.com/moment/moment/internal/linkfetch"
 	locationprovider "github.com/moment/moment/internal/location"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
@@ -135,6 +136,14 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	if err != nil {
 		return fail(err)
 	}
+	linkService, err := app.NewLinkPreviewService(
+		linkfetch.NewResolver(linkfetch.ResolverOptions{}),
+		media.NewLinkThumbnailAdapter(mediaStore),
+		app.LinkPreviewOptions{},
+	)
+	if err != nil {
+		return fail(err)
+	}
 	commentRepository, err := sqlitestore.NewCommentRepository(database, runtimeState.Locks)
 	if err != nil {
 		return fail(err)
@@ -165,7 +174,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets: host.assets, OwnerAuth: host.auth, SiteSettings: siteService, InstanceID: runtimeState.Instance.ID, InstanceInitializedAt: runtimeState.Instance.InitializedAt,
-		Media: mediaStore, Posts: postService, Locations: locationService, Comments: commentService, Search: searchService,
+		Media: mediaStore, Posts: postService, Locations: locationService, Links: linkService, Comments: commentService, Search: searchService,
 		ShareMetadata: shareMetadata, Archive: host.exporter, ImportInspector: inspector, ImportCommitter: host.committer, Doctor: doctorService,
 		SecureCookies: host.secureCookies, TrustedProxies: host.trustedProxies, Log: host.log,
 		Readiness: func(readyCtx context.Context) error {

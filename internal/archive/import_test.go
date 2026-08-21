@@ -865,3 +865,99 @@ func (reader *cancelAfterReader) Read(data []byte) (int, error) {
 	}
 	return read, err
 }
+
+// TestLinkCardRoundTripsThroughPortableArchive proves a captured card survives
+// export and import intact, including its thumbnail. The thumbnail is named by
+// content hash in the archive because media identifiers are reassigned on
+// import, so this also proves the hash is resolved back to a real reference.
+func TestLinkCardRoundTripsThroughPortableArchive(t *testing.T) {
+	const cardEntryID = "01ARZ3NDEKTSV4RRFFQ69G5FAZ"
+	fixture := newExportFixture(t, true)
+	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
+		if _, err := queries.ExecContext(context.Background(), `
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
+VALUES (?, 'moment', '看看这个视频', 1, 1, 1)`, cardEntryID); err != nil {
+			return err
+		}
+		_, err := queries.ExecContext(context.Background(), `
+INSERT INTO entry_link_card (
+    entry_id, position, source_url, canonical_url, provider, card_kind, title,
+    description, site_name, author_name, duration_seconds, thumbnail_media_id,
+    embed_url, captured_at_ms
+) VALUES (?, 0, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'youtube', 'video',
+          'A captured title', 'A captured description', 'YouTube', 'A channel',
+          212, ?, 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ', 1700000000000)`,
+			cardEntryID, mediaOneID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 8, 16, 1, 2, 3, 0, time.UTC)
+	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
+		context.Background(),
+		exportFixtureFile(t, fixture),
+		7,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageRoot := filepath.Join(fixture.runtime.Root, "staging", "import", result.GenerationID)
+	stagedRuntime := &runtimefs.Runtime{
+		Root: fixture.runtime.Root, Instance: fixture.runtime.Instance,
+		Current: stagingGeneration(stageRoot, result.GenerationID), Locks: fixture.runtime.Locks,
+	}
+	stagedDatabase, err := sqlitestore.Open(context.Background(), stagedRuntime, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stagedDatabase.Close() }()
+	snapshot, err := stagedDatabase.BeginArchiveSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = snapshot.Close() }()
+
+	var restored *sqlitestore.ArchiveEntry
+	if err := snapshot.Entries(context.Background(), func(value sqlitestore.ArchiveEntry) error {
+		if value.ID == cardEntryID {
+			clone := value
+			restored = &clone
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if restored == nil || len(restored.LinkCards) != 1 {
+		t.Fatalf("restored entry = %#v", restored)
+	}
+	card := restored.LinkCards[0]
+	if card.Card.Title != "A captured title" || card.Card.Description != "A captured description" {
+		t.Fatalf("card text did not survive: %#v", card.Card)
+	}
+	if card.Card.Provider != domain.LinkProviderYouTube || card.Card.Kind != domain.LinkKindVideo {
+		t.Fatalf("card identity did not survive: %#v", card.Card)
+	}
+	if card.Card.DurationSeconds == nil || *card.Card.DurationSeconds != 212 {
+		t.Fatalf("card duration did not survive: %#v", card.Card.DurationSeconds)
+	}
+	if card.Card.EmbedURL != "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ" {
+		t.Fatalf("embed URL did not survive: %q", card.Card.EmbedURL)
+	}
+	if card.ThumbnailSHA256 != fixture.mediaOneSHA {
+		t.Fatalf("thumbnail hash = %q want %q", card.ThumbnailSHA256, fixture.mediaOneSHA)
+	}
+	// The hash must have been resolved back to a live managed media row, not
+	// silently dropped.
+	var thumbnailID string
+	if err := stagedDatabase.ReadTx(context.Background(), func(queries sqlitestore.Queries) error {
+		return queries.QueryRowContext(context.Background(),
+			`SELECT thumbnail_media_id FROM entry_link_card WHERE entry_id = ?`, cardEntryID).Scan(&thumbnailID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if thumbnailID == "" {
+		t.Fatal("thumbnail reference was not restored")
+	}
+}

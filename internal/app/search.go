@@ -53,8 +53,34 @@ type SearchSource struct {
 	ID                  domain.ID
 	ContentMD           string
 	ContentText         string
+	LinkCardText        string
 	FTSCopies           int
 	FTSStoredTextCopies int
+}
+
+// DerivedSearchText is the single authority for an entry's indexed text. Both
+// the write path and rebuild call it, so the two can never drift and leave the
+// doctor's FTS consistency check reporting phantom damage.
+func DerivedSearchText(contentMD string, cards []domain.LinkCard) (string, error) {
+	return derivedSearchText(contentMD, domain.LinkCardSearchText(cards))
+}
+
+func derivedSearchText(contentMD, cardText string) (string, error) {
+	normalized, err := domain.NormalizeContentV2(contentMD)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(cardText) == "" {
+		return normalized, nil
+	}
+	normalizedCards, err := domain.NormalizeContentV2(cardText)
+	if err != nil {
+		return "", err
+	}
+	if normalized == "" {
+		return normalizedCards, nil
+	}
+	return normalized + " " + normalizedCards, nil
 }
 
 // SearchStore is valid only for its transaction callback.
@@ -64,6 +90,7 @@ type SearchStore interface {
 	CommentCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
 	EntryMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
+	EntryLinkCards(context.Context, domain.ID) ([]LinkCardProjection, error)
 	SearchPublishedMillis(context.Context, SearchRepositoryQuery) ([]int64, error)
 	ArchivePublishedMillis(context.Context, *int64, *int64) ([]int64, error)
 	SearchNormalizerVersion(context.Context) (int, error)
@@ -200,6 +227,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 	var fromMS, toMS *int64
 	commentCounts := make(map[domain.ID]int)
 	locations := make(map[domain.ID]*domain.Location)
+	linkCards := make(map[domain.ID][]LinkCardProjection)
 	err = service.transactions.Read(ctx, func(store SearchStore) error {
 		var storeErr error
 		version, storeErr := store.SearchNormalizerVersion(ctx)
@@ -243,6 +271,10 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 			if storeErr != nil {
 				return storeErr
 			}
+			linkCards[records[index].Entry.ID], storeErr = store.EntryLinkCards(ctx, records[index].Entry.ID)
+			if storeErr != nil {
+				return storeErr
+			}
 		}
 		ids := make([]domain.ID, 0, len(records))
 		for _, record := range records {
@@ -270,7 +302,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		YearCounts: aggregateYears(instants, location),
 	}
 	for _, record := range records {
-		post, renderErr := renderPost(record.Entry, record.Media, locations[record.Entry.ID], commentCounts[record.Entry.ID])
+		post, renderErr := renderPost(record.Entry, record.Media, locations[record.Entry.ID], linkCards[record.Entry.ID], commentCounts[record.Entry.ID])
 		if renderErr != nil {
 			return SearchPage{}, renderErr
 		}
@@ -447,7 +479,7 @@ func (service *SearchService) DiagnoseDerived(ctx context.Context, maxEntries in
 					result.Bounded = true
 					return nil
 				}
-				expected, err := domain.NormalizeContentV2(source.ContentMD)
+				expected, err := derivedSearchText(source.ContentMD, source.LinkCardText)
 				if err != nil {
 					return storedEntryError(source.ID)
 				}
@@ -482,7 +514,7 @@ func (service *SearchService) scanDerived(ctx context.Context, store SearchStore
 			return err
 		}
 		for _, source := range sources {
-			expected, err := domain.NormalizeContentV2(source.ContentMD)
+			expected, err := derivedSearchText(source.ContentMD, source.LinkCardText)
 			if err != nil {
 				return storedEntryError(source.ID)
 			}
@@ -511,7 +543,7 @@ func (service *SearchService) writeAllDerived(ctx context.Context, store SearchS
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			contentText, err := domain.NormalizeContentV2(source.ContentMD)
+			contentText, err := derivedSearchText(source.ContentMD, source.LinkCardText)
 			if err != nil {
 				return storedEntryError(source.ID)
 			}

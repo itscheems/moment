@@ -82,6 +82,64 @@ export interface PostMediaInput {
 export type LocationProvider = "manual" | "amap" | "geoapify";
 export type CoordinateSystem = "wgs84" | "gcj02";
 
+/**
+ * The owner-facing card shape. It is the complete snapshot, unlike the narrow
+ * public projection, because publishing must send back exactly what the unfurl
+ * produced. The server re-validates every field regardless.
+ */
+export interface OwnerLinkCard {
+  source_url: string;
+  canonical_url: string;
+  provider: string;
+  card_kind: string;
+  title: string;
+  description: string;
+  site_name: string;
+  author_name: string;
+  duration_seconds: number | null;
+  view_count: number | null;
+  comment_count: number | null;
+  like_count: number | null;
+  thumbnail_media_id: string | null;
+  thumbnail_mime_type: string | null;
+  thumbnail_width: number | null;
+  thumbnail_height: number | null;
+  embed_url: string | null;
+  captured_at_ms: number | null;
+}
+
+const ownerLinkCardKeys = [
+  "source_url",
+  "canonical_url",
+  "provider",
+  "card_kind",
+  "title",
+  "description",
+  "site_name",
+  "author_name",
+  "duration_seconds",
+  "view_count",
+  "comment_count",
+  "like_count",
+  "thumbnail_media_id",
+  "thumbnail_mime_type",
+  "thumbnail_width",
+  "thumbnail_height",
+  "embed_url",
+  "captured_at_ms",
+];
+
+function parseOwnerLinkCard(value: unknown): OwnerLinkCard {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !hasExactKeys(value as Record<string, unknown>, ownerLinkCardKeys)
+  ) {
+    throw invalidResponse("link card contains an unsupported or missing field");
+  }
+  return value as unknown as OwnerLinkCard;
+}
+
 export interface OwnerLocation {
   name: string;
   displayName: string;
@@ -2279,6 +2337,23 @@ export class OwnerApi {
     return record.items.map(parseOwnerLocation);
   }
 
+  /**
+   * Unfurl one URL into a card snapshot.
+   *
+   * Only an owner can make the server request an arbitrary address, and the
+   * server keeps every safety bound; the browser never contacts the origin
+   * itself.
+   */
+  async unfurlLink(url: string, signal?: AbortSignal): Promise<OwnerLinkCard> {
+    const params = new URLSearchParams({ url });
+    const response = await this.fetcher(
+      `/api/v1/owner/links/unfurl?${params}`,
+      { ...requestInit("GET"), signal },
+    );
+    const { data } = await decodeResponse(response);
+    return parseOwnerLinkCard(data);
+  }
+
   async create(
     csrfToken: string,
     contentMd: string,
@@ -2286,6 +2361,7 @@ export class OwnerApi {
     media: PostMediaInput[] = [],
     location?: OwnerLocation | null,
     quotedPostId?: string,
+    linkCards?: OwnerLinkCard[] | null,
   ): Promise<PublicPost> {
     const body: Record<string, unknown> = {
       content_md: contentMd,
@@ -2294,6 +2370,7 @@ export class OwnerApi {
     if (location !== undefined) {
       body.location = location === null ? null : locationPayload(location);
     }
+    if (linkCards !== undefined) body.link_cards = linkCards ?? [];
     if (quotedPostId !== undefined) body.quoted_post_id = quotedPostId;
     const init = requestInit("POST", csrfToken, body);
     const headers = new Headers(init.headers);
@@ -2312,12 +2389,14 @@ export class OwnerApi {
     contentMd: string,
     media?: PostMediaInput[],
     location?: OwnerLocation | null,
+    linkCards?: OwnerLinkCard[] | null,
   ): Promise<PublicPost> {
     const body: Record<string, unknown> = { content_md: contentMd };
     if (media) body.media = mediaPayload(media);
     if (location !== undefined) {
       body.location = location === null ? null : locationPayload(location);
     }
+    if (linkCards !== undefined) body.link_cards = linkCards ?? [];
     const response = await this.fetcher(
       `/api/v1/owner/posts/${encodeURIComponent(id)}`,
       requestInit("PATCH", csrfToken, body),

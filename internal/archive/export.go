@@ -235,7 +235,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			return write(entryRecord{
 				ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
 				CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
-				PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: media, Location: portableLocation(value.Location),
+				PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: media, Location: portableLocation(value.Location), LinkCards: portableLinkCards(value.LinkCards),
 			})
 		})
 	})
@@ -530,6 +530,31 @@ type entryRecord struct {
 	QuoteUnavailable bool            `json:"quote_unavailable,omitempty"`
 	Media            []usageRecord   `json:"media"`
 	Location         *locationRecord `json:"location,omitempty"`
+	// LinkCards is additive within format version 1, exactly as location was:
+	// the key is absent when there are none, and an older reader ignores it.
+	LinkCards []linkCardRecord `json:"link_cards,omitempty"`
+}
+
+// linkCardRecord is the portable card snapshot. The thumbnail travels by
+// content hash rather than by media ID because media identifiers are reassigned
+// on import while the hash is the stable anchor across instances.
+type linkCardRecord struct {
+	Position        int     `json:"position"`
+	SourceURL       string  `json:"source_url"`
+	CanonicalURL    string  `json:"canonical_url"`
+	Provider        string  `json:"provider"`
+	CardKind        string  `json:"card_kind"`
+	Title           string  `json:"title"`
+	Description     string  `json:"description"`
+	SiteName        string  `json:"site_name"`
+	AuthorName      string  `json:"author_name"`
+	DurationSeconds *int    `json:"duration_seconds"`
+	ThumbnailSHA256 *string `json:"thumbnail_sha256"`
+	EmbedURL        string  `json:"embed_url"`
+	CapturedAt      string  `json:"captured_at"`
+	ViewCount       *int64  `json:"view_count,omitempty"`
+	CommentCount    *int64  `json:"comment_count,omitempty"`
+	LikeCount       *int64  `json:"like_count,omitempty"`
 }
 
 func portableOptionalTime(value *int64) *string {
@@ -783,6 +808,83 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 		return value.Location.Validate()
 	}
 	return nil
+}
+
+func portableLinkCards(values []sqlitestore.ArchiveLinkCard) []linkCardRecord {
+	if len(values) == 0 {
+		return nil
+	}
+	records := make([]linkCardRecord, 0, len(values))
+	for _, value := range values {
+		record := linkCardRecord{
+			Position: value.Card.Position, SourceURL: value.Card.SourceURL,
+			CanonicalURL: value.Card.CanonicalURL, Provider: string(value.Card.Provider),
+			CardKind: string(value.Card.Kind), Title: value.Card.Title,
+			Description: value.Card.Description, SiteName: value.Card.SiteName,
+			AuthorName: value.Card.AuthorName, EmbedURL: value.Card.EmbedURL,
+			CapturedAt: portableTime(value.Card.CapturedAt),
+		}
+		if value.Card.DurationSeconds != nil {
+			seconds := *value.Card.DurationSeconds
+			record.DurationSeconds = &seconds
+		}
+		record.ViewCount = portableCount(value.Card.ViewCount)
+		record.CommentCount = portableCount(value.Card.CommentCount)
+		record.LikeCount = portableCount(value.Card.LikeCount)
+		if value.ThumbnailSHA256 != "" {
+			sha := value.ThumbnailSHA256
+			record.ThumbnailSHA256 = &sha
+		}
+		records = append(records, record)
+	}
+	return records
+}
+
+func domainLinkCards(values []linkCardRecord) ([]sqlitestore.ArchiveLinkCard, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	cards := make([]sqlitestore.ArchiveLinkCard, 0, len(values))
+	for index, value := range values {
+		instant, err := parsePortableTimestamp(value.CapturedAt)
+		if err != nil {
+			return nil, errors.New("link card captured_at must be an RFC 3339 UTC instant")
+		}
+		capturedAt := instant.UnixMilli()
+		card := domain.LinkCard{
+			Position: index, SourceURL: value.SourceURL, CanonicalURL: value.CanonicalURL,
+			Provider: domain.LinkCardProvider(value.Provider), Kind: domain.LinkCardKind(value.CardKind),
+			Title: value.Title, Description: value.Description, SiteName: value.SiteName,
+			AuthorName: value.AuthorName, EmbedURL: value.EmbedURL, CapturedAt: capturedAt,
+		}
+		if value.DurationSeconds != nil {
+			seconds := *value.DurationSeconds
+			card.DurationSeconds = &seconds
+		}
+		card.ViewCount = portableCount(value.ViewCount)
+		card.CommentCount = portableCount(value.CommentCount)
+		card.LikeCount = portableCount(value.LikeCount)
+		if err := card.Validate(); err != nil {
+			return nil, err
+		}
+		entry := sqlitestore.ArchiveLinkCard{Card: card}
+		if value.ThumbnailSHA256 != nil {
+			entry.ThumbnailSHA256 = *value.ThumbnailSHA256
+		}
+		cards = append(cards, entry)
+	}
+	if err := domain.ValidateLinkCards(sqlitestore.ArchiveLinkCardsOf(cards)); err != nil {
+		return nil, err
+	}
+	return cards, nil
+}
+
+func portableCount(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	count := *value
+	return &count
 }
 
 func portableLocation(value *domain.Location) *locationRecord {
@@ -1299,6 +1401,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	entryIDs := make(map[string]struct{})
 	quoteRefs := make(map[string]string)
 	usageMediaIDs := make(map[string]struct{})
+	thumbnailSHAs := make(map[string]struct{})
 	lastEntryID := ""
 	entries, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, fields map[string]json.RawMessage) error {
 		if int64(len(entryIDs)) >= document.Counts.Entries {
@@ -1361,9 +1464,18 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if _, exists := entryIDs[value.ID]; exists {
 			return errors.New("entry ID is duplicated")
 		}
+		linkCards, err := domainLinkCards(value.LinkCards)
+		if err != nil {
+			return err
+		}
+		for _, card := range linkCards {
+			if card.ThumbnailSHA256 != "" {
+				thumbnailSHAs[card.ThumbnailSHA256] = struct{}{}
+			}
+		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
 		}); err != nil {
 			return err
 		}
@@ -1453,6 +1565,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	}
 	expectedMedia := make(map[string]struct{}, len(mediaMembers))
 	mediaIDs := make(map[string]struct{})
+	mediaSHAs := make(map[string]struct{})
 	lastMediaSHA, lastMediaID := "", ""
 	mediaCount, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, fields map[string]json.RawMessage) error {
 		if int64(len(mediaIDs)) >= document.Counts.Media {
@@ -1492,6 +1605,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		expectedMedia[portablePath] = struct{}{}
 		mediaIDs[value.ID] = struct{}{}
+		mediaSHAs[value.SHA256] = struct{}{}
 		portableMedia[portablePath] = media.Media{
 			ID: mediaID, SHA256: value.SHA256, OriginalName: value.OriginalName,
 			MIMEType: value.MIMEType, ByteSize: value.ByteSize, Width: value.Width,
@@ -1514,6 +1628,13 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	for mediaID := range usageMediaIDs {
 		if _, exists := mediaIDs[mediaID]; !exists {
 			return errors.New("entry media usage refers to media absent from the archive")
+		}
+	}
+	// A thumbnail travels by content hash, so reachability is checked against
+	// the packaged hashes rather than against reassigned identifiers.
+	for sha := range thumbnailSHAs {
+		if _, exists := mediaSHAs[sha]; !exists {
+			return errors.New("link card thumbnail refers to media absent from the archive")
 		}
 	}
 	if site.AvatarMediaID != nil {

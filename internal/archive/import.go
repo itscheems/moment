@@ -1231,9 +1231,13 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		if err != nil {
 			return err
 		}
+		linkCards, err := domainLinkCards(value.LinkCards)
+		if err != nil {
+			return err
+		}
 		return importer.InsertEntry(ctx, sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
 		})
 	})
 	if err != nil {
@@ -1716,7 +1720,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		}
 		actualEntries = append(actualEntries, entryRecord{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS), PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: portableLocation(value.Location),
+			CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS), PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: portableLocation(value.Location), LinkCards: portableLinkCards(value.LinkCards),
 		})
 		return nil
 	})

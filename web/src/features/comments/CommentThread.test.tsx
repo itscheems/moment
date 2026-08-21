@@ -56,6 +56,7 @@ const post: PublicPost = {
   timelineItemKind: "original",
   commentCount: 0,
   media: [],
+  linkCards: [],
 };
 
 function comment(

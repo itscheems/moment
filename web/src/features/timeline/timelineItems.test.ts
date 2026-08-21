@@ -15,6 +15,7 @@ function original(): PublicPost {
     timelineItemKind: "original",
     commentCount: 0,
     media: [],
+    linkCards: [],
     location: null,
     quotedPost: null,
   };

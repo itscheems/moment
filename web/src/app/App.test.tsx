@@ -79,6 +79,7 @@ function post(id: string, content: string, html = `<p>${content}</p>`) {
     quoted_post: null,
     comment_count: 0,
     media: [],
+    link_cards: [],
   };
 }
 

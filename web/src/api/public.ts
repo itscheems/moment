@@ -35,8 +35,42 @@ export interface PublicPost {
   timelineItemKind: "original" | "repost";
   commentCount: number;
   media: PublicMediaUsage[];
+  linkCards: PublicLinkCard[];
   location?: PublicPostLocation | null;
   quotedPost?: PublicQuotedPost | null;
+}
+
+/**
+ * A captured link preview. Every field was snapshotted when the post was
+ * published, so rendering one never needs a network request: the thumbnail is
+ * managed media served from this instance.
+ *
+ * embedUrl is present only while its origin is still allowlisted by the server.
+ * A card whose embed origin has since been withdrawn arrives without it and
+ * renders as a static card rather than a frame the page could not load.
+ */
+export interface PublicLinkCard {
+  position: number;
+  canonicalUrl: string;
+  cardKind: "link" | "video";
+  title: string;
+  description: string;
+  siteName: string;
+  authorName: string;
+  durationSeconds: number | null;
+  /**
+   * Engagement figures captured with the rest of the snapshot. Platforms that
+   * publish these as prose have them parsed server-side, so a reader renders
+   * numbers and never has to know which platform a card came from.
+   */
+  viewCount: number | null;
+  commentCount: number | null;
+  likeCount: number | null;
+  thumbnailMediaId: string | null;
+  thumbnailMimeType: string | null;
+  thumbnailWidth: number | null;
+  thumbnailHeight: number | null;
+  embedUrl: string | null;
 }
 
 export interface PublicAvailableQuotedPost {
@@ -663,6 +697,7 @@ export function parsePost(value: unknown): PublicPost {
     "timeline_item_kind",
     "comment_count",
     "media",
+    "link_cards",
   ];
   if (
     (!hasExactKeys(value, postKeys) &&
@@ -675,6 +710,7 @@ export function parsePost(value: unknown): PublicPost {
     throw invalidResponse("post contains an unsupported or missing field");
   }
   const media = parseMediaUsages(value.media, 9, "post");
+  const linkCards = parseLinkCards(value.link_cards);
   let location: PublicPostLocation | null = null;
   if (value.location !== undefined && value.location !== null) {
     if (
@@ -774,9 +810,119 @@ export function parsePost(value: unknown): PublicPost {
     })(),
     commentCount: nonNegativeIntegerField(value, "comment_count"),
     media,
+    linkCards,
     location,
     quotedPost,
   };
+}
+
+const linkCardKeys = [
+  "position",
+  "canonical_url",
+  "card_kind",
+  "title",
+  "description",
+  "site_name",
+  "author_name",
+  "duration_seconds",
+  "view_count",
+  "comment_count",
+  "like_count",
+  "thumbnail_media_id",
+  "thumbnail_mime_type",
+  "thumbnail_width",
+  "thumbnail_height",
+  "embed_url",
+];
+
+function parseLinkCards(value: unknown): PublicLinkCard[] {
+  if (!Array.isArray(value)) {
+    throw invalidResponse("post link cards must be an array");
+  }
+  if (value.length > 1) {
+    throw invalidResponse("a Moment carries at most one link card");
+  }
+  return value.map((item, index) => {
+    if (!isRecord(item) || !hasExactKeys(item, linkCardKeys)) {
+      throw invalidResponse(
+        "link card contains an unsupported or missing field",
+      );
+    }
+    const kind = stringField(item, "card_kind");
+    if (kind !== "link" && kind !== "video") {
+      throw invalidResponse("link card kind is invalid");
+    }
+    const canonicalUrl = stringField(item, "canonical_url");
+    if (!isSafeExternalUrl(canonicalUrl)) {
+      throw invalidResponse(
+        "link card canonical URL is not a safe http(s) URL",
+      );
+    }
+    const embedUrl =
+      item.embed_url === null ? null : stringField(item, "embed_url");
+    if (embedUrl !== null && !isSafeExternalUrl(embedUrl)) {
+      throw invalidResponse("link card embed URL is not a safe http(s) URL");
+    }
+    if (nonNegativeIntegerField(item, "position") !== index) {
+      throw invalidResponse("link card positions must be ordered from zero");
+    }
+    return {
+      position: index,
+      canonicalUrl,
+      cardKind: kind,
+      title: stringField(item, "title"),
+      description: stringField(item, "description"),
+      siteName: stringField(item, "site_name"),
+      authorName: stringField(item, "author_name"),
+      durationSeconds:
+        item.duration_seconds === null
+          ? null
+          : positiveIntegerField(item, "duration_seconds"),
+      viewCount:
+        item.view_count === null
+          ? null
+          : nonNegativeIntegerField(item, "view_count"),
+      commentCount:
+        item.comment_count === null
+          ? null
+          : nonNegativeIntegerField(item, "comment_count"),
+      likeCount:
+        item.like_count === null
+          ? null
+          : nonNegativeIntegerField(item, "like_count"),
+      thumbnailMediaId:
+        item.thumbnail_media_id === null
+          ? null
+          : stringField(item, "thumbnail_media_id"),
+      thumbnailMimeType:
+        item.thumbnail_mime_type === null
+          ? null
+          : stringField(item, "thumbnail_mime_type"),
+      thumbnailWidth:
+        item.thumbnail_width === null
+          ? null
+          : positiveIntegerField(item, "thumbnail_width"),
+      thumbnailHeight:
+        item.thumbnail_height === null
+          ? null
+          : positiveIntegerField(item, "thumbnail_height"),
+      embedUrl,
+    };
+  });
+}
+
+/**
+ * The server already constrains these URLs, but the client re-checks rather
+ * than trusting a response body it did not generate. A card renders an href and
+ * an iframe src; both must be plain http(s).
+ */
+function isSafeExternalUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function nullableCursor(meta: Record<string, unknown>): string | null {
@@ -805,6 +951,7 @@ function parseSearchHit(value: unknown): SearchHit {
     "timeline_item_kind",
     "comment_count",
     "media",
+    "link_cards",
     "snippet",
   ];
   if (

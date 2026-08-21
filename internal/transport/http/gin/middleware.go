@@ -10,6 +10,8 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+
+	"github.com/moment/moment/internal/linkfetch"
 )
 
 const bodyLimitKey = "moment.body_limit"
@@ -24,13 +26,39 @@ func requestIDMiddleware(nextID func() string) gin.HandlerFunc {
 	}
 }
 
+// contentSecurityPolicy is built once from the embed allowlist so the header and
+// the recognizers can never disagree about which origins may be framed.
+//
+// Without an explicit frame-src the directive falls back to default-src 'self',
+// which refuses every third-party player. Opening it is a deliberate, bounded
+// relaxation: the set is fixed, auditable, and only ever grows. Everything else
+// stays closed, and in particular img-src still refuses remote images -- a card
+// thumbnail is served from managed media, never hotlinked.
+var contentSecurityPolicy = buildContentSecurityPolicy()
+
+func buildContentSecurityPolicy() string {
+	frameSources := append([]string{"'self'"}, linkfetch.EmbeddableOrigins()...)
+	return strings.Join([]string{
+		"default-src 'self'",
+		"img-src 'self' data: blob:",
+		"style-src 'self' 'unsafe-inline'",
+		"script-src 'self'",
+		"connect-src 'self'",
+		"frame-src " + strings.Join(frameSources, " "),
+		"object-src 'none'",
+		"base-uri 'none'",
+		"frame-ancestors 'none'",
+		"form-action 'self'",
+	}, "; ")
+}
+
 func securityHeadersMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		ctx.Header("X-Content-Type-Options", "nosniff")
 		ctx.Header("X-Frame-Options", "DENY")
 		ctx.Header("Referrer-Policy", "same-origin")
 		ctx.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)")
-		ctx.Header("Content-Security-Policy", "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		ctx.Header("Content-Security-Policy", contentSecurityPolicy)
 		ctx.Next()
 	}
 }

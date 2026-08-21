@@ -29,6 +29,7 @@ const (
 	CodeMediaProcessorUnavailable   Code = "MEDIA_PROCESSOR_UNAVAILABLE"
 	CodeMediaNotFound               Code = "MEDIA_NOT_FOUND"
 	CodeLocationProviderUnavailable Code = "LOCATION_PROVIDER_UNAVAILABLE"
+	CodeLinkPreviewUnavailable      Code = "LINK_PREVIEW_UNAVAILABLE"
 	CodeUnauthorized                Code = "UNAUTHORIZED"
 	CodeIdempotencyKeyReused        Code = "IDEMPOTENCY_KEY_REUSED"
 	CodeImportInProgress            Code = "IMPORT_IN_PROGRESS"

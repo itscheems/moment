@@ -22,6 +22,7 @@ const post = {
   quoted_post: null,
   comment_count: 0,
   media: [],
+  link_cards: [],
 };
 
 const comment = {

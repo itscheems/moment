@@ -21,6 +21,7 @@ const post = {
   quoted_post: null,
   comment_count: 0,
   media: [],
+  link_cards: [],
 };
 
 const rootComment = {
@@ -359,6 +360,7 @@ describe("public API client", () => {
           timelineItemKind: "original",
           commentCount: post.comment_count,
           media: [],
+          linkCards: [],
           location: null,
           quotedPost: null,
         },

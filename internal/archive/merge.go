@@ -278,8 +278,9 @@ func comparePortableAuthorities(input MergePlanInput, requireSameOwner bool) (Me
 	incomingEntry := indexEntries(input.Incoming.Entries)
 	localSHA := mediaSHAs(input.Local.Media)
 	incomingSHA := mediaSHAs(input.Incoming.Media)
+	incomingIDBySHA := mediaIDsBySHA(input.Incoming.Media)
 	for _, incoming := range sortedEntries(input.Incoming.Entries) {
-		item := MergeItem{Kind: MergeEntry, ID: incoming.ID, Selectable: true, ChangedFields: []string{}, Dependencies: entryDependencies(incoming)}
+		item := MergeItem{Kind: MergeEntry, ID: incoming.ID, Selectable: true, ChangedFields: []string{}, Dependencies: entryDependencies(incoming, incomingIDBySHA)}
 		if local, exists := localEntry[incoming.ID]; exists {
 			item.ChangedFields = entryChangedFields(local, incoming, localSHA, incomingSHA)
 			if len(item.ChangedFields) == 0 {
@@ -461,13 +462,24 @@ func mustRawJSON(value any) json.RawMessage {
 	return payload
 }
 
-func entryDependencies(value sqlitestore.ArchiveEntry) []MergeRef {
-	result := make([]MergeRef, 0, len(value.Media))
+func entryDependencies(value sqlitestore.ArchiveEntry, mediaIDBySHA map[string]string) []MergeRef {
+	result := make([]MergeRef, 0, len(value.Media)+len(value.LinkCards))
 	if value.QuotedEntryID != nil {
 		result = append(result, MergeRef{Kind: MergeEntry, ID: *value.QuotedEntryID})
 	}
 	for _, usage := range value.Media {
 		result = append(result, MergeRef{Kind: MergeMedia, ID: usage.MediaID})
+	}
+	// A card thumbnail is a real media dependency. The merge plan enumerates
+	// dependencies by media ID while a card names its thumbnail by content
+	// hash, so translate here rather than leaving the closure incomplete.
+	for _, card := range value.LinkCards {
+		if card.ThumbnailSHA256 == "" {
+			continue
+		}
+		if id, exists := mediaIDBySHA[card.ThumbnailSHA256]; exists {
+			result = append(result, MergeRef{Kind: MergeMedia, ID: id})
+		}
 	}
 	return uniqueRefs(result)
 }
@@ -541,6 +553,11 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	}
 	if !reflect.DeepEqual(local.Location, incoming.Location) {
 		fields = append(fields, "location")
+	}
+	// Cards compare directly because a snapshot card names its thumbnail by
+	// content hash, which means the same thing on both sides of the merge.
+	if !reflect.DeepEqual(local.LinkCards, incoming.LinkCards) {
+		fields = append(fields, "link_cards")
 	}
 	return fields
 }
@@ -626,6 +643,14 @@ func indexMedia(values []sqlitestore.ArchiveMedia) (map[string]sqlitestore.Archi
 	}
 	return byID, bySHA
 }
+func mediaIDsBySHA(values []sqlitestore.ArchiveMedia) map[string]string {
+	result := map[string]string{}
+	for _, v := range values {
+		result[v.SHA256] = v.ID
+	}
+	return result
+}
+
 func mediaSHAs(values []sqlitestore.ArchiveMedia) map[string]string {
 	result := map[string]string{}
 	for _, v := range values {

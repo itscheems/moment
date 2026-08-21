@@ -59,6 +59,7 @@ function makePost(
     timelineItemKind: "original",
     commentCount,
     media: [],
+    linkCards: [],
   };
 }
 
@@ -864,6 +865,7 @@ describe("shared post presentation", () => {
                 quoted_post: null,
                 comment_count: 0,
                 media: [],
+                link_cards: [],
               },
               meta: { request_id: "req_repost" },
             }),
