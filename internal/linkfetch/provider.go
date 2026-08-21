@@ -156,7 +156,10 @@ func (bilibiliProvider) Recognize(target *url.URL) (Recognition, bool) {
 	if !bilibiliIDPattern.MatchString(id) {
 		return Recognition{}, false
 	}
-	embed := "https://player.bilibili.com/player.html?bvid=" + id + "&autoplay=0&danmaku=0"
+	// Playback flags belong to the moment of playing, not to the stored
+	// snapshot. Leaving autoplay out here keeps the reader from having to
+	// override a value the card baked in.
+	embed := "https://player.bilibili.com/player.html?bvid=" + id + "&danmaku=0"
 	if page := target.Query().Get("p"); page != "" && isSmallPositiveInteger(page) {
 		embed += "&p=" + page
 	}

@@ -16,6 +16,22 @@ function formatDuration(seconds: number): string {
     : `${minutes}:${pad(remaining)}`;
 }
 
+/**
+ * Add autoplay to a stored embed URL.
+ *
+ * The parameter is set rather than appended so a card stored before playback
+ * flags moved out of the snapshot does not end up with the key twice.
+ */
+function playbackUrl(embedUrl: string): string {
+  try {
+    const parsed = new URL(embedUrl);
+    parsed.searchParams.set("autoplay", "1");
+    return parsed.toString();
+  } catch {
+    return embedUrl;
+  }
+}
+
 function hostLabel(card: PublicLinkCard): string {
   if (card.siteName.trim()) return card.siteName.trim();
   try {
@@ -80,7 +96,7 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
             allowFullScreen
             className={styles.player}
             referrerPolicy="strict-origin-when-cross-origin"
-            src={`${card.embedUrl}${card.embedUrl.includes("?") ? "&" : "?"}autoplay=1`}
+            src={playbackUrl(card.embedUrl)}
             title={title || site}
           />
         </div>

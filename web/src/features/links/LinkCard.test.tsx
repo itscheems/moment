@@ -99,3 +99,23 @@ describe("LinkCard", () => {
     expect(link).toHaveAttribute("target", "_blank");
   });
 });
+
+describe("LinkCard playback URL", () => {
+  it("sets autoplay instead of appending it to a stored embed URL", () => {
+    // Cards stored before playback flags moved out of the snapshot already
+    // carry an autoplay value; the key must not appear twice.
+    render(
+      <LinkCard
+        card={card({
+          embedUrl:
+            "https://player.bilibili.com/player.html?bvid=BV1fx3y6pEPD&autoplay=0&danmaku=0",
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /播放/ }));
+    const src = document.querySelector("iframe")?.getAttribute("src") ?? "";
+    expect(src.match(/autoplay=/g)).toHaveLength(1);
+    expect(src).toContain("autoplay=1");
+    expect(src).toContain("danmaku=0");
+  });
+});
