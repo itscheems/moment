@@ -58,6 +58,9 @@ type LinkCard struct {
 	SiteName          string  `json:"site_name"`
 	AuthorName        string  `json:"author_name"`
 	DurationSeconds   *int    `json:"duration_seconds"`
+	ViewCount         *int64  `json:"view_count"`
+	CommentCount      *int64  `json:"comment_count"`
+	LikeCount         *int64  `json:"like_count"`
 	ThumbnailMediaID  *string `json:"thumbnail_media_id"`
 	ThumbnailMIMEType *string `json:"thumbnail_mime_type"`
 	ThumbnailWidth    *uint32 `json:"thumbnail_width"`
@@ -232,6 +235,9 @@ func linkCardProjections(cards []app.LinkCardProjection) []LinkCard {
 			SiteName:        card.SiteName,
 			AuthorName:      card.AuthorName,
 			DurationSeconds: card.DurationSeconds,
+			ViewCount:       card.ViewCount,
+			CommentCount:    card.CommentCount,
+			LikeCount:       card.LikeCount,
 		}
 		if card.ThumbnailMediaID != "" {
 			id := card.ThumbnailMediaID

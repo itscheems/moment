@@ -17,6 +17,9 @@ function card(overrides: Partial<PublicLinkCard> = {}): PublicLinkCard {
     siteName: "YouTube",
     authorName: "Rick Astley",
     durationSeconds: 212,
+    viewCount: null,
+    commentCount: null,
+    likeCount: null,
     thumbnailMediaId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     thumbnailMimeType: "image/jpeg",
     thumbnailWidth: 1280,
@@ -117,5 +120,47 @@ describe("LinkCard playback URL", () => {
     expect(src.match(/autoplay=/g)).toHaveLength(1);
     expect(src).toContain("autoplay=1");
     expect(src).toContain("danmaku=0");
+  });
+});
+
+describe("LinkCard statistics", () => {
+  it("renders captured engagement figures with glyphs and accessible names", () => {
+    render(
+      <LinkCard
+        card={card({
+          viewCount: 480312,
+          commentCount: 86,
+          likeCount: 10879,
+          description: "",
+        })}
+      />,
+    );
+    // Platform convention: above ten thousand the exact figure stops being the
+    // useful part, so it collapses to 万 the way the source site shows it.
+    expect(screen.getByText("48万")).toBeInTheDocument();
+    expect(screen.getByText("86")).toBeInTheDocument();
+    expect(screen.getByText("1.1万")).toBeInTheDocument();
+    // The exact numbers stay available to assistive technology.
+    expect(screen.getByText("播放 480,312")).toBeInTheDocument();
+    expect(screen.getByText("弹幕 86")).toBeInTheDocument();
+    expect(screen.getByText("点赞 10,879")).toBeInTheDocument();
+    expect(
+      document.querySelector('svg[data-icon="play-count"]'),
+    ).not.toBeNull();
+    expect(
+      document.querySelector('svg[data-icon="danmaku-count"]'),
+    ).not.toBeNull();
+  });
+
+  it("keeps the description when a platform published no figures", () => {
+    render(<LinkCard card={card({ description: "一段真正的简介" })} />);
+    expect(screen.getByText("一段真正的简介")).toBeInTheDocument();
+    expect(document.querySelector('svg[data-icon="play-count"]')).toBeNull();
+  });
+
+  it("shows a partial set when only some figures were published", () => {
+    render(<LinkCard card={card({ viewCount: 42, description: "" })} />);
+    expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.queryByText(/弹幕/)).toBeNull();
   });
 });

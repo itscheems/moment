@@ -369,7 +369,8 @@ func (snapshot *ArchiveSnapshot) entryLinkCards(ctx context.Context, entryID str
 SELECT card.position, card.source_url, card.canonical_url, card.provider,
        card.card_kind, card.title, card.description, card.site_name,
        card.author_name, card.duration_seconds, card.embed_url,
-       card.captured_at_ms, thumbnail.sha256
+       card.captured_at_ms, card.view_count, card.comment_count,
+       card.like_count, thumbnail.sha256
 FROM entry_link_card AS card
 LEFT JOIN media AS thumbnail ON thumbnail.id = card.thumbnail_media_id
 WHERE card.entry_id = ?
@@ -381,12 +382,13 @@ ORDER BY card.position`, entryID)
 	var cards []ArchiveLinkCard
 	for rows.Next() {
 		var card domain.LinkCard
-		var duration sql.NullInt64
+		var duration, views, comments, likes sql.NullInt64
 		var sha sql.NullString
 		if err := rows.Scan(
 			&card.Position, &card.SourceURL, &card.CanonicalURL, &card.Provider,
 			&card.Kind, &card.Title, &card.Description, &card.SiteName,
-			&card.AuthorName, &duration, &card.EmbedURL, &card.CapturedAt, &sha,
+			&card.AuthorName, &duration, &card.EmbedURL, &card.CapturedAt,
+			&views, &comments, &likes, &sha,
 		); err != nil {
 			return nil, fmt.Errorf("scan archive entry link card: %w", err)
 		}
@@ -394,6 +396,9 @@ ORDER BY card.position`, entryID)
 			seconds := int(duration.Int64)
 			card.DurationSeconds = &seconds
 		}
+		card.ViewCount = nullableCount(views)
+		card.CommentCount = nullableCount(comments)
+		card.LikeCount = nullableCount(likes)
 		if err := card.Validate(); err != nil {
 			return nil, errors.New("archive entry link card is invalid")
 		}

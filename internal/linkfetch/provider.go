@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/moment/moment/internal/domain"
@@ -31,11 +32,24 @@ type Provider interface {
 	Recognize(target *url.URL) (Recognition, bool)
 }
 
-// Enricher is the optional second half of a provider. No provider implements
-// it today: YouTube and Bilibili both serve usable Open Graph metadata to an
-// anonymous fetcher, so the generic path already covers them.
+// Enricher is the optional second half of a provider: fetching something the
+// generic path could not reach. No provider implements it today, because both
+// recognized platforms serve usable Open Graph metadata to an anonymous
+// fetcher.
 type Enricher interface {
 	Enrich(ctx context.Context, fetcher *Fetcher, recognition Recognition) (Metadata, error)
+}
+
+// Refiner reshapes metadata an origin published in a form that is technically
+// valid but not presentable.
+//
+// It is a pure function over an already-fetched document: no context, no
+// fetcher, no network. That is what makes it safe to hand to a provider. Its
+// whole job is to turn platform-shaped text into the provider-independent
+// fields a card renders, so that the reader never branches on which platform a
+// card came from.
+type Refiner interface {
+	Refine(metadata Metadata) Metadata
 }
 
 // Embeddable origins. This list is the whole inline-player surface: only a URL
@@ -170,6 +184,57 @@ func (bilibiliProvider) Recognize(target *url.URL) (Recognition, bool) {
 		EmbedURL:     embed,
 		Kind:         domain.LinkKindVideo,
 	}, true
+}
+
+// Bilibili publishes its engagement figures as one prose blob in og:description
+// and appends its own branding to og:title. Both are parsed here into the
+// structured fields a card actually renders.
+var (
+	bilibiliTitleSuffix = regexp.MustCompile(`_(哔哩哔哩|bilibili)(_bilibili)?\s*$`)
+	bilibiliViews       = regexp.MustCompile(`视频播放量\s*([0-9]+)`)
+	bilibiliDanmaku     = regexp.MustCompile(`弹幕量\s*([0-9]+)`)
+	bilibiliLikes       = regexp.MustCompile(`点赞数\s*([0-9]+)`)
+	bilibiliAuthor      = regexp.MustCompile(`视频作者\s*([^,，]+)`)
+)
+
+func (bilibiliProvider) Refine(metadata Metadata) Metadata {
+	title := metadata.Title
+	for {
+		trimmed := strings.TrimSpace(bilibiliTitleSuffix.ReplaceAllString(title, ""))
+		if trimmed == title || trimmed == "" {
+			break
+		}
+		title = trimmed
+	}
+	metadata.Title = title
+
+	description := metadata.Description
+	metadata.ViewCount = matchCount(bilibiliViews, description)
+	metadata.CommentCount = matchCount(bilibiliDanmaku, description)
+	metadata.LikeCount = matchCount(bilibiliLikes, description)
+	if metadata.AuthorName == "" {
+		if match := bilibiliAuthor.FindStringSubmatch(description); match != nil {
+			metadata.AuthorName = strings.TrimSpace(match[1])
+		}
+	}
+	// The blob was a statistics readout, not prose. Once its figures are
+	// structured, keeping the original text would only repeat them badly.
+	if metadata.ViewCount != nil || metadata.LikeCount != nil {
+		metadata.Description = ""
+	}
+	return metadata
+}
+
+func matchCount(pattern *regexp.Regexp, source string) *int64 {
+	match := pattern.FindStringSubmatch(source)
+	if match == nil {
+		return nil
+	}
+	value, err := strconv.ParseInt(match[1], 10, 64)
+	if err != nil || value < 0 {
+		return nil
+	}
+	return &value
 }
 
 func isSmallPositiveInteger(value string) bool {

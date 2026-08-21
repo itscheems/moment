@@ -22,6 +22,9 @@ type Metadata struct {
 	ImageURL        string
 	DurationSeconds *int
 	Kind            domain.LinkCardKind
+	ViewCount       *int64
+	CommentCount    *int64
+	LikeCount       *int64
 }
 
 // Merge fills empty fields from other. The generic Open Graph result is always
@@ -50,6 +53,15 @@ func (metadata *Metadata) Merge(other Metadata) {
 	}
 	if metadata.Kind == "" {
 		metadata.Kind = other.Kind
+	}
+	if metadata.ViewCount == nil {
+		metadata.ViewCount = other.ViewCount
+	}
+	if metadata.CommentCount == nil {
+		metadata.CommentCount = other.CommentCount
+	}
+	if metadata.LikeCount == nil {
+		metadata.LikeCount = other.LikeCount
 	}
 }
 

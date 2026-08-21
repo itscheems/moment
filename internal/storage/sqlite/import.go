@@ -192,12 +192,14 @@ INSERT INTO entry_location (
 INSERT INTO entry_link_card (
     entry_id, position, source_url, canonical_url, provider, card_kind, title,
     description, site_name, author_name, duration_seconds, thumbnail_media_id,
-    embed_url, captured_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    embed_url, captured_at_ms, view_count, comment_count, like_count
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			value.ID, card.Card.Position, card.Card.SourceURL, card.Card.CanonicalURL,
 			string(card.Card.Provider), string(card.Card.Kind), card.Card.Title,
 			card.Card.Description, card.Card.SiteName, card.Card.AuthorName,
 			duration, thumbnail, card.Card.EmbedURL, card.Card.CapturedAt,
+			countArgument(card.Card.ViewCount), countArgument(card.Card.CommentCount),
+			countArgument(card.Card.LikeCount),
 		); err != nil {
 			return fmt.Errorf("insert portable entry link card: %w", err)
 		}

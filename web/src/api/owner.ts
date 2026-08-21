@@ -97,6 +97,9 @@ export interface OwnerLinkCard {
   site_name: string;
   author_name: string;
   duration_seconds: number | null;
+  view_count: number | null;
+  comment_count: number | null;
+  like_count: number | null;
   thumbnail_media_id: string | null;
   thumbnail_mime_type: string | null;
   thumbnail_width: number | null;
@@ -115,6 +118,9 @@ const ownerLinkCardKeys = [
   "site_name",
   "author_name",
   "duration_seconds",
+  "view_count",
+  "comment_count",
+  "like_count",
   "thumbnail_media_id",
   "thumbnail_mime_type",
   "thumbnail_width",

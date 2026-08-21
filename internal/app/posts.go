@@ -1020,6 +1020,14 @@ func hashCreatePost(content string, media []domain.EntryMediaUsage, location *do
 				_, _ = digest.Write([]byte{1})
 				writeHashInt64(digest, int64(*card.DurationSeconds))
 			}
+			for _, count := range []*int64{card.ViewCount, card.CommentCount, card.LikeCount} {
+				if count == nil {
+					_, _ = digest.Write([]byte{0})
+					continue
+				}
+				_, _ = digest.Write([]byte{1})
+				writeHashInt64(digest, *count)
+			}
 		}
 	}
 	if quotedPostID != nil {

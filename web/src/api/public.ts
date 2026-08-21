@@ -58,6 +58,14 @@ export interface PublicLinkCard {
   siteName: string;
   authorName: string;
   durationSeconds: number | null;
+  /**
+   * Engagement figures captured with the rest of the snapshot. Platforms that
+   * publish these as prose have them parsed server-side, so a reader renders
+   * numbers and never has to know which platform a card came from.
+   */
+  viewCount: number | null;
+  commentCount: number | null;
+  likeCount: number | null;
   thumbnailMediaId: string | null;
   thumbnailMimeType: string | null;
   thumbnailWidth: number | null;
@@ -817,6 +825,9 @@ const linkCardKeys = [
   "site_name",
   "author_name",
   "duration_seconds",
+  "view_count",
+  "comment_count",
+  "like_count",
   "thumbnail_media_id",
   "thumbnail_mime_type",
   "thumbnail_width",
@@ -867,6 +878,18 @@ function parseLinkCards(value: unknown): PublicLinkCard[] {
         item.duration_seconds === null
           ? null
           : positiveIntegerField(item, "duration_seconds"),
+      viewCount:
+        item.view_count === null
+          ? null
+          : nonNegativeIntegerField(item, "view_count"),
+      commentCount:
+        item.comment_count === null
+          ? null
+          : nonNegativeIntegerField(item, "comment_count"),
+      likeCount:
+        item.like_count === null
+          ? null
+          : nonNegativeIntegerField(item, "like_count"),
       thumbnailMediaId:
         item.thumbnail_media_id === null
           ? null

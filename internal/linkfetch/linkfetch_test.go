@@ -369,3 +369,88 @@ func TestResolveRetriesAChallengedRecognizedPage(t *testing.T) {
 		t.Fatalf("expected the retry to win, got %q after %d attempts", preview.Title, attempts)
 	}
 }
+
+func TestBilibiliRefinerStructuresItsStatisticsBlob(t *testing.T) {
+	// Bilibili publishes engagement figures as prose in og:description and
+	// appends its own branding to og:title. Both are turned into the fields a
+	// card renders, so the reader never parses platform text.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/html")
+		_, _ = writer.Write([]byte(`<html><head>
+<link rel="canonical" href="https://www.bilibili.com/video/BV1fx3y6pEPD">
+<meta property="og:title" content="怕输才会紧张，想赢只会兴奋_哔哩哔哩_bilibili">
+<meta property="og:description" content="-, 视频播放量 480312、弹幕量 86、点赞数 10879、投硬币枚数 220、收藏人数 3561、转发人数 210, 视频作者 崽崽阿阿_, 作者简介 ">
+<meta property="og:image" content="https://example.com/cover.jpg">
+<meta property="og:site_name" content="哔哩哔哩">
+</head></html>`))
+	}))
+	defer server.Close()
+
+	resolver := NewResolver(ResolverOptions{Fetcher: loopbackFetcher()})
+	preview, err := resolver.Resolve(context.Background(), server.URL+"/video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Title != "怕输才会紧张，想赢只会兴奋" {
+		t.Fatalf("platform branding survived in the title: %q", preview.Title)
+	}
+	if preview.ViewCount == nil || *preview.ViewCount != 480312 {
+		t.Fatalf("view count = %v", preview.ViewCount)
+	}
+	if preview.CommentCount == nil || *preview.CommentCount != 86 {
+		t.Fatalf("comment count = %v", preview.CommentCount)
+	}
+	if preview.LikeCount == nil || *preview.LikeCount != 10879 {
+		t.Fatalf("like count = %v", preview.LikeCount)
+	}
+	if preview.AuthorName != "崽崽阿阿_" {
+		t.Fatalf("author = %q", preview.AuthorName)
+	}
+	// The blob was a statistics readout; once structured, repeating it as prose
+	// would only render the same numbers badly.
+	if preview.Description != "" {
+		t.Fatalf("statistics blob survived as description: %q", preview.Description)
+	}
+}
+
+func TestRefinementIsSkippedForAChallengedPage(t *testing.T) {
+	// A challenge page has no cover, so its text is dropped rather than parsed.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/html")
+		_, _ = writer.Write([]byte(`<html><head>
+<link rel="canonical" href="https://www.bilibili.com/video/BV1fx3y6pEPD">
+<meta property="og:title" content="验证码_哔哩哔哩">
+</head></html>`))
+	}))
+	defer server.Close()
+
+	resolver := NewResolver(ResolverOptions{Fetcher: loopbackFetcher()})
+	preview, err := resolver.Resolve(context.Background(), server.URL+"/video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Title != "" || preview.ViewCount != nil {
+		t.Fatalf("challenged page must not produce card text: %#v", preview)
+	}
+}
+
+func TestGenericPageCarriesNoStatistics(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/html")
+		_, _ = writer.Write([]byte(`<html><head>
+<meta property="og:title" content="A blog post">
+<meta property="og:description" content="视频播放量 999 看起来像统计其实是正文">
+</head></html>`))
+	}))
+	defer server.Close()
+
+	resolver := NewResolver(ResolverOptions{Fetcher: loopbackFetcher()})
+	preview, err := resolver.Resolve(context.Background(), server.URL+"/post")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only a recognized provider refines. An unrelated page keeps its prose.
+	if preview.ViewCount != nil || preview.Description == "" {
+		t.Fatalf("generic page was refined: %#v", preview)
+	}
+}

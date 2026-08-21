@@ -434,7 +434,8 @@ func (store postStore) EntryLinkCards(ctx context.Context, entryID domain.ID) ([
 SELECT card.position, card.source_url, card.canonical_url, card.provider,
        card.card_kind, card.title, card.description, card.site_name,
        card.author_name, card.duration_seconds, card.thumbnail_media_id,
-       card.embed_url, card.captured_at_ms,
+       card.embed_url, card.captured_at_ms, card.view_count,
+       card.comment_count, card.like_count,
        thumbnail.mime_type, thumbnail.width, thumbnail.height
 FROM entry_link_card AS card
 LEFT JOIN media AS thumbnail ON thumbnail.id = card.thumbnail_media_id
@@ -453,12 +454,15 @@ ORDER BY card.position`, entryID.String())
 			mimeType  sql.NullString
 			width     sql.NullInt64
 			height    sql.NullInt64
+			views     sql.NullInt64
+			comments  sql.NullInt64
+			likes     sql.NullInt64
 		)
 		if err := rows.Scan(
 			&card.Position, &card.SourceURL, &card.CanonicalURL, &card.Provider,
 			&card.Kind, &card.Title, &card.Description, &card.SiteName,
 			&card.AuthorName, &duration, &thumbnail, &card.EmbedURL, &card.CapturedAt,
-			&mimeType, &width, &height,
+			&views, &comments, &likes, &mimeType, &width, &height,
 		); err != nil {
 			return nil, fmt.Errorf("scan entry link card: %w", err)
 		}
@@ -467,6 +471,9 @@ ORDER BY card.position`, entryID.String())
 			card.DurationSeconds = &seconds
 		}
 		card.ThumbnailMediaID = thumbnail.String
+		card.ViewCount = nullableCount(views)
+		card.CommentCount = nullableCount(comments)
+		card.LikeCount = nullableCount(likes)
 		if err := card.Validate(); err != nil {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored link card violates the domain contract", map[string]any{"post_id": entryID.String()})
 		}
@@ -502,17 +509,33 @@ func (store postStore) ReplaceEntryLinkCards(ctx context.Context, entryID domain
 INSERT INTO entry_link_card (
     entry_id, position, source_url, canonical_url, provider, card_kind, title,
     description, site_name, author_name, duration_seconds, thumbnail_media_id,
-    embed_url, captured_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    embed_url, captured_at_ms, view_count, comment_count, like_count
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			entryID.String(), card.Position, card.SourceURL, card.CanonicalURL,
 			string(card.Provider), string(card.Kind), card.Title, card.Description,
 			card.SiteName, card.AuthorName, duration, thumbnail, card.EmbedURL,
-			card.CapturedAt,
+			card.CapturedAt, countArgument(card.ViewCount),
+			countArgument(card.CommentCount), countArgument(card.LikeCount),
 		); err != nil {
 			return fmt.Errorf("insert entry link card: %w", err)
 		}
 	}
 	return nil
+}
+
+func nullableCount(value sql.NullInt64) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	count := value.Int64
+	return &count
+}
+
+func countArgument(value *int64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 // EntryLinkCardMediaIDs returns the thumbnails an entry currently references so

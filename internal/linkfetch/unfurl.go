@@ -23,6 +23,9 @@ type Preview struct {
 	DurationSeconds *int
 	ImageURL        string
 	EmbedURL        string
+	ViewCount       *int64
+	CommentCount    *int64
+	LikeCount       *int64
 }
 
 // Resolver turns an owner-supplied URL into a Preview.
@@ -95,6 +98,7 @@ func (resolver *Resolver) Resolve(ctx context.Context, rawURL string) (Preview, 
 	}
 
 	recognition, recognized := Recognize(resolver.providers, source)
+	var refiner Refiner
 
 	// The generic document fetch is the trunk. It follows redirects, which is
 	// also how a short link such as b23.tv resolves to its real target.
@@ -110,11 +114,15 @@ func (resolver *Resolver) Resolve(ctx context.Context, rawURL string) (Preview, 
 	}
 
 	if recognized {
-		if enricher, ok := any(resolver.providerFor(recognition.Provider)).(Enricher); ok {
+		provider := resolver.providerFor(recognition.Provider)
+		if enricher, ok := any(provider).(Enricher); ok {
 			if extra, err := enricher.Enrich(ctx, resolver.fetcher, recognition); err == nil {
 				metadata.Merge(extra)
 			}
 		}
+		// Refinement is pure and runs after the challenge retry below decides
+		// whether the document is trustworthy at all.
+		refiner, _ = any(provider).(Refiner)
 	}
 
 	if documentErr != nil && metadata.Title == "" && !recognized {
@@ -142,6 +150,8 @@ func (resolver *Resolver) Resolve(ctx context.Context, rawURL string) (Preview, 
 		metadata.Description = ""
 		metadata.AuthorName = ""
 		metadata.SiteName = ""
+	} else if refiner != nil {
+		metadata = refiner.Refine(metadata)
 	}
 
 	preview := Preview{
@@ -155,6 +165,9 @@ func (resolver *Resolver) Resolve(ctx context.Context, rawURL string) (Preview, 
 		AuthorName:      metadata.AuthorName,
 		DurationSeconds: metadata.DurationSeconds,
 		ImageURL:        metadata.ImageURL,
+		ViewCount:       metadata.ViewCount,
+		CommentCount:    metadata.CommentCount,
+		LikeCount:       metadata.LikeCount,
 	}
 	if recognized {
 		preview.Provider = recognition.Provider

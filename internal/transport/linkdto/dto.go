@@ -27,6 +27,9 @@ type Card struct {
 	SiteName          string  `json:"site_name"`
 	AuthorName        string  `json:"author_name"`
 	DurationSeconds   *int    `json:"duration_seconds"`
+	ViewCount         *int64  `json:"view_count"`
+	CommentCount      *int64  `json:"comment_count"`
+	LikeCount         *int64  `json:"like_count"`
 	ThumbnailMediaID  *string `json:"thumbnail_media_id"`
 	ThumbnailMIMEType *string `json:"thumbnail_mime_type"`
 	ThumbnailWidth    *uint32 `json:"thumbnail_width"`
@@ -38,6 +41,7 @@ type Card struct {
 var cardFields = []string{
 	"source_url", "canonical_url", "provider", "card_kind", "title",
 	"description", "site_name", "author_name", "duration_seconds",
+	"view_count", "comment_count", "like_count",
 	"thumbnail_media_id", "thumbnail_mime_type", "thumbnail_width",
 	"thumbnail_height", "embed_url", "captured_at_ms",
 }
@@ -93,6 +97,9 @@ func (card Card) Domain(position int) (domain.LinkCard, error) {
 		seconds := *card.DurationSeconds
 		value.DurationSeconds = &seconds
 	}
+	value.ViewCount = copyCount(card.ViewCount)
+	value.CommentCount = copyCount(card.CommentCount)
+	value.LikeCount = copyCount(card.LikeCount)
 	if card.ThumbnailMediaID != nil {
 		value.ThumbnailMediaID = *card.ThumbnailMediaID
 	}
@@ -114,6 +121,14 @@ func (card Card) Domain(position int) (domain.LinkCard, error) {
 	return value, nil
 }
 
+func copyCount(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	count := *value
+	return &count
+}
+
 // FromPreview renders one resolved preview for an owner client.
 func FromPreview(preview app.LinkPreview) Card {
 	card := Card{
@@ -130,6 +145,9 @@ func FromPreview(preview app.LinkPreview) Card {
 		seconds := *preview.Card.DurationSeconds
 		card.DurationSeconds = &seconds
 	}
+	card.ViewCount = copyCount(preview.Card.ViewCount)
+	card.CommentCount = copyCount(preview.Card.CommentCount)
+	card.LikeCount = copyCount(preview.Card.LikeCount)
 	if preview.Card.ThumbnailMediaID != "" {
 		id := preview.Card.ThumbnailMediaID
 		card.ThumbnailMediaID = &id
@@ -168,6 +186,9 @@ func FromDomainCard(card domain.LinkCard) Card {
 		seconds := *card.DurationSeconds
 		wire.DurationSeconds = &seconds
 	}
+	wire.ViewCount = copyCount(card.ViewCount)
+	wire.CommentCount = copyCount(card.CommentCount)
+	wire.LikeCount = copyCount(card.LikeCount)
 	if card.ThumbnailMediaID != "" {
 		id := card.ThumbnailMediaID
 		wire.ThumbnailMediaID = &id

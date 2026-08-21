@@ -552,6 +552,9 @@ type linkCardRecord struct {
 	ThumbnailSHA256 *string `json:"thumbnail_sha256"`
 	EmbedURL        string  `json:"embed_url"`
 	CapturedAt      string  `json:"captured_at"`
+	ViewCount       *int64  `json:"view_count,omitempty"`
+	CommentCount    *int64  `json:"comment_count,omitempty"`
+	LikeCount       *int64  `json:"like_count,omitempty"`
 }
 
 func portableOptionalTime(value *int64) *string {
@@ -825,6 +828,9 @@ func portableLinkCards(values []sqlitestore.ArchiveLinkCard) []linkCardRecord {
 			seconds := *value.Card.DurationSeconds
 			record.DurationSeconds = &seconds
 		}
+		record.ViewCount = portableCount(value.Card.ViewCount)
+		record.CommentCount = portableCount(value.Card.CommentCount)
+		record.LikeCount = portableCount(value.Card.LikeCount)
 		if value.ThumbnailSHA256 != "" {
 			sha := value.ThumbnailSHA256
 			record.ThumbnailSHA256 = &sha
@@ -855,6 +861,9 @@ func domainLinkCards(values []linkCardRecord) ([]sqlitestore.ArchiveLinkCard, er
 			seconds := *value.DurationSeconds
 			card.DurationSeconds = &seconds
 		}
+		card.ViewCount = portableCount(value.ViewCount)
+		card.CommentCount = portableCount(value.CommentCount)
+		card.LikeCount = portableCount(value.LikeCount)
 		if err := card.Validate(); err != nil {
 			return nil, err
 		}
@@ -868,6 +877,14 @@ func domainLinkCards(values []linkCardRecord) ([]sqlitestore.ArchiveLinkCard, er
 		return nil, err
 	}
 	return cards, nil
+}
+
+func portableCount(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	count := *value
+	return &count
 }
 
 func portableLocation(value *domain.Location) *locationRecord {

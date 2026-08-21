@@ -71,6 +71,14 @@ type LinkCard struct {
 	ThumbnailMediaID string
 	EmbedURL         string
 	CapturedAt       int64
+	// Engagement counts captured with the rest of the snapshot. They are
+	// deliberately provider-independent: a platform that publishes its stats as
+	// a prose blob has them parsed into these fields at capture time, so
+	// rendering reads numbers and never has to know which platform produced
+	// them. Absent means the origin did not publish that figure.
+	ViewCount    *int64
+	CommentCount *int64
+	LikeCount    *int64
 }
 
 // Validate enforces the canonical link card contract. It runs on the write
@@ -130,6 +138,18 @@ func (card LinkCard) Validate() error {
 	if card.CapturedAt <= 0 {
 		return NewError(CodeInvalidArgument, "link card capture time is required", map[string]any{"field": "captured_at"})
 	}
+	for _, stat := range []struct {
+		field string
+		value *int64
+	}{
+		{"view_count", card.ViewCount},
+		{"comment_count", card.CommentCount},
+		{"like_count", card.LikeCount},
+	} {
+		if stat.value != nil && *stat.value < 0 {
+			return NewError(CodeInvalidArgument, stat.field+" cannot be negative", map[string]any{"field": stat.field})
+		}
+	}
 	return nil
 }
 
@@ -161,9 +181,20 @@ func CloneLinkCards(cards []LinkCard) []LinkCard {
 			duration := *card.DurationSeconds
 			clone.DurationSeconds = &duration
 		}
+		clone.ViewCount = cloneCount(card.ViewCount)
+		clone.CommentCount = cloneCount(card.CommentCount)
+		clone.LikeCount = cloneCount(card.LikeCount)
 		clones[index] = clone
 	}
 	return clones
+}
+
+func cloneCount(value *int64) *int64 {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }
 
 // NormalizeLinkURL applies the shared URL grammar every link card field obeys:

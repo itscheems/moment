@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 
 import type { PublicLinkCard } from "../../api/public";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
@@ -30,6 +30,20 @@ function playbackUrl(embedUrl: string): string {
   } catch {
     return embedUrl;
   }
+}
+
+/**
+ * Format an engagement count the way the platforms themselves do.
+ *
+ * Above ten thousand the exact figure stops carrying information a reader
+ * wants, so it collapses to 万 — the same unit the source sites display, which
+ * keeps the number recognisable next to the card it came from.
+ */
+function formatCount(value: number): string {
+  if (value < 10_000) return value.toLocaleString("zh-CN");
+  const scaled = value / 10_000;
+  const digits = scaled < 100 ? 1 : 0;
+  return `${scaled.toFixed(digits).replace(/\.0$/, "")}万`;
 }
 
 function hostLabel(card: PublicLinkCard): string {
@@ -77,11 +91,62 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
     />
   ) : null;
 
+  // Stats render from structured numbers, never by re-parsing platform prose,
+  // so this row stays identical no matter which site a card came from.
+  const stats: Array<{
+    key: string;
+    icon: ReactNode;
+    label: string;
+    value: number;
+  }> = [];
+  if (card.viewCount !== null) {
+    stats.push({
+      key: "views",
+      icon: <Icon name="play-count" />,
+      label: "播放",
+      value: card.viewCount,
+    });
+  }
+  if (card.commentCount !== null) {
+    stats.push({
+      key: "comments",
+      icon: <Icon name="danmaku-count" />,
+      label: "弹幕",
+      value: card.commentCount,
+    });
+  }
+  if (card.likeCount !== null) {
+    stats.push({
+      key: "likes",
+      icon: null,
+      label: "点赞",
+      value: card.likeCount,
+    });
+  }
+
   const meta = (
     <div className={styles.meta}>
       <p className={styles.site}>{site}</p>
       {title ? <p className={styles.title}>{title}</p> : null}
-      {card.description.trim() ? (
+      {stats.length > 0 ? (
+        <ul className={styles.stats}>
+          {stats.map((stat) => (
+            <li className={styles.stat} key={stat.key}>
+              {/* A glyph carries the meaning where one exists; otherwise the
+                  name is spelled out, so no figure is ever left unlabelled. */}
+              {stat.icon ?? (
+                <span aria-hidden="true" className={styles.statName}>
+                  {stat.label}
+                </span>
+              )}
+              <span aria-hidden="true">{formatCount(stat.value)}</span>
+              <span className={styles.statLabel}>
+                {stat.label} {stat.value.toLocaleString("zh-CN")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : card.description.trim() ? (
         <p className={styles.description}>{card.description.trim()}</p>
       ) : null}
     </div>
