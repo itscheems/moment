@@ -49,13 +49,13 @@ func TestOpenMigratesCurrentGenerationAndProbesFTS(t *testing.T) {
 	}
 
 	expected := []string{
-		"comment_location", "comment_media", "comment_pins", "comments", "entries", "entry_fts", "entry_location", "entry_media", "idempotency_keys",
-		"media", "schema_migrations", "site_settings",
+		"comment_location", "comment_media", "comment_pins", "comments", "entries", "entry_fts", "entry_link_card", "entry_location", "entry_media",
+		"idempotency_keys", "media", "schema_migrations", "site_settings",
 	}
 	rows, err := db.read.QueryContext(ctx, `
 SELECT name
 FROM sqlite_schema
-WHERE name IN ('comment_location', 'comment_media', 'comment_pins', 'comments', 'entries', 'entry_fts', 'entry_location', 'entry_media', 'idempotency_keys', 'media', 'schema_migrations', 'site_settings')
+WHERE name IN ('comment_location', 'comment_media', 'comment_pins', 'comments', 'entries', 'entry_fts', 'entry_link_card', 'entry_location', 'entry_media', 'idempotency_keys', 'media', 'schema_migrations', 'site_settings')
 ORDER BY name`)
 	if err != nil {
 		t.Fatal(err)
