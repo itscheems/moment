@@ -145,7 +145,7 @@ func TestLinkPreviewFoldsOriginFailureIntoOneStableCode(t *testing.T) {
 }
 
 func TestLinkPreviewRejectsUnsafeURLBeforeAnyRequest(t *testing.T) {
-	service, _ := newLinkPreviewFixture(t, func(writer http.ResponseWriter, _ *http.Request) {
+	service, _ := newLinkPreviewFixture(t, func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("no request should be made for an invalid URL")
 	}, &stubThumbnailStore{})
 

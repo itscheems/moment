@@ -48,6 +48,7 @@ function post(id: string, text: string) {
     quoted_post: null,
     comment_count: 0,
     media: [],
+    link_cards: [],
   };
 }
 
@@ -113,6 +114,7 @@ describe("profile page", () => {
           quotedPost: null,
           commentCount: 0,
           media: [],
+          linkCards: [],
         },
       });
     });

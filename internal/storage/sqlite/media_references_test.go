@@ -150,7 +150,7 @@ func TestLinkCardThumbnailUsesCentralResolver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created_, err := service.Create(ctx, app.CreatePostInput{
+	publishedPost, err := service.Create(ctx, app.CreatePostInput{
 		ContentMD: "watch this",
 		LinkCards: []domain.LinkCard{{
 			SourceURL:        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -167,8 +167,8 @@ func TestLinkCardThumbnailUsesCentralResolver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(created_.Post.LinkCards) != 1 {
-		t.Fatalf("expected the created post to carry one card, got %d", len(created_.Post.LinkCards))
+	if len(publishedPost.Post.LinkCards) != 1 {
+		t.Fatalf("expected the created post to carry one card, got %d", len(publishedPost.Post.LinkCards))
 	}
 	assertMediaClock(t, database, mediaOne, nil)
 
@@ -176,7 +176,7 @@ func TestLinkCardThumbnailUsesCentralResolver(t *testing.T) {
 	clock = cleared
 	empty := []domain.LinkCard{}
 	if _, err := service.Update(ctx, app.UpdatePostInput{
-		ID:              created_.Post.Entry.ID,
+		ID:              publishedPost.Post.Entry.ID,
 		PreserveContent: true,
 		LinkCards:       &empty,
 	}); err != nil {

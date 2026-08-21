@@ -229,6 +229,7 @@ function post(
       ...usage,
       mime_type: usage.mime_type ?? "image/png",
     })),
+    link_cards: [],
   };
 }
 

@@ -256,6 +256,7 @@ func linkCardProjections(cards []app.LinkCardProjection) []LinkCard {
 	return projections
 }
 
+// FromPost maps one application post onto the stable public shape.
 func FromPost(post app.Post) Post {
 	media := make([]MediaProjection, 0, len(post.Media))
 	for _, usage := range post.Media {

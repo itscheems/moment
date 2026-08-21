@@ -46,6 +46,7 @@ function post(id: string, content: string) {
     quoted_post: null,
     comment_count: 0,
     media: [],
+    link_cards: [],
   };
 }
 

@@ -15,6 +15,7 @@ import {
 import { formatMomentDate } from "./dates";
 import { OwnerPostActions } from "../owner/OwnerPostActions";
 import { OwnerRepostAction } from "../owner/OwnerRepostAction";
+import { LinkCard } from "../links/LinkCard";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
 
@@ -135,6 +136,8 @@ export function PostPresentation({
   const title = siteDisplayName(site);
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
   const collapsed = !detail && longInTimeline(post);
+  const linkCard =
+    post.linkCards.length > 0 ? <LinkCard card={post.linkCards[0]} /> : null;
   const detailHref = `/m/${encodeURIComponent(post.id)}`;
   const timelineKey = `${post.id}:${post.timelineItemKind}`;
   const useTimelineDensity = timelineDensity && !detail;
@@ -311,6 +314,7 @@ export function PostPresentation({
             html={contentHtml ?? post.contentHtml}
             mentionUsername={site.username}
           />
+          {linkCard}
           {post.location ? <PostLocation location={post.location} /> : null}
           <ImageGrid eagerVideo media={post.media} />
           {quoteCard}
@@ -377,13 +381,6 @@ export function PostPresentation({
           html={contentHtml ?? post.contentHtml}
           mentionUsername={site.username}
         />
-        {post.location ? <PostLocation location={post.location} /> : null}
-        <ImageGrid
-          compactTallVideo={compactTallVideo}
-          eagerVideo={eagerVideo}
-          media={post.media}
-        />
-        {quoteCard}
         {collapsed ? (
           <InternalLink
             className={styles.readMore}
@@ -393,6 +390,14 @@ export function PostPresentation({
             阅读全文
           </InternalLink>
         ) : null}
+        {linkCard}
+        {post.location ? <PostLocation location={post.location} /> : null}
+        <ImageGrid
+          compactTallVideo={compactTallVideo}
+          eagerVideo={eagerVideo}
+          media={post.media}
+        />
+        {quoteCard}
         <div className={styles.postActions}>
           <ActionTooltip label="回复">
             {onReply ? (

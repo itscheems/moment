@@ -163,7 +163,7 @@ func New(options Options) *Fetcher {
 func (fetcher *Fetcher) Get(ctx context.Context, rawURL string, accepted []string, maxBytes int64) (Response, error) {
 	normalized, err := domain.NormalizeLinkURL(rawURL)
 	if err != nil {
-		return Response{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return Response{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	target, err := url.Parse(normalized)
 	if err != nil {
@@ -174,7 +174,7 @@ func (fetcher *Fetcher) Get(ctx context.Context, rawURL string, accepted []strin
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, normalized, nil)
 	if err != nil {
-		return Response{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return Response{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	request.Header.Set("User-Agent", UserAgent)
 	request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
@@ -189,7 +189,7 @@ func (fetcher *Fetcher) Get(ctx context.Context, rawURL string, accepted []strin
 		if ctx.Err() != nil {
 			return Response{}, ctx.Err()
 		}
-		return Response{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return Response{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	defer func() {
 		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
@@ -207,7 +207,7 @@ func (fetcher *Fetcher) Get(ctx context.Context, rawURL string, accepted []strin
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxBytes+1))
 	if err != nil {
-		return Response{}, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return Response{}, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	if int64(len(body)) > maxBytes {
 		return Response{}, fmt.Errorf("%w: response exceeds %d bytes", ErrUnavailable, maxBytes)
@@ -229,7 +229,7 @@ func addressControl(allowPrivate bool) func(string, string, syscall.RawConn) err
 		}
 		host, _, err := net.SplitHostPort(address)
 		if err != nil {
-			return fmt.Errorf("%w: %v", ErrBlockedAddress, err)
+			return fmt.Errorf("%w: %w", ErrBlockedAddress, err)
 		}
 		// Control runs against the address the socket will actually connect to,
 		// so a name that resolved to a public IP during a first lookup cannot be

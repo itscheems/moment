@@ -190,7 +190,7 @@ func TestIsEmbeddableRejectsUnlistedOrigin(t *testing.T) {
 
 func TestResolveBuildsVideoCardFromOpenGraph(t *testing.T) {
 	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	server = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = fmt.Fprintf(writer, `<html><head>
 <link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ">
