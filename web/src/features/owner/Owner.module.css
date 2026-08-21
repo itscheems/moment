@@ -1207,3 +1207,85 @@
     transition: none;
   }
 }
+
+/* The composer preview shows the snapshot that will be stored, so it is a
+   compact row rather than a second rendering of the published card. */
+.composerLinkCard {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  margin-block-start: var(--space-3);
+  padding: var(--space-2);
+}
+
+.composerLinkThumbnail {
+  flex: 0 0 auto;
+  inline-size: 4.5rem;
+  block-size: 4.5rem;
+  border-radius: 0.6rem;
+  object-fit: cover;
+}
+
+.composerLinkText {
+  min-inline-size: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.composerLinkText p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerLinkSite {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.composerLinkTitle {
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.composerLinkRemove {
+  flex: 0 0 auto;
+  inline-size: 2rem;
+  block-size: 2rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.composerLinkRemove:hover:not(:disabled),
+.composerLinkRemove:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.composerLinkRemove:disabled {
+  cursor: not-allowed;
+}
+
+.composerLinkRemove svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+
+.linkPreviewPending {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}

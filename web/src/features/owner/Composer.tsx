@@ -43,6 +43,8 @@ import {
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { ComposerLinkCard } from "./ComposerLinkCard";
+import { useLinkPreview } from "./useLinkPreview";
 import { LocationPicker, SelectedLocationChip } from "./LocationPicker";
 import { MentionSuggestions } from "./MentionSuggestions";
 import {
@@ -164,6 +166,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       string | null
     >(null);
     const initialLocation = useMemo(() => initialPostLocation(post), [post]);
+    const linkPreview = useLinkPreview(api, content, !quotedPost);
     const [location, setLocation] = useState<OwnerLocation | null>(
       initialLocation,
     );
@@ -851,6 +854,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               content,
               usages,
               locationChanged ? location : undefined,
+              linkPreview.changed
+                ? linkPreview.card
+                  ? [linkPreview.card]
+                  : []
+                : undefined,
             )
           : repostOnly && quotedPost
             ? await api.setReposted(session.csrfToken, quotedPost.id, true)
@@ -861,6 +869,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 usages,
                 location ?? undefined,
                 quotedPost?.id,
+                linkPreview.card ? [linkPreview.card] : undefined,
               );
         allowLeaveRef.current = true;
         dirtyRef.current = false;
@@ -1121,6 +1130,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 {count.toLocaleString("zh-CN")} /{" "}
                 {MAX_CONTENT.toLocaleString("zh-CN")}
               </p>
+            ) : null}
+            {linkPreview.status === "loading" ? (
+              <p className={styles.linkPreviewPending} role="status">
+                正在获取链接预览…
+              </p>
+            ) : null}
+            {linkPreview.card ? (
+              <ComposerLinkCard
+                card={linkPreview.card}
+                disabled={pending}
+                onRemove={() => {
+                  linkPreview.dismiss();
+                  setAnnouncement("链接卡片已移除");
+                }}
+              />
             ) : null}
             {location ? (
               <SelectedLocationChip
