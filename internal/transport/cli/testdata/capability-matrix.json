@@ -165,6 +165,15 @@
       "parity_strategy": "exact_alias_of_owner_init"
     },
     {
+      "command": "link unfurl",
+      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:exclusive"]},
+      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
+      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "output_schema": "link_card_v1",
+      "expected_exits": [0, 2, 5, 8, 9, 10],
+      "parity_strategy": "canonical_provider_snapshot"
+    },
+    {
       "command": "location nearby",
       "direct": {"availability": "supported", "auth": "local_data_access", "locks": []},
       "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},

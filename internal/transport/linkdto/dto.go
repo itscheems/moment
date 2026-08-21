@@ -150,3 +150,33 @@ func FromPreview(preview app.LinkPreview) Card {
 	card.CapturedAt = &captured
 	return card
 }
+
+// FromDomainCard renders a stored snapshot back onto the wire, so a CLI client
+// can round-trip a card between unfurl and post write without losing a field.
+func FromDomainCard(card domain.LinkCard) Card {
+	wire := Card{
+		SourceURL:    card.SourceURL,
+		CanonicalURL: card.CanonicalURL,
+		Provider:     string(card.Provider),
+		Kind:         string(card.Kind),
+		Title:        card.Title,
+		Description:  card.Description,
+		SiteName:     card.SiteName,
+		AuthorName:   card.AuthorName,
+	}
+	if card.DurationSeconds != nil {
+		seconds := *card.DurationSeconds
+		wire.DurationSeconds = &seconds
+	}
+	if card.ThumbnailMediaID != "" {
+		id := card.ThumbnailMediaID
+		wire.ThumbnailMediaID = &id
+	}
+	if card.EmbedURL != "" {
+		embed := card.EmbedURL
+		wire.EmbedURL = &embed
+	}
+	captured := card.CapturedAt
+	wire.CapturedAt = &captured
+	return wire
+}

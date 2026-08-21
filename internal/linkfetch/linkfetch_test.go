@@ -280,3 +280,33 @@ func TestResolveCachesByCanonicalSource(t *testing.T) {
 }
 
 func mustIP(raw string) net.IP { return net.ParseIP(raw) }
+
+func TestResolveDropsUntrustedTextFromAnInterstitial(t *testing.T) {
+	// A recognized video page that returns no thumbnail was not really the
+	// resource: platforms serve anti-bot or consent walls with a 200 and a
+	// title. The card must not display that title.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "text/html")
+		_, _ = writer.Write([]byte(`<html><head>
+<link rel="canonical" href="https://www.bilibili.com/video/BV1GJ411x7h7">
+<meta property="og:title" content="验证码_哔哩哔哩">
+</head></html>`))
+	}))
+	defer server.Close()
+
+	resolver := NewResolver(ResolverOptions{Fetcher: loopbackFetcher()})
+	preview, err := resolver.Resolve(context.Background(), server.URL+"/video")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if preview.Title != "" || preview.Description != "" {
+		t.Fatalf("interstitial text must not reach the card: %#v", preview)
+	}
+	// The recognizer's own contribution still stands, so the card links and embeds.
+	if preview.Provider != domain.LinkProviderBilibili || preview.EmbedURL == "" {
+		t.Fatalf("expected the recognition to survive: %#v", preview)
+	}
+	if preview.SiteName != "bilibili.com" {
+		t.Fatalf("expected the host label fallback, got %q", preview.SiteName)
+	}
+}

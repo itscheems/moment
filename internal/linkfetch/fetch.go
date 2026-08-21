@@ -54,13 +54,19 @@ const (
 
 // blockedCIDRs names ranges that are routable in form but never a legitimate
 // link-preview target. The address family helpers cover the rest.
+//
+// 198.18.0.0/15 is deliberately absent. It is the RFC 2544 benchmarking range
+// and would otherwise belong here, but fake-IP DNS proxies -- the default mode
+// of the tunnels commonly used to reach these platforms -- map real public
+// hosts into exactly that range. Blocking it makes every unfurl fail on such a
+// host while protecting nothing that the loopback, private, link-local, and
+// metadata rules below do not already cover. Those higher-value rules stay.
 var blockedCIDRs = []string{
 	"0.0.0.0/8",
 	"100.64.0.0/10",
 	"169.254.0.0/16",
 	"192.0.0.0/24",
 	"192.0.2.0/24",
-	"198.18.0.0/15",
 	"198.51.100.0/24",
 	"203.0.113.0/24",
 	"240.0.0.0/4",

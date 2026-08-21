@@ -115,6 +115,19 @@ func (resolver *Resolver) Resolve(ctx context.Context, rawURL string) (Preview, 
 		return Preview{}, documentErr
 	}
 
+	// A recognized video page always carries a thumbnail. When one does not,
+	// the response was not really the resource that was asked for -- an
+	// anti-bot interstitial or a consent wall, which still returns 200 and a
+	// title. Keeping that title would put "verification required" on the card,
+	// so the untrustworthy text is dropped and only the recognizer's own
+	// contribution survives. The card stays useful: it still links and embeds.
+	if recognized && metadata.ImageURL == "" {
+		metadata.Title = ""
+		metadata.Description = ""
+		metadata.AuthorName = ""
+		metadata.SiteName = ""
+	}
+
 	preview := Preview{
 		SourceURL:       source,
 		CanonicalURL:    firstNonEmpty(recognition.CanonicalURL, metadata.CanonicalURL, source),

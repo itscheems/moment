@@ -21,6 +21,7 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	"github.com/moment/moment/internal/transport/commentdto"
+	"github.com/moment/moment/internal/transport/linkdto"
 	"github.com/moment/moment/internal/transport/locationdto"
 	"github.com/moment/moment/internal/transport/postdto"
 	"github.com/moment/moment/internal/transport/searchdto"
@@ -82,6 +83,7 @@ func registerPosts(application *Application) {
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
 			registerPostMediaFlags(flags)
 			registerPostLocationFlags(flags, false)
+			registerPostLinkCardFlags(flags, false)
 		},
 		Run: runPostCreate,
 	})
@@ -101,6 +103,7 @@ func registerPosts(application *Application) {
 			flags.String("content", "", "replacement UTF-8 Markdown content")
 			registerPostMediaFlags(flags)
 			registerPostLocationFlags(flags, true)
+			registerPostLinkCardFlags(flags, true)
 		},
 		Run: runPostUpdate,
 	})
@@ -312,6 +315,10 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 	if err != nil {
 		return Result{}, err
 	}
+	linkInput, err := postLinkCardInputFromFlags(ctx, invocation, input, false)
+	if err != nil {
+		return Result{}, err
+	}
 	mediaInput, err := postMediaInputFromFlags(ctx, input)
 	if err != nil {
 		return Result{}, err
@@ -356,7 +363,7 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		if err != nil {
 			return Result{}, err
 		}
-		created, err := direct.service.Create(ctx, app.CreatePostInput{ContentMD: content, Media: usages, Location: locationInput.Location, QuotedPostID: quotedPostID, IdempotencyKey: idempotencyKey})
+		created, err := direct.service.Create(ctx, app.CreatePostInput{ContentMD: content, Media: usages, Location: locationInput.Location, LinkCards: linkInput.Cards, QuotedPostID: quotedPostID, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -382,6 +389,9 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 			wire := locationdto.FromDomain(*locationInput.Location)
 			pointer := &wire
 			payload.Location = &pointer
+		}
+		if linkInput.Present {
+			payload.LinkCards = linkCardPayload(linkInput.Cards)
 		}
 		var status int
 		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/posts", nil, payload, idempotencyKey, true, &post)
@@ -417,8 +427,12 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 	if err != nil {
 		return Result{}, err
 	}
-	if !contentPresent && !mediaInput.Present && !locationInput.Present {
-		return Result{}, invalidArgument("post update requires a content, media, or location change", "provide --content, media input, --location-name, --location-json, or --clear-location")
+	linkInput, err := postLinkCardInputFromFlags(ctx, invocation, input, true)
+	if err != nil {
+		return Result{}, err
+	}
+	if !contentPresent && !mediaInput.Present && !locationInput.Present && !linkInput.Present {
+		return Result{}, invalidArgument("post update requires a content, media, location, or link change", "provide --content, media input, --location-name, --location-json, --clear-location, --link, --link-json, or --clear-link")
 	}
 	var (
 		post postdto.Post
@@ -444,6 +458,13 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 		if locationInput.Present {
 			location := domain.CloneLocation(locationInput.Location)
 			update.Location = &location
+		}
+		if linkInput.Present {
+			cards := domain.CloneLinkCards(linkInput.Cards)
+			if cards == nil {
+				cards = []domain.LinkCard{}
+			}
+			update.LinkCards = &cards
 		}
 		updated, err := direct.service.Update(ctx, update)
 		if err != nil {
@@ -474,6 +495,9 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 				pointer := &wire
 				payload.Location = &pointer
 			}
+		}
+		if linkInput.Present {
+			payload.LinkCards = linkCardPayload(linkInput.Cards)
 		}
 		var status int
 		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/posts/"+id.String(), nil, payload, "", true, &post)
@@ -588,7 +612,18 @@ type postWritePayload struct {
 	ContentMD    *string                `json:"content_md,omitempty"`
 	Media        *[]postdto.MediaUsage  `json:"media,omitempty"`
 	Location     **locationdto.Location `json:"location,omitempty"`
+	LinkCards    *[]linkdto.Card        `json:"link_cards,omitempty"`
 	QuotedPostID *string                `json:"quoted_post_id,omitempty"`
+}
+
+// linkCardPayload always emits an array so a clear is an explicit empty list
+// rather than an omitted key, which the server reads as "preserve".
+func linkCardPayload(cards []domain.LinkCard) *[]linkdto.Card {
+	wire := make([]linkdto.Card, 0, len(cards))
+	for _, card := range cards {
+		wire = append(wire, linkdto.FromDomainCard(card))
+	}
+	return &wire
 }
 
 type postLocationInput struct {
@@ -612,6 +647,92 @@ func registerPostMediaFlags(flags *pflag.FlagSet) {
 	flags.Var(&onceStringFlag{name: "--media-alt"}, "media-alt", "non-empty provided alt text for --media")
 	flags.Bool("media-decorative", false, "encode --media with explicit decorative alt text")
 	flags.Var(&onceStringFlag{name: "--media-manifest"}, "media-manifest", "ordered JSON manifest path or - for stdin")
+}
+
+// postLinkCardInput mirrors postLocationInput: Present distinguishes "leave the
+// existing cards alone" from "replace them with exactly this list".
+type postLinkCardInput struct {
+	Present bool
+	Cards   []domain.LinkCard
+}
+
+func registerPostLinkCardFlags(flags *pflag.FlagSet, allowClear bool) {
+	flags.Var(&onceStringFlag{name: "--link"}, "link", "URL to unfurl and attach as a link card (mutually exclusive with --link-json)")
+	flags.Var(&onceStringFlag{name: "--link-json"}, "link-json", "canonical link card object path or - for stdin")
+	if allowClear {
+		flags.Bool("clear-link", false, "remove the post link card")
+	}
+}
+
+func postLinkCardInputFromFlags(ctx context.Context, invocation Invocation, input CommandInput, allowClear bool) (postLinkCardInput, error) {
+	if _, err := input.String("link"); err != nil {
+		return postLinkCardInput{}, err
+	}
+	path, err := input.String("link-json")
+	if err != nil {
+		return postLinkCardInput{}, err
+	}
+	linkChanged, pathChanged := input.Changed("link"), input.Changed("link-json")
+	clearLink := false
+	if allowClear {
+		clearLink, err = input.Bool("clear-link")
+		if err != nil {
+			return postLinkCardInput{}, err
+		}
+	}
+	selected := 0
+	for _, value := range []bool{linkChanged, pathChanged, clearLink} {
+		if value {
+			selected++
+		}
+	}
+	if selected > 1 {
+		return postLinkCardInput{}, invalidArgument("link flags are mutually exclusive", "choose --link, --link-json, or --clear-link")
+	}
+	if selected == 0 {
+		return postLinkCardInput{}, nil
+	}
+	if clearLink {
+		return postLinkCardInput{Present: true, Cards: []domain.LinkCard{}}, nil
+	}
+	var wire linkdto.Card
+	if linkChanged {
+		// The convenience form unfurls first so one command can publish a card
+		// exactly as the composer would.
+		raw, readErr := input.String("link")
+		if readErr != nil || strings.TrimSpace(raw) == "" {
+			return postLinkCardInput{}, invalidArgument("--link cannot be empty", "provide one absolute http or https URL")
+		}
+		card, _, unfurlErr := unfurlLinkURL(ctx, invocation, raw)
+		if unfurlErr != nil {
+			return postLinkCardInput{}, unfurlErr
+		}
+		wire = card
+	} else {
+		if strings.TrimSpace(path) == "" {
+			return postLinkCardInput{}, invalidArgument("--link-json cannot be empty", "provide a canonical JSON object path or - for stdin")
+		}
+		if path == "-" {
+			for _, competing := range []string{"media-manifest", "location-json"} {
+				if value, _ := input.String(competing); input.Changed(competing) && value == "-" {
+					return postLinkCardInput{}, invalidArgument("only one input may read stdin", "put the other input in a regular file")
+				}
+			}
+		}
+		data, err := readBoundedPostLocation(ctx, input.In(), path)
+		if err != nil {
+			return postLinkCardInput{}, err
+		}
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		if err := decoder.Decode(&wire); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+			return postLinkCardInput{}, invalidArgument("--link-json must contain one canonical link card object", "use the object returned by 'moment link unfurl --json'")
+		}
+	}
+	card, err := wire.Domain(0)
+	if err != nil {
+		return postLinkCardInput{}, postCLIError(err)
+	}
+	return postLinkCardInput{Present: true, Cards: []domain.LinkCard{card}}, nil
 }
 
 func registerPostLocationFlags(flags *pflag.FlagSet, allowClear bool) {
