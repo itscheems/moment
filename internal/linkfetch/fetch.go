@@ -11,6 +11,7 @@ package linkfetch
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -50,6 +51,17 @@ const (
 	DefaultResponseHeaderTimeout = 6 * time.Second
 	// UserAgent identifies Moment to origins without leaking instance details.
 	UserAgent = "MomentLinkPreview/1.0 (+https://github.com/moment/moment)"
+	// documentAccept is what a browser asks for.
+	//
+	// It is deliberately permissive, and separate from the response validation
+	// below. A narrow Accept is not a security control -- the client cannot
+	// force an origin to honour it -- but several sites treat one as a bot
+	// signal and answer with a stub or a challenge page instead of the real
+	// document. Bilibili does exactly that. What actually protects Moment is
+	// checking the Content-Type that comes back, which is unchanged.
+	documentAccept = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+	// imageAccept mirrors that reasoning for thumbnail downloads.
+	imageAccept = "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
 )
 
 // blockedCIDRs names ranges that are routable in form but never a legitimate
@@ -134,6 +146,12 @@ func New(options Options) *Fetcher {
 			MaxIdleConns:          8,
 			IdleConnTimeout:       30 * time.Second,
 			DisableCompression:    false,
+			// Pin HTTP/1.1. Some origins answer an HTTP/2 request from a
+			// non-browser client with a stub or a challenge page while serving
+			// the real document over HTTP/1.1 -- Bilibili does this today.
+			// Every safety bound above is unaffected by the protocol version.
+			ForceAttemptHTTP2: false,
+			TLSNextProto:      map[string]func(string, *tls.Conn) http.RoundTripper{},
 		}
 	}
 	fetcher := &Fetcher{maxRedirects: maxRedirects}
@@ -178,9 +196,7 @@ func (fetcher *Fetcher) Get(ctx context.Context, rawURL string, accepted []strin
 	}
 	request.Header.Set("User-Agent", UserAgent)
 	request.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-	if len(accepted) > 0 {
-		request.Header.Set("Accept", strings.Join(accepted, ", "))
-	}
+	request.Header.Set("Accept", acceptHeaderFor(accepted))
 	response, err := fetcher.client.Do(request)
 	if err != nil {
 		if errors.Is(err, ErrBlockedAddress) {
@@ -268,6 +284,18 @@ func validateRequestURL(target *url.URL) error {
 		return fmt.Errorf("%w: missing host", ErrBlockedAddress)
 	}
 	return nil
+}
+
+// acceptHeaderFor picks a browser-shaped Accept for the kind of resource being
+// requested. The returned value never narrows what the response validation will
+// permit; it only avoids looking like a scraper to the origin.
+func acceptHeaderFor(accepted []string) string {
+	for _, candidate := range accepted {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(candidate)), "image/") {
+			return imageAccept
+		}
+	}
+	return documentAccept
 }
 
 func baseContentType(header string) string {

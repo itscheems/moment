@@ -310,3 +310,62 @@ func TestResolveDropsUntrustedTextFromAnInterstitial(t *testing.T) {
 		t.Fatalf("expected the host label fallback, got %q", preview.SiteName)
 	}
 }
+
+func TestFetcherSendsABrowserShapedAcceptHeader(t *testing.T) {
+	// A narrow Accept is not a security control -- an origin is free to ignore
+	// it -- but several sites read one as a bot signal and answer with a stub.
+	// Response validation stays strict; only the request preference is broad.
+	var accept string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		accept = request.Header.Get("Accept")
+		writer.Header().Set("Content-Type", "text/html")
+		_, _ = writer.Write([]byte("<html><head><title>ok</title></head></html>"))
+	}))
+	defer server.Close()
+
+	fetcher := loopbackFetcher()
+	if _, err := fetcher.Get(context.Background(), server.URL, []string{"text/html"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(accept, "text/html") || !strings.Contains(accept, "*/*") {
+		t.Fatalf("document Accept should be browser shaped, got %q", accept)
+	}
+	if _, err := fetcher.Get(context.Background(), server.URL, []string{"image/*"}, 0); err == nil {
+		t.Fatal("an html body must still be refused for an image request")
+	}
+	if !strings.Contains(accept, "image/") {
+		t.Fatalf("image Accept should prefer images, got %q", accept)
+	}
+}
+
+func TestResolveRetriesAChallengedRecognizedPage(t *testing.T) {
+	// Some origins serve an interstitial intermittently. One bounded retry
+	// recovers the real document without pretending to be a different client.
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		attempts++
+		writer.Header().Set("Content-Type", "text/html")
+		if attempts == 1 {
+			_, _ = writer.Write([]byte(`<html><head>
+<link rel="canonical" href="https://www.bilibili.com/video/BV1B7411m7LV">
+<meta property="og:title" content="验证码_哔哩哔哩">
+</head></html>`))
+			return
+		}
+		_, _ = writer.Write([]byte(`<html><head>
+<link rel="canonical" href="https://www.bilibili.com/video/BV1B7411m7LV">
+<meta property="og:title" content="真正的标题">
+<meta property="og:image" content="https://example.com/cover.jpg">
+</head></html>`))
+	}))
+	defer server.Close()
+
+	resolver := NewResolver(ResolverOptions{Fetcher: loopbackFetcher()})
+	preview, err := resolver.Resolve(context.Background(), server.URL+"/video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Title != "真正的标题" {
+		t.Fatalf("expected the retry to win, got %q after %d attempts", preview.Title, attempts)
+	}
+}

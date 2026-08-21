@@ -46,6 +46,12 @@ type ResolverOptions struct {
 // origin, not to be an authority: a published card is always a stored snapshot.
 const DefaultCacheTTL = 5 * time.Minute
 
+// challengeRetries bounds how many times a recognized page that came back
+// without a thumbnail is re-requested. Two extra attempts is enough to ride out
+// an intermittently served challenge while staying polite: the whole sequence
+// only ever runs for one owner-initiated unfurl.
+const challengeRetries = 2
+
 // NewResolver builds a Resolver over a guarded Fetcher.
 func NewResolver(options ResolverOptions) *Resolver {
 	fetcher := options.Fetcher
@@ -118,9 +124,19 @@ func (resolver *Resolver) Resolve(ctx context.Context, rawURL string) (Preview, 
 	// A recognized video page always carries a thumbnail. When one does not,
 	// the response was not really the resource that was asked for -- an
 	// anti-bot interstitial or a consent wall, which still returns 200 and a
-	// title. Keeping that title would put "verification required" on the card,
-	// so the untrustworthy text is dropped and only the recognizer's own
-	// contribution survives. The card stays useful: it still links and embeds.
+	// title such as "verification required".
+	//
+	// Some origins serve that challenge intermittently to the same client, so
+	// one bounded retry recovers most of them. This is ordinary resilience
+	// against a flaky response, not an attempt to defeat the check: if the
+	// retry is challenged too, the untrustworthy text is dropped and only the
+	// recognizer's own contribution survives. The card stays useful either
+	// way, because it still links and embeds.
+	for attempt := 0; attempt < challengeRetries && recognized && metadata.ImageURL == "" && ctx.Err() == nil; attempt++ {
+		if retry, err := resolver.fetcher.FetchDocument(ctx, source); err == nil && retry.ImageURL != "" {
+			metadata = retry
+		}
+	}
 	if recognized && metadata.ImageURL == "" {
 		metadata.Title = ""
 		metadata.Description = ""
