@@ -60,6 +60,27 @@ type ArchiveEntry struct {
 	QuoteUnavailable bool
 	Media            []ArchiveUsage
 	Location         *domain.Location
+	LinkCards        []ArchiveLinkCard
+}
+
+// ArchiveLinkCard pairs a portable card with its thumbnail's content hash.
+// Media identifiers are reassigned on import, so the hash is what survives a
+// move between instances.
+type ArchiveLinkCard struct {
+	Card            domain.LinkCard
+	ThumbnailSHA256 string
+}
+
+// ArchiveLinkCardsOf extracts the domain cards for list-level validation.
+func ArchiveLinkCardsOf(values []ArchiveLinkCard) []domain.LinkCard {
+	if values == nil {
+		return nil
+	}
+	cards := make([]domain.LinkCard, 0, len(values))
+	for _, value := range values {
+		cards = append(cards, value.Card)
+	}
+	return cards
 }
 
 // ArchiveComment is one portable comment record.
@@ -313,6 +334,11 @@ ORDER BY e.id, usage.position`)
 					return errors.New("archive entry location is invalid")
 				}
 			}
+			cards, cardErr := snapshot.entryLinkCards(ctx, entry.ID)
+			if cardErr != nil {
+				return cardErr
+			}
+			entry.LinkCards = cards
 			current = &entry
 		}
 		if mediaID.Valid {
@@ -333,6 +359,50 @@ ORDER BY e.id, usage.position`)
 		return yield(*current)
 	}
 	return nil
+}
+
+// entryLinkCards reads one entry's cards. It is a separate statement because
+// the entry stream already fans out to one row per media usage; joining a
+// second one-to-many table would multiply those rows.
+func (snapshot *ArchiveSnapshot) entryLinkCards(ctx context.Context, entryID string) ([]ArchiveLinkCard, error) {
+	rows, err := snapshot.tx.QueryContext(ctx, `
+SELECT card.position, card.source_url, card.canonical_url, card.provider,
+       card.card_kind, card.title, card.description, card.site_name,
+       card.author_name, card.duration_seconds, card.embed_url,
+       card.captured_at_ms, thumbnail.sha256
+FROM entry_link_card AS card
+LEFT JOIN media AS thumbnail ON thumbnail.id = card.thumbnail_media_id
+WHERE card.entry_id = ?
+ORDER BY card.position`, entryID)
+	if err != nil {
+		return nil, fmt.Errorf("query archive entry link cards: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var cards []ArchiveLinkCard
+	for rows.Next() {
+		var card domain.LinkCard
+		var duration sql.NullInt64
+		var sha sql.NullString
+		if err := rows.Scan(
+			&card.Position, &card.SourceURL, &card.CanonicalURL, &card.Provider,
+			&card.Kind, &card.Title, &card.Description, &card.SiteName,
+			&card.AuthorName, &duration, &card.EmbedURL, &card.CapturedAt, &sha,
+		); err != nil {
+			return nil, fmt.Errorf("scan archive entry link card: %w", err)
+		}
+		if duration.Valid {
+			seconds := int(duration.Int64)
+			card.DurationSeconds = &seconds
+		}
+		if err := card.Validate(); err != nil {
+			return nil, errors.New("archive entry link card is invalid")
+		}
+		cards = append(cards, ArchiveLinkCard{Card: card, ThumbnailSHA256: sha.String})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate archive entry link cards: %w", err)
+	}
+	return cards, nil
 }
 
 // Comments streams one canonical flat thread per entry: root groups by root
