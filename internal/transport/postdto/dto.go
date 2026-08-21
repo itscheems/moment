@@ -388,7 +388,11 @@ func ValidatePost(post Post) error {
 	if err := domain.ValidatePostMarkdown(post.ContentMD, len(usages)); err != nil {
 		return err
 	}
-	html, err := domain.RenderMarkdown(post.ContentMD)
+	cards := make([]domain.LinkCard, 0, len(post.LinkCards))
+	for _, card := range post.LinkCards {
+		cards = append(cards, domain.LinkCard{SourceURL: card.CanonicalURL, CanonicalURL: card.CanonicalURL})
+	}
+	html, err := domain.RenderMarkdownWithLinkCards(post.ContentMD, cards)
 	if err != nil {
 		return err
 	}

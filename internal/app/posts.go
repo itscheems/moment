@@ -411,7 +411,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err != nil {
 		return CreatePostResult{}, normalizePostRepositoryError(err)
 	}
-	result.Post.ContentHTML, err = domain.RenderMarkdown(result.Post.Entry.ContentMD)
+	result.Post.ContentHTML, err = domain.RenderMarkdownWithLinkCards(result.Post.Entry.ContentMD, LinkCardsOf(result.Post.LinkCards))
 	if err != nil {
 		return CreatePostResult{}, storedEntryError(result.Post.Entry.ID)
 	}
@@ -1100,7 +1100,7 @@ func renderPost(entry domain.Entry, media []MediaUsageProjection, location *doma
 	if err := domain.ValidatePostMarkdown(entry.ContentMD, len(media)); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	html, err := domain.RenderMarkdown(entry.ContentMD)
+	html, err := domain.RenderMarkdownWithLinkCards(entry.ContentMD, LinkCardsOf(cards))
 	if err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}

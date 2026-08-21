@@ -6,8 +6,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"regexp"
+
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
 	"github.com/yuin/goldmark/parser"
 	goldmarkhtml "github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
@@ -20,8 +23,17 @@ const MaxContentCodePoints = 20_000
 // comment. Comments use the same safe Markdown grammar as posts.
 const MaxCommentContentCodePoints = 2_000
 
+// markdownEngine linkifies bare URLs so a pasted link is clickable without
+// Markdown syntax. Only URLs carrying an explicit scheme are linkified: a
+// bare "www." string or an email address would otherwise turn ordinary prose
+// into links. Every generated href still passes the protocol allowlist below.
 var markdownEngine = goldmark.New(
 	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+	goldmark.WithExtensions(extension.NewLinkify(
+		extension.WithLinkifyAllowedProtocols([][]byte{[]byte("http:"), []byte("https:")}),
+		extension.WithLinkifyEmailRegexp(regexp.MustCompile(`a^`)),
+		extension.WithLinkifyWWWRegexp(regexp.MustCompile(`a^`)),
+	)),
 )
 
 // ValidateMarkdown applies the authoritative Entry Markdown grammar. An Entry
@@ -123,6 +135,48 @@ func RenderMarkdown(source string) (string, error) {
 		return "", err
 	}
 	return renderValidatedMarkdown(source)
+}
+
+// RenderMarkdownWithLinkCards renders a body whose trailing bare URL is already
+// represented by an attached card.
+//
+// The body itself is never rewritten: content_md keeps the complete URL, and
+// this is purely a presentation transform, so changing the rule later cannot
+// damage stored data. Hiding applies only when the URL is a bare autolink
+// standing alone at the very end of the body and a card actually attached. A
+// labelled link, a URL in mid-sentence, and a URL with no card all render
+// normally, because in those cases the text is doing work the card does not
+// replace.
+func RenderMarkdownWithLinkCards(source string, cards []LinkCard) (string, error) {
+	if err := ValidateMarkdown(source); err != nil {
+		return "", err
+	}
+	return renderValidatedMarkdown(hideTrailingCardURL(source, cards))
+}
+
+// hideTrailingCardURL removes a trailing bare URL from the source that is about
+// to be rendered. It operates on a copy; the caller's authoritative body is
+// untouched.
+func hideTrailingCardURL(source string, cards []LinkCard) string {
+	if len(cards) == 0 {
+		return source
+	}
+	trimmed := strings.TrimRight(source, " \t\r\n")
+	for _, card := range cards {
+		for _, candidate := range []string{card.SourceURL, card.CanonicalURL} {
+			if candidate == "" || !strings.HasSuffix(trimmed, candidate) {
+				continue
+			}
+			head := trimmed[:len(trimmed)-len(candidate)]
+			// The URL must stand alone: preceded by nothing, or by a line
+			// break. A URL that ends a sentence stays visible because removing
+			// it would leave the sentence dangling.
+			if head == "" || strings.HasSuffix(head, "\n") {
+				return strings.TrimRight(head, " \t\r\n")
+			}
+		}
+	}
+	return source
 }
 
 func renderValidatedMarkdown(source string) (string, error) {
