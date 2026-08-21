@@ -337,7 +337,7 @@ export function ProfilePage({
               exact={initialized.absolute}
               children={
                 <time dateTime={site.instanceInitializedAt}>
-                  <Icon name="archive" /> {joined}加入
+                  <Icon name="calendar" /> {joined}加入
                 </time>
               }
             />
