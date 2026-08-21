@@ -129,6 +129,88 @@ VALUES (?, ?, NULL, 'guest', 'Guest', 'comment image', ?)`, commentRoot, entryOn
 	assertMediaClock(t, database, mediaTwo, &removed)
 }
 
+// TestLinkCardThumbnailUsesCentralResolver proves the link card thumbnail is a
+// first-class reference source: publishing one clears the unreferenced clock,
+// replacing the card restarts it, and the resolver -- not a feature-local
+// query -- is what decides. Spec section 7.6 requires this coverage whenever a
+// media reference source is added.
+func TestLinkCardThumbnailUsesCentralResolver(t *testing.T) {
+	ctx := context.Background()
+	database, runtimeState := openTestDatabase(t, Options{})
+	created := time.UnixMilli(1_700_000_000_000)
+	published := created.Add(time.Hour)
+	cleared := published.Add(time.Hour)
+	insertReferenceMedia(t, database, mediaOne, "e", created)
+	repository, err := NewPostRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock := published
+	service, err := app.NewPostService(repository, app.WithPostClock(func() time.Time { return clock }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	created_, err := service.Create(ctx, app.CreatePostInput{
+		ContentMD: "watch this",
+		LinkCards: []domain.LinkCard{{
+			SourceURL:        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+			CanonicalURL:     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+			Provider:         domain.LinkProviderYouTube,
+			Kind:             domain.LinkKindVideo,
+			Title:            "a video",
+			SiteName:         "YouTube",
+			ThumbnailMediaID: mediaOne,
+			EmbedURL:         "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ",
+			CapturedAt:       published.UnixMilli(),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created_.Post.LinkCards) != 1 {
+		t.Fatalf("expected the created post to carry one card, got %d", len(created_.Post.LinkCards))
+	}
+	assertMediaClock(t, database, mediaOne, nil)
+
+	// Clearing the card must restart the clock in the same transaction.
+	clock = cleared
+	empty := []domain.LinkCard{}
+	if _, err := service.Update(ctx, app.UpdatePostInput{
+		ID:              created_.Post.Entry.ID,
+		PreserveContent: true,
+		LinkCards:       &empty,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClock(t, database, mediaOne, &cleared)
+}
+
+// TestLinkCardThumbnailBlocksMediaDeletion proves the ON DELETE RESTRICT
+// reference keeps a live thumbnail from being pruned out from under a card.
+func TestLinkCardThumbnailBlocksMediaDeletion(t *testing.T) {
+	database, runtimeState := openTestDatabase(t, Options{})
+	created := time.UnixMilli(1_700_000_000_000)
+	insertReferenceMedia(t, database, mediaOne, "f", created)
+	mustWrite(t, database, `
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
+VALUES (?, 'moment', 'carded', ?, ?, ?)`, entryOne, created.UnixMilli(), created.UnixMilli(), created.UnixMilli())
+	mustWrite(t, database, `
+INSERT INTO entry_link_card (
+    entry_id, position, source_url, canonical_url, provider, card_kind, title,
+    description, site_name, author_name, duration_seconds, thumbnail_media_id,
+    embed_url, captured_at_ms
+) VALUES (?, 0, 'https://example.com/a', 'https://example.com/a', 'generic', 'link', 't', '', 'example.com', '', NULL, ?, '', ?)`,
+		entryOne, mediaOne, created.UnixMilli())
+	_ = runtimeState
+	err := database.WriteTx(context.Background(), func(queries Queries) error {
+		_, execErr := queries.ExecContext(context.Background(), `DELETE FROM media WHERE id = ?`, mediaOne)
+		return execErr
+	})
+	if err == nil {
+		t.Fatal("expected a referenced link card thumbnail to block media deletion")
+	}
+}
+
 func insertReferenceMedia(t *testing.T, database *Database, id, fill string, created time.Time) {
 	t.Helper()
 	sha := strings.Repeat(fill, 64)

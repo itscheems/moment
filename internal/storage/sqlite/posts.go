@@ -427,6 +427,105 @@ INSERT INTO entry_location (
 	return nil
 }
 
+func (store postStore) EntryLinkCards(ctx context.Context, entryID domain.ID) ([]domain.LinkCard, error) {
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT position, source_url, canonical_url, provider, card_kind, title,
+       description, site_name, author_name, duration_seconds,
+       thumbnail_media_id, embed_url, captured_at_ms
+FROM entry_link_card
+WHERE entry_id = ?
+ORDER BY position`, entryID.String())
+	if err != nil {
+		return nil, fmt.Errorf("query entry link cards: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var cards []domain.LinkCard
+	for rows.Next() {
+		var (
+			card      domain.LinkCard
+			duration  sql.NullInt64
+			thumbnail sql.NullString
+		)
+		if err := rows.Scan(
+			&card.Position, &card.SourceURL, &card.CanonicalURL, &card.Provider,
+			&card.Kind, &card.Title, &card.Description, &card.SiteName,
+			&card.AuthorName, &duration, &thumbnail, &card.EmbedURL, &card.CapturedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan entry link card: %w", err)
+		}
+		if duration.Valid {
+			seconds := int(duration.Int64)
+			card.DurationSeconds = &seconds
+		}
+		card.ThumbnailMediaID = thumbnail.String
+		if err := card.Validate(); err != nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored link card violates the domain contract", map[string]any{"post_id": entryID.String()})
+		}
+		cards = append(cards, card)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate entry link cards: %w", err)
+	}
+	return cards, nil
+}
+
+func (store postStore) ReplaceEntryLinkCards(ctx context.Context, entryID domain.ID, cards []domain.LinkCard) error {
+	if err := domain.ValidateLinkCards(cards); err != nil {
+		return err
+	}
+	if _, err := store.queries.ExecContext(ctx, `DELETE FROM entry_link_card WHERE entry_id = ?`, entryID.String()); err != nil {
+		return fmt.Errorf("delete entry link cards: %w", err)
+	}
+	for _, card := range cards {
+		var duration, thumbnail any
+		if card.DurationSeconds != nil {
+			duration = *card.DurationSeconds
+		}
+		if card.ThumbnailMediaID != "" {
+			thumbnail = card.ThumbnailMediaID
+		}
+		if _, err := store.queries.ExecContext(ctx, `
+INSERT INTO entry_link_card (
+    entry_id, position, source_url, canonical_url, provider, card_kind, title,
+    description, site_name, author_name, duration_seconds, thumbnail_media_id,
+    embed_url, captured_at_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			entryID.String(), card.Position, card.SourceURL, card.CanonicalURL,
+			string(card.Provider), string(card.Kind), card.Title, card.Description,
+			card.SiteName, card.AuthorName, duration, thumbnail, card.EmbedURL,
+			card.CapturedAt,
+		); err != nil {
+			return fmt.Errorf("insert entry link card: %w", err)
+		}
+	}
+	return nil
+}
+
+// EntryLinkCardMediaIDs returns the thumbnails an entry currently references so
+// the caller can reconcile reference state in the same transaction as a change.
+func (store postStore) EntryLinkCardMediaIDs(ctx context.Context, entryID domain.ID) ([]string, error) {
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT thumbnail_media_id
+FROM entry_link_card
+WHERE entry_id = ? AND thumbnail_media_id IS NOT NULL`, entryID.String())
+	if err != nil {
+		return nil, fmt.Errorf("query entry link card media: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan entry link card media: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate entry link card media: %w", err)
+	}
+	return ids, nil
+}
+
 func (store postStore) EntryQuote(ctx context.Context, entryID domain.ID) (app.EntryQuoteReference, error) {
 	var raw sql.NullString
 	err := store.queries.QueryRowContext(ctx, `SELECT quoted_entry_id FROM entry_quotes WHERE entry_id = ?`, entryID.String()).Scan(&raw)
