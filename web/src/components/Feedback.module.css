@@ -12,10 +12,11 @@
 }
 
 .toast {
-  border-radius: 1rem;
-  padding: 0.55rem 0.65rem 0.55rem 1rem;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 0.875rem;
+  padding: 0.35rem 0.4rem 0.35rem 1rem;
   color: #ffffff;
-  background: #0f1419;
+  background: #16181c;
   box-shadow: var(--shadow-popover);
   transition:
     transform var(--motion-fast) var(--ease-out),
@@ -23,7 +24,7 @@
 }
 
 .content {
-  min-block-size: 2.75rem;
+  min-block-size: 2.5rem;
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -42,7 +43,8 @@
 
 .title {
   font-size: var(--text-sm);
-  font-weight: 700;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .description {
@@ -52,42 +54,61 @@
 }
 
 .actions {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: 0.15rem;
 }
 
-.action,
-.close {
-  min-block-size: 2.75rem;
+/* The action offers somewhere to go next; it is not the reason the toast
+   appeared. A filled button would claim more attention than the message it
+   sits beside, so it reads as a link and lets the text stay the subject. */
+.action {
+  min-block-size: 2.25rem;
+  border: 0;
   border-radius: 999px;
   padding-inline: var(--space-3);
   font: inherit;
   font-size: var(--text-sm);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.action {
-  border: 0;
-  color: var(--accent-contrast);
-  background: var(--accent);
-}
-
-.close {
-  border: 1px solid rgb(255 255 255 / 35%);
-  color: #ffffff;
+  font-weight: 600;
+  color: #7fc4f7;
   background: transparent;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .action:hover,
 .action:focus-visible {
-  filter: brightness(1.08);
+  background: rgb(127 196 247 / 14%);
+}
+
+/* Dismissal keeps a full 44px target while the glyph itself stays quiet. */
+.close {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: #8b98a5;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+
+.close svg {
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
 }
 
 .close:hover,
 .close:focus-visible {
-  background: rgb(255 255 255 / 12%);
+  color: #ffffff;
+  background: rgb(255 255 255 / 10%);
 }
 
 .action:focus-visible,
@@ -101,18 +122,17 @@
     inset-block-end: calc(4.5rem + env(safe-area-inset-bottom));
   }
 
-  .content {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .actions {
-    align-self: stretch;
+  /* The row stays a row now that the controls are light enough to fit
+     beside the message even on a narrow screen. */
+  .action {
+    padding-inline: var(--space-2);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .toast {
+  .toast,
+  .action,
+  .close {
     transition: none;
   }
 }

@@ -1,6 +1,7 @@
 import { Toast } from "@base-ui/react/toast";
 import type { ReactNode } from "react";
 
+import { Icon } from "./icons";
 import styles from "./Feedback.module.css";
 
 export const feedback = Toast.createToastManager();
@@ -56,6 +57,8 @@ function FeedbackList() {
           ) : null}
         </div>
         <div className={styles.actions}>
+          {/* The action is a secondary offer, not the point of the message, so
+              it reads as a link rather than competing with a filled button. */}
           <Toast.Action className={styles.action} />
           <button
             aria-label="关闭通知"
@@ -63,7 +66,7 @@ function FeedbackList() {
             onClick={() => feedback.close(toast.id)}
             type="button"
           >
-            关闭
+            <Icon name="close" />
           </button>
         </div>
       </Toast.Content>
