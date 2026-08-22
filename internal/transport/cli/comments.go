@@ -550,6 +550,10 @@ func commentAPIRequest(ctx context.Context, invocation Invocation, method, endpo
 		if err := commentdto.ValidateThread(*typed); err != nil {
 			return nil, status, invalidAPIResponse()
 		}
+	case *commentdto.ReplyPage:
+		if err := commentdto.ValidateReplyPage(*typed); err != nil {
+			return nil, status, invalidAPIResponse()
+		}
 	case *commentdto.Pin:
 		if err := commentdto.ValidatePin(*typed); err != nil {
 			return nil, status, invalidAPIResponse()

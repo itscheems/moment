@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -311,5 +312,68 @@ func TestCommentCLIIdentityBoundaryErrorsCancellationHelpAndMaintenanceLease(t *
 	}
 	if err := direct.Close(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Paging a thread has to give the same answer whichever transport asks. The
+// API path decodes into its own DTO and runs two independent shape checks
+// before trusting a response; a type missing from either of them is rejected
+// as an invalid response even though the server answered correctly, and only
+// an end-to-end call through both modes shows it.
+func TestCommentPagingKeepsDirectAndAPIAnswersIdentical(t *testing.T) {
+	fixture := newCommentCLIFixture(t)
+	application := momentTestApplication()
+	root := commandData(t, execute(application, "", "comment", "create", fixture.postID,
+		"--data-dir", fixture.dataDir, "--content", "paged root", "--idempotency-key", "page-root", "--json"))
+	rootID := root["id"].(string)
+	for index := range 4 {
+		execute(application, "", "comment", "reply", fixture.postID, rootID,
+			"--data-dir", fixture.dataDir, "--content", "reply "+strconv.Itoa(index),
+			"--idempotency-key", "page-reply-"+strconv.Itoa(index), "--json")
+	}
+
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	for _, probe := range []struct {
+		name string
+		args []string
+	}{
+		{name: "thread", args: []string{"comment", "list", fixture.postID, "--limit", "5"}},
+		{name: "replies", args: []string{"comment", "replies", fixture.postID, rootID, "--limit", "2"}},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			apiOutput := execute(application, "", append([]string{"--url", fixture.server.URL}, append(probe.args, "--json")...)...)
+			directOutput := execute(application, "", append(append([]string{}, probe.args...), "--data-dir", fixture.dataDir, "--json")...)
+			if apiOutput.exit != ExitSuccess {
+				t.Fatalf("api %v = %#v", probe.args, apiOutput)
+			}
+			api := commandData(t, apiOutput)
+			direct := commandData(t, directOutput)
+			if !reflect.DeepEqual(api, direct) {
+				t.Fatalf("api=%#v direct=%#v", api, direct)
+			}
+			apiMeta := decodeOneDocument(t, apiOutput.stdout)["meta"].(map[string]any)
+			directMeta := decodeOneDocument(t, directOutput.stdout)["meta"].(map[string]any)
+			if !reflect.DeepEqual(apiMeta["next_cursor"], directMeta["next_cursor"]) {
+				t.Fatalf("cursor api=%#v direct=%#v", apiMeta["next_cursor"], directMeta["next_cursor"])
+			}
+		})
+	}
+
+	// The root reports every reply it has, not the three that travelled with
+	// it, and offers a cursor for the rest.
+	thread := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--json"))
+	items := thread["items"].([]any)
+	first := items[0].(map[string]any)
+	if first["reply_count"] != float64(4) || first["replies_next_cursor"] == nil {
+		t.Fatalf("root paging metadata = %#v", first)
+	}
+	loaded := 0
+	for _, item := range items {
+		if item.(map[string]any)["parent_id"] != nil {
+			loaded++
+		}
+	}
+	if loaded != 3 {
+		t.Fatalf("inline replies = %d, want the preview count", loaded)
 	}
 }
