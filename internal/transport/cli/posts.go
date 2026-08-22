@@ -18,6 +18,7 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
+	"github.com/moment/moment/internal/observability"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	"github.com/moment/moment/internal/transport/commentdto"
@@ -1348,6 +1349,10 @@ func postAPIRequest(
 		return nil, 0, err
 	}
 	request.Header.Set("Accept", "application/json")
+	// Say what we are. Without this the server sees only a bearer token and
+	// files a command a person typed alongside anonymous scripts — the same
+	// collapse the surface field exists to prevent, one level down.
+	request.Header.Set(observability.SurfaceHeader, string(observability.SurfaceCLI))
 	if payload != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/observability"
 
 	"github.com/moment/moment/internal/linkfetch"
 )
@@ -63,15 +64,41 @@ func securityHeadersMiddleware() gin.HandlerFunc {
 	}
 }
 
-func accessLogMiddleware(log LogFunc) gin.HandlerFunc {
+// requestSurface decides which entry point a request arrived through.
+//
+// Arriving over HTTP does not make something the web. `moment --url … post
+// create` is a command a person typed, and a script with a bearer token is
+// neither a person nor a browser; recording all three as web would make the
+// field mean "HTTP" and answer nothing worth asking.
+//
+// A browser session is the reliable signal, because the cookie is issued by
+// this server and only its own page ever carries one. Everything else is a
+// programmatic client, which may name itself more precisely.
+func requestSurface(ctx *gin.Context) observability.Surface {
+	if cookie, err := ctx.Request.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
+		return observability.SurfaceWeb
+	}
+	if ctx.GetHeader("Authorization") == "" {
+		// An unauthenticated read of a public page. Nothing was operated on,
+		// and the site being read is the web one.
+		return observability.SurfaceWeb
+	}
+	if declared, ok := observability.ClientSurface(ctx.GetHeader(observability.SurfaceHeader)); ok {
+		return declared
+	}
+	return observability.SurfaceAPI
+}
+
+func accessLogMiddleware(log SurfaceLogFunc) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		startedAt := time.Now()
+		surface := requestSurface(ctx)
 		ctx.Next()
 		route := ctx.FullPath()
 		if route == "" {
 			route = "unmatched"
 		}
-		log("info", "http_request", map[string]any{
+		log(surface, "info", "http_request", map[string]any{
 			"request_id":  RequestID(ctx.Request.Context()),
 			"method":      ctx.Request.Method,
 			"route":       route,
@@ -81,7 +108,7 @@ func accessLogMiddleware(log LogFunc) gin.HandlerFunc {
 	}
 }
 
-func recoveryMiddleware(log LogFunc) gin.HandlerFunc {
+func recoveryMiddleware(log SurfaceLogFunc) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		defer func() {
 			recovered := recover()
@@ -98,7 +125,7 @@ func recoveryMiddleware(log LogFunc) gin.HandlerFunc {
 			if route == "" {
 				route = "unmatched"
 			}
-			log("error", "http_panic", map[string]any{
+			log(requestSurface(ctx), "error", "http_panic", map[string]any{
 				"request_id": RequestID(ctx.Request.Context()),
 				"method":     ctx.Request.Method,
 				"route":      route,

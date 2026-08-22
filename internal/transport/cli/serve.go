@@ -93,12 +93,12 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 		return Result{}, err
 	}
 	board := server.NewSwitchboard()
-	// Everything the HTTP stack logs is an operation a browser made, even
-	// though this process was started from a terminal. Attributing it to the
-	// terminal would make the classification useless exactly where it is most
-	// wanted: telling a page click apart from a typed command.
-	webLog := func(level, event string, fields map[string]any) {
-		invocation.LogEventOn(observability.SurfaceWeb, level, event, fields)
+	// The HTTP stack serves more than one entry point — the browser, this same
+	// CLI in API mode, any script holding a token — so it decides per request
+	// and reports what it found. Scoping the whole stack to one surface would
+	// be the same mistake as scoping it by process.
+	httpLog := func(surface observability.Surface, level, event string, fields map[string]any) {
+		invocation.LogEventOn(surface, level, event, fields)
 	}
 	// The server's own lifecycle belongs to no client.
 	systemLog := func(level, event string, fields map[string]any) {
@@ -106,7 +106,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 	}
 	host := &liveServerHost{
 		board: board, auth: authManager, assets: assets, trustedProxies: trustedProxies,
-		secureCookies: !runtime.IsDevelopment(), log: webLog, exporter: exporter,
+		secureCookies: !runtime.IsDevelopment(), log: httpLog, exporter: exporter,
 	}
 	host.committer = &hostedImportCommitter{core: committer, host: host}
 	retentionContext, cancelRetention := context.WithCancel(ctx)

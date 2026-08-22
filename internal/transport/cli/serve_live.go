@@ -28,7 +28,7 @@ type liveServerHost struct {
 	assets         fs.FS
 	trustedProxies []string
 	secureCookies  bool
-	log            ginhttp.LogFunc
+	log            ginhttp.SurfaceLogFunc
 	exporter       *archive.Exporter
 	committer      *hostedImportCommitter
 	database       *sqlitestore.Database
@@ -176,7 +176,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 		Assets: host.assets, OwnerAuth: host.auth, SiteSettings: siteService, InstanceID: runtimeState.Instance.ID, InstanceInitializedAt: runtimeState.Instance.InitializedAt,
 		Media: mediaStore, Posts: postService, Locations: locationService, Links: linkService, Comments: commentService, Search: searchService,
 		ShareMetadata: shareMetadata, Archive: host.exporter, ImportInspector: inspector, ImportCommitter: host.committer, Doctor: doctorService,
-		SecureCookies: host.secureCookies, TrustedProxies: host.trustedProxies, Log: host.log,
+		SecureCookies: host.secureCookies, TrustedProxies: host.trustedProxies, SurfaceLog: host.log,
 		Readiness: func(readyCtx context.Context) error {
 			if err := database.Ready(readyCtx); err != nil {
 				return err

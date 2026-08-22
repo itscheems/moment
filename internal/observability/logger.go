@@ -56,12 +56,41 @@ const (
 	SurfaceCLI Surface = "cli"
 	// SurfaceWeb marks an operation that arrived over HTTP from the browser.
 	SurfaceWeb Surface = "web"
+	// SurfaceAPI marks a programmatic HTTP client: a script, curl, anything
+	// holding a bearer token that has not said what it is. It is deliberately
+	// separate from web — both arrive over HTTP, and collapsing them would
+	// make web mean "HTTP", which is the distinction this type exists to draw.
+	SurfaceAPI Surface = "api"
 	// SurfaceSystem marks an event that belongs to no client at all — process
 	// startup, background reclamation, scheduled work. Filing those under a
 	// client would be a convenient lie, and an audit trail that lies about
 	// provenance is worse than one that admits a third case.
 	SurfaceSystem Surface = "system"
 )
+
+// SurfaceHeader is how a client tells the server which entry point it is.
+//
+// It lives here rather than in the HTTP package so a client can name itself
+// without depending on the server it is talking to.
+const SurfaceHeader = "X-Moment-Surface"
+
+// ClientSurface reports whether a client-declared value names a surface a
+// client is allowed to claim.
+//
+// Only cli and api are claimable. A client cannot declare itself web: that is
+// inferred from holding a browser session, and letting a header assert it
+// would let any caller forge the one attribution the server can actually
+// verify. Nothing can declare itself system, which by definition has no client.
+func ClientSurface(declared string) (Surface, bool) {
+	switch Surface(declared) {
+	case SurfaceCLI:
+		return SurfaceCLI, true
+	case SurfaceAPI:
+		return SurfaceAPI, true
+	default:
+		return "", false
+	}
+}
 
 // Logger serializes complete events so concurrent requests cannot interleave.
 //
