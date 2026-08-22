@@ -46,6 +46,7 @@
 .threadState,
 .threadError,
 .closedNotice,
+.signInNotice,
 .emptyThread {
   border-block-end: 1px solid var(--border-subtle);
   padding: 0.85rem var(--space-4);
@@ -733,6 +734,7 @@
 
 .threadError,
 .closedNotice,
+.signInNotice,
 .emptyThread {
   display: grid;
   justify-items: start;
@@ -741,10 +743,37 @@
 
 .threadError > span,
 .closedNotice > span,
+.signInNotice > span,
 .emptyThread > span {
   color: var(--text-secondary);
   font-size: var(--text-sm);
   line-height: 1.5;
+}
+
+/* Matches .threadError button: the same pill inside the same kind of notice.
+   It is an anchor rather than a button because it navigates, which also keeps
+   open-in-new-tab working. */
+.signInNotice a {
+  min-block-size: var(--target-size);
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  margin-block-start: var(--space-2);
+  padding-inline: var(--space-4);
+  color: var(--text-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.signInNotice a:hover,
+.signInNotice a:focus-visible {
+  background: var(--surface-hover);
+}
+
+.replyDialogPopup > .signInNotice {
+  border-block-end: 0;
+  padding-block-start: var(--space-2);
 }
 
 .threadError button {
@@ -1253,6 +1282,7 @@
   .threadState,
   .threadError,
   .closedNotice,
+  .signInNotice,
   .emptyThread,
   .commentItem {
     padding-inline: var(--space-3);
@@ -1262,7 +1292,8 @@
     padding-inline-start: var(--space-3);
   }
 
-  .replyDialogPopup > .formSurface {
+  .replyDialogPopup > .formSurface,
+  .replyDialogPopup > .signInNotice {
     padding-inline: var(--space-4);
   }
 

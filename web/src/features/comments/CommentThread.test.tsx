@@ -636,6 +636,62 @@ describe("public comment thread", () => {
     rectSpy.mockRestore();
   });
 
+  it("offers sign-in instead of a composer while signed out", async () => {
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [root, reply] });
+      }
+    });
+    renderThread();
+
+    expect(await screen.findByText("登录后回复")).toBeVisible();
+    expect(screen.getByRole("link", { name: "登录" })).toHaveAttribute(
+      "href",
+      "/owner/login",
+    );
+    expect(
+      screen.queryByRole("form", { name: "发表回复" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("回复内容")).not.toBeInTheDocument();
+
+    // Reading keeps working, and the per-row reply buttons stay away so the
+    // sign-in prompt is made once rather than once per comment.
+    expect(screen.getByText("顶级回应")).toBeInTheDocument();
+    expect(screen.getByText("已有一级回复")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^回复 / }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers sign-in inside the reply dialog while signed out", async () => {
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [] });
+      }
+    });
+    render(
+      <NavigationProvider>
+        <OwnerProvider>
+          <ReplyDialogHarness />
+        </OwnerProvider>
+      </NavigationProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "打开回复窗口" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "回复这条 Moment",
+    });
+    expect(within(dialog).getByText("登录后回复")).toBeVisible();
+    expect(within(dialog).getByRole("link", { name: "登录" })).toHaveAttribute(
+      "href",
+      "/owner/login",
+    );
+    expect(within(dialog).queryByLabelText("回复内容")).not.toBeInTheDocument();
+    // The Moment being replied to stays on screen: the reader keeps the
+    // context they opened the dialog for.
+    expect(within(dialog).getByText("一段需要回应的 Moment")).toBeVisible();
+  });
+
   it("keeps layout motion bounded and removes it for reduced-motion users", () => {
     expect(commentsCss).toContain(
       "transition: block-size var(--motion-content) var(--ease-out)",

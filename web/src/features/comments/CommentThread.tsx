@@ -242,8 +242,8 @@ function messageFor(error: unknown, replying: boolean): string {
  *
  * `expired` and a leftover `session` both count as yes: the composer has to
  * stay mounted in those states so `Reauthenticate` can hand the draft back to
- * the same textarea instead of dropping what the writer already typed. In
- * every other state the composer is not rendered at all.
+ * the same textarea instead of dropping what the writer already typed. Every
+ * other state gets `SignInToReply`.
  *
  * Note that `OwnerState`'s `"guest"` means "no owner session in this browser".
  * It is a session state and it survives the retirement of guest commenting —
@@ -255,6 +255,24 @@ function useCanComment(): boolean {
     owner.state === "owner" ||
     owner.state === "expired" ||
     owner.session !== null
+  );
+}
+
+/**
+ * Stands in for the composer when nobody is signed in.
+ *
+ * Commenting needs an account now, and a thread that simply ends after the
+ * last reply reads as broken rather than as closed — the reader cannot tell
+ * whether replies are off, still loading, or waiting on them. Say which it is
+ * and point at the way in.
+ */
+function SignInToReply() {
+  return (
+    <div className={styles.signInNotice} role="status">
+      <strong>登录后回复</strong>
+      <span>发表回复需要登录。过往回复继续公开可读。</span>
+      <InternalLink href="/owner/login">登录</InternalLink>
+    </div>
   );
 }
 
@@ -1493,7 +1511,9 @@ export function PostReplyDialog({
                 site={site}
                 textareaRef={textareaRef}
               />
-            ) : null}
+            ) : (
+              <SignInToReply />
+            )}
           </Dialog.Popup>
         </Dialog.Viewport>
       </Dialog.Portal>
@@ -1696,7 +1716,9 @@ export function CommentThread({
               site={site}
               topLevelTargetUsername={site.username}
             />
-          ) : null}
+          ) : (
+            <SignInToReply />
+          )}
 
           {items.length > 0 ? (
             <ol className={styles.commentList}>
@@ -1734,9 +1756,10 @@ export function CommentThread({
                     owner={owner.state === "owner" || owner.state === "expired"}
                     pinned={comment.id === pinnedCommentId}
                     // A null root is the existing "there is nothing to reply
-                    // to here" signal, and it is the right one for a reader who
-                    // cannot compose: a reply button that can only open a
-                    // composer they will never see is a dead end.
+                    // to here" signal, and it is the right one for a signed-out
+                    // reader too: offering a reply button that can only open a
+                    // sign-in prompt would repeat that prompt on every row,
+                    // when the one above the list already says it once.
                     replyRoot={
                       !canCompose
                         ? null
