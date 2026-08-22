@@ -1752,7 +1752,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		}
 		actualComments = append(actualComments, commentRecord{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorKind: value.AuthorKind,
-			AuthorName: value.AuthorName, ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS), Media: usages, Location: portableLocation(value.Location),
+			AuthorName: value.AuthorName, ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS), Media: usages, Location: portableLocation(value.Location), Pinned: value.Pinned,
 		})
 		return nil
 	})

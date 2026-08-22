@@ -210,6 +210,63 @@ VALUES (?, 'moment', '引用外层仍然存在', 1, 1, 1)`, quoteID); err != nil
 	}
 }
 
+func TestPinnedCommentRoundTripsThroughPortableArchive(t *testing.T) {
+	const pinnedEntryID = "01ARZ3NDEKTSV4RRFFQ69G5FB1"
+	const pinnedCommentID = "01ARZ3NDEKTSV4RRFFQ69G5FB2"
+	fixture := newExportFixture(t, false)
+	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
+		if _, err := queries.ExecContext(context.Background(), `
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
+VALUES (?, 'moment', '置顶评论所在的动态', 1, 1, 1)`, pinnedEntryID); err != nil {
+			return err
+		}
+		if _, err := queries.ExecContext(context.Background(), `
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
+VALUES (?, ?, NULL, 'guest', '访客', '置顶评论', 1)`, pinnedCommentID, pinnedEntryID); err != nil {
+			return err
+		}
+		_, err := queries.ExecContext(context.Background(), `INSERT INTO comment_pins (entry_id, comment_id) VALUES (?, ?)`, pinnedEntryID, pinnedCommentID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 8, 22, 1, 2, 3, 0, time.UTC)
+	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
+		context.Background(),
+		exportFixtureFile(t, fixture),
+		7,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stageRoot := filepath.Join(fixture.runtime.Root, "staging", "import", result.GenerationID)
+	stagedRuntime := &runtimefs.Runtime{
+		Root: fixture.runtime.Root, Instance: fixture.runtime.Instance,
+		Current: stagingGeneration(stageRoot, result.GenerationID), Locks: fixture.runtime.Locks,
+	}
+	stagedDatabase, err := sqlitestore.Open(context.Background(), stagedRuntime, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stagedDatabase.Close() }()
+	snapshot, err := stagedDatabase.BeginArchiveSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = snapshot.Close() }()
+	var comments []sqlitestore.ArchiveComment
+	if err := snapshot.Comments(context.Background(), func(value sqlitestore.ArchiveComment) error {
+		comments = append(comments, value)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(comments) != 1 || comments[0].ID != pinnedCommentID || !comments[0].Pinned {
+		t.Fatalf("round-tripped pinned comment = %#v", comments)
+	}
+}
+
 func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) {
 	source := newExportFixture(t, true)
 	validPath := exportFixtureFile(t, source)
