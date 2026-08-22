@@ -248,12 +248,12 @@ describe("profile page", () => {
       expect(screen.getByLabelText("回复内容")).toHaveFocus(),
     );
     expect(window.location.href).toBe(initialUrl);
-    expect(document.documentElement.style.overflowY).toBe("hidden");
+    expect(document.documentElement.style.overflow).toBe("hidden");
 
     fireEvent.click(screen.getByRole("button", { name: "关闭回复窗口" }));
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
     expect(trigger).toHaveFocus();
-    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
   });
 
   it("renders the singleton pin first without duplicating its timeline row", async () => {

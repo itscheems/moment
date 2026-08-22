@@ -417,16 +417,16 @@ describe("public timeline", () => {
         }),
       ).getByText(/正在回复/),
     ).toHaveTextContent("正在回复 @owner");
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.top).toBe("-360px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.top).toBe("");
 
     fireEvent.click(
       within(dialog).getByRole("button", { name: "关闭回复窗口" }),
     );
     await waitFor(() => expect(trigger).toHaveFocus());
     expect(window.location.pathname).toBe("/");
-    expect(document.documentElement.style.overflowY).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 360);
+    expect(document.documentElement.style.overflow).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
   });
 
   it("replays the server cursor chain on refresh and restores scroll", async () => {

@@ -79,15 +79,15 @@ describe("ThemeMenu", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: /显示/ }));
 
     const dialog = await screen.findByRole("dialog", { name: "自定义显示" });
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-275px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
     fireEvent.click(within(dialog).getByRole("button", { name: "完成" }));
 
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
-    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 275);
+    expect(document.documentElement.style.overflow).toBe("");
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 

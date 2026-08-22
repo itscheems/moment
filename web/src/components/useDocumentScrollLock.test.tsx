@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { useDocumentScrollLock } from "./useDocumentScrollLock";
 
@@ -19,34 +19,48 @@ function LockHarness({ first, second }: { first: boolean; second: boolean }) {
 }
 
 describe("document scroll lock", () => {
-  beforeEach(() => {
-    vi.spyOn(window, "scrollX", "get").mockReturnValue(12);
-    vi.spyOn(window, "scrollY", "get").mockReturnValue(480);
-    vi.stubGlobal("scrollTo", vi.fn());
-  });
+  afterEach(cleanup);
 
-  afterEach(() => {
-    cleanup();
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-  });
-
-  it("keeps the document fixed until the last stacked modal closes", () => {
+  it("holds the lock until the last stacked overlay closes", () => {
     const { rerender } = render(<LockHarness first second />);
-
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-480px");
-    expect(document.body.style.left).toBe("-12px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.documentElement.style.overscrollBehavior).toBe("none");
 
     rerender(<LockHarness first={false} second />);
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(document.documentElement.style.overflow).toBe("hidden");
 
     rerender(<LockHarness first={false} second={false} />);
-    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
+    expect(document.documentElement.style.overscrollBehavior).toBe("");
+  });
+
+  it("never takes the body out of flow", () => {
+    // Pinning the body with position: fixed is the common recipe and it
+    // silently destroys every sticky element on the page: with no scrollport
+    // left, the navigation rails and the timeline header fall back to their
+    // document position and jump off-screen by the scroll offset.
+    render(<LockHarness first second />);
     expect(document.body.style.position).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(12, 480);
+    expect(document.body.style.top).toBe("");
+    expect(document.body.style.overflow).toBe("");
+  });
+
+  it("leaves the scroll offset alone, so nothing has to be restored", () => {
+    // The offset never moves while locked, which is why release does not call
+    // scrollTo and cannot fight with a route's own scroll restoration.
+    render(<LockHarness first second />);
+    expect(document.documentElement.style.top).toBe("");
+  });
+
+  it("restores whatever inline styles the page already had", () => {
+    document.documentElement.style.overflow = "clip";
+    document.documentElement.style.paddingInlineEnd = "3px";
+    const { rerender } = render(<LockHarness first second={false} />);
+    expect(document.documentElement.style.overflow).toBe("hidden");
+
+    rerender(<LockHarness first={false} second={false} />);
+    expect(document.documentElement.style.overflow).toBe("clip");
+    expect(document.documentElement.style.paddingInlineEnd).toBe("3px");
+    document.documentElement.removeAttribute("style");
   });
 });
