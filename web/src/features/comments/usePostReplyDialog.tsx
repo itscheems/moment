@@ -12,7 +12,7 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { PostReplyDialog } from "./CommentThread";
+import { PostReplyDialog } from "./PostReplyDialog";
 
 export function usePostReplyDialog({
   api,

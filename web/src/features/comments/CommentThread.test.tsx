@@ -79,13 +79,23 @@ function comment(
   } = {},
 ) {
   const parentId = options.parentId ?? null;
+  const authorName = options.authorName ?? (options.owner ? "Owner" : "访客");
   return {
     id,
     post_id: postId,
     parent_id: parentId,
     depth: parentId ? 1 : 0,
     author_kind: options.owner ? "owner" : "guest",
-    author_name: options.authorName ?? (options.owner ? "Owner" : "访客"),
+    author_name: authorName,
+    author: {
+      user_id: options.owner ? site.ownerId : null,
+      username: options.owner ? site.username : null,
+      display_name: authorName,
+      avatar_media_id: null,
+      profile_url: options.owner ? `/@${site.username}` : null,
+    },
+    reply_to: null,
+    reply_count: 0,
     content_md: content,
     content_html: content ? `<p>${content}</p>\n` : "",
     created_at: options.createdAt ?? "2026-08-10T01:03:00Z",
@@ -206,16 +216,21 @@ function success(
   meta: Record<string, unknown> = {},
   status = 200,
 ) {
-  const canonicalData =
+  const thread =
     typeof data === "object" &&
     data !== null &&
     !Array.isArray(data) &&
-    "items" in data &&
-    !("pinned_comment_id" in data)
-      ? { ...data, pinned_comment_id: null }
-      : data;
+    "items" in data;
+  const canonicalData = thread
+    ? { pinned_comment_id: null, pinned: null, ...data }
+    : data;
   return json(
-    { data: canonicalData, meta: { request_id: "req_test", ...meta } },
+    {
+      data: canonicalData,
+      meta: thread
+        ? { request_id: "req_test", next_cursor: null, ...meta }
+        : { request_id: "req_test", ...meta },
+    },
     status,
   );
 }

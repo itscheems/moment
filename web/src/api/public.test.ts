@@ -24,6 +24,23 @@ const post = {
   link_cards: [],
 };
 
+// A legacy guest row: a name and nothing else behind it.
+const guestAuthor = {
+  user_id: null,
+  username: null,
+  display_name: "访客",
+  avatar_media_id: null,
+  profile_url: null,
+};
+
+const ownerAuthor = {
+  user_id: "0123456789abcdef0123456789abcdef",
+  username: "owner",
+  display_name: "Moment",
+  avatar_media_id: null,
+  profile_url: "/@owner",
+};
+
 const rootComment = {
   id: "01K2ABCDEF0123456789ABCDE1",
   post_id: post.id,
@@ -31,10 +48,13 @@ const rootComment = {
   depth: 0,
   author_kind: "guest",
   author_name: "访客",
+  author: guestAuthor,
+  reply_to: null,
   content_md: "第一条 **回应**",
   content_html: "<p>第一条 <strong>回应</strong></p>\n",
   created_at: "2026-08-10T01:03:00Z",
   media: [],
+  reply_count: 1,
 };
 
 const replyComment = {
@@ -44,9 +64,11 @@ const replyComment = {
   depth: 1,
   author_kind: "owner",
   author_name: "Owner",
+  author: ownerAuthor,
   content_md: "一级回复",
   content_html: "<p>一级回复</p>\n",
   created_at: "2026-08-10T01:04:00Z",
+  reply_count: 0,
 };
 
 describe("public API client", () => {
@@ -780,8 +802,9 @@ describe("public API client", () => {
           data: {
             items: [rootComment, replyComment],
             pinned_comment_id: rootComment.id,
+            pinned: [rootComment, replyComment],
           },
-          meta: { request_id: "req_comments" },
+          meta: { next_cursor: null, request_id: "req_comments" },
         }),
       ) as typeof fetch,
     );
@@ -840,8 +863,8 @@ describe("public API client", () => {
     const api = new PublicApi(
       vi.fn(async () =>
         json({
-          data: { items: [located], pinned_comment_id: null },
-          meta: { request_id: "req" },
+          data: { items: [located], pinned_comment_id: null, pinned: [] },
+          meta: { next_cursor: null, request_id: "req" },
         }),
       ) as typeof fetch,
     );

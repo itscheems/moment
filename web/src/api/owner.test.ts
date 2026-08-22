@@ -31,11 +31,22 @@ const comment = {
   parent_id: null,
   depth: 0,
   author_kind: "owner",
+  // The stored placeholder. What a reader sees comes from `author`, resolved
+  // server side, which is why these two disagree.
   author_name: "Owner",
+  author: {
+    user_id: "0123456789abcdef0123456789abcdef",
+    username: "owner",
+    display_name: "Moment",
+    avatar_media_id: null,
+    profile_url: "/@owner",
+  },
+  reply_to: null,
   content_md: "所有者回应",
   content_html: "<p>所有者回应</p>\n",
   created_at: "2026-08-10T01:03:00Z",
   media: [],
+  reply_count: 0,
 };
 
 class FakeUploadRequest extends EventTarget {
