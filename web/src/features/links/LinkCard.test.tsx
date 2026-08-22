@@ -156,6 +156,9 @@ describe("LinkCard statistics", () => {
     expect(screen.getByText("48万")).toBeInTheDocument();
     expect(screen.getByText("86")).toBeInTheDocument();
     expect(screen.getByText("1.1万")).toBeInTheDocument();
+    // A four-digit figure must not be the only value in the row wearing a
+    // thousands separator.
+    expect(screen.queryByText("1,171")).toBeNull();
     // The exact numbers stay available to assistive technology.
     expect(screen.getByText("播放 480,312")).toBeInTheDocument();
     expect(screen.getByText("弹幕 86")).toBeInTheDocument();
@@ -178,6 +181,19 @@ describe("LinkCard statistics", () => {
     render(<LinkCard card={card({ viewCount: 42, description: "" })} />);
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(screen.queryByText(/弹幕/)).toBeNull();
+  });
+
+  it("writes four-digit figures plainly and keeps the grouped number for readers", () => {
+    render(
+      <LinkCard
+        card={card({ likeCount: 1171, viewCount: 370, description: "" })}
+      />,
+    );
+    // Compact display: no separator, so it matches every other figure beside it.
+    expect(screen.getByText("1171")).toBeInTheDocument();
+    expect(screen.getByText("370")).toBeInTheDocument();
+    // Accessible label: the precise, grouped figure.
+    expect(screen.getByText("点赞 1,171")).toBeInTheDocument();
   });
 });
 
