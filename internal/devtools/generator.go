@@ -192,23 +192,19 @@ func (builder *fixtureBuilder) createComments(ctx context.Context, entryID domai
 				input.Media[position].Position = position
 			}
 		}
+		// Every fixture comment is owner-authored because that is the only
+		// kind the product can still write. Legacy guest rows are exercised by
+		// archive tests rather than seeded here: a fixture generator that
+		// produced rows no live code path can produce would drift away from
+		// what an actual instance looks like.
 		var result app.CreateCommentResult
 		var err error
 		switch {
 		case index == 0 || index%3 == 0:
-			if index%2 == 0 {
-				input.AuthorName = "Visitor"
-				result, err = builder.comments.CreateGuest(ctx, input)
-			} else {
-				result, err = builder.comments.CreateOwner(ctx, input)
-			}
+			result, err = builder.comments.CreateOwner(ctx, input)
 			if err == nil && index == 0 {
 				root = result.Comment.Comment.ID
 			}
-		case index%2 == 0:
-			input.ParentID = &root
-			input.AuthorName = "Reply visitor"
-			result, err = builder.comments.CreateGuest(ctx, input)
 		default:
 			input.ParentID = &root
 			result, err = builder.comments.CreateOwner(ctx, input)

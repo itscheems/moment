@@ -449,7 +449,7 @@ func commentAPIRequest(ctx context.Context, invocation Invocation, method, endpo
 }
 
 func commentResult(action string, comment commentdto.Comment, meta map[string]any) Result {
-	return Result{Data: comment, Text: fmt.Sprintf("%s %s.\nAuthor: %s (%s)\n%s", action, comment.ID, comment.AuthorName, comment.AuthorKind, comment.ContentMD), Meta: meta}
+	return Result{Data: comment, Text: fmt.Sprintf("%s %s.\nAuthor: %s (%s)\n%s", action, comment.ID, commentAuthorLabel(comment), comment.AuthorKind, comment.ContentMD), Meta: meta}
 }
 
 func commentThreadText(thread commentdto.Thread) string {
@@ -466,7 +466,7 @@ func commentThreadText(thread commentdto.Thread) string {
 		if len([]rune(content)) > 80 {
 			content = string([]rune(content)[:80]) + "…"
 		}
-		lines = append(lines, fmt.Sprintf("%s%s  %s  %s", prefix, comment.ID, comment.AuthorName, content))
+		lines = append(lines, fmt.Sprintf("%s%s  %s  %s", prefix, comment.ID, commentAuthorLabel(comment), content))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -481,4 +481,19 @@ func commentCLIError(err error) error {
 		return err
 	}
 	return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
+}
+
+// commentAuthorLabel renders the identity the server resolved rather than the
+// name stored on the row. Owner comments store the placeholder "Owner", which
+// the browser has always replaced with the site identity and the CLI used to
+// print verbatim — the same comment reported two different authors depending
+// on where you read it.
+func commentAuthorLabel(comment commentdto.Comment) string {
+	if comment.Author.Username != nil {
+		return fmt.Sprintf("%s (@%s)", comment.Author.DisplayName, *comment.Author.Username)
+	}
+	if comment.Author.DisplayName != "" {
+		return comment.Author.DisplayName
+	}
+	return comment.AuthorName
 }

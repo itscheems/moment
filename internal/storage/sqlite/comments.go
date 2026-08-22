@@ -137,9 +137,52 @@ func (store commentStore) CommentsEnabled(ctx context.Context) (bool, error) {
 	return enabled == 1, nil
 }
 
+// SiteOwnerID reads the account that authors every owner comment.
+func (store commentStore) SiteOwnerID(ctx context.Context) (string, error) {
+	var ownerID string
+	if err := store.queries.QueryRowContext(ctx, `SELECT owner_id FROM site_settings WHERE id = 1`).Scan(&ownerID); err != nil {
+		return "", fmt.Errorf("read site owner: %w", err)
+	}
+	return ownerID, nil
+}
+
+// CommentAuthorIdentities resolves account IDs to the profile a comment reader
+// needs.
+//
+// Moment has one account, so the only row that can match lives in the site
+// singleton. The query is written as a set lookup rather than a single fetch
+// because that is what the eventual user table needs, and because a caller
+// that already batches its IDs does not have to change when it arrives.
+func (store commentStore) CommentAuthorIdentities(ctx context.Context, ids []string) (map[string]app.CommentAuthorIdentity, error) {
+	identities := make(map[string]app.CommentAuthorIdentity, len(ids))
+	if len(ids) == 0 {
+		return identities, nil
+	}
+	var ownerID, username, displayName string
+	var avatar sql.NullString
+	err := store.queries.QueryRowContext(ctx, `
+SELECT owner_id, username, display_name, avatar_media_id FROM site_settings WHERE id = 1`).
+		Scan(&ownerID, &username, &displayName, &avatar)
+	if err != nil {
+		return nil, fmt.Errorf("read comment author identity: %w", err)
+	}
+	for _, id := range ids {
+		if id != ownerID {
+			continue
+		}
+		identity := app.CommentAuthorIdentity{UserID: ownerID, Username: username, DisplayName: displayName}
+		if avatar.Valid {
+			value := avatar.String
+			identity.AvatarMediaID = &value
+		}
+		identities[id] = identity
+	}
+	return identities, nil
+}
+
 func (store commentStore) CommentByID(ctx context.Context, id domain.ID) (domain.Comment, bool, error) {
 	record, err := scanComment(store.queries.QueryRowContext(ctx, `
-SELECT id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms
+SELECT id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms
      , location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
@@ -158,7 +201,7 @@ WHERE comments.id = ?`, id.String()))
 
 func (store commentStore) ListComments(ctx context.Context, entryID domain.ID) ([]domain.Comment, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT child.id, child.entry_id, child.parent_id, child.author_kind, child.author_name, child.content_md, child.created_at_ms,
+SELECT child.id, child.entry_id, child.parent_id, child.author_kind, child.author_name, child.author_user_id, child.content_md, child.created_at_ms,
        location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
@@ -321,8 +364,8 @@ ORDER BY usage.media_id`, commentID.String(), commentID.String())
 
 func (store commentStore) InsertComment(ctx context.Context, comment domain.Comment) error {
 	_, err := store.queries.ExecContext(ctx, `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?)`, comment.ID.String(), comment.EntryID.String(), nullableCommentID(comment.ParentID), string(comment.AuthorKind), comment.AuthorName, comment.ContentMD, domain.TimeToMillis(comment.CreatedAt))
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, comment.ID.String(), comment.EntryID.String(), nullableCommentID(comment.ParentID), string(comment.AuthorKind), comment.AuthorName, nullableString(comment.AuthorUserID), comment.ContentMD, domain.TimeToMillis(comment.CreatedAt))
 	if err != nil {
 		if strings.Contains(err.Error(), "comment parent must be a root in the same entry") {
 			return domain.NewError(domain.CodeCommentDepthExceeded, "replies must target a top-level comment on the same post", nil)
@@ -436,13 +479,13 @@ type commentScanner interface{ Scan(...any) error }
 
 func scanComment(scanner commentScanner) (domain.Comment, error) {
 	var idValue, entryValue, authorKind, authorName, content string
-	var parent sql.NullString
+	var parent, authorUserID sql.NullString
 	var createdAt int64
 	var locationName, locationDisplayName, countryCode, country, region, city, district, category, provider, providerPlaceID sql.NullString
 	var latitude, longitude sql.NullInt64
 	var coordinateSystem sql.NullString
 	if err := scanner.Scan(
-		&idValue, &entryValue, &parent, &authorKind, &authorName, &content, &createdAt,
+		&idValue, &entryValue, &parent, &authorKind, &authorName, &authorUserID, &content, &createdAt,
 		&locationName, &locationDisplayName, &countryCode, &country, &region, &city,
 		&district, &category, &provider, &providerPlaceID, &latitude, &longitude,
 		&coordinateSystem,
@@ -482,11 +525,23 @@ func scanComment(scanner commentScanner) (domain.Comment, error) {
 			location.Point = &domain.GeoPoint{LatitudeE7: latitude.Int64, LongitudeE7: longitude.Int64, System: domain.CoordinateSystem(coordinateSystem.String)}
 		}
 	}
-	record := domain.Comment{ID: id, EntryID: entryID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(authorKind), AuthorName: authorName, ContentMD: content, Location: location, CreatedAt: domain.TimeFromMillis(createdAt)}
+	var authorUser *string
+	if authorUserID.Valid {
+		value := authorUserID.String
+		authorUser = &value
+	}
+	record := domain.Comment{ID: id, EntryID: entryID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(authorKind), AuthorName: authorName, AuthorUserID: authorUser, ContentMD: content, Location: location, CreatedAt: domain.TimeFromMillis(createdAt)}
 	if err := record.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment violates the comment contract", map[string]any{"comment_id": id.String()})
 	}
 	return record, nil
+}
+
+func nullableString(value *string) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func nullableCommentID(id *domain.ID) any {

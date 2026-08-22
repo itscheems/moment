@@ -11,26 +11,54 @@ import (
 // public display name.
 const MaxCommentAuthorNameCodePoints = 40
 
-// CommentAuthorKind is the only persisted comment identity boundary in v0.
+// CommentAuthorKind separates the accounts that can write from the anonymous
+// visitors that once could.
 type CommentAuthorKind string
 
 const (
 	// CommentAuthorOwner marks an authenticated owner action.
 	CommentAuthorOwner CommentAuthorKind = "owner"
-	// CommentAuthorGuest marks an anonymous public visitor action.
+	// CommentAuthorGuest marks a comment written by an anonymous visitor
+	// before commenting required an account.
+	//
+	// Nothing produces this kind any longer. It stays valid on read because
+	// archives written before the change still contain such rows, and an
+	// archive that cannot be imported is a backup that does not exist.
 	CommentAuthorGuest CommentAuthorKind = "guest"
 )
 
 // Comment is one top-level comment or one reply to a top-level comment.
+//
+// AuthorName and AuthorUserID answer different questions. AuthorName is what
+// the author was called when the row was written and is the only identity a
+// legacy guest row has. AuthorUserID points at the account that wrote it, so
+// a rename reaches every comment that account ever made. Owner rows carry
+// both; rows imported from an archive written before accounts existed carry
+// only the name, and the reader falls back to the site identity for them.
 type Comment struct {
-	ID         ID
-	EntryID    ID
-	ParentID   *ID
-	AuthorKind CommentAuthorKind
-	AuthorName string
-	ContentMD  string
-	Location   *Location
-	CreatedAt  time.Time
+	ID           ID
+	EntryID      ID
+	ParentID     *ID
+	AuthorKind   CommentAuthorKind
+	AuthorName   string
+	AuthorUserID *string
+	ContentMD    string
+	Location     *Location
+	CreatedAt    time.Time
+}
+
+// ValidateAuthorUserID accepts the 32 lowercase hex digits an account
+// identifier is written with, matching site_settings.owner_id.
+func ValidateAuthorUserID(value string) error {
+	if len(value) != 32 {
+		return NewError(CodeInvalidArgument, "comment author user id must be 32 hex digits", map[string]any{"field": "author_user_id"})
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return NewError(CodeInvalidArgument, "comment author user id must be lowercase hexadecimal", map[string]any{"field": "author_user_id"})
+		}
+	}
+	return nil
 }
 
 // NormalizeCommentAuthorName trims presentation-only surrounding whitespace
@@ -77,6 +105,11 @@ func (comment Comment) Validate() error {
 			return err
 		}
 		return NewError(CodeInvalidArgument, "comment author name is not normalized", map[string]any{"field": "author_name"})
+	}
+	if comment.AuthorUserID != nil {
+		if err := ValidateAuthorUserID(*comment.AuthorUserID); err != nil {
+			return err
+		}
 	}
 	if comment.ContentMD == "" {
 		if comment.Location == nil {

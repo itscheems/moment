@@ -13,6 +13,11 @@ import (
 )
 
 // Comment is the canonical one-level comment wire representation.
+//
+// AuthorName is the value stored on the row and exists so a client can round
+// trip a comment without losing what was persisted. Author is the identity to
+// render: it is resolved server side, so every adapter shows the same name and
+// no client has to know that owner comments take theirs from the site.
 type Comment struct {
 	ID          string            `json:"id"`
 	PostID      string            `json:"post_id"`
@@ -20,11 +25,25 @@ type Comment struct {
 	Depth       int               `json:"depth"`
 	AuthorKind  string            `json:"author_kind"`
 	AuthorName  string            `json:"author_name"`
+	Author      Author            `json:"author"`
 	ContentMD   string            `json:"content_md"`
 	ContentHTML string            `json:"content_html"`
 	CreatedAt   time.Time         `json:"created_at"`
 	Media       []MediaUsage      `json:"media"`
 	Location    *postdto.Location `json:"location"`
+}
+
+// Author is the resolved public identity behind one comment.
+//
+// A comment written before commenting required an account has no identity to
+// resolve, so every field but DisplayName is null and the client renders it as
+// unlinked plain text.
+type Author struct {
+	UserID        *string `json:"user_id"`
+	Username      *string `json:"username"`
+	DisplayName   string  `json:"display_name"`
+	AvatarMediaID *string `json:"avatar_media_id"`
+	ProfileURL    *string `json:"profile_url"`
 }
 
 // MediaUsage is one ordered managed image attached to a comment read model.
@@ -61,9 +80,26 @@ func FromComment(comment app.Comment) Comment {
 	}
 	return Comment{
 		ID: comment.Comment.ID.String(), PostID: comment.Comment.EntryID.String(), ParentID: parentID, Depth: depth,
-		AuthorKind: string(comment.Comment.AuthorKind), AuthorName: comment.Comment.AuthorName,
+		AuthorKind: string(comment.Comment.AuthorKind), AuthorName: comment.Comment.AuthorName, Author: fromAuthor(comment.Author),
 		ContentMD: comment.Comment.ContentMD, ContentHTML: comment.ContentHTML, CreatedAt: comment.Comment.CreatedAt.UTC(), Media: media, Location: location,
 	}
+}
+
+func fromAuthor(author app.CommentAuthor) Author {
+	value := Author{DisplayName: author.DisplayName, AvatarMediaID: author.AvatarMediaID}
+	if author.UserID != "" {
+		userID := author.UserID
+		value.UserID = &userID
+	}
+	if author.Username != "" {
+		username := author.Username
+		value.Username = &username
+	}
+	if author.ProfileURL != "" {
+		profileURL := author.ProfileURL
+		value.ProfileURL = &profileURL
+	}
+	return value
 }
 
 // FromThread maps one canonical flattened application thread.
@@ -119,6 +155,9 @@ func ValidateComment(comment Comment) error {
 	if err := record.Validate(); err != nil {
 		return err
 	}
+	if err := validateAuthor(comment.Author); err != nil {
+		return err
+	}
 	usages := make([]domain.EntryMediaUsage, len(comment.Media))
 	for index, usage := range comment.Media {
 		if usage.Width == 0 || usage.Height == 0 || !validProjectionMIMEType(usage.MIMEType) {
@@ -139,6 +178,31 @@ func ValidateComment(comment Comment) error {
 	}
 	if err != nil || html != comment.ContentHTML {
 		return errors.New("comment content_html does not match content_md")
+	}
+	return nil
+}
+
+// validateAuthor rejects a half-resolved identity. An account either has all
+// of its reference fields or none of them; anything in between means a caller
+// would render a link that goes nowhere.
+func validateAuthor(author Author) error {
+	if author.DisplayName == "" {
+		return errors.New("comment author display name is empty")
+	}
+	linked := 0
+	for _, value := range []*string{author.UserID, author.Username, author.ProfileURL} {
+		if value != nil {
+			if *value == "" {
+				return errors.New("comment author reference is empty")
+			}
+			linked++
+		}
+	}
+	if linked != 0 && linked != 3 {
+		return errors.New("comment author identity is partially resolved")
+	}
+	if author.Username != nil && author.ProfileURL != nil && *author.ProfileURL != "/@"+*author.Username {
+		return errors.New("comment author profile URL does not match username")
 	}
 	return nil
 }

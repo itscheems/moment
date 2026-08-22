@@ -13,10 +13,11 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-const (
-	ownerCommentCreateIdempotencyScope = "comments.owner.create.v1"
-	guestCommentCreateIdempotencyScope = "comments.guest.create.v1"
-)
+// Replay records written by the retired anonymous path still carry the scope
+// "comments.guest.create.v1". Nothing produces that scope any more, and the
+// rows are deliberately left in place: deleting them would change the replay
+// answer for keys a caller may still hold.
+const ownerCommentCreateIdempotencyScope = "comments.owner.create.v1"
 
 // CommentStore is the complete comment authority available within one
 // repository transaction.
@@ -25,6 +26,8 @@ type CommentStore interface {
 	EntryExists(context.Context, domain.ID) (bool, error)
 	CommentsEnabled(context.Context) (bool, error)
 	CommentByID(context.Context, domain.ID) (domain.Comment, bool, error)
+	CommentAuthorIdentities(context.Context, []string) (map[string]CommentAuthorIdentity, error)
+	SiteOwnerID(context.Context) (string, error)
 	ListComments(context.Context, domain.ID) ([]domain.Comment, error)
 	PinnedCommentID(context.Context, domain.ID) (*domain.ID, error)
 	CommentMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
@@ -49,8 +52,37 @@ type CommentTransactions interface {
 // Comment includes the authoritative record and its safe derived HTML.
 type Comment struct {
 	Comment     domain.Comment
+	Author      CommentAuthor
 	ContentHTML string
 	Media       []MediaUsageProjection
+}
+
+// CommentAuthor is the identity a reader sees beside a comment, resolved at
+// read time rather than copied out of the row.
+//
+// Reading through a reference is what lets one rename reach every comment an
+// account ever wrote, and it is what stopped the web and the CLI disagreeing:
+// the web used to overlay the site identity on top of the stored "Owner"
+// placeholder and the CLI printed the placeholder as-is.
+//
+// A legacy guest row has no account behind it, so it carries only DisplayName;
+// Username, UserID and ProfileURL are empty and callers must render it as
+// plain text with no link.
+type CommentAuthor struct {
+	UserID        string
+	Username      string
+	DisplayName   string
+	AvatarMediaID *string
+	ProfileURL    string
+}
+
+// CommentAuthorIdentity is one account's public profile as the comment reader
+// needs it.
+type CommentAuthorIdentity struct {
+	UserID        string
+	Username      string
+	DisplayName   string
+	AvatarMediaID *string
 }
 
 // CommentThread is a stable flattened one-level thread. Roots are ordered by
@@ -156,47 +188,13 @@ func NewCommentService(transactions CommentTransactions, options ...CommentServi
 	return service, nil
 }
 
-// CreateGuest persists a visitor comment without accepting network identity.
-func (service *CommentService) CreateGuest(ctx context.Context, input CreateCommentInput) (CreateCommentResult, error) {
-	input.AuthorKind = domain.CommentAuthorGuest
-	return service.create(ctx, input)
-}
-
-// CreateOwner persists an owner-marked comment. CLI and owner HTTP adapters
-// use this method and cannot impersonate a guest.
+// CreateOwner persists an owner-marked comment. It is the only way to write a
+// comment: every adapter reaches the thread through an authenticated owner
+// route, so no caller can choose the author kind.
 func (service *CommentService) CreateOwner(ctx context.Context, input CreateCommentInput) (CreateCommentResult, error) {
 	input.AuthorKind = domain.CommentAuthorOwner
 	input.AuthorName = "Owner"
 	return service.create(ctx, input)
-}
-
-// ValidateCreateTarget confirms that a public reply upload is anchored to an
-// existing post whose comment surface is currently enabled. It deliberately
-// performs no mutation; the final comment transaction repeats these checks.
-func (service *CommentService) ValidateCreateTarget(ctx context.Context, entryID domain.ID) error {
-	if err := contextError(ctx); err != nil {
-		return err
-	}
-	if err := validateCommentID(entryID); err != nil {
-		return err
-	}
-	return service.transactions.Read(ctx, func(store CommentStore) error {
-		exists, err := store.EntryExists(ctx, entryID)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			return postNotFound(entryID)
-		}
-		enabled, err := store.CommentsEnabled(ctx)
-		if err != nil {
-			return err
-		}
-		if !enabled {
-			return domain.NewError(domain.CodeCommentsDisabled, "new comments are disabled", nil)
-		}
-		return nil
-	})
 }
 
 func (service *CommentService) create(ctx context.Context, input CreateCommentInput) (CreateCommentResult, error) {
@@ -223,7 +221,7 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 		}
 	}
 	requestHash := hashCreateComment(input)
-	idempotencyScope := commentCreateIdempotencyScope(input.AuthorKind)
+	idempotencyScope := ownerCommentCreateIdempotencyScope
 	if input.IdempotencyKey != "" {
 		replayed, found, replayErr := service.loadCommentReplay(ctx, input, idempotencyScope, requestHash)
 		if replayErr != nil {
@@ -252,7 +250,11 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 				return storeErr
 			}
 			if found {
-				comment, replayErr := reconstructCommentReplay(input, idempotencyScope, requestHash, record)
+				replayOwnerID, replayErr := store.SiteOwnerID(ctx)
+				if replayErr != nil {
+					return replayErr
+				}
+				comment, replayErr := reconstructCommentReplay(input, replayOwnerID, idempotencyScope, requestHash, record)
 				if replayErr != nil {
 					return replayErr
 				}
@@ -261,6 +263,11 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 				if replayErr != nil {
 					return replayErr
 				}
+				authors, replayErr := resolveCommentAuthors(ctx, store, []domain.Comment{comment})
+				if replayErr != nil {
+					return replayErr
+				}
+				result.Comment.Author = authors[comment.ID]
 				result.Replayed = true
 				return nil
 			}
@@ -296,7 +303,14 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 		if generateErr != nil {
 			return generateErr
 		}
-		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: now}
+		// The authoring account is stamped inside the transaction that writes
+		// the row, so a rename racing the insert cannot leave the comment
+		// pointing at an identity that never wrote it.
+		ownerID, ownerErr := store.SiteOwnerID(ctx)
+		if ownerErr != nil {
+			return ownerErr
+		}
+		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: now}
 		if validateErr := comment.Validate(); validateErr != nil {
 			return validateErr
 		}
@@ -323,12 +337,17 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 			return projectErr
 		}
 		result.Comment.Media = projectedMedia
+		authors, authorErr := resolveCommentAuthors(ctx, store, []domain.Comment{comment})
+		if authorErr != nil {
+			return authorErr
+		}
+		result.Comment.Author = authors[comment.ID]
 		return nil
 	})
 	if err != nil {
 		return CreateCommentResult{}, normalizeCommentRepositoryError(err)
 	}
-	result.Comment, err = renderComment(result.Comment.Comment, result.Comment.Media)
+	result.Comment, err = renderComment(result.Comment.Comment, result.Comment.Author, result.Comment.Media)
 	if err != nil {
 		return CreateCommentResult{}, err
 	}
@@ -340,18 +359,31 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 	var found bool
 	var media []MediaUsageProjection
 	var recordComment domain.Comment
+	var author CommentAuthor
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		var storeErr error
 		record, found, storeErr = store.IdempotencyRecord(ctx, scope, input.IdempotencyKey)
 		if storeErr != nil || !found {
 			return storeErr
 		}
-		recordComment, storeErr = reconstructCommentReplay(input, scope, requestHash, record)
+		ownerID, storeErr := store.SiteOwnerID(ctx)
+		if storeErr != nil {
+			return storeErr
+		}
+		recordComment, storeErr = reconstructCommentReplay(input, ownerID, scope, requestHash, record)
 		if storeErr != nil {
 			return storeErr
 		}
 		media, storeErr = store.ProjectMediaUsages(ctx, input.Media)
-		return storeErr
+		if storeErr != nil {
+			return storeErr
+		}
+		authors, storeErr := resolveCommentAuthors(ctx, store, []domain.Comment{recordComment})
+		if storeErr != nil {
+			return storeErr
+		}
+		author = authors[recordComment.ID]
+		return nil
 	})
 	if err != nil {
 		return CreateCommentResult{}, false, normalizeCommentRepositoryError(err)
@@ -359,7 +391,7 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 	if !found {
 		return CreateCommentResult{}, false, nil
 	}
-	comment, err := renderComment(recordComment, media)
+	comment, err := renderComment(recordComment, author, media)
 	if err != nil {
 		return CreateCommentResult{}, false, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
@@ -376,6 +408,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 	}
 	var records []domain.Comment
 	var pinnedCommentID *domain.ID
+	var authors map[domain.ID]CommentAuthor
 	mediaByComment := make(map[domain.ID][]MediaUsageProjection)
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		exists, storeErr := store.EntryExists(ctx, entryID)
@@ -399,6 +432,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 				return storeErr
 			}
 		}
+		authors, storeErr = resolveCommentAuthors(ctx, store, records)
 		return storeErr
 	})
 	if err != nil {
@@ -415,7 +449,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 		} else if _, found := roots[*record.ParentID]; !found {
 			return CommentThread{}, corruptCommentThread(entryID)
 		}
-		comment, renderErr := renderComment(record, mediaByComment[record.ID])
+		comment, renderErr := renderComment(record, authors[record.ID], mediaByComment[record.ID])
 		if renderErr != nil {
 			return CommentThread{}, corruptCommentThread(entryID)
 		}
@@ -523,7 +557,11 @@ func (service *CommentService) Delete(ctx context.Context, id domain.ID, dryRun 
 		if err != nil {
 			return err
 		}
-		result.Comment, err = renderComment(record, mediaUsages)
+		authors, err := resolveCommentAuthors(ctx, store, []domain.Comment{record})
+		if err != nil {
+			return err
+		}
+		result.Comment, err = renderComment(record, authors[record.ID], mediaUsages)
 		if err != nil {
 			return corruptComment(id)
 		}
@@ -558,25 +596,26 @@ func (service *CommentService) Delete(ctx context.Context, id domain.ID, dryRun 
 	return result, nil
 }
 
-func reconstructCommentReplay(input CreateCommentInput, scope, requestHash string, record IdempotencyRecord) (domain.Comment, error) {
+// reconstructCommentReplay rebuilds the stored comment from the request that
+// produced it. The request hash proves the input is byte-identical, so every
+// field the input carries reconstructs exactly.
+//
+// ownerID covers the one field it does not carry. The account that authored a
+// comment is stamped by the server, not supplied by the caller, and owner_id
+// is minted once at migration and never updated — SiteUpdate has no field for
+// it — so reading it now yields the same value the original write stamped.
+func reconstructCommentReplay(input CreateCommentInput, ownerID, scope, requestHash string, record IdempotencyRecord) (domain.Comment, error) {
 	if record.Scope != scope || record.Key != input.IdempotencyKey || !validRequestHash(record.RequestHash) {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
 	if record.RequestHash != requestHash {
 		return domain.Comment{}, domain.NewError(domain.CodeIdempotencyKeyReused, "idempotency key was already used with different comment input", map[string]any{"field": "idempotency_key"})
 	}
-	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: record.CreatedAt}
+	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: record.CreatedAt}
 	if err := comment.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
 	return comment, nil
-}
-
-func commentCreateIdempotencyScope(kind domain.CommentAuthorKind) string {
-	if kind == domain.CommentAuthorGuest {
-		return guestCommentCreateIdempotencyScope
-	}
-	return ownerCommentCreateIdempotencyScope
 }
 
 func hashCreateComment(input CreateCommentInput) string {
@@ -605,7 +644,73 @@ func hashCreateComment(input CreateCommentInput) string {
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
-func renderComment(record domain.Comment, media []MediaUsageProjection) (Comment, error) {
+// resolveCommentAuthors maps every comment in the batch to the identity that
+// should be rendered for it.
+//
+// The lookup is batched and keyed by account ID because that is the shape a
+// real user table needs; today exactly one account can match. Owner rows
+// written before author_user_id existed — anything restored from an older
+// archive — have no reference of their own, so they fall back to the site
+// owner, which is by definition who wrote them.
+func resolveCommentAuthors(ctx context.Context, store CommentStore, records []domain.Comment) (map[domain.ID]CommentAuthor, error) {
+	authors := make(map[domain.ID]CommentAuthor, len(records))
+	ownerID := ""
+	wanted := make(map[string]struct{})
+	for _, record := range records {
+		if record.AuthorKind == domain.CommentAuthorGuest {
+			continue
+		}
+		if record.AuthorUserID != nil {
+			wanted[*record.AuthorUserID] = struct{}{}
+			continue
+		}
+		if ownerID == "" {
+			resolved, err := store.SiteOwnerID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			ownerID = resolved
+		}
+		wanted[ownerID] = struct{}{}
+	}
+	ids := make([]string, 0, len(wanted))
+	for id := range wanted {
+		ids = append(ids, id)
+	}
+	identities := map[string]CommentAuthorIdentity{}
+	if len(ids) > 0 {
+		resolved, err := store.CommentAuthorIdentities(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		identities = resolved
+	}
+	for _, record := range records {
+		if record.AuthorKind == domain.CommentAuthorGuest {
+			authors[record.ID] = CommentAuthor{DisplayName: record.AuthorName}
+			continue
+		}
+		id := ownerID
+		if record.AuthorUserID != nil {
+			id = *record.AuthorUserID
+		}
+		identity, found := identities[id]
+		if !found {
+			// An owner comment whose account cannot be resolved still has to
+			// render. The stored name is the only thing left to show.
+			authors[record.ID] = CommentAuthor{DisplayName: record.AuthorName}
+			continue
+		}
+		authors[record.ID] = CommentAuthor{
+			UserID: identity.UserID, Username: identity.Username,
+			DisplayName: identity.DisplayName, AvatarMediaID: identity.AvatarMediaID,
+			ProfileURL: "/@" + identity.Username,
+		}
+	}
+	return authors, nil
+}
+
+func renderComment(record domain.Comment, author CommentAuthor, media []MediaUsageProjection) (Comment, error) {
 	if err := record.Validate(); err != nil {
 		return Comment{}, err
 	}
@@ -621,7 +726,7 @@ func renderComment(record domain.Comment, media []MediaUsageProjection) (Comment
 		return Comment{}, err
 	}
 	record.Location = domain.CloneLocation(record.Location)
-	return Comment{Comment: record, ContentHTML: html, Media: cloneMediaUsageProjections(media)}, nil
+	return Comment{Comment: record, Author: author, ContentHTML: html, Media: cloneMediaUsageProjections(media)}, nil
 }
 
 func commentLocationHashValues(location *domain.Location) []string {

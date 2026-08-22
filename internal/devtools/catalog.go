@@ -63,7 +63,7 @@ var scenarios = []Scenario{
 	{Name: "post-long-markdown", Category: CategoryEdge, RecipeVersion: RecipeVersion, Description: "one post at the 20,000-code-point content boundary", Counts: Counts{Entries: 1}},
 	{Name: "post-with-images", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "one, four, and nine-image post layouts with repeated managed media", Counts: Counts{Entries: 3, Media: 12, MediaBytes: 12 * 4096}},
 	{Name: "post-images-missing-alt", Category: CategoryEdge, RecipeVersion: RecipeVersion, Description: "missing, decorative, and provided image alt states", Counts: Counts{Entries: 1, Media: 3, MediaBytes: 3 * 4096}},
-	{Name: "comment-one-level", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "guest and owner roots with replies flattened to one level", Counts: Counts{Entries: 1, Comments: 6}},
+	{Name: "comment-one-level", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "owner roots with replies flattened to one level", Counts: Counts{Entries: 1, Comments: 6}},
 	{Name: "search-cjk", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "Chinese, English, numeric, and phrase search fixtures", Counts: Counts{Entries: 6}},
 	{Name: "archive-years", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "posts spanning deterministic year, month, and day aggregates", Counts: Counts{Entries: 12}},
 	{Name: "archive-roundtrip", Category: CategoryArchive, RecipeVersion: RecipeVersion, Description: "portable site, entries, comments, media, and alt states restored through format v1", Counts: Counts{Entries: 4, Comments: 8, Media: 6, MediaBytes: 6 * 4096}, ArchiveRoundTrip: true},
