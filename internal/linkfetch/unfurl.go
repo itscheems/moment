@@ -50,11 +50,18 @@ type ResolverOptions struct {
 // origin, not to be an authority: a published card is always a stored snapshot.
 const DefaultCacheTTL = 5 * time.Minute
 
-// challengeRetries bounds how many times a recognized page that came back
-// without a thumbnail is re-requested. Two extra attempts is enough to ride out
-// an intermittently served challenge while staying polite: the whole sequence
-// only ever runs for one owner-initiated unfurl.
-const challengeRetries = 2
+// challengeRetries bounds how many times an incomplete document is
+// re-requested, and challengeBackoff spaces those attempts out.
+//
+// The spacing is the part that matters. An origin serving challenges does not
+// decide per request: observed runs come in bursts of several seconds, so
+// three back-to-back attempts land entirely inside one burst and all fail.
+// Waiting between them is what lets a retry reach the other side. The whole
+// sequence still only ever runs once, for one owner-initiated unfurl.
+const (
+	challengeRetries = 3
+	challengeBackoff = 500 * time.Millisecond
+)
 
 // NewResolver builds a Resolver over a guarded Fetcher.
 func NewResolver(options ResolverOptions) *Resolver {
@@ -141,8 +148,30 @@ func (resolver *Resolver) Resolve(ctx context.Context, rawURL string) (Preview, 
 	// retry is challenged too, the untrustworthy text is dropped and only the
 	// recognizer's own contribution survives. The card stays useful either
 	// way, because it still links and embeds.
-	for attempt := 0; attempt < challengeRetries && recognized && metadata.ImageURL == "" && ctx.Err() == nil; attempt++ {
-		if retry, err := resolver.fetcher.FetchDocument(ctx, source); err == nil && retry.ImageURL != "" {
+	// An origin that answers a bot with something other than the real page does
+	// not always answer with an obvious challenge: it may also return a partial
+	// document that has a title and a cover but none of the figures the page
+	// normally carries. Both shapes are detected the same way -- the response
+	// is missing something the resource always has -- and both are worth one
+	// bounded second look.
+	for attempt := 0; attempt < challengeRetries && recognized && ctx.Err() == nil; attempt++ {
+		if complete(metadata, refiner) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return Preview{}, ctx.Err()
+		case <-time.After(challengeBackoff * time.Duration(attempt+1)):
+		}
+		retry, err := resolver.fetcher.FetchDocument(ctx, source)
+		if err != nil {
+			break
+		}
+		if complete(retry, refiner) {
+			metadata = retry
+			break
+		}
+		if metadata.ImageURL == "" && retry.ImageURL != "" {
 			metadata = retry
 		}
 	}
@@ -197,6 +226,19 @@ func (resolver *Resolver) Resolve(ctx context.Context, rawURL string) (Preview, 
 
 	resolver.cache.put(source, preview)
 	return preview, nil
+}
+
+// complete reports whether a fetched document carries everything the resource
+// is expected to publish. A cover is required of every recognized video page;
+// a provider that refines statistics additionally expects to find them.
+func complete(metadata Metadata, refiner Refiner) bool {
+	if metadata.ImageURL == "" {
+		return false
+	}
+	if refiner == nil {
+		return true
+	}
+	return refiner.HasStatistics(refiner.Refine(metadata))
 }
 
 func (resolver *Resolver) providerFor(name domain.LinkCardProvider) Provider {
