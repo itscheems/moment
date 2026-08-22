@@ -12,6 +12,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/archive"
+	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -142,7 +143,7 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 	}
 	service.inspectDisk(builder, root)
 	if !readable {
-		for _, id := range []string{CheckSecretPermissions, CheckCurrentNextState, CheckInstanceLocks, CheckCurrentGeneration, CheckDatabaseOpen, CheckSchemaVersion, CheckSiteConfiguration} {
+		for _, id := range []string{CheckSecretPermissions, CheckCurrentNextState, CheckInstanceLocks, CheckCurrentGeneration, CheckDatabaseOpen, CheckSchemaVersion, CheckSiteConfiguration, CheckAccountIntegrity} {
 			builder.set(skipped(id, "data_directory_unreadable"))
 		}
 		if mode == ModeDeep {
@@ -239,6 +240,7 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 		builder.set(skipped(CheckDatabaseOpen, "current_generation_failed"))
 		builder.set(skipped(CheckSchemaVersion, "database_not_open"))
 		builder.set(skipped(CheckSiteConfiguration, "database_not_open"))
+		builder.set(skipped(CheckAccountIntegrity, "database_not_open"))
 		if mode == ModeDeep {
 			service.skipDatabaseAndMediaDeep(builder, "current_generation_failed")
 		}
@@ -271,6 +273,7 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 		builder.set(skipped(CheckDatabaseOpen, "diagnostic_snapshot_not_acquired"))
 		builder.set(skipped(CheckSchemaVersion, "database_not_open"))
 		builder.set(skipped(CheckSiteConfiguration, "database_not_open"))
+		builder.set(skipped(CheckAccountIntegrity, "database_not_open"))
 		if mode == ModeDeep {
 			service.skipDatabaseAndMediaDeep(builder, "diagnostic_snapshot_not_acquired")
 		}
@@ -316,6 +319,7 @@ func (service *Service) Run(ctx context.Context, mode Mode) (Report, error) {
 		builder.set(failed(CheckDatabaseOpen, "the selected database cannot be opened read-only", "restore database readability or recover a valid generation", map[string]any{"opened": false, "bounded": bounded}, class))
 		builder.set(skipped(CheckSchemaVersion, "database_not_open"))
 		builder.set(skipped(CheckSiteConfiguration, "database_not_open"))
+		builder.set(skipped(CheckAccountIntegrity, "database_not_open"))
 		if mode == ModeDeep {
 			service.skipDatabaseAndMediaDeep(builder, "database_not_open")
 		}
@@ -550,6 +554,7 @@ func (service *Service) inspectMedia(ctx context.Context, builder *reportBuilder
 func (service *Service) inspectSite(ctx context.Context, builder *reportBuilder, database *sqlitestore.DiagnosticDatabase, locker *runtimefs.Locker, development bool) {
 	if locker == nil {
 		builder.set(skipped(CheckSiteConfiguration, "lock_dependency_failed"))
+		builder.set(skipped(CheckAccountIntegrity, "lock_dependency_failed"))
 		return
 	}
 	repository, err := sqlitestore.NewSiteRepository(database, locker)
@@ -564,6 +569,46 @@ func (service *Service) inspectSite(ctx context.Context, builder *reportBuilder,
 		builder.set(failed(CheckSiteConfiguration, "stored site settings violate the application contract", "repair site identity, timezone, public URL, singleton, or managed profile media configuration", map[string]any{"valid": false}, failureIntegrity))
 	} else {
 		builder.set(pass(CheckSiteConfiguration, "stored site settings satisfy the application contract", "no action is required", map[string]any{"valid": true}))
+	}
+	service.inspectAccounts(ctx, builder, database)
+}
+
+// inspectAccounts reports whether the account graph still holds together.
+//
+// Two of these have no database constraint behind them and can only be noticed
+// here. comments.author_user_id deliberately carries no foreign key -- adding
+// one would have meant rebuilding a table six others cascade from -- so a row
+// pointing at a deleted account is invisible until something looks. And a
+// username that collides with a reserved path produces an account whose profile
+// is unreachable, which is a warning rather than a failure precisely because
+// the reserved list is enforced on write and never on read: an existing account
+// keeps working, and renaming it is the owner's decision, not the migration's.
+func (service *Service) inspectAccounts(ctx context.Context, builder *reportBuilder, database *sqlitestore.DiagnosticDatabase) {
+	accounts, err := database.Accounts(ctx, domain.UsernameReserved)
+	if err != nil {
+		builder.set(skipped(CheckAccountIntegrity, "database_not_open"))
+		return
+	}
+	evidence := map[string]any{
+		"owners":                 uint64(accounts.Owners),
+		"owner_resolves":         accounts.OwnerResolves == 1,
+		"orphan_identities":      uint64(accounts.OrphanIdentities),
+		"orphan_sessions":        uint64(accounts.OrphanSessions),
+		"orphan_comment_authors": uint64(accounts.OrphanCommentRefs),
+		"reserved_usernames":     uint64(len(accounts.ReservedUsernames)),
+	}
+	switch {
+	case accounts.Owners != 1 || accounts.OwnerResolves != 1:
+		builder.set(failed(CheckAccountIntegrity, "the site does not have exactly one resolvable owner account",
+			"restore the owner account from a backup before signing in", evidence, failureIntegrity))
+	case accounts.OrphanIdentities > 0 || accounts.OrphanSessions > 0:
+		builder.set(failed(CheckAccountIntegrity, "sign-in records point at accounts that do not exist",
+			"restore from a backup or remove the dangling identity and session rows", evidence, failureIntegrity))
+	case accounts.OrphanCommentRefs > 0 || len(accounts.ReservedUsernames) > 0:
+		builder.set(warning(CheckAccountIntegrity, "some accounts or comment authors need attention",
+			"rename accounts holding reserved handles; comments naming a removed account render as plain text", evidence))
+	default:
+		builder.set(pass(CheckAccountIntegrity, "the account graph is consistent", "no action is required", evidence))
 	}
 }
 

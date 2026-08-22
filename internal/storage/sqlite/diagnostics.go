@@ -321,3 +321,60 @@ LIMIT ?`, limit+1)
 	}
 	return values, bounded, rows.Err()
 }
+
+// DiagnosticAccounts summarises the shape of the account graph.
+//
+// Every field is a count of something that should be impossible, except the
+// first two, which are counts of something that should be exactly one. A
+// healthy site reads 1, 1, 0, 0, 0, 0.
+type DiagnosticAccounts struct {
+	Owners            int
+	OwnerResolves     int
+	OrphanIdentities  int
+	OrphanSessions    int
+	OrphanCommentRefs int
+	ReservedUsernames []string
+}
+
+// Accounts reports account integrity for diagnostics.
+func (database *DiagnosticDatabase) Accounts(ctx context.Context, reserved func(string) bool) (DiagnosticAccounts, error) {
+	var value DiagnosticAccounts
+	err := database.ReadTx(ctx, func(queries Queries) error {
+		scalars := []struct {
+			query  string
+			target *int
+		}{
+			{`SELECT count(*) FROM users WHERE role = 'owner' AND status = 'active'`, &value.Owners},
+			{`SELECT count(*) FROM site_settings AS site JOIN users AS account ON account.id = site.owner_id WHERE site.id = 1`, &value.OwnerResolves},
+			{`SELECT count(*) FROM identities WHERE user_id NOT IN (SELECT id FROM users)`, &value.OrphanIdentities},
+			{`SELECT count(*) FROM sessions WHERE user_id NOT IN (SELECT id FROM users)`, &value.OrphanSessions},
+			// author_user_id deliberately carries no foreign key, so this is
+			// the only thing that would notice it pointing at nothing.
+			{`SELECT count(*) FROM comments WHERE author_user_id IS NOT NULL AND author_user_id NOT IN (SELECT id FROM users)`, &value.OrphanCommentRefs},
+		}
+		for _, scalar := range scalars {
+			if err := queries.QueryRowContext(ctx, scalar.query).Scan(scalar.target); err != nil {
+				return fmt.Errorf("read account diagnostics: %w", err)
+			}
+		}
+		if reserved == nil {
+			return nil
+		}
+		rows, err := queries.QueryContext(ctx, `SELECT username FROM users ORDER BY username`)
+		if err != nil {
+			return fmt.Errorf("read account usernames: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var username string
+			if err := rows.Scan(&username); err != nil {
+				return fmt.Errorf("scan account username: %w", err)
+			}
+			if reserved(username) {
+				value.ReservedUsernames = append(value.ReservedUsernames, username)
+			}
+		}
+		return rows.Err()
+	})
+	return value, err
+}

@@ -163,8 +163,11 @@ func ValidateUserID(value string) error {
 var reservedUsernames = map[string]struct{}{
 	// Server routes: /healthz, /readyz, and everything under /api.
 	"api": {}, "healthz": {}, "readyz": {},
-	// Browser routes declared in web/src/app/routes.ts.
-	"search": {}, "archive": {}, "profile": {}, "owner": {},
+	// Browser routes declared in web/src/app/routes.ts. "owner" is absent on
+	// purpose: only /owner/<something> is a route, bare /owner is not, and it
+	// is the handle a fresh install ships with -- reserving the default would
+	// mean every new site starts out flagging itself.
+	"search": {}, "archive": {}, "profile": {},
 	// Bundled asset directories under internal/webassets/dist.
 	"assets": {}, "fonts": {}, "icons": {},
 	// Held back so the paths stay available without renaming anyone later.
