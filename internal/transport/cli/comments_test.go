@@ -377,3 +377,68 @@ func TestCommentPagingKeepsDirectAndAPIAnswersIdentical(t *testing.T) {
 		t.Fatalf("inline replies = %d, want the preview count", loaded)
 	}
 }
+
+// The pinned root travels beside the page rather than inside it, so a post
+// whose pinned comment sits further down the stream returns a page that does
+// not contain it. Text mode rendered only that page, which meant the pinned
+// conversation vanished with nothing to say one existed.
+func TestCommentListTextRendersThePinnedConversationOffPage(t *testing.T) {
+	fixture := newCommentCLIFixture(t)
+	application := momentTestApplication()
+	first := commandData(t, execute(application, "", "comment", "create", fixture.postID,
+		"--data-dir", fixture.dataDir, "--content", "first root", "--idempotency-key", "pin-1", "--json"))
+	second := commandData(t, execute(application, "", "comment", "create", fixture.postID,
+		"--data-dir", fixture.dataDir, "--content", "second root", "--idempotency-key", "pin-2", "--json"))
+
+	// Which root leads the stream is decided by creation order, and the two can
+	// share a millisecond; ask for the first page rather than assume.
+	page := commandData(t, execute(application, "", "comment", "list", fixture.postID,
+		"--data-dir", fixture.dataDir, "--limit", "1", "--json"))
+	onPage := page["items"].([]any)[0].(map[string]any)["id"].(string)
+	offPage := first["id"].(string)
+	if offPage == onPage {
+		offPage = second["id"].(string)
+	}
+	execute(application, "", "comment", "reply", fixture.postID, offPage,
+		"--data-dir", fixture.dataDir, "--content", "pinned reply", "--idempotency-key", "pin-reply", "--json")
+	pinned := execute(application, "", "comment", "pin", fixture.postID, offPage,
+		"--data-dir", fixture.dataDir, "--yes", "--json")
+	if pinned.exit != ExitSuccess {
+		t.Fatalf("pin = %#v", pinned)
+	}
+
+	output := execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--limit", "1")
+	if output.exit != ExitSuccess || output.stderr != "" {
+		t.Fatalf("text listing = %#v", output)
+	}
+	if !strings.Contains(output.stdout, offPage) {
+		t.Fatalf("pinned comment %s is missing from the listing:\n%s", offPage, output.stdout)
+	}
+	if !strings.Contains(output.stdout, "(pinned)") {
+		t.Fatalf("listing does not say which comment is pinned:\n%s", output.stdout)
+	}
+	if !strings.Contains(output.stdout, "  ↳ ") || !strings.Contains(output.stdout, "pinned reply") {
+		t.Fatalf("pinned conversation lost its reply:\n%s", output.stdout)
+	}
+	if !strings.Contains(output.stdout, onPage) {
+		t.Fatalf("page root %s is missing from the listing:\n%s", onPage, output.stdout)
+	}
+	// The pinned conversation leads, which is where the browser puts it too.
+	if strings.Index(output.stdout, offPage) > strings.Index(output.stdout, onPage) {
+		t.Fatalf("pinned conversation does not lead the listing:\n%s", output.stdout)
+	}
+
+	// A page that already contains the pinned root shows it once, not twice.
+	wide := execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir)
+	if wide.exit != ExitSuccess || strings.Count(wide.stdout, offPage) != 1 || strings.Count(wide.stdout, "(pinned)") != 1 {
+		t.Fatalf("full page repeated the pinned conversation:\n%s", wide.stdout)
+	}
+
+	// The JSON shape is untouched: the pinned conversation still travels beside
+	// the page instead of being folded into it.
+	shape := commandData(t, execute(application, "", "comment", "list", fixture.postID,
+		"--data-dir", fixture.dataDir, "--limit", "1", "--json"))
+	if len(shape["items"].([]any)) != 1 || shape["pinned_comment_id"] != offPage || len(shape["pinned"].([]any)) != 2 {
+		t.Fatalf("JSON shape changed = %#v", shape)
+	}
+}

@@ -228,7 +228,7 @@ func runCommentReplies(ctx context.Context, invocation Invocation, input Command
 	default:
 		return Result{}, errors.New("unsupported comment replies transport")
 	}
-	return Result{Data: page, Text: commentListText(page.Items), Meta: meta}, nil
+	return Result{Data: page, Text: commentListText(page.Items, ""), Meta: meta}, nil
 }
 
 func runCommentCreate(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -566,11 +566,59 @@ func commentResult(action string, comment commentdto.Comment, meta map[string]an
 	return Result{Data: comment, Text: fmt.Sprintf("%s %s.\nAuthor: %s (%s)\n%s", action, comment.ID, commentAuthorLabel(comment), comment.AuthorKind, comment.ContentMD), Meta: meta}
 }
 
+// commentThreadText renders one page of a thread together with its pinned
+// conversation.
+//
+// The pinned root travels beside the page rather than inside it, so under
+// pagination it can sit many pages further down the stream. Rendering Items
+// alone therefore showed no pinned comment and no sign that one existed — for
+// a post whose pinned comment is the forty-fifth, the first page said nothing
+// about it at all. It is folded in when the page does not carry it, left where
+// it is when the page does, and led with either way, which is where the
+// browser puts it too.
 func commentThreadText(thread commentdto.Thread) string {
-	return commentListText(thread.Items)
+	pinnedID := ""
+	if thread.PinnedCommentID != nil {
+		pinnedID = *thread.PinnedCommentID
+	}
+	return commentListText(pinnedConversationFirst(thread), pinnedID)
 }
 
-func commentListText(comments []commentdto.Comment) string {
+// pinnedConversationFirst puts the pinned root and the replies travelling with
+// it at the head of one page, without repeating a conversation the page
+// already carries.
+func pinnedConversationFirst(thread commentdto.Thread) []commentdto.Comment {
+	if len(thread.Pinned) == 0 {
+		return thread.Items
+	}
+	rootID := thread.Pinned[0].ID
+	start := -1
+	for index, comment := range thread.Items {
+		if comment.ID == rootID && comment.ParentID == nil {
+			start = index
+			break
+		}
+	}
+	if start < 0 {
+		ordered := make([]commentdto.Comment, 0, len(thread.Pinned)+len(thread.Items))
+		return append(append(ordered, thread.Pinned...), thread.Items...)
+	}
+	// A root is always followed by its own replies, so the conversation is the
+	// run that starts here and ends at the next root.
+	end := start + 1
+	for end < len(thread.Items) && thread.Items[end].ParentID != nil && *thread.Items[end].ParentID == rootID {
+		end++
+	}
+	ordered := make([]commentdto.Comment, 0, len(thread.Items))
+	ordered = append(ordered, thread.Items[start:end]...)
+	ordered = append(ordered, thread.Items[:start]...)
+	return append(ordered, thread.Items[end:]...)
+}
+
+// commentListText renders one flattened run of comments. pinnedID names the
+// root to mark, and is empty wherever a listing has no pinned selection to
+// report, such as a page of replies under one root.
+func commentListText(comments []commentdto.Comment, pinnedID string) string {
 	if len(comments) == 0 {
 		return "No comments found"
 	}
@@ -585,10 +633,16 @@ func commentListText(comments []commentdto.Comment) string {
 			content = string([]rune(content)[:80]) + "…"
 		}
 		suffix := ""
+		// Marked by the thread's own selection rather than by position, so a
+		// pinned root the server could not load still says what it is when the
+		// page happens to carry it.
+		if comment.ParentID == nil && comment.ID == pinnedID {
+			suffix = "  (pinned)"
+		}
 		// Only the remainder is worth showing: the replies already on screen
 		// are visible, the ones that are not are what the reader would ask for.
 		if hidden := comment.ReplyCount - countLoadedReplies(comments, comment.ID); hidden > 0 {
-			suffix = fmt.Sprintf("  (+%d more replies)", hidden)
+			suffix += fmt.Sprintf("  (+%d more replies)", hidden)
 		}
 		lines = append(lines, fmt.Sprintf("%s%s  %s  %s%s", prefix, comment.ID, commentAuthorLabel(comment), content, suffix))
 	}
