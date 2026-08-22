@@ -401,8 +401,8 @@ func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 	if update.Title != nil && (strings.TrimSpace(*update.Title) == "" || len([]rune(*update.Title)) > 120) {
 		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "title must contain 1 to 120 characters", map[string]any{"field": "title"})
 	}
-	if update.Bio != nil && len([]rune(*update.Bio)) > 500 {
-		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "bio must not exceed 500 characters", map[string]any{"field": "bio"})
+	if update.Bio != nil && len([]rune(*update.Bio)) > domain.MaxBioLength {
+		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "bio is too long", map[string]any{"field": "bio"})
 	}
 	if update.Timezone != nil {
 		if err := validateTimezone(*update.Timezone); err != nil {
@@ -435,7 +435,7 @@ func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 
 func (service *SiteService) validateStored(ctx context.Context, store SiteStore, settings SiteSettings) error {
 	if !validOwnerID(settings.OwnerID) || !validUsername(settings.Username) || strings.TrimSpace(settings.DisplayName) != settings.DisplayName || settings.DisplayName == "" || len([]rune(settings.DisplayName)) > 80 ||
-		strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > 500 {
+		strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > domain.MaxBioLength {
 		return domain.NewError(domain.CodeDataIntegrityFailed, "stored site identity text is invalid", nil)
 	}
 	if err := validateTimezone(settings.Timezone); err != nil {

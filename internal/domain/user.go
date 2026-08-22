@@ -10,7 +10,13 @@ import (
 const MaxDisplayNameLength = 80
 
 // MaxBioLength bounds the free-text line an account may publish about itself.
-const MaxBioLength = 280
+//
+// 500 rather than a rounder number because that is what the site bio has always
+// been, and the same field is now edited through two routes -- the account's own
+// profile and the owner's site settings. A tighter bound here would have meant
+// an owner whose bio predates accounts could read it but never save it again,
+// and an archive carrying one could import but not round-trip.
+const MaxBioLength = 500
 
 // UsernameMinLength and UsernameMaxLength bound the handle an account is
 // reached at. Both halves of the range are enforced by the database too; the
