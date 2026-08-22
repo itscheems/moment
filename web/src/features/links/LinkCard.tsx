@@ -39,9 +39,15 @@ function playbackUrl(embedUrl: string): string {
  * Above ten thousand the exact figure stops carrying information a reader
  * wants, so it collapses to 万 — the same unit the source sites display, which
  * keeps the number recognisable next to the card it came from.
+ *
+ * Below that the digits are written plainly, without a thousands separator.
+ * Grouping only ever applies to part of the range, so a four-digit figure
+ * would be the single value in the row wearing a comma, sitting between a bare
+ * 370 and a bare 28.9万. The precise, grouped number stays in the accessible
+ * label, where reading it out is the whole point.
  */
 function formatCount(value: number): string {
-  if (value < 10_000) return value.toLocaleString("zh-CN");
+  if (value < 10_000) return String(value);
   const scaled = value / 10_000;
   const digits = scaled < 100 ? 1 : 0;
   return `${scaled.toFixed(digits).replace(/\.0$/, "")}万`;
