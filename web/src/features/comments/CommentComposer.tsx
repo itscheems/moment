@@ -310,6 +310,11 @@ export function CommentForm({
   const formId =
     suppliedFormId ??
     (parentId ? `reply-${replyTargetId ?? parentId}` : "top-level-comment");
+  // The composer already knew who it was answering — it just spent that on the
+  // 「正在回复 @X」 line and threw it away. A root comment answers nobody, so it
+  // never carries one; a reply with no explicit target is answering its root.
+  const replyToCommentId =
+    parentId === null ? null : (replyTargetId ?? parentId);
   const inlineTopLevel =
     parentId === null && topLevelTargetUsername !== undefined;
   const displayReauth =
@@ -500,6 +505,11 @@ export function CommentForm({
     const signature = JSON.stringify([
       postId,
       parentId,
+      // The reply target belongs in the signature for the same reason the
+      // server folds it into its idempotency hash: the same words aimed at two
+      // different siblings under one root are two different comments, and
+      // reusing the key would replay the first one back as the second.
+      replyToCommentId,
       content,
       mediaItems.map((item) => [
         item.key,
@@ -528,6 +538,7 @@ export function CommentForm({
         idempotencyRef.current,
         mediaInput(mediaItemsRef.current),
         commentLocation,
+        replyToCommentId,
       );
       onCreated(result.comment);
       setContent("");

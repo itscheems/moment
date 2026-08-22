@@ -10,19 +10,25 @@ import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  PublicApi,
   type PublicComment,
   type PublicCommentAuthor,
   type SiteIdentity,
 } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
+import { OwnerProvider } from "../owner/OwnerProvider";
+import { CommentForm } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import styles from "./Comments.module.css";
 
 const postId = "01K2ABCDEF0123456789ABCDE0";
 const rootId = "01K2ABCDEF0123456789ABCDE1";
 const replyId = "01K2ABCDEF0123456789ABCDE2";
+const siblingId = "01K2ABCDEF0123456789ABCDE3";
+const offPageId = "01K2ABCDEF0123456789ABCDE4";
 const ownerId = "11d003f31a23262ea0f6cbe9857981a1";
 const strangerId = "22e114g42b34373fb1g7dcfa968a92b2";
+const sessionKey = "moment.owner.session.v1";
 
 const site: SiteIdentity = {
   ownerId,
@@ -191,6 +197,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  window.sessionStorage.clear();
   for (const property of ["scrollHeight", "clientHeight"] as const) {
     Reflect.deleteProperty(HTMLElement.prototype, property);
   }
@@ -385,5 +392,185 @@ describe("long comment folding", () => {
 
     fireEvent.click(toggle);
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+});
+
+describe("the reply target prefix", () => {
+  const sibling = comment(siblingId, "先来的兄弟回复", { parentId: rootId });
+
+  function replyNaming(targetId: string, author = ownerAuthor) {
+    return comment(replyId, "接着说", {
+      parentId: rootId,
+      replyTo: { commentId: targetId, author },
+    });
+  }
+
+  it("names the target when the reply answers a sibling", () => {
+    renderItem(replyNaming(siblingId), [sibling]);
+
+    expect(screen.getByText("回复")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "@itscheems" }),
+    ).toBeInTheDocument();
+  });
+
+  it("stays quiet when the reply answers the root its position already names", () => {
+    renderItem(replyNaming(rootId), [comment(rootId, "楼主")]);
+
+    expect(screen.queryByText("回复")).not.toBeInTheDocument();
+  });
+
+  it("stays quiet when the comment names nobody", () => {
+    renderItem(comment(replyId, "接着说", { parentId: rootId }));
+
+    expect(screen.queryByText("回复")).not.toBeInTheDocument();
+  });
+
+  it("focuses and highlights a target that is on the page", () => {
+    renderItem(replyNaming(siblingId), [sibling]);
+    const target = document.querySelector(`[data-comment-id="${siblingId}"]`);
+
+    fireEvent.click(screen.getByRole("button", { name: "@itscheems" }));
+
+    expect(target).toHaveFocus();
+    expect(target).toHaveAttribute("data-comment-flash", "true");
+  });
+
+  it("degrades to plain text when the target is not on the page", () => {
+    renderItem(replyNaming(offPageId));
+
+    const prefix = document.querySelector(`.${styles.commentReplyTo}`);
+    expect(prefix).toHaveTextContent("回复 @itscheems");
+    expect(prefix?.querySelector("button")).toBeNull();
+  });
+
+  it("falls back to the stored name for a legacy guest target", () => {
+    // Not `@undefined`, and not a control either: a row with no account has no
+    // handle to print and nothing to open.
+    renderItem(replyNaming(siblingId, guestAuthor), [sibling]);
+
+    expect(screen.getByText("路过的人")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /路过的人/ })).toBeNull();
+  });
+});
+
+describe("the composer's reply target", () => {
+  function installApi(handler: (url: string, init?: RequestInit) => Response) {
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) =>
+        handler(String(input), init),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    return fetcher;
+  }
+
+  function createdBody(id: string) {
+    return JSON.stringify({
+      data: {
+        id,
+        post_id: postId,
+        parent_id: rootId,
+        depth: 1,
+        author_kind: "owner",
+        author_name: "Owner",
+        author: {
+          user_id: ownerId,
+          username: "itscheems",
+          display_name: "Cheems",
+          avatar_media_id: null,
+          profile_url: "/@itscheems",
+        },
+        reply_to: { comment_id: siblingId, author: null },
+        content_md: "接着说",
+        content_html: "<p>接着说</p>\n",
+        created_at: "2026-08-10T01:05:00Z",
+        media: [],
+        location: null,
+        reply_count: 0,
+      },
+      meta: { request_id: "req_test", replayed: false },
+    });
+  }
+
+  async function renderComposer(replyTargetId: string) {
+    window.sessionStorage.setItem(
+      sessionKey,
+      JSON.stringify({
+        csrf_token: "csrf-test",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    const posted: Array<Record<string, unknown>> = [];
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/status") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              initialized: true,
+              password_enabled: false,
+              session_epoch: 1,
+              initialized_at: "2026-08-01T00:00:00Z",
+            },
+            meta: { request_id: "req_test" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/comments") && init?.method === "POST") {
+        posted.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(createdBody(replyId), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("{}", { status: 404 });
+    });
+
+    render(
+      <NavigationProvider>
+        <OwnerProvider>
+          <CommentForm
+            api={new PublicApi()}
+            commentsEnabled
+            content="接着说"
+            onClosed={() => {}}
+            onCreated={() => {}}
+            parentId={rootId}
+            postId={postId}
+            replyTargetAuthor="Cheems"
+            replyTargetId={replyTargetId}
+            setContent={() => {}}
+            site={site}
+          />
+        </OwnerProvider>
+      </NavigationProvider>,
+    );
+    return posted;
+  }
+
+  it("persists the comment the reply answers instead of only announcing it", async () => {
+    const posted = await renderComposer(siblingId);
+    const form = await screen.findByRole("form", { name: "回复 Cheems" });
+
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({
+      parent_id: rootId,
+      reply_to_comment_id: siblingId,
+    });
+  });
+
+  it("answers the root when the reply names no other comment", async () => {
+    const posted = await renderComposer(rootId);
+    const form = await screen.findByRole("form", { name: "回复 Cheems" });
+
+    await act(async () => {
+      fireEvent.submit(form);
+    });
+
+    expect(posted[0]).toMatchObject({ reply_to_comment_id: rootId });
   });
 });

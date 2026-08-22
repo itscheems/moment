@@ -774,6 +774,7 @@ describe("owner API client", () => {
     expect(JSON.parse(String(createInit.body))).toEqual({
       content_md: "所有者回应",
       parent_id: null,
+      reply_to_comment_id: null,
       media: [],
       location: null,
     });

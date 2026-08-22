@@ -852,6 +852,42 @@
   text-decoration: underline;
 }
 
+.commentReplyTo {
+  grid-column: 2;
+  min-block-size: 1.25rem;
+  margin: 0.05rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+
+.commentReplyToLink,
+.commentReplyTo span:last-child {
+  color: var(--accent);
+}
+
+.commentReplyToLink {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.commentReplyToLink:hover,
+.commentReplyToLink:focus-visible {
+  text-decoration: underline;
+}
+
+/*
+ * A comment the reader jumped to from a 「回复 @X」 prefix. Set as a data
+ * attribute by the prefix rather than as React state, because the comment that
+ * has to light up is somebody else's row, not the one holding the control.
+ */
+.commentItem[data-comment-flash="true"] {
+  animation: comment-flash-target 1.4s var(--ease-out);
+}
+
 .replyComment {
   padding-inline-start: var(--space-4);
 }
@@ -1295,6 +1331,16 @@
   }
 }
 
+@keyframes comment-flash-target {
+  from {
+    background: var(--accent-soft);
+  }
+
+  to {
+    background: transparent;
+  }
+}
+
 @keyframes comment-reveal-fade {
   from {
     opacity: 0;
@@ -1416,6 +1462,11 @@
 
   .commentItem {
     transition: none;
+  }
+
+  .commentItem[data-comment-flash="true"] {
+    animation: none;
+    background: var(--accent-soft);
   }
 
   .commentBodyClipped {

@@ -376,6 +376,14 @@ function CommentOwnerMenu({
 }
 
 /**
+ * How long the reply-target highlight stays on after the prefix is followed.
+ *
+ * Long enough to find the row with your eyes, short enough that it is gone
+ * before it starts reading as a permanent state of that comment.
+ */
+const REPLY_TARGET_FLASH_MS = 1400;
+
+/**
  * Whether a comment was written from the site owner's account.
  *
  * `author_kind` used to answer this. It is the axis being retired: its one
@@ -476,10 +484,41 @@ export function CommentItem({
       : null;
   const headerRef = useRef<HTMLElement>(null);
   const restoreScrollRef = useRef(false);
+  const flashTimerRef = useRef<number | null>(null);
   const { bodyRef, expanded, overflowing, setExpanded } = useFoldedBody(
     comment.contentHtml,
   );
   const bodyId = `comment-${comment.id}-body`;
+
+  const replyTo = comment.replyTo;
+  // Answering the root is what the reply's position already says. Repeat it and
+  // the prefix becomes noise on every single reply; judge by target comment
+  // rather than target author, because when the root's author has written
+  // several replies their name is precisely what stops telling you which one.
+  const namesReplyTarget =
+    replyTo !== null && replyTo.commentId !== comment.parentId;
+  const [replyTargetOnPage, setReplyTargetOnPage] = useState(false);
+
+  useEffect(() => {
+    if (!namesReplyTarget || replyTo === null) return;
+    // Deliberately no dependency list. Whether the target is mounted changes
+    // when the thread pages more replies in, and that reaches this item as a
+    // re-render rather than as a change to any prop it is given.
+    const present =
+      document.querySelector(`[data-comment-id="${replyTo.commentId}"]`) !==
+      null;
+    setReplyTargetOnPage((current) =>
+      current === present ? current : present,
+    );
+  });
+
+  useEffect(
+    () => () => {
+      if (flashTimerRef.current !== null)
+        window.clearTimeout(flashTimerRef.current);
+    },
+    [],
+  );
 
   // Collapsing pulls everything below it upward. If the comment's own top has
   // already scrolled past, the page jumps and the reader loses the row they
@@ -491,6 +530,22 @@ export function CommentItem({
     if (!header || header.getBoundingClientRect().top >= 0) return;
     header.scrollIntoView?.({ block: "nearest" });
   }, [expanded]);
+
+  const revealReplyTarget = () => {
+    if (replyTo === null) return;
+    const target = document.querySelector<HTMLElement>(
+      `[data-comment-id="${replyTo.commentId}"]`,
+    );
+    if (!target) return;
+    target.focus();
+    target.dataset.commentFlash = "true";
+    if (flashTimerRef.current !== null)
+      window.clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = window.setTimeout(() => {
+      flashTimerRef.current = null;
+      delete target.dataset.commentFlash;
+    }, REPLY_TARGET_FLASH_MS);
+  };
 
   return (
     <li
@@ -583,6 +638,33 @@ export function CommentItem({
             <time dateTime={comment.createdAt}>{created.relative}</time>
           </ExactTimeTooltip>
         </header>
+        {namesReplyTarget && replyTo ? (
+          <p className={styles.commentReplyTo}>
+            <span>回复</span>{" "}
+            {replyTo.author.username !== null && replyTargetOnPage ? (
+              // A button, not an anchor: this moves focus inside the page and
+              // has no address of its own to offer. Cross-page targets are a
+              // later lane, so an off-page target stays plain text rather than
+              // becoming a control that does nothing.
+              <button
+                className={styles.commentReplyToLink}
+                onClick={revealReplyTarget}
+                type="button"
+              >
+                @{replyTo.author.username}
+              </button>
+            ) : (
+              // Display names are not unique and a legacy guest target has no
+              // username at all, so the handle is the identifying form wherever
+              // there is one.
+              <span>
+                {replyTo.author.username !== null
+                  ? `@${replyTo.author.username}`
+                  : replyTo.author.displayName}
+              </span>
+            )}
+          </p>
+        ) : null}
         {comment.contentHtml ? (
           <div
             className={`${styles.commentBody} ${expanded ? "" : styles.commentBodyClipped}`}
