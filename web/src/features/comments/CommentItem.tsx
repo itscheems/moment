@@ -1,6 +1,12 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { Menu } from "@base-ui/react/menu";
-import { type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   PublicApiError,
@@ -381,6 +387,54 @@ function ownedBySite(author: PublicCommentAuthor, site: SiteIdentity): boolean {
   return author.userId !== null && author.userId === site.ownerId;
 }
 
+/**
+ * Clip the comment body and report whether anything is actually hidden.
+ *
+ * The clip is unconditional — it lives in CSS and is on from the first paint —
+ * so a body that fits is simply never touched by a maximum it does not reach,
+ * and nothing on screen ever expands and then snaps shut. All this hook
+ * decides is whether to offer the control, and it decides that from the
+ * rendered box rather than from the text. Character counts cannot answer it:
+ * the same 535 characters of Chinese are 16 lines in the desktop column and 34
+ * on a phone, and Latin text of that length is a fraction of either. So it
+ * measures, and measures again whenever the box or the font metrics change.
+ *
+ * Measuring is skipped while expanded, where the clip is off and `scrollHeight`
+ * necessarily equals `clientHeight`: believing that reading would decide the
+ * body fits and withdraw the control that puts it back.
+ */
+function useFoldedBody(contentHtml: string) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body || expanded) return;
+    let live = true;
+    const measure = () => {
+      if (!live) return;
+      setOverflowing(body.scrollHeight > body.clientHeight);
+    };
+    measure();
+    // Web fonts land after first paint and change the line box under the clip.
+    void document.fonts?.ready.then(measure);
+    if (typeof ResizeObserver === "undefined") {
+      return () => {
+        live = false;
+      };
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(body);
+    return () => {
+      live = false;
+      observer.disconnect();
+    };
+  }, [contentHtml, expanded]);
+
+  return { bodyRef, expanded, overflowing, setExpanded };
+}
+
 export function CommentItem({
   comment,
   site,
@@ -420,6 +474,23 @@ export function CommentItem({
     author.username !== null && author.profileUrl !== null
       ? { profileUrl: author.profileUrl, username: author.username }
       : null;
+  const headerRef = useRef<HTMLElement>(null);
+  const restoreScrollRef = useRef(false);
+  const { bodyRef, expanded, overflowing, setExpanded } = useFoldedBody(
+    comment.contentHtml,
+  );
+  const bodyId = `comment-${comment.id}-body`;
+
+  // Collapsing pulls everything below it upward. If the comment's own top has
+  // already scrolled past, the page jumps and the reader loses the row they
+  // were reading; put it back where it was.
+  useLayoutEffect(() => {
+    if (!restoreScrollRef.current) return;
+    restoreScrollRef.current = false;
+    const header = headerRef.current;
+    if (!header || header.getBoundingClientRect().top >= 0) return;
+    header.scrollIntoView?.({ block: "nearest" });
+  }, [expanded]);
 
   return (
     <li
@@ -464,7 +535,7 @@ export function CommentItem({
             <span>已置顶</span>
           </p>
         ) : null}
-        <header className={styles.commentByline}>
+        <header className={styles.commentByline} ref={headerRef}>
           {account ? (
             <>
               {/*
@@ -513,12 +584,41 @@ export function CommentItem({
           </ExactTimeTooltip>
         </header>
         {comment.contentHtml ? (
-          <MarkdownContent
-            className={styles.commentMarkdown}
-            html={comment.contentHtml}
-            mentionUsername={site.username}
-          />
+          <div
+            className={`${styles.commentBody} ${expanded ? "" : styles.commentBodyClipped}`}
+            id={bodyId}
+            // A clipped link is still in the tab order — `overflow: hidden` only
+            // hides it. Opening the body on focus keeps the reader from tabbing
+            // into something they cannot see.
+            onFocusCapture={() => setExpanded(true)}
+            ref={bodyRef}
+          >
+            <MarkdownContent
+              className={styles.commentMarkdown}
+              html={comment.contentHtml}
+              mentionUsername={site.username}
+            />
+          </div>
         ) : null}
+        {overflowing ? (
+          <button
+            aria-controls={bodyId}
+            aria-expanded={expanded}
+            className={styles.commentFoldToggle}
+            onClick={() => {
+              restoreScrollRef.current = expanded;
+              setExpanded(!expanded);
+            }}
+            type="button"
+          >
+            {expanded ? "收起" : "展开全文"}
+          </button>
+        ) : null}
+        {/*
+         * Media and location stay whole. Folding is about a wall of text; a
+         * half-cropped photo grid only reads as broken, and a comment can be
+         * nothing but a location or a picture.
+         */}
         {comment.location ? <PostLocation location={comment.location} /> : null}
         <ImageGrid media={comment.media} />
         <footer className={styles.commentActions}>

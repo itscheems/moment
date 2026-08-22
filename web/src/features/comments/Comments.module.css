@@ -1028,6 +1028,67 @@
   background: transparent;
 }
 
+/*
+ * The body is clipped from the first paint and stays clipped until the reader
+ * asks otherwise, so a comment never expands and then snaps shut once the
+ * measurement lands. A body that fits simply never reaches this maximum.
+ *
+ * Ten lines of the body's own 1.25rem line box, and the number comes from
+ * measuring the real corpus in a browser at every width from 320 to 1440 rather
+ * than from guessing at the text.
+ *
+ * Those measurements leave a wide gap with nothing in it. The ordinary comments
+ * — a sentence, a five-bullet list, a small fenced code block — never exceed
+ * 133px, which is 6.7 lines, reached by the list once it reflows at 320px. The
+ * two long ones never drop below 263px, or 13.2 lines, which is the 535
+ * character one at its widest. Ten lines is 200px: the middle of that gap, with
+ * three lines of room on each side, so neither an unusually blocky short
+ * comment nor an unusually wide long one lands on the wrong side of it.
+ *
+ * Nothing here special-cases block elements, and nothing should: a code block
+ * really is that tall, and carving out exceptions by content shape would put
+ * back exactly the guesswork the measurement replaces. Counting characters
+ * cannot work at all here — the corpus is Chinese, where the 535-character
+ * comment is 16 lines in the 510px column and the same budget of Latin text is
+ * barely four.
+ */
+.commentBody {
+  grid-column: 2;
+}
+
+.commentBodyClipped {
+  position: relative;
+  max-block-size: calc(10 * 1.25rem);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 82%, transparent);
+}
+
+/*
+ * There is no comment detail route to escape to the way a post's 阅读全文 has
+ * one, so this control has to work in both directions.
+ */
+.commentFoldToggle {
+  grid-column: 2;
+  min-block-size: 1.75rem;
+  inline-size: fit-content;
+  display: flex;
+  align-items: center;
+  margin-block-start: 0.15rem;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+}
+
+.commentFoldToggle:hover,
+.commentFoldToggle:focus-visible {
+  text-decoration: underline;
+}
+
 .commentActions {
   grid-column: 2;
   min-block-size: var(--target-size);
@@ -1355,6 +1416,10 @@
 
   .commentItem {
     transition: none;
+  }
+
+  .commentBodyClipped {
+    mask-image: none;
   }
 
   .commentMediaComposer > div > div:first-child button:hover:not(:disabled),

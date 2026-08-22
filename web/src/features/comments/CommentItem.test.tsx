@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -10,9 +16,11 @@ import {
 } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { CommentItem } from "./CommentItem";
+import styles from "./Comments.module.css";
 
 const postId = "01K2ABCDEF0123456789ABCDE0";
 const rootId = "01K2ABCDEF0123456789ABCDE1";
+const replyId = "01K2ABCDEF0123456789ABCDE2";
 const ownerId = "11d003f31a23262ea0f6cbe9857981a1";
 const strangerId = "22e114g42b34373fb1g7dcfa968a92b2";
 
@@ -95,6 +103,10 @@ function comment(
  */
 const measured = new Map<string, { scroll: number; client: number }>();
 
+function measure(id: string, scroll: number, client = 200) {
+  measured.set(id, { scroll, client });
+}
+
 function stubLayout() {
   for (const property of ["scrollHeight", "clientHeight"] as const) {
     Object.defineProperty(HTMLElement.prototype, property, {
@@ -161,6 +173,12 @@ function renderItem(
       </ol>
     </NavigationProvider>,
   );
+}
+
+function bodyOf(commentId: string) {
+  const element = document.getElementById(`comment-${commentId}-body`);
+  if (!element) throw new Error(`no body for ${commentId}`);
+  return element;
 }
 
 beforeEach(() => {
@@ -237,5 +255,135 @@ describe("comment identity", () => {
     // preview card trigger, because both would show the owner's own material.
     expect(document.querySelector("img")).toBeNull();
     expect(screen.getByText("别")).toBeInTheDocument();
+  });
+});
+
+describe("long comment folding", () => {
+  it("clips every body and offers the control only where something is hidden", () => {
+    const long = comment(rootId, "很长的一段");
+    const short = comment(replyId, "短", { parentId: rootId });
+    measure(`comment-${rootId}-body`, 983);
+    measure(`comment-${replyId}-body`, 23, 23);
+    renderItem(long, [short]);
+
+    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyClipped);
+    expect(bodyOf(replyId)).toHaveClass(styles.commentBodyClipped);
+    expect(screen.getAllByRole("button", { name: "展开全文" })).toHaveLength(1);
+  });
+
+  it("wires the control to the body it controls and reverses cleanly", () => {
+    measure(`comment-${rootId}-body`, 983);
+    renderItem(comment(rootId, "很长的一段"));
+
+    const toggle = screen.getByRole("button", { name: "展开全文" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveAttribute("aria-controls", `comment-${rootId}-body`);
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle).toHaveTextContent("收起");
+    expect(bodyOf(rootId)).not.toHaveClass(styles.commentBodyClipped);
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveTextContent("展开全文");
+    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyClipped);
+  });
+
+  it("opens the body when focus lands on a link the clip is hiding", () => {
+    measure(`comment-${rootId}-body`, 983);
+    renderItem(
+      comment(rootId, "", {
+        contentMd: "见 [文档](https://example.com)",
+        contentHtml: '<p>见 <a href="https://example.com">文档</a></p>\n',
+      }),
+    );
+
+    const hidden = screen.getByRole("link", { name: "文档" });
+    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyClipped);
+    fireEvent.focus(hidden);
+    expect(bodyOf(rootId)).not.toHaveClass(styles.commentBodyClipped);
+  });
+
+  it("folds the body only, leaving media and location whole", () => {
+    measure(`comment-${rootId}-body`, 983);
+    renderItem(
+      comment(rootId, "很长的一段", {
+        location: { name: "陆悦天地", displayName: "陆悦天地" },
+        media: [
+          {
+            mediaId: "01M08A31N0WNK66SC39ZAQFK6P",
+            position: 0,
+            altText: null,
+            mimeType: "image/png",
+            width: 800,
+            height: 600,
+          },
+        ],
+      }),
+    );
+
+    const body = bodyOf(rootId);
+    const location = screen.getByLabelText("地点：陆悦天地");
+    expect(body.contains(location)).toBe(false);
+    const image = document.querySelector("img");
+    expect(image).not.toBeNull();
+    expect(body.contains(image)).toBe(false);
+  });
+
+  it("re-measures when the box changes instead of trusting the first reading", () => {
+    measure(`comment-${rootId}-body`, 100);
+    renderItem(comment(rootId, "刚好放得下"));
+    expect(screen.queryByRole("button", { name: "展开全文" })).toBeNull();
+
+    // The same comment in a narrower column: whether it folds is a property of
+    // the rendered box, not of the text.
+    measure(`comment-${rootId}-body`, 320);
+    act(() => FakeResizeObserver.notify());
+    expect(
+      screen.getByRole("button", { name: "展开全文" }),
+    ).toBeInTheDocument();
+
+    measure(`comment-${rootId}-body`, 100);
+    act(() => FakeResizeObserver.notify());
+    expect(screen.queryByRole("button", { name: "展开全文" })).toBeNull();
+  });
+
+  it("keeps the reader in place when collapsing pulls the page up", () => {
+    measure(`comment-${rootId}-body`, 983);
+    renderItem(comment(rootId, "很长的一段"));
+    const toggle = screen.getByRole("button", { name: "展开全文" });
+    fireEvent.click(toggle);
+
+    const header = document.querySelector("header");
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(header, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    Object.defineProperty(header, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ top: -420 }) as DOMRect,
+    });
+
+    fireEvent.click(toggle);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("leaves a comment alone when collapsing costs the reader nothing", () => {
+    measure(`comment-${rootId}-body`, 983);
+    renderItem(comment(rootId, "很长的一段"));
+    const toggle = screen.getByRole("button", { name: "展开全文" });
+    fireEvent.click(toggle);
+
+    const header = document.querySelector("header");
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(header, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    fireEvent.click(toggle);
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });
