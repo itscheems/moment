@@ -58,11 +58,25 @@ function paragraphText(text: string) {
     element?.tagName === "P" && element.textContent === text;
 }
 
-function install(handler: (url: string) => Response | Promise<Response>) {
+function install(
+  handler: (url: string) => Response | Promise<Response>,
+  { signedIn = false }: { signedIn?: boolean } = {},
+) {
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url === "/api/v1/site") return json(site);
     if (url === "/api/v1/owner/status") {
+      if (signedIn) {
+        return json({
+          data: {
+            initialized: true,
+            password_enabled: false,
+            session_epoch: 1,
+            initialized_at: "2026-08-01T00:00:00Z",
+          },
+          meta: { request_id: "req_owner" },
+        });
+      }
       return json(
         {
           error: {
@@ -158,16 +172,28 @@ describe("search and archive memory layer", () => {
 
   it("opens the reply dialog from a search result without leaving search", async () => {
     window.history.replaceState({}, "", "/search?q=%E9%9B%A8");
-    install((url) => {
-      if (!url.startsWith("/api/v1/search?")) return json({}, 404);
-      return json({
-        data: {
-          items: [{ ...first, snippet: "雨" }],
-          year_counts: [{ year: 2026, count: 1 }],
-        },
-        meta: { next_cursor: null, request_id: "req_search" },
-      });
-    });
+    // Replying needs an account, so the composer only appears for a signed-in
+    // browser; without this the dialog would offer sign-in instead.
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-reply",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    install(
+      (url) => {
+        if (!url.startsWith("/api/v1/search?")) return json({}, 404);
+        return json({
+          data: {
+            items: [{ ...first, snippet: "雨" }],
+            year_counts: [{ year: 2026, count: 1 }],
+          },
+          meta: { next_cursor: null, request_id: "req_search" },
+        });
+      },
+      { signedIn: true },
+    );
     render(<App />);
 
     await screen.findByText(paragraphText("旧城雨落在街口"));

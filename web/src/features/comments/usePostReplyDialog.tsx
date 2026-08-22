@@ -29,7 +29,6 @@ export function usePostReplyDialog({
   const [open, setOpen] = useState(false);
   const [post, setPost] = useState<PublicPost | null>(null);
   const [content, setContent] = useState("");
-  const [guestName, setGuestName] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const openReply = useCallback(
@@ -61,10 +60,8 @@ export function usePostReplyDialog({
         api={api}
         commentsEnabled={site.commentsEnabled}
         content={content}
-        guestName={guestName}
         onContentChange={setContent}
         onCreated={created}
-        onGuestNameChange={setGuestName}
         onOpenChange={setOpen}
         open={open}
         post={post}

@@ -201,21 +201,28 @@ describe("profile page", () => {
 
   it("opens the reply dialog from a profile Moment and restores the trigger", async () => {
     const item = post(otherId, "从个人资料直接回复");
+    // Replying needs an account, so the composer only appears for a signed-in
+    // browser; without this the dialog would offer sign-in instead.
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-reply",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) =>
         String(input) === "/api/v1/owner/status"
-          ? json(
-              {
-                error: {
-                  code: "UNAUTHORIZED",
-                  message: "guest",
-                  details: {},
-                  request_id: "req_owner",
-                },
+          ? json({
+              data: {
+                initialized: true,
+                password_enabled: false,
+                session_epoch: 1,
+                initialized_at: "2026-08-01T00:00:00Z",
               },
-              401,
-            )
+              meta: { request_id: "req_owner" },
+            })
           : json({}, 404),
       ),
     );

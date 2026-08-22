@@ -56,7 +56,6 @@ import { activeMention, type ActiveMention } from "../owner/mentions";
 import styles from "./Comments.module.css";
 import ownerStyles from "../owner/Owner.module.css";
 
-const MAX_AUTHOR_NAME = 40;
 const MAX_COMMENT = 2_000;
 
 function CommentProgress({ count }: { count: number }) {
@@ -83,8 +82,6 @@ function CommentProgress({ count }: { count: number }) {
     </span>
   );
 }
-
-type CommentMode = "guest" | "owner";
 
 interface ReplyDraft {
   rootId: string;
@@ -222,7 +219,7 @@ function messageFor(error: unknown, replying: boolean): string {
     case "EXTERNAL_IMAGE_NOT_ALLOWED":
       return "回复不能引用 Markdown 图片；普通链接仍然可以使用。";
     case "INVALID_ARGUMENT":
-      return "请检查显示名和回复内容后重试。";
+      return "请检查回复内容后重试。";
     case "COMMENT_NOT_FOUND":
       return replying
         ? "上级回复已被删除。这段文字仍保留，可以改为直接回复 Moment。"
@@ -238,6 +235,27 @@ function messageFor(error: unknown, replying: boolean): string {
     default:
       return "回复没有发出，文字已保留。可以安全重试。";
   }
+}
+
+/**
+ * Whether this browser may still submit a comment.
+ *
+ * `expired` and a leftover `session` both count as yes: the composer has to
+ * stay mounted in those states so `Reauthenticate` can hand the draft back to
+ * the same textarea instead of dropping what the writer already typed. In
+ * every other state the composer is not rendered at all.
+ *
+ * Note that `OwnerState`'s `"guest"` means "no owner session in this browser".
+ * It is a session state and it survives the retirement of guest commenting —
+ * it has nothing to do with `PublicComment.authorKind === "guest"`.
+ */
+function useCanComment(): boolean {
+  const owner = useOwner();
+  return (
+    owner.state === "owner" ||
+    owner.state === "expired" ||
+    owner.session !== null
+  );
 }
 
 function Reauthenticate({
@@ -305,14 +323,11 @@ function CommentForm({
   api,
   site,
   postId,
-  mode,
   parentId,
   replyTargetId,
   replyTargetAuthor,
   content,
   setContent,
-  guestName,
-  setGuestName,
   commentsEnabled,
   onCreated,
   onClosed,
@@ -326,14 +341,11 @@ function CommentForm({
   api: PublicApi;
   site: SiteIdentity;
   postId: string;
-  mode: CommentMode;
   parentId: string | null;
   replyTargetId?: string;
   replyTargetAuthor?: string;
   content: string;
   setContent: (value: string) => void;
-  guestName: string;
-  setGuestName: (value: string) => void;
   commentsEnabled: boolean;
   onCreated: (comment: PublicComment) => void;
   onClosed: () => void;
@@ -348,9 +360,6 @@ function CommentForm({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authExpired, setAuthExpired] = useState(false);
-  const [website, setWebsite] = useState("");
-  const [retryUntil, setRetryUntil] = useState(0);
-  const [remaining, setRemaining] = useState(0);
   const [activated, setActivated] = useState(
     parentId !== null || initialExpanded,
   );
@@ -370,25 +379,17 @@ function CommentForm({
   const localTextareaRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = suppliedTextareaRef ?? localTextareaRef;
   const contentCount = useMemo(() => Array.from(content).length, [content]);
-  const nameCount = useMemo(
-    () => Array.from(guestName.trim()).length,
-    [guestName],
-  );
-  const validName =
-    mode === "owner" || (nameCount > 0 && nameCount <= MAX_AUTHOR_NAME);
   const validContent =
     (content.trim().length > 0 || commentLocation !== null) &&
     contentCount <= MAX_COMMENT;
   const mediaError = mediaValidation(mediaItems, 4);
-  const rateLimited = remaining > 0;
   const formId =
     suppliedFormId ??
     (parentId ? `reply-${replyTargetId ?? parentId}` : "top-level-comment");
   const inlineTopLevel =
     parentId === null && topLevelTargetUsername !== undefined;
   const displayReauth =
-    mode === "owner" &&
-    (authExpired || (owner.state === "expired" && !owner.session));
+    authExpired || (owner.state === "expired" && !owner.session);
   const displayedError =
     error ??
     (displayReauth
@@ -402,15 +403,12 @@ function CommentForm({
     commentLocation !== null ||
     pending ||
     displayedError !== null ||
-    rateLimited ||
     !commentsEnabled;
   const layoutRevision = [
-    mode,
     expanded,
     mediaItems.length,
     commentLocation?.name ?? "",
     displayedError !== null,
-    rateLimited,
     displayReauth,
     commentsEnabled,
     mentionItems.length,
@@ -460,36 +458,28 @@ function CommentForm({
           ),
         );
       };
-      const uploaded =
-        mode === "owner"
-          ? await owner.api.uploadMedia(
-              owner.session!.csrfToken,
-              current.file,
-              progress,
-              controller.signal,
-              (processingPosterUrl) => {
-                if (
-                  !mountedRef.current ||
-                  mediaUploadsRef.current.get(key) !== controller
-                ) {
-                  URL.revokeObjectURL(processingPosterUrl);
-                  return;
-                }
-                replaceMedia(
-                  mediaItemsRef.current.map((item) =>
-                    item.key === key && item.state === "uploading"
-                      ? { ...item, processingPosterUrl }
-                      : item,
-                  ),
-                );
-              },
-            )
-          : await api.uploadCommentMedia(
-              postId,
-              current.file,
-              progress,
-              controller.signal,
-            );
+      const uploaded = await owner.api.uploadMedia(
+        owner.session!.csrfToken,
+        current.file,
+        progress,
+        controller.signal,
+        (processingPosterUrl) => {
+          if (
+            !mountedRef.current ||
+            mediaUploadsRef.current.get(key) !== controller
+          ) {
+            URL.revokeObjectURL(processingPosterUrl);
+            return;
+          }
+          replaceMedia(
+            mediaItemsRef.current.map((item) =>
+              item.key === key && item.state === "uploading"
+                ? { ...item, processingPosterUrl }
+                : item,
+            ),
+          );
+        },
+      );
       if (
         !mountedRef.current ||
         mediaUploadsRef.current.get(key) !== controller
@@ -521,18 +511,6 @@ function CommentForm({
         mediaUploadsRef.current.delete(key);
     }
   };
-
-  useEffect(() => {
-    if (!retryUntil) {
-      setRemaining(0);
-      return;
-    }
-    const update = () =>
-      setRemaining(Math.max(0, Math.ceil((retryUntil - Date.now()) / 1_000)));
-    update();
-    const timer = window.setInterval(update, 250);
-    return () => window.clearInterval(timer);
-  }, [retryUntil]);
 
   useEffect(() => {
     if (!authExpired || !owner.session) return;
@@ -584,25 +562,20 @@ function CommentForm({
     event.preventDefault();
     if (
       pendingRef.current ||
-      !validName ||
       !validContent ||
       !commentsEnabled ||
-      rateLimited ||
       mediaError !== null
     ) {
       return;
     }
-    if (mode === "owner" && !owner.session) {
+    if (!owner.session) {
       setAuthExpired(true);
       setError("当前写入会话已失效。文字已保留，刷新身份后可以重试。");
       return;
     }
-    const authorName = guestName.trim();
     const signature = JSON.stringify([
-      mode,
       postId,
       parentId,
-      mode === "guest" ? authorName : null,
       content,
       mediaItems.map((item) => [
         item.key,
@@ -611,7 +584,6 @@ function CommentForm({
         item.mediaId,
       ]),
       commentLocation,
-      mode === "guest" ? website : null,
     ]);
     if (signatureRef.current !== signature) {
       signatureRef.current = signature;
@@ -624,50 +596,27 @@ function CommentForm({
       for (const item of [...mediaItemsRef.current]) {
         if (!item.mediaId) await uploadOne(item.key);
       }
-      const usages = mediaInput(mediaItemsRef.current);
-      const result =
-        mode === "owner"
-          ? await owner.api.createComment(
-              owner.session!.csrfToken,
-              postId,
-              content,
-              parentId,
-              idempotencyRef.current,
-              usages,
-              commentLocation,
-            )
-          : await api.createGuestComment(
-              postId,
-              {
-                authorName,
-                contentMd: content,
-                parentId,
-                website,
-                media: usages,
-              },
-              idempotencyRef.current,
-            );
+      const result = await owner.api.createComment(
+        owner.session!.csrfToken,
+        postId,
+        content,
+        parentId,
+        idempotencyRef.current,
+        mediaInput(mediaItemsRef.current),
+        commentLocation,
+      );
       onCreated(result.comment);
       setContent("");
-      setWebsite("");
       signatureRef.current = "";
       idempotencyRef.current = "";
-      setRetryUntil(0);
       replaceMedia([]);
       setCommentLocation(null);
       setActivated(parentId !== null || initialExpanded);
     } catch (nextError) {
-      if (mode === "owner" && owner.expireIfInvalidSession(nextError)) {
+      if (owner.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
         setError("当前写入会话已失效。文字已保留，刷新身份后可以重试。");
       } else {
-        if (
-          nextError instanceof PublicApiError &&
-          nextError.code === "RATE_LIMITED" &&
-          nextError.retryAfterSeconds
-        ) {
-          setRetryUntil(Date.now() + nextError.retryAfterSeconds * 1_000);
-        }
         if (
           nextError instanceof PublicApiError &&
           nextError.code === "COMMENTS_DISABLED"
@@ -697,11 +646,7 @@ function CommentForm({
         ref={layoutContentRef}
       >
         <span aria-hidden="true" className={styles.composerAvatar}>
-          {mode === "owner" ? (
-            <SiteAvatar site={site} />
-          ) : (
-            (Array.from(guestName.trim())[0]?.toLocaleUpperCase() ?? "?")
-          )}
+          <SiteAvatar site={site} />
         </span>
         <form
           aria-label={
@@ -719,9 +664,7 @@ function CommentForm({
                   : "写下回复"}
               </h3>
             </div>
-            <span className={styles.srOnly}>
-              {mode === "owner" ? "所有者" : "访客"}
-            </span>
+            <span className={styles.srOnly}>所有者</span>
           </header>
           {(parentId && replyTargetAuthor) ||
           (!parentId && expanded && topLevelTargetUsername) ? (
@@ -731,27 +674,6 @@ function CommentForm({
                 @{parentId ? replyTargetAuthor : topLevelTargetUsername}
               </span>
             </p>
-          ) : null}
-          {mode === "guest" ? (
-            <div className={styles.nameField}>
-              <label htmlFor={`${formId}-name`}>显示名</label>
-              <input
-                autoComplete="name"
-                disabled={pending}
-                id={`${formId}-name`}
-                maxLength={MAX_AUTHOR_NAME}
-                onChange={(event) => {
-                  setGuestName(event.target.value);
-                  setError(null);
-                }}
-                placeholder="怎么称呼你"
-                required
-                value={guestName}
-              />
-              <span aria-label={`显示名 ${nameCount} / ${MAX_AUTHOR_NAME} 字`}>
-                {nameCount}/{MAX_AUTHOR_NAME}
-              </span>
-            </div>
           ) : null}
           <label className={styles.srOnly} htmlFor={`${formId}-content`}>
             回复内容
@@ -804,10 +726,8 @@ function CommentForm({
                   event.key === "Enter" &&
                   (event.metaKey || event.ctrlKey) &&
                   !event.nativeEvent.isComposing &&
-                  validName &&
                   validContent &&
                   commentsEnabled &&
-                  !rateLimited &&
                   mediaError === null
                 ) {
                   event.preventDefault();
@@ -835,16 +755,6 @@ function CommentForm({
             active={mentionActive}
             items={mentionItems}
             onPick={pickMention}
-          />
-          <input
-            aria-hidden="true"
-            autoComplete="off"
-            className={styles.honeypot}
-            name="website"
-            onChange={(event) => setWebsite(event.target.value)}
-            tabIndex={-1}
-            type="text"
-            value={website}
           />
           <div className={styles.formMeta} id={`${formId}-guidance`}>
             <span className={styles.srOnly}>
@@ -897,21 +807,15 @@ function CommentForm({
                     data-pending={pending ? "true" : undefined}
                     disabled={
                       pending ||
-                      !validName ||
                       !validContent ||
                       !commentsEnabled ||
-                      rateLimited ||
-                      (mode === "owner" && !owner.session) ||
+                      !owner.session ||
                       mediaError !== null
                     }
                     type="submit"
                   >
                     <span aria-hidden="true">
-                      {pending
-                        ? "正在发表…"
-                        : rateLimited
-                          ? `${remaining} 秒后重试`
-                          : "回复"}
+                      {pending ? "正在发表…" : "回复"}
                     </span>
                   </button>
                 </div>
@@ -925,12 +829,7 @@ function CommentForm({
             toolbarAction={
               <LocationPicker
                 api={owner.api}
-                disabled={
-                  pending ||
-                  !commentsEnabled ||
-                  mode !== "owner" ||
-                  !owner.session
-                }
+                disabled={pending || !commentsEnabled || !owner.session}
                 onChange={(nextLocation) => {
                   setCommentLocation(nextLocation);
                   setActivated(true);
@@ -1000,12 +899,6 @@ function CommentForm({
                 </button>
               ) : null}
             </div>
-          ) : null}
-          {rateLimited ? (
-            <p className={styles.rateNotice} role="status">
-              发表得有点快，请在 {remaining}{" "}
-              秒后重试。文字和本次重试凭据都已保留。
-            </p>
           ) : null}
           {!commentsEnabled ? (
             <p className={styles.closedInline} role="status">
@@ -1395,6 +1288,11 @@ function CommentItem({
 }) {
   const created = formatMomentDate(comment.createdAt, site.timezone);
   const root = comment.parentId === null;
+  // The non-owner branch below is the legacy read-only `guest` kind: rows that
+  // predate the account requirement, or that an old archive brought back. They
+  // carry only a free-text name, so they render as plain text — no `@username`,
+  // no profile link, no preview card, no badge. Keep it: dropping it would
+  // strand comments the owner still has in their own backups.
   const authorName =
     comment.authorKind === "owner"
       ? site.displayName.trim() || site.title.trim() || comment.authorName
@@ -1493,11 +1391,9 @@ export function PostReplyDialog({
   api,
   commentsEnabled,
   content,
-  guestName,
   onClosed,
   onContentChange,
   onCreated,
-  onGuestNameChange,
   onOpenChange,
   open,
   post,
@@ -1507,24 +1403,18 @@ export function PostReplyDialog({
   api: PublicApi;
   commentsEnabled: boolean;
   content: string;
-  guestName: string;
   onClosed?: () => void;
   onContentChange: (value: string) => void;
   onCreated: (comment: PublicComment) => void;
-  onGuestNameChange: (value: string) => void;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   post: PublicPost;
   site: SiteIdentity;
   triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
-  const owner = useOwner();
+  const canCompose = useCanComment();
   const [closedByServer, setClosedByServer] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const mode: CommentMode =
-    owner.state === "owner" || owner.state === "expired" || owner.session
-      ? "owner"
-      : "guest";
   const canComment = commentsEnabled && !closedByServer;
 
   useDocumentScrollLock(open);
@@ -1547,7 +1437,7 @@ export function PostReplyDialog({
           <Dialog.Popup
             className={styles.replyDialogPopup}
             finalFocus={() => triggerRef?.current ?? true}
-            initialFocus={initialFocus}
+            initialFocus={canCompose ? initialFocus : undefined}
           >
             <header className={styles.replyDialogHeader}>
               <Dialog.Close
@@ -1582,29 +1472,28 @@ export function PostReplyDialog({
                 </p>
               </div>
             </article>
-            <CommentForm
-              api={api}
-              commentsEnabled={canComment}
-              content={content}
-              formId="dialog-top-level-comment"
-              guestName={guestName}
-              initialExpanded
-              mode={mode}
-              onClosed={() => {
-                setClosedByServer(true);
-                onClosed?.();
-              }}
-              onCreated={(comment) => {
-                onCreated(comment);
-                onOpenChange(false);
-              }}
-              parentId={null}
-              postId={post.id}
-              setContent={onContentChange}
-              setGuestName={onGuestNameChange}
-              site={site}
-              textareaRef={textareaRef}
-            />
+            {canCompose ? (
+              <CommentForm
+                api={api}
+                commentsEnabled={canComment}
+                content={content}
+                formId="dialog-top-level-comment"
+                initialExpanded
+                onClosed={() => {
+                  setClosedByServer(true);
+                  onClosed?.();
+                }}
+                onCreated={(comment) => {
+                  onCreated(comment);
+                  onOpenChange(false);
+                }}
+                parentId={null}
+                postId={post.id}
+                setContent={onContentChange}
+                site={site}
+                textareaRef={textareaRef}
+              />
+            ) : null}
           </Dialog.Popup>
         </Dialog.Viewport>
       </Dialog.Portal>
@@ -1636,7 +1525,6 @@ export function CommentThread({
   const [pinnedCommentId, setPinnedCommentId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
-  const [guestName, setGuestName] = useState("");
   const [topContent, setTopContent] = useState("");
   const [dialogContent, setDialogContent] = useState("");
   const [reply, setReply] = useState<ReplyDraft | null>(null);
@@ -1645,10 +1533,7 @@ export function CommentThread({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusCommentRef = useRef<string | null>(null);
   const commentsEnabled = site.commentsEnabled && !closedByServer;
-  const mode: CommentMode =
-    owner.state === "owner" || owner.state === "expired" || owner.session
-      ? "owner"
-      : "guest";
+  const canCompose = useCanComment();
 
   const load = useCallback(() => setAttempt((value) => value + 1), []);
 
@@ -1758,11 +1643,9 @@ export function CommentThread({
           api={api}
           commentsEnabled={commentsEnabled}
           content={dialogContent}
-          guestName={guestName}
           onClosed={() => setClosedByServer(true)}
           onContentChange={setDialogContent}
           onCreated={created}
-          onGuestNameChange={setGuestName}
           onOpenChange={(open) => onReplyDialogOpenChange?.(open)}
           open={replyDialogOpen}
           post={post}
@@ -1800,23 +1683,20 @@ export function CommentThread({
               <strong>回复已关闭</strong>
               <span>过往回复继续公开可读，现在不能发表新内容。</span>
             </div>
-          ) : (
+          ) : canCompose ? (
             <CommentForm
               api={api}
               commentsEnabled={commentsEnabled}
               content={topContent}
-              guestName={guestName}
-              mode={mode}
               onClosed={() => setClosedByServer(true)}
               onCreated={created}
               parentId={null}
               postId={postId}
               setContent={setTopContent}
-              setGuestName={setGuestName}
               site={site}
               topLevelTargetUsername={site.username}
             />
-          )}
+          ) : null}
 
           {items.length > 0 ? (
             <ol className={styles.commentList}>
@@ -1853,10 +1733,16 @@ export function CommentThread({
                     }}
                     owner={owner.state === "owner" || owner.state === "expired"}
                     pinned={comment.id === pinnedCommentId}
+                    // A null root is the existing "there is nothing to reply
+                    // to here" signal, and it is the right one for a reader who
+                    // cannot compose: a reply button that can only open a
+                    // composer they will never see is a dead end.
                     replyRoot={
-                      comment.parentId === null
-                        ? comment
-                        : (rootsById.get(comment.parentId) ?? null)
+                      !canCompose
+                        ? null
+                        : comment.parentId === null
+                          ? comment
+                          : (rootsById.get(comment.parentId) ?? null)
                     }
                     replyCount={replyCounts.get(comment.id) ?? 0}
                     site={site}
@@ -1867,8 +1753,6 @@ export function CommentThread({
                         api={api}
                         commentsEnabled={commentsEnabled}
                         content={reply.content}
-                        guestName={guestName}
-                        mode={mode}
                         onCancel={() => setReply(null)}
                         onClosed={() => setClosedByServer(true)}
                         onCreated={created}
@@ -1890,7 +1774,6 @@ export function CommentThread({
                             current ? { ...current, content } : current,
                           )
                         }
-                        setGuestName={setGuestName}
                         site={site}
                       />
                     </li>

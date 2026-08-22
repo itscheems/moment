@@ -773,66 +773,39 @@ describe("public API client", () => {
     });
   });
 
-  it("validates the canonical flat thread and sends the real guest form contract", async () => {
-    const fetcher = vi.fn(
-      async (_input: RequestInfo | URL, init?: RequestInit) => {
-        if (init?.method === "POST") {
-          return json(
-            {
-              data: {
-                ...replyComment,
-                author_kind: "guest",
-                author_name: "访客",
-              },
-              meta: { replayed: false, request_id: "req_create" },
-            },
-            201,
-          );
-        }
-        return json({
+  it("validates the canonical flat thread and still reads legacy guest rows", async () => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
           data: {
             items: [rootComment, replyComment],
             pinned_comment_id: rootComment.id,
           },
           meta: { request_id: "req_comments" },
-        });
-      },
+        }),
+      ) as typeof fetch,
     );
-    const api = new PublicApi(fetcher as typeof fetch);
 
+    // rootComment is author_kind "guest": nothing writes that any more, but an
+    // archive taken before accounts were required will still deliver it.
     await expect(api.comments(post.id)).resolves.toMatchObject({
       pinnedCommentId: rootComment.id,
       items: [
-        { id: rootComment.id, depth: 0, parentId: null },
-        { id: replyComment.id, depth: 1, parentId: rootComment.id },
+        {
+          id: rootComment.id,
+          depth: 0,
+          parentId: null,
+          authorKind: "guest",
+          authorName: "访客",
+        },
+        {
+          id: replyComment.id,
+          depth: 1,
+          parentId: rootComment.id,
+          authorKind: "owner",
+        },
       ],
     });
-    await expect(
-      api.createGuestComment(
-        post.id,
-        {
-          authorName: "访客",
-          contentMd: "一级回复",
-          parentId: rootComment.id,
-        },
-        "web-comment-retry",
-      ),
-    ).resolves.toMatchObject({
-      comment: { id: replyComment.id },
-      replayed: false,
-    });
-
-    const mutation = fetcher.mock.calls[1][1] as RequestInit;
-    expect(JSON.parse(String(mutation.body))).toEqual({
-      author_name: "访客",
-      content_md: "一级回复",
-      parent_id: rootComment.id,
-      website: "",
-      media: [],
-    });
-    expect(new Headers(mutation.headers).get("Idempotency-Key")).toBe(
-      "web-comment-retry",
-    );
   });
 
   it("rejects a pinned reply instead of a top-level comment", async () => {
@@ -990,13 +963,7 @@ describe("public API client", () => {
     const valid = new PublicApi(
       vi.fn(async () => limited("7", 7)) as typeof fetch,
     );
-    await expect(
-      valid.createGuestComment(
-        post.id,
-        { authorName: "访客", contentMd: "回应", parentId: null },
-        "web-comment-rate",
-      ),
-    ).rejects.toMatchObject({
+    await expect(valid.comments(post.id)).rejects.toMatchObject({
       code: "RATE_LIMITED",
       retryAfterSeconds: 7,
     });
@@ -1004,34 +971,9 @@ describe("public API client", () => {
     const malformed = new PublicApi(
       vi.fn(async () => limited("7", 8)) as typeof fetch,
     );
-    await expect(
-      malformed.createGuestComment(
-        post.id,
-        { authorName: "访客", contentMd: "回应", parentId: null },
-        "web-comment-rate",
-      ),
-    ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
-  });
-
-  it("requires create status and replay metadata to agree", async () => {
-    const api = new PublicApi(
-      vi.fn(async () =>
-        json(
-          {
-            data: rootComment,
-            meta: { replayed: true, request_id: "req_create" },
-          },
-          201,
-        ),
-      ) as typeof fetch,
-    );
-    await expect(
-      api.createGuestComment(
-        post.id,
-        { authorName: "访客", contentMd: "回应", parentId: null },
-        "web-comment-replay",
-      ),
-    ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
+    await expect(malformed.comments(post.id)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
   });
 
   it.each([
@@ -1081,66 +1023,4 @@ describe("public API client", () => {
       });
     },
   );
-
-  it.each([
-    { status: 200, replayed: false },
-    { status: 201, replayed: true },
-    { status: 202, replayed: false },
-  ])(
-    "rejects comment create HTTP $status with replayed=$replayed",
-    async ({ status, replayed }) => {
-      const api = new PublicApi(
-        vi.fn(async () =>
-          json(
-            {
-              data: rootComment,
-              meta: { replayed, request_id: "req_create" },
-            },
-            status,
-          ),
-        ) as typeof fetch,
-      );
-      await expect(
-        api.createGuestComment(
-          post.id,
-          { authorName: "访客", contentMd: "回应", parentId: null },
-          "web-comment-status",
-        ),
-      ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
-    },
-  );
-
-  it.each([
-    {
-      name: "forged owner identity",
-      comment: { ...rootComment, author_kind: "owner", author_name: "Owner" },
-    },
-    {
-      name: "different parent",
-      comment: { ...rootComment, parent_id: replyComment.id, depth: 1 },
-    },
-    {
-      name: "different normalized guest name",
-      comment: { ...rootComment, author_name: "另一个人" },
-    },
-  ])("rejects a guest create response with $name", async ({ comment }) => {
-    const api = new PublicApi(
-      vi.fn(async () =>
-        json(
-          {
-            data: comment,
-            meta: { replayed: false, request_id: "req_create" },
-          },
-          201,
-        ),
-      ) as typeof fetch,
-    );
-    await expect(
-      api.createGuestComment(
-        post.id,
-        { authorName: "访客", contentMd: "回应", parentId: null },
-        "web-comment-identity",
-      ),
-    ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
-  });
 });

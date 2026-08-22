@@ -133,7 +133,6 @@
 }
 
 .commentCollapsed .commentComposerHeader,
-.commentCollapsed .nameField,
 .commentCollapsed .formMeta,
 .commentCollapsed .commentForm > footer,
 .commentCollapsed .commentForm > section {
@@ -286,27 +285,6 @@
   color: var(--accent);
 }
 
-.nameField {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-2);
-  margin-block: var(--space-1) var(--space-2);
-  animation: comment-reveal-fade var(--motion-content) var(--ease-out);
-}
-
-.inlineTopLevelForm .nameField {
-  animation: none;
-}
-
-.nameField label {
-  grid-column: 1 / -1;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.nameField input,
 .reauth input {
   min-block-size: 2.5rem;
   min-inline-size: 0;
@@ -317,12 +295,10 @@
   background: var(--surface);
 }
 
-.nameField input:focus,
 .reauth input:focus {
   border-color: var(--accent);
 }
 
-.nameField > span,
 .formMeta {
   color: var(--text-secondary);
   font-size: var(--text-xs);
@@ -354,8 +330,7 @@
   white-space: pre-wrap;
 }
 
-.commentForm textarea::placeholder,
-.nameField input::placeholder {
+.commentForm textarea::placeholder {
   color: var(--text-tertiary);
 }
 
@@ -562,16 +537,11 @@
   cursor: pointer;
 }
 
-.rateNotice,
 .closedInline {
   margin: var(--space-3) 0 0;
   color: var(--text-secondary);
   font-size: var(--text-sm);
   line-height: 1.5;
-}
-
-.rateNotice {
-  color: var(--accent);
 }
 
 .commentForm > footer {
@@ -689,16 +659,6 @@
 .dangerAction[data-pending="true"],
 .reauth button[data-pending="true"] {
   cursor: progress;
-}
-
-.honeypot {
-  position: fixed;
-  inset-inline-start: -10000px;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
 }
 
 .reauth {
@@ -1341,7 +1301,6 @@
   .replyDialogPopup,
   .commentLayoutFrame,
   .replyTarget,
-  .nameField,
   .commentMediaComposer {
     animation: none;
     transition: none;

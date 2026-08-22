@@ -106,12 +106,6 @@ export interface PublicMediaUsage {
   height: number;
 }
 
-export interface MediaUsageInput {
-  mediaId: string;
-  position: number;
-  altText: string | null;
-}
-
 export interface TimelinePage {
   items: PublicPost[];
   nextCursor: string | null;
@@ -165,6 +159,14 @@ export interface PublicComment {
   postId: string;
   parentId: string | null;
   depth: 0 | 1;
+  /**
+   * `"guest"` is a legacy read-only kind. Nothing produces it any more — the
+   * anonymous write path is gone — but rows carrying it still arrive from
+   * archives exported before commenting required an account, and importing
+   * those archives has to keep working for a product whose promise is that the
+   * data is yours. So the accept set stays wider than the produce set, here and
+   * in every renderer downstream.
+   */
   authorKind: "owner" | "guest";
   authorName: string;
   contentMd: string;
@@ -177,14 +179,6 @@ export interface PublicComment {
 export interface CommentThread {
   items: PublicComment[];
   pinnedCommentId: string | null;
-}
-
-export interface CreateGuestCommentInput {
-  authorName: string;
-  contentMd: string;
-  parentId: string | null;
-  website?: string;
-  media?: MediaUsageInput[];
 }
 
 export interface UploadedMedia {
@@ -537,6 +531,8 @@ export function parseComment(
     throw invalidResponse("comment depth does not match parent_id");
   }
   const authorKind = stringField(value, "author_kind");
+  // Narrowing this to `"owner"` would make every archive taken before accounts
+  // were required undecodable. See PublicComment.authorKind.
   if (authorKind !== "owner" && authorKind !== "guest") {
     throw invalidResponse("comment author_kind is invalid");
   }
@@ -1481,55 +1477,6 @@ export class PublicApi {
     }
     return parseCommentThread(data, postId);
   }
-
-  async createGuestComment(
-    postId: string,
-    input: CreateGuestCommentInput,
-    idempotencyKey: string,
-  ): Promise<CreatedComment> {
-    const response = await this.fetcher(
-      `/api/v1/posts/${encodeURIComponent(postId)}/comments`,
-      {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          "Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify({
-          author_name: input.authorName,
-          content_md: input.contentMd,
-          parent_id: input.parentId,
-          website: input.website ?? "",
-          media: (input.media ?? []).map((usage, position) => ({
-            media_id: usage.mediaId,
-            position,
-            alt_text: usage.altText,
-          })),
-        }),
-      },
-    );
-    return decodeCreatedComment(response, postId, {
-      parentId: input.parentId,
-      authorKind: "guest",
-      authorName: input.authorName.trim(),
-    });
-  }
-
-  async uploadCommentMedia(
-    postId: string,
-    file: File,
-    onProgress: (percent: number) => void = () => undefined,
-    signal?: AbortSignal,
-  ): Promise<UploadedMedia> {
-    return uploadMediaXHR(
-      `/api/v1/posts/${encodeURIComponent(postId)}/comment-media`,
-      file,
-      onProgress,
-      signal,
-    );
-  }
 }
 
 export function uploadMediaXHR(
@@ -1746,7 +1693,6 @@ export async function decodeCreatedComment(
   expected?: {
     parentId: string | null;
     authorKind: PublicComment["authorKind"];
-    authorName?: string;
   },
 ): Promise<CreatedComment> {
   const { data, meta } = await decodeCommentResponse(response, ["replayed"]);
@@ -1764,9 +1710,7 @@ export async function decodeCreatedComment(
   if (
     expected &&
     (comment.parentId !== expected.parentId ||
-      comment.authorKind !== expected.authorKind ||
-      (expected.authorName !== undefined &&
-        comment.authorName !== expected.authorName))
+      comment.authorKind !== expected.authorKind)
   ) {
     throw invalidResponse(
       "created comment does not match the submitted identity or parent",
