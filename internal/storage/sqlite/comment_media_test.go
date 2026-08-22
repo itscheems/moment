@@ -39,8 +39,8 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 	}
 	replyMedia := []domain.EntryMediaUsage{{MediaID: two, Position: 0, AltText: &description}}
 
-	root, err := service.CreateGuest(ctx, app.CreateCommentInput{
-		EntryID: postID, AuthorName: "Guest", ContentMD: "root with images",
+	root, err := service.CreateOwner(ctx, app.CreateCommentInput{
+		EntryID: postID, ContentMD: "root with images",
 		Media: rootMedia, IdempotencyKey: "comment-media-root",
 	})
 	if err != nil || !reflect.DeepEqual(root.Comment.Media, expectedMediaProjections(rootMedia)) {
@@ -62,12 +62,12 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 		!reflect.DeepEqual(thread.Items[1].Media, expectedMediaProjections(replyMedia)) {
 		t.Fatalf("thread = %#v, %v", thread, err)
 	}
-	replayed, err := service.CreateGuest(ctx, app.CreateCommentInput{
-		EntryID: postID, AuthorName: "Guest", ContentMD: "root with images",
+	replayed, err := service.CreateOwner(ctx, app.CreateCommentInput{
+		EntryID: postID, ContentMD: "root with images",
 		Media: rootMedia, IdempotencyKey: "comment-media-root",
 	})
 	if err != nil || !replayed.Replayed || !reflect.DeepEqual(replayed.Comment, root.Comment) {
-		t.Fatalf("replay = %#v, %v", replayed, err)
+		t.Fatalf("replay = %#v, want %#v, err = %v", replayed.Comment, root.Comment, err)
 	}
 
 	preview, err := service.Delete(ctx, root.Comment.Comment.ID, true)
