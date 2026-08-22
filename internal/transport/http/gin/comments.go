@@ -107,7 +107,7 @@ func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key})
+		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ReplyToCommentID: request.ReplyToCommentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -146,10 +146,11 @@ func deleteOwnerComment(service *app.CommentService) gin.HandlerFunc {
 }
 
 type commentWriteRequest struct {
-	ContentMD string
-	ParentID  *domain.ID
-	Media     []domain.EntryMediaUsage
-	Location  *domain.Location
+	ContentMD        string
+	ParentID         *domain.ID
+	ReplyToCommentID *domain.ID
+	Media            []domain.EntryMediaUsage
+	Location         *domain.Location
 }
 
 func decodeCommentWrite(ctx *gin.Context) (commentWriteRequest, error) {
@@ -202,6 +203,20 @@ func decodeCommentWrite(ctx *gin.Context) (commentWriteRequest, error) {
 				return commentWriteRequest{}, parseErr
 			}
 			request.ParentID = &id
+		case "reply_to_comment_id":
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				request.ReplyToCommentID = nil
+				continue
+			}
+			var value string
+			if json.Unmarshal(raw, &value) != nil {
+				return commentWriteRequest{}, invalidCommentArgument("reply_to_comment_id must be a comment ULID or null", key)
+			}
+			id, parseErr := domain.ParseID(value)
+			if parseErr != nil {
+				return commentWriteRequest{}, parseErr
+			}
+			request.ReplyToCommentID = &id
 		case "media":
 			media, decodeErr := decodeCommentMedia(raw)
 			if decodeErr != nil {

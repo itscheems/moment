@@ -26,11 +26,24 @@ type Comment struct {
 	AuthorKind  string            `json:"author_kind"`
 	AuthorName  string            `json:"author_name"`
 	Author      Author            `json:"author"`
+	ReplyTo     *ReplyTarget      `json:"reply_to"`
 	ContentMD   string            `json:"content_md"`
 	ContentHTML string            `json:"content_html"`
 	CreatedAt   time.Time         `json:"created_at"`
 	Media       []MediaUsage      `json:"media"`
 	Location    *postdto.Location `json:"location"`
+}
+
+// ReplyTarget names the comment a reply answers.
+//
+// The client shows it only when the target is not the root, because answering
+// the root is what the reply's position already says; repeating it there would
+// be noise. Judging that by target comment rather than by target author is
+// deliberate: when the root's author has written several replies, the name is
+// exactly the thing that stops identifying which one is meant.
+type ReplyTarget struct {
+	CommentID string `json:"comment_id"`
+	Author    Author `json:"author"`
 }
 
 // Author is the resolved public identity behind one comment.
@@ -80,9 +93,16 @@ func FromComment(comment app.Comment) Comment {
 	}
 	return Comment{
 		ID: comment.Comment.ID.String(), PostID: comment.Comment.EntryID.String(), ParentID: parentID, Depth: depth,
-		AuthorKind: string(comment.Comment.AuthorKind), AuthorName: comment.Comment.AuthorName, Author: fromAuthor(comment.Author),
+		AuthorKind: string(comment.Comment.AuthorKind), AuthorName: comment.Comment.AuthorName, Author: fromAuthor(comment.Author), ReplyTo: fromReplyTarget(comment.ReplyTo),
 		ContentMD: comment.Comment.ContentMD, ContentHTML: comment.ContentHTML, CreatedAt: comment.Comment.CreatedAt.UTC(), Media: media, Location: location,
 	}
+}
+
+func fromReplyTarget(target *app.CommentReplyTarget) *ReplyTarget {
+	if target == nil {
+		return nil
+	}
+	return &ReplyTarget{CommentID: target.CommentID.String(), Author: fromAuthor(target.Author)}
 }
 
 func fromAuthor(author app.CommentAuthor) Author {
@@ -157,6 +177,21 @@ func ValidateComment(comment Comment) error {
 	}
 	if err := validateAuthor(comment.Author); err != nil {
 		return err
+	}
+	if comment.ReplyTo != nil {
+		if parentID == nil {
+			return errors.New("a top-level comment cannot answer another comment")
+		}
+		targetID, parseErr := domain.ParseID(comment.ReplyTo.CommentID)
+		if parseErr != nil {
+			return parseErr
+		}
+		if targetID == id {
+			return errors.New("a comment cannot answer itself")
+		}
+		if err := validateAuthor(comment.ReplyTo.Author); err != nil {
+			return err
+		}
 	}
 	usages := make([]domain.EntryMediaUsage, len(comment.Media))
 	for index, usage := range comment.Media {

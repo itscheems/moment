@@ -42,9 +42,17 @@ type Comment struct {
 	AuthorKind   CommentAuthorKind
 	AuthorName   string
 	AuthorUserID *string
-	ContentMD    string
-	Location     *Location
-	CreatedAt    time.Time
+	// ReplyToCommentID names the comment being answered. It is an annotation,
+	// not structure: ParentID alone decides where a reply sits and how deletion
+	// cascades, so this field takes no part in ordering, depth or cascade.
+	//
+	// Only a reply can set it, and the target must belong to the same
+	// conversation. Verifying that needs the sibling rows, so the check lives
+	// in the store and in the service rather than here.
+	ReplyToCommentID *ID
+	ContentMD        string
+	Location         *Location
+	CreatedAt        time.Time
 }
 
 // ValidateAuthorUserID accepts the 32 lowercase hex digits an account
@@ -109,6 +117,17 @@ func (comment Comment) Validate() error {
 	if comment.AuthorUserID != nil {
 		if err := ValidateAuthorUserID(*comment.AuthorUserID); err != nil {
 			return err
+		}
+	}
+	if comment.ReplyToCommentID != nil {
+		if _, err := ParseID(comment.ReplyToCommentID.String()); err != nil {
+			return err
+		}
+		if comment.ParentID == nil {
+			return NewError(CodeInvalidArgument, "a top-level comment cannot answer another comment", map[string]any{"field": "reply_to_comment_id"})
+		}
+		if *comment.ReplyToCommentID == comment.ID {
+			return NewError(CodeInvalidArgument, "a comment cannot answer itself", map[string]any{"field": "reply_to_comment_id"})
 		}
 	}
 	if comment.ContentMD == "" {

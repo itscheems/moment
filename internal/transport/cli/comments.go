@@ -33,13 +33,14 @@ func registerComments(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"comment", "reply"}, ArgsUsage: "<post-id> <parent-comment-id>", Short: "Reply as the owner",
 		Long:    "Create one owner reply to a top-level comment through the shared one-level comment service.",
-		Inputs:  "Provide a post ULID, top-level parent comment ULID, comment content or location, and optional --idempotency-key. CLI mutations always use owner identity.",
+		Inputs:  "Provide a post ULID, top-level parent comment ULID, comment content or location, optional --reply-to naming another comment in the same conversation, and optional --idempotency-key. CLI mutations always use owner identity.",
 		Output:  "The canonical created owner comment and replay metadata.",
 		Errors:  "Missing/deleted parents, depth violations, disabled comments, and authentication failures use stable codes.",
 		Example: "moment comment reply 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --content 'thanks' --json",
 		Args:    cobra.ExactArgs(2), Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
+			flags.String("reply-to", "", "ULID of the comment being answered; must be the parent or another reply under it")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
 			registerPostMediaFlags(flags)
 			registerPostLocationFlags(flags, false)
@@ -153,6 +154,18 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 	if err != nil {
 		return Result{}, commentCLIError(err)
 	}
+	var replyToID *domain.ID
+	if input.Changed("reply-to") {
+		raw, flagErr := input.String("reply-to")
+		if flagErr != nil {
+			return Result{}, flagErr
+		}
+		parsed, parseErr := domain.ParseID(raw)
+		if parseErr != nil {
+			return Result{}, commentCLIError(parseErr)
+		}
+		replyToID = &parsed
+	}
 	content, err := input.String("content")
 	if err != nil {
 		return Result{}, err
@@ -190,7 +203,7 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 		if err != nil {
 			return Result{}, err
 		}
-		result, err := direct.service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey})
+		result, err := direct.service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ReplyToCommentID: replyToID, ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -209,6 +222,9 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 		}
 		if parentID != nil {
 			payload["parent_id"] = parentID.String()
+		}
+		if replyToID != nil {
+			payload["reply_to_comment_id"] = replyToID.String()
 		}
 		var status int
 		meta, status, err = commentAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/posts/"+postID.String()+"/comments", nil, payload, idempotencyKey, true, &comment)

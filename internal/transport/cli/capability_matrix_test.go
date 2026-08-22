@@ -276,7 +276,7 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"comment delete":         "1ae438d8870bb0da2d34306260131316228dc82b19c29e34215ac8e1eaf2c7d9",
 		"comment list":           "f92976c87a2f2f329d76fce26b1fd6004cc3f5c3a8d58305619329c362a4e633",
 		"comment pin":            "584f1e03045b9a85dd17fe5cf5ded482ae326f11033b3503b3ab31f8fc173d6a",
-		"comment reply":          "9c87f69155ea513ee9d4619d0c4f844b45ef9e1759a13fd2566fa50725906056",
+		"comment reply":          "0a085ef08bacd2ebaf30871ca5c4c528fbbcc11ea82cb1cea3dd4332c528c045",
 		"comment unpin":          "b09b2234e10e25962623f4b638c0f1fdd9a3a69477dee847a2e1037b12eb2975",
 		"dev":                    "f3fbc09380185bb3d32d04b94712c5968c4e734067ceacb8ef00a3e6666e9a32",
 		"dev reset":              "623279be28439377ce7e723b4351046fb758f7126e5c81db39a55646fc2621ce",

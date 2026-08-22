@@ -368,3 +368,157 @@ func mustOwnerComment(t *testing.T, service *app.CommentService, input app.Creat
 	}
 	return result
 }
+
+// A reply names the comment it answers so a reader can tell which of several
+// sibling replies it is responding to. The annotation is deliberately separate
+// from parent_id: it takes no part in depth, ordering or cascade, so the
+// one-level rule and its four enforcement sites stay untouched.
+func TestCommentReplyTargetStaysWithinItsConversation(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	insertEntry(t, db, entryTwo, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	clock := newSequenceClock(base, base.Add(time.Second), base.Add(2*time.Second), base.Add(3*time.Second), base.Add(4*time.Second))
+	service := newTestCommentService(t, db, runtimeState, clock.Now,
+		commentIDs(commentOne, commentTwo, commentThree, commentFour, "01ARZ3NDEKTSV4RRFFQ69G5FB4"))
+	postID, _ := domain.ParseID(entryOne)
+	otherPostID, _ := domain.ParseID(entryTwo)
+
+	root := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "root"})
+	rootID := root.Comment.Comment.ID
+	first := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "first reply"})
+	firstID := first.Comment.Comment.ID
+
+	answeringSibling := mustOwnerComment(t, service, app.CreateCommentInput{
+		EntryID: postID, ParentID: &rootID, ReplyToCommentID: &firstID, ContentMD: "answering the sibling",
+	})
+	if answeringSibling.Comment.ReplyTo == nil || answeringSibling.Comment.ReplyTo.CommentID != firstID {
+		t.Fatalf("reply target = %#v", answeringSibling.Comment.ReplyTo)
+	}
+	// The target's identity is resolved server side because the target can sit
+	// outside whatever page the reader has loaded.
+	if answeringSibling.Comment.ReplyTo.Author.Username == "" {
+		t.Fatalf("reply target author = %#v", answeringSibling.Comment.ReplyTo.Author)
+	}
+
+	otherRoot := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "unrelated root"})
+	otherRootID := otherRoot.Comment.Comment.ID
+	otherPostRoot := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: otherPostID, ContentMD: "other post root"})
+	otherPostRootID := otherPostRoot.Comment.Comment.ID
+
+	for name, target := range map[string]*domain.ID{
+		"another root in the same post": &otherRootID,
+		"a comment on another post":     &otherPostRootID,
+	} {
+		_, err := service.CreateOwner(context.Background(), app.CreateCommentInput{
+			EntryID: postID, ParentID: &rootID, ReplyToCommentID: target, ContentMD: "out of conversation",
+		})
+		if !domain.HasCode(err, domain.CodeInvalidArgument) {
+			t.Fatalf("%s = %v", name, err)
+		}
+	}
+	if _, err := service.CreateOwner(context.Background(), app.CreateCommentInput{
+		EntryID: postID, ReplyToCommentID: &firstID, ContentMD: "root answering a reply",
+	}); !domain.HasCode(err, domain.CodeInvalidArgument) {
+		t.Fatalf("root with a reply target = %v", err)
+	}
+
+	// Deleting the answered comment clears the annotation without touching the
+	// reply that carried it, so a non-null reference always points at a row
+	// that exists and no reader has to handle a dangling target.
+	if _, err := service.Delete(context.Background(), firstID, false); err != nil {
+		t.Fatal(err)
+	}
+	thread, err := service.List(context.Background(), postID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, comment := range thread.Items {
+		if comment.Comment.ID != answeringSibling.Comment.Comment.ID {
+			continue
+		}
+		found = true
+		if comment.Comment.ReplyToCommentID != nil || comment.ReplyTo != nil {
+			t.Fatalf("reply target survived its deleted comment: %#v", comment.Comment.ReplyToCommentID)
+		}
+	}
+	if !found {
+		t.Fatal("the reply was deleted along with the comment it answered")
+	}
+}
+
+// The reply target is part of what a create request asks for, so it has to be
+// part of what the idempotency digest covers. Without it one key would replay a
+// stored comment for a request naming a different target and return a
+// well-formed answer to the wrong comment.
+func TestCommentIdempotencyDistinguishesReplyTargets(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	clock := newSequenceClock(base, base.Add(time.Second), base.Add(2*time.Second), base.Add(3*time.Second))
+	service := newTestCommentService(t, db, runtimeState, clock.Now, commentIDs(commentOne, commentTwo, commentThree, commentFour))
+	postID, _ := domain.ParseID(entryOne)
+
+	root := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "root"})
+	rootID := root.Comment.Comment.ID
+	first := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "first"})
+	firstID := first.Comment.Comment.ID
+
+	original := mustOwnerComment(t, service, app.CreateCommentInput{
+		EntryID: postID, ParentID: &rootID, ReplyToCommentID: &firstID,
+		ContentMD: "same body", IdempotencyKey: "reply-target",
+	})
+	replayed, err := service.CreateOwner(context.Background(), app.CreateCommentInput{
+		EntryID: postID, ParentID: &rootID, ReplyToCommentID: &firstID,
+		ContentMD: "same body", IdempotencyKey: "reply-target",
+	})
+	if err != nil || !replayed.Replayed || replayed.Comment.Comment.ID != original.Comment.Comment.ID {
+		t.Fatalf("identical retry = %+v, %v", replayed, err)
+	}
+	if replayed.Comment.ReplyTo == nil || replayed.Comment.ReplyTo.CommentID != firstID {
+		t.Fatalf("replayed reply target = %#v", replayed.Comment.ReplyTo)
+	}
+	if _, err := service.CreateOwner(context.Background(), app.CreateCommentInput{
+		EntryID: postID, ParentID: &rootID, ReplyToCommentID: &rootID,
+		ContentMD: "same body", IdempotencyKey: "reply-target",
+	}); !domain.HasCode(err, domain.CodeIdempotencyKeyReused) {
+		t.Fatalf("retry naming a different target = %v", err)
+	}
+}
+
+// The service check is defence in depth over a database trigger, matching how
+// the one-level rule is guarded. A writer that bypasses the service entirely
+// still cannot record an out-of-conversation target.
+func TestCommentReplyTargetTriggerRejectsRawWrites(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	clock := newSequenceClock(base, base.Add(time.Second), base.Add(2*time.Second))
+	service := newTestCommentService(t, db, runtimeState, clock.Now, commentIDs(commentOne, commentTwo, commentThree))
+	postID, _ := domain.ParseID(entryOne)
+	root := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "root"})
+	other := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "unrelated root"})
+
+	err := db.WriteTx(context.Background(), func(queries Queries) error {
+		_, execErr := queries.ExecContext(context.Background(), `
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms, reply_to_comment_id)
+VALUES (?, ?, ?, 'owner', 'Owner', 'raw', 9, ?)`,
+			commentFour, entryOne, root.Comment.Comment.ID.String(), other.Comment.Comment.ID.String())
+		return execErr
+	})
+	if err == nil || !strings.Contains(err.Error(), "comment reply target must be in the same conversation") {
+		t.Fatalf("raw out-of-conversation target = %v", err)
+	}
+
+	selfErr := db.WriteTx(context.Background(), func(queries Queries) error {
+		_, execErr := queries.ExecContext(context.Background(), `
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms, reply_to_comment_id)
+VALUES (?, ?, ?, 'owner', 'Owner', 'raw self', 9, ?)`,
+			commentFour, entryOne, root.Comment.Comment.ID.String(), commentFour)
+		return execErr
+	})
+	if selfErr == nil || !strings.Contains(selfErr.Error(), "comment reply target must be in the same conversation") {
+		t.Fatalf("raw self-referencing target = %v", selfErr)
+	}
+}

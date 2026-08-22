@@ -137,6 +137,50 @@ func (store commentStore) CommentsEnabled(ctx context.Context) (bool, error) {
 	return enabled == 1, nil
 }
 
+// CommentsByID loads a set of comments in one query.
+//
+// Reply targets are resolved through this: a reply names the comment it
+// answers, and the answer has to be rendered even when that comment is not on
+// the page the reader is looking at. Missing IDs are simply absent from the
+// result.
+func (store commentStore) CommentsByID(ctx context.Context, ids []domain.ID) (map[domain.ID]domain.Comment, error) {
+	records := make(map[domain.ID]domain.Comment, len(ids))
+	if len(ids) == 0 {
+		return records, nil
+	}
+	placeholders := make([]string, len(ids))
+	arguments := make([]any, len(ids))
+	for index, id := range ids {
+		placeholders[index] = "?"
+		arguments[index] = id.String()
+	}
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT comments.id, comments.entry_id, comments.parent_id, comments.author_kind, comments.author_name,
+       comments.author_user_id, comments.reply_to_comment_id, comments.content_md, comments.created_at_ms,
+       location.name, location.display_name, location.country_code,
+       location.country, location.region, location.city, location.district,
+       location.category, location.provider, location.provider_place_id,
+       location.latitude_e7, location.longitude_e7, location.coordinate_system
+FROM comments
+LEFT JOIN comment_location AS location ON location.comment_id = comments.id
+WHERE comments.id IN (`+strings.Join(placeholders, ", ")+`)`, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query comments by id: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		record, scanErr := scanComment(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan comments by id: %w", scanErr)
+		}
+		records[record.ID] = record
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate comments by id: %w", err)
+	}
+	return records, nil
+}
+
 // SiteOwnerID reads the account that authors every owner comment.
 func (store commentStore) SiteOwnerID(ctx context.Context) (string, error) {
 	var ownerID string
@@ -182,7 +226,7 @@ SELECT owner_id, username, display_name, avatar_media_id FROM site_settings WHER
 
 func (store commentStore) CommentByID(ctx context.Context, id domain.ID) (domain.Comment, bool, error) {
 	record, err := scanComment(store.queries.QueryRowContext(ctx, `
-SELECT id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms
+SELECT id, entry_id, parent_id, author_kind, author_name, author_user_id, reply_to_comment_id, content_md, created_at_ms
      , location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
@@ -201,7 +245,7 @@ WHERE comments.id = ?`, id.String()))
 
 func (store commentStore) ListComments(ctx context.Context, entryID domain.ID) ([]domain.Comment, error) {
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT child.id, child.entry_id, child.parent_id, child.author_kind, child.author_name, child.author_user_id, child.content_md, child.created_at_ms,
+SELECT child.id, child.entry_id, child.parent_id, child.author_kind, child.author_name, child.author_user_id, child.reply_to_comment_id, child.content_md, child.created_at_ms,
        location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
@@ -364,11 +408,14 @@ ORDER BY usage.media_id`, commentID.String(), commentID.String())
 
 func (store commentStore) InsertComment(ctx context.Context, comment domain.Comment) error {
 	_, err := store.queries.ExecContext(ctx, `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, comment.ID.String(), comment.EntryID.String(), nullableCommentID(comment.ParentID), string(comment.AuthorKind), comment.AuthorName, nullableString(comment.AuthorUserID), comment.ContentMD, domain.TimeToMillis(comment.CreatedAt))
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, reply_to_comment_id, content_md, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, comment.ID.String(), comment.EntryID.String(), nullableCommentID(comment.ParentID), string(comment.AuthorKind), comment.AuthorName, nullableString(comment.AuthorUserID), nullableCommentID(comment.ReplyToCommentID), comment.ContentMD, domain.TimeToMillis(comment.CreatedAt))
 	if err != nil {
 		if strings.Contains(err.Error(), "comment parent must be a root in the same entry") {
 			return domain.NewError(domain.CodeCommentDepthExceeded, "replies must target a top-level comment on the same post", nil)
+		}
+		if strings.Contains(err.Error(), "comment reply target must be in the same conversation") {
+			return domain.NewError(domain.CodeInvalidArgument, "a reply can only answer its own root or another reply under it", map[string]any{"field": "reply_to_comment_id"})
 		}
 		return fmt.Errorf("insert comment: %w", err)
 	}
@@ -479,13 +526,13 @@ type commentScanner interface{ Scan(...any) error }
 
 func scanComment(scanner commentScanner) (domain.Comment, error) {
 	var idValue, entryValue, authorKind, authorName, content string
-	var parent, authorUserID sql.NullString
+	var parent, authorUserID, replyTarget sql.NullString
 	var createdAt int64
 	var locationName, locationDisplayName, countryCode, country, region, city, district, category, provider, providerPlaceID sql.NullString
 	var latitude, longitude sql.NullInt64
 	var coordinateSystem sql.NullString
 	if err := scanner.Scan(
-		&idValue, &entryValue, &parent, &authorKind, &authorName, &authorUserID, &content, &createdAt,
+		&idValue, &entryValue, &parent, &authorKind, &authorName, &authorUserID, &replyTarget, &content, &createdAt,
 		&locationName, &locationDisplayName, &countryCode, &country, &region, &city,
 		&district, &category, &provider, &providerPlaceID, &latitude, &longitude,
 		&coordinateSystem,
@@ -530,7 +577,15 @@ func scanComment(scanner commentScanner) (domain.Comment, error) {
 		value := authorUserID.String
 		authorUser = &value
 	}
-	record := domain.Comment{ID: id, EntryID: entryID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(authorKind), AuthorName: authorName, AuthorUserID: authorUser, ContentMD: content, Location: location, CreatedAt: domain.TimeFromMillis(createdAt)}
+	var replyTo *domain.ID
+	if replyTarget.Valid {
+		parsed, parseErr := domain.ParseID(replyTarget.String)
+		if parseErr != nil {
+			return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment has an invalid reply target", map[string]any{"comment_id": id.String()})
+		}
+		replyTo = &parsed
+	}
+	record := domain.Comment{ID: id, EntryID: entryID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(authorKind), AuthorName: authorName, AuthorUserID: authorUser, ReplyToCommentID: replyTo, ContentMD: content, Location: location, CreatedAt: domain.TimeFromMillis(createdAt)}
 	if err := record.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment violates the comment contract", map[string]any{"comment_id": id.String()})
 	}

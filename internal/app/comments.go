@@ -26,6 +26,7 @@ type CommentStore interface {
 	EntryExists(context.Context, domain.ID) (bool, error)
 	CommentsEnabled(context.Context) (bool, error)
 	CommentByID(context.Context, domain.ID) (domain.Comment, bool, error)
+	CommentsByID(context.Context, []domain.ID) (map[domain.ID]domain.Comment, error)
 	CommentAuthorIdentities(context.Context, []string) (map[string]CommentAuthorIdentity, error)
 	SiteOwnerID(context.Context) (string, error)
 	ListComments(context.Context, domain.ID) ([]domain.Comment, error)
@@ -53,8 +54,20 @@ type CommentTransactions interface {
 type Comment struct {
 	Comment     domain.Comment
 	Author      CommentAuthor
+	ReplyTo     *CommentReplyTarget
 	ContentHTML string
 	Media       []MediaUsageProjection
+}
+
+// CommentReplyTarget names the comment a reply is answering, together with the
+// identity to show for it.
+//
+// The target can sit outside the page the reader has loaded, so the author is
+// resolved server side rather than looked up client side against whatever
+// happens to be on screen.
+type CommentReplyTarget struct {
+	CommentID domain.ID
+	Author    CommentAuthor
 }
 
 // CommentAuthor is the identity a reader sees beside a comment, resolved at
@@ -102,14 +115,15 @@ type CommentPin struct {
 // CreateCommentInput contains owner/guest application identity, never network
 // identity. Adapters cannot use it to persist an IP address.
 type CreateCommentInput struct {
-	EntryID        domain.ID
-	ParentID       *domain.ID
-	AuthorKind     domain.CommentAuthorKind
-	AuthorName     string
-	ContentMD      string
-	Media          []domain.EntryMediaUsage
-	Location       *domain.Location
-	IdempotencyKey string
+	EntryID          domain.ID
+	ParentID         *domain.ID
+	ReplyToCommentID *domain.ID
+	AuthorKind       domain.CommentAuthorKind
+	AuthorName       string
+	ContentMD        string
+	Media            []domain.EntryMediaUsage
+	Location         *domain.Location
+	IdempotencyKey   string
 }
 
 // CreateCommentResult reports a safe idempotent retry.
@@ -204,6 +218,14 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 	if err := validateCommentID(input.EntryID); err != nil {
 		return CreateCommentResult{}, err
 	}
+	if input.ReplyToCommentID != nil {
+		if err := validateCommentID(*input.ReplyToCommentID); err != nil {
+			return CreateCommentResult{}, err
+		}
+		if input.ParentID == nil {
+			return CreateCommentResult{}, domain.NewError(domain.CodeInvalidArgument, "a top-level comment cannot answer another comment", map[string]any{"field": "reply_to_comment_id"})
+		}
+	}
 	if input.ParentID != nil {
 		if err := validateCommentID(*input.ParentID); err != nil {
 			return CreateCommentResult{}, err
@@ -268,6 +290,11 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 					return replayErr
 				}
 				result.Comment.Author = authors[comment.ID]
+				replayTargets, replayErr := resolveCommentReplyTargets(ctx, store, []domain.Comment{comment})
+				if replayErr != nil {
+					return replayErr
+				}
+				result.Comment.ReplyTo = replayTargets[comment.ID]
 				result.Replayed = true
 				return nil
 			}
@@ -298,6 +325,25 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 				return domain.NewError(domain.CodeCommentDepthExceeded, "replies must target a top-level comment on the same post", map[string]any{"parent_id": input.ParentID.String()})
 			}
 		}
+		// The reply target must belong to the same conversation: either the
+		// root itself or another reply under it. Restated here rather than left
+		// to the trigger alone, matching how the depth rule is handled — a
+		// caller gets a typed error describing what it did, not a translated
+		// abort message.
+		if input.ReplyToCommentID != nil {
+			target, found, targetErr := store.CommentByID(ctx, *input.ReplyToCommentID)
+			if targetErr != nil {
+				return targetErr
+			}
+			if !found {
+				return commentNotFound(*input.ReplyToCommentID)
+			}
+			sameConversation := target.ID == *input.ParentID ||
+				(target.ParentID != nil && *target.ParentID == *input.ParentID)
+			if target.EntryID != input.EntryID || !sameConversation {
+				return domain.NewError(domain.CodeInvalidArgument, "a reply can only answer its own root or another reply under it", map[string]any{"field": "reply_to_comment_id"})
+			}
+		}
 		now := domain.NormalizeTime(service.clock())
 		id, generateErr := service.ids(now)
 		if generateErr != nil {
@@ -310,7 +356,7 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 		if ownerErr != nil {
 			return ownerErr
 		}
-		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: now}
+		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), ReplyToCommentID: cloneCommentID(input.ReplyToCommentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: now}
 		if validateErr := comment.Validate(); validateErr != nil {
 			return validateErr
 		}
@@ -342,12 +388,17 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 			return authorErr
 		}
 		result.Comment.Author = authors[comment.ID]
+		replyTargets, authorErr := resolveCommentReplyTargets(ctx, store, []domain.Comment{comment})
+		if authorErr != nil {
+			return authorErr
+		}
+		result.Comment.ReplyTo = replyTargets[comment.ID]
 		return nil
 	})
 	if err != nil {
 		return CreateCommentResult{}, normalizeCommentRepositoryError(err)
 	}
-	result.Comment, err = renderComment(result.Comment.Comment, result.Comment.Author, result.Comment.Media)
+	result.Comment, err = renderComment(result.Comment.Comment, result.Comment.Author, result.Comment.ReplyTo, result.Comment.Media)
 	if err != nil {
 		return CreateCommentResult{}, err
 	}
@@ -360,6 +411,7 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 	var media []MediaUsageProjection
 	var recordComment domain.Comment
 	var author CommentAuthor
+	var replyTo *CommentReplyTarget
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		var storeErr error
 		record, found, storeErr = store.IdempotencyRecord(ctx, scope, input.IdempotencyKey)
@@ -383,6 +435,11 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 			return storeErr
 		}
 		author = authors[recordComment.ID]
+		replyTargets, storeErr := resolveCommentReplyTargets(ctx, store, []domain.Comment{recordComment})
+		if storeErr != nil {
+			return storeErr
+		}
+		replyTo = replyTargets[recordComment.ID]
 		return nil
 	})
 	if err != nil {
@@ -391,7 +448,7 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 	if !found {
 		return CreateCommentResult{}, false, nil
 	}
-	comment, err := renderComment(recordComment, author, media)
+	comment, err := renderComment(recordComment, author, replyTo, media)
 	if err != nil {
 		return CreateCommentResult{}, false, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
@@ -409,6 +466,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 	var records []domain.Comment
 	var pinnedCommentID *domain.ID
 	var authors map[domain.ID]CommentAuthor
+	var replyTargets map[domain.ID]*CommentReplyTarget
 	mediaByComment := make(map[domain.ID][]MediaUsageProjection)
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		exists, storeErr := store.EntryExists(ctx, entryID)
@@ -433,6 +491,10 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 			}
 		}
 		authors, storeErr = resolveCommentAuthors(ctx, store, records)
+		if storeErr != nil {
+			return storeErr
+		}
+		replyTargets, storeErr = resolveCommentReplyTargets(ctx, store, records)
 		return storeErr
 	})
 	if err != nil {
@@ -449,7 +511,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 		} else if _, found := roots[*record.ParentID]; !found {
 			return CommentThread{}, corruptCommentThread(entryID)
 		}
-		comment, renderErr := renderComment(record, authors[record.ID], mediaByComment[record.ID])
+		comment, renderErr := renderComment(record, authors[record.ID], replyTargets[record.ID], mediaByComment[record.ID])
 		if renderErr != nil {
 			return CommentThread{}, corruptCommentThread(entryID)
 		}
@@ -561,7 +623,11 @@ func (service *CommentService) Delete(ctx context.Context, id domain.ID, dryRun 
 		if err != nil {
 			return err
 		}
-		result.Comment, err = renderComment(record, authors[record.ID], mediaUsages)
+		replyTargets, err := resolveCommentReplyTargets(ctx, store, []domain.Comment{record})
+		if err != nil {
+			return err
+		}
+		result.Comment, err = renderComment(record, authors[record.ID], replyTargets[record.ID], mediaUsages)
 		if err != nil {
 			return corruptComment(id)
 		}
@@ -611,7 +677,7 @@ func reconstructCommentReplay(input CreateCommentInput, ownerID, scope, requestH
 	if record.RequestHash != requestHash {
 		return domain.Comment{}, domain.NewError(domain.CodeIdempotencyKeyReused, "idempotency key was already used with different comment input", map[string]any{"field": "idempotency_key"})
 	}
-	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: record.CreatedAt}
+	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), ReplyToCommentID: cloneCommentID(input.ReplyToCommentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: record.CreatedAt}
 	if err := comment.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
@@ -620,8 +686,13 @@ func reconstructCommentReplay(input CreateCommentInput, ownerID, scope, requestH
 
 func hashCreateComment(input CreateCommentInput) string {
 	digest := sha256.New()
-	_, _ = digest.Write([]byte("moment-comment-create-v1\x00"))
-	for _, value := range []string{input.EntryID.String(), commentIDString(input.ParentID), string(input.AuthorKind), input.AuthorName, input.ContentMD} {
+	// Version 2 adds the reply target. A digest that ignored it would let one
+	// idempotency key replay a stored comment for a request that named a
+	// different target, returning a perfectly well-formed answer to the wrong
+	// comment. Retiring v1 costs nothing: a key reused across the two versions
+	// reads as a changed request, which is exactly what it is.
+	_, _ = digest.Write([]byte("moment-comment-create-v2\x00"))
+	for _, value := range []string{input.EntryID.String(), commentIDString(input.ParentID), commentIDString(input.ReplyToCommentID), string(input.AuthorKind), input.AuthorName, input.ContentMD} {
 		var length [8]byte
 		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
 		_, _ = digest.Write(length[:])
@@ -652,6 +723,65 @@ func hashCreateComment(input CreateCommentInput) string {
 // written before author_user_id existed — anything restored from an older
 // archive — have no reference of their own, so they fall back to the site
 // owner, which is by definition who wrote them.
+// resolveCommentReplyTargets loads the comments the batch answers and resolves
+// an identity for each. Targets already present in the batch are reused rather
+// than fetched again, so an ordinary thread costs no extra query at all.
+func resolveCommentReplyTargets(ctx context.Context, store CommentStore, records []domain.Comment) (map[domain.ID]*CommentReplyTarget, error) {
+	targets := make(map[domain.ID]*CommentReplyTarget)
+	known := make(map[domain.ID]domain.Comment, len(records))
+	for _, record := range records {
+		known[record.ID] = record
+	}
+	missing := make([]domain.ID, 0)
+	for _, record := range records {
+		if record.ReplyToCommentID == nil {
+			continue
+		}
+		if _, found := known[*record.ReplyToCommentID]; !found {
+			missing = append(missing, *record.ReplyToCommentID)
+		}
+	}
+	if len(missing) > 0 {
+		fetched, err := store.CommentsByID(ctx, missing)
+		if err != nil {
+			return nil, err
+		}
+		for id, record := range fetched {
+			known[id] = record
+		}
+	}
+	referenced := make([]domain.Comment, 0)
+	for _, record := range records {
+		if record.ReplyToCommentID == nil {
+			continue
+		}
+		if target, found := known[*record.ReplyToCommentID]; found {
+			referenced = append(referenced, target)
+		}
+	}
+	if len(referenced) == 0 {
+		return targets, nil
+	}
+	authors, err := resolveCommentAuthors(ctx, store, referenced)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		if record.ReplyToCommentID == nil {
+			continue
+		}
+		target, found := known[*record.ReplyToCommentID]
+		if !found {
+			// ON DELETE SET NULL means a non-null reference always points at a
+			// live row, so reaching here would mean the database disagrees with
+			// its own constraint. Drop the annotation rather than fail the read.
+			continue
+		}
+		targets[record.ID] = &CommentReplyTarget{CommentID: target.ID, Author: authors[target.ID]}
+	}
+	return targets, nil
+}
+
 func resolveCommentAuthors(ctx context.Context, store CommentStore, records []domain.Comment) (map[domain.ID]CommentAuthor, error) {
 	authors := make(map[domain.ID]CommentAuthor, len(records))
 	ownerID := ""
@@ -710,7 +840,7 @@ func resolveCommentAuthors(ctx context.Context, store CommentStore, records []do
 	return authors, nil
 }
 
-func renderComment(record domain.Comment, author CommentAuthor, media []MediaUsageProjection) (Comment, error) {
+func renderComment(record domain.Comment, author CommentAuthor, replyTo *CommentReplyTarget, media []MediaUsageProjection) (Comment, error) {
 	if err := record.Validate(); err != nil {
 		return Comment{}, err
 	}
@@ -726,7 +856,7 @@ func renderComment(record domain.Comment, author CommentAuthor, media []MediaUsa
 		return Comment{}, err
 	}
 	record.Location = domain.CloneLocation(record.Location)
-	return Comment{Comment: record, Author: author, ContentHTML: html, Media: cloneMediaUsageProjections(media)}, nil
+	return Comment{Comment: record, Author: author, ReplyTo: replyTo, ContentHTML: html, Media: cloneMediaUsageProjections(media)}, nil
 }
 
 func commentLocationHashValues(location *domain.Location) []string {
