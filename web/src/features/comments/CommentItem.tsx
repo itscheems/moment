@@ -5,6 +5,7 @@ import { type RefObject, useEffect, useRef, useState } from "react";
 import {
   PublicApiError,
   type PublicComment,
+  type PublicCommentAuthor,
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
@@ -368,6 +369,18 @@ function CommentOwnerMenu({
   );
 }
 
+/**
+ * Whether a comment was written from the site owner's account.
+ *
+ * `author_kind` used to answer this. It is the axis being retired: its one
+ * remaining job is marking rows a legacy guest wrote, and its value domain
+ * stops meaning anything the day a second account exists. The resolved user id
+ * is the stable answer, and today it gives exactly the same verdict.
+ */
+function ownedBySite(author: PublicCommentAuthor, site: SiteIdentity): boolean {
+  return author.userId !== null && author.userId === site.ownerId;
+}
+
 export function CommentItem({
   comment,
   site,
@@ -393,15 +406,21 @@ export function CommentItem({
 }) {
   const created = formatMomentDate(comment.createdAt, site.timezone);
   const root = comment.parentId === null;
-  // The non-owner branch below is the legacy read-only `guest` kind: rows that
-  // predate the account requirement, or that an old archive brought back. They
-  // carry only a free-text name, so they render as plain text — no `@username`,
-  // no profile link, no preview card, no badge. Keep it: dropping it would
-  // strand comments the owner still has in their own backups.
-  const authorName =
-    comment.authorKind === "owner"
-      ? site.displayName.trim() || site.title.trim() || comment.authorName
-      : comment.authorName;
+  // Everything the byline shows comes from this one projection, which the
+  // server resolved. Reading the site identity for owner rows and the stored
+  // string for the rest is what let the CLI and the browser print two
+  // different author names for the same comment.
+  const author = comment.author;
+  const authorName = author.displayName;
+  const ownerAccount = ownedBySite(author, site);
+  // A legacy guest row carries a free-text name and nothing else — no profile
+  // to open, so no links and no preview card. The parser guarantees the three
+  // reference fields arrive together; this narrows them for the renderer.
+  const account =
+    author.username !== null && author.profileUrl !== null
+      ? { profileUrl: author.profileUrl, username: author.username }
+      : null;
+
   return (
     <li
       className={`${styles.commentItem} ${root ? "" : styles.replyComment}`}
@@ -420,17 +439,21 @@ export function CommentItem({
             replyCount={replyCount}
           />
         ) : null}
-        {comment.authorKind === "owner" ? (
+        {ownerAccount && account ? (
           <SiteIdentityPreview site={site}>
             <InternalLink
               aria-label={`查看 ${authorName} 的个人资料`}
               className={styles.commentAvatar}
-              href={`/@${site.username}`}
+              href={account.profileUrl}
             >
               <SiteAvatar site={site} />
             </InternalLink>
           </SiteIdentityPreview>
         ) : (
+          // Everything that is not the owner's account falls back to an
+          // initial. The day a second account can comment, this needs the
+          // author's own avatar — `author.avatarMediaId` already carries it —
+          // and the branch above needs a real identity to preview.
           <span aria-hidden="true" className={styles.commentAvatar}>
             {Array.from(authorName)[0]?.toLocaleUpperCase() ?? "M"}
           </span>
@@ -442,19 +465,46 @@ export function CommentItem({
           </p>
         ) : null}
         <header className={styles.commentByline}>
-          {comment.authorKind === "owner" ? (
-            <SiteIdentityPreview site={site}>
+          {account ? (
+            <>
+              {/*
+               * `SiteIdentityPreview` wants a whole `SiteIdentity` — cover and
+               * bio included — and the comment author projection has neither.
+               * The owner is the only account that can comment today, so the
+               * site identity is the author's identity and passing it is
+               * correct rather than convenient. Do not synthesise one for any
+               * other user id: it would quietly show this site's cover and bio
+               * under somebody else's name the day accounts arrive. That day
+               * this needs a real lookup by username.
+               */}
+              {ownerAccount ? (
+                <SiteIdentityPreview site={site}>
+                  <InternalLink
+                    className={styles.commentAuthor}
+                    href={account.profileUrl}
+                  >
+                    {authorName}
+                  </InternalLink>
+                </SiteIdentityPreview>
+              ) : (
+                <InternalLink
+                  className={styles.commentAuthor}
+                  href={account.profileUrl}
+                >
+                  {authorName}
+                </InternalLink>
+              )}
               <InternalLink
-                className={styles.commentAuthor}
-                href={`/@${site.username}`}
+                className={styles.commentHandle}
+                href={account.profileUrl}
               >
-                {authorName}
+                @{account.username}
               </InternalLink>
-            </SiteIdentityPreview>
+            </>
           ) : (
             <strong>{authorName}</strong>
           )}
-          {comment.authorKind === "owner" ? (
+          {ownerAccount ? (
             <span className={styles.ownerBadge}>所有者</span>
           ) : null}
           <span aria-hidden="true">·</span>
