@@ -20,12 +20,69 @@ import { CommentForm, SignInToReply, useCanComment } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import { PostReplyDialog } from "./PostReplyDialog";
 import {
+  appendRepliesToRoot,
+  appendRoots,
   countReplies,
+  mergePinnedConversation,
   orderPinnedConversation,
   reconcileCreatedComment,
   reconcileDeletedComment,
 } from "./commentOrdering";
+import { LoadMoreSentinel } from "../../components/LoadMoreSentinel";
+import { validateCursorPage } from "../timeline/cursorContinuity";
 import styles from "./Comments.module.css";
+
+/**
+ * How far a single root's replies have been read.
+ *
+ * Roots and replies page independently, so each root carries its own cursor.
+ * The cursor on the comment itself only describes the page it arrived with and
+ * goes stale as soon as one more is fetched, which is why this is tracked
+ * separately rather than read back off the row.
+ */
+interface ReplyPaging {
+  cursor: string | null;
+  loading: boolean;
+  error: unknown;
+}
+
+function replyPagingFromComments(
+  comments: PublicComment[],
+): Map<string, ReplyPaging> {
+  const paging = new Map<string, ReplyPaging>();
+  for (const comment of comments) {
+    if (comment.parentId !== null) continue;
+    paging.set(comment.id, {
+      cursor: comment.repliesNextCursor,
+      loading: false,
+      error: null,
+    });
+  }
+  return paging;
+}
+
+function mergeReplyPaging(
+  current: Map<string, ReplyPaging>,
+  comments: PublicComment[],
+): Map<string, ReplyPaging> {
+  const merged = new Map(current);
+  for (const [id, paging] of replyPagingFromComments(comments)) {
+    if (!merged.has(id)) merged.set(id, paging);
+  }
+  return merged;
+}
+
+function withReplyPaging(
+  current: Map<string, ReplyPaging>,
+  rootId: string,
+  patch: Partial<ReplyPaging>,
+): Map<string, ReplyPaging> {
+  const existing = current.get(rootId);
+  if (!existing) return current;
+  const merged = new Map(current);
+  merged.set(rootId, { ...existing, ...patch });
+  return merged;
+}
 
 interface ReplyDraft {
   rootId: string;
@@ -48,7 +105,12 @@ export function CommentThread({
   postId: string;
   post?: PublicPost;
   site: SiteIdentity;
-  onCountChange?: (count: number) => void;
+  /**
+   * Reports how the post's comment total moved, not what it now is. A thread
+   * that only ever holds one page cannot count the whole thing, and the server
+   * already sends the total on the post itself.
+   */
+  onCountChange?: (delta: number) => void;
   replyDialogOpen?: boolean;
   onReplyDialogOpenChange?: (open: boolean) => void;
   replyDialogTriggerRef?: RefObject<HTMLButtonElement | null>;
@@ -56,6 +118,13 @@ export function CommentThread({
   const owner = useOwner();
   const [items, setItems] = useState<PublicComment[] | null>(null);
   const [pinnedCommentId, setPinnedCommentId] = useState<string | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState<unknown>(null);
+  const [replyPaging, setReplyPaging] = useState<Map<string, ReplyPaging>>(
+    () => new Map(),
+  );
+  const visitedCursors = useRef(new Set<string>());
   const [loadError, setLoadError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
   const [topContent, setTopContent] = useState("");
@@ -73,13 +142,22 @@ export function CommentThread({
   useEffect(() => {
     const controller = new AbortController();
     setLoadError(null);
+    setMoreError(null);
+    visitedCursors.current = new Set();
     void api
       .comments(postId, { signal: controller.signal })
       .then((thread) => {
-        if (!controller.signal.aborted) {
-          setItems(thread.items);
-          setPinnedCommentId(thread.pinnedCommentId);
-        }
+        if (controller.signal.aborted) return;
+        // The pinned conversation is delivered beside the page so that pinning
+        // never reorders what a cursor addresses. Folding it back into the
+        // stream at its own point in time keeps one array to reason about, and
+        // keeps that array in the creation order every other helper walks.
+        setItems(mergePinnedConversation(thread.items, thread.pinned));
+        setPinnedCommentId(thread.pinnedCommentId);
+        setNextCursor(thread.nextCursor);
+        setReplyPaging(
+          replyPagingFromComments([...thread.pinned, ...thread.items]),
+        );
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) setLoadError(error);
@@ -87,9 +165,74 @@ export function CommentThread({
     return () => controller.abort();
   }, [api, attempt, postId]);
 
-  useEffect(() => {
-    if (items) onCountChange?.(items.length);
-  }, [items, onCountChange]);
+  const loadMoreRoots = useCallback(
+    (source: "automatic" | "manual") => {
+      const cursor = nextCursor;
+      if (!cursor || loadingMore) return;
+      // A cursor counts as spent only once a page actually comes back for it.
+      // Marking it before the request would turn an ordinary network failure
+      // into a permanent "cycle detected", with the retry button unable to do
+      // the one thing it offers.
+      const visited = new Set(visitedCursors.current);
+      visited.add(cursor);
+      setLoadingMore(true);
+      setMoreError(null);
+      void api
+        .comments(postId, { cursor })
+        .then((page) => {
+          validateCursorPage(page, cursor, visited, "comment");
+          visitedCursors.current = visited;
+          const firstNewId = page.items[0]?.id;
+          setItems((current) => appendRoots(current ?? [], page.items));
+          setReplyPaging((current) => mergeReplyPaging(current, page.items));
+          setNextCursor(page.nextCursor);
+          // Only a deliberate press moves focus. An observer-triggered load is
+          // something the reader did not ask for, and yanking focus mid-scroll
+          // would lose their place.
+          if (source === "manual" && firstNewId) {
+            window.requestAnimationFrame(() =>
+              document
+                .querySelector<HTMLElement>(`[data-comment-id="${firstNewId}"]`)
+                ?.focus({ preventScroll: true }),
+            );
+          }
+        })
+        .catch((error: unknown) => setMoreError(error))
+        .finally(() => setLoadingMore(false));
+    },
+    [api, loadingMore, nextCursor, postId],
+  );
+
+  const loadMoreReplies = useCallback(
+    (rootId: string) => {
+      const paging = replyPaging.get(rootId);
+      if (!paging || paging.loading || !paging.cursor) return;
+      setReplyPaging((current) =>
+        withReplyPaging(current, rootId, { loading: true, error: null }),
+      );
+      void api
+        .commentReplies(postId, rootId, { cursor: paging.cursor })
+        .then((page) => {
+          setItems((current) =>
+            current
+              ? appendRepliesToRoot(current, rootId, page.items)
+              : current,
+          );
+          setReplyPaging((current) =>
+            withReplyPaging(current, rootId, {
+              cursor: page.nextCursor,
+              loading: false,
+            }),
+          );
+        })
+        .catch((error: unknown) =>
+          setReplyPaging((current) =>
+            withReplyPaging(current, rootId, { loading: false, error }),
+          ),
+        );
+    },
+    [api, postId, replyPaging],
+  );
 
   useEffect(() => {
     const id = focusCommentRef.current;
@@ -109,6 +252,10 @@ export function CommentThread({
         return current;
       }
     });
+    if (comment.parentId === null) {
+      setReplyPaging((current) => mergeReplyPaging(current, [comment]));
+    }
+    onCountChange?.(1);
     setReply(null);
     setAnnouncement("回复已发表");
   };
@@ -120,6 +267,7 @@ export function CommentThread({
     if (reply?.rootId === comment.id || reply?.targetId === comment.id)
       setReply(null);
     if (pinnedCommentId === comment.id) setPinnedCommentId(null);
+    onCountChange?.(-(1 + repliesAffected));
     setAnnouncement(
       repliesAffected > 0
         ? `回复和 ${repliesAffected} 条后续回复已删除`
@@ -143,6 +291,38 @@ export function CommentThread({
     () => orderPinnedConversation(items ?? [], pinnedCommentId),
     [items, pinnedCommentId],
   );
+
+  // A root's branch ends where the next root begins. Marking the last row of
+  // each run is what lets the "more replies" control sit at the bottom of the
+  // branch it belongs to instead of being attached to the root itself, which
+  // would put it above the replies it continues.
+  const hiddenReplies = useMemo(() => {
+    const loaded = countReplies(displayedItems);
+    const hidden = new Map<string, number>();
+    for (const comment of displayedItems) {
+      if (comment.parentId !== null) continue;
+      const remaining = comment.replyCount - (loaded.get(comment.id) ?? 0);
+      // The count is a snapshot and the cursor is the truth about what is left
+      // to fetch. A reply deleted after the page was built makes the count
+      // read high; without this the branch would keep offering replies that a
+      // press could never produce.
+      if (remaining > 0 && replyPaging.get(comment.id)?.cursor) {
+        hidden.set(comment.id, remaining);
+      }
+    }
+    return hidden;
+  }, [displayedItems, replyPaging]);
+
+  const branchEnds = useMemo(() => {
+    const ends = new Map<string, string>();
+    displayedItems.forEach((comment, index) => {
+      const rootId = comment.parentId ?? comment.id;
+      const next = displayedItems[index + 1];
+      const continues = next && (next.parentId ?? next.id) === rootId;
+      if (!continues) ends.set(comment.id, rootId);
+    });
+    return ends;
+  }, [displayedItems]);
 
   return (
     <section
@@ -306,12 +486,90 @@ export function CommentThread({
                       />
                     </li>
                   ) : null}
+                  {branchEnds.has(comment.id) &&
+                  hiddenReplies.has(branchEnds.get(comment.id) as string) ? (
+                    <ReplyBranch
+                      hidden={
+                        hiddenReplies.get(
+                          branchEnds.get(comment.id) as string,
+                        ) as number
+                      }
+                      onLoad={() =>
+                        loadMoreReplies(branchEnds.get(comment.id) as string)
+                      }
+                      paging={replyPaging.get(
+                        branchEnds.get(comment.id) as string,
+                      )}
+                    />
+                  ) : null}
                 </Fragment>
               ))}
             </ol>
           ) : null}
+
+          {moreError ? (
+            <div className={styles.threadError} role="alert">
+              <strong>
+                {moreError instanceof PublicApiError &&
+                moreError.code === "API_RESPONSE_INVALID"
+                  ? "后续回复无法安全显示"
+                  : "这次没有取到更多回复"}
+              </strong>
+              <span>已经读到的回复仍在，重试不会重复发表任何内容。</span>
+              <button
+                onClick={() =>
+                  moreError instanceof PublicApiError &&
+                  moreError.code === "API_RESPONSE_INVALID"
+                    ? load()
+                    : loadMoreRoots("manual")
+                }
+                type="button"
+              >
+                {moreError instanceof PublicApiError &&
+                moreError.code === "API_RESPONSE_INVALID"
+                  ? "从头重新加载"
+                  : "重试"}
+              </button>
+            </div>
+          ) : null}
+
+          {nextCursor && !moreError ? (
+            <LoadMoreSentinel
+              cursor={nextCursor}
+              label="加载更多回复"
+              loading={loadingMore}
+              onLoad={loadMoreRoots}
+            />
+          ) : null}
         </>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * The tail of one root's replies, offering the ones that did not travel.
+ *
+ * It counts down rather than announcing a total: the replies already on screen
+ * are visible, so what the reader needs to know is how many they have not seen.
+ */
+function ReplyBranch({
+  hidden,
+  onLoad,
+  paging,
+}: {
+  hidden: number;
+  onLoad: () => void;
+  paging?: ReplyPaging;
+}) {
+  return (
+    <li className={styles.replyBranch}>
+      <button disabled={paging?.loading} onClick={onLoad} type="button">
+        {paging?.loading ? "正在加载…" : `展开其余 ${hidden} 条回复`}
+      </button>
+      {paging?.error ? (
+        <span role="alert">没有取到更多回复，可以再试一次。</span>
+      ) : null}
+    </li>
   );
 }

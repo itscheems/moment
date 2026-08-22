@@ -90,7 +90,10 @@ function comment(
     author: {
       user_id: options.owner ? site.ownerId : null,
       username: options.owner ? site.username : null,
-      display_name: authorName,
+      // The server resolves an owner comment's name from the site identity,
+      // never from the placeholder stored on the row. Mirroring that here is
+      // what makes these fixtures a faithful stand-in for a real response.
+      display_name: options.owner ? site.displayName : authorName,
       avatar_media_id: null,
       profile_url: options.owner ? `/@${site.username}` : null,
     },
@@ -389,19 +392,196 @@ describe("public comment thread", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reports the loaded count without rendering an empty-state row", async () => {
+  // The thread reports movement, not a total: holding one page of a
+  // conversation, it cannot know how many comments the post has, and
+  // announcing the size of the loaded page would overwrite the real figure.
+  it("reports the comment count as a delta and renders no empty-state row", async () => {
     preauthenticate();
     installApi((url, init) => {
       if (url.endsWith("/comments") && init?.method !== "POST") {
         return success({ items: [] });
       }
+      if (url.endsWith("/comments") && init?.method === "POST") {
+        return success(
+          comment(createdId, "新回复", { owner: true }),
+          { replayed: false },
+          201,
+        );
+      }
     });
     const onCountChange = vi.fn();
     renderThread(site, false, onCountChange);
 
-    await screen.findByRole("form", { name: "发表回复" });
-    await waitFor(() => expect(onCountChange).toHaveBeenLastCalledWith(0));
+    const form = await screen.findByRole("form", { name: "发表回复" });
     expect(screen.queryByText("暂无回复")).not.toBeInTheDocument();
+    // Nothing has changed yet, so nothing is reported.
+    expect(onCountChange).not.toHaveBeenCalled();
+
+    const content = within(form).getByLabelText("回复内容");
+    fireEvent.focus(content);
+    fireEvent.change(content, { target: { value: "新回复" } });
+    fireEvent.click(within(form).getByRole("button", { name: "发表回复" }));
+    await waitFor(() => expect(onCountChange).toHaveBeenCalledWith(1));
+  });
+
+  // A thread arrives one page at a time. The pinned conversation travels
+  // beside that page rather than reordered into it, so the same root can be in
+  // both and has to render once.
+  it("renders the pinned conversation once and pages the rest of the roots", async () => {
+    const secondRootId = "01K2ABCDEF0123456789ABCDF1";
+    const pinnedRoot = comment(rootId, "被置顶的回应", { owner: true });
+    const fetcher = installApi((url, init) => {
+      if (!url.includes("/comments") || init?.method === "POST")
+        return undefined;
+      if (url.includes("cursor=page2")) {
+        return success(
+          {
+            items: [comment(secondRootId, "第二页的根", { owner: true })],
+            pinned_comment_id: rootId,
+            pinned: [pinnedRoot],
+          },
+          { next_cursor: null },
+        );
+      }
+      return success(
+        {
+          items: [pinnedRoot],
+          pinned_comment_id: rootId,
+          pinned: [pinnedRoot],
+        },
+        { next_cursor: "page2" },
+      );
+    });
+
+    renderThread();
+
+    await screen.findByText("被置顶的回应");
+    expect(screen.getAllByText("被置顶的回应")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "加载更多回复" }));
+    await screen.findByText("第二页的根");
+    expect(screen.getAllByText("被置顶的回应")).toHaveLength(1);
+    expect(
+      fetcher.mock.calls.some(([url]) => String(url).includes("cursor=page2")),
+    ).toBe(true);
+    // The cursor is spent, so the control retires rather than looping.
+    expect(
+      screen.queryByRole("button", { name: "加载更多回复" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // A cursor is spent only when a page comes back for it. Marking it as used
+  // before the request would turn an ordinary network failure into a permanent
+  // "cycle detected", leaving the retry button unable to retry.
+  it("retries the same cursor after a failed page instead of reporting a cycle", async () => {
+    const secondRootId = "01K2ABCDEF0123456789ABCDF3";
+    let attempts = 0;
+    installApi((url, init) => {
+      if (!url.includes("/comments") || init?.method === "POST")
+        return undefined;
+      if (url.includes("cursor=page2")) {
+        attempts += 1;
+        if (attempts === 1) return json({}, 503);
+        return success(
+          {
+            items: [comment(secondRootId, "终于来了", { owner: true })],
+            pinned_comment_id: null,
+            pinned: null,
+          },
+          { next_cursor: null },
+        );
+      }
+      return success(
+        {
+          items: [comment(rootId, "第一页", { owner: true })],
+          pinned_comment_id: null,
+          pinned: null,
+        },
+        { next_cursor: "page2" },
+      );
+    });
+
+    renderThread();
+
+    await screen.findByText("第一页");
+    fireEvent.click(screen.getByRole("button", { name: "加载更多回复" }));
+
+    const retry = await screen.findByRole("button", { name: "重试" });
+    // The already-loaded page is never discarded by a failed continuation.
+    expect(screen.getByText("第一页")).toBeInTheDocument();
+
+    fireEvent.click(retry);
+    await screen.findByText("终于来了");
+    expect(attempts).toBe(2);
+    expect(
+      screen.queryByRole("button", { name: "重试" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // A root reports its true reply total, so the branch can offer exactly the
+  // ones the reader has not seen instead of a total they can already count.
+  it("offers a root's unread replies and appends them behind the loaded ones", async () => {
+    const laterReplyId = "01K2ABCDEF0123456789ABCDF2";
+    const root = {
+      ...comment(rootId, "有很多回复", { owner: true }),
+      reply_count: 2,
+    };
+    const firstReply = comment(replyId, "第一条回复", {
+      parentId: rootId,
+      owner: true,
+    });
+    const fetcher = installApi((url, init) => {
+      if (init?.method === "POST") return undefined;
+      if (url.includes("/replies")) {
+        // A reply page is its own shape: items and nothing else. Routing it
+        // through success() would attach the thread-only pinned fields.
+        return json({
+          data: {
+            items: [
+              comment(laterReplyId, "第二条回复", {
+                parentId: rootId,
+                owner: true,
+              }),
+            ],
+          },
+          meta: { request_id: "req_test", next_cursor: null },
+        });
+      }
+      if (url.includes("/comments")) {
+        return success({
+          items: [{ ...root, replies_next_cursor: "replies2" }, firstReply],
+          pinned_comment_id: null,
+          pinned: null,
+        });
+      }
+      return undefined;
+    });
+
+    renderThread();
+
+    const branch = await screen.findByRole("button", {
+      name: "展开其余 1 条回复",
+    });
+    fireEvent.click(branch);
+
+    await screen.findByText("第二条回复");
+    expect(
+      fetcher.mock.calls.some(([url]) =>
+        String(url).includes(`/comments/${rootId}/replies?cursor=replies2`),
+      ),
+    ).toBe(true);
+    // Nothing left to offer once the counted replies are all present.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /展开其余/ }),
+      ).not.toBeInTheDocument(),
+    );
+    // The newly loaded reply lands behind the one already shown, keeping the
+    // root immediately followed by its own replies in creation order.
+    const ordered = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-comment-id]"),
+    ).map((node) => node.dataset.commentId);
+    expect(ordered).toEqual([rootId, replyId, laterReplyId]);
   });
 
   it("expands the detail reply composer once and keeps it open after blur", async () => {
@@ -590,6 +770,8 @@ describe("public comment thread", () => {
     expect(JSON.parse(String(mutation?.[1]?.body))).toEqual({
       content_md: "",
       parent_id: null,
+      // A top-level comment answers nobody in particular.
+      reply_to_comment_id: null,
       media: [],
       location: {
         name: "书房",
@@ -982,9 +1164,14 @@ describe("public comment thread", () => {
       ([url, init]) =>
         String(url).endsWith("/comments") && init?.method === "POST",
     );
+    // Where the reply sits and what it answers are recorded separately: it
+    // hangs off the root, but it answers the sibling the reader clicked. That
+    // difference is the whole reason for the second field, and it is the case
+    // where the rendered prefix has something to say.
     expect(JSON.parse(String(mutation?.[1]?.body))).toEqual({
       content_md: "新一级回复",
       parent_id: rootId,
+      reply_to_comment_id: replyId,
       media: [],
       location: null,
     });
@@ -1444,6 +1631,10 @@ describe("public comment thread", () => {
         {
           content_md: content,
           parent_id: parentId,
+          // Both cases answer the comment they hang off — the top-level one
+          // answers nobody, the reply answers the root it was opened from —
+          // so the target tracks parent_id here rather than diverging from it.
+          reply_to_comment_id: parentId,
           media: [],
           location: null,
         },
