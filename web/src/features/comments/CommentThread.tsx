@@ -440,17 +440,17 @@ export function CommentThread({
                     }}
                     owner={owner.state === "owner" || owner.state === "expired"}
                     pinned={comment.id === pinnedCommentId}
-                    // A null root is the existing "there is nothing to reply
-                    // to here" signal, and it is the right one for a signed-out
-                    // reader too: offering a reply button that can only open a
-                    // sign-in prompt would repeat that prompt on every row,
-                    // when the one above the list already says it once.
+                    // A null root means there is nothing to reply to, which is
+                    // a different thing from not being allowed to. Being
+                    // signed out travels as canReply instead, so the action
+                    // keeps its place and explains itself when pressed rather
+                    // than vanishing and leaving a thread full of replies with
+                    // no visible way to make one.
+                    canReply={canCompose}
                     replyRoot={
-                      !canCompose
-                        ? null
-                        : comment.parentId === null
-                          ? comment
-                          : (rootsById.get(comment.parentId) ?? null)
+                      comment.parentId === null
+                        ? comment
+                        : (rootsById.get(comment.parentId) ?? null)
                     }
                     replyCount={replyCounts.get(comment.id) ?? 0}
                     site={site}

@@ -1,5 +1,6 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { Menu } from "@base-ui/react/menu";
+import { Popover } from "@base-ui/react/popover";
 import {
   type RefObject,
   useEffect,
@@ -443,12 +444,67 @@ function useFoldedBody(contentHtml: string) {
   return { bodyRef, expanded, overflowing, setExpanded };
 }
 
+/**
+ * The reply action for a reader who is not signed in.
+ *
+ * It keeps the affordance and answers on press rather than disappearing.
+ * Hiding it would leave a thread full of replies with no visible way to make
+ * one, which reads as broken rather than as gated — and the notice above the
+ * list is easy to scroll past by the time a reader reaches the comment they
+ * actually want to answer.
+ *
+ * Press, not hover: hovering an action the reader cannot use should not throw
+ * a card over the comment they are reading.
+ */
+function SignInToReplyPopover({ authorName }: { authorName: string }) {
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        aria-label={`回复 ${authorName}`}
+        className={styles.commentAction}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <Icon name="reply" />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Positioner
+          align="start"
+          className={styles.signInPositioner}
+          collisionAvoidance={{ side: "flip", align: "shift" }}
+          collisionPadding={8}
+          side="bottom"
+          sideOffset={6}
+        >
+          <Popover.Popup
+            className={styles.signInPopup}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <Popover.Title className={styles.signInPopupTitle}>
+              登录后回复
+            </Popover.Title>
+            <Popover.Description className={styles.signInPopupBody}>
+              发表回复需要登录。过往回复继续公开可读。
+            </Popover.Description>
+            <InternalLink
+              className={styles.signInPopupAction}
+              href="/owner/login"
+            >
+              登录
+            </InternalLink>
+          </Popover.Popup>
+        </Popover.Positioner>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 export function CommentItem({
   comment,
   site,
   owner,
   pinned,
   replyRoot,
+  canReply = true,
   replyCount,
   focusTarget,
   onReply,
@@ -460,6 +516,13 @@ export function CommentItem({
   owner: boolean;
   pinned: boolean;
   replyRoot: PublicComment | null;
+  /**
+   * Whether this reader may actually reply. It is deliberately separate from
+   * replyRoot: a null root means there is nothing to reply to and the action
+   * has no meaning, while canReply false means the action means something the
+   * reader has to sign in to do. The two want different answers on screen.
+   */
+  canReply?: boolean;
   replyCount: number;
   focusTarget: RefObject<HTMLElement | null>;
   onReply: (root: PublicComment, target: PublicComment) => void;
@@ -711,18 +774,32 @@ export function CommentItem({
          * comment in the thread — a gap that reads as something failing to
          * load rather than as nothing being on offer.
          */}
+        {/*
+         * No root, no footer: there is genuinely nothing to reply to, and an
+         * empty action bar still claims its full target height, leaving a band
+         * of dead space that reads as something failing to load.
+         *
+         * Being signed out is a different thing. The action still means
+         * something; the reader just has to sign in first. Removing it there
+         * would leave them guessing why replies exist but no way to make one,
+         * so the button stays and says so when pressed.
+         */}
         {replyRoot ? (
           <footer className={styles.commentActions}>
-            <ActionTooltip label="回复">
-              <button
-                aria-label={`回复 ${authorName}`}
-                className={styles.commentAction}
-                onClick={() => onReply(replyRoot, comment)}
-                type="button"
-              >
-                <Icon name="reply" />
-              </button>
-            </ActionTooltip>
+            {canReply ? (
+              <ActionTooltip label="回复">
+                <button
+                  aria-label={`回复 ${authorName}`}
+                  className={styles.commentAction}
+                  onClick={() => onReply(replyRoot, comment)}
+                  type="button"
+                >
+                  <Icon name="reply" />
+                </button>
+              </ActionTooltip>
+            ) : (
+              <SignInToReplyPopover authorName={authorName} />
+            )}
           </footer>
         ) : null}
       </article>

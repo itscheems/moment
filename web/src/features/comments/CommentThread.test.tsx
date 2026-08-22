@@ -851,13 +851,27 @@ describe("public comment thread", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByLabelText("回复内容")).not.toBeInTheDocument();
 
-    // Reading keeps working, and the per-row reply buttons stay away so the
-    // sign-in prompt is made once rather than once per comment.
+    // Reading keeps working, and the per-row reply actions stay in place. They
+    // are the affordance for the thing a reader wants to do; removing them
+    // would leave a page full of replies with no visible way to make one, and
+    // the notice above the list is easy to have scrolled past by the time the
+    // reader reaches the comment they mean to answer.
     expect(screen.getByText("顶级回应")).toBeInTheDocument();
     expect(screen.getByText("已有一级回复")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /^回复 / }),
-    ).not.toBeInTheDocument();
+    const replyActions = screen.getAllByRole("button", { name: /^回复 / });
+    expect(replyActions).toHaveLength(2);
+
+    fireEvent.click(replyActions[0]);
+    const prompt = await screen.findByRole("dialog");
+    // jsdom does not run the popup's entry transition, so presence is the
+    // meaningful assertion here; the rendered card is checked in a browser.
+    expect(within(prompt).getByText("登录后回复")).toBeInTheDocument();
+    expect(within(prompt).getByRole("link", { name: "登录" })).toHaveAttribute(
+      "href",
+      "/owner/login",
+    );
+    // Pressing it must not open a composer it cannot submit.
+    expect(screen.queryByLabelText("回复内容")).not.toBeInTheDocument();
   });
 
   it("offers sign-in inside the reply dialog while signed out", async () => {

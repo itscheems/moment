@@ -156,6 +156,7 @@ function renderItem(
     owner?: boolean;
     pinned?: boolean;
     replyRoot?: PublicComment;
+    canReply?: boolean;
   } = {},
 ) {
   const focusTarget = createRef<HTMLElement>();
@@ -173,6 +174,7 @@ function renderItem(
             owner={overrides.owner ?? false}
             pinned={overrides.pinned ?? false}
             replyCount={0}
+            canReply={overrides.canReply ?? true}
             replyRoot={overrides.replyRoot ?? null}
             site={site}
           />
@@ -582,13 +584,35 @@ describe("the composer's reply target", () => {
 // full target height, and a band of blank space under every comment reads as
 // something failing to load rather than as nothing being on offer.
 describe("comment action bar", () => {
-  it("renders no action bar at all when there is nothing to act on", () => {
-    renderItem(comment(rootId, "顶级回应"));
+  it("renders no action bar when there is nothing to reply to", () => {
+    // A reply whose root is not on the page: the action has no target, so it
+    // has no meaning either, and an empty bar would leave dead space.
+    renderItem(comment(replyId, "孤儿回复", { parentId: offPageId }));
 
     expect(document.querySelector("footer")).toBeNull();
     expect(
       screen.queryByRole("button", { name: /^回复/ }),
     ).not.toBeInTheDocument();
+  });
+
+  // Being signed out is not the same as having nothing to reply to. The action
+  // still means something, so it stays and explains itself when pressed.
+  it("keeps the reply action while signed out and answers with a sign-in card", async () => {
+    const root = comment(rootId, "顶级回应");
+    renderItem(root, [], { replyRoot: root, canReply: false });
+
+    const action = screen.getByRole("button", { name: /^回复/ });
+    expect(action).toBeInTheDocument();
+
+    fireEvent.click(action);
+    const prompt = await screen.findByRole("dialog");
+    // jsdom does not run the popup's entry transition, so presence is the
+    // meaningful assertion here; the rendered card is checked in a browser.
+    expect(within(prompt).getByText("登录后回复")).toBeInTheDocument();
+    expect(within(prompt).getByRole("link", { name: "登录" })).toHaveAttribute(
+      "href",
+      "/owner/login",
+    );
   });
 
   it("keeps the reply action when a reply target is available", () => {

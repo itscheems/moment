@@ -1224,11 +1224,22 @@
   text-decoration: underline;
 }
 
+/*
+ * The action row starts where the text does, but the glyph inside it does not:
+ * the button is a full 2.75rem touch target with a 1.25rem icon centred in it,
+ * so the icon lands 0.75rem to the right of every line above it and the column
+ * visibly steps in at the bottom of each comment.
+ *
+ * Pulling the row left by exactly that inset puts the glyph on the text edge
+ * while the button keeps its size — shrinking the button instead would buy the
+ * alignment by making it harder to hit.
+ */
 .commentActions {
   grid-column: 2;
   min-block-size: var(--target-size);
   justify-content: flex-start;
   margin-block-start: 0.1rem;
+  margin-inline-start: calc((var(--target-size) - 1.25rem) / -2);
 }
 
 .commentAction {
@@ -1589,4 +1600,71 @@
   .commentMediaComposer > div > div:first-child button:active:not(:disabled) {
     transform: none;
   }
+}
+
+/*
+ * The sign-in card behind a reply action a signed-out reader pressed. It
+ * borrows the shape of the post location popup rather than inventing a second
+ * kind of card, so the two read as the same object in different places.
+ */
+.signInPositioner {
+  z-index: var(--layer-popover);
+  max-inline-size: calc(100vw - 1rem);
+}
+
+.signInPopup {
+  inline-size: max-content;
+  max-inline-size: min(20rem, calc(100vw - 1rem));
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--motion-popover) var(--ease-out),
+    transform var(--motion-popover) var(--ease-out);
+}
+
+.signInPopup[data-starting-style],
+.signInPopup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-0.2rem) scale(0.98);
+}
+
+.signInPopupTitle,
+.signInPopupBody {
+  margin: 0;
+}
+
+.signInPopupTitle {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.signInPopupBody {
+  margin-block-start: 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.signInPopupAction {
+  margin-block-start: 0.6rem;
+  display: inline-flex;
+  min-block-size: 2rem;
+  align-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.signInPopupAction:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
