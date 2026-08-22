@@ -106,7 +106,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 	}
 	host := &liveServerHost{
 		board: board, auth: authManager, assets: assets, trustedProxies: trustedProxies,
-		secureCookies: !runtime.IsDevelopment(), log: httpLog, exporter: exporter,
+		secureCookies: !runtime.IsDevelopment(), listenAddress: listenAddress, log: httpLog, exporter: exporter,
 	}
 	host.committer = &hostedImportCommitter{core: committer, host: host}
 	retentionContext, cancelRetention := context.WithCancel(ctx)

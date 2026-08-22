@@ -18,6 +18,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/auth/oauth"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/mediatype"
 	"github.com/moment/moment/internal/observability"
@@ -52,6 +53,8 @@ type Config struct {
 	Assets                fs.FS
 	Readiness             ReadinessFunc
 	OwnerAuth             *auth.Manager
+	Accounts              *app.AccountService
+	OAuthProviders        *oauth.Registry
 	SiteSettings          *app.SiteService
 	InstanceID            string
 	InstanceInitializedAt time.Time
@@ -143,45 +146,64 @@ func New(config Config) (*gin.Engine, error) {
 		}
 		Success(ctx, http.StatusOK, map[string]string{"status": "ready"}, nil)
 	})
+	// Every owner-scoped group is admitted by one gate, so authorisation has
+	// exactly one implementation. A route group cannot be registered without
+	// it, which is what makes "this route forgot to check" unrepresentable
+	// rather than merely unlikely.
+	var gate *Gate
 	if config.OwnerAuth != nil {
-		RegisterOwnerRoutes(engine, config.OwnerAuth, CookieOptions{Secure: config.SecureCookies})
+		if config.Accounts == nil {
+			return nil, errors.New("owner authentication requires the account service")
+		}
+		gate = NewGate(config.OwnerAuth, config.Accounts)
+		RegisterOwnerRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
+		RegisterAccountRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
+		// A deployment with no provider credentials still registers the routes;
+		// the provider list comes back empty and the sign-in page draws no
+		// buttons. Registering conditionally would make a misconfiguration look
+		// like a missing feature.
+		RegisterOAuthRoutes(engine, gate, OAuthConfig{
+			Registry: config.OAuthProviders,
+			Cookies:  CookieOptions{Secure: config.SecureCookies},
+			Log:      surfaceLog,
+		})
 	}
 	if config.SiteSettings != nil {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("site settings routes require owner authentication")
 		}
-		RegisterSiteRoutes(engine, config.SiteSettings, config.OwnerAuth, config.InstanceID, config.InstanceInitializedAt)
+		RegisterSiteRoutes(engine, config.SiteSettings, gate, config.InstanceID, config.InstanceInitializedAt)
 		RegisterMentionRoutes(engine, config.SiteSettings)
 	}
 	if config.Media != nil {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("media routes require owner authentication")
 		}
-		RegisterMediaRoutes(engine, config.Media, config.OwnerAuth)
+		RegisterMediaRoutes(engine, config.Media, gate)
 	}
 	if config.Posts != nil {
 		if config.OwnerAuth == nil || config.SiteSettings == nil {
 			return nil, errors.New("post routes require owner authentication and site settings")
 		}
-		RegisterPostRoutes(engine, config.Posts, config.SiteSettings, config.OwnerAuth)
+		RegisterPostRoutes(engine, config.Posts, config.SiteSettings, gate)
 	}
 	if config.Locations != nil {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("location routes require owner authentication")
 		}
-		RegisterLocationRoutes(engine, config.Locations, config.OwnerAuth)
+		RegisterLocationRoutes(engine, config.Locations, gate)
 	}
 	if config.Links != nil {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("link preview routes require owner authentication")
 		}
-		RegisterLinkRoutes(engine, config.Links, config.OwnerAuth)
+		RegisterLinkRoutes(engine, config.Links, gate)
 	}
 	if config.Comments != nil {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("comment routes require owner authentication")
 		}
-		RegisterCommentRoutes(engine, config.Comments, config.OwnerAuth)
+		RegisterCommentRoutes(engine, config.Comments, gate)
 	}
 	if config.Search != nil {
 		RegisterSearchRoutes(engine, config.Search)
@@ -190,25 +212,25 @@ func New(config Config) (*gin.Engine, error) {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("archive export route requires owner authentication")
 		}
-		RegisterExportRoutes(engine, config.Archive, config.OwnerAuth)
+		RegisterExportRoutes(engine, config.Archive, gate)
 	}
 	if config.ImportInspector != nil {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("import inspection route requires owner authentication")
 		}
-		RegisterImportInspectRoutes(engine, config.ImportInspector, config.OwnerAuth)
+		RegisterImportInspectRoutes(engine, config.ImportInspector, gate)
 	}
 	if config.ImportCommitter != nil {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("import commit routes require owner authentication")
 		}
-		RegisterImportCommitRoutes(engine, config.ImportCommitter, config.OwnerAuth)
+		RegisterImportCommitRoutes(engine, config.ImportCommitter, gate)
 	}
 	if config.Doctor != nil {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("doctor route requires owner authentication")
 		}
-		RegisterDoctorRoutes(engine, config.Doctor, config.OwnerAuth)
+		RegisterDoctorRoutes(engine, config.Doctor, gate)
 	}
 
 	if config.Register != nil {

@@ -8,15 +8,14 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/locationdto"
 )
 
 // RegisterLocationRoutes mounts owner-authenticated place discovery endpoints.
-func RegisterLocationRoutes(engine *gin.Engine, locations *app.LocationService, manager *auth.Manager) {
+func RegisterLocationRoutes(engine *gin.Engine, locations *app.LocationService, gate *Gate) {
 	owner := engine.Group("/api/v1/owner/locations")
-	owner.Use(RequireOwner(manager))
+	owner.Use(gate.RequireOwner())
 	owner.GET("/search", searchLocations(locations))
 	owner.GET("/nearby", nearbyLocations(locations))
 }

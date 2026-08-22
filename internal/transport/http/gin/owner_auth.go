@@ -10,6 +10,7 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 )
 
@@ -43,15 +44,16 @@ type sessionResponse struct {
 }
 
 // RegisterOwnerRoutes installs the complete authentication transport. Future
-// owner feature groups can reuse RequireOwner rather than decode credentials.
-func RegisterOwnerRoutes(engine *gin.Engine, manager *auth.Manager, cookies CookieOptions) {
+// owner feature groups can reuse the gate rather than decode credentials.
+func RegisterOwnerRoutes(engine *gin.Engine, gate *Gate, cookies CookieOptions) {
+	manager := gate.manager
 	owner := engine.Group("/api/v1/owner")
 	owner.GET("/login-options", loginOptions(manager))
-	owner.POST("/session", exchangeSession(manager, cookies))
+	owner.POST("/session", exchangeSession(gate, cookies))
 
 	protected := owner.Group("")
-	protected.Use(RequireOwner(manager))
-	protected.DELETE("/session", logoutSession(cookies))
+	protected.Use(gate.RequireOwner())
+	protected.DELETE("/session", logoutSession(gate, cookies))
 	protected.GET("/status", ownerStatus(manager))
 	protected.POST("/token/rotate", rotateToken(manager))
 	protected.PUT("/password", setPassword(manager))
@@ -72,55 +74,7 @@ func loginOptions(manager *auth.Manager) gin.HandlerFunc {
 // session. An Authorization header always takes precedence; malformed/invalid
 // bearer input never falls back to cookies. Unsafe cookie-authenticated requests
 // additionally require the CSRF token bound into the signed session.
-func RequireOwner(manager *auth.Manager) gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		authorizationValues := ctx.Request.Header.Values("Authorization")
-		if len(authorizationValues) > 1 {
-			unauthorized(ctx)
-			return
-		}
-		if len(authorizationValues) == 1 {
-			if strings.TrimSpace(authorizationValues[0]) == "" {
-				unauthorized(ctx)
-				return
-			}
-			parts := strings.Fields(authorizationValues[0])
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-				unauthorized(ctx)
-				return
-			}
-			grant, err := manager.AuthorizeBearer(parts[1])
-			if err != nil {
-				unauthorized(ctx)
-				return
-			}
-			ctx.Set(ownerSourceKey, "bearer")
-			ctx.Set(ownerGrantKey, grant)
-			ctx.Next()
-			return
-		}
-
-		cookie, err := ctx.Request.Cookie(SessionCookieName)
-		if err != nil {
-			unauthorized(ctx)
-			return
-		}
-		session, grant, err := manager.AuthorizeSession(cookie.Value)
-		if err != nil {
-			unauthorized(ctx)
-			return
-		}
-		if isUnsafeMethod(ctx.Request.Method) && !constantTimeEqual(ctx.GetHeader(CSRFHeaderName), session.CSRFToken) {
-			Failure(ctx, http.StatusForbidden, "CSRF_INVALID", "a valid CSRF token is required", nil)
-			return
-		}
-		ctx.Set(ownerSourceKey, "session")
-		ctx.Set(ownerGrantKey, grant)
-		ctx.Next()
-	}
-}
-
-func exchangeSession(manager *auth.Manager, cookies CookieOptions) gin.HandlerFunc {
+func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		body, ok := readBody(ctx)
 		if !ok {
@@ -135,16 +89,37 @@ func exchangeSession(manager *auth.Manager, cookies CookieOptions) gin.HandlerFu
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "exactly one owner password or token is required", nil)
 			return
 		}
+		// A password and a bearer are both the owner's credentials, so the
+		// subject is looked up rather than chosen. Resolving it before signing
+		// keeps the credential layer free of any knowledge of storage.
+		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
+		if err != nil {
+			writeAccountError(ctx, err)
+			return
+		}
+		sessionID, err := app.NewSessionID()
+		if err != nil {
+			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "owner session could not be issued", nil)
+			return
+		}
+		subject := auth.Subject{UserID: owner.ID, SessionID: sessionID}
+
 		var cookieValue string
 		var session auth.Session
-		var err error
 		if request.Password != nil {
-			cookieValue, session, err = manager.IssuePasswordSession(*request.Password)
+			cookieValue, session, err = gate.manager.IssuePasswordSession(*request.Password, subject)
 		} else {
-			cookieValue, session, err = manager.IssueSession(*request.Token)
+			cookieValue, session, err = gate.manager.IssueSession(*request.Token, subject)
 		}
 		if err != nil {
 			unauthorized(ctx)
+			return
+		}
+		// The row is written before the cookie is handed out, so a cookie a
+		// caller holds always has something to be revoked by.
+		if _, err := gate.accounts.StartSession(ctx.Request.Context(), owner.ID, sessionID,
+			string(requestSurface(ctx)), session.ExpiresAt.UnixMilli()); err != nil {
+			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "owner session could not be recorded", nil)
 			return
 		}
 		setSessionCookie(ctx, cookieValue, session.ExpiresAt, cookies)
@@ -187,8 +162,19 @@ func setPassword(manager *auth.Manager) gin.HandlerFunc {
 	}
 }
 
-func logoutSession(cookies CookieOptions) gin.HandlerFunc {
+// logoutSession revokes the session it was called with, then clears the cookie.
+//
+// Clearing the cookie alone was the previous behaviour and was not a logout: a
+// copied cookie value stayed valid for the rest of its twelve hours, because
+// nothing server-side had been told to stop honouring it.
+func logoutSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		if session, ok := CurrentSession(ctx); ok {
+			if err := gate.accounts.EndSession(ctx.Request.Context(), session.ID); err != nil {
+				Failure(ctx, http.StatusInternalServerError, "INTERNAL", "session could not be ended", nil)
+				return
+			}
+		}
 		clearSessionCookie(ctx, cookies)
 		Success(ctx, http.StatusOK, map[string]bool{"logged_out": true}, nil)
 	}

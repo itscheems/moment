@@ -1,13 +1,18 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/linkfetch"
 )
 
 // AccountStore is the persistence port for accounts and the external
@@ -65,6 +70,20 @@ type AccountService struct {
 	transactions AccountTransactions
 	clock        func() time.Time
 	newID        func() (string, error)
+	avatarSource AvatarSource
+	avatars      AvatarStore
+}
+
+// WithAvatarCapture enables storing a provider's account picture as managed
+// media. Both halves are required; without them an account simply starts with
+// no picture.
+func WithAvatarCapture(source AvatarSource, store AvatarStore) AccountOption {
+	return func(service *AccountService) {
+		if source != nil && store != nil {
+			service.avatarSource = source
+			service.avatars = store
+		}
+	}
 }
 
 // AccountOption customises an AccountService.
@@ -535,4 +554,204 @@ func (service *AccountService) SetStatus(ctx context.Context, userID string, sta
 		return nil
 	})
 	return result, err
+}
+
+// SessionResolution is everything a request needs to know about its caller.
+type SessionResolution struct {
+	Session domain.SessionRecord
+	User    domain.User
+}
+
+// ResolveSession answers who a live session belongs to.
+//
+// Both halves matter and neither is redundant. The cookie's signature already
+// proves this server issued it; the row decides whether it is still supposed to
+// work, and the account decides what that person may do now rather than what
+// they could do when they signed in.
+func (service *AccountService) ResolveSession(ctx context.Context, sessionID string) (SessionResolution, error) {
+	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
+	var resolved SessionResolution
+	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+		session, found, err := sessions.SessionByID(ctx, sessionID)
+		if err != nil {
+			return err
+		}
+		if !found || !session.Live(nowMS) {
+			return domain.NewError(domain.CodeUnauthorized, "this session is no longer valid", nil)
+		}
+		user, err := accounts.UserByID(ctx, session.UserID)
+		if err != nil {
+			return err
+		}
+		if !user.CanSignIn() {
+			return domain.NewError(domain.CodeAccountSuspended, "this account has been suspended", nil)
+		}
+		resolved = SessionResolution{Session: session, User: user}
+		return nil
+	})
+	return resolved, err
+}
+
+// sessionTouchIntervalMS bounds how often a request updates last_seen_at_ms.
+//
+// SQLite serialises writes through a single connection here, so writing on
+// every authenticated request would make the write pool the bottleneck for
+// reads. Five minutes is precise enough for "when was this device last used"
+// and cheap enough to be free.
+const sessionTouchIntervalMS = 5 * 60 * 1000
+
+// TouchSession records that a session was used, at most once per interval.
+func (service *AccountService) TouchSession(ctx context.Context, session domain.SessionRecord) error {
+	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
+	if nowMS-session.LastSeenAtMS < sessionTouchIntervalMS {
+		return nil
+	}
+	return service.transactions.WriteAccounts(ctx, func(_ AccountStore, sessions SessionStore) error {
+		return sessions.TouchSession(ctx, session.ID, nowMS)
+	})
+}
+
+// OwnerAccount reads the account that owns the site.
+func (service *AccountService) OwnerAccount(ctx context.Context) (domain.User, error) {
+	var user domain.User
+	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
+		ownerID, err := accounts.OwnerUserID(ctx)
+		if err != nil {
+			return err
+		}
+		value, err := accounts.UserByID(ctx, ownerID)
+		if err != nil {
+			return err
+		}
+		user = value
+		return nil
+	})
+	return user, err
+}
+
+// StartSession records a new sign-in and returns the row it created.
+func (service *AccountService) StartSession(ctx context.Context, userID, sessionID, surface string, expiresAtMS int64) (domain.SessionRecord, error) {
+	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
+	record := domain.SessionRecord{
+		ID:           sessionID,
+		UserID:       userID,
+		IssuedAtMS:   nowMS,
+		ExpiresAtMS:  expiresAtMS,
+		LastSeenAtMS: nowMS,
+		Surface:      surface,
+	}
+	err := service.transactions.WriteAccounts(ctx, func(_ AccountStore, sessions SessionStore) error {
+		return sessions.CreateSession(ctx, record)
+	})
+	return record, err
+}
+
+// EndSession revokes one sign-in.
+func (service *AccountService) EndSession(ctx context.Context, sessionID string) error {
+	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
+	return service.transactions.WriteAccounts(ctx, func(_ AccountStore, sessions SessionStore) error {
+		return sessions.RevokeSession(ctx, sessionID, nowMS)
+	})
+}
+
+// EndAllSessions revokes every sign-in for an account.
+func (service *AccountService) EndAllSessions(ctx context.Context, userID string) (int, error) {
+	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
+	var revoked int
+	err := service.transactions.WriteAccounts(ctx, func(_ AccountStore, sessions SessionStore) error {
+		count, err := sessions.RevokeUserSessions(ctx, userID, nowMS)
+		revoked = count
+		return err
+	})
+	return revoked, err
+}
+
+// Sessions lists an account's sign-ins, newest first.
+func (service *AccountService) Sessions(ctx context.Context, userID string) ([]domain.SessionRecord, error) {
+	var records []domain.SessionRecord
+	err := service.transactions.ReadAccounts(ctx, func(_ AccountStore, sessions SessionStore) error {
+		value, err := sessions.ListUserSessions(ctx, userID)
+		records = value
+		return err
+	})
+	return records, err
+}
+
+// NewSessionID mints the identifier a session row is found by.
+func NewSessionID() (string, error) { return NewAccountID() }
+
+// AvatarSource downloads a bounded remote image. It is the same seam the link
+// previewer uses, which is what gives an avatar the same address filtering,
+// redirect stripping and byte ceiling a link thumbnail already gets.
+type AvatarSource interface {
+	Get(ctx context.Context, rawURL string, accepted []string, maxBytes int64) (linkfetch.Response, error)
+}
+
+// AvatarStore ingests downloaded bytes as managed media.
+type AvatarStore interface {
+	Ingest(ctx context.Context, originalName string, input io.Reader) (domain.ID, string, uint32, uint32, error)
+}
+
+// avatarHostAllowlist bounds where an avatar may be fetched from.
+//
+// The URL arrives inside a provider's answer, but it is still a value someone
+// else chose, and the fetcher's own address filter only proves a host is
+// publicly routable. Pinning the two hosts these providers actually serve
+// pictures from costs nothing and removes the question.
+var avatarHostAllowlist = map[string]string{
+	"lh3.googleusercontent.com":     "google",
+	"avatars.githubusercontent.com": "github",
+}
+
+// avatarCaptureBudget bounds how long sign-in will wait for a picture.
+//
+// A person signing in is waiting on this request. A provider's image host
+// being slow, or unreachable from where this server runs, must cost them a
+// default avatar rather than a failed login.
+const avatarCaptureBudget = 3 * time.Second
+
+// CaptureAvatar downloads an account picture and stores it as managed media.
+//
+// Failure is not an error the caller should react to: an account with no
+// picture renders its initial, and the person can upload one whenever they
+// like. The signature returns an error only so the reason can be logged.
+func (service *AccountService) CaptureAvatar(ctx context.Context, userID, avatarURL string) error {
+	if service.avatars == nil || service.avatarSource == nil || avatarURL == "" {
+		return nil
+	}
+	parsed, err := url.Parse(avatarURL)
+	if err != nil || parsed.Scheme != "https" {
+		return fmt.Errorf("avatar url is not usable")
+	}
+	if _, allowed := avatarHostAllowlist[strings.ToLower(parsed.Hostname())]; !allowed {
+		return fmt.Errorf("avatar host is not allowed")
+	}
+
+	fetchCtx, cancel := context.WithTimeout(ctx, avatarCaptureBudget)
+	defer cancel()
+	response, err := service.avatarSource.Get(fetchCtx, avatarURL, []string{"image/*"}, linkfetch.DefaultMaxImageBytes)
+	if err != nil {
+		return err
+	}
+	id, _, _, _, err := service.avatars.Ingest(fetchCtx, "account-avatar", bytes.NewReader(response.Body))
+	if err != nil {
+		return err
+	}
+
+	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
+	mediaID := id.String()
+	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
+		user, err := accounts.UserByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		// Never replace a picture the person chose. This runs on first sign-in,
+		// and a later provider change must not overwrite an upload.
+		if user.AvatarMediaID != nil {
+			return nil
+		}
+		user.AvatarMediaID = &mediaID
+		user.UpdatedAtMS = nowMS
+		return accounts.UpdateProfile(ctx, user)
+	})
 }

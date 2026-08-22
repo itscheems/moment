@@ -14,7 +14,6 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/linkdto"
 	"github.com/moment/moment/internal/transport/locationdto"
@@ -24,11 +23,11 @@ import (
 // RegisterPostRoutes exposes public plain-text reads and owner-only mutations
 // over one PostService. SiteService supplies the authoritative IANA timezone
 // used by application-owned date range interpretation.
-func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.SiteService, manager *auth.Manager) {
+func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.SiteService, gate *Gate) {
 	engine.GET("/api/v1/posts", listPosts(posts, site))
 	engine.GET("/api/v1/posts/:id", getPost(posts))
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(RequireOwner(manager))
+	owner.Use(gate.RequireOwner())
 	owner.POST("/posts", createPost(posts))
 	owner.PATCH("/posts/:id", updatePost(posts))
 	owner.DELETE("/posts/:id", deletePost(posts))

@@ -10,7 +10,6 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/archive"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 )
 
@@ -27,9 +26,9 @@ type ArchiveExporter interface {
 // RegisterExportRoutes exposes the owner-authenticated, bodyless v1 download.
 // GET is safe for cookie auth under the existing owner contract; bearer auth
 // is accepted by the same middleware.
-func RegisterExportRoutes(engine *gin.Engine, exporter ArchiveExporter, manager *auth.Manager) {
+func RegisterExportRoutes(engine *gin.Engine, exporter ArchiveExporter, gate *Gate) {
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(RequireOwner(manager))
+	owner.Use(gate.RequireOwner())
 	owner.GET("/export", streamExport(exporter))
 }
 

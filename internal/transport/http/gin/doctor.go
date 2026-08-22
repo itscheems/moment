@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	gin "github.com/gin-gonic/gin"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/doctor"
 )
 
@@ -17,9 +16,9 @@ type DoctorReporter interface {
 
 // RegisterDoctorRoutes exposes only the explicitly allowlisted summary mode.
 // Deep topology checks remain a local/direct CLI capability.
-func RegisterDoctorRoutes(engine *gin.Engine, reporter DoctorReporter, manager *auth.Manager) {
+func RegisterDoctorRoutes(engine *gin.Engine, reporter DoctorReporter, gate *Gate) {
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(RequireOwner(manager))
+	owner.Use(gate.RequireOwner())
 	owner.GET("/doctor", doctorSummary(reporter))
 }
 

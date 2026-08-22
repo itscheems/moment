@@ -14,7 +14,6 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/commentdto"
 	"github.com/moment/moment/internal/transport/postdto"
@@ -31,11 +30,11 @@ import (
 // Removal is a write-side decision only. Rows an earlier version accepted stay
 // readable: author_kind still admits 'guest' wherever a comment is read, so an
 // archive taken before this change imports and renders unchanged.
-func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, manager *auth.Manager) {
+func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, gate *Gate) {
 	engine.GET("/api/v1/posts/:id/comments", listComments(service))
 	engine.GET("/api/v1/posts/:id/comments/:comment_id/replies", listCommentReplies(service))
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(RequireOwner(manager))
+	owner.Use(gate.RequireActiveAccount())
 	owner.POST("/posts/:id/comments", createOwnerComment(service))
 	owner.PUT("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, true))
 	owner.DELETE("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, false))

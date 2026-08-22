@@ -11,16 +11,15 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 )
 
 // RegisterSiteRoutes installs the public settings read and owner-only partial
 // mutation over one application service.
-func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, manager *auth.Manager, instanceID string, instanceInitializedAt time.Time) {
+func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, gate *Gate, instanceID string, instanceInitializedAt time.Time) {
 	engine.GET("/api/v1/site", getSiteSettings(service, instanceID, instanceInitializedAt))
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(RequireOwner(manager))
+	owner.Use(gate.RequireOwner())
 	owner.PATCH("/site", updateSiteSettings(service))
 }
 

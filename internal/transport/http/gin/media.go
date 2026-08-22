@@ -11,14 +11,13 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
 )
 
 // RegisterMediaRoutes installs explicit immutable original/preview delivery
 // and owner-authenticated ingestion. Preview failures never route to originals.
-func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, manager *auth.Manager) {
+func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 	for _, path := range []string{"/api/v1/media/:id", "/api/v1/media/:id/preview", "/api/v1/media/:id/poster"} {
 		kind := "original"
 		if strings.HasSuffix(path, "/preview") {
@@ -31,7 +30,7 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, manager *auth.M
 		engine.HEAD(path, getMediaAsset(store, kind))
 	}
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(RequireOwner(manager))
+	owner.Use(gate.RequireOwner())
 	posters := newUploadPosterCache()
 	owner.POST("/media", uploadMedia(store, posters))
 	owner.GET("/media-uploads/:uploadID/poster", getUploadPoster(posters))

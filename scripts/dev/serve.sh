@@ -24,21 +24,20 @@ read_local_setting() {
   ' "$setting_file"
 }
 
-load_location_provider_keys() {
-  local config_file value
+load_provider_keys() {
+  local config_file key value
 
-  # Process environment wins, followed by .env.local, then .env. Parse only
-  # the two explicit provider keys below; never source or evaluate local files.
+  # Process environment wins, followed by .env.local, then .env. Parse only the
+  # explicit keys listed below; never source or evaluate local files.
   for config_file in "${repo_root}/.env.local" "${repo_root}/.env"; do
     [[ -f "$config_file" ]] || continue
-    if [[ -z "${AMAP_API_KEY:-}" ]]; then
-      value="$(read_local_setting "$config_file" AMAP_API_KEY)"
-      [[ -z "$value" ]] || export AMAP_API_KEY="$value"
-    fi
-    if [[ -z "${GEOAPIFY_API_KEY:-}" ]]; then
-      value="$(read_local_setting "$config_file" GEOAPIFY_API_KEY)"
-      [[ -z "$value" ]] || export GEOAPIFY_API_KEY="$value"
-    fi
+    for key in AMAP_API_KEY GEOAPIFY_API_KEY \
+      MOMENT_GOOGLE_CLIENT_ID MOMENT_GOOGLE_CLIENT_SECRET \
+      MOMENT_GITHUB_CLIENT_ID MOMENT_GITHUB_CLIENT_SECRET; do
+      [[ -z "${!key:-}" ]] || continue
+      value="$(read_local_setting "$config_file" "$key")"
+      [[ -z "$value" ]] || export "$key=$value"
+    done
   done
 }
 
@@ -156,7 +155,7 @@ if [[ -t 1 ]]; then
   printf '\n'
 fi
 
-load_location_provider_keys
+load_provider_keys
 if [[ -n "${AMAP_API_KEY:-}" || -n "${GEOAPIFY_API_KEY:-}" ]]; then
   provider_summary=''
   [[ -z "${AMAP_API_KEY:-}" ]] || provider_summary='AMap'
