@@ -91,6 +91,9 @@ func (service *LinkPreviewService) Resolve(ctx context.Context, rawURL string) (
 		SiteName:        preview.SiteName,
 		AuthorName:      preview.AuthorName,
 		DurationSeconds: preview.DurationSeconds,
+		ViewCount:       preview.ViewCount,
+		CommentCount:    preview.CommentCount,
+		LikeCount:       preview.LikeCount,
 		EmbedURL:        preview.EmbedURL,
 		CapturedAt:      domain.TimeToMillis(domain.NormalizeTime(service.clock())),
 	}

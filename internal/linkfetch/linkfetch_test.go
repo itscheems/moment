@@ -454,3 +454,78 @@ func TestGenericPageCarriesNoStatistics(t *testing.T) {
 		t.Fatalf("generic page was refined: %#v", preview)
 	}
 }
+
+func TestBilibiliRefinerStripsCategoryAndBrandingTails(t *testing.T) {
+	// Bilibili appends different tails depending on how a video was surfaced.
+	// None of them are part of the title the uploader wrote.
+	for raw, want := range map[string]string{
+		"怕输才会紧张，想赢只会兴奋_哔哩哔哩_bilibili":  "怕输才会紧张，想赢只会兴奋",
+		"21亿瑞天帝成帝瞬间被天道镇压！陨落为凡人_游戏热门视频": "21亿瑞天帝成帝瞬间被天道镇压！陨落为凡人",
+		"某个标题_生活热门视频":                  "某个标题",
+		"某个标题_哔哩哔哩":                    "某个标题",
+		"某个标题_bilibili弹幕视频网":           "某个标题",
+		// A title that merely contains an underscore must survive intact.
+		"深入理解 TCP_IP 协议": "深入理解 TCP_IP 协议",
+	} {
+		got := bilibiliProvider{}.Refine(Metadata{Title: raw}).Title
+		if got != want {
+			t.Fatalf("refined %q = %q, want %q", raw, got, want)
+		}
+	}
+}
+
+func TestResolveRetriesAPartialDocumentThatHasNoStatistics(t *testing.T) {
+	// A partial response is not always an obvious challenge page: it can carry
+	// a title and a cover while omitting the figures the page normally has.
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		attempts++
+		writer.Header().Set("Content-Type", "text/html")
+		stats := ""
+		if attempts > 1 {
+			stats = `<meta property="og:description" content="视频播放量 288993、弹幕量 370、点赞数 1171, 视频作者 某人, ">`
+		}
+		_, _ = writer.Write([]byte(`<html><head>
+<link rel="canonical" href="https://www.bilibili.com/video/BV189zjBZEP7">
+<meta property="og:title" content="一个标题_游戏热门视频">
+<meta property="og:image" content="https://example.com/cover.jpg">
+` + stats + `</head></html>`))
+	}))
+	defer server.Close()
+
+	resolver := NewResolver(ResolverOptions{Fetcher: loopbackFetcher()})
+	preview, err := resolver.Resolve(context.Background(), server.URL+"/video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.ViewCount == nil || *preview.ViewCount != 288993 {
+		t.Fatalf("expected the retry to recover the figures, got %v after %d attempts", preview.ViewCount, attempts)
+	}
+	if preview.Title != "一个标题" {
+		t.Fatalf("unexpected title %q", preview.Title)
+	}
+}
+
+func TestResolveDoesNotRetryAProviderWithoutStatistics(t *testing.T) {
+	// YouTube publishes no such figures, so a complete page must not be
+	// re-requested merely because none were found.
+	var attempts int
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		attempts++
+		writer.Header().Set("Content-Type", "text/html")
+		_, _ = writer.Write([]byte(`<html><head>
+<link rel="canonical" href="https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+<meta property="og:title" content="A video">
+<meta property="og:image" content="https://example.com/cover.jpg">
+</head></html>`))
+	}))
+	defer server.Close()
+
+	resolver := NewResolver(ResolverOptions{Fetcher: loopbackFetcher()})
+	if _, err := resolver.Resolve(context.Background(), server.URL+"/watch"); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 {
+		t.Fatalf("expected exactly one request, got %d", attempts)
+	}
+}

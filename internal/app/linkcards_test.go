@@ -206,3 +206,56 @@ func TestDerivedSearchTextIsUnchangedWithoutCards(t *testing.T) {
 		t.Fatalf("card-free derived text drifted: %q vs %q", withoutCards, baseline)
 	}
 }
+
+func TestLinkPreviewCarriesEveryResolvedFieldOntoTheCard(t *testing.T) {
+	// Every field the resolver produces has to reach the stored card. An
+	// earlier version added engagement figures at both ends and forgot the
+	// assignment between them, so cards published through the live path
+	// silently lost their counts while a hand-written --link-json payload
+	// still looked correct.
+	image := pngBytes(t)
+	var server *httptest.Server
+	service, srv := newLinkPreviewFixture(t, func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/cover.png" {
+			writer.Header().Set("Content-Type", "image/png")
+			_, _ = writer.Write(image)
+			return
+		}
+		writer.Header().Set("Content-Type", "text/html")
+		_, _ = writer.Write([]byte(`<html><head>
+<link rel="canonical" href="https://www.bilibili.com/video/BV189zjBZEP7">
+<meta property="og:title" content="一个标题_游戏热门视频">
+<meta property="og:image" content="` + server.URL + `/cover.png">
+<meta property="og:video:duration" content="674">
+<meta property="og:description" content="视频播放量 288993、弹幕量 370、点赞数 1171, 视频作者 某位作者, ">
+</head></html>`))
+	}, &stubThumbnailStore{})
+	server = srv
+
+	preview, err := service.Resolve(context.Background(), server.URL+"/video")
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := preview.Card
+	if card.ViewCount == nil || *card.ViewCount != 288993 {
+		t.Fatalf("view count did not reach the card: %v", card.ViewCount)
+	}
+	if card.CommentCount == nil || *card.CommentCount != 370 {
+		t.Fatalf("comment count did not reach the card: %v", card.CommentCount)
+	}
+	if card.LikeCount == nil || *card.LikeCount != 1171 {
+		t.Fatalf("like count did not reach the card: %v", card.LikeCount)
+	}
+	if card.AuthorName != "某位作者" {
+		t.Fatalf("author did not reach the card: %q", card.AuthorName)
+	}
+	if card.DurationSeconds == nil || *card.DurationSeconds != 674 {
+		t.Fatalf("duration did not reach the card: %v", card.DurationSeconds)
+	}
+	if card.Title != "一个标题" {
+		t.Fatalf("title tail was not stripped: %q", card.Title)
+	}
+	if card.ThumbnailMediaID == "" {
+		t.Fatal("thumbnail did not reach the card")
+	}
+}

@@ -50,6 +50,11 @@ type Enricher interface {
 // card came from.
 type Refiner interface {
 	Refine(metadata Metadata) Metadata
+	// HasStatistics answers whether a refined document actually carried the
+	// figures this provider publishes. A provider that ships a Refiner expects
+	// to find them, so their absence marks the response as a partial variant
+	// rather than a normal page.
+	HasStatistics(metadata Metadata) bool
 }
 
 // Embeddable origins. This list is the whole inline-player surface: only a URL
@@ -190,12 +195,23 @@ func (bilibiliProvider) Recognize(target *url.URL) (Recognition, bool) {
 // and appends its own branding to og:title. Both are parsed here into the
 // structured fields a card actually renders.
 var (
-	bilibiliTitleSuffix = regexp.MustCompile(`_(哔哩哔哩|bilibili)(_bilibili)?\s*$`)
+	// Bilibili appends its own tail to a page title, and not always the same
+	// one: sometimes its branding, sometimes the category feed the video was
+	// surfaced through. Both are navigation context rather than part of the
+	// title the uploader wrote, and neither belongs on a card.
+	bilibiliTitleSuffix = regexp.MustCompile(`_(哔哩哔哩(_bilibili)?(弹幕视频网)?|bilibili(弹幕视频网)?|[^_]{0,12}热门视频)\s*$`)
 	bilibiliViews       = regexp.MustCompile(`视频播放量\s*([0-9]+)`)
 	bilibiliDanmaku     = regexp.MustCompile(`弹幕量\s*([0-9]+)`)
 	bilibiliLikes       = regexp.MustCompile(`点赞数\s*([0-9]+)`)
 	bilibiliAuthor      = regexp.MustCompile(`视频作者\s*([^,，]+)`)
 )
+
+// HasStatistics reports whether refinement produced the figures this provider
+// is expected to publish. The resolver uses it to tell a complete document from
+// a partial one without knowing anything about which platform it came from.
+func (bilibiliProvider) HasStatistics(metadata Metadata) bool {
+	return metadata.ViewCount != nil || metadata.LikeCount != nil
+}
 
 func (bilibiliProvider) Refine(metadata Metadata) Metadata {
 	title := metadata.Title
