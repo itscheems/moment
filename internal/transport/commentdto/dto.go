@@ -294,9 +294,21 @@ func validProjectionMIMEType(value string) bool {
 // stay in order, and each reply still sits directly behind the root it belongs
 // to. The one rule that had to go is "the pinned comment appears in items" —
 // under pagination it legitimately may not.
+//
+// A pinned selection with no conversation beside it is likewise accepted, and
+// deliberately: ListPage emits exactly that when the pinned row cannot be
+// loaded, and the reader still needs to know which comment is pinned in order
+// to mark it if a later page carries it. What is not accepted is a pinned
+// conversation belonging to some other post, because the whole response
+// describes one post's thread.
 func ValidateThread(thread Thread) error {
 	if thread.Items == nil {
 		return errors.New("comment thread items must be an array")
+	}
+	if thread.PinnedCommentID != nil {
+		if _, err := domain.ParseID(*thread.PinnedCommentID); err != nil {
+			return err
+		}
 	}
 	if err := validateCommentRun(thread.Pinned); err != nil {
 		return err
@@ -344,6 +356,20 @@ func ValidateThread(thread Thread) error {
 		replyCopy := comment
 		lastReply = &replyCopy
 	}
+	// The pinned conversation travels beside the page rather than inside it,
+	// but it is still part of this post's thread and has to be checked against
+	// it: walking items alone left the two halves of one response free to
+	// describe two different posts. Items may be empty while a pinned
+	// conversation is present, so either half can be the one that names the
+	// post.
+	for _, comment := range thread.Pinned {
+		if postID == "" {
+			postID = comment.PostID
+		}
+		if comment.PostID != postID {
+			return errors.New("comment thread contains multiple posts")
+		}
+	}
 	if thread.PinnedCommentID != nil {
 		for _, comment := range thread.Items {
 			if comment.ID == *thread.PinnedCommentID && comment.ParentID != nil {
@@ -355,10 +381,17 @@ func ValidateThread(thread Thread) error {
 }
 
 // ValidateReplyPage checks one page of replies under a single root.
+//
+// It carries the same whole-page checks as ValidateThread. Sharing one
+// parent_id does not imply sharing one post, and stable ordering does not
+// imply distinct identities once a repeated reply arrives with a different
+// timestamp — which is what concatenating two overlapping pages produces.
 func ValidateReplyPage(page ReplyPage) error {
 	if page.Items == nil {
 		return errors.New("comment reply page items must be an array")
 	}
+	seen := make(map[string]struct{})
+	postID := ""
 	parent := ""
 	var last *Comment
 	for _, comment := range page.Items {
@@ -368,6 +401,16 @@ func ValidateReplyPage(page ReplyPage) error {
 		if comment.ParentID == nil {
 			return errors.New("comment reply page contains a root comment")
 		}
+		if postID == "" {
+			postID = comment.PostID
+		}
+		if comment.PostID != postID {
+			return errors.New("comment reply page contains multiple posts")
+		}
+		if _, duplicate := seen[comment.ID]; duplicate {
+			return errors.New("comment reply page contains a duplicate comment")
+		}
+		seen[comment.ID] = struct{}{}
 		if parent == "" {
 			parent = *comment.ParentID
 		}
