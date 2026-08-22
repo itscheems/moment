@@ -703,8 +703,16 @@ export function CommentItem({
          */}
         {comment.location ? <PostLocation location={comment.location} /> : null}
         <ImageGrid media={comment.media} />
-        <footer className={styles.commentActions}>
-          {replyRoot ? (
+        {/*
+         * No actions, no footer. The empty <span> this used to fall back to was
+         * a spacer for a `space-between` row, and it was almost unreachable
+         * while every reader could reply. Now that a signed-out reader has no
+         * reply button, keeping it left a 44px band of dead space under every
+         * comment in the thread — a gap that reads as something failing to
+         * load rather than as nothing being on offer.
+         */}
+        {replyRoot ? (
+          <footer className={styles.commentActions}>
             <ActionTooltip label="回复">
               <button
                 aria-label={`回复 ${authorName}`}
@@ -715,10 +723,8 @@ export function CommentItem({
                 <Icon name="reply" />
               </button>
             </ActionTooltip>
-          ) : (
-            <span />
-          )}
-        </footer>
+          </footer>
+        ) : null}
       </article>
     </li>
   );

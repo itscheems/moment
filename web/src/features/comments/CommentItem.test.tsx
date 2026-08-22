@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -572,5 +573,32 @@ describe("the composer's reply target", () => {
     });
 
     expect(posted[0]).toMatchObject({ reply_to_comment_id: rootId });
+  });
+});
+
+// A signed-out reader has no reply button, because the prompt above the thread
+// already says why once and repeating it on every row is noise. What must not
+// survive is the row it used to sit in: an empty action bar still claims its
+// full target height, and a band of blank space under every comment reads as
+// something failing to load rather than as nothing being on offer.
+describe("comment action bar", () => {
+  it("renders no action bar at all when there is nothing to act on", () => {
+    renderItem(comment(rootId, "顶级回应"));
+
+    expect(document.querySelector("footer")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^回复/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the reply action when a reply target is available", () => {
+    const root = comment(rootId, "顶级回应");
+    renderItem(root, [], { replyRoot: root });
+
+    const footer = document.querySelector("footer");
+    expect(footer).not.toBeNull();
+    expect(
+      within(footer as HTMLElement).getByRole("button", { name: /^回复/ }),
+    ).toBeInTheDocument();
   });
 });
