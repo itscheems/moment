@@ -854,6 +854,14 @@
   background: var(--border-subtle);
 }
 
+/*
+ * The inline reply composer is spliced into the list as a sibling between a
+ * comment and the replies below it, which is enough to break a bare
+ * `+ .replyComment` adjacency and snap the connector. Draw the same line when
+ * a composer follows the comment, and carry it across the composer row itself
+ * whenever a reply still comes after it.
+ */
+.commentItem:has(+ .replyComposerRow)::after,
 .commentItem:has(+ .replyComment)::after {
   content: "";
   position: absolute;
@@ -862,6 +870,29 @@
   inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
   inline-size: 2px;
   background: var(--border-subtle);
+}
+
+.replyComposerRow:has(+ .replyComment) {
+  position: relative;
+}
+
+.replyComposerRow:has(+ .replyComment)::before,
+.replyComposerRow:has(+ .replyComment)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
+  inline-size: 2px;
+  background: var(--border-subtle);
+}
+
+.replyComposerRow:has(+ .replyComment)::before {
+  inset-block-start: 0;
+  block-size: var(--space-3);
+}
+
+.replyComposerRow:has(+ .replyComment)::after {
+  inset-block-start: calc(var(--space-3) + var(--target-size));
+  inset-block-end: 0;
 }
 
 .commentOwnerMenu {
