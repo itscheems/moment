@@ -203,6 +203,67 @@ func (store commentStore) queryCommentPage(ctx context.Context, query string, ar
 	return records, nil
 }
 
+// ReplyPreviews returns the oldest few replies under each of several roots in
+// one query.
+//
+// The caller used to ask per root inside the page loop. That is a query behind
+// every row on the page — the same shape this change removed for attachments,
+// reply totals and author identities — and at the maximum page size it is a
+// hundred round trips for a single read.
+//
+// A window function does the per-root cut in SQLite rather than in Go: rank
+// each reply within its parent by the same (created_at_ms, id) order the
+// keyset pages walk, then keep the first few. One extra row per root is kept
+// so the caller can still tell whether more remain without counting.
+func (store commentStore) ReplyPreviews(ctx context.Context, rootIDs []domain.ID, limit int) (map[domain.ID][]domain.Comment, error) {
+	previews := make(map[domain.ID][]domain.Comment, len(rootIDs))
+	if len(rootIDs) == 0 || limit <= 0 {
+		return previews, nil
+	}
+	placeholders := make([]string, len(rootIDs))
+	arguments := make([]any, 0, len(rootIDs)+1)
+	for index, id := range rootIDs {
+		placeholders[index] = "?"
+		arguments = append(arguments, id.String())
+		previews[id] = []domain.Comment{}
+	}
+	arguments = append(arguments, limit)
+	rows, err := store.queries.QueryContext(ctx, `
+WITH ranked AS (
+    SELECT comments.id AS ranked_id,
+           ROW_NUMBER() OVER (
+               PARTITION BY comments.parent_id
+               ORDER BY comments.created_at_ms ASC, comments.id ASC
+           ) AS position
+    FROM comments
+    WHERE comments.parent_id IN (`+strings.Join(placeholders, ", ")+`)
+)
+SELECT `+commentColumns+`
+FROM comments
+JOIN ranked ON ranked.ranked_id = comments.id
+LEFT JOIN comment_location AS location ON location.comment_id = comments.id
+WHERE ranked.position <= ?
+ORDER BY comments.parent_id, comments.created_at_ms ASC, comments.id ASC`, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query reply previews: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		record, scanErr := scanComment(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan reply previews: %w", scanErr)
+		}
+		if record.ParentID == nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "reply preview returned a root comment", nil)
+		}
+		previews[*record.ParentID] = append(previews[*record.ParentID], record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate reply previews: %w", err)
+	}
+	return previews, nil
+}
+
 // ReplyCounts totals the replies under each root in one query.
 //
 // The client used to derive this by counting a fully loaded thread. Once only

@@ -688,3 +688,78 @@ func TestCommentPageReportsTotalsAndCarriesThePinnedConversation(t *testing.T) {
 		t.Fatalf("pinning reordered the page: %#v", pinnedThread.Items)
 	}
 }
+
+// The page's reply previews are cut per root inside one query. The loop it
+// replaced put a query behind every row on the page, which at the maximum page
+// size is a hundred round trips for a single read. What must not change is the
+// answer: the same oldest replies, in the same order, with the same extra row
+// that tells the caller more remain.
+func TestReplyPreviewsMatchPerRootPaging(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	// Crockford base32: I, L, O and U are not in the ULID alphabet.
+	const alphabet = "0123456789ABCDEFGHJKMNPQ"
+	times := make([]time.Time, 0, 12)
+	ids := make([]string, 0, 12)
+	for index := 0; index < 12; index++ {
+		times = append(times, base.Add(time.Duration(index)*time.Second))
+		ids = append(ids, "01ARZ3NDEKTSV4RRFFQ69G5G"+string(alphabet[index])+"0")
+	}
+	service := newTestCommentService(t, db, runtimeState, newSequenceClock(times...).Now, commentIDs(ids...))
+	postID, _ := domain.ParseID(entryOne)
+
+	busy := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "busy"})
+	busyID := busy.Comment.Comment.ID
+	for index := 0; index < 6; index++ {
+		mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ParentID: &busyID, ContentMD: "busy reply"})
+	}
+	quiet := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "quiet"})
+	quietID := quiet.Comment.Comment.ID
+	mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ParentID: &quietID, ContentMD: "only reply"})
+	bare := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "bare"})
+	bareID := bare.Comment.Comment.ID
+
+	if err := db.ReadTx(context.Background(), func(queries Queries) error {
+		store := newCommentStore(queries)
+		roots := []domain.ID{busyID, quietID, bareID}
+		limit := app.InlineReplyPreviewCount + 1
+		batched, err := store.ReplyPreviews(context.Background(), roots, limit)
+		if err != nil {
+			return err
+		}
+		if len(batched) != len(roots) {
+			t.Fatalf("previews cover %d roots, want %d", len(batched), len(roots))
+		}
+		for _, rootID := range roots {
+			individual, listErr := store.ListCommentReplies(context.Background(), rootID, nil, limit)
+			if listErr != nil {
+				return listErr
+			}
+			if len(batched[rootID]) != len(individual) {
+				t.Fatalf("root %s batched=%d individual=%d", rootID, len(batched[rootID]), len(individual))
+			}
+			for index := range individual {
+				if batched[rootID][index].ID != individual[index].ID {
+					t.Fatalf("root %s position %d batched=%s individual=%s", rootID, index, batched[rootID][index].ID, individual[index].ID)
+				}
+			}
+		}
+		// A root with no replies still has an entry, so a caller reading the
+		// map by key renders nothing rather than reading a missing key.
+		if len(batched[bareID]) != 0 {
+			t.Fatalf("root without replies = %#v", batched[bareID])
+		}
+		// The extra row is what tells the caller more remain.
+		if len(batched[busyID]) != limit {
+			t.Fatalf("busy root preview = %d, want the probe row too", len(batched[busyID]))
+		}
+		empty, err := store.ReplyPreviews(context.Background(), nil, limit)
+		if err != nil || len(empty) != 0 {
+			t.Fatalf("empty batch = %#v, %v", empty, err)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

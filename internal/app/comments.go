@@ -29,6 +29,7 @@ type CommentStore interface {
 	CommentsByID(context.Context, []domain.ID) (map[domain.ID]domain.Comment, error)
 	ListCommentRoots(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
 	ListCommentReplies(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
+	ReplyPreviews(context.Context, []domain.ID, int) (map[domain.ID][]domain.Comment, error)
 	CommentMediaUsagesByComment(context.Context, []domain.ID) (map[domain.ID][]MediaUsageProjection, error)
 	ReplyCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
 	CommentAuthorIdentities(context.Context, []string) (map[string]CommentAuthorIdentity, error)
@@ -551,15 +552,20 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 		}
 		records := make([]domain.Comment, 0, len(roots))
 		repliesNextCursor := make(map[domain.ID]string, len(roots))
+		// One windowed query for the whole page rather than one per root: the
+		// page can hold up to MaxPageSize roots, and a query behind every row
+		// is the shape this read already avoids for attachments, totals and
+		// identities.
+		previews, previewErr := store.ReplyPreviews(ctx, rootIDs, InlineReplyPreviewCount+1)
+		if previewErr != nil {
+			return previewErr
+		}
 		for _, root := range roots {
 			records = append(records, root)
 			if replyCounts[root.ID] == 0 {
 				continue
 			}
-			replies, replyErr := store.ListCommentReplies(ctx, root.ID, nil, InlineReplyPreviewCount+1)
-			if replyErr != nil {
-				return replyErr
-			}
+			replies := previews[root.ID]
 			if len(replies) > InlineReplyPreviewCount {
 				replies = replies[:InlineReplyPreviewCount]
 				last := replies[len(replies)-1]
