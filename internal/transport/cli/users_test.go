@@ -73,7 +73,7 @@ func TestUserSuggestDirectAPIParity(t *testing.T) {
 		t.Fatalf("suggestions = %#v", items)
 	}
 	item := items[0].(map[string]any)
-	if item["username"] != "cheems" || item["display_name"] != "Cheems" || item["profile_url"] != "/@cheems" {
+	if item["username"] != "cheems" || item["display_name"] != "Cheems" || item["profile_url"] != "/cheems" {
 		t.Fatalf("suggestion = %#v", item)
 	}
 

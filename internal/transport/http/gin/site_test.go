@@ -260,7 +260,7 @@ func TestMentionSuggestionsExposeOnlyCurrentOwner(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		t.Fatal(err)
 	}
-	if len(envelope.Data) != 1 || envelope.Data[0].Username != "owner" || envelope.Data[0].ProfileURL != "/@owner" || envelope.Meta["count"] != float64(1) {
+	if len(envelope.Data) != 1 || envelope.Data[0].Username != "owner" || envelope.Data[0].ProfileURL != "/owner" || envelope.Meta["count"] != float64(1) {
 		t.Fatalf("mention envelope = %#v", envelope)
 	}
 	invalid := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/users/mention-suggestions?limit=0", ""))

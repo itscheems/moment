@@ -1109,7 +1109,7 @@ func resolveCommentAuthors(ctx context.Context, store CommentStore, records []do
 		authors[record.ID] = CommentAuthor{
 			UserID: identity.UserID, Username: identity.Username,
 			DisplayName: identity.DisplayName, AvatarMediaID: identity.AvatarMediaID,
-			ProfileURL: "/@" + identity.Username,
+			ProfileURL: domain.ProfileURL(identity.Username),
 		}
 	}
 	return authors, nil

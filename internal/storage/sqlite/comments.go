@@ -363,33 +363,48 @@ func (store commentStore) SiteOwnerID(ctx context.Context) (string, error) {
 // CommentAuthorIdentities resolves account IDs to the profile a comment reader
 // needs.
 //
-// Moment has one account, so the only row that can match lives in the site
-// singleton. The query is written as a set lookup rather than a single fetch
-// because that is what the eventual user table needs, and because a caller
-// that already batches its IDs does not have to change when it arrives.
+// This is the read 0020 was written for. The batch signature was chosen back
+// when the only possible answer was the site singleton, precisely so that the
+// day a real table existed only the body would change -- and it is the only
+// thing that changed.
+//
+// Ids with no matching account are simply absent from the result. The caller
+// renders those as the stored author name in plain text, which is the same
+// treatment a legacy guest row gets, and is what keeps a deleted account from
+// turning its old comments into an error.
 func (store commentStore) CommentAuthorIdentities(ctx context.Context, ids []string) (map[string]app.CommentAuthorIdentity, error) {
 	identities := make(map[string]app.CommentAuthorIdentity, len(ids))
 	if len(ids) == 0 {
 		return identities, nil
 	}
-	var ownerID, username, displayName string
-	var avatar sql.NullString
-	err := store.queries.QueryRowContext(ctx, `
-SELECT owner_id, username, display_name, avatar_media_id FROM site_settings WHERE id = 1`).
-		Scan(&ownerID, &username, &displayName, &avatar)
-	if err != nil {
-		return nil, fmt.Errorf("read comment author identity: %w", err)
-	}
+	placeholders := make([]string, 0, len(ids))
+	arguments := make([]any, 0, len(ids))
 	for _, id := range ids {
-		if id != ownerID {
-			continue
+		placeholders = append(placeholders, "?")
+		arguments = append(arguments, id)
+	}
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT id, username, display_name, avatar_media_id
+FROM users
+WHERE id IN (`+strings.Join(placeholders, ", ")+`)`, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("read comment author identities: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var identity app.CommentAuthorIdentity
+		var avatar sql.NullString
+		if err := rows.Scan(&identity.UserID, &identity.Username, &identity.DisplayName, &avatar); err != nil {
+			return nil, fmt.Errorf("scan comment author identity: %w", err)
 		}
-		identity := app.CommentAuthorIdentity{UserID: ownerID, Username: username, DisplayName: displayName}
 		if avatar.Valid {
 			value := avatar.String
 			identity.AvatarMediaID = &value
 		}
-		identities[id] = identity
+		identities[identity.UserID] = identity
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate comment author identities: %w", err)
 	}
 	return identities, nil
 }

@@ -50,12 +50,12 @@ func TestOpenMigratesCurrentGenerationAndProbesFTS(t *testing.T) {
 
 	expected := []string{
 		"comment_location", "comment_media", "comment_pins", "comments", "entries", "entry_fts", "entry_link_card", "entry_location", "entry_media",
-		"idempotency_keys", "media", "schema_migrations", "site_settings",
+		"idempotency_keys", "identities", "media", "schema_migrations", "sessions", "site_settings", "users",
 	}
 	rows, err := db.read.QueryContext(ctx, `
 SELECT name
 FROM sqlite_schema
-WHERE name IN ('comment_location', 'comment_media', 'comment_pins', 'comments', 'entries', 'entry_fts', 'entry_link_card', 'entry_location', 'entry_media', 'idempotency_keys', 'media', 'schema_migrations', 'site_settings')
+WHERE name IN ('comment_location', 'comment_media', 'comment_pins', 'comments', 'entries', 'entry_fts', 'entry_link_card', 'entry_location', 'entry_media', 'identities', 'idempotency_keys', 'media', 'schema_migrations', 'sessions', 'site_settings', 'users')
 ORDER BY name`)
 	if err != nil {
 		t.Fatal(err)
@@ -459,8 +459,12 @@ INSERT INTO media VALUES (?, ?, ?, 'invalid.jpg', 'image/jpeg', 1, 1, 1, 1, NULL
 
 	mustWrite(t, db, `
 UPDATE site_settings
-SET title = 'Moment', bio = '', timezone = 'Asia/Shanghai', public_base_url = NULL, avatar_media_id = ?, comments_enabled = 1
-WHERE id = 1`, mediaTwo)
+SET title = 'Moment', timezone = 'Asia/Shanghai', public_base_url = NULL, comments_enabled = 1
+WHERE id = 1`)
+	// The avatar reference that keeps media pinned lives on the account row now.
+	mustWrite(t, db, `
+UPDATE users SET avatar_media_id = ?
+WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`, mediaTwo)
 	var publicBaseURL sql.NullString
 	if err := db.read.QueryRowContext(ctx, `SELECT public_base_url FROM site_settings WHERE id = 1`).Scan(&publicBaseURL); err != nil {
 		t.Fatal(err)
@@ -477,8 +481,8 @@ WHERE id = 1`, mediaTwo)
 	}
 	mustWrite(t, db, `UPDATE site_settings SET public_base_url = NULL WHERE id = 1`)
 	assertWriteRejected(t, db, `
-INSERT INTO site_settings (id, title, bio, timezone, public_base_url, comments_enabled)
-VALUES (2, 'Other', '', 'UTC', 'https://other.test', 1)`)
+INSERT INTO site_settings (id, title, timezone, public_base_url, comments_enabled, owner_id)
+VALUES (2, 'Other', 'UTC', 'https://other.test', 1, (SELECT owner_id FROM site_settings WHERE id = 1))`)
 	assertWriteRejected(t, db, `UPDATE site_settings SET public_base_url = '' WHERE id = 1`)
 	assertWriteRejected(t, db, `UPDATE site_settings SET public_base_url = '   ' WHERE id = 1`)
 	assertCount(t, db.read, `SELECT count(*) FROM site_settings`, 1)

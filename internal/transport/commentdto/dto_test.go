@@ -47,7 +47,7 @@ func TestCommentMediaReadProjectionCarriesPositiveDimensions(t *testing.T) {
 func TestCommentAuthorRejectsPartiallyResolvedIdentity(t *testing.T) {
 	username := "cheems"
 	userID := "0123456789abcdef0123456789abcdef"
-	profileURL := "/@cheems"
+	profileURL := "/cheems"
 	if err := validateAuthor(Author{DisplayName: "Legacy visitor"}); err != nil {
 		t.Fatalf("rejected a legacy guest identity: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestCommentAuthorRejectsPartiallyResolvedIdentity(t *testing.T) {
 	if err := validateAuthor(Author{Username: &username, DisplayName: "Cheems"}); err == nil {
 		t.Fatal("accepted a username without a profile URL")
 	}
-	mismatched := "/@someone-else"
+	mismatched := "/someone-else"
 	if err := validateAuthor(Author{UserID: &userID, Username: &username, DisplayName: "Cheems", ProfileURL: &mismatched}); err == nil {
 		t.Fatal("accepted a profile URL that does not match the username")
 	}

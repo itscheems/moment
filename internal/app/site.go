@@ -30,6 +30,13 @@ type SiteSettings struct {
 	CoverMediaID    *string `json:"cover_media_id"`
 	PinnedPostID    *string `json:"pinned_post_id"`
 	CommentsEnabled bool    `json:"comments_enabled"`
+	// RegistrationMode decides what happens to an external identity the site
+	// has not seen before. It is site policy rather than public identity, so
+	// adapters that publish this value must omit it for anonymous readers.
+	RegistrationMode domain.RegistrationMode `json:"registration_mode"`
+	// UpdatedAtMS stamps the owner account row when a write touches profile
+	// fields. It is not part of the public projection.
+	UpdatedAtMS int64 `json:"-"`
 }
 
 // MentionSuggestion is the bounded public identity projection used by
@@ -207,7 +214,7 @@ func (service *SiteService) SuggestMentions(ctx context.Context, query string, l
 	}
 	return []MentionSuggestion{{
 		OwnerID: settings.OwnerID, Username: settings.Username, DisplayName: settings.DisplayName,
-		AvatarMediaID: cloneString(settings.AvatarMediaID), ProfileURL: "/@" + settings.Username,
+		AvatarMediaID: cloneString(settings.AvatarMediaID), ProfileURL: domain.ProfileURL(settings.Username),
 	}}, nil
 }
 
@@ -320,6 +327,10 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 			return err
 		}
 		next := applySiteUpdate(current, prepared)
+		// The owner's half of this value lives on the account row now, and
+		// that row records when it last changed. Stamping here rather than in
+		// the store keeps the clock in the one layer that owns it.
+		next.UpdatedAtMS = domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 		for _, media := range []struct {
 			field string
 			id    *string

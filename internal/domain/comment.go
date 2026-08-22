@@ -56,7 +56,7 @@ type Comment struct {
 }
 
 // ValidateAuthorUserID accepts the 32 lowercase hex digits an account
-// identifier is written with, matching site_settings.owner_id.
+// identifier is written with, matching users.id.
 func ValidateAuthorUserID(value string) error {
 	if len(value) != 32 {
 		return NewError(CodeInvalidArgument, "comment author user id must be 32 hex digits", map[string]any{"field": "author_user_id"})

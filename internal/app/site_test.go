@@ -158,7 +158,7 @@ func TestMentionSuggestionsUseStableOwnerIdentity(t *testing.T) {
 		items, err := service.SuggestMentions(context.Background(), query, 8)
 		if err != nil || len(items) != 1 || items[0].OwnerID != initial.OwnerID ||
 			items[0].Username != "cheems" || items[0].DisplayName != "Cheems 日记" ||
-			items[0].ProfileURL != "/@cheems" || items[0].AvatarMediaID == nil {
+			items[0].ProfileURL != "/cheems" || items[0].AvatarMediaID == nil {
 			t.Fatalf("query %q suggestions = %#v, err = %v", query, items, err)
 		}
 	}
