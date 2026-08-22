@@ -150,7 +150,7 @@ func newMediaHTTPFixture(t *testing.T) (http.Handler, *media.Store, string, *run
 	if err := manager.Load(); err != nil {
 		t.Fatal(err)
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, Media: store, Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_media" }})
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, Accounts: testAccounts(t, database, runtimeState), Media: store, Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_media" }})
 	if err != nil {
 		t.Fatal(err)
 	}

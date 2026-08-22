@@ -239,11 +239,17 @@ WHERE id = 1`,
 		return fmt.Errorf("site settings update changed %d rows", changed)
 	}
 
+	// Callers that only touch site fields -- pinning a post, for instance --
+	// leave UpdatedAtMS unset. Stamping zero would violate the account row's
+	// own constraint, so an unstamped write keeps whatever was already there
+	// rather than claiming the profile changed.
 	profile, err := store.queries.ExecContext(ctx, `
 UPDATE users
-SET username = ?, display_name = ?, bio = ?, avatar_media_id = ?, cover_media_id = ?, updated_at_ms = ?
+SET username = ?, display_name = ?, bio = ?, avatar_media_id = ?, cover_media_id = ?,
+    updated_at_ms = CASE WHEN ? > 0 THEN ? ELSE updated_at_ms END
 WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`,
-		settings.Username, settings.DisplayName, settings.Bio, optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID), settings.UpdatedAtMS,
+		settings.Username, settings.DisplayName, settings.Bio, optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID),
+		settings.UpdatedAtMS, settings.UpdatedAtMS,
 	)
 	if err != nil {
 		return fmt.Errorf("update owner profile: %w", err)

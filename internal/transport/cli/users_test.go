@@ -49,6 +49,7 @@ func TestUserSuggestDirectAPIParity(t *testing.T) {
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:       fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
 		OwnerAuth:    manager,
+		Accounts:     testAccountService(t, database, runtimeState),
 		SiteSettings: service,
 		Readiness:    service.Ready,
 	})

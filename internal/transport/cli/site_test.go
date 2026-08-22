@@ -130,6 +130,7 @@ func TestSiteDirectAPIParityPublicGetAndAuthenticatedUpdate(t *testing.T) {
 			"index.html": &fstest.MapFile{Data: []byte("Moment")},
 		},
 		OwnerAuth:    manager,
+		Accounts:     testAccountService(t, database, runtimeState),
 		SiteSettings: service,
 		Readiness: func(ctx context.Context) error {
 			if err := database.Ready(ctx); err != nil {

@@ -31,9 +31,15 @@ type SiteSettings struct {
 	PinnedPostID    *string `json:"pinned_post_id"`
 	CommentsEnabled bool    `json:"comments_enabled"`
 	// RegistrationMode decides what happens to an external identity the site
-	// has not seen before. It is site policy rather than public identity, so
-	// adapters that publish this value must omit it for anonymous readers.
-	RegistrationMode domain.RegistrationMode `json:"registration_mode"`
+	// has not seen before.
+	//
+	// It is never serialised here. GET /api/v1/site is public, and this value
+	// is site policy rather than public identity -- telling an anonymous reader
+	// whether applications are being accepted is the owner's decision to
+	// publish, not a field that leaks by being in the same struct. The owner
+	// reads it from the account review endpoint, which is already about
+	// exactly this.
+	RegistrationMode domain.RegistrationMode `json:"-"`
 	// UpdatedAtMS stamps the owner account row when a write touches profile
 	// fields. It is not part of the public projection.
 	UpdatedAtMS int64 `json:"-"`
@@ -56,21 +62,23 @@ type NullableString struct {
 
 // SiteUpdate contains transport-independent partial update intent.
 type SiteUpdate struct {
-	Username        *string
-	DisplayName     *string
-	Title           *string
-	Bio             *string
-	Timezone        *string
-	PublicBaseURL   *NullableString
-	AvatarMediaID   *NullableString
-	CoverMediaID    *NullableString
-	CommentsEnabled *bool
+	Username         *string
+	DisplayName      *string
+	Title            *string
+	Bio              *string
+	Timezone         *string
+	PublicBaseURL    *NullableString
+	AvatarMediaID    *NullableString
+	CoverMediaID     *NullableString
+	CommentsEnabled  *bool
+	RegistrationMode *string
 }
 
 // Empty reports whether an update carries no fields.
 func (update SiteUpdate) Empty() bool {
 	return update.Username == nil && update.DisplayName == nil && update.Title == nil && update.Bio == nil && update.Timezone == nil &&
-		update.PublicBaseURL == nil && update.AvatarMediaID == nil && update.CoverMediaID == nil && update.CommentsEnabled == nil
+		update.PublicBaseURL == nil && update.AvatarMediaID == nil && update.CoverMediaID == nil && update.CommentsEnabled == nil &&
+		update.RegistrationMode == nil
 }
 
 // SiteStore is the transaction-bound settings persistence surface.

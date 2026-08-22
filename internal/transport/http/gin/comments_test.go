@@ -82,7 +82,15 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore, Log: log, RequestID: func() string { return "req_comments" }})
+	accountRepository, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commentAccounts, err := app.NewAccountService(accountRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, Accounts: commentAccounts, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore, Log: log, RequestID: func() string { return "req_comments" }})
 	if err != nil {
 		t.Fatal(err)
 	}

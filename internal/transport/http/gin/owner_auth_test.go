@@ -11,12 +11,16 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/runtimefs"
 )
 
 type ownerTestFixture struct {
 	manager               *auth.Manager
+	accounts              *app.AccountService
+	store                 *memoryAccounts
+	gate                  *Gate
 	token                 string
 	engine                http.Handler
 	now                   *time.Time
@@ -45,9 +49,15 @@ func newOwnerTestFixture(t *testing.T, secure bool) ownerTestFixture {
 	if err := manager.Load(); err != nil {
 		t.Fatal(err)
 	}
+	store := newMemoryAccounts(testOwnerAccount())
+	accounts, err := app.NewAccountService(store)
+	if err != nil {
+		t.Fatal(err)
+	}
 	engine, err := New(Config{
 		Assets:        testAssets(),
 		OwnerAuth:     manager,
+		Accounts:      accounts,
 		SecureCookies: secure,
 		Readiness:     func(context.Context) error { return nil },
 		RequestID:     func() string { return "req_owner" },
@@ -55,7 +65,7 @@ func newOwnerTestFixture(t *testing.T, secure bool) ownerTestFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ownerTestFixture{manager: manager, token: credential.Token, engine: engine, now: &now, instanceID: runtimeState.Instance.ID}
+	return ownerTestFixture{manager: manager, accounts: accounts, store: store, gate: NewGate(manager, accounts), token: credential.Token, engine: engine, now: &now, instanceID: runtimeState.Instance.ID}
 }
 
 func ownerRequest(method, path string, body string) *http.Request {
@@ -256,7 +266,7 @@ func TestConcurrentlyPreauthorizedOldBearerCanRotateOnlyOnce(t *testing.T) {
 	engine := fixture.engine.(*gin.Engine)
 	arrived := make(chan struct{}, 2)
 	release := make(chan struct{})
-	engine.POST("/api/v1/owner/test-rotate", RequireOwner(fixture.manager), func(ctx *gin.Context) {
+	engine.POST("/api/v1/owner/test-rotate", fixture.gate.RequireOwner(), func(ctx *gin.Context) {
 		arrived <- struct{}{}
 		<-release
 		grant, ok := ownerGrant(ctx)

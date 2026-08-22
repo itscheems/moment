@@ -70,7 +70,7 @@ func newCommentCLIFixture(t *testing.T) commentCLIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore})
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager, Accounts: testAccountService(t, database, runtimeState), SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,4 +441,30 @@ func TestCommentListTextRendersThePinnedConversationOffPage(t *testing.T) {
 	if len(shape["items"].([]any)) != 1 || shape["pinned_comment_id"] != offPage || len(shape["pinned"].([]any)) != 2 {
 		t.Fatalf("JSON shape changed = %#v", shape)
 	}
+}
+
+// testAccountService builds the account service the HTTP platform now requires.
+// These tests exercise the CLI against a real engine, so the accounts come from
+// the same SQLite generation everything else in the test is using.
+func testAccountServiceForRuntime(t *testing.T, runtimeState *runtimefs.Runtime) *app.AccountService {
+	t.Helper()
+	database, err := sqlitestore.Open(context.Background(), runtimeState, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	return testAccountService(t, database, runtimeState)
+}
+
+func testAccountService(t *testing.T, database *sqlitestore.Database, runtimeState *runtimefs.Runtime) *app.AccountService {
+	t.Helper()
+	repository, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := app.NewAccountService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
 }

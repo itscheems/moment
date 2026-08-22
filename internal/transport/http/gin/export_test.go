@@ -35,7 +35,7 @@ func TestExportOwnerAuthStrictInputAndDownloadHeaders(t *testing.T) {
 		return archive.Summary{FormatVersion: 1}, nil
 	})
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, Archive: exporter,
+		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, Archive: exporter,
 		Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_export" },
 	})
 	if err != nil {

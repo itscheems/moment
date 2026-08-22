@@ -193,6 +193,13 @@ CREATE INDEX sessions_expiry_idx ON sessions (expires_at_ms);
 -- username_set_at_ms is stamped rather than left NULL. This account's name was
 -- chosen by a person, not generated from a provider profile, so the one-time
 -- "pick a username" prompt must not appear for it.
+--
+-- The timestamps come from the site's own oldest content rather than from the
+-- clock. A migration that reads the clock produces a different database from
+-- the same input every time it runs, which this repository already has a test
+-- for -- fixtures are seeded through the real migration path and compared
+-- across runs. The fallback of 1 is deliberately an obvious sentinel: a site
+-- with no posts yet has no evidence of when its owner began.
 INSERT INTO users (
     id, username, display_name, bio, avatar_media_id, cover_media_id,
     role, status, username_set_at_ms, created_at_ms, updated_at_ms
@@ -206,9 +213,9 @@ SELECT
     cover_media_id,
     'owner',
     'active',
-    CAST(strftime('%s', 'now') AS INTEGER) * 1000,
-    CAST(strftime('%s', 'now') AS INTEGER) * 1000,
-    CAST(strftime('%s', 'now') AS INTEGER) * 1000
+    COALESCE((SELECT MIN(created_at_ms) FROM entries), 1),
+    COALESCE((SELECT MIN(created_at_ms) FROM entries), 1),
+    COALESCE((SELECT MIN(created_at_ms) FROM entries), 1)
 FROM site_settings
 WHERE id = 1;
 

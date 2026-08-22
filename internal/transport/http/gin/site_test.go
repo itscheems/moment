@@ -103,6 +103,7 @@ func newSiteHTTPFixture(t *testing.T) (ownerTestFixture, *httpSiteTransactions) 
 	engine, err := New(Config{
 		Assets:                testAssets(),
 		OwnerAuth:             manager,
+		Accounts:              testAccountsForRuntime(t, runtimeState),
 		SiteSettings:          service,
 		InstanceID:            runtimeState.Instance.ID,
 		InstanceInitializedAt: runtimeState.Instance.InitializedAt,

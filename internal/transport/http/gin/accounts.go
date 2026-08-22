@@ -318,7 +318,12 @@ func listAllAccounts(gate *Gate) gin.HandlerFunc {
 		for _, user := range users {
 			items = append(items, privateAccount(user))
 		}
-		Success(ctx, http.StatusOK, items, map[string]any{"count": len(items)})
+		mode, err := gate.accounts.CurrentRegistrationMode(ctx.Request.Context())
+		if err != nil {
+			writeAccountError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, items, map[string]any{"count": len(items), "registration_mode": string(mode)})
 	}
 }
 

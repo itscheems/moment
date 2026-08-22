@@ -442,6 +442,17 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 					}
 				}
 			}
+		} else if member.Name == "data/users.jsonl" || member.Name == "data/identities.jsonl" {
+			// The same random deployment identity reaches these members, as an
+			// account id rather than as owner_id. Excluding it in one place and
+			// not the other is what made this digest drift the moment accounts
+			// were exported: the value is per-instance in both.
+			contents, readErr := io.ReadAll(opened)
+			if readErr != nil {
+				copyErr = readErr
+			} else {
+				copyErr = writeAccountLinesWithoutInstanceIdentity(digest, contents)
+			}
 		} else {
 			_, copyErr = io.Copy(digest, opened)
 		}
@@ -452,4 +463,32 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 		_, _ = io.WriteString(digest, "\x00")
 	}
 	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+// writeAccountLinesWithoutInstanceIdentity feeds account JSONL to a digest with
+// the per-instance identifiers removed, so two instances running the same
+// scenario compare equal.
+func writeAccountLinesWithoutInstanceIdentity(digest io.Writer, contents []byte) error {
+	for _, line := range bytes.Split(contents, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal(line, &record); err != nil {
+			return err
+		}
+		delete(record, "id")
+		delete(record, "user_id")
+		normalized, err := json.Marshal(record)
+		if err != nil {
+			return err
+		}
+		if _, err := digest.Write(normalized); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(digest, "\n"); err != nil {
+			return err
+		}
+	}
+	return nil
 }

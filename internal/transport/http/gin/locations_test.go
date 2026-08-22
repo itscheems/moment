@@ -35,7 +35,7 @@ func TestLocationHTTPRequiresOwnerAndReturnsCanonicalSnapshots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	RegisterLocationRoutes(fixture.engine.(*gin.Engine), service, fixture.manager)
+	RegisterLocationRoutes(fixture.engine.(*gin.Engine), service, fixture.gate)
 
 	unauthorized := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/owner/locations/search?q=静安寺", ""))
 	if unauthorized.Code != http.StatusUnauthorized {

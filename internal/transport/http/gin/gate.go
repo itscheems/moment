@@ -1,6 +1,7 @@
 package ginhttp
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -195,6 +196,13 @@ func CurrentSession(ctx *gin.Context) (domain.SessionRecord, bool) {
 
 // writeAccountError maps account failures onto the response envelope.
 func writeAccountError(ctx *gin.Context, err error) {
+	// A cancelled request is the caller leaving, not a failure of ours. Every
+	// other write*Error in this package makes the same distinction, and one
+	// that did not would report a disconnect as a server fault.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		Failure(ctx, http.StatusRequestTimeout, "CANCELLED", "the account operation was cancelled", nil)
+		return
+	}
 	var domainErr *domain.Error
 	if !errors.As(err, &domainErr) {
 		Failure(ctx, http.StatusInternalServerError, "INTERNAL", "account lookup failed", nil)

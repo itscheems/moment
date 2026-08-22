@@ -267,7 +267,7 @@ func TestOwnerAPIModeTokenSourcesParityAndLiveRotation(t *testing.T) {
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:    fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
-		OwnerAuth: manager,
+		OwnerAuth: manager, Accounts: testAccountServiceForRuntime(t, runtimeState),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -344,7 +344,7 @@ func TestOwnerSetPasswordDirectAPIParityAndSecretInput(t *testing.T) {
 	if err := manager.Load(); err != nil {
 		t.Fatal(err)
 	}
-	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager})
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager, Accounts: testAccountServiceForRuntime(t, runtimeState)})
 	if err != nil {
 		t.Fatal(err)
 	}
