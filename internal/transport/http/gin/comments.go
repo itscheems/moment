@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"strconv"
 	"unicode/utf8"
 
 	gin "github.com/gin-gonic/gin"
@@ -32,6 +33,7 @@ import (
 // archive taken before this change imports and renders unchanged.
 func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, manager *auth.Manager) {
 	engine.GET("/api/v1/posts/:id/comments", listComments(service))
+	engine.GET("/api/v1/posts/:id/comments/:comment_id/replies", listCommentReplies(service))
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
 	owner.POST("/posts/:id/comments", createOwnerComment(service))
@@ -72,22 +74,84 @@ func changeOwnerCommentPin(service *app.CommentService, active bool) gin.Handler
 
 func listComments(service *app.CommentService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		if ctx.Request.URL.RawQuery != "" {
-			writeCommentError(ctx, invalidCommentArgument("comment list does not accept query parameters", "query"))
-			return
-		}
 		postID, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		thread, err := service.List(ctx.Request.Context(), postID)
+		cursor, limit, err := commentPageQuery(ctx.Request.URL)
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		Success(ctx, http.StatusOK, commentdto.FromThread(thread), nil)
+		thread, err := service.ListPage(ctx.Request.Context(), app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit})
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, commentdto.FromThread(thread), map[string]any{"next_cursor": commentdto.NextCursor(thread.NextCursor)})
 	}
+}
+
+func listCommentReplies(service *app.CommentService) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		postID, err := domain.ParseID(ctx.Param("id"))
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		rootID, err := domain.ParseID(ctx.Param("comment_id"))
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		cursor, limit, err := commentPageQuery(ctx.Request.URL)
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		page, err := service.ListReplies(ctx.Request.Context(), app.ListRepliesInput{EntryID: postID, RootID: rootID, Cursor: cursor, Limit: limit})
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, commentdto.FromReplyPage(page), map[string]any{"next_cursor": commentdto.NextCursor(page.NextCursor)})
+	}
+}
+
+// commentPageQuery accepts exactly cursor and limit, each at most once and
+// never empty. An unknown parameter is rejected rather than ignored: silently
+// dropping a filter a caller believed was applied is worse than refusing it.
+func commentPageQuery(value *url.URL) (string, int, error) {
+	query, err := url.ParseQuery(value.RawQuery)
+	if err != nil {
+		return "", 0, invalidCommentArgument("query string is malformed", "query")
+	}
+	for key, values := range query {
+		switch key {
+		case "cursor", "limit":
+		default:
+			return "", 0, invalidCommentArgument("unsupported query parameter", key)
+		}
+		if len(values) != 1 {
+			return "", 0, invalidCommentArgument("query parameter must be supplied once", key)
+		}
+		if values[0] == "" {
+			return "", 0, invalidCommentArgument(key+" cannot be empty", key)
+		}
+	}
+	limit := 0
+	if values, present := query["limit"]; present {
+		parsed, convErr := strconv.Atoi(values[0])
+		if convErr != nil {
+			return "", 0, invalidCommentArgument("limit must be an integer", "limit")
+		}
+		if parsed == 0 {
+			return "", 0, invalidCommentArgument("limit must be between 1 and 100", "limit")
+		}
+		limit = parsed
+	}
+	return query.Get("cursor"), limit, nil
 }
 
 func createOwnerComment(service *app.CommentService) gin.HandlerFunc {

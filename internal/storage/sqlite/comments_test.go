@@ -522,3 +522,169 @@ VALUES (?, ?, ?, 'owner', 'Owner', 'raw self', 9, ?)`,
 		t.Fatalf("raw self-referencing target = %v", selfErr)
 	}
 }
+
+// Comments page oldest-first, the opposite direction from the timeline, so the
+// seek predicate walks forward. Two comments sharing a millisecond are what
+// separate a correct predicate from one that compares only the timestamp: the
+// wrong version either repeats the pair forever or skips one of them, and
+// neither failure is visible with distinct timestamps.
+func TestCommentRootPagingWalksForwardThroughATie(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	shared := time.UnixMilli(1_700_000_000_000)
+	clock := newSequenceClock(shared, shared, shared.Add(time.Second), shared.Add(2*time.Second))
+	service := newTestCommentService(t, db, runtimeState, clock.Now, commentIDs(commentOne, commentTwo, commentThree, commentFour))
+	postID, _ := domain.ParseID(entryOne)
+
+	for _, content := range []string{"first", "second", "third", "fourth"} {
+		mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: content})
+	}
+
+	seen := make([]string, 0, 4)
+	cursor := ""
+	for page := 0; page < 6; page++ {
+		thread, err := service.ListPage(context.Background(), app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(thread.Items) != 1 {
+			t.Fatalf("page %d returned %d comments", page, len(thread.Items))
+		}
+		seen = append(seen, thread.Items[0].Comment.ContentMD)
+		cursor = thread.NextCursor
+		if cursor == "" {
+			break
+		}
+	}
+	want := []string{"first", "second", "third", "fourth"}
+	if len(seen) != len(want) {
+		t.Fatalf("paged comments = %v", seen)
+	}
+	for index, content := range want {
+		if seen[index] != content {
+			t.Fatalf("paged comments = %v, want %v", seen, want)
+		}
+	}
+	if cursor != "" {
+		t.Fatalf("cursor survived the final page: %q", cursor)
+	}
+}
+
+// A cursor names the thread it was issued for, so one minted for a different
+// post or a different root is refused rather than silently answering with
+// someone else's page.
+func TestCommentCursorsRefuseAnotherScope(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	insertEntry(t, db, entryTwo, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	clock := newSequenceClock(base, base.Add(time.Second), base.Add(2*time.Second), base.Add(3*time.Second), base.Add(4*time.Second))
+	service := newTestCommentService(t, db, runtimeState, clock.Now,
+		commentIDs(commentOne, commentTwo, commentThree, commentFour, "01ARZ3NDEKTSV4RRFFQ69G5FB4"))
+	postID, _ := domain.ParseID(entryOne)
+	otherPostID, _ := domain.ParseID(entryTwo)
+
+	rootOne := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "root one"})
+	mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "root two"})
+	mustOwnerComment(t, service, app.CreateCommentInput{EntryID: otherPostID, ContentMD: "other post root"})
+	rootID := rootOne.Comment.Comment.ID
+	mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "reply one"})
+	mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "reply two"})
+
+	page, err := service.ListPage(context.Background(), app.ListCommentsInput{EntryID: postID, Limit: 1})
+	if err != nil || page.NextCursor == "" {
+		t.Fatalf("first page = %+v, %v", page, err)
+	}
+	if _, err := service.ListPage(context.Background(), app.ListCommentsInput{EntryID: otherPostID, Cursor: page.NextCursor}); !domain.HasCode(err, domain.CodeInvalidArgument) {
+		t.Fatalf("root cursor replayed on another post = %v", err)
+	}
+
+	replies, err := service.ListReplies(context.Background(), app.ListRepliesInput{EntryID: postID, RootID: rootID, Limit: 1})
+	if err != nil || replies.NextCursor == "" {
+		t.Fatalf("first reply page = %+v, %v", replies, err)
+	}
+	// A reply cursor names its root, so replaying it under a different one is
+	// refused. The root itself is also checked against the post in the URL:
+	// without that, any thread could be paged through any post's address.
+	secondPage, err := service.ListPage(context.Background(), app.ListCommentsInput{EntryID: postID, Cursor: page.NextCursor, Limit: 1})
+	if err != nil || len(secondPage.Items) == 0 {
+		t.Fatalf("second page = %+v, %v", secondPage, err)
+	}
+	otherRootID := secondPage.Items[0].Comment.ID
+	if _, err := service.ListReplies(context.Background(), app.ListRepliesInput{EntryID: postID, RootID: otherRootID, Cursor: replies.NextCursor}); !domain.HasCode(err, domain.CodeInvalidArgument) {
+		t.Fatalf("reply cursor replayed under another root = %v", err)
+	}
+	if _, err := service.ListReplies(context.Background(), app.ListRepliesInput{EntryID: otherPostID, RootID: rootID}); !domain.HasCode(err, domain.CodeCommentNotFound) {
+		t.Fatalf("replies asked for through the wrong post = %v", err)
+	}
+	for _, bad := range []string{"not-base64!", "eyJ2IjoxfQ"} {
+		if _, err := service.ListPage(context.Background(), app.ListCommentsInput{EntryID: postID, Cursor: bad}); !domain.HasCode(err, domain.CodeInvalidArgument) {
+			t.Fatalf("cursor %q = %v", bad, err)
+		}
+	}
+}
+
+// A root reports how many replies it has, not how many travelled with it, and
+// the pinned conversation arrives beside the page rather than reordered into
+// it so the cursor keeps meaning the same thing when the pin moves.
+func TestCommentPageReportsTotalsAndCarriesThePinnedConversation(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	times := make([]time.Time, 0, 9)
+	ids := make([]string, 0, 9)
+	for index := 0; index < 9; index++ {
+		times = append(times, base.Add(time.Duration(index)*time.Second))
+		ids = append(ids, "01ARZ3NDEKTSV4RRFFQ69G5F"+string(rune('A'+index))+"0")
+	}
+	clock := newSequenceClock(times...)
+	service := newTestCommentService(t, db, runtimeState, clock.Now, commentIDs(ids...))
+	postID, _ := domain.ParseID(entryOne)
+
+	root := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "busy root"})
+	rootID := root.Comment.Comment.ID
+	for index := 0; index < 5; index++ {
+		mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "reply"})
+	}
+	later := mustOwnerComment(t, service, app.CreateCommentInput{EntryID: postID, ContentMD: "later root"})
+
+	thread, err := service.ListPage(context.Background(), app.ListCommentsInput{EntryID: postID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inlineReplies := 0
+	for _, comment := range thread.Items {
+		if comment.Comment.ParentID != nil {
+			inlineReplies++
+			continue
+		}
+		if comment.Comment.ID != rootID {
+			continue
+		}
+		if comment.ReplyCount != 5 {
+			t.Fatalf("reply count = %d, want the true total 5", comment.ReplyCount)
+		}
+		if comment.RepliesNextCursor == "" {
+			t.Fatal("a root with more replies than the preview reported no continuation")
+		}
+	}
+	if inlineReplies != app.InlineReplyPreviewCount {
+		t.Fatalf("inline replies = %d, want %d", inlineReplies, app.InlineReplyPreviewCount)
+	}
+
+	if _, err := service.Pin(context.Background(), postID, later.Comment.Comment.ID); err != nil {
+		t.Fatal(err)
+	}
+	pinnedThread, err := service.ListPage(context.Background(), app.ListCommentsInput{EntryID: postID, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pinnedThread.Pinned) == 0 || pinnedThread.Pinned[0].Comment.ID != later.Comment.Comment.ID {
+		t.Fatalf("pinned conversation = %#v", pinnedThread.Pinned)
+	}
+	// The stream itself is untouched by the pin: the first page is still the
+	// oldest root, not the pinned one.
+	if len(pinnedThread.Items) == 0 || pinnedThread.Items[0].Comment.ID != rootID {
+		t.Fatalf("pinning reordered the page: %#v", pinnedThread.Items)
+	}
+}

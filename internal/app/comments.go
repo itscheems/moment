@@ -27,6 +27,10 @@ type CommentStore interface {
 	CommentsEnabled(context.Context) (bool, error)
 	CommentByID(context.Context, domain.ID) (domain.Comment, bool, error)
 	CommentsByID(context.Context, []domain.ID) (map[domain.ID]domain.Comment, error)
+	ListCommentRoots(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
+	ListCommentReplies(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
+	CommentMediaUsagesByComment(context.Context, []domain.ID) (map[domain.ID][]MediaUsageProjection, error)
+	ReplyCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
 	CommentAuthorIdentities(context.Context, []string) (map[string]CommentAuthorIdentity, error)
 	SiteOwnerID(context.Context) (string, error)
 	ListComments(context.Context, domain.ID) ([]domain.Comment, error)
@@ -57,6 +61,12 @@ type Comment struct {
 	ReplyTo     *CommentReplyTarget
 	ContentHTML string
 	Media       []MediaUsageProjection
+	// ReplyCount and RepliesNextCursor describe a root's replies and are zero
+	// on a reply. They live on the root rather than in a parallel map because
+	// they are that root's own state; kept alongside it they cannot drift out
+	// of step with it.
+	ReplyCount        int
+	RepliesNextCursor string
 }
 
 // CommentReplyTarget names the comment a reply is answering, together with the
@@ -101,9 +111,44 @@ type CommentAuthorIdentity struct {
 // CommentThread is a stable flattened one-level thread. Roots are ordered by
 // creation time and ID; each root is immediately followed by similarly ordered
 // direct replies.
+//
+// The array stays flat under pagination. What a partial page loses is
+// completeness, not adjacency: a root still sits immediately before whichever
+// of its replies came back, so every consumer that relies on that grouping —
+// pinned reordering, optimistic insert, optimistic delete — keeps working
+// unchanged. ReplyCount on each root reports the true total regardless of how
+// many of them travelled.
 type CommentThread struct {
 	Items           []Comment
 	PinnedCommentID *domain.ID
+	// Pinned carries the pinned root and its inline replies alongside the page
+	// rather than hoisted into it. Reordering Items around a pin would change
+	// what the keyset cursor means the moment the pin moved; excluding the
+	// pinned root from Items instead would leave a hole in pages already
+	// fetched if the pin were cleared mid-scroll.
+	Pinned     []Comment
+	NextCursor string
+}
+
+// CommentReplyPage is one keyset page of replies under a single root.
+type CommentReplyPage struct {
+	Items      []Comment
+	NextCursor string
+}
+
+// ListCommentsInput selects one page of root comments.
+type ListCommentsInput struct {
+	EntryID domain.ID
+	Cursor  string
+	Limit   int
+}
+
+// ListRepliesInput selects one page of replies under a single root.
+type ListRepliesInput struct {
+	EntryID domain.ID
+	RootID  domain.ID
+	Cursor  string
+	Limit   int
 }
 
 // CommentPin is the singleton top-level comment selected for one post.
@@ -456,6 +501,235 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 }
 
 // List returns one stable flattened thread and verifies stored parent order.
+// ListPage returns one keyset page of root comments, each carrying a preview
+// of its replies plus the totals a reader needs to ask for the rest.
+//
+// A thread used to arrive whole. That is fine for a handful of comments and
+// indefensible for a popular post: the response grows without bound, and the
+// reader waits for replies they will never scroll to.
+func (service *CommentService) ListPage(ctx context.Context, input ListCommentsInput) (CommentThread, error) {
+	if err := contextError(ctx); err != nil {
+		return CommentThread{}, err
+	}
+	if err := validateCommentID(input.EntryID); err != nil {
+		return CommentThread{}, err
+	}
+	limit, err := normalizeCommentLimit(input.Limit, DefaultCommentPageSize)
+	if err != nil {
+		return CommentThread{}, err
+	}
+	after, err := decodeCommentRootCursor(input.Cursor, input.EntryID)
+	if err != nil {
+		return CommentThread{}, err
+	}
+
+	var thread CommentThread
+	err = service.transactions.Read(ctx, func(store CommentStore) error {
+		exists, storeErr := store.EntryExists(ctx, input.EntryID)
+		if storeErr != nil {
+			return storeErr
+		}
+		if !exists {
+			return postNotFound(input.EntryID)
+		}
+		// One extra root answers "is there another page" without a second
+		// query, the same trick the timeline uses.
+		roots, storeErr := store.ListCommentRoots(ctx, input.EntryID, after, limit+1)
+		if storeErr != nil {
+			return storeErr
+		}
+		hasNext := len(roots) > limit
+		if hasNext {
+			roots = roots[:limit]
+		}
+		rootIDs := make([]domain.ID, len(roots))
+		for index, root := range roots {
+			rootIDs[index] = root.ID
+		}
+		replyCounts, storeErr := store.ReplyCounts(ctx, rootIDs)
+		if storeErr != nil {
+			return storeErr
+		}
+		records := make([]domain.Comment, 0, len(roots))
+		repliesNextCursor := make(map[domain.ID]string, len(roots))
+		for _, root := range roots {
+			records = append(records, root)
+			if replyCounts[root.ID] == 0 {
+				continue
+			}
+			replies, replyErr := store.ListCommentReplies(ctx, root.ID, nil, InlineReplyPreviewCount+1)
+			if replyErr != nil {
+				return replyErr
+			}
+			if len(replies) > InlineReplyPreviewCount {
+				replies = replies[:InlineReplyPreviewCount]
+				last := replies[len(replies)-1]
+				repliesNextCursor[root.ID] = encodeCommentReplyCursor(root.ID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+			}
+			records = append(records, replies...)
+		}
+		rendered, renderErr := service.renderCommentPage(ctx, store, records)
+		if renderErr != nil {
+			return renderErr
+		}
+		for index := range rendered {
+			id := rendered[index].Comment.ID
+			if rendered[index].Comment.ParentID != nil {
+				continue
+			}
+			rendered[index].ReplyCount = replyCounts[id]
+			rendered[index].RepliesNextCursor = repliesNextCursor[id]
+		}
+		thread.Items = rendered
+		if hasNext && len(roots) > 0 {
+			last := roots[len(roots)-1]
+			thread.NextCursor = encodeCommentRootCursor(input.EntryID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+		}
+		pinnedCommentID, storeErr := store.PinnedCommentID(ctx, input.EntryID)
+		if storeErr != nil {
+			return storeErr
+		}
+		thread.PinnedCommentID = cloneCommentID(pinnedCommentID)
+		if pinnedCommentID == nil {
+			return nil
+		}
+		pinnedRoot, found, storeErr := store.CommentByID(ctx, *pinnedCommentID)
+		if storeErr != nil {
+			return storeErr
+		}
+		if !found {
+			return nil
+		}
+		pinnedRecords := []domain.Comment{pinnedRoot}
+		pinnedReplies, storeErr := store.ListCommentReplies(ctx, pinnedRoot.ID, nil, InlineReplyPreviewCount+1)
+		if storeErr != nil {
+			return storeErr
+		}
+		pinnedNextCursor := ""
+		if len(pinnedReplies) > InlineReplyPreviewCount {
+			pinnedReplies = pinnedReplies[:InlineReplyPreviewCount]
+			last := pinnedReplies[len(pinnedReplies)-1]
+			pinnedNextCursor = encodeCommentReplyCursor(pinnedRoot.ID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+		}
+		pinnedRecords = append(pinnedRecords, pinnedReplies...)
+		pinnedCounts, storeErr := store.ReplyCounts(ctx, []domain.ID{pinnedRoot.ID})
+		if storeErr != nil {
+			return storeErr
+		}
+		pinnedRendered, renderErr := service.renderCommentPage(ctx, store, pinnedRecords)
+		if renderErr != nil {
+			return renderErr
+		}
+		if len(pinnedRendered) > 0 {
+			pinnedRendered[0].ReplyCount = pinnedCounts[pinnedRoot.ID]
+			pinnedRendered[0].RepliesNextCursor = pinnedNextCursor
+		}
+		thread.Pinned = pinnedRendered
+		return nil
+	})
+	if err != nil {
+		return CommentThread{}, normalizeCommentRepositoryError(err)
+	}
+	return thread, nil
+}
+
+// ListReplies returns one keyset page of replies under a single root.
+func (service *CommentService) ListReplies(ctx context.Context, input ListRepliesInput) (CommentReplyPage, error) {
+	if err := contextError(ctx); err != nil {
+		return CommentReplyPage{}, err
+	}
+	if err := validateCommentID(input.EntryID); err != nil {
+		return CommentReplyPage{}, err
+	}
+	if err := validateCommentID(input.RootID); err != nil {
+		return CommentReplyPage{}, err
+	}
+	limit, err := normalizeCommentLimit(input.Limit, DefaultReplyPageSize)
+	if err != nil {
+		return CommentReplyPage{}, err
+	}
+	after, err := decodeCommentReplyCursor(input.Cursor, input.RootID)
+	if err != nil {
+		return CommentReplyPage{}, err
+	}
+
+	var page CommentReplyPage
+	err = service.transactions.Read(ctx, func(store CommentStore) error {
+		root, found, storeErr := store.CommentByID(ctx, input.RootID)
+		if storeErr != nil {
+			return storeErr
+		}
+		// The root has to belong to the post named in the request. Without
+		// that check a caller could page any thread through any post's URL,
+		// and the reply cursor alone would not catch it.
+		if !found || root.EntryID != input.EntryID || root.ParentID != nil {
+			return commentNotFound(input.RootID)
+		}
+		replies, storeErr := store.ListCommentReplies(ctx, input.RootID, after, limit+1)
+		if storeErr != nil {
+			return storeErr
+		}
+		hasNext := len(replies) > limit
+		if hasNext {
+			replies = replies[:limit]
+		}
+		rendered, renderErr := service.renderCommentPage(ctx, store, replies)
+		if renderErr != nil {
+			return renderErr
+		}
+		page.Items = rendered
+		if hasNext && len(replies) > 0 {
+			last := replies[len(replies)-1]
+			page.NextCursor = encodeCommentReplyCursor(input.RootID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+		}
+		return nil
+	})
+	if err != nil {
+		return CommentReplyPage{}, normalizeCommentRepositoryError(err)
+	}
+	return page, nil
+}
+
+// renderCommentPage resolves everything a page of comments needs in batches:
+// attachments, author identities and reply targets each cost one query for the
+// whole page rather than one per row.
+func (service *CommentService) renderCommentPage(ctx context.Context, store CommentStore, records []domain.Comment) ([]Comment, error) {
+	if len(records) == 0 {
+		return []Comment{}, nil
+	}
+	ids := make([]domain.ID, len(records))
+	for index, record := range records {
+		ids[index] = record.ID
+	}
+	mediaByComment, err := store.CommentMediaUsagesByComment(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	authors, err := resolveCommentAuthors(ctx, store, records)
+	if err != nil {
+		return nil, err
+	}
+	replyTargets, err := resolveCommentReplyTargets(ctx, store, records)
+	if err != nil {
+		return nil, err
+	}
+	rendered := make([]Comment, 0, len(records))
+	for _, record := range records {
+		comment, renderErr := renderComment(record, authors[record.ID], replyTargets[record.ID], mediaByComment[record.ID])
+		if renderErr != nil {
+			return nil, corruptComment(record.ID)
+		}
+		rendered = append(rendered, comment)
+	}
+	return rendered, nil
+}
+
+// List returns a whole thread in one response.
+//
+// ListPage is what the browser uses. This stays for callers that genuinely
+// want everything at once — the CLI reading a thread, and tests asserting the
+// canonical flattened order — and it keeps the invariant those callers rely
+// on: every reply is present, directly after its root.
 func (service *CommentService) List(ctx context.Context, entryID domain.ID) (CommentThread, error) {
 	if err := contextError(ctx); err != nil {
 		return CommentThread{}, err
@@ -465,9 +739,8 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 	}
 	var records []domain.Comment
 	var pinnedCommentID *domain.ID
-	var authors map[domain.ID]CommentAuthor
-	var replyTargets map[domain.ID]*CommentReplyTarget
-	mediaByComment := make(map[domain.ID][]MediaUsageProjection)
+	var rendered []Comment
+	var replyCounts map[domain.ID]int
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		exists, storeErr := store.EntryExists(ctx, entryID)
 		if storeErr != nil {
@@ -484,35 +757,33 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 		if storeErr != nil {
 			return storeErr
 		}
+		rootIDs := make([]domain.ID, 0, len(records))
 		for _, record := range records {
-			mediaByComment[record.ID], storeErr = store.CommentMediaUsages(ctx, record.ID)
-			if storeErr != nil {
-				return storeErr
+			if record.ParentID == nil {
+				rootIDs = append(rootIDs, record.ID)
 			}
 		}
-		authors, storeErr = resolveCommentAuthors(ctx, store, records)
+		replyCounts, storeErr = store.ReplyCounts(ctx, rootIDs)
 		if storeErr != nil {
 			return storeErr
 		}
-		replyTargets, storeErr = resolveCommentReplyTargets(ctx, store, records)
+		rendered, storeErr = service.renderCommentPage(ctx, store, records)
 		return storeErr
 	})
 	if err != nil {
 		return CommentThread{}, normalizeCommentRepositoryError(err)
 	}
-	thread := CommentThread{Items: make([]Comment, 0, len(records)), PinnedCommentID: cloneCommentID(pinnedCommentID)}
+	thread := CommentThread{Items: make([]Comment, 0, len(rendered)), PinnedCommentID: cloneCommentID(pinnedCommentID)}
 	roots := make(map[domain.ID]struct{})
-	for _, record := range records {
+	for _, comment := range rendered {
+		record := comment.Comment
 		if record.EntryID != entryID {
 			return CommentThread{}, corruptCommentThread(entryID)
 		}
 		if record.ParentID == nil {
 			roots[record.ID] = struct{}{}
+			comment.ReplyCount = replyCounts[record.ID]
 		} else if _, found := roots[*record.ParentID]; !found {
-			return CommentThread{}, corruptCommentThread(entryID)
-		}
-		comment, renderErr := renderComment(record, authors[record.ID], replyTargets[record.ID], mediaByComment[record.ID])
-		if renderErr != nil {
 			return CommentThread{}, corruptCommentThread(entryID)
 		}
 		thread.Items = append(thread.Items, comment)
@@ -525,8 +796,6 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 	return thread, nil
 }
 
-// Pin atomically selects one top-level comment for emphasis in its post.
-// Assigning the current root is an idempotent success.
 func (service *CommentService) Pin(ctx context.Context, entryID, commentID domain.ID) (CommentPin, error) {
 	return service.changePin(ctx, entryID, commentID, true)
 }

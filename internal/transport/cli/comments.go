@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/moment/moment/internal/app"
@@ -21,13 +22,30 @@ import (
 
 func registerComments(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
-		Path: []string{"comment", "list"}, ArgsUsage: "<post-id>", Short: "List one comment thread",
-		Long:    "Read one stable flattened one-level thread through the selected local instance or public HTTP API.",
-		Inputs:  "Provide one canonical post ULID. Public API reads do not require an owner token.",
-		Output:  "An ordered data.items array with roots followed immediately by their direct replies.",
-		Errors:  "Invalid IDs and missing posts return stable codes and non-zero exit statuses.",
-		Example: "moment comment list 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Path: []string{"comment", "list"}, ArgsUsage: "<post-id>", Short: "List one page of a comment thread",
+		Long:    "Read one keyset page of a flattened one-level thread through the selected local instance or public HTTP API.",
+		Inputs:  "Provide one canonical post ULID plus optional --cursor and --limit. Public API reads do not require an owner token.",
+		Output:  "An ordered data.items array of roots followed by their inline replies, data.pinned, and nullable meta.next_cursor.",
+		Errors:  "Invalid IDs, invalid cursors, and missing posts return stable codes and non-zero exit statuses.",
+		Example: "moment comment list 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --limit 20 --json",
 		Args:    cobra.ExactArgs(1), Capability: CapabilityBoth, Run: runCommentList,
+		Flags: func(flags *pflag.FlagSet) {
+			flags.String("cursor", "", "opaque keyset cursor from a previous page")
+			flags.Int("limit", 0, "maximum root comments to return (1-100)")
+		},
+	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path: []string{"comment", "replies"}, ArgsUsage: "<post-id> <root-comment-id>", Short: "List one page of replies",
+		Long:    "Read one keyset page of the replies under a single top-level comment.",
+		Inputs:  "Provide a post ULID, a top-level comment ULID, and optional --cursor and --limit.",
+		Output:  "An ordered data.items array of replies and nullable meta.next_cursor.",
+		Errors:  "Invalid IDs, invalid cursors, and comments that are not roots of the named post return stable codes.",
+		Example: "moment comment replies 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --json",
+		Args:    cobra.ExactArgs(2), Capability: CapabilityBoth, Run: runCommentReplies,
+		Flags: func(flags *pflag.FlagSet) {
+			flags.String("cursor", "", "opaque keyset cursor from a previous page")
+			flags.Int("limit", 0, "maximum replies to return (1-100)")
+		},
 	})
 	application.MustRegisterLeaf(commentCreateSpec("create", "Create an owner comment", "Create one top-level owner comment through the application service or authenticated owner API.", "moment comment create 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'owner note' --json", runCommentCreate))
 	application.MustRegisterLeaf(LeafSpec{
@@ -103,10 +121,42 @@ func commentCreateSpec(verb, short, long, example string, run Handler) LeafSpec 
 	}
 }
 
+// commentPageFlags reads the shared cursor and limit flags. Both transports
+// parse them the same way so a direct-mode page and an API-mode page describe
+// the same slice of the same thread.
+func commentPageFlags(input CommandInput) (string, int, url.Values, error) {
+	cursor, err := input.String("cursor")
+	if err != nil {
+		return "", 0, nil, err
+	}
+	if input.Changed("cursor") && cursor == "" {
+		return "", 0, nil, invalidArgument("cursor cannot be empty", "omit --cursor to read the first page")
+	}
+	limit, err := input.Int("limit")
+	if err != nil {
+		return "", 0, nil, err
+	}
+	if input.Changed("limit") && (limit < 1 || limit > app.MaxPostPageSize) {
+		return "", 0, nil, invalidArgument("limit must be between 1 and 100", "choose a limit within the supported range")
+	}
+	query := url.Values{}
+	if cursor != "" {
+		query.Set("cursor", cursor)
+	}
+	if input.Changed("limit") {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	return cursor, limit, query, nil
+}
+
 func runCommentList(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
 	postID, err := domain.ParseID(input.Args()[0])
 	if err != nil {
 		return Result{}, commentCLIError(err)
+	}
+	cursor, limit, query, err := commentPageFlags(input)
+	if err != nil {
+		return Result{}, err
 	}
 	var thread commentdto.Thread
 	var meta map[string]any
@@ -117,14 +167,15 @@ func runCommentList(ctx context.Context, invocation Invocation, input CommandInp
 			return Result{}, commentCLIError(err)
 		}
 		defer func() { _ = database.Close() }()
-		result, err := service.List(ctx, postID)
+		result, err := service.ListPage(ctx, app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
 		thread = commentdto.FromThread(result)
+		meta = map[string]any{"next_cursor": commentdto.NextCursor(result.NextCursor)}
 	case ModeAPI:
 		var status int
-		meta, status, err = commentAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/posts/"+postID.String()+"/comments", nil, nil, "", false, &thread)
+		meta, status, err = commentAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/posts/"+postID.String()+"/comments", query, nil, "", false, &thread)
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -135,6 +186,49 @@ func runCommentList(ctx context.Context, invocation Invocation, input CommandInp
 		return Result{}, errors.New("unsupported comment list transport")
 	}
 	return Result{Data: thread, Text: commentThreadText(thread), Meta: meta}, nil
+}
+
+func runCommentReplies(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	postID, err := domain.ParseID(input.Args()[0])
+	if err != nil {
+		return Result{}, commentCLIError(err)
+	}
+	rootID, err := domain.ParseID(input.Args()[1])
+	if err != nil {
+		return Result{}, commentCLIError(err)
+	}
+	cursor, limit, query, err := commentPageFlags(input)
+	if err != nil {
+		return Result{}, err
+	}
+	var page commentdto.ReplyPage
+	var meta map[string]any
+	switch invocation.Mode() {
+	case ModeDirect:
+		service, database, err := openDirectCommentRead(ctx, invocation)
+		if err != nil {
+			return Result{}, commentCLIError(err)
+		}
+		defer func() { _ = database.Close() }()
+		result, err := service.ListReplies(ctx, app.ListRepliesInput{EntryID: postID, RootID: rootID, Cursor: cursor, Limit: limit})
+		if err != nil {
+			return Result{}, commentCLIError(err)
+		}
+		page = commentdto.FromReplyPage(result)
+		meta = map[string]any{"next_cursor": commentdto.NextCursor(result.NextCursor)}
+	case ModeAPI:
+		var status int
+		meta, status, err = commentAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/posts/"+postID.String()+"/comments/"+rootID.String()+"/replies", query, nil, "", false, &page)
+		if err != nil {
+			return Result{}, commentCLIError(err)
+		}
+		if status != http.StatusOK {
+			return Result{}, invalidAPIResponse()
+		}
+	default:
+		return Result{}, errors.New("unsupported comment replies transport")
+	}
+	return Result{Data: page, Text: commentListText(page.Items), Meta: meta}, nil
 }
 
 func runCommentCreate(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -469,11 +563,15 @@ func commentResult(action string, comment commentdto.Comment, meta map[string]an
 }
 
 func commentThreadText(thread commentdto.Thread) string {
-	if len(thread.Items) == 0 {
+	return commentListText(thread.Items)
+}
+
+func commentListText(comments []commentdto.Comment) string {
+	if len(comments) == 0 {
 		return "No comments found"
 	}
-	lines := make([]string, 0, len(thread.Items))
-	for _, comment := range thread.Items {
+	lines := make([]string, 0, len(comments))
+	for _, comment := range comments {
 		prefix := ""
 		if comment.Depth == 1 {
 			prefix = "  ↳ "
@@ -482,9 +580,25 @@ func commentThreadText(thread commentdto.Thread) string {
 		if len([]rune(content)) > 80 {
 			content = string([]rune(content)[:80]) + "…"
 		}
-		lines = append(lines, fmt.Sprintf("%s%s  %s  %s", prefix, comment.ID, commentAuthorLabel(comment), content))
+		suffix := ""
+		// Only the remainder is worth showing: the replies already on screen
+		// are visible, the ones that are not are what the reader would ask for.
+		if hidden := comment.ReplyCount - countLoadedReplies(comments, comment.ID); hidden > 0 {
+			suffix = fmt.Sprintf("  (+%d more replies)", hidden)
+		}
+		lines = append(lines, fmt.Sprintf("%s%s  %s  %s%s", prefix, comment.ID, commentAuthorLabel(comment), content, suffix))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func countLoadedReplies(comments []commentdto.Comment, rootID string) int {
+	loaded := 0
+	for _, comment := range comments {
+		if comment.ParentID != nil && *comment.ParentID == rootID {
+			loaded++
+		}
+	}
+	return loaded
 }
 
 func commentCLIError(err error) error {

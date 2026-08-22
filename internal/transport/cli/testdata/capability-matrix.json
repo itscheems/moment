@@ -102,6 +102,15 @@
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
+      "command": "comment replies",
+      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
+      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
+      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "output_schema": "comment_reply_page_v1",
+      "expected_exits": [0, 2, 3, 4, 6, 7, 8, 9, 10],
+      "parity_strategy": "byte_identical_data"
+    },
+    {
       "command": "comment reply",
       "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
       "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},

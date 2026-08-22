@@ -32,6 +32,11 @@ type Comment struct {
 	CreatedAt   time.Time         `json:"created_at"`
 	Media       []MediaUsage      `json:"media"`
 	Location    *postdto.Location `json:"location"`
+	// ReplyCount is the true number of replies under a root, independent of how
+	// many of them this response carried. RepliesNextCursor is set when more
+	// remain. Both are zero on a reply.
+	ReplyCount        int    `json:"reply_count"`
+	RepliesNextCursor string `json:"replies_next_cursor,omitempty"`
 }
 
 // ReplyTarget names the comment a reply answers.
@@ -63,9 +68,24 @@ type Author struct {
 type MediaUsage = postdto.MediaProjection
 
 // Thread is a non-null flattened comment array.
+//
+// Items is one page in creation order. A pinned root is not hoisted into it:
+// reordering the stream would make the keyset cursor mean something different
+// the moment the pin changed. It travels separately in Pinned instead, and the
+// client renders that above the stream and skips the duplicate by ID.
+//
+// Excluding it from Items was the tempting alternative and is wrong: re-pin
+// mid-scroll and the previously pinned root would be missing from pages the
+// reader had already fetched, with nothing to put it back.
 type Thread struct {
 	Items           []Comment `json:"items"`
 	PinnedCommentID *string   `json:"pinned_comment_id"`
+	Pinned          []Comment `json:"pinned"`
+}
+
+// ReplyPage is one page of replies under a single root.
+type ReplyPage struct {
+	Items []Comment `json:"items"`
 }
 
 // Pin is the canonical owner mutation result for one post comment pin.
@@ -94,6 +114,7 @@ func FromComment(comment app.Comment) Comment {
 	return Comment{
 		ID: comment.Comment.ID.String(), PostID: comment.Comment.EntryID.String(), ParentID: parentID, Depth: depth,
 		AuthorKind: string(comment.Comment.AuthorKind), AuthorName: comment.Comment.AuthorName, Author: fromAuthor(comment.Author), ReplyTo: fromReplyTarget(comment.ReplyTo),
+		ReplyCount: comment.ReplyCount, RepliesNextCursor: comment.RepliesNextCursor,
 		ContentMD: comment.Comment.ContentMD, ContentHTML: comment.ContentHTML, CreatedAt: comment.Comment.CreatedAt.UTC(), Media: media, Location: location,
 	}
 }
@@ -124,16 +145,36 @@ func fromAuthor(author app.CommentAuthor) Author {
 
 // FromThread maps one canonical flattened application thread.
 func FromThread(thread app.CommentThread) Thread {
-	items := make([]Comment, 0, len(thread.Items))
-	for _, comment := range thread.Items {
-		items = append(items, FromComment(comment))
-	}
 	var pinnedCommentID *string
 	if thread.PinnedCommentID != nil {
 		value := thread.PinnedCommentID.String()
 		pinnedCommentID = &value
 	}
-	return Thread{Items: items, PinnedCommentID: pinnedCommentID}
+	return Thread{Items: fromComments(thread.Items), PinnedCommentID: pinnedCommentID, Pinned: fromComments(thread.Pinned)}
+}
+
+// FromReplyPage maps one page of replies under a single root.
+func FromReplyPage(page app.CommentReplyPage) ReplyPage {
+	return ReplyPage{Items: fromComments(page.Items)}
+}
+
+func fromComments(comments []app.Comment) []Comment {
+	if comments == nil {
+		return nil
+	}
+	items := make([]Comment, 0, len(comments))
+	for _, comment := range comments {
+		items = append(items, FromComment(comment))
+	}
+	return items
+}
+
+// NextCursor exposes a page boundary as a nullable wire value.
+func NextCursor(cursor string) *string {
+	if cursor == "" {
+		return nil
+	}
+	return &cursor
 }
 
 // FromPin maps one canonical owner pin result.
@@ -247,9 +288,23 @@ func validProjectionMIMEType(value string) bool {
 }
 
 // ValidateThread verifies adjacency, identity uniqueness and stable ordering.
+//
+// It deliberately does not require completeness. A page carries a subset of a
+// thread, and a subset still satisfies every property that matters here: roots
+// stay in order, and each reply still sits directly behind the root it belongs
+// to. The one rule that had to go is "the pinned comment appears in items" —
+// under pagination it legitimately may not.
 func ValidateThread(thread Thread) error {
 	if thread.Items == nil {
 		return errors.New("comment thread items must be an array")
+	}
+	if err := validateCommentRun(thread.Pinned); err != nil {
+		return err
+	}
+	if len(thread.Pinned) > 0 {
+		if thread.PinnedCommentID == nil || thread.Pinned[0].ID != *thread.PinnedCommentID || thread.Pinned[0].ParentID != nil {
+			return errors.New("pinned conversation does not lead with the pinned root")
+		}
 	}
 	seen := make(map[string]struct{})
 	postID := ""
@@ -290,15 +345,67 @@ func ValidateThread(thread Thread) error {
 		lastReply = &replyCopy
 	}
 	if thread.PinnedCommentID != nil {
-		_, found := seen[*thread.PinnedCommentID]
-		if !found {
-			return errors.New("pinned comment is missing from the thread")
-		}
 		for _, comment := range thread.Items {
 			if comment.ID == *thread.PinnedCommentID && comment.ParentID != nil {
 				return errors.New("pinned comment must be a root")
 			}
 		}
+	}
+	return nil
+}
+
+// ValidateReplyPage checks one page of replies under a single root.
+func ValidateReplyPage(page ReplyPage) error {
+	if page.Items == nil {
+		return errors.New("comment reply page items must be an array")
+	}
+	parent := ""
+	var last *Comment
+	for _, comment := range page.Items {
+		if err := ValidateComment(comment); err != nil {
+			return err
+		}
+		if comment.ParentID == nil {
+			return errors.New("comment reply page contains a root comment")
+		}
+		if parent == "" {
+			parent = *comment.ParentID
+		}
+		if *comment.ParentID != parent {
+			return errors.New("comment reply page mixes conversations")
+		}
+		if last != nil && !commentAfter(*last, comment) {
+			return errors.New("comment replies are not in stable order")
+		}
+		current := comment
+		last = &current
+	}
+	return nil
+}
+
+// validateCommentRun checks a root followed by its own ordered replies.
+func validateCommentRun(comments []Comment) error {
+	root := ""
+	var last *Comment
+	for index, comment := range comments {
+		if err := ValidateComment(comment); err != nil {
+			return err
+		}
+		if index == 0 {
+			if comment.ParentID != nil {
+				return errors.New("comment run must lead with a root")
+			}
+			root = comment.ID
+			continue
+		}
+		if comment.ParentID == nil || *comment.ParentID != root {
+			return errors.New("comment reply is not adjacent to its root")
+		}
+		if last != nil && !commentAfter(*last, comment) {
+			return errors.New("comment replies are not in stable order")
+		}
+		current := comment
+		last = &current
 	}
 	return nil
 }

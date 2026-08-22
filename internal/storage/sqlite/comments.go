@@ -137,6 +137,115 @@ func (store commentStore) CommentsEnabled(ctx context.Context) (bool, error) {
 	return enabled == 1, nil
 }
 
+// commentColumns is shared by every comment read so a column added to the
+// table cannot reach one query and miss another.
+const commentColumns = `comments.id, comments.entry_id, comments.parent_id, comments.author_kind, comments.author_name,
+       comments.author_user_id, comments.reply_to_comment_id, comments.content_md, comments.created_at_ms,
+       location.name, location.display_name, location.country_code,
+       location.country, location.region, location.city, location.district,
+       location.category, location.provider, location.provider_place_id,
+       location.latitude_e7, location.longitude_e7, location.coordinate_system`
+
+// Comments read oldest first, so the seek predicate walks forward with `>`.
+// The timeline walks backward with `<`; mixing the two directions in one
+// codebase is the easiest thing here to get wrong, and getting it wrong
+// returns a plausible wrong page rather than an error.
+const commentSeekPredicate = `(comments.created_at_ms > ? OR (comments.created_at_ms = ? AND comments.id > ?))`
+
+const commentKeysetOrder = `ORDER BY comments.created_at_ms ASC, comments.id ASC LIMIT ?`
+
+func commentSeekArguments(after *app.CommentPosition) (string, []any) {
+	if after == nil {
+		return "", nil
+	}
+	return " AND " + commentSeekPredicate, []any{after.CreatedAtMS, after.CreatedAtMS, after.ID.String()}
+}
+
+// ListCommentRoots returns one keyset page of top-level comments.
+func (store commentStore) ListCommentRoots(ctx context.Context, entryID domain.ID, after *app.CommentPosition, limit int) ([]domain.Comment, error) {
+	predicate, arguments := commentSeekArguments(after)
+	query := `SELECT ` + commentColumns + `
+FROM comments
+LEFT JOIN comment_location AS location ON location.comment_id = comments.id
+WHERE comments.entry_id = ? AND comments.parent_id IS NULL` + predicate + `
+` + commentKeysetOrder
+	return store.queryCommentPage(ctx, query, append(append([]any{entryID.String()}, arguments...), limit)...)
+}
+
+// ListCommentReplies returns one keyset page of replies under a single root.
+func (store commentStore) ListCommentReplies(ctx context.Context, rootID domain.ID, after *app.CommentPosition, limit int) ([]domain.Comment, error) {
+	predicate, arguments := commentSeekArguments(after)
+	query := `SELECT ` + commentColumns + `
+FROM comments
+LEFT JOIN comment_location AS location ON location.comment_id = comments.id
+WHERE comments.parent_id = ?` + predicate + `
+` + commentKeysetOrder
+	return store.queryCommentPage(ctx, query, append(append([]any{rootID.String()}, arguments...), limit)...)
+}
+
+func (store commentStore) queryCommentPage(ctx context.Context, query string, arguments ...any) ([]domain.Comment, error) {
+	rows, err := store.queries.QueryContext(ctx, query, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query comment page: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	records := make([]domain.Comment, 0)
+	for rows.Next() {
+		record, scanErr := scanComment(rows)
+		if scanErr != nil {
+			return nil, fmt.Errorf("scan comment page: %w", scanErr)
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate comment page: %w", err)
+	}
+	return records, nil
+}
+
+// ReplyCounts totals the replies under each root in one query.
+//
+// The client used to derive this by counting a fully loaded thread. Once only
+// part of a thread is loaded that arithmetic is no longer available to it, and
+// asking per root would put a query behind every row on the page.
+func (store commentStore) ReplyCounts(ctx context.Context, rootIDs []domain.ID) (map[domain.ID]int, error) {
+	counts := make(map[domain.ID]int, len(rootIDs))
+	if len(rootIDs) == 0 {
+		return counts, nil
+	}
+	placeholders := make([]string, len(rootIDs))
+	arguments := make([]any, len(rootIDs))
+	for index, id := range rootIDs {
+		placeholders[index] = "?"
+		arguments[index] = id.String()
+		counts[id] = 0
+	}
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT parent_id, count(*) FROM comments
+WHERE parent_id IN (`+strings.Join(placeholders, ", ")+`)
+GROUP BY parent_id`, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query reply counts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var rawID string
+		var total int
+		if err := rows.Scan(&rawID, &total); err != nil {
+			return nil, fmt.Errorf("scan reply counts: %w", err)
+		}
+		id, parseErr := domain.ParseID(rawID)
+		if parseErr != nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored reply has an invalid parent ID", nil)
+		}
+		counts[id] = total
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate reply counts: %w", err)
+	}
+	return counts, nil
+}
+
 // CommentsByID loads a set of comments in one query.
 //
 // Reply targets are resolved through this: a reply names the comment it
@@ -292,6 +401,70 @@ func (store commentStore) PinnedCommentID(ctx context.Context, entryID domain.ID
 		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored pinned comment ID is invalid", map[string]any{"entry_id": entryID.String()})
 	}
 	return &id, nil
+}
+
+// CommentMediaUsagesByComment loads the attachments for a whole page at once.
+//
+// The caller used to ask per comment inside a loop. That was invisible while a
+// thread always arrived whole and would have become a fixed per-page cost the
+// moment threads started paginating.
+func (store commentStore) CommentMediaUsagesByComment(ctx context.Context, commentIDs []domain.ID) (map[domain.ID][]app.MediaUsageProjection, error) {
+	usagesByComment := make(map[domain.ID][]app.MediaUsageProjection, len(commentIDs))
+	if len(commentIDs) == 0 {
+		return usagesByComment, nil
+	}
+	placeholders := make([]string, len(commentIDs))
+	arguments := make([]any, len(commentIDs))
+	for index, id := range commentIDs {
+		placeholders[index] = "?"
+		arguments[index] = id.String()
+		usagesByComment[id] = []app.MediaUsageProjection{}
+	}
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT usage.comment_id, usage.media_id, usage.position, usage.alt_text, media.mime_type, media.width, media.height
+FROM comment_media AS usage
+LEFT JOIN media ON media.id = usage.media_id
+WHERE usage.comment_id IN (`+strings.Join(placeholders, ", ")+`)
+ORDER BY usage.comment_id, usage.position`, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("query comment media usages: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var rawCommentID, rawMediaID string
+		var position int
+		var alt, mimeType sql.NullString
+		var width, height sql.NullInt64
+		if err := rows.Scan(&rawCommentID, &rawMediaID, &position, &alt, &mimeType, &width, &height); err != nil {
+			return nil, fmt.Errorf("scan comment media usage: %w", err)
+		}
+		commentID, err := domain.ParseID(rawCommentID)
+		if err != nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media comment ID is invalid", nil)
+		}
+		mediaID, err := domain.ParseID(rawMediaID)
+		if err != nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media ID is invalid", map[string]any{"comment_id": commentID.String()})
+		}
+		if !mimeType.Valid || mimeType.String == "" || !validStoredMediaDimension(width) || !validStoredMediaDimension(height) {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media dimensions are invalid", map[string]any{"comment_id": commentID.String(), "media_id": mediaID.String()})
+		}
+		usage := app.MediaUsageProjection{MediaID: mediaID, Position: position, MIMEType: mimeType.String, Width: uint32(width.Int64), Height: uint32(height.Int64)}
+		if alt.Valid {
+			value := alt.String
+			usage.AltText = &value
+		}
+		usagesByComment[commentID] = append(usagesByComment[commentID], usage)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate comment media usages: %w", err)
+	}
+	for commentID, usages := range usagesByComment {
+		if err := domain.ValidateCommentMediaUsages(mediaProjectionInputs(usages)); err != nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored comment media usages violate the ordered contract", map[string]any{"comment_id": commentID.String()})
+		}
+	}
+	return usagesByComment, nil
 }
 
 func (store commentStore) CommentMediaUsages(ctx context.Context, commentID domain.ID) ([]app.MediaUsageProjection, error) {
