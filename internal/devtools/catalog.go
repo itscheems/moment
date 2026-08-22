@@ -9,7 +9,14 @@ import (
 
 // RecipeVersion changes whenever logical fixture identity, ordering, content,
 // or byte generation changes. Consumers may persist this value in goldens.
-const RecipeVersion = "moment-dev-v1"
+//
+// v2: comments are owner-authored throughout. Retiring anonymous commenting
+// removed the guest branch from the generator, so every scenario with comments
+// now yields author_kind 'owner' where it used to alternate with 'guest' — at
+// the same deterministic IDs, since those derive from this constant. A golden
+// taken under v1 would otherwise have compared clean against different rows,
+// which is the exact failure this version exists to prevent.
+const RecipeVersion = "moment-dev-v2"
 
 // Category identifies the acceptance surface exercised by a named scenario.
 type Category string
