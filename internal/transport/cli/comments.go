@@ -297,7 +297,14 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 		if err != nil {
 			return Result{}, err
 		}
-		result, err := direct.service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ReplyToCommentID: replyToID, ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey})
+		// Direct mode is authorised by access to the data directory, not by a
+		// session, so there is nobody to read the author from. The owner is the
+		// account it writes as, and it is read rather than assumed.
+		owner, err := directOwnerAccount(ctx, direct.database, direct.runtime)
+		if err != nil {
+			return Result{}, commentCLIError(err)
+		}
+		result, err := direct.service.Create(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ReplyToCommentID: replyToID, ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey, Author: owner})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -484,6 +491,25 @@ type directCommentRuntime struct {
 	media       *media.Store
 	database    *sqlitestore.Database
 	maintenance *runtimefs.Lease
+	runtime     *runtimefs.Runtime
+}
+
+// directOwnerAccount reads the account a direct-mode write is performed as.
+//
+// Direct mode is authorised by access to the data directory rather than by a
+// session, so there is no admitted caller to take an author from. The owner
+// account is that author, and reading it keeps the row honest rather than
+// stamping an id the CLI assumed.
+func directOwnerAccount(ctx context.Context, database *sqlitestore.Database, runtimeState *runtimefs.Runtime) (domain.User, error) {
+	repository, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		return domain.User{}, err
+	}
+	service, err := app.NewAccountService(repository)
+	if err != nil {
+		return domain.User{}, err
+	}
+	return service.OwnerAccount(ctx)
 }
 
 func (runtime *directCommentRuntime) Close() error {
@@ -522,7 +548,7 @@ func openDirectCommentWrite(ctx context.Context, invocation Invocation) (*direct
 		_ = maintenance.Release()
 		return nil, err
 	}
-	return &directCommentRuntime{service: service, media: mediaStore, database: database, maintenance: maintenance}, nil
+	return &directCommentRuntime{service: service, media: mediaStore, database: database, maintenance: maintenance, runtime: runtimeState}, nil
 }
 
 func resolveCommentMediaInput(input postMediaInput, upload func(string) (domain.ID, error)) ([]domain.EntryMediaUsage, error) {

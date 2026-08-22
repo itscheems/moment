@@ -33,12 +33,19 @@ import (
 func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, gate *Gate) {
 	engine.GET("/api/v1/posts/:id/comments", listComments(service))
 	engine.GET("/api/v1/posts/:id/comments/:comment_id/replies", listCommentReplies(service))
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireActiveAccount())
-	owner.POST("/posts/:id/comments", createOwnerComment(service))
-	owner.PUT("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, true))
-	owner.DELETE("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, false))
-	owner.DELETE("/comments/:id", deleteOwnerComment(service))
+	// Writing a comment and moderating the conversation are two authorities,
+	// and they were one group until a second account could exist. Pinning
+	// somebody else's comment or removing it is the site owner's; writing one,
+	// and removing your own, belongs to any approved account.
+	authored := engine.Group("/api/v1/owner")
+	authored.Use(gate.RequireActiveAccount())
+	authored.POST("/posts/:id/comments", createComment(service))
+	authored.DELETE("/comments/:id", deleteComment(service))
+
+	moderation := engine.Group("/api/v1/owner")
+	moderation.Use(gate.RequireOwner())
+	moderation.PUT("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, true))
+	moderation.DELETE("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, false))
 }
 
 func changeOwnerCommentPin(service *app.CommentService, active bool) gin.HandlerFunc {
@@ -153,7 +160,7 @@ func commentPageQuery(value *url.URL) (string, int, error) {
 	return query.Get("cursor"), limit, nil
 }
 
-func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
+func createComment(service *app.CommentService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		postID, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
@@ -170,7 +177,12 @@ func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ReplyToCommentID: request.ReplyToCommentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key})
+		author, ok := CurrentAccount(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		result, err := service.Create(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ReplyToCommentID: request.ReplyToCommentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key, Author: author})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -187,7 +199,7 @@ func writeCreatedComment(ctx *gin.Context, result app.CreateCommentResult) {
 	Success(ctx, status, commentdto.FromComment(result.Comment), map[string]any{"replayed": result.Replayed})
 }
 
-func deleteOwnerComment(service *app.CommentService) gin.HandlerFunc {
+func deleteComment(service *app.CommentService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		id, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
@@ -199,7 +211,12 @@ func deleteOwnerComment(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.Delete(ctx.Request.Context(), id, dryRun)
+		actor, ok := CurrentAccount(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		result, err := service.DeleteBy(ctx.Request.Context(), id, actor, dryRun)
 		if err != nil {
 			writeCommentError(ctx, err)
 			return

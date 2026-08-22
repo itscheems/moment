@@ -84,7 +84,7 @@ func TestCommentCLIDirectAPIParityOwnerIdentityIdempotencyAndSafety(t *testing.T
 	application := momentTestApplication()
 	createdOutput := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--content", "owner **root**", "--idempotency-key", "comment-cli-1", "--json")
 	created := commandData(t, createdOutput)
-	if created["author_kind"] != "owner" || created["author_name"] != "Owner" || created["parent_id"] != nil || created["depth"] != float64(0) || createdOutput.stderr != "" {
+	if created["author_kind"] != "owner" || created["author_name"] != "Moment" || created["parent_id"] != nil || created["depth"] != float64(0) || createdOutput.stderr != "" {
 		t.Fatalf("created = %#v output=%#v", created, createdOutput)
 	}
 	replayedOutput := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--content", "owner **root**", "--idempotency-key", "comment-cli-1", "--json")

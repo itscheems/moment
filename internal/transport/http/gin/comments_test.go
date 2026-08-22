@@ -13,6 +13,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/auth/oauth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
@@ -26,11 +27,12 @@ const legacyGuestCommentID = "01ARZ3NDEKTSV4RRFFQ69G5FB9"
 
 type commentHTTPFixture struct {
 	ownerTestFixture
-	comments *app.CommentService
-	site     *app.SiteService
-	postID   domain.ID
-	clock    *time.Time
-	database *sqlitestore.Database
+	accountService *app.AccountService
+	comments       *app.CommentService
+	site           *app.SiteService
+	postID         domain.ID
+	clock          *time.Time
+	database       *sqlitestore.Database
 }
 
 func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
@@ -90,12 +92,15 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, Accounts: commentAccounts, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore, Log: log, RequestID: func() string { return "req_comments" }})
+	// Federated sign-in is wired in so a test can mint a real member account
+	// against this same engine; the provider is substituted, not reached.
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, Accounts: commentAccounts, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore, OAuthProviders: oauth.NewRegistry(newStubProvider()), Log: log, RequestID: func() string { return "req_comments" }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return commentHTTPFixture{
-		ownerTestFixture: ownerTestFixture{manager: manager, token: credential.Token, engine: engine, now: &now},
+		ownerTestFixture: ownerTestFixture{manager: manager, accounts: commentAccounts, gate: NewGate(manager, commentAccounts), token: credential.Token, engine: engine, now: &now},
+		accountService:   commentAccounts,
 		comments:         comments, site: site, postID: postID, clock: &now, database: database,
 	}
 }
@@ -216,13 +221,13 @@ func TestCommentHTTPOwnerThreadAndModerationContract(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	publicPath := publicCommentPath(fixture)
 	root := postOwnerComment(t, fixture, `{"content_md":"first **comment**"}`)
-	if root["author_kind"] != "owner" || root["author_name"] != "Owner" || root["parent_id"] != nil ||
+	if root["author_kind"] != "owner" || root["author_name"] != "Moment" || root["parent_id"] != nil ||
 		root["depth"] != float64(0) || !strings.Contains(root["content_html"].(string), "<strong>comment</strong>") {
 		t.Fatalf("root = %#v", root)
 	}
 	rootID := root["id"].(string)
 	reply := postOwnerComment(t, fixture, `{"content_md":"owner reply","parent_id":"`+rootID+`"}`)
-	if reply["author_kind"] != "owner" || reply["author_name"] != "Owner" || reply["parent_id"] != rootID || reply["depth"] != float64(1) {
+	if reply["author_kind"] != "owner" || reply["author_name"] != "Moment" || reply["parent_id"] != rootID || reply["depth"] != float64(1) {
 		t.Fatalf("reply = %#v", reply)
 	}
 	deep := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, ownerCommentPath(fixture),
@@ -519,7 +524,7 @@ func TestCommentHTTPListsLegacyGuestRowsWrittenBeforeAccountsWereRequired(t *tes
 		!strings.Contains(legacy["content_html"].(string), "left before accounts existed") {
 		t.Fatalf("legacy guest comment = %#v", legacy)
 	}
-	if items[1]["id"] != current["id"] || items[1]["author_kind"] != "owner" || items[1]["author_name"] != "Owner" {
+	if items[1]["id"] != current["id"] || items[1]["author_kind"] != "owner" || items[1]["author_name"] != "Moment" {
 		t.Fatalf("owner comment = %#v", items[1])
 	}
 	postResponse := performRequest(fixture.engine, commentRequest(http.MethodGet, "/api/v1/posts/"+fixture.postID.String(), ""))

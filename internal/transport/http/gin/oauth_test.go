@@ -435,3 +435,27 @@ func TestProviderListingReportsOnlyConfiguredProviders(t *testing.T) {
 		t.Fatalf("auth_error = %q", got)
 	}
 }
+
+// startOAuthFlowOn performs the first leg against any engine that has federated
+// sign-in registered, and reports the cookie and state a browser would hold.
+func startOAuthFlowOn(t *testing.T, engine http.Handler) (*http.Cookie, string) {
+	t.Helper()
+	response := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/login/oauth/google/start", nil))
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("start = %d, body = %s", response.Code, response.Body.String())
+	}
+	location, err := url.Parse(response.Header().Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var flow *http.Cookie
+	for _, cookie := range response.Result().Cookies() {
+		if cookie.Name == oauthCookieName {
+			flow = cookie
+		}
+	}
+	if flow == nil {
+		t.Fatal("start did not set the flow cookie")
+	}
+	return flow, location.Query().Get("state")
+}
