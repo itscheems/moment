@@ -39,6 +39,11 @@ export interface OwnerLoginOptions {
   passwordEnabled: boolean;
 }
 
+export interface OAuthLoginProvider {
+  name: string;
+  label: string;
+}
+
 export interface SiteSettingsUpdate {
   username?: string;
   displayName?: string;
@@ -1993,6 +1998,31 @@ export class OwnerApi {
       throw invalidResponse("login options response has unexpected fields");
     }
     return { passwordEnabled: booleanField(record, "password_enabled") };
+  }
+
+  // Third-party sign-in is advertised through its own endpoint so that the
+  // password/token login options above stay a separate contract.
+  async loginProviders(signal?: AbortSignal): Promise<OAuthLoginProvider[]> {
+    const response = await this.fetcher("/api/v1/login/oauth/providers", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const data = await decodeExactOwnerSuccess(response, ["providers"]);
+    const providers = data.providers;
+    if (!Array.isArray(providers)) {
+      throw invalidResponse("login providers must be an array");
+    }
+    return providers.map((entry) => {
+      if (!isRecord(entry) || !hasExactKeys(entry, ["name", "label"])) {
+        throw invalidResponse("login provider contains unsupported fields");
+      }
+      const name = stringField(entry, "name");
+      const label = stringField(entry, "label");
+      if (!/^[a-z][a-z0-9_]{0,31}$/.test(name) || !label.trim()) {
+        throw invalidResponse("login provider identity is invalid");
+      }
+      return { name, label };
+    });
   }
 
   async status(signal?: AbortSignal): Promise<OwnerStatus> {

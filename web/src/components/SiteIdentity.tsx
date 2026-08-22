@@ -3,8 +3,14 @@ import { mediaPreviewUrl } from "../api/mediaUrls";
 
 import styles from "./SiteIdentity.module.css";
 
+// The `@` is presentation only. Profile URLs dropped it (`/username`), so never
+// route a handle string into an `href` — use `siteProfileHref` for that.
 export function siteHandle(site: SiteIdentity): string {
   return `@${site.username}`;
+}
+
+export function siteProfileHref(site: SiteIdentity): string {
+  return `/${site.username}`;
 }
 
 export function siteDisplayName(site: SiteIdentity): string {

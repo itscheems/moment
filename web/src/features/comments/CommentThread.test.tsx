@@ -95,7 +95,7 @@ function comment(
       // what makes these fixtures a faithful stand-in for a real response.
       display_name: options.owner ? site.displayName : authorName,
       avatar_media_id: null,
-      profile_url: options.owner ? `/@${site.username}` : null,
+      profile_url: options.owner ? `/${site.username}` : null,
     },
     reply_to: null,
     reply_count: 0,

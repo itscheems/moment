@@ -1,14 +1,66 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
+import type { OAuthLoginProvider } from "../../api/owner";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import { Icon, type IconName } from "../../components/icons";
 import { useOwner } from "./OwnerProvider";
 import styles from "./Owner.module.css";
+
+// GitHub sits above Google on purpose: a meaningful share of this instance's
+// visitors are in mainland China, where Google is unreachable, so the option
+// that can actually complete has to be the first one they see.
+const PROVIDER_ORDER = ["github", "google"];
+
+const PROVIDER_ICONS: Record<string, IconName> = {
+  github: "github",
+  google: "google",
+};
+
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  OAUTH_PROVIDER_UNAVAILABLE:
+    "这个登录方式暂时不可用，请稍后再试或改用密码登录。",
+  OAUTH_STATE_INVALID: "登录请求已过期，请重新点击登录。",
+  OAUTH_IDENTITY_UNUSABLE: "没能从该账号读到可用的身份信息。",
+  ACCOUNT_SUSPENDED: "这个账号已被停用。",
+  REGISTRATION_CLOSED: "本站当前不接受新注册。",
+  OAUTH_EXCHANGE_FAILED: "与登录服务通信失败，请重试。",
+};
 
 function safeReturnPath(value: string | null): string {
   return value && value.startsWith("/") && !value.startsWith("//")
     ? value
     : "/";
+}
+
+function orderedProviders(
+  providers: OAuthLoginProvider[],
+): OAuthLoginProvider[] {
+  const rank = (provider: OAuthLoginProvider) => {
+    const index = PROVIDER_ORDER.indexOf(provider.name);
+    return index === -1 ? PROVIDER_ORDER.length : index;
+  };
+  // Array#sort is stable, so anything the server adds later keeps its own
+  // order behind the two we position deliberately.
+  return [...providers].sort((left, right) => rank(left) - rank(right));
+}
+
+function authErrorMessage(code: string | null): string | null {
+  if (code === null) return null;
+  return AUTH_ERROR_MESSAGES[code] ?? "第三方登录没有完成，请重试。";
+}
+
+// The failure code is a one-shot message. Leaving it on the URL would replay
+// the same alert on every refresh, so it is consumed as soon as it is read.
+function stripAuthError() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("auth_error")) return;
+  url.searchParams.delete("auth_error");
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${url.pathname}${url.search}${url.hash}`,
+  );
 }
 
 export function OwnerLogin({
@@ -26,7 +78,42 @@ export function OwnerLogin({
   const [pending, setPending] = useState(false);
   const [optionsPending, setOptionsPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [providers, setProviders] = useState<OAuthLoginProvider[]>([]);
+  const [startingProvider, setStartingProvider] = useState<string | null>(null);
+  const [authError] = useState(() =>
+    authErrorMessage(
+      new URLSearchParams(window.location.search).get("auth_error"),
+    ),
+  );
   const pendingRef = useRef(false);
+
+  useEffect(() => stripAuthError(), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void api
+      .loginProviders(controller.signal)
+      .then((available) => {
+        if (!controller.signal.aborted) {
+          setProviders(orderedProviders(available));
+        }
+      })
+      .catch(() => {
+        // Instances with no OAuth configured do not serve this endpoint at all.
+        // Falling back to an empty list degrades the page to the password form
+        // instead of showing a failure the visitor cannot act on.
+        if (!controller.signal.aborted) setProviders([]);
+      });
+    return () => controller.abort();
+  }, [api]);
+
+  useEffect(() => {
+    // A back navigation can restore this page from the bfcache with the button
+    // still disabled from the redirect that led away from it.
+    const restore = () => setStartingProvider(null);
+    window.addEventListener("pageshow", restore);
+    return () => window.removeEventListener("pageshow", restore);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -75,6 +162,19 @@ export function OwnerLogin({
       pendingRef.current = false;
       setPending(false);
     }
+  };
+
+  const startOAuth = (name: string) => {
+    if (startingProvider !== null) return;
+    setStartingProvider(name);
+    const returnPath = safeReturnPath(
+      new URLSearchParams(window.location.search).get("return"),
+    );
+    // A full page load, not a fetch: the provider owns the next screen and the
+    // callback has to land back on this origin with its own cookies.
+    window.location.assign(
+      `/api/v1/login/oauth/${encodeURIComponent(name)}/start?return=${encodeURIComponent(returnPath)}`,
+    );
   };
 
   const endSession = async () => {
@@ -135,6 +235,11 @@ export function OwnerLogin({
           ? "输入此实例的所有者密码。Moment 不需要公开注册、邮箱或账号选择。"
           : "令牌用于初始化、CLI 和恢复；只在尚未设置密码或紧急访问时使用。"}
       </p>
+      {authError ? (
+        <p className={styles.authError} role="alert">
+          {authError}
+        </p>
+      ) : null}
       {state === "unavailable" ? (
         <div className={styles.inlineNotice} role="alert">
           <span>暂时无法确认现有会话，仍可尝试登录。</span>
@@ -142,6 +247,37 @@ export function OwnerLogin({
             重试检查
           </button>
         </div>
+      ) : null}
+      {providers.length > 0 ? (
+        <>
+          <div className={styles.oauthOptions}>
+            {providers.map((provider) => {
+              const icon = PROVIDER_ICONS[provider.name];
+              const starting = startingProvider === provider.name;
+              return (
+                <button
+                  className={styles.oauthButton}
+                  disabled={startingProvider !== null}
+                  key={provider.name}
+                  onClick={() => startOAuth(provider.name)}
+                  type="button"
+                >
+                  {icon ? <Icon name={icon} /> : null}
+                  <span>
+                    {starting
+                      ? `正在前往 ${provider.label}…`
+                      : `使用 ${provider.label} 登录`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className={styles.oauthSeparator}>
+            <span aria-hidden="true" className={styles.oauthRule} />
+            <span>or</span>
+            <span aria-hidden="true" className={styles.oauthRule} />
+          </div>
+        </>
       ) : null}
       <form
         className={styles.loginForm}

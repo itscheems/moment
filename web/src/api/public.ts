@@ -689,7 +689,7 @@ function parseCommentAuthor(value: unknown): PublicCommentAuthor {
   if (linked !== 0 && linked !== 3) {
     throw invalidResponse("comment author identity is partially resolved");
   }
-  if (username !== null && profileUrl !== `/@${username}`) {
+  if (username !== null && profileUrl !== `/${username}`) {
     throw invalidResponse("comment author profile_url does not match username");
   }
   return {
@@ -1532,7 +1532,7 @@ export class PublicApi {
         !/^[0-9a-f]{32}$/.test(ownerId) ||
         !/^[a-z][a-z0-9_]{2,29}$/.test(username) ||
         !displayName ||
-        profileUrl !== `/@${username}` ||
+        profileUrl !== `/${username}` ||
         (avatarMediaId !== null && !isCanonicalUlid(avatarMediaId))
       ) {
         throw invalidResponse("mention suggestion identity is invalid");

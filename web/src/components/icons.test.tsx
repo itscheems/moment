@@ -70,6 +70,35 @@ describe("Icon", () => {
     );
   });
 
+  it("lets the GitHub mark follow the surrounding text colour", () => {
+    const { container } = render(<Icon name="github" />);
+    const icon = container.querySelector('svg[data-icon="github"]');
+
+    expect(icon?.getAttribute("viewBox")).toBe("0 0 24 24");
+    expect(icon?.getAttribute("fill")).toBe("currentColor");
+    expect(icon?.querySelectorAll("path")).toHaveLength(1);
+    // A stroked wrapper would thicken the silhouette into a blob.
+    expect(icon?.querySelector("g")).toBeNull();
+    expect(icon?.querySelector("path")?.getAttribute("fill")).toBeNull();
+  });
+
+  it("keeps the Google mark on its four trademarked colours", () => {
+    const { container } = render(<Icon name="google" />);
+    const icon = container.querySelector('svg[data-icon="google"]');
+    const paths = Array.from(icon?.querySelectorAll("path") ?? []);
+
+    expect(icon?.getAttribute("viewBox")).toBe("0 0 48 48");
+    expect(icon?.querySelector("g")).toBeNull();
+    // Every path states its own fill, so the theme never repaints the logo.
+    expect(paths.map((path) => path.getAttribute("fill"))).toEqual([
+      "#EA4335",
+      "#4285F4",
+      "#FBBC05",
+      "#34A853",
+      "none",
+    ]);
+  });
+
   it("renders the media removal artwork from the shared sprite", () => {
     const { container } = render(<Icon name="media-remove" />);
     const icon = container.querySelector('svg[data-icon="media-remove"]');

@@ -67,7 +67,7 @@ function page(items: unknown[], nextCursor: string | null): Response {
 }
 
 beforeEach(() => {
-  window.history.replaceState({}, "", "/@owner");
+  window.history.replaceState({}, "", "/owner");
   vi.stubGlobal("scrollTo", vi.fn());
 });
 
@@ -449,7 +449,7 @@ describe("profile page", () => {
     window.history.replaceState(
       { momentScrollY: 640 },
       "",
-      "/@owner?loaded_through=cursor-one",
+      "/owner?loaded_through=cursor-one",
     );
     const first = post(pinnedId, "资料页第一页");
     const second = post(otherId, "资料页第二页");

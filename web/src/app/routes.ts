@@ -48,16 +48,6 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     match: (pathname) => pathname === "/archive" || pathname === "/archive/",
   },
   {
-    id: "profile",
-    title: "个人资料",
-    eyebrow: "",
-    href: "/profile",
-    match: (pathname) =>
-      pathname === "/profile" ||
-      pathname === "/profile/" ||
-      /^\/@[a-z][a-z0-9_]{2,29}\/?$/.test(pathname),
-  },
-  {
     id: "owner-login",
     title: "所有者登录",
     eyebrow: "",
@@ -90,6 +80,19 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     ownerOnly: true,
     match: (pathname) =>
       pathname === "/owner/settings" || pathname === "/owner/settings/",
+  },
+  // Handles live at the site root now (`/username`, not `/@username`), so this
+  // pattern would swallow every other single-segment page. `resolveRoute` takes
+  // the first match, so the profile route has to stay last in this array.
+  {
+    id: "profile",
+    title: "个人资料",
+    eyebrow: "",
+    href: "/profile",
+    match: (pathname) =>
+      pathname === "/profile" ||
+      pathname === "/profile/" ||
+      /^\/[a-z][a-z0-9_]{2,29}\/?$/.test(pathname),
   },
 ];
 

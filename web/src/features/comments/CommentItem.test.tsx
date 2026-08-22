@@ -55,7 +55,7 @@ const ownerAuthor: PublicCommentAuthor = {
   username: "itscheems",
   displayName: "Cheems",
   avatarMediaId: "01M08A31N0WNK66SC39ZAQFK6M",
-  profileUrl: "/@itscheems",
+  profileUrl: "/itscheems",
 };
 
 const guestAuthor: PublicCommentAuthor = {
@@ -71,7 +71,7 @@ const strangerAuthor: PublicCommentAuthor = {
   username: "someone",
   displayName: "别人",
   avatarMediaId: "01M08A31N0WNK66SC39ZAQFK6N",
-  profileUrl: "/@someone",
+  profileUrl: "/someone",
 };
 
 function comment(
@@ -212,8 +212,8 @@ describe("comment identity", () => {
 
     const name = screen.getByRole("link", { name: "Cheems" });
     const handle = screen.getByRole("link", { name: "@itscheems" });
-    expect(name).toHaveAttribute("href", "/@itscheems");
-    expect(handle).toHaveAttribute("href", "/@itscheems");
+    expect(name).toHaveAttribute("href", "/itscheems");
+    expect(handle).toHaveAttribute("href", "/itscheems");
     expect(screen.queryByText("Moment 站点")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Cheems的回复")).toBeInTheDocument();
     expect(screen.getByText("所有者")).toBeInTheDocument();
@@ -258,7 +258,7 @@ describe("comment identity", () => {
     // Linked, because the account has a profile...
     expect(screen.getByRole("link", { name: "别人" })).toHaveAttribute(
       "href",
-      "/@someone",
+      "/someone",
     );
     expect(screen.getByRole("link", { name: "@someone" })).toBeInTheDocument();
     // ...but nothing of this site's is borrowed for it: no avatar image, and no
@@ -481,7 +481,7 @@ describe("the composer's reply target", () => {
           username: "itscheems",
           display_name: "Cheems",
           avatar_media_id: null,
-          profile_url: "/@itscheems",
+          profile_url: "/itscheems",
         },
         reply_to: { comment_id: siblingId, author: null },
         content_md: "接着说",

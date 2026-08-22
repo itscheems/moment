@@ -39,7 +39,7 @@ const comment = {
     username: "owner",
     display_name: "Moment",
     avatar_media_id: null,
-    profile_url: "/@owner",
+    profile_url: "/owner",
   },
   reply_to: null,
   content_md: "所有者回应",

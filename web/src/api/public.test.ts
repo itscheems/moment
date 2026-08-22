@@ -38,7 +38,7 @@ const ownerAuthor = {
   username: "owner",
   display_name: "Moment",
   avatar_media_id: null,
-  profile_url: "/@owner",
+  profile_url: "/owner",
 };
 
 const rootComment = {

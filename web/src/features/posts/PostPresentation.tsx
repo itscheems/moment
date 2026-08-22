@@ -4,7 +4,11 @@ import { type MouseEvent, type MouseEventHandler } from "react";
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
-import { SiteAvatar, siteDisplayName } from "../../components/SiteIdentity";
+import {
+  SiteAvatar,
+  siteDisplayName,
+  siteProfileHref,
+} from "../../components/SiteIdentity";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import {
   ActionTooltip,
@@ -160,7 +164,7 @@ export function PostPresentation({
         <InternalLink
           aria-label={`查看 ${title} 的个人资料`}
           className={styles.identityLink}
-          href={`/@${site.username}`}
+          href={siteProfileHref(site)}
         >
           <SiteAvatar eager={detail} site={site} />
         </InternalLink>
@@ -188,7 +192,7 @@ export function PostPresentation({
           children={
             <InternalLink
               className={styles.nameLink}
-              href={`/@${site.username}`}
+              href={siteProfileHref(site)}
             >
               <strong>{site.displayName}</strong>
             </InternalLink>
@@ -196,7 +200,7 @@ export function PostPresentation({
         />
         <InternalLink
           className={styles.usernameLink}
-          href={`/@${site.username}`}
+          href={siteProfileHref(site)}
         >
           @{site.username}
         </InternalLink>

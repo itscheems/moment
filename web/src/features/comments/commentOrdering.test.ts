@@ -32,7 +32,7 @@ function comment(
       username: "owner",
       displayName: "Moment",
       avatarMediaId: null,
-      profileUrl: "/@owner",
+      profileUrl: "/owner",
     },
     replyTo: null,
     contentMd: id,

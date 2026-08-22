@@ -236,7 +236,7 @@ describe("shared post presentation", () => {
     ).toContainElement(document.querySelector('svg[data-icon="reply"]'));
     expect(screen.getByRole("link", { name: "@owner" })).toHaveAttribute(
       "href",
-      "/@owner",
+      "/owner",
     );
   });
 
@@ -654,14 +654,14 @@ describe("shared post presentation", () => {
     });
     expect(avatarLinks).toHaveLength(2);
     avatarLinks.forEach((link) =>
-      expect(link).toHaveAttribute("href", "/@owner"),
+      expect(link).toHaveAttribute("href", "/owner"),
     );
     expect(
       within(screen.getByRole("heading", { name: "Moment" })).getByRole(
         "link",
         { name: "Moment" },
       ),
-    ).toHaveAttribute("href", "/@owner");
+    ).toHaveAttribute("href", "/owner");
     expect(
       screen.queryByRole("link", { name: "查看个人资料" }),
     ).not.toBeInTheDocument();
@@ -718,7 +718,7 @@ describe("shared post presentation", () => {
         within(previewBody!).getByRole("link", { name: accessibleName }),
       );
 
-      expect(window.location.pathname).toBe("/@owner");
+      expect(window.location.pathname).toBe("/owner");
       expect(
         screen.queryByRole("heading", { name: "Moment" }),
       ).not.toBeInTheDocument();

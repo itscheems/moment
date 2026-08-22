@@ -303,6 +303,12 @@ function installApi(
       if (response) return response;
       if (url === "/api/v1/site") return json(siteEnvelope);
       if (url === "/api/v1/owner/status") return ownerStatus();
+      if (url === "/api/v1/login/oauth/providers") {
+        return json({
+          data: { providers: [] },
+          meta: { request_id: "req_providers" },
+        });
+      }
       if (url.startsWith("/api/v1/posts?")) {
         return json({
           data: { items: [] },
@@ -396,7 +402,7 @@ describe("owner composing flow", () => {
               username: "owner",
               display_name: "乔乔",
               avatar_media_id: null,
-              profile_url: "/@owner",
+              profile_url: "/owner",
             },
           ],
           meta: { request_id: "req_mentions" },

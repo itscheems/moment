@@ -75,6 +75,70 @@
   line-height: 1.65;
 }
 
+.oauthOptions {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+}
+
+/* `.loginGate button` above resets the border for every button in this gate, so
+   these rules have to out-rank it from inside the same ancestor. */
+.loginGate .oauthButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.loginGate .oauthButton:hover:not(:disabled),
+.loginGate .oauthButton:focus-visible:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.loginGate .oauthButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+/* The Google mark is fixed four-color artwork and keeps its own fills; the
+   GitHub silhouette inherits the label colour. */
+.oauthButton svg {
+  flex: none;
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.oauthSeparator {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.oauthRule {
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+/* The separator already draws the divider above the form. */
+.oauthSeparator + .loginForm {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+
+.loginGate > .authError {
+  margin: 0 0 var(--space-4);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
 .loginForm {
   display: grid;
   gap: var(--space-3);

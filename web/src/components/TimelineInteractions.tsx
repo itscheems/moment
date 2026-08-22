@@ -5,7 +5,7 @@ import { useRef, type ReactElement, type SyntheticEvent } from "react";
 
 import type { SiteIdentity } from "../api/public";
 import { InternalLink } from "../app/navigation";
-import { SiteAvatar, SiteCover } from "./SiteIdentity";
+import { SiteAvatar, SiteCover, siteProfileHref } from "./SiteIdentity";
 import { notify } from "./Feedback";
 import { Icon } from "./icons";
 import styles from "./TimelineInteractions.module.css";
@@ -58,7 +58,7 @@ export function SiteIdentityPreview({
   site: SiteIdentity;
 }) {
   const title = site.displayName.trim() || site.title.trim() || "Moment";
-  const profileHref = `/@${site.username}`;
+  const profileHref = siteProfileHref(site);
   const previewActionsRef = useRef<PreviewCard.Root.Actions>(null);
   const unmountBeforeNavigation = () => {
     previewActionsRef.current?.unmount();

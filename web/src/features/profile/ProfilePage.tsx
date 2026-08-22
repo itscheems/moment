@@ -18,6 +18,7 @@ import {
   SiteCover,
   siteDisplayName,
   siteHandle,
+  siteProfileHref,
 } from "../../components/SiteIdentity";
 import {
   ExactTimeTooltip,
@@ -310,7 +311,7 @@ export function ProfilePage({
         <div className={styles.profileActions}>
           <ShareMenu
             baseUrl={site.publicBaseUrl}
-            href={`/@${site.username}`}
+            href={siteProfileHref(site)}
             title={`${title} 的个人资料`}
             trigger={
               <button

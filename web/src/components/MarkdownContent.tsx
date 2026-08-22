@@ -81,7 +81,7 @@ function linkOwnerMentions(html: string, username?: string): string {
       const prefix = match[1] ?? "";
       fragment.append(value.slice(cursor, index + prefix.length));
       const link = parsed.createElement("a");
-      link.setAttribute("href", `/@${username}`);
+      link.setAttribute("href", `/${username}`);
       link.textContent = match[2];
       link.dataset.momentMention = username;
       fragment.append(link);
