@@ -36,10 +36,17 @@ type Google struct {
 // cannot be reached fails while the operator is watching instead of on someone
 // else's first login attempt.
 func NewGoogle(ctx context.Context, credentials Credentials, redirectURL string) (*Google, error) {
+	return newGoogleForIssuer(ctx, googleIssuer, credentials, redirectURL)
+}
+
+// newGoogleForIssuer is NewGoogle with the issuer left open, so the adapter can
+// be exercised against a stand-in that speaks the same protocol. Production has
+// exactly one issuer and NewGoogle is the only way to reach it.
+func newGoogleForIssuer(ctx context.Context, issuer string, credentials Credentials, redirectURL string) (*Google, error) {
 	if !credentials.Configured() || redirectURL == "" {
 		return nil, nil
 	}
-	provider, err := oidc.NewProvider(withClient(ctx), googleIssuer)
+	provider, err := oidc.NewProvider(withClient(ctx), issuer)
 	if err != nil {
 		return nil, unavailable("discover google endpoints", err)
 	}
