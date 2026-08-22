@@ -605,8 +605,14 @@ export function CommentForm({
           (!parentId && expanded && topLevelTargetUsername) ? (
             <p className={styles.replyTarget}>
               正在回复{" "}
+              {/*
+               * The label arrives whole. A handle carries its own @; a legacy
+               * row that has no account carries a plain display name, and
+               * prefixing that with @ would present a name — spaces and all —
+               * as though it were a handle.
+               */}
               <span>
-                @{parentId ? replyTargetAuthor : topLevelTargetUsername}
+                {parentId ? replyTargetAuthor : `@${topLevelTargetUsername}`}
               </span>
             </p>
           ) : null}

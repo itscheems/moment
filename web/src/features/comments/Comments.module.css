@@ -962,23 +962,27 @@
 }
 
 /*
- * `ReplyBranch` is emitted after the last loaded reply of a branch but before
- * the inline composer for that same comment, so the composer is the one row
- * that can follow it and the line has to cross it to reach them. `.replyComment`
- * is named alongside for the day the branch row moves above the replies it
- * summarises; it cannot follow today.
+ * Within one root's run the order is: the comment, then the inline composer
+ * aimed at it, then the branch row that continues the whole run. So a composer
+ * can be followed by either a reply or the branch row, and the branch row is
+ * last and followed by nothing. `.replyBranch:has(+ ...)` is kept for the day
+ * that changes; it does not match today, and a rule that silently matches
+ * nothing is why the composer gap went unnoticed in the first place.
  */
 .replyBranch:has(+ .replyComposerRow),
 .replyBranch:has(+ .replyComment),
+.replyComposerRow:has(+ .replyBranch),
 .replyComposerRow:has(+ .replyComment) {
   position: relative;
 }
 
 .replyBranch:has(+ .replyComposerRow)::before,
 .replyBranch:has(+ .replyComment)::before,
+.replyComposerRow:has(+ .replyBranch)::before,
 .replyComposerRow:has(+ .replyComment)::before,
 .replyBranch:has(+ .replyComposerRow)::after,
 .replyBranch:has(+ .replyComment)::after,
+.replyComposerRow:has(+ .replyBranch)::after,
 .replyComposerRow:has(+ .replyComment)::after {
   content: "";
   position: absolute;
@@ -987,11 +991,13 @@
   background: var(--border-subtle);
 }
 
+.replyComposerRow:has(+ .replyBranch)::before,
 .replyComposerRow:has(+ .replyComment)::before {
   inset-block-start: 0;
   block-size: var(--space-3);
 }
 
+.replyComposerRow:has(+ .replyBranch)::after,
 .replyComposerRow:has(+ .replyComment)::after {
   inset-block-start: calc(var(--space-3) + var(--target-size));
   inset-block-end: 0;

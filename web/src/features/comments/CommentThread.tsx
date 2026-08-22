@@ -44,6 +44,13 @@ interface ReplyPaging {
   cursor: string | null;
   loading: boolean;
   error: unknown;
+  /**
+   * Cursors this root has already been answered for. Reply pages get the same
+   * cycle guard the roots, timeline, profile and search pages get: without it
+   * a cursor that repeats itself leaves a control that refetches the identical
+   * page forever and never reports anything wrong.
+   */
+  visited: string[];
 }
 
 function replyPagingFromComments(
@@ -56,6 +63,7 @@ function replyPagingFromComments(
       cursor: comment.repliesNextCursor,
       loading: false,
       error: null,
+      visited: [],
     });
   }
   return paging;
@@ -207,12 +215,17 @@ export function CommentThread({
     (rootId: string) => {
       const paging = replyPaging.get(rootId);
       if (!paging || paging.loading || !paging.cursor) return;
+      const cursor = paging.cursor;
+      const visited = new Set(paging.visited);
+      visited.add(cursor);
       setReplyPaging((current) =>
         withReplyPaging(current, rootId, { loading: true, error: null }),
       );
       void api
-        .commentReplies(postId, rootId, { cursor: paging.cursor })
+        .commentReplies(postId, rootId, { cursor })
         .then((page) => {
+          validateCursorPage(page, cursor, visited, "comment reply");
+          const firstNewId = page.items[0]?.id;
           setItems((current) =>
             current
               ? appendRepliesToRoot(current, rootId, page.items)
@@ -222,8 +235,21 @@ export function CommentThread({
             withReplyPaging(current, rootId, {
               cursor: page.nextCursor,
               loading: false,
+              visited: [...visited],
             }),
           );
+          // The pressed control is inside the run that just grew, so it is
+          // unmounted and remounted further down and focus would otherwise
+          // fall to the document body. Land on the first reply that arrived —
+          // the thing the reader asked for — matching how the root sentinel
+          // treats a deliberate press.
+          if (firstNewId) {
+            window.requestAnimationFrame(() =>
+              document
+                .querySelector<HTMLElement>(`[data-comment-id="${firstNewId}"]`)
+                ?.focus({ preventScroll: true }),
+            );
+          }
         })
         .catch((error: unknown) =>
           setReplyPaging((current) =>
@@ -420,12 +446,15 @@ export function CommentThread({
                       );
                     }}
                     onReply={(root, target) => {
-                      const targetAuthor =
-                        target.authorKind === "owner"
-                          ? site.displayName.trim() ||
-                            site.title.trim() ||
-                            target.authorName
-                          : target.authorName;
+                      // The handle the server resolved, not the site identity
+                      // overlaid on an author kind. That overlay is the exact
+                      // thing author_user_id replaced: it made the composer
+                      // claim one name while the byline above it showed
+                      // another. A legacy row with no account keeps its stored
+                      // name, which the composer renders unprefixed.
+                      const targetAuthor = target.author.username
+                        ? `@${target.author.username}`
+                        : target.author.displayName;
                       setReply({
                         rootId: root.id,
                         targetId: target.id,
@@ -452,7 +481,15 @@ export function CommentThread({
                         ? comment
                         : (rootsById.get(comment.parentId) ?? null)
                     }
-                    replyCount={replyCounts.get(comment.id) ?? 0}
+                    // The root's own total, not the rows on screen: the
+                    // delete confirmation is describing an irreversible
+                    // cascade, and a page holds only part of a conversation.
+                    // The loaded count is kept as a floor so a reply that has
+                    // been optimistically inserted still counts.
+                    replyCount={Math.max(
+                      comment.replyCount,
+                      replyCounts.get(comment.id) ?? 0,
+                    )}
                     site={site}
                   />
                   {reply?.targetId === comment.id ? (

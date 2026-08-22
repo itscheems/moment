@@ -1148,17 +1148,23 @@ describe("public comment thread", () => {
         name: "回复 Moment",
       }),
     );
+    // The composer names the handle it will record, not the display name the
+    // byline shows: an owner comment resolves to @owner, and that is what the
+    // reply is stored against.
     const replyForm = screen.getByRole("form", {
-      name: "回复 Moment",
+      name: "回复 @owner",
     });
-    expect(screen.getAllByRole("form", { name: "回复 Moment" })).toHaveLength(
+    expect(screen.getAllByRole("form", { name: "回复 @owner" })).toHaveLength(
       1,
     );
     expect(replyForm.closest("li")?.previousElementSibling).toHaveAttribute(
       "data-comment-id",
       replyId,
     );
-    expect(replyForm).toHaveTextContent("正在回复 @Moment");
+    // Previously this read "@Moment" — the display name wearing an @ as though
+    // it were a handle, from the site overlay this branch retired everywhere
+    // else. The handle is what the reply is actually recorded against.
+    expect(replyForm).toHaveTextContent("正在回复 @owner");
     fireEvent.change(within(replyForm).getByLabelText("回复内容"), {
       target: { value: "新一级回复" },
     });

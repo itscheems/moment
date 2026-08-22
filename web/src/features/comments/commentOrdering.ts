@@ -5,6 +5,28 @@ function orderComments(left: PublicComment, right: PublicComment): number {
   return time || left.id.localeCompare(right.id);
 }
 
+/**
+ * Move a root's reply total by one.
+ *
+ * replyCount is a server snapshot of how many replies a root has, and it is
+ * what both the "展开其余 N 条回复" control and the delete confirmation are
+ * derived from. An optimistic insert or removal changes that total for real,
+ * so leaving the snapshot alone makes the control vanish while replies are
+ * still unfetched, and makes the delete dialog understate what a cascading
+ * delete is about to destroy.
+ */
+function shiftRootReplyCount(
+  items: PublicComment[],
+  rootId: string,
+  delta: number,
+): PublicComment[] {
+  return items.map((comment) =>
+    comment.id === rootId && comment.parentId === null
+      ? { ...comment, replyCount: Math.max(0, comment.replyCount + delta) }
+      : comment,
+  );
+}
+
 export function reconcileCreatedComment(
   current: PublicComment[],
   created: PublicComment,
@@ -33,7 +55,12 @@ export function reconcileCreatedComment(
   ) {
     index += 1;
   }
-  return [...current.slice(0, index), created, ...current.slice(index)];
+  const inserted = [
+    ...current.slice(0, index),
+    created,
+    ...current.slice(index),
+  ];
+  return shiftRootReplyCount(inserted, created.parentId, 1);
 }
 
 export function reconcileDeletedComment(
@@ -41,7 +68,11 @@ export function reconcileDeletedComment(
   deleted: PublicComment,
 ): PublicComment[] {
   if (deleted.parentId !== null) {
-    return current.filter((comment) => comment.id !== deleted.id);
+    const present = current.some((comment) => comment.id === deleted.id);
+    const remaining = current.filter((comment) => comment.id !== deleted.id);
+    return present
+      ? shiftRootReplyCount(remaining, deleted.parentId, -1)
+      : remaining;
   }
   const rootIndex = current.findIndex((comment) => comment.id === deleted.id);
   if (rootIndex < 0) return current;
@@ -98,7 +129,32 @@ export function appendRepliesToRoot(
     (reply) => reply.parentId === rootId && !present.has(reply.id),
   );
   if (added.length === 0) return current;
-  return [...current.slice(0, end), ...added, ...current.slice(end)];
+  // Merged by creation order rather than appended. A fetched page resumes from
+  // the cursor and so is older than anything the reader just wrote, and a run
+  // left out of order would go on to misplace the next optimistic insert,
+  // which locates its slot by walking exactly this ordering.
+  const merged = mergeByCreation(current.slice(rootIndex + 1, end), added);
+  return [...current.slice(0, rootIndex + 1), ...merged, ...current.slice(end)];
+}
+
+/**
+ * Merge two creation-ordered runs into one, keeping the order.
+ */
+function mergeByCreation(
+  left: PublicComment[],
+  right: PublicComment[],
+): PublicComment[] {
+  const merged: PublicComment[] = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    merged.push(
+      orderComments(left[leftIndex], right[rightIndex]) <= 0
+        ? left[leftIndex++]
+        : right[rightIndex++],
+    );
+  }
+  return [...merged, ...left.slice(leftIndex), ...right.slice(rightIndex)];
 }
 
 /**
@@ -114,7 +170,48 @@ export function appendRoots(
 ): PublicComment[] {
   const present = new Set(current.map((comment) => comment.id));
   const added = incoming.filter((comment) => !present.has(comment.id));
-  return added.length === 0 ? current : [...current, ...added];
+  if (added.length === 0) return current;
+  // Merged by creation order rather than dropped at the tail. A root the
+  // reader wrote moments ago already sits at the end of the loaded stream, so
+  // appending an older page behind it would render their newest comment above
+  // comments older than it, and would break the creation ordering every other
+  // helper here walks.
+  //
+  // The unit is a run — a root plus the replies already travelling with it —
+  // because splitting one would separate a reply from the root it belongs to,
+  // and because a reply arriving with its root is already counted in that
+  // root's total and must not bump it.
+  const merged: PublicComment[] = [];
+  const left = commentRuns(current);
+  const right = commentRuns(added);
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    merged.push(
+      ...(orderComments(left[leftIndex][0], right[rightIndex][0]) <= 0
+        ? left[leftIndex++]
+        : right[rightIndex++]),
+    );
+  }
+  for (const run of [...left.slice(leftIndex), ...right.slice(rightIndex)]) {
+    merged.push(...run);
+  }
+  return merged;
+}
+
+/**
+ * Split a flattened thread into runs, each a root followed by its own replies.
+ */
+function commentRuns(items: PublicComment[]): PublicComment[][] {
+  const runs: PublicComment[][] = [];
+  for (const comment of items) {
+    if (comment.parentId === null || runs.length === 0) {
+      runs.push([comment]);
+      continue;
+    }
+    runs[runs.length - 1].push(comment);
+  }
+  return runs;
 }
 
 /**

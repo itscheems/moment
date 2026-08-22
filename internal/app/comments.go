@@ -500,7 +500,6 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 	return CreateCommentResult{Comment: comment, Replayed: true}, true, nil
 }
 
-// List returns one stable flattened thread and verifies stored parent order.
 // ListPage returns one keyset page of root comments, each carrying a preview
 // of its replies plus the totals a reader needs to ask for the rest.
 //
@@ -796,6 +795,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 	return thread, nil
 }
 
+// Pin selects the single top-level comment shown above a post's thread.
 func (service *CommentService) Pin(ctx context.Context, entryID, commentID domain.ID) (CommentPin, error) {
 	return service.changePin(ctx, entryID, commentID, true)
 }
@@ -984,14 +984,6 @@ func hashCreateComment(input CreateCommentInput) string {
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
-// resolveCommentAuthors maps every comment in the batch to the identity that
-// should be rendered for it.
-//
-// The lookup is batched and keyed by account ID because that is the shape a
-// real user table needs; today exactly one account can match. Owner rows
-// written before author_user_id existed — anything restored from an older
-// archive — have no reference of their own, so they fall back to the site
-// owner, which is by definition who wrote them.
 // resolveCommentReplyTargets loads the comments the batch answers and resolves
 // an identity for each. Targets already present in the batch are reused rather
 // than fetched again, so an ordinary thread costs no extra query at all.
@@ -1051,6 +1043,14 @@ func resolveCommentReplyTargets(ctx context.Context, store CommentStore, records
 	return targets, nil
 }
 
+// resolveCommentAuthors maps every comment in the batch to the identity that
+// should be rendered for it.
+//
+// The lookup is batched and keyed by account ID because that is the shape a
+// real user table needs; today exactly one account can match. Owner rows
+// written before author_user_id existed — anything restored from an older
+// archive — have no reference of their own, so they fall back to the site
+// owner, which is by definition who wrote them.
 func resolveCommentAuthors(ctx context.Context, store CommentStore, records []domain.Comment) (map[domain.ID]CommentAuthor, error) {
 	authors := make(map[domain.ID]CommentAuthor, len(records))
 	ownerID := ""
