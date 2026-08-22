@@ -747,8 +747,8 @@ describe("owner backup and restore", () => {
     expect(
       within(dialog).getByRole("button", { name: "关闭覆盖恢复确认" }),
     ).toBeInTheDocument();
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.top).toBe("-720px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.top).toBe("");
 
     fireEvent.click(
       within(dialog).getByRole("button", { name: "确认完全替换" }),
@@ -756,8 +756,8 @@ describe("owner backup and restore", () => {
     expect(
       await screen.findByText("备份已恢复并通过就绪检查"),
     ).toBeInTheDocument();
-    expect(document.documentElement.style.overflowY).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 720);
+    expect(document.documentElement.style.overflow).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
 
     const call = fetcher.mock.calls.find(
       ([input]) => String(input) === "/api/v1/owner/import/review/replace",

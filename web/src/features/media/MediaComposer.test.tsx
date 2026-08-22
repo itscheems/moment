@@ -445,9 +445,9 @@ describe("media editor", () => {
     fireEvent.click(trigger);
 
     const dialog = await screen.findByRole("dialog");
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-360px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
     expect(dialog.closest("[data-base-ui-portal]")?.parentElement).toBe(
       document.body,
     );
@@ -482,9 +482,9 @@ describe("media editor", () => {
     fireEvent.click(close);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(trigger).toHaveFocus());
-    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 360);
+    expect(document.documentElement.style.overflow).toBe("");
   });
 
   it("opens a selected local file through its browser object URL", async () => {

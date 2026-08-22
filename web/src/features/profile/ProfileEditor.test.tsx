@@ -124,9 +124,9 @@ describe("profile editor", () => {
     expect(
       screen.getByRole("button", { name: "关闭编辑资料" }),
     ).toBeInTheDocument();
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-520px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
     expect(screen.getByRole("img", { name: "封面预览" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "编辑封面" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "移除封面" }));
@@ -139,10 +139,10 @@ describe("profile editor", () => {
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
     await waitFor(() =>
-      expect(document.documentElement.style.overflowY).toBe(""),
+      expect(document.documentElement.style.overflow).toBe(""),
     );
     expect(document.body.style.position).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 520);
+    expect(document.documentElement.style.overflow).toBe("");
     expect(bodies).toEqual([
       {
         display_name: "更新后的 Moment",

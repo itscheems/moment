@@ -1123,15 +1123,15 @@ describe("owner composing flow", () => {
     );
     expect(window.location.pathname).toBe("/owner/compose");
     const dialog = await screen.findByRole("dialog", { name: "退出发布？" });
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-510px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
     expect(window.confirm).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" }));
     expect(window.location.pathname).toBe("/owner/compose");
-    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 510);
+    expect(document.documentElement.style.overflow).toBe("");
 
     fireEvent.click(
       screen.getAllByRole("link", { name: "乔乔的 Moment首页" })[0],
@@ -1984,9 +1984,9 @@ describe("owner composing flow", () => {
     expect(
       await screen.findByRole("heading", { name: "删除这段 Moment？" }),
     ).toBeInTheDocument();
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-900px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "保留" })).toHaveFocus(),
     );
@@ -1994,9 +1994,9 @@ describe("owner composing flow", () => {
     expect(window.location.pathname).toBe("/");
     fireEvent.click(screen.getByRole("button", { name: "保留" }));
     await waitFor(() => expect(more).toHaveFocus());
-    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 900);
+    expect(document.documentElement.style.overflow).toBe("");
 
     fireEvent.click(more);
     fireEvent.click(await screen.findByRole("menuitem", { name: "删除" }));

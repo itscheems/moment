@@ -1,34 +1,39 @@
 import { useLayoutEffect } from "react";
 
 type StyleSnapshot = {
-  html: {
-    overflowX: string;
-    overflowY: string;
-    overscrollBehavior: string;
-    scrollBehavior: string;
-  };
-  body: {
-    left: string;
-    overflowX: string;
-    overflowY: string;
-    overscrollBehavior: string;
-    position: string;
-    right: string;
-    scrollBehavior: string;
-    top: string;
-    width: string;
-  };
+  overflow: string;
+  overflowX: string;
+  overflowY: string;
+  overscrollBehavior: string;
+  paddingInlineEnd: string;
+  scrollBehavior: string;
 };
 
 type DocumentLock = {
   count: number;
-  scrollX: number;
-  scrollY: number;
   styles: StyleSnapshot;
 };
 
 const locks = new WeakMap<Document, DocumentLock>();
 
+/**
+ * Lock background scrolling while a blocking overlay is open.
+ *
+ * The lock lives entirely on the document element. An earlier version also
+ * pinned the body with `position: fixed; top: -scrollY`, which is the common
+ * recipe, but it silently destroys every `position: sticky` element on the
+ * page: with the body taken out of flow there is no scrollport left to stick
+ * to, so the navigation rails and the timeline header fell back to their
+ * document position and jumped off-screen by exactly the scroll offset. That
+ * was visible as the left navigation disappearing whenever a reply dialog was
+ * opened from a scrolled page.
+ *
+ * Hiding overflow on the document element alone blocks real wheel and key
+ * scrolling, keeps the scroll offset untouched so nothing needs restoring, and
+ * leaves the scrollport intact so sticky positioning keeps working. The same
+ * property must not be set on the body: that would turn the body into its own
+ * scroll container and reintroduce the identical sticky breakage.
+ */
 function acquireDocumentLock(document: Document): () => void {
   const active = locks.get(document);
   if (active) {
@@ -37,47 +42,31 @@ function acquireDocumentLock(document: Document): () => void {
   }
 
   const html = document.documentElement;
-  const body = document.body;
   const view = document.defaultView;
   const lock: DocumentLock = {
     count: 1,
-    scrollX: view?.scrollX ?? html.scrollLeft,
-    scrollY: view?.scrollY ?? html.scrollTop,
     styles: {
-      html: {
-        overflowX: html.style.overflowX,
-        overflowY: html.style.overflowY,
-        overscrollBehavior: html.style.overscrollBehavior,
-        scrollBehavior: html.style.scrollBehavior,
-      },
-      body: {
-        left: body.style.left,
-        overflowX: body.style.overflowX,
-        overflowY: body.style.overflowY,
-        overscrollBehavior: body.style.overscrollBehavior,
-        position: body.style.position,
-        right: body.style.right,
-        scrollBehavior: body.style.scrollBehavior,
-        top: body.style.top,
-        width: body.style.width,
-      },
+      overflow: html.style.overflow,
+      overflowX: html.style.overflowX,
+      overflowY: html.style.overflowY,
+      overscrollBehavior: html.style.overscrollBehavior,
+      paddingInlineEnd: html.style.paddingInlineEnd,
+      scrollBehavior: html.style.scrollBehavior,
     },
   };
   locks.set(document, lock);
 
-  html.style.overflowX = "hidden";
-  html.style.overflowY = "hidden";
+  // Hiding overflow removes a classic scrollbar, which would widen the
+  // viewport and shift the centred column sideways. Reserve the width it gave
+  // back so the page does not visibly jump.
+  const gutter = Math.max(0, (view?.innerWidth ?? 0) - html.clientWidth);
+
+  html.style.overflow = "hidden";
   html.style.overscrollBehavior = "none";
   html.style.scrollBehavior = "auto";
-  body.style.position = "fixed";
-  body.style.top = `${-lock.scrollY}px`;
-  body.style.left = `${-lock.scrollX}px`;
-  body.style.right = "0";
-  body.style.width = "100%";
-  body.style.overflowX = "hidden";
-  body.style.overflowY = "hidden";
-  body.style.overscrollBehavior = "none";
-  body.style.scrollBehavior = "auto";
+  if (gutter > 0) {
+    html.style.paddingInlineEnd = `${gutter}px`;
+  }
 
   return () => releaseDocumentLock(document);
 }
@@ -88,12 +77,8 @@ function releaseDocumentLock(document: Document): void {
   lock.count -= 1;
   if (lock.count > 0) return;
 
-  const html = document.documentElement;
-  const body = document.body;
-  Object.assign(html.style, lock.styles.html);
-  Object.assign(body.style, lock.styles.body);
+  Object.assign(document.documentElement.style, lock.styles);
   locks.delete(document);
-  document.defaultView?.scrollTo(lock.scrollX, lock.scrollY);
 }
 
 export function useDocumentScrollLock(active: boolean): void {

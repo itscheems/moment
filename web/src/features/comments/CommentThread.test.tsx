@@ -832,16 +832,16 @@ describe("public comment thread", () => {
     let textarea =
       within(dialog).getByLabelText<HTMLTextAreaElement>("回复内容");
     expect(textarea).toHaveFocus();
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-420px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
     fireEvent.change(textarea, { target: { value: "保留到再次打开" } });
     fireEvent.click(
       within(dialog).getByRole("button", { name: "关闭回复窗口" }),
     );
     await waitFor(() => expect(trigger).toHaveFocus());
-    expect(document.documentElement.style.overflowY).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 420);
+    expect(document.documentElement.style.overflow).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
 
     fireEvent.click(trigger);
     dialog = await screen.findByRole("dialog", { name: "回复这条 Moment" });
@@ -1539,9 +1539,9 @@ describe("public comment thread", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent(
       "下面的 1 条回复",
     );
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-615px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "删除回复及其对话" }));
 
     await waitFor(() =>
@@ -1551,9 +1551,9 @@ describe("public comment thread", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "回复" })).toHaveFocus(),
     );
-    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 615);
+    expect(document.documentElement.style.overflow).toBe("");
   });
 
   it("moves a pinned root with its replies as one group and restores chronology after unpin", async () => {

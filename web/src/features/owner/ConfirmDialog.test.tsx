@@ -38,9 +38,9 @@ describe("owner confirmation dialog", () => {
     fireEvent.click(trigger);
     const dialog = await screen.findByRole("dialog", { name: "继续操作？" });
 
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-330px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "保留" })).toHaveFocus(),
     );
@@ -48,8 +48,8 @@ describe("owner confirmation dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "保留" }));
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
     await waitFor(() => expect(trigger).toHaveFocus());
-    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 330);
+    expect(document.documentElement.style.overflow).toBe("");
   });
 });

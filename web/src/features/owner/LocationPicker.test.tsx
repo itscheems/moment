@@ -78,9 +78,9 @@ describe("location picker", () => {
 
     expect(getCurrentPosition).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "添加位置" }));
-    expect(document.documentElement.style.overflowY).toBe("hidden");
-    expect(document.body.style.position).toBe("fixed");
-    expect(document.body.style.top).toBe("-410px");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    expect(document.body.style.position).toBe("");
+    expect(document.body.style.top).toBe("");
     expect(getCurrentPosition).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /使用当前位置/ }));
     await waitFor(() =>
@@ -93,9 +93,9 @@ describe("location picker", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ name: "静安寺", provider: "amap" }),
     );
-    expect(document.documentElement.style.overflowY).toBe("");
+    expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
-    expect(window.scrollTo).toHaveBeenCalledWith(0, 410);
+    expect(document.documentElement.style.overflow).toBe("");
   });
 
   it("offers a deliberate manual fallback without coordinates", () => {
