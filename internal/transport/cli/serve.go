@@ -8,6 +8,7 @@ import (
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/buildinfo"
+	"github.com/moment/moment/internal/observability"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -92,9 +93,20 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 		return Result{}, err
 	}
 	board := server.NewSwitchboard()
+	// Everything the HTTP stack logs is an operation a browser made, even
+	// though this process was started from a terminal. Attributing it to the
+	// terminal would make the classification useless exactly where it is most
+	// wanted: telling a page click apart from a typed command.
+	webLog := func(level, event string, fields map[string]any) {
+		invocation.LogEventOn(observability.SurfaceWeb, level, event, fields)
+	}
+	// The server's own lifecycle belongs to no client.
+	systemLog := func(level, event string, fields map[string]any) {
+		invocation.LogEventOn(observability.SurfaceSystem, level, event, fields)
+	}
 	host := &liveServerHost{
 		board: board, auth: authManager, assets: assets, trustedProxies: trustedProxies,
-		secureCookies: !runtime.IsDevelopment(), log: invocation.LogEvent, exporter: exporter,
+		secureCookies: !runtime.IsDevelopment(), log: webLog, exporter: exporter,
 	}
 	host.committer = &hostedImportCommitter{core: committer, host: host}
 	retentionContext, cancelRetention := context.WithCancel(ctx)
@@ -123,7 +135,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 			board.EndMaintenance()
 			return nil
 		},
-		Address: listenAddress, Log: invocation.LogEvent,
+		Address: listenAddress, Log: systemLog,
 	}); err != nil {
 		switch {
 		case errors.Is(err, sqlitestore.ErrNotReady), errors.Is(err, sqlitestore.ErrMigrationDrift),
