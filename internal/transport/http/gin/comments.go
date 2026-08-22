@@ -10,36 +10,30 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"time"
 	"unicode/utf8"
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
-	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/transport/commentdto"
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
-var errInvalidCommentRateLimit = errors.New("comment rate limit and window must be greater than zero")
-
-const (
-	defaultGuestCommentLimit  = 5
-	defaultGuestCommentWindow = time.Minute
-)
-
-// RegisterCommentRoutes installs public guest reads/writes and distinct
-// authenticated owner mutation routes.
-func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, mediaStore *media.Store, manager *auth.Manager, limiter CommentRateLimiter) {
-	if limiter == nil {
-		limiter, _ = NewCommentRateLimiter(defaultGuestCommentLimit, defaultGuestCommentWindow, nil)
-	}
+// RegisterCommentRoutes installs the public thread read alongside the
+// authenticated owner mutations.
+//
+// Writing a comment now requires an account. The anonymous visitor path that
+// used to live here took an unauthenticated create, an unauthenticated media
+// upload, an IP-keyed rate limiter and a honeypot field with it; removing it
+// leaves the server with no unauthenticated write surface at all.
+//
+// Removal is a write-side decision only. Rows an earlier version accepted stay
+// readable: author_kind still admits 'guest' wherever a comment is read, so an
+// archive taken before this change imports and renders unchanged.
+func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, manager *auth.Manager) {
 	engine.GET("/api/v1/posts/:id/comments", listComments(service))
-	engine.POST("/api/v1/posts/:id/comments", createGuestComment(service, limiter))
-	if mediaStore != nil {
-		engine.POST("/api/v1/posts/:id/comment-media", uploadGuestCommentMedia(service, mediaStore, limiter))
-	}
+	engine.GET("/api/v1/posts/:id/comments/:comment_id/replies", listCommentReplies(service))
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(RequireOwner(manager))
 	owner.POST("/posts/:id/comments", createOwnerComment(service))
@@ -80,59 +74,84 @@ func changeOwnerCommentPin(service *app.CommentService, active bool) gin.Handler
 
 func listComments(service *app.CommentService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		if ctx.Request.URL.RawQuery != "" {
-			writeCommentError(ctx, invalidCommentArgument("comment list does not accept query parameters", "query"))
-			return
-		}
 		postID, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		thread, err := service.List(ctx.Request.Context(), postID)
+		cursor, limit, err := commentPageQuery(ctx.Request.URL)
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		Success(ctx, http.StatusOK, commentdto.FromThread(thread), nil)
+		thread, err := service.ListPage(ctx.Request.Context(), app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit})
+		if err != nil {
+			writeCommentError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, commentdto.FromThread(thread), map[string]any{"next_cursor": commentdto.NextCursor(thread.NextCursor)})
 	}
 }
 
-func createGuestComment(service *app.CommentService, limiter CommentRateLimiter) gin.HandlerFunc {
+func listCommentReplies(service *app.CommentService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		postID, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		request, err := decodeCommentWrite(ctx, false)
+		rootID, err := domain.ParseID(ctx.Param("comment_id"))
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		if request.Honeypot != "" {
-			writeCommentError(ctx, domain.NewError(domain.CodeCommentRejected, "comment submission was rejected", nil))
-			return
-		}
-		allowed, retry := limiter.Allow(ctx.ClientIP())
-		if !allowed {
-			seconds := max(1, int((retry+time.Second-1)/time.Second))
-			ctx.Header("Retry-After", strconv.Itoa(seconds))
-			writeCommentError(ctx, domain.NewError(domain.CodeRateLimited, "comment rate limit exceeded", map[string]any{"retry_after_seconds": seconds}))
-			return
-		}
-		key, err := oneHeader(ctx.Request.Header, "Idempotency-Key")
+		cursor, limit, err := commentPageQuery(ctx.Request.URL)
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.CreateGuest(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, AuthorName: request.AuthorName, ContentMD: request.ContentMD, Media: request.Media, IdempotencyKey: key})
+		page, err := service.ListReplies(ctx.Request.Context(), app.ListRepliesInput{EntryID: postID, RootID: rootID, Cursor: cursor, Limit: limit})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
 		}
-		writeCreatedComment(ctx, result)
+		Success(ctx, http.StatusOK, commentdto.FromReplyPage(page), map[string]any{"next_cursor": commentdto.NextCursor(page.NextCursor)})
 	}
+}
+
+// commentPageQuery accepts exactly cursor and limit, each at most once and
+// never empty. An unknown parameter is rejected rather than ignored: silently
+// dropping a filter a caller believed was applied is worse than refusing it.
+func commentPageQuery(value *url.URL) (string, int, error) {
+	query, err := url.ParseQuery(value.RawQuery)
+	if err != nil {
+		return "", 0, invalidCommentArgument("query string is malformed", "query")
+	}
+	for key, values := range query {
+		switch key {
+		case "cursor", "limit":
+		default:
+			return "", 0, invalidCommentArgument("unsupported query parameter", key)
+		}
+		if len(values) != 1 {
+			return "", 0, invalidCommentArgument("query parameter must be supplied once", key)
+		}
+		if values[0] == "" {
+			return "", 0, invalidCommentArgument(key+" cannot be empty", key)
+		}
+	}
+	limit := 0
+	if values, present := query["limit"]; present {
+		parsed, convErr := strconv.Atoi(values[0])
+		if convErr != nil {
+			return "", 0, invalidCommentArgument("limit must be an integer", "limit")
+		}
+		if parsed == 0 {
+			return "", 0, invalidCommentArgument("limit must be between 1 and 100", "limit")
+		}
+		limit = parsed
+	}
+	return query.Get("cursor"), limit, nil
 }
 
 func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
@@ -142,7 +161,7 @@ func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		request, err := decodeCommentWrite(ctx, true)
+		request, err := decodeCommentWrite(ctx)
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -152,7 +171,7 @@ func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key})
+		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ReplyToCommentID: request.ReplyToCommentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -191,15 +210,14 @@ func deleteOwnerComment(service *app.CommentService) gin.HandlerFunc {
 }
 
 type commentWriteRequest struct {
-	AuthorName string
-	ContentMD  string
-	ParentID   *domain.ID
-	Honeypot   string
-	Media      []domain.EntryMediaUsage
-	Location   *domain.Location
+	ContentMD        string
+	ParentID         *domain.ID
+	ReplyToCommentID *domain.ID
+	Media            []domain.EntryMediaUsage
+	Location         *domain.Location
 }
 
-func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, error) {
+func decodeCommentWrite(ctx *gin.Context) (commentWriteRequest, error) {
 	mediaType, _, err := mime.ParseMediaType(ctx.GetHeader("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "comment writes require application/json", map[string]any{"field": "content_type"})
@@ -249,6 +267,20 @@ func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, erro
 				return commentWriteRequest{}, parseErr
 			}
 			request.ParentID = &id
+		case "reply_to_comment_id":
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+				request.ReplyToCommentID = nil
+				continue
+			}
+			var value string
+			if json.Unmarshal(raw, &value) != nil {
+				return commentWriteRequest{}, invalidCommentArgument("reply_to_comment_id must be a comment ULID or null", key)
+			}
+			id, parseErr := domain.ParseID(value)
+			if parseErr != nil {
+				return commentWriteRequest{}, parseErr
+			}
+			request.ReplyToCommentID = &id
 		case "media":
 			media, decodeErr := decodeCommentMedia(raw)
 			if decodeErr != nil {
@@ -256,22 +288,11 @@ func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, erro
 			}
 			request.Media = media
 		case "location":
-			if !owner {
-				return commentWriteRequest{}, invalidCommentArgument("location is not accepted for guest writes", key)
-			}
 			location, decodeErr := decodePostLocation(raw)
 			if decodeErr != nil {
 				return commentWriteRequest{}, decodeErr
 			}
 			request.Location = location
-		case "author_name":
-			if owner || decodeRequiredString(raw, &request.AuthorName) != nil {
-				return commentWriteRequest{}, invalidCommentArgument("author_name is not accepted for owner writes", key)
-			}
-		case "website":
-			if owner || decodeRequiredString(raw, &request.Honeypot) != nil {
-				return commentWriteRequest{}, invalidCommentArgument("website is not accepted for owner writes", key)
-			}
 		default:
 			return commentWriteRequest{}, invalidCommentArgument("unsupported comment field", key)
 		}
@@ -284,9 +305,6 @@ func decodeCommentWrite(ctx *gin.Context, owner bool) (commentWriteRequest, erro
 	}
 	if !seen["content_md"] {
 		return commentWriteRequest{}, invalidCommentArgument("request must contain content_md", "content_md")
-	}
-	if !owner && !seen["author_name"] {
-		return commentWriteRequest{}, invalidCommentArgument("request must contain author_name", "author_name")
 	}
 	return request, nil
 }
@@ -322,28 +340,6 @@ func decodeCommentMedia(raw json.RawMessage) ([]domain.EntryMediaUsage, error) {
 		return nil, err
 	}
 	return usages, nil
-}
-
-func uploadGuestCommentMedia(service *app.CommentService, store *media.Store, limiter CommentRateLimiter) gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		postID, err := domain.ParseID(ctx.Param("id"))
-		if err != nil {
-			writeCommentError(ctx, err)
-			return
-		}
-		if err := service.ValidateCreateTarget(ctx.Request.Context(), postID); err != nil {
-			writeCommentError(ctx, err)
-			return
-		}
-		allowed, retry := limiter.Allow(ctx.ClientIP())
-		if !allowed {
-			seconds := max(1, int((retry+time.Second-1)/time.Second))
-			ctx.Header("Retry-After", strconv.Itoa(seconds))
-			writeCommentError(ctx, domain.NewError(domain.CodeRateLimited, "comment rate limit exceeded", map[string]any{"retry_after_seconds": seconds}))
-			return
-		}
-		uploadMedia(store)(ctx)
-	}
 }
 
 func decodeRequiredString(raw []byte, destination *string) error {

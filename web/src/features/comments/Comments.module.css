@@ -46,6 +46,7 @@
 .threadState,
 .threadError,
 .closedNotice,
+.signInNotice,
 .emptyThread {
   border-block-end: 1px solid var(--border-subtle);
   padding: 0.85rem var(--space-4);
@@ -133,7 +134,6 @@
 }
 
 .commentCollapsed .commentComposerHeader,
-.commentCollapsed .nameField,
 .commentCollapsed .formMeta,
 .commentCollapsed .commentForm > footer,
 .commentCollapsed .commentForm > section {
@@ -286,27 +286,6 @@
   color: var(--accent);
 }
 
-.nameField {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-2);
-  margin-block: var(--space-1) var(--space-2);
-  animation: comment-reveal-fade var(--motion-content) var(--ease-out);
-}
-
-.inlineTopLevelForm .nameField {
-  animation: none;
-}
-
-.nameField label {
-  grid-column: 1 / -1;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.nameField input,
 .reauth input {
   min-block-size: 2.5rem;
   min-inline-size: 0;
@@ -317,12 +296,10 @@
   background: var(--surface);
 }
 
-.nameField input:focus,
 .reauth input:focus {
   border-color: var(--accent);
 }
 
-.nameField > span,
 .formMeta {
   color: var(--text-secondary);
   font-size: var(--text-xs);
@@ -354,8 +331,7 @@
   white-space: pre-wrap;
 }
 
-.commentForm textarea::placeholder,
-.nameField input::placeholder {
+.commentForm textarea::placeholder {
   color: var(--text-tertiary);
 }
 
@@ -562,16 +538,11 @@
   cursor: pointer;
 }
 
-.rateNotice,
 .closedInline {
   margin: var(--space-3) 0 0;
   color: var(--text-secondary);
   font-size: var(--text-sm);
   line-height: 1.5;
-}
-
-.rateNotice {
-  color: var(--accent);
 }
 
 .commentForm > footer {
@@ -691,16 +662,6 @@
   cursor: progress;
 }
 
-.honeypot {
-  position: fixed;
-  inset-inline-start: -10000px;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-}
-
 .reauth {
   grid-column: 2;
   display: grid;
@@ -773,6 +734,7 @@
 
 .threadError,
 .closedNotice,
+.signInNotice,
 .emptyThread {
   display: grid;
   justify-items: start;
@@ -781,10 +743,37 @@
 
 .threadError > span,
 .closedNotice > span,
+.signInNotice > span,
 .emptyThread > span {
   color: var(--text-secondary);
   font-size: var(--text-sm);
   line-height: 1.5;
+}
+
+/* Matches .threadError button: the same pill inside the same kind of notice.
+   It is an anchor rather than a button because it navigates, which also keeps
+   open-in-new-tab working. */
+.signInNotice a {
+  min-block-size: var(--target-size);
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  margin-block-start: var(--space-2);
+  padding-inline: var(--space-4);
+  color: var(--text-primary);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.signInNotice a:hover,
+.signInNotice a:focus-visible {
+  background: var(--surface-hover);
+}
+
+.replyDialogPopup > .signInNotice {
+  border-block-end: 0;
+  padding-block-start: var(--space-2);
 }
 
 .threadError button {
@@ -851,6 +840,54 @@
   text-decoration: underline;
 }
 
+.commentHandle {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.commentHandle:hover,
+.commentHandle:focus-visible {
+  text-decoration: underline;
+}
+
+.commentReplyTo {
+  grid-column: 2;
+  min-block-size: 1.25rem;
+  margin: 0.05rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+
+.commentReplyToLink,
+.commentReplyTo span:last-child {
+  color: var(--accent);
+}
+
+.commentReplyToLink {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.commentReplyToLink:hover,
+.commentReplyToLink:focus-visible {
+  text-decoration: underline;
+}
+
+/*
+ * A comment the reader jumped to from a 「回复 @X」 prefix. Set as a data
+ * attribute by the prefix rather than as React state, because the comment that
+ * has to light up is somebody else's row, not the one holding the control.
+ */
+.commentItem[data-comment-flash="true"] {
+  animation: comment-flash-target 1.4s var(--ease-out);
+}
+
 .replyComment {
   padding-inline-start: var(--space-4);
 }
@@ -865,6 +902,16 @@
   background: var(--border-subtle);
 }
 
+/*
+ * The connector is drawn by sibling adjacency, so anything spliced between a
+ * comment and the replies below it — the inline composer, the 「共 N 条回复」
+ * row — is enough to break a bare `+ .replyComment` match and snap the line.
+ * Every row that can legally sit in that gap has to be named here, and the
+ * composer additionally carries the line across itself whenever a reply still
+ * comes after it.
+ */
+.commentItem:has(+ .replyBranch)::after,
+.commentItem:has(+ .replyComposerRow)::after,
 .commentItem:has(+ .replyComment)::after {
   content: "";
   position: absolute;
@@ -873,6 +920,101 @@
   inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
   inline-size: 2px;
   background: var(--border-subtle);
+}
+
+/*
+ * The tail of a root's branch, offering the replies that did not travel with
+ * the page. It sits at the same inset as a reply so the control reads as part
+ * of the branch it continues rather than as a sibling of the root.
+ */
+.replyBranch {
+  padding-inline-start: calc(
+    var(--space-4) + var(--target-size) + var(--space-3)
+  );
+  padding-block: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.replyBranch button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.replyBranch button:disabled {
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.replyBranch button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.replyBranch [role="alert"] {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+/*
+ * Within one root's run the order is: the comment, then the inline composer
+ * aimed at it, then the branch row that continues the whole run. So a composer
+ * can be followed by either a reply or the branch row, and the branch row is
+ * last and followed by nothing. `.replyBranch:has(+ ...)` is kept for the day
+ * that changes; it does not match today, and a rule that silently matches
+ * nothing is why the composer gap went unnoticed in the first place.
+ */
+.replyBranch:has(+ .replyComposerRow),
+.replyBranch:has(+ .replyComment),
+.replyComposerRow:has(+ .replyBranch),
+.replyComposerRow:has(+ .replyComment) {
+  position: relative;
+}
+
+.replyBranch:has(+ .replyComposerRow)::before,
+.replyBranch:has(+ .replyComment)::before,
+.replyComposerRow:has(+ .replyBranch)::before,
+.replyComposerRow:has(+ .replyComment)::before,
+.replyBranch:has(+ .replyComposerRow)::after,
+.replyBranch:has(+ .replyComment)::after,
+.replyComposerRow:has(+ .replyBranch)::after,
+.replyComposerRow:has(+ .replyComment)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
+  inline-size: 2px;
+  background: var(--border-subtle);
+}
+
+.replyComposerRow:has(+ .replyBranch)::before,
+.replyComposerRow:has(+ .replyComment)::before {
+  inset-block-start: 0;
+  block-size: var(--space-3);
+}
+
+.replyComposerRow:has(+ .replyBranch)::after,
+.replyComposerRow:has(+ .replyComment)::after {
+  inset-block-start: calc(var(--space-3) + var(--target-size));
+  inset-block-end: 0;
+}
+
+/*
+ * The branch row has no avatar to route the line around, so it carries one
+ * unbroken segment instead of the composer's two.
+ */
+.replyBranch:has(+ .replyComposerRow)::before,
+.replyBranch:has(+ .replyComment)::before {
+  inset-block: 0;
+}
+
+.replyBranch:has(+ .replyComposerRow)::after,
+.replyBranch:has(+ .replyComment)::after {
+  content: none;
 }
 
 .commentOwnerMenu {
@@ -1027,11 +1169,83 @@
   background: transparent;
 }
 
+/*
+ * The body is clipped from the first paint and stays clipped until the reader
+ * asks otherwise, so a comment never expands and then snaps shut once the
+ * measurement lands. A body that fits simply never reaches this maximum.
+ *
+ * Ten lines of the body's own 1.25rem line box, and the number comes from
+ * measuring the real corpus in a browser at every width from 320 to 1440 rather
+ * than from guessing at the text.
+ *
+ * Those measurements leave a wide gap with nothing in it. The ordinary comments
+ * — a sentence, a five-bullet list, a small fenced code block — never exceed
+ * 133px, which is 6.7 lines, reached by the list once it reflows at 320px. The
+ * two long ones never drop below 263px, or 13.2 lines, which is the 535
+ * character one at its widest. Ten lines is 200px: the middle of that gap, with
+ * three lines of room on each side, so neither an unusually blocky short
+ * comment nor an unusually wide long one lands on the wrong side of it.
+ *
+ * Nothing here special-cases block elements, and nothing should: a code block
+ * really is that tall, and carving out exceptions by content shape would put
+ * back exactly the guesswork the measurement replaces. Counting characters
+ * cannot work at all here — the corpus is Chinese, where the 535-character
+ * comment is 16 lines in the 510px column and the same budget of Latin text is
+ * barely four.
+ */
+.commentBody {
+  grid-column: 2;
+}
+
+.commentBodyClipped {
+  position: relative;
+  max-block-size: calc(10 * 1.25rem);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 82%, transparent);
+}
+
+/*
+ * There is no comment detail route to escape to the way a post's 阅读全文 has
+ * one, so this control has to work in both directions.
+ */
+.commentFoldToggle {
+  grid-column: 2;
+  min-block-size: 1.75rem;
+  inline-size: fit-content;
+  display: flex;
+  align-items: center;
+  margin-block-start: 0.15rem;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+}
+
+.commentFoldToggle:hover,
+.commentFoldToggle:focus-visible {
+  text-decoration: underline;
+}
+
+/*
+ * The action row starts where the text does, but the glyph inside it does not:
+ * the button is a full 2.75rem touch target with a 1.25rem icon centred in it,
+ * so the icon lands 0.75rem to the right of every line above it and the column
+ * visibly steps in at the bottom of each comment.
+ *
+ * Pulling the row left by exactly that inset puts the glyph on the text edge
+ * while the button keeps its size — shrinking the button instead would buy the
+ * alignment by making it harder to hit.
+ */
 .commentActions {
   grid-column: 2;
   min-block-size: var(--target-size);
   justify-content: flex-start;
   margin-block-start: 0.1rem;
+  margin-inline-start: calc((var(--target-size) - 1.25rem) / -2);
 }
 
 .commentAction {
@@ -1233,6 +1447,16 @@
   }
 }
 
+@keyframes comment-flash-target {
+  from {
+    background: var(--accent-soft);
+  }
+
+  to {
+    background: transparent;
+  }
+}
+
 @keyframes comment-reveal-fade {
   from {
     opacity: 0;
@@ -1293,6 +1517,7 @@
   .threadState,
   .threadError,
   .closedNotice,
+  .signInNotice,
   .emptyThread,
   .commentItem {
     padding-inline: var(--space-3);
@@ -1302,7 +1527,14 @@
     padding-inline-start: var(--space-3);
   }
 
-  .replyDialogPopup > .formSurface {
+  .replyBranch {
+    padding-inline-start: calc(
+      var(--space-3) + var(--target-size) + var(--space-3)
+    );
+  }
+
+  .replyDialogPopup > .formSurface,
+  .replyDialogPopup > .signInNotice {
     padding-inline: var(--space-4);
   }
 
@@ -1310,7 +1542,13 @@
     inset-inline-start: calc(var(--space-3) + (var(--target-size) / 2));
   }
 
-  .commentItem:has(+ .replyComment)::after {
+  .commentItem:has(+ .replyBranch)::after,
+  .commentItem:has(+ .replyComposerRow)::after,
+  .commentItem:has(+ .replyComment)::after,
+  .replyBranch:has(+ .replyComposerRow)::before,
+  .replyBranch:has(+ .replyComment)::before,
+  .replyComposerRow:has(+ .replyComment)::before,
+  .replyComposerRow:has(+ .replyComment)::after {
     inset-inline-start: calc(var(--space-3) + (var(--target-size) / 2));
   }
 
@@ -1339,9 +1577,9 @@
   .dialogBackdrop,
   .dialogPopup,
   .replyDialogPopup,
+  .signInPopup,
   .commentLayoutFrame,
   .replyTarget,
-  .nameField,
   .commentMediaComposer {
     animation: none;
     transition: none;
@@ -1355,9 +1593,85 @@
     transition: none;
   }
 
+  .commentItem[data-comment-flash="true"] {
+    animation: none;
+    background: var(--accent-soft);
+  }
+
+  .commentBodyClipped {
+    mask-image: none;
+  }
+
   .commentMediaComposer > div > div:first-child button:hover:not(:disabled),
   .commentMediaComposer > div > div:first-child button:focus-visible,
   .commentMediaComposer > div > div:first-child button:active:not(:disabled) {
     transform: none;
   }
+}
+
+/*
+ * The sign-in card behind a reply action a signed-out reader pressed. It
+ * borrows the shape of the post location popup rather than inventing a second
+ * kind of card, so the two read as the same object in different places.
+ */
+.signInPositioner {
+  z-index: var(--layer-popover);
+  max-inline-size: calc(100vw - 1rem);
+}
+
+.signInPopup {
+  inline-size: max-content;
+  max-inline-size: min(20rem, calc(100vw - 1rem));
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--motion-popover) var(--ease-out),
+    transform var(--motion-popover) var(--ease-out);
+}
+
+.signInPopup[data-starting-style],
+.signInPopup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-0.2rem) scale(0.98);
+}
+
+.signInPopupTitle,
+.signInPopupBody {
+  margin: 0;
+}
+
+.signInPopupTitle {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.signInPopupBody {
+  margin-block-start: 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.signInPopupAction {
+  margin-block-start: 0.6rem;
+  display: inline-flex;
+  min-block-size: 2rem;
+  align-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.signInPopupAction:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }

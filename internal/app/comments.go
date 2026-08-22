@@ -13,10 +13,11 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-const (
-	ownerCommentCreateIdempotencyScope = "comments.owner.create.v1"
-	guestCommentCreateIdempotencyScope = "comments.guest.create.v1"
-)
+// Replay records written by the retired anonymous path still carry the scope
+// "comments.guest.create.v1". Nothing produces that scope any more, and the
+// rows are deliberately left in place: deleting them would change the replay
+// answer for keys a caller may still hold.
+const ownerCommentCreateIdempotencyScope = "comments.owner.create.v1"
 
 // CommentStore is the complete comment authority available within one
 // repository transaction.
@@ -25,6 +26,14 @@ type CommentStore interface {
 	EntryExists(context.Context, domain.ID) (bool, error)
 	CommentsEnabled(context.Context) (bool, error)
 	CommentByID(context.Context, domain.ID) (domain.Comment, bool, error)
+	CommentsByID(context.Context, []domain.ID) (map[domain.ID]domain.Comment, error)
+	ListCommentRoots(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
+	ListCommentReplies(context.Context, domain.ID, *CommentPosition, int) ([]domain.Comment, error)
+	ReplyPreviews(context.Context, []domain.ID, int) (map[domain.ID][]domain.Comment, error)
+	CommentMediaUsagesByComment(context.Context, []domain.ID) (map[domain.ID][]MediaUsageProjection, error)
+	ReplyCounts(context.Context, []domain.ID) (map[domain.ID]int, error)
+	CommentAuthorIdentities(context.Context, []string) (map[string]CommentAuthorIdentity, error)
+	SiteOwnerID(context.Context) (string, error)
 	ListComments(context.Context, domain.ID) ([]domain.Comment, error)
 	PinnedCommentID(context.Context, domain.ID) (*domain.ID, error)
 	CommentMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
@@ -49,16 +58,98 @@ type CommentTransactions interface {
 // Comment includes the authoritative record and its safe derived HTML.
 type Comment struct {
 	Comment     domain.Comment
+	Author      CommentAuthor
+	ReplyTo     *CommentReplyTarget
 	ContentHTML string
 	Media       []MediaUsageProjection
+	// ReplyCount and RepliesNextCursor describe a root's replies and are zero
+	// on a reply. They live on the root rather than in a parallel map because
+	// they are that root's own state; kept alongside it they cannot drift out
+	// of step with it.
+	ReplyCount        int
+	RepliesNextCursor string
+}
+
+// CommentReplyTarget names the comment a reply is answering, together with the
+// identity to show for it.
+//
+// The target can sit outside the page the reader has loaded, so the author is
+// resolved server side rather than looked up client side against whatever
+// happens to be on screen.
+type CommentReplyTarget struct {
+	CommentID domain.ID
+	Author    CommentAuthor
+}
+
+// CommentAuthor is the identity a reader sees beside a comment, resolved at
+// read time rather than copied out of the row.
+//
+// Reading through a reference is what lets one rename reach every comment an
+// account ever wrote, and it is what stopped the web and the CLI disagreeing:
+// the web used to overlay the site identity on top of the stored "Owner"
+// placeholder and the CLI printed the placeholder as-is.
+//
+// A legacy guest row has no account behind it, so it carries only DisplayName;
+// Username, UserID and ProfileURL are empty and callers must render it as
+// plain text with no link.
+type CommentAuthor struct {
+	UserID        string
+	Username      string
+	DisplayName   string
+	AvatarMediaID *string
+	ProfileURL    string
+}
+
+// CommentAuthorIdentity is one account's public profile as the comment reader
+// needs it.
+type CommentAuthorIdentity struct {
+	UserID        string
+	Username      string
+	DisplayName   string
+	AvatarMediaID *string
 }
 
 // CommentThread is a stable flattened one-level thread. Roots are ordered by
 // creation time and ID; each root is immediately followed by similarly ordered
 // direct replies.
+//
+// The array stays flat under pagination. What a partial page loses is
+// completeness, not adjacency: a root still sits immediately before whichever
+// of its replies came back, so every consumer that relies on that grouping —
+// pinned reordering, optimistic insert, optimistic delete — keeps working
+// unchanged. ReplyCount on each root reports the true total regardless of how
+// many of them travelled.
 type CommentThread struct {
 	Items           []Comment
 	PinnedCommentID *domain.ID
+	// Pinned carries the pinned root and its inline replies alongside the page
+	// rather than hoisted into it. Reordering Items around a pin would change
+	// what the keyset cursor means the moment the pin moved; excluding the
+	// pinned root from Items instead would leave a hole in pages already
+	// fetched if the pin were cleared mid-scroll.
+	Pinned     []Comment
+	NextCursor string
+}
+
+// CommentReplyPage is one keyset page of replies under a single root.
+type CommentReplyPage struct {
+	Items      []Comment
+	NextCursor string
+}
+
+// ListCommentsInput selects one page of root comments.
+type ListCommentsInput struct {
+	EntryID domain.ID
+	Cursor  string
+	Limit   int
+}
+
+// ListRepliesInput selects one page of replies under a single root.
+type ListRepliesInput struct {
+	EntryID domain.ID
+	RootID  domain.ID
+	Cursor  string
+	Limit   int
 }
 
 // CommentPin is the singleton top-level comment selected for one post.
@@ -70,14 +161,15 @@ type CommentPin struct {
 // CreateCommentInput contains owner/guest application identity, never network
 // identity. Adapters cannot use it to persist an IP address.
 type CreateCommentInput struct {
-	EntryID        domain.ID
-	ParentID       *domain.ID
-	AuthorKind     domain.CommentAuthorKind
-	AuthorName     string
-	ContentMD      string
-	Media          []domain.EntryMediaUsage
-	Location       *domain.Location
-	IdempotencyKey string
+	EntryID          domain.ID
+	ParentID         *domain.ID
+	ReplyToCommentID *domain.ID
+	AuthorKind       domain.CommentAuthorKind
+	AuthorName       string
+	ContentMD        string
+	Media            []domain.EntryMediaUsage
+	Location         *domain.Location
+	IdempotencyKey   string
 }
 
 // CreateCommentResult reports a safe idempotent retry.
@@ -156,47 +248,13 @@ func NewCommentService(transactions CommentTransactions, options ...CommentServi
 	return service, nil
 }
 
-// CreateGuest persists a visitor comment without accepting network identity.
-func (service *CommentService) CreateGuest(ctx context.Context, input CreateCommentInput) (CreateCommentResult, error) {
-	input.AuthorKind = domain.CommentAuthorGuest
-	return service.create(ctx, input)
-}
-
-// CreateOwner persists an owner-marked comment. CLI and owner HTTP adapters
-// use this method and cannot impersonate a guest.
+// CreateOwner persists an owner-marked comment. It is the only way to write a
+// comment: every adapter reaches the thread through an authenticated owner
+// route, so no caller can choose the author kind.
 func (service *CommentService) CreateOwner(ctx context.Context, input CreateCommentInput) (CreateCommentResult, error) {
 	input.AuthorKind = domain.CommentAuthorOwner
 	input.AuthorName = "Owner"
 	return service.create(ctx, input)
-}
-
-// ValidateCreateTarget confirms that a public reply upload is anchored to an
-// existing post whose comment surface is currently enabled. It deliberately
-// performs no mutation; the final comment transaction repeats these checks.
-func (service *CommentService) ValidateCreateTarget(ctx context.Context, entryID domain.ID) error {
-	if err := contextError(ctx); err != nil {
-		return err
-	}
-	if err := validateCommentID(entryID); err != nil {
-		return err
-	}
-	return service.transactions.Read(ctx, func(store CommentStore) error {
-		exists, err := store.EntryExists(ctx, entryID)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			return postNotFound(entryID)
-		}
-		enabled, err := store.CommentsEnabled(ctx)
-		if err != nil {
-			return err
-		}
-		if !enabled {
-			return domain.NewError(domain.CodeCommentsDisabled, "new comments are disabled", nil)
-		}
-		return nil
-	})
 }
 
 func (service *CommentService) create(ctx context.Context, input CreateCommentInput) (CreateCommentResult, error) {
@@ -205,6 +263,14 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 	}
 	if err := validateCommentID(input.EntryID); err != nil {
 		return CreateCommentResult{}, err
+	}
+	if input.ReplyToCommentID != nil {
+		if err := validateCommentID(*input.ReplyToCommentID); err != nil {
+			return CreateCommentResult{}, err
+		}
+		if input.ParentID == nil {
+			return CreateCommentResult{}, domain.NewError(domain.CodeInvalidArgument, "a top-level comment cannot answer another comment", map[string]any{"field": "reply_to_comment_id"})
+		}
 	}
 	if input.ParentID != nil {
 		if err := validateCommentID(*input.ParentID); err != nil {
@@ -223,7 +289,7 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 		}
 	}
 	requestHash := hashCreateComment(input)
-	idempotencyScope := commentCreateIdempotencyScope(input.AuthorKind)
+	idempotencyScope := ownerCommentCreateIdempotencyScope
 	if input.IdempotencyKey != "" {
 		replayed, found, replayErr := service.loadCommentReplay(ctx, input, idempotencyScope, requestHash)
 		if replayErr != nil {
@@ -252,7 +318,11 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 				return storeErr
 			}
 			if found {
-				comment, replayErr := reconstructCommentReplay(input, idempotencyScope, requestHash, record)
+				replayOwnerID, replayErr := store.SiteOwnerID(ctx)
+				if replayErr != nil {
+					return replayErr
+				}
+				comment, replayErr := reconstructCommentReplay(input, replayOwnerID, idempotencyScope, requestHash, record)
 				if replayErr != nil {
 					return replayErr
 				}
@@ -261,6 +331,16 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 				if replayErr != nil {
 					return replayErr
 				}
+				authors, replayErr := resolveCommentAuthors(ctx, store, []domain.Comment{comment})
+				if replayErr != nil {
+					return replayErr
+				}
+				result.Comment.Author = authors[comment.ID]
+				replayTargets, replayErr := resolveCommentReplyTargets(ctx, store, []domain.Comment{comment})
+				if replayErr != nil {
+					return replayErr
+				}
+				result.Comment.ReplyTo = replayTargets[comment.ID]
 				result.Replayed = true
 				return nil
 			}
@@ -291,12 +371,38 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 				return domain.NewError(domain.CodeCommentDepthExceeded, "replies must target a top-level comment on the same post", map[string]any{"parent_id": input.ParentID.String()})
 			}
 		}
+		// The reply target must belong to the same conversation: either the
+		// root itself or another reply under it. Restated here rather than left
+		// to the trigger alone, matching how the depth rule is handled — a
+		// caller gets a typed error describing what it did, not a translated
+		// abort message.
+		if input.ReplyToCommentID != nil {
+			target, found, targetErr := store.CommentByID(ctx, *input.ReplyToCommentID)
+			if targetErr != nil {
+				return targetErr
+			}
+			if !found {
+				return commentNotFound(*input.ReplyToCommentID)
+			}
+			sameConversation := target.ID == *input.ParentID ||
+				(target.ParentID != nil && *target.ParentID == *input.ParentID)
+			if target.EntryID != input.EntryID || !sameConversation {
+				return domain.NewError(domain.CodeInvalidArgument, "a reply can only answer its own root or another reply under it", map[string]any{"field": "reply_to_comment_id"})
+			}
+		}
 		now := domain.NormalizeTime(service.clock())
 		id, generateErr := service.ids(now)
 		if generateErr != nil {
 			return generateErr
 		}
-		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: now}
+		// The authoring account is stamped inside the transaction that writes
+		// the row, so a rename racing the insert cannot leave the comment
+		// pointing at an identity that never wrote it.
+		ownerID, ownerErr := store.SiteOwnerID(ctx)
+		if ownerErr != nil {
+			return ownerErr
+		}
+		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), ReplyToCommentID: cloneCommentID(input.ReplyToCommentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: now}
 		if validateErr := comment.Validate(); validateErr != nil {
 			return validateErr
 		}
@@ -323,12 +429,22 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 			return projectErr
 		}
 		result.Comment.Media = projectedMedia
+		authors, authorErr := resolveCommentAuthors(ctx, store, []domain.Comment{comment})
+		if authorErr != nil {
+			return authorErr
+		}
+		result.Comment.Author = authors[comment.ID]
+		replyTargets, authorErr := resolveCommentReplyTargets(ctx, store, []domain.Comment{comment})
+		if authorErr != nil {
+			return authorErr
+		}
+		result.Comment.ReplyTo = replyTargets[comment.ID]
 		return nil
 	})
 	if err != nil {
 		return CreateCommentResult{}, normalizeCommentRepositoryError(err)
 	}
-	result.Comment, err = renderComment(result.Comment.Comment, result.Comment.Media)
+	result.Comment, err = renderComment(result.Comment.Comment, result.Comment.Author, result.Comment.ReplyTo, result.Comment.Media)
 	if err != nil {
 		return CreateCommentResult{}, err
 	}
@@ -340,18 +456,37 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 	var found bool
 	var media []MediaUsageProjection
 	var recordComment domain.Comment
+	var author CommentAuthor
+	var replyTo *CommentReplyTarget
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		var storeErr error
 		record, found, storeErr = store.IdempotencyRecord(ctx, scope, input.IdempotencyKey)
 		if storeErr != nil || !found {
 			return storeErr
 		}
-		recordComment, storeErr = reconstructCommentReplay(input, scope, requestHash, record)
+		ownerID, storeErr := store.SiteOwnerID(ctx)
+		if storeErr != nil {
+			return storeErr
+		}
+		recordComment, storeErr = reconstructCommentReplay(input, ownerID, scope, requestHash, record)
 		if storeErr != nil {
 			return storeErr
 		}
 		media, storeErr = store.ProjectMediaUsages(ctx, input.Media)
-		return storeErr
+		if storeErr != nil {
+			return storeErr
+		}
+		authors, storeErr := resolveCommentAuthors(ctx, store, []domain.Comment{recordComment})
+		if storeErr != nil {
+			return storeErr
+		}
+		author = authors[recordComment.ID]
+		replyTargets, storeErr := resolveCommentReplyTargets(ctx, store, []domain.Comment{recordComment})
+		if storeErr != nil {
+			return storeErr
+		}
+		replyTo = replyTargets[recordComment.ID]
+		return nil
 	})
 	if err != nil {
 		return CreateCommentResult{}, false, normalizeCommentRepositoryError(err)
@@ -359,14 +494,247 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 	if !found {
 		return CreateCommentResult{}, false, nil
 	}
-	comment, err := renderComment(recordComment, media)
+	comment, err := renderComment(recordComment, author, replyTo, media)
 	if err != nil {
 		return CreateCommentResult{}, false, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
 	return CreateCommentResult{Comment: comment, Replayed: true}, true, nil
 }
 
-// List returns one stable flattened thread and verifies stored parent order.
+// ListPage returns one keyset page of root comments, each carrying a preview
+// of its replies plus the totals a reader needs to ask for the rest.
+//
+// A thread used to arrive whole. That is fine for a handful of comments and
+// indefensible for a popular post: the response grows without bound, and the
+// reader waits for replies they will never scroll to.
+func (service *CommentService) ListPage(ctx context.Context, input ListCommentsInput) (CommentThread, error) {
+	if err := contextError(ctx); err != nil {
+		return CommentThread{}, err
+	}
+	if err := validateCommentID(input.EntryID); err != nil {
+		return CommentThread{}, err
+	}
+	limit, err := normalizeCommentLimit(input.Limit, DefaultCommentPageSize)
+	if err != nil {
+		return CommentThread{}, err
+	}
+	after, err := decodeCommentRootCursor(input.Cursor, input.EntryID)
+	if err != nil {
+		return CommentThread{}, err
+	}
+
+	var thread CommentThread
+	err = service.transactions.Read(ctx, func(store CommentStore) error {
+		exists, storeErr := store.EntryExists(ctx, input.EntryID)
+		if storeErr != nil {
+			return storeErr
+		}
+		if !exists {
+			return postNotFound(input.EntryID)
+		}
+		// One extra root answers "is there another page" without a second
+		// query, the same trick the timeline uses.
+		roots, storeErr := store.ListCommentRoots(ctx, input.EntryID, after, limit+1)
+		if storeErr != nil {
+			return storeErr
+		}
+		hasNext := len(roots) > limit
+		if hasNext {
+			roots = roots[:limit]
+		}
+		rootIDs := make([]domain.ID, len(roots))
+		for index, root := range roots {
+			rootIDs[index] = root.ID
+		}
+		replyCounts, storeErr := store.ReplyCounts(ctx, rootIDs)
+		if storeErr != nil {
+			return storeErr
+		}
+		records := make([]domain.Comment, 0, len(roots))
+		repliesNextCursor := make(map[domain.ID]string, len(roots))
+		// One windowed query for the whole page rather than one per root: the
+		// page can hold up to MaxPageSize roots, and a query behind every row
+		// is the shape this read already avoids for attachments, totals and
+		// identities.
+		previews, previewErr := store.ReplyPreviews(ctx, rootIDs, InlineReplyPreviewCount+1)
+		if previewErr != nil {
+			return previewErr
+		}
+		for _, root := range roots {
+			records = append(records, root)
+			if replyCounts[root.ID] == 0 {
+				continue
+			}
+			replies := previews[root.ID]
+			if len(replies) > InlineReplyPreviewCount {
+				replies = replies[:InlineReplyPreviewCount]
+				last := replies[len(replies)-1]
+				repliesNextCursor[root.ID] = encodeCommentReplyCursor(root.ID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+			}
+			records = append(records, replies...)
+		}
+		rendered, renderErr := service.renderCommentPage(ctx, store, records)
+		if renderErr != nil {
+			return renderErr
+		}
+		for index := range rendered {
+			id := rendered[index].Comment.ID
+			if rendered[index].Comment.ParentID != nil {
+				continue
+			}
+			rendered[index].ReplyCount = replyCounts[id]
+			rendered[index].RepliesNextCursor = repliesNextCursor[id]
+		}
+		thread.Items = rendered
+		if hasNext && len(roots) > 0 {
+			last := roots[len(roots)-1]
+			thread.NextCursor = encodeCommentRootCursor(input.EntryID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+		}
+		pinnedCommentID, storeErr := store.PinnedCommentID(ctx, input.EntryID)
+		if storeErr != nil {
+			return storeErr
+		}
+		thread.PinnedCommentID = cloneCommentID(pinnedCommentID)
+		if pinnedCommentID == nil {
+			return nil
+		}
+		pinnedRoot, found, storeErr := store.CommentByID(ctx, *pinnedCommentID)
+		if storeErr != nil {
+			return storeErr
+		}
+		if !found {
+			return nil
+		}
+		pinnedRecords := []domain.Comment{pinnedRoot}
+		pinnedReplies, storeErr := store.ListCommentReplies(ctx, pinnedRoot.ID, nil, InlineReplyPreviewCount+1)
+		if storeErr != nil {
+			return storeErr
+		}
+		pinnedNextCursor := ""
+		if len(pinnedReplies) > InlineReplyPreviewCount {
+			pinnedReplies = pinnedReplies[:InlineReplyPreviewCount]
+			last := pinnedReplies[len(pinnedReplies)-1]
+			pinnedNextCursor = encodeCommentReplyCursor(pinnedRoot.ID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+		}
+		pinnedRecords = append(pinnedRecords, pinnedReplies...)
+		pinnedCounts, storeErr := store.ReplyCounts(ctx, []domain.ID{pinnedRoot.ID})
+		if storeErr != nil {
+			return storeErr
+		}
+		pinnedRendered, renderErr := service.renderCommentPage(ctx, store, pinnedRecords)
+		if renderErr != nil {
+			return renderErr
+		}
+		if len(pinnedRendered) > 0 {
+			pinnedRendered[0].ReplyCount = pinnedCounts[pinnedRoot.ID]
+			pinnedRendered[0].RepliesNextCursor = pinnedNextCursor
+		}
+		thread.Pinned = pinnedRendered
+		return nil
+	})
+	if err != nil {
+		return CommentThread{}, normalizeCommentRepositoryError(err)
+	}
+	return thread, nil
+}
+
+// ListReplies returns one keyset page of replies under a single root.
+func (service *CommentService) ListReplies(ctx context.Context, input ListRepliesInput) (CommentReplyPage, error) {
+	if err := contextError(ctx); err != nil {
+		return CommentReplyPage{}, err
+	}
+	if err := validateCommentID(input.EntryID); err != nil {
+		return CommentReplyPage{}, err
+	}
+	if err := validateCommentID(input.RootID); err != nil {
+		return CommentReplyPage{}, err
+	}
+	limit, err := normalizeCommentLimit(input.Limit, DefaultReplyPageSize)
+	if err != nil {
+		return CommentReplyPage{}, err
+	}
+	after, err := decodeCommentReplyCursor(input.Cursor, input.RootID)
+	if err != nil {
+		return CommentReplyPage{}, err
+	}
+
+	var page CommentReplyPage
+	err = service.transactions.Read(ctx, func(store CommentStore) error {
+		root, found, storeErr := store.CommentByID(ctx, input.RootID)
+		if storeErr != nil {
+			return storeErr
+		}
+		// The root has to belong to the post named in the request. Without
+		// that check a caller could page any thread through any post's URL,
+		// and the reply cursor alone would not catch it.
+		if !found || root.EntryID != input.EntryID || root.ParentID != nil {
+			return commentNotFound(input.RootID)
+		}
+		replies, storeErr := store.ListCommentReplies(ctx, input.RootID, after, limit+1)
+		if storeErr != nil {
+			return storeErr
+		}
+		hasNext := len(replies) > limit
+		if hasNext {
+			replies = replies[:limit]
+		}
+		rendered, renderErr := service.renderCommentPage(ctx, store, replies)
+		if renderErr != nil {
+			return renderErr
+		}
+		page.Items = rendered
+		if hasNext && len(replies) > 0 {
+			last := replies[len(replies)-1]
+			page.NextCursor = encodeCommentReplyCursor(input.RootID, CommentPosition{CreatedAtMS: domain.TimeToMillis(last.CreatedAt), ID: last.ID})
+		}
+		return nil
+	})
+	if err != nil {
+		return CommentReplyPage{}, normalizeCommentRepositoryError(err)
+	}
+	return page, nil
+}
+
+// renderCommentPage resolves everything a page of comments needs in batches:
+// attachments, author identities and reply targets each cost one query for the
+// whole page rather than one per row.
+func (service *CommentService) renderCommentPage(ctx context.Context, store CommentStore, records []domain.Comment) ([]Comment, error) {
+	if len(records) == 0 {
+		return []Comment{}, nil
+	}
+	ids := make([]domain.ID, len(records))
+	for index, record := range records {
+		ids[index] = record.ID
+	}
+	mediaByComment, err := store.CommentMediaUsagesByComment(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	authors, err := resolveCommentAuthors(ctx, store, records)
+	if err != nil {
+		return nil, err
+	}
+	replyTargets, err := resolveCommentReplyTargets(ctx, store, records)
+	if err != nil {
+		return nil, err
+	}
+	rendered := make([]Comment, 0, len(records))
+	for _, record := range records {
+		comment, renderErr := renderComment(record, authors[record.ID], replyTargets[record.ID], mediaByComment[record.ID])
+		if renderErr != nil {
+			return nil, corruptComment(record.ID)
+		}
+		rendered = append(rendered, comment)
+	}
+	return rendered, nil
+}
+
+// List returns a whole thread in one response.
+//
+// ListPage is what the browser uses. This stays for callers that genuinely
+// want everything at once — the CLI reading a thread, and tests asserting the
+// canonical flattened order — and it keeps the invariant those callers rely
+// on: every reply is present, directly after its root.
 func (service *CommentService) List(ctx context.Context, entryID domain.ID) (CommentThread, error) {
 	if err := contextError(ctx); err != nil {
 		return CommentThread{}, err
@@ -376,7 +744,8 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 	}
 	var records []domain.Comment
 	var pinnedCommentID *domain.ID
-	mediaByComment := make(map[domain.ID][]MediaUsageProjection)
+	var rendered []Comment
+	var replyCounts map[domain.ID]int
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
 		exists, storeErr := store.EntryExists(ctx, entryID)
 		if storeErr != nil {
@@ -393,30 +762,33 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 		if storeErr != nil {
 			return storeErr
 		}
+		rootIDs := make([]domain.ID, 0, len(records))
 		for _, record := range records {
-			mediaByComment[record.ID], storeErr = store.CommentMediaUsages(ctx, record.ID)
-			if storeErr != nil {
-				return storeErr
+			if record.ParentID == nil {
+				rootIDs = append(rootIDs, record.ID)
 			}
 		}
+		replyCounts, storeErr = store.ReplyCounts(ctx, rootIDs)
+		if storeErr != nil {
+			return storeErr
+		}
+		rendered, storeErr = service.renderCommentPage(ctx, store, records)
 		return storeErr
 	})
 	if err != nil {
 		return CommentThread{}, normalizeCommentRepositoryError(err)
 	}
-	thread := CommentThread{Items: make([]Comment, 0, len(records)), PinnedCommentID: cloneCommentID(pinnedCommentID)}
+	thread := CommentThread{Items: make([]Comment, 0, len(rendered)), PinnedCommentID: cloneCommentID(pinnedCommentID)}
 	roots := make(map[domain.ID]struct{})
-	for _, record := range records {
+	for _, comment := range rendered {
+		record := comment.Comment
 		if record.EntryID != entryID {
 			return CommentThread{}, corruptCommentThread(entryID)
 		}
 		if record.ParentID == nil {
 			roots[record.ID] = struct{}{}
+			comment.ReplyCount = replyCounts[record.ID]
 		} else if _, found := roots[*record.ParentID]; !found {
-			return CommentThread{}, corruptCommentThread(entryID)
-		}
-		comment, renderErr := renderComment(record, mediaByComment[record.ID])
-		if renderErr != nil {
 			return CommentThread{}, corruptCommentThread(entryID)
 		}
 		thread.Items = append(thread.Items, comment)
@@ -429,8 +801,7 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 	return thread, nil
 }
 
-// Pin atomically selects one top-level comment for emphasis in its post.
-// Assigning the current root is an idempotent success.
+// Pin selects the single top-level comment shown above a post's thread.
 func (service *CommentService) Pin(ctx context.Context, entryID, commentID domain.ID) (CommentPin, error) {
 	return service.changePin(ctx, entryID, commentID, true)
 }
@@ -523,7 +894,15 @@ func (service *CommentService) Delete(ctx context.Context, id domain.ID, dryRun 
 		if err != nil {
 			return err
 		}
-		result.Comment, err = renderComment(record, mediaUsages)
+		authors, err := resolveCommentAuthors(ctx, store, []domain.Comment{record})
+		if err != nil {
+			return err
+		}
+		replyTargets, err := resolveCommentReplyTargets(ctx, store, []domain.Comment{record})
+		if err != nil {
+			return err
+		}
+		result.Comment, err = renderComment(record, authors[record.ID], replyTargets[record.ID], mediaUsages)
 		if err != nil {
 			return corruptComment(id)
 		}
@@ -558,31 +937,37 @@ func (service *CommentService) Delete(ctx context.Context, id domain.ID, dryRun 
 	return result, nil
 }
 
-func reconstructCommentReplay(input CreateCommentInput, scope, requestHash string, record IdempotencyRecord) (domain.Comment, error) {
+// reconstructCommentReplay rebuilds the stored comment from the request that
+// produced it. The request hash proves the input is byte-identical, so every
+// field the input carries reconstructs exactly.
+//
+// ownerID covers the one field it does not carry. The account that authored a
+// comment is stamped by the server, not supplied by the caller, and owner_id
+// is minted once at migration and never updated — SiteUpdate has no field for
+// it — so reading it now yields the same value the original write stamped.
+func reconstructCommentReplay(input CreateCommentInput, ownerID, scope, requestHash string, record IdempotencyRecord) (domain.Comment, error) {
 	if record.Scope != scope || record.Key != input.IdempotencyKey || !validRequestHash(record.RequestHash) {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
 	if record.RequestHash != requestHash {
 		return domain.Comment{}, domain.NewError(domain.CodeIdempotencyKeyReused, "idempotency key was already used with different comment input", map[string]any{"field": "idempotency_key"})
 	}
-	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: record.CreatedAt}
+	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), ReplyToCommentID: cloneCommentID(input.ReplyToCommentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: record.CreatedAt}
 	if err := comment.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
 	return comment, nil
 }
 
-func commentCreateIdempotencyScope(kind domain.CommentAuthorKind) string {
-	if kind == domain.CommentAuthorGuest {
-		return guestCommentCreateIdempotencyScope
-	}
-	return ownerCommentCreateIdempotencyScope
-}
-
 func hashCreateComment(input CreateCommentInput) string {
 	digest := sha256.New()
-	_, _ = digest.Write([]byte("moment-comment-create-v1\x00"))
-	for _, value := range []string{input.EntryID.String(), commentIDString(input.ParentID), string(input.AuthorKind), input.AuthorName, input.ContentMD} {
+	// Version 2 adds the reply target. A digest that ignored it would let one
+	// idempotency key replay a stored comment for a request that named a
+	// different target, returning a perfectly well-formed answer to the wrong
+	// comment. Retiring v1 costs nothing: a key reused across the two versions
+	// reads as a changed request, which is exactly what it is.
+	_, _ = digest.Write([]byte("moment-comment-create-v2\x00"))
+	for _, value := range []string{input.EntryID.String(), commentIDString(input.ParentID), commentIDString(input.ReplyToCommentID), string(input.AuthorKind), input.AuthorName, input.ContentMD} {
 		var length [8]byte
 		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
 		_, _ = digest.Write(length[:])
@@ -605,7 +990,132 @@ func hashCreateComment(input CreateCommentInput) string {
 	return hex.EncodeToString(digest.Sum(nil))
 }
 
-func renderComment(record domain.Comment, media []MediaUsageProjection) (Comment, error) {
+// resolveCommentReplyTargets loads the comments the batch answers and resolves
+// an identity for each. Targets already present in the batch are reused rather
+// than fetched again, so an ordinary thread costs no extra query at all.
+func resolveCommentReplyTargets(ctx context.Context, store CommentStore, records []domain.Comment) (map[domain.ID]*CommentReplyTarget, error) {
+	targets := make(map[domain.ID]*CommentReplyTarget)
+	known := make(map[domain.ID]domain.Comment, len(records))
+	for _, record := range records {
+		known[record.ID] = record
+	}
+	missing := make([]domain.ID, 0)
+	for _, record := range records {
+		if record.ReplyToCommentID == nil {
+			continue
+		}
+		if _, found := known[*record.ReplyToCommentID]; !found {
+			missing = append(missing, *record.ReplyToCommentID)
+		}
+	}
+	if len(missing) > 0 {
+		fetched, err := store.CommentsByID(ctx, missing)
+		if err != nil {
+			return nil, err
+		}
+		for id, record := range fetched {
+			known[id] = record
+		}
+	}
+	referenced := make([]domain.Comment, 0)
+	for _, record := range records {
+		if record.ReplyToCommentID == nil {
+			continue
+		}
+		if target, found := known[*record.ReplyToCommentID]; found {
+			referenced = append(referenced, target)
+		}
+	}
+	if len(referenced) == 0 {
+		return targets, nil
+	}
+	authors, err := resolveCommentAuthors(ctx, store, referenced)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		if record.ReplyToCommentID == nil {
+			continue
+		}
+		target, found := known[*record.ReplyToCommentID]
+		if !found {
+			// ON DELETE SET NULL means a non-null reference always points at a
+			// live row, so reaching here would mean the database disagrees with
+			// its own constraint. Drop the annotation rather than fail the read.
+			continue
+		}
+		targets[record.ID] = &CommentReplyTarget{CommentID: target.ID, Author: authors[target.ID]}
+	}
+	return targets, nil
+}
+
+// resolveCommentAuthors maps every comment in the batch to the identity that
+// should be rendered for it.
+//
+// The lookup is batched and keyed by account ID because that is the shape a
+// real user table needs; today exactly one account can match. Owner rows
+// written before author_user_id existed — anything restored from an older
+// archive — have no reference of their own, so they fall back to the site
+// owner, which is by definition who wrote them.
+func resolveCommentAuthors(ctx context.Context, store CommentStore, records []domain.Comment) (map[domain.ID]CommentAuthor, error) {
+	authors := make(map[domain.ID]CommentAuthor, len(records))
+	ownerID := ""
+	wanted := make(map[string]struct{})
+	for _, record := range records {
+		if record.AuthorKind == domain.CommentAuthorGuest {
+			continue
+		}
+		if record.AuthorUserID != nil {
+			wanted[*record.AuthorUserID] = struct{}{}
+			continue
+		}
+		if ownerID == "" {
+			resolved, err := store.SiteOwnerID(ctx)
+			if err != nil {
+				return nil, err
+			}
+			ownerID = resolved
+		}
+		wanted[ownerID] = struct{}{}
+	}
+	ids := make([]string, 0, len(wanted))
+	for id := range wanted {
+		ids = append(ids, id)
+	}
+	identities := map[string]CommentAuthorIdentity{}
+	if len(ids) > 0 {
+		resolved, err := store.CommentAuthorIdentities(ctx, ids)
+		if err != nil {
+			return nil, err
+		}
+		identities = resolved
+	}
+	for _, record := range records {
+		if record.AuthorKind == domain.CommentAuthorGuest {
+			authors[record.ID] = CommentAuthor{DisplayName: record.AuthorName}
+			continue
+		}
+		id := ownerID
+		if record.AuthorUserID != nil {
+			id = *record.AuthorUserID
+		}
+		identity, found := identities[id]
+		if !found {
+			// An owner comment whose account cannot be resolved still has to
+			// render. The stored name is the only thing left to show.
+			authors[record.ID] = CommentAuthor{DisplayName: record.AuthorName}
+			continue
+		}
+		authors[record.ID] = CommentAuthor{
+			UserID: identity.UserID, Username: identity.Username,
+			DisplayName: identity.DisplayName, AvatarMediaID: identity.AvatarMediaID,
+			ProfileURL: "/@" + identity.Username,
+		}
+	}
+	return authors, nil
+}
+
+func renderComment(record domain.Comment, author CommentAuthor, replyTo *CommentReplyTarget, media []MediaUsageProjection) (Comment, error) {
 	if err := record.Validate(); err != nil {
 		return Comment{}, err
 	}
@@ -621,7 +1131,7 @@ func renderComment(record domain.Comment, media []MediaUsageProjection) (Comment
 		return Comment{}, err
 	}
 	record.Location = domain.CloneLocation(record.Location)
-	return Comment{Comment: record, ContentHTML: html, Media: cloneMediaUsageProjections(media)}, nil
+	return Comment{Comment: record, Author: author, ReplyTo: replyTo, ContentHTML: html, Media: cloneMediaUsageProjections(media)}, nil
 }
 
 func commentLocationHashValues(location *domain.Location) []string {

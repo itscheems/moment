@@ -2481,6 +2481,11 @@ export class OwnerApi {
     return parseSiteIdentity(data);
   }
 
+  /**
+   * `replyToCommentId` is an annotation, not a tree edge: it names the one
+   * comment this answers, while `parentId` still decides where the row sits.
+   * Only a reply may carry one, and only to its own root or a sibling under it.
+   */
   async createComment(
     csrfToken: string,
     postId: string,
@@ -2489,10 +2494,12 @@ export class OwnerApi {
     idempotencyKey: string,
     media: PostMediaInput[] = [],
     location: OwnerLocation | null = null,
+    replyToCommentId: string | null = null,
   ): Promise<CreatedComment> {
     const init = requestInit("POST", csrfToken, {
       content_md: contentMd,
       parent_id: parentId,
+      reply_to_comment_id: replyToCommentId,
       media: mediaPayload(media),
       location: location === null ? null : locationPayload(location),
     });

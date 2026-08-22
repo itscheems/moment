@@ -1414,6 +1414,8 @@ func validPostAPIRawData(data json.RawMessage, destination any) bool {
 		return typed != nil && validRawAPIComment(data, *typed)
 	case *commentdto.Thread:
 		return typed != nil && validRawAPICommentThread(data, *typed)
+	case *commentdto.ReplyPage:
+		return typed != nil && validRawAPICommentReplyPage(data, *typed)
 	case *searchdto.SearchData:
 		return typed != nil && validRawAPISearch(data, *typed)
 	default:
@@ -1490,6 +1492,23 @@ func validRawAPIComment(data json.RawMessage, comment commentdto.Comment) bool {
 		return bytes.Equal(parent, []byte("null"))
 	}
 	return !bytes.Equal(parent, []byte("null"))
+}
+
+func validRawAPICommentReplyPage(data json.RawMessage, page commentdto.ReplyPage) bool {
+	if !hasRequiredNonNullAPIDataFields(data, "items") {
+		return false
+	}
+	fields, _ := apiDataFields(data)
+	items, ok := apiRawArray(fields["items"])
+	if !ok || len(items) != len(page.Items) {
+		return false
+	}
+	for index := range items {
+		if !validRawAPIComment(items[index], page.Items[index]) {
+			return false
+		}
+	}
+	return true
 }
 
 func validRawAPICommentThread(data json.RawMessage, thread commentdto.Thread) bool {

@@ -103,7 +103,7 @@ if (( validation_only == 1 )); then
     .fixture.probe_scenario == "timeline-empty" and .fixture.probe_backup_scenario == "post-with-images" and
     .fixture.probe_stage_timeout == "30m" and
     .fixture.probe_timeout_no_partial == true and .fixture.probe_archive_round_trip == true and
-    .fixture.probe_deep_doctor == true and .fixture.recipe_version == "moment-dev-v1" and
+    .fixture.probe_deep_doctor == true and .fixture.recipe_version == "moment-dev-v2" and
     .fixture.entries == 10000 and .fixture.comments == 50000 and .fixture.media == 20000 and
     .fixture.media_bytes == 21474836480 and .fixture.peak_rss_bytes > 0 and
     .fixture.rss_limit_bytes == 805306368 and .fixture.peak_rss_bytes < .fixture.rss_limit_bytes and

@@ -31,11 +31,22 @@ const comment = {
   parent_id: null,
   depth: 0,
   author_kind: "owner",
+  // The stored placeholder. What a reader sees comes from `author`, resolved
+  // server side, which is why these two disagree.
   author_name: "Owner",
+  author: {
+    user_id: "0123456789abcdef0123456789abcdef",
+    username: "owner",
+    display_name: "Moment",
+    avatar_media_id: null,
+    profile_url: "/@owner",
+  },
+  reply_to: null,
   content_md: "所有者回应",
   content_html: "<p>所有者回应</p>\n",
   created_at: "2026-08-10T01:03:00Z",
   media: [],
+  reply_count: 0,
 };
 
 class FakeUploadRequest extends EventTarget {
@@ -763,6 +774,7 @@ describe("owner API client", () => {
     expect(JSON.parse(String(createInit.body))).toEqual({
       content_md: "所有者回应",
       parent_id: null,
+      reply_to_comment_id: null,
       media: [],
       location: null,
     });
@@ -893,4 +905,48 @@ describe("owner API client", () => {
       api.createComment("csrf", post.id, "回应", null, "web-owner-identity"),
     ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
   });
+
+  it("rejects an owner create response for a different parent", async () => {
+    const api = new OwnerApi(
+      vi.fn(async () =>
+        json(
+          {
+            data: comment,
+            meta: { replayed: false, request_id: "req_create" },
+          },
+          201,
+        ),
+      ) as typeof fetch,
+    );
+    await expect(
+      api.createComment(
+        "csrf",
+        post.id,
+        "回应",
+        "01K2ABCDEF0123456789ABCDE2",
+        "web-owner-parent",
+      ),
+    ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
+  });
+
+  it.each([
+    { status: 200, replayed: false },
+    { status: 201, replayed: true },
+    { status: 202, replayed: false },
+  ])(
+    "rejects comment create HTTP $status with replayed=$replayed",
+    async ({ status, replayed }) => {
+      const api = new OwnerApi(
+        vi.fn(async () =>
+          json(
+            { data: comment, meta: { replayed, request_id: "req_create" } },
+            status,
+          ),
+        ) as typeof fetch,
+      );
+      await expect(
+        api.createComment("csrf", post.id, "回应", null, "web-owner-status"),
+      ).rejects.toMatchObject({ code: "API_RESPONSE_INVALID" });
+    },
+  );
 });

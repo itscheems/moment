@@ -53,7 +53,6 @@ type Config struct {
 	Comments              *app.CommentService
 	Search                *app.SearchService
 	ShareMetadata         *app.ShareMetadataService
-	CommentLimiter        CommentRateLimiter
 	Media                 *media.Store
 	Archive               ArchiveExporter
 	ImportInspector       ImportInspector
@@ -165,7 +164,7 @@ func New(config Config) (*gin.Engine, error) {
 		if config.OwnerAuth == nil {
 			return nil, errors.New("comment routes require owner authentication")
 		}
-		RegisterCommentRoutes(engine, config.Comments, config.Media, config.OwnerAuth, config.CommentLimiter)
+		RegisterCommentRoutes(engine, config.Comments, config.OwnerAuth)
 	}
 	if config.Search != nil {
 		RegisterSearchRoutes(engine, config.Search)

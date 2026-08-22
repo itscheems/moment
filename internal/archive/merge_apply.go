@@ -143,7 +143,9 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 
 	comments := indexComments(local.Comments)
 	// First allocate all comment identities so replies can target a parent that
-	// appears later in archive order.
+	// appears later in archive order. Only identities this merge can reissue are
+	// remapped: entry, comment, and media IDs. AuthorUserID names an account,
+	// which this merge neither owns nor reissues, so it travels verbatim.
 	for _, value := range incoming.Comments {
 		choice := itemChoices[mergeChoiceKey(MergeComment, value.ID)]
 		switch choice {
@@ -192,8 +194,24 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 			}
 			resolvedComment.ParentID = &parentID
 		}
+		// The reply target names a comment, and MergeKeepBoth reissues comment
+		// identities, so the annotation follows the same remap parent_id gets or
+		// it lands on a stranger. The allocation loop above has already assigned
+		// every identity, so answering a sibling remapped in this same pass
+		// resolves regardless of the order the two are visited in. Whether the
+		// result is one the schema will accept is settled afterwards, against
+		// the finished graph.
+		resolvedComment.ReplyToCommentID = nil
+		if value.ReplyToCommentID != nil {
+			targetID := *value.ReplyToCommentID
+			if remapped, exists := result.CommentRemap[targetID]; exists {
+				targetID = remapped
+			}
+			resolvedComment.ReplyToCommentID = &targetID
+		}
 		comments[resolvedComment.ID] = resolvedComment
 	}
+	clearStrandedReplyTargets(comments)
 	result.Authority.Comments = topologicalComments(comments)
 
 	localMediaByID, localMediaBySHA := indexMedia(local.Media)
@@ -254,6 +272,55 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 	}
 	result.Authority.Media = sortedMedia(result.Authority.Media)
 	return result, nil
+}
+
+// clearStrandedReplyTargets drops every reply annotation the resolved graph
+// cannot carry, restating the rule migration 0021 puts in the schema: a
+// non-null reply_to_comment_id must name its own root or a sibling under that
+// root, in the same post.
+//
+// The two ends of that rule are chosen independently. A selection may reissue a
+// root under MergeKeepBoth while keeping one of its replies local, or move a
+// reply under a different root with MergeUseIncoming; each item is valid on its
+// own, and validateMergeItemChoices has no cross-item rule that would forbid
+// the pair. Resolving the annotation and the parent separately therefore lets
+// an answer end up beside one conversation while pointing into another, which
+// the insert and update guards abort on — untyped, deep inside Commit, after
+// the reviewer has completed the entire plan and selection flow.
+//
+// Clearing is the resolution rather than a typed failure. This column is an
+// annotation and not structure: nothing traverses it, ON DELETE SET NULL
+// already defines losing the target as ordinary, and resolveCommentReplyTargets
+// drops the annotation rather than fail a read for the same reason. A parent
+// that disappears fails the merge because the reply would have nowhere to live;
+// a navigation hint that no longer navigates anywhere costs a prefix. Failing
+// instead would reject a selection the plan itself offered, so it would only be
+// honest once the plan modelled the dependency and every adapter could stop the
+// reviewer from choosing it.
+//
+// The whole graph is swept, not only the incoming half, because a local reply
+// can be stranded the same way: MergeUseIncoming can move its target out from
+// under their shared root, and the importer checks the row it writes, not where
+// the row came from.
+func clearStrandedReplyTargets(comments map[string]sqlitestore.ArchiveComment) {
+	for id, value := range comments {
+		if value.ReplyToCommentID == nil || replyTargetSharesConversation(value, comments) {
+			continue
+		}
+		value.ReplyToCommentID = nil
+		comments[id] = value
+	}
+}
+
+func replyTargetSharesConversation(value sqlitestore.ArchiveComment, comments map[string]sqlitestore.ArchiveComment) bool {
+	if value.ParentID == nil || *value.ReplyToCommentID == value.ID {
+		return false
+	}
+	target, exists := comments[*value.ReplyToCommentID]
+	if !exists || target.EntryID != value.EntryID {
+		return false
+	}
+	return target.ID == *value.ParentID || (target.ParentID != nil && *target.ParentID == *value.ParentID)
 }
 
 func validateMergeItemChoices(plan MergePlan, selection MergeSelection) (map[string]MergeAction, error) {

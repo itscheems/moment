@@ -379,6 +379,15 @@ describe("public timeline", () => {
   });
 
   it("opens the reply dialog from a timeline bubble without navigating", async () => {
+    // Replying needs an account, so the composer only appears for a signed-in
+    // browser; without this the dialog would offer sign-in instead.
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-reply",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
     const item = post("01K2ABCDEF0123456789ABCDE0", "直接在时间流回复");
     const fetcher = vi.fn(async (input: RequestInfo | URL) =>
       String(input) === "/api/v1/owner/status"

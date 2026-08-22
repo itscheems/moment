@@ -61,10 +61,17 @@ export function DetailPage({
     return () => activeRequest.current?.abort();
   }, [load]);
 
-  const handleCommentCountChange = useCallback((commentCount: number) => {
+  // The thread reports how the total moved, not what it is. It only ever holds
+  // one page of a conversation now, so counting its rows would replace a real
+  // total with the size of whatever happens to be loaded.
+  const handleCommentCountChange = useCallback((delta: number) => {
+    if (delta === 0) return;
     setPost((current) =>
-      current && current.commentCount !== commentCount
-        ? { ...current, commentCount }
+      current
+        ? {
+            ...current,
+            commentCount: Math.max(0, current.commentCount + delta),
+          }
         : current,
     );
   }, []);

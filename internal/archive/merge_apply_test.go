@@ -154,3 +154,185 @@ func TestResolvePortableMergeRejectsIncompleteOrStaleSelection(t *testing.T) {
 		t.Fatal("expected incomplete selection rejection")
 	}
 }
+
+func TestResolvePortableMergeRemapsReplyTargetOfKeptBothComment(t *testing.T) {
+	entryID := "01H00000000000000000000040"
+	rootID := "01H00000000000000000000041"
+	targetID := "01H00000000000000000000042"
+	answerID := "01H00000000000000000000043"
+	authority := func(suffix string) PortableAuthority {
+		return PortableAuthority{
+			Site:    sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"},
+			Entries: []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: "post"}},
+			Comments: []sqlitestore.ArchiveComment{
+				{ID: rootID, EntryID: entryID, ContentMD: "root"},
+				{ID: targetID, EntryID: entryID, ParentID: &rootID, ContentMD: "target " + suffix},
+				{ID: answerID, EntryID: entryID, ParentID: &rootID, ReplyToCommentID: &targetID, ContentMD: "answer " + suffix},
+			},
+		}
+	}
+	local, incoming := authority("local"), authority("incoming")
+	plan, err := ComparePortableAuthorities(MergePlanInput{ArchiveSHA256: repeatHex("e"), BaseGeneration: "generation", ExpiresAt: time.Unix(40, 0).UTC(), Local: local, Incoming: incoming})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := plan.DefaultSelection
+	for index := range selection.Items {
+		if selection.Items[index].ID == targetID || selection.Items[index].ID == answerID {
+			selection.Items[index].Action = MergeKeepBoth
+		}
+	}
+	resolved, err := ResolvePortableMerge(plan, selection, local, incoming, MergeResolveOptions{
+		Clock:   func() time.Time { return time.UnixMilli(1_700_000_000_000) },
+		Entropy: bytes.NewReader([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newTargetID, newAnswerID := resolved.CommentRemap[targetID], resolved.CommentRemap[answerID]
+	if newTargetID == targetID || newAnswerID == answerID || newTargetID == "" || newAnswerID == "" {
+		t.Fatalf("comment remap = %#v", resolved.CommentRemap)
+	}
+	comments := indexComments(resolved.Authority.Comments)
+	if len(comments) != 5 {
+		t.Fatalf("resolved comments = %#v", comments)
+	}
+	// The reissued answer must name the reissued target, not the local original
+	// it no longer sits beside and not nothing at all.
+	if got := comments[newAnswerID].ReplyToCommentID; got == nil || *got != newTargetID {
+		t.Fatalf("reissued answer targets %s, want %s", commentTargetText(got), newTargetID)
+	}
+	// The local copy is not part of the incoming graph and must be untouched.
+	if got := comments[answerID].ReplyToCommentID; got == nil || *got != targetID {
+		t.Fatalf("local answer targets %s, want %s", commentTargetText(got), targetID)
+	}
+	if got := comments[newAnswerID].ParentID; got == nil || *got != rootID {
+		t.Fatalf("reissued answer parent = %s, want the unremapped root %s", commentTargetText(got), rootID)
+	}
+}
+
+func TestResolvePortableMergeDropsReplyTargetLeftBehindBySelection(t *testing.T) {
+	entryID := "01H00000000000000000000050"
+	rootID := "01H00000000000000000000051"
+	targetID := "01H00000000000000000000052"
+	answerID := "01H00000000000000000000053"
+	local := PortableAuthority{Site: sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"}}
+	incoming := PortableAuthority{
+		Site:    sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"},
+		Entries: []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: "post"}},
+		Comments: []sqlitestore.ArchiveComment{
+			{ID: rootID, EntryID: entryID, ContentMD: "root"},
+			{ID: targetID, EntryID: entryID, ParentID: &rootID, ContentMD: "target"},
+			{ID: answerID, EntryID: entryID, ParentID: &rootID, ReplyToCommentID: &targetID, ContentMD: "answer"},
+		},
+	}
+	plan, err := ComparePortableAuthorities(MergePlanInput{ArchiveSHA256: repeatHex("f"), BaseGeneration: "generation", ExpiresAt: time.Unix(50, 0).UTC(), Local: local, Incoming: incoming})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := plan.DefaultSelection
+	for index := range selection.Items {
+		if selection.Items[index].ID == targetID {
+			selection.Items[index].Action = MergeSkip
+		}
+	}
+	resolved, err := ResolvePortableMerge(plan, selection, local, incoming, MergeResolveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comments := indexComments(resolved.Authority.Comments)
+	if len(comments) != 2 {
+		t.Fatalf("resolved comments = %#v", comments)
+	}
+	// The annotation is not structure, so losing its target clears it instead of
+	// dangling at a comment the merge never wrote.
+	if got := comments[answerID].ReplyToCommentID; got != nil {
+		t.Fatalf("answer still targets %s after its target was skipped", *got)
+	}
+}
+
+// commentTargetText renders an optional comment reference for a failure message.
+func commentTargetText(value *string) string {
+	if value == nil {
+		return "<none>"
+	}
+	return *value
+}
+
+// A reissued root and a reply left behind are two independent decisions: the
+// plan validates every item on its own and offers no rule forbidding the pair.
+// The answer then resolves to a parent in the new conversation and a target
+// still in the old one, which is exactly what the reply-target guard added by
+// migration 0021 aborts on — after the reviewer has completed the whole
+// selection flow, and with an untyped error.
+func TestResolvePortableMergeDropsReplyTargetStrandedByAReissuedRoot(t *testing.T) {
+	entryID := "01H00000000000000000000060"
+	rootID := "01H00000000000000000000061"
+	targetID := "01H00000000000000000000062"
+	answerID := "01H00000000000000000000063"
+	authority := func(suffix string) PortableAuthority {
+		return PortableAuthority{
+			Site:    sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"},
+			Entries: []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: "post"}},
+			Comments: []sqlitestore.ArchiveComment{
+				{ID: rootID, EntryID: entryID, ContentMD: "root " + suffix},
+				{ID: targetID, EntryID: entryID, ParentID: &rootID, ContentMD: "target " + suffix},
+				{ID: answerID, EntryID: entryID, ParentID: &rootID, ReplyToCommentID: &targetID, ContentMD: "answer " + suffix},
+			},
+		}
+	}
+	local, incoming := authority("local"), authority("incoming")
+	plan, err := ComparePortableAuthorities(MergePlanInput{ArchiveSHA256: repeatHex("a"), BaseGeneration: "generation", ExpiresAt: time.Unix(60, 0).UTC(), Local: local, Incoming: incoming})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := plan.DefaultSelection
+	for index := range selection.Items {
+		switch selection.Items[index].ID {
+		case rootID:
+			selection.Items[index].Action = MergeKeepBoth
+		case targetID:
+			selection.Items[index].Action = MergeKeepLocal
+		case answerID:
+			selection.Items[index].Action = MergeUseIncoming
+		}
+	}
+	resolved, err := ResolvePortableMerge(plan, selection, local, incoming, MergeResolveOptions{
+		Clock:   func() time.Time { return time.UnixMilli(1_700_000_000_000) },
+		Entropy: bytes.NewReader([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	comments := indexComments(resolved.Authority.Comments)
+	newRootID := resolved.CommentRemap[rootID]
+	if got := comments[answerID].ParentID; newRootID == rootID || got == nil || *got != newRootID {
+		t.Fatalf("answer parent = %s, want the reissued root %s", commentTargetText(got), newRootID)
+	}
+	// The target stayed under the original root, so the annotation has nowhere
+	// left to point and is cleared rather than left for the schema to reject.
+	if got := comments[answerID].ReplyToCommentID; got != nil {
+		t.Fatalf("answer under reissued root %s still targets %s in the old conversation", newRootID, *got)
+	}
+	assertMergeReplyTargetsStayInConversation(t, resolved.Authority.Comments)
+}
+
+// assertMergeReplyTargetsStayInConversation restates the predicate the
+// comments_reply_target insert and update guards enforce, so a resolved graph
+// that the importer would abort on fails here instead.
+func assertMergeReplyTargetsStayInConversation(t *testing.T, values []sqlitestore.ArchiveComment) {
+	t.Helper()
+	comments := indexComments(values)
+	for _, value := range values {
+		if value.ReplyToCommentID == nil {
+			continue
+		}
+		target, exists := comments[*value.ReplyToCommentID]
+		if value.ParentID == nil || !exists || *value.ReplyToCommentID == value.ID || target.EntryID != value.EntryID {
+			t.Fatalf("comment %s targets %s, which the reply-target guard rejects", value.ID, *value.ReplyToCommentID)
+		}
+		if target.ID != *value.ParentID && (target.ParentID == nil || *target.ParentID != *value.ParentID) {
+			t.Fatalf("comment %s under root %s targets %s in another conversation", value.ID, *value.ParentID, target.ID)
+		}
+	}
+}

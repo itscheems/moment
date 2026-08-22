@@ -106,12 +106,6 @@ export interface PublicMediaUsage {
   height: number;
 }
 
-export interface MediaUsageInput {
-  mediaId: string;
-  position: number;
-  altText: string | null;
-}
-
 export interface TimelinePage {
   items: PublicPost[];
   nextCursor: string | null;
@@ -165,26 +159,74 @@ export interface PublicComment {
   postId: string;
   parentId: string | null;
   depth: 0 | 1;
+  /**
+   * `"guest"` is a legacy read-only kind. Nothing produces it any more — the
+   * anonymous write path is gone — but rows carrying it still arrive from
+   * archives exported before commenting required an account, and importing
+   * those archives has to keep working for a product whose promise is that the
+   * data is yours. So the accept set stays wider than the produce set, here and
+   * in every renderer downstream.
+   */
   authorKind: "owner" | "guest";
+  /**
+   * The name stored on the row. `author` is what to render; this is kept so a
+   * client can round trip a comment without losing what was persisted, and it
+   * is the only identity a legacy guest row has.
+   */
   authorName: string;
+  author: PublicCommentAuthor;
+  /**
+   * The comment this one answers, resolved by the server because it can sit
+   * outside the page currently loaded. Null when the comment answers nobody in
+   * particular, and cleared when the comment it named was deleted.
+   */
+  replyTo: PublicCommentReplyTarget | null;
   contentMd: string;
   contentHtml: string;
   createdAt: string;
   media: PublicMediaUsage[];
   location: PublicPostLocation | null;
+  /** The true number of replies under a root, whatever this page carried. */
+  replyCount: number;
+  /** Set when the root has replies beyond the ones already delivered. */
+  repliesNextCursor: string | null;
+}
+
+/**
+ * The identity to show beside a comment.
+ *
+ * A legacy guest row has no account behind it, so everything but displayName is
+ * null and it renders as unlinked plain text with no badge and no preview card.
+ */
+export interface PublicCommentAuthor {
+  userId: string | null;
+  username: string | null;
+  displayName: string;
+  avatarMediaId: string | null;
+  profileUrl: string | null;
+}
+
+export interface PublicCommentReplyTarget {
+  commentId: string;
+  author: PublicCommentAuthor;
 }
 
 export interface CommentThread {
   items: PublicComment[];
   pinnedCommentId: string | null;
+  /**
+   * The pinned root and its inline replies, delivered beside the page rather
+   * than hoisted into it. The stream stays in creation order so a cursor keeps
+   * meaning the same thing when the pin moves; the client renders this above
+   * the stream and skips the duplicate by id.
+   */
+  pinned: PublicComment[];
+  nextCursor: string | null;
 }
 
-export interface CreateGuestCommentInput {
-  authorName: string;
-  contentMd: string;
-  parentId: string | null;
-  website?: string;
-  media?: MediaUsageInput[];
+export interface CommentReplyPage {
+  items: PublicComment[];
+  nextCursor: string | null;
 }
 
 export interface UploadedMedia {
@@ -253,6 +295,27 @@ function hasExactKeys(
   return (
     actual.length === sortedExpected.length &&
     actual.every((value, index) => value === sortedExpected[index])
+  );
+}
+
+/**
+ * Accept a record carrying every required key and nothing beyond the optional
+ * ones.
+ *
+ * Enumerating every legal key combination was fine while one field was
+ * optional and stops scaling the moment a second is: each new optional field
+ * doubles the list, and a combination left out reads as a corrupt response
+ * rather than as the oversight it is.
+ */
+function hasKeys(
+  record: Record<string, unknown>,
+  required: string[],
+  optional: string[] = [],
+): boolean {
+  const allowed = new Set([...required, ...optional]);
+  return (
+    required.every((key) => key in record) &&
+    Object.keys(record).every((key) => allowed.has(key))
   );
 }
 
@@ -488,31 +551,25 @@ export function parseComment(
 ): PublicComment {
   if (!isRecord(value)) throw invalidResponse("comment must be an object");
   if (
-    !hasExactKeys(value, [
-      "id",
-      "post_id",
-      "parent_id",
-      "depth",
-      "author_kind",
-      "author_name",
-      "content_md",
-      "content_html",
-      "created_at",
-      "media",
-    ]) &&
-    !hasExactKeys(value, [
-      "id",
-      "post_id",
-      "parent_id",
-      "depth",
-      "author_kind",
-      "author_name",
-      "content_md",
-      "content_html",
-      "created_at",
-      "media",
-      "location",
-    ])
+    !hasKeys(
+      value,
+      [
+        "id",
+        "post_id",
+        "parent_id",
+        "depth",
+        "author_kind",
+        "author_name",
+        "author",
+        "reply_to",
+        "content_md",
+        "content_html",
+        "created_at",
+        "media",
+        "reply_count",
+      ],
+      ["location", "replies_next_cursor"],
+    )
   ) {
     throw invalidResponse("comment contains an unsupported or missing field");
   }
@@ -537,6 +594,8 @@ export function parseComment(
     throw invalidResponse("comment depth does not match parent_id");
   }
   const authorKind = stringField(value, "author_kind");
+  // Narrowing this to `"owner"` would make every archive taken before accounts
+  // were required undecodable. See PublicComment.authorKind.
   if (authorKind !== "owner" && authorKind !== "guest") {
     throw invalidResponse("comment author_kind is invalid");
   }
@@ -573,6 +632,14 @@ export function parseComment(
   ) {
     throw invalidResponse("response field content_md violates comment limits");
   }
+  const repliesNextCursor =
+    value.replies_next_cursor === undefined
+      ? null
+      : stringField(value, "replies_next_cursor");
+  const replyCount = nonNegativeIntegerField(value, "reply_count");
+  if (parentId !== null && (replyCount !== 0 || repliesNextCursor !== null)) {
+    throw invalidResponse("a reply cannot carry reply pagination");
+  }
   return {
     id,
     postId,
@@ -580,12 +647,73 @@ export function parseComment(
     depth: depth as 0 | 1,
     authorKind,
     authorName,
+    author: parseCommentAuthor(value.author),
+    replyTo: parseCommentReplyTarget(value.reply_to, id),
     contentMd,
     contentHtml: safeCommentHtmlField(value, "content_html"),
     createdAt: instantField(value, "created_at"),
     media,
     location,
+    replyCount,
+    repliesNextCursor,
   };
+}
+
+/**
+ * An account either has all of its reference fields or none of them. Anything
+ * between the two would render a link that goes nowhere.
+ */
+function parseCommentAuthor(value: unknown): PublicCommentAuthor {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "user_id",
+      "username",
+      "display_name",
+      "avatar_media_id",
+      "profile_url",
+    ])
+  ) {
+    throw invalidResponse("comment author is invalid");
+  }
+  const userId = nullableStringField(value, "user_id");
+  const username = nullableStringField(value, "username");
+  const profileUrl = nullableStringField(value, "profile_url");
+  const displayName = stringField(value, "display_name");
+  if (!displayName.trim()) {
+    throw invalidResponse("comment author display_name cannot be empty");
+  }
+  const linked = [userId, username, profileUrl].filter(
+    (field) => field !== null,
+  ).length;
+  if (linked !== 0 && linked !== 3) {
+    throw invalidResponse("comment author identity is partially resolved");
+  }
+  if (username !== null && profileUrl !== `/@${username}`) {
+    throw invalidResponse("comment author profile_url does not match username");
+  }
+  return {
+    userId,
+    username,
+    displayName,
+    avatarMediaId: nullableStringField(value, "avatar_media_id"),
+    profileUrl,
+  };
+}
+
+function parseCommentReplyTarget(
+  value: unknown,
+  commentId: string,
+): PublicCommentReplyTarget | null {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value) || !hasExactKeys(value, ["comment_id", "author"])) {
+    throw invalidResponse("comment reply target is invalid");
+  }
+  const targetId = stringField(value, "comment_id");
+  if (!isCanonicalUlid(targetId) || targetId === commentId) {
+    throw invalidResponse("comment reply target is not another comment");
+  }
+  return { commentId: targetId, author: parseCommentAuthor(value.author) };
 }
 
 function parseMediaUsages(
@@ -636,14 +764,18 @@ function commentOrder(left: PublicComment, right: PublicComment): number {
   return time || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0);
 }
 
-function parseCommentThread(value: unknown, postId: string): CommentThread {
+function parseCommentThread(
+  value: unknown,
+  postId: string,
+  nextCursor: string | null,
+): CommentThread {
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ["items", "pinned_comment_id"]) ||
+    !hasKeys(value, ["items", "pinned_comment_id", "pinned"]) ||
     !Array.isArray(value.items)
   ) {
     throw invalidResponse(
-      "comment thread must contain items and pinned_comment_id",
+      "comment thread must contain items, pinned_comment_id and pinned",
     );
   }
   const pinnedCommentId = nullableStringField(value, "pinned_comment_id");
@@ -677,13 +809,59 @@ function parseCommentThread(value: unknown, postId: string): CommentThread {
       previousReply = comment;
     }
   }
-  if (pinnedCommentId !== null) {
-    const pinned = items.find((comment) => comment.id === pinnedCommentId);
-    if (!pinned || pinned.parentId !== null) {
+  // The pinned root is no longer required to appear in items. Under pagination
+  // it legitimately may not: it can sit many pages further down the stream,
+  // which is exactly why it travels separately.
+  for (const comment of items) {
+    if (comment.id === pinnedCommentId && comment.parentId !== null) {
       throw invalidResponse("pinned_comment_id must identify a root comment");
     }
   }
-  return { items, pinnedCommentId };
+  const pinned = Array.isArray(value.pinned)
+    ? value.pinned.map((item) => parseComment(item, postId))
+    : [];
+  if (value.pinned !== null && !Array.isArray(value.pinned)) {
+    throw invalidResponse("pinned conversation must be an array or null");
+  }
+  if (pinned.length > 0) {
+    if (
+      pinned[0].id !== pinnedCommentId ||
+      pinned[0].parentId !== null ||
+      pinned.slice(1).some((reply) => reply.parentId !== pinned[0].id)
+    ) {
+      throw invalidResponse(
+        "pinned conversation does not lead with the pinned root",
+      );
+    }
+  }
+  return { items, pinnedCommentId, pinned, nextCursor };
+}
+
+function parseCommentReplyPage(
+  value: unknown,
+  postId: string,
+  rootId: string,
+  nextCursor: string | null,
+): CommentReplyPage {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["items"]) ||
+    !Array.isArray(value.items)
+  ) {
+    throw invalidResponse("comment reply page must contain items");
+  }
+  const items = value.items.map((item) => parseComment(item, postId));
+  let previous: PublicComment | null = null;
+  for (const comment of items) {
+    if (comment.parentId !== rootId) {
+      throw invalidResponse("comment reply page mixes conversations");
+    }
+    if (previous && commentOrder(previous, comment) >= 0) {
+      throw invalidResponse("comment replies are not in stable order");
+    }
+    previous = comment;
+  }
+  return { items, nextCursor };
 }
 
 export function parsePost(value: unknown): PublicPost {
@@ -1470,65 +1648,45 @@ export class PublicApi {
     return parsePost(data);
   }
 
-  async comments(postId: string, signal?: AbortSignal): Promise<CommentThread> {
+  async comments(
+    postId: string,
+    options: { cursor?: string | null; signal?: AbortSignal } = {},
+  ): Promise<CommentThread> {
+    const query = options.cursor
+      ? `?cursor=${encodeURIComponent(options.cursor)}`
+      : "";
     const response = await this.fetcher(
-      `/api/v1/posts/${encodeURIComponent(postId)}/comments`,
-      { headers: { Accept: "application/json" }, signal },
+      `/api/v1/posts/${encodeURIComponent(postId)}/comments${query}`,
+      { headers: { Accept: "application/json" }, signal: options.signal },
     );
-    const { data } = await decodeCommentResponse(response, []);
+    const { data, meta } = await decodeCommentResponse(response, [
+      "next_cursor",
+    ]);
     if (response.status !== 200) {
       throw invalidResponse("comment thread must return HTTP 200");
     }
-    return parseCommentThread(data, postId);
+    return parseCommentThread(data, postId, nullableCursor(meta));
   }
 
-  async createGuestComment(
+  async commentReplies(
     postId: string,
-    input: CreateGuestCommentInput,
-    idempotencyKey: string,
-  ): Promise<CreatedComment> {
+    rootId: string,
+    options: { cursor?: string | null; signal?: AbortSignal } = {},
+  ): Promise<CommentReplyPage> {
+    const query = options.cursor
+      ? `?cursor=${encodeURIComponent(options.cursor)}`
+      : "";
     const response = await this.fetcher(
-      `/api/v1/posts/${encodeURIComponent(postId)}/comments`,
-      {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          "Idempotency-Key": idempotencyKey,
-        },
-        body: JSON.stringify({
-          author_name: input.authorName,
-          content_md: input.contentMd,
-          parent_id: input.parentId,
-          website: input.website ?? "",
-          media: (input.media ?? []).map((usage, position) => ({
-            media_id: usage.mediaId,
-            position,
-            alt_text: usage.altText,
-          })),
-        }),
-      },
+      `/api/v1/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(rootId)}/replies${query}`,
+      { headers: { Accept: "application/json" }, signal: options.signal },
     );
-    return decodeCreatedComment(response, postId, {
-      parentId: input.parentId,
-      authorKind: "guest",
-      authorName: input.authorName.trim(),
-    });
-  }
-
-  async uploadCommentMedia(
-    postId: string,
-    file: File,
-    onProgress: (percent: number) => void = () => undefined,
-    signal?: AbortSignal,
-  ): Promise<UploadedMedia> {
-    return uploadMediaXHR(
-      `/api/v1/posts/${encodeURIComponent(postId)}/comment-media`,
-      file,
-      onProgress,
-      signal,
-    );
+    const { data, meta } = await decodeCommentResponse(response, [
+      "next_cursor",
+    ]);
+    if (response.status !== 200) {
+      throw invalidResponse("comment replies must return HTTP 200");
+    }
+    return parseCommentReplyPage(data, postId, rootId, nullableCursor(meta));
   }
 }
 
@@ -1746,7 +1904,6 @@ export async function decodeCreatedComment(
   expected?: {
     parentId: string | null;
     authorKind: PublicComment["authorKind"];
-    authorName?: string;
   },
 ): Promise<CreatedComment> {
   const { data, meta } = await decodeCommentResponse(response, ["replayed"]);
@@ -1764,9 +1921,7 @@ export async function decodeCreatedComment(
   if (
     expected &&
     (comment.parentId !== expected.parentId ||
-      comment.authorKind !== expected.authorKind ||
-      (expected.authorName !== undefined &&
-        comment.authorName !== expected.authorName))
+      comment.authorKind !== expected.authorKind)
   ) {
     throw invalidResponse(
       "created comment does not match the submitted identity or parent",

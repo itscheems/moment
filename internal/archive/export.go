@@ -256,8 +256,9 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			}
 			return write(commentRecord{
 				ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
-				AuthorKind: value.AuthorKind, AuthorName: value.AuthorName,
-				ContentMD: value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS), Media: media,
+				AuthorKind: value.AuthorKind, AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
+				ReplyToCommentID: value.ReplyToCommentID,
+				ContentMD:        value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS), Media: media,
 				Location: portableLocation(value.Location), Pinned: value.Pinned,
 			})
 		})
@@ -582,17 +583,23 @@ type locationRecord struct {
 	CoordinateSystem *string `json:"coordinate_system"`
 }
 
+// commentRecord is the v1 wire shape of one comment. Fields added after v1
+// shipped are omitempty and never required on read, because the format version
+// is compared with strict equality and an archive written before the field
+// existed must still import.
 type commentRecord struct {
-	ID         string          `json:"id"`
-	EntryID    string          `json:"entry_id"`
-	ParentID   *string         `json:"parent_id"`
-	AuthorKind string          `json:"author_kind"`
-	AuthorName string          `json:"author_name"`
-	ContentMD  string          `json:"content_md"`
-	CreatedAt  string          `json:"created_at"`
-	Media      []usageRecord   `json:"media"`
-	Location   *locationRecord `json:"location,omitempty"`
-	Pinned     bool            `json:"pinned,omitempty"`
+	ID               string          `json:"id"`
+	EntryID          string          `json:"entry_id"`
+	ParentID         *string         `json:"parent_id"`
+	AuthorKind       string          `json:"author_kind"`
+	AuthorName       string          `json:"author_name"`
+	AuthorUserID     *string         `json:"author_user_id,omitempty"`
+	ReplyToCommentID *string         `json:"reply_to_comment_id,omitempty"`
+	ContentMD        string          `json:"content_md"`
+	CreatedAt        string          `json:"created_at"`
+	Media            []usageRecord   `json:"media"`
+	Location         *locationRecord `json:"location,omitempty"`
+	Pinned           bool            `json:"pinned,omitempty"`
 }
 
 type mediaRecord struct {
@@ -952,6 +959,14 @@ func validateArchiveComment(value sqlitestore.ArchiveComment) error {
 		}
 		parentID = &parsed
 	}
+	var replyToID *domain.ID
+	if value.ReplyToCommentID != nil {
+		parsed, err := domain.ParseID(*value.ReplyToCommentID)
+		if err != nil {
+			return err
+		}
+		replyToID = &parsed
+	}
 	if value.CreatedAtMS <= 0 {
 		return errors.New("comment timestamp must be positive")
 	}
@@ -961,7 +976,8 @@ func validateArchiveComment(value sqlitestore.ArchiveComment) error {
 	if err := (domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
 		AuthorKind: domain.CommentAuthorKind(value.AuthorKind), AuthorName: value.AuthorName,
-		ContentMD: value.ContentMD, Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
+		AuthorUserID: value.AuthorUserID, ReplyToCommentID: replyToID, ContentMD: value.ContentMD,
+		Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
 	}).Validate(); err != nil {
 		return err
 	}
@@ -1509,6 +1525,9 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		parent  *string
 	}
 	commentIDs := make(map[string]commentReference)
+	// A reply may answer a sibling that appears later in canonical order, so
+	// the targets are collected here and resolved once every ID is known.
+	replyTargets := make(map[string]string)
 	pinnedEntries := make(map[string]struct{})
 	var previousComment *commentOrder
 	comments, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
@@ -1561,17 +1580,32 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveComment(sqlitestore.ArchiveComment{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
-			AuthorKind: value.AuthorKind, AuthorName: value.AuthorName,
-			ContentMD: value.ContentMD, CreatedAtMS: created.UnixMilli(), Media: usages, Location: location, Pinned: value.Pinned,
+			AuthorKind: value.AuthorKind, AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
+			ReplyToCommentID: value.ReplyToCommentID, ContentMD: value.ContentMD,
+			CreatedAtMS: created.UnixMilli(), Media: usages, Location: location, Pinned: value.Pinned,
 		}); err != nil {
 			return err
 		}
 		commentIDs[value.ID] = commentReference{entryID: value.EntryID, parent: value.ParentID}
+		if value.ReplyToCommentID != nil {
+			replyTargets[value.ID] = *value.ReplyToCommentID
+		}
 		previousComment = &order
 		return nil
 	})
 	if err != nil {
 		return err
+	}
+	// The same rule the database enforces: a reply may only answer its own root
+	// or another reply under that root. Checking it here turns a hostile archive
+	// into a rejection rather than a constraint failure during staging.
+	for id, targetID := range replyTargets {
+		source := commentIDs[id]
+		target, exists := commentIDs[targetID]
+		if !exists || source.parent == nil || target.entryID != source.entryID ||
+			(targetID != *source.parent && (target.parent == nil || *target.parent != *source.parent)) {
+			return fmt.Errorf("comment %s answers comment %s outside its conversation", id, targetID)
+		}
 	}
 	expectedMedia := make(map[string]struct{}, len(mediaMembers))
 	mediaIDs := make(map[string]struct{})
