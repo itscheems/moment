@@ -49,12 +49,28 @@ function providersEnvelope(providers: Array<{ name: string; label: string }>) {
   });
 }
 
+function signedOutEnvelope() {
+  return {
+    error: {
+      code: "UNAUTHORIZED",
+      message: "auth required",
+      details: {},
+      request_id: "req_auth",
+    },
+  };
+}
+
 function installApi(
   providers: Array<{ name: string; label: string }> | "unconfigured",
 ) {
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url === "/api/v1/owner/status") return ownerStatus();
+    // Every page in this suite is a signed-out one, and the account session is
+    // what now says so.
+    if (url === "/api/v1/account/session") {
+      return json(signedOutEnvelope(), 401);
+    }
     if (url === "/api/v1/owner/login-options") {
       return json({
         data: { password_enabled: true },

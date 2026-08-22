@@ -16,6 +16,28 @@ import { ProfileEditor } from "./ProfileEditor";
 const sessionKey = "moment.owner.session.v1";
 const mediaId = "01ARZ3NDEKTSV4RRFFQ69G5FAY";
 
+function accountSessionEnvelope() {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-from-cookie",
+      account: {
+        user_id: "00000000000000000000000000000000",
+        username: "owner",
+        display_name: "Moment",
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "owner",
+        profile_url: "/owner",
+        status: "active",
+        username_chosen: true,
+      },
+    },
+    meta: { request_id: "req_account_session" },
+  };
+}
+
 const site: SiteIdentity = {
   ownerId: "00000000000000000000000000000000",
   username: "owner",
@@ -87,6 +109,11 @@ describe("profile editor", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        // The editor's media controls belong to the site owner, and it is the
+        // account session that says who is holding this one.
+        if (url === "/api/v1/account/session") {
+          return json(accountSessionEnvelope());
+        }
         if (url === "/api/v1/owner/status") {
           return json({
             data: {
@@ -157,6 +184,9 @@ describe("profile editor", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input) === "/api/v1/account/session") {
+          return json(accountSessionEnvelope());
+        }
         if (String(input) === "/api/v1/owner/status") {
           return json({
             data: {

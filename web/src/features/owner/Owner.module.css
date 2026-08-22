@@ -1353,3 +1353,54 @@
   color: var(--text-secondary);
   font-size: 0.8125rem;
 }
+
+.usernameForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+}
+
+.usernameForm label {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.usernameForm small {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.usernameField {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline-start: var(--space-3);
+  background: var(--surface);
+}
+
+.usernameField > span {
+  color: var(--text-tertiary);
+}
+
+.usernameField input {
+  min-block-size: var(--target-size);
+  flex: 1;
+  border: 0;
+  padding-inline-end: var(--space-3);
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+.usernameField input:focus {
+  outline: none;
+}
+
+.usernameField:focus-within {
+  border-color: var(--accent);
+}

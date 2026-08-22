@@ -25,7 +25,7 @@ import {
   ShareMenu,
 } from "../../components/TimelineInteractions";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
-import { useOwner } from "../owner/OwnerProvider";
+import { ownsSite, useOwner } from "../owner/OwnerProvider";
 import { listenForOwnerPosts, type OwnerPostEvent } from "../owner/postEvents";
 import { PostPresentation } from "../posts/PostPresentation";
 import { formatMomentDate } from "../posts/dates";
@@ -90,6 +90,9 @@ export function ProfilePage({
   onSiteSaved: (site: SiteIdentity) => void;
 }) {
   const owner = useOwner();
+  // This is the site owner's own page, so the editor and the per-post actions
+  // belong to them alone. A signed-in member reads it like anyone else.
+  const ownerView = owner.state === "owner" && ownsSite(owner.account);
   const navigation = useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
   const [pinnedPost, setPinnedPost] = useState<PublicPost | null>(null);
@@ -323,7 +326,7 @@ export function ProfilePage({
               </button>
             }
           />
-          {owner.state === "owner" ? (
+          {ownerView ? (
             <div className={styles.profileEditorSlot}>
               <ProfileEditor onSaved={onSiteSaved} site={site} />
             </div>
@@ -378,7 +381,7 @@ export function ProfilePage({
                 onReply={(event) => openReply(pinnedPost, event)}
                 onReposted={handleReposted}
                 onSiteChanged={onSiteSaved}
-                owner={owner.state === "owner"}
+                owner={ownerView}
                 pinned
                 post={pinnedPost}
                 site={site}
@@ -397,7 +400,7 @@ export function ProfilePage({
                   onReply={(event) => openReply(post, event)}
                   onReposted={handleReposted}
                   onSiteChanged={onSiteSaved}
-                  owner={owner.state === "owner"}
+                  owner={ownerView}
                   post={post}
                   site={site}
                   timelineDensity
@@ -431,7 +434,7 @@ export function ProfilePage({
             ) : null}
           </div>
         ) : (
-          <PublicEmpty context="profile" owner={owner.state === "owner"} />
+          <PublicEmpty context="profile" owner={ownerView} />
         )
       ) : null}
       {replyDialog}

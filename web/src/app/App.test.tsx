@@ -112,15 +112,57 @@ function preauthenticate() {
   );
 }
 
+function accountSessionEnvelope(username = "owner") {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-from-cookie",
+      account: {
+        user_id: "00000000000000000000000000000000",
+        username,
+        display_name: "乔乔",
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "owner",
+        profile_url: `/${username}`,
+        status: "active",
+        username_chosen: true,
+      },
+    },
+    meta: { request_id: "req_account_session" },
+  };
+}
+
+function signedOutEnvelope() {
+  return {
+    error: {
+      code: "UNAUTHORIZED",
+      message: "auth required",
+      details: {},
+      request_id: "req_auth",
+    },
+  };
+}
+
 function installApi(
   handler: (url: string) => Promise<Response> = async (url) => {
     if (url === "/api/v1/site") return json(siteEnvelope);
     return json(timelineEnvelope());
   },
 ) {
-  const fetcher = vi.fn(async (input: RequestInfo | URL) =>
-    handler(String(input)),
-  );
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    // Restoring a signed-in browser goes through the account session now, so
+    // every route in this suite has to answer it. A stored session stands in
+    // for the cookie the server would be reading.
+    if (url === "/api/v1/account/session") {
+      return window.sessionStorage.getItem("moment.owner.session.v1")
+        ? json(accountSessionEnvelope())
+        : json(signedOutEnvelope(), 401);
+    }
+    return handler(url);
+  });
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }

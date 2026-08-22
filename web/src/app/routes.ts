@@ -72,12 +72,14 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     ownerOnly: true,
     match: (pathname) => /^\/owner\/m\/[^/]+\/edit\/?$/.test(pathname),
   },
+  // Not owner-only, despite the path. Login methods and active sessions belong
+  // to whoever is signed in, and this is the page that holds them; the sections
+  // that act on the site rather than on the account hide themselves instead.
   {
     id: "owner-settings",
     title: "设置",
     eyebrow: "",
     href: "/owner/settings",
-    ownerOnly: true,
     match: (pathname) =>
       pathname === "/owner/settings" || pathname === "/owner/settings/",
   },

@@ -10,7 +10,7 @@ import { Icon } from "../../components/icons";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { fileValidation } from "../media/mediaState";
-import { useOwner } from "../owner/OwnerProvider";
+import { ownsSite, useOwner } from "../owner/OwnerProvider";
 import styles from "./ProfileEditor.module.css";
 
 type AssetKind = "avatar" | "cover";
@@ -27,7 +27,12 @@ export function ProfileEditor({
   site: SiteIdentity;
   onSaved: (site: SiteIdentity) => void;
 }) {
-  const { api, session, expireIfInvalidSession } = useOwner();
+  const { account, api, session, expireIfInvalidSession } = useOwner();
+  // Uploading media is an owner route. A member can still edit the words on
+  // their profile, and their picture stays whatever the provider handed over
+  // at first sign-in -- so the camera buttons are hidden rather than left to
+  // fail. A known first-version boundary, not an oversight.
+  const canUploadMedia = ownsSite(account);
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState(site.title);
   const [displayName, setDisplayName] = useState(site.displayName);
@@ -278,45 +283,47 @@ export function ProfileEditor({
                       />
                     )}
                     <div className={styles.coverActions}>
-                      <Menu.Root>
-                        <Menu.Trigger
-                          aria-label="编辑封面"
-                          ref={coverMenuTrigger}
-                          title="编辑封面"
-                          type="button"
-                        >
-                          <Icon name="camera" />
-                        </Menu.Trigger>
-                        <Menu.Portal>
-                          <Menu.Positioner
-                            align="end"
-                            className={styles.mediaMenuPositioner}
-                            side="bottom"
-                            sideOffset={6}
+                      {canUploadMedia ? (
+                        <Menu.Root>
+                          <Menu.Trigger
+                            aria-label="编辑封面"
+                            ref={coverMenuTrigger}
+                            title="编辑封面"
+                            type="button"
                           >
-                            <Menu.Popup
-                              className={styles.mediaMenu}
-                              finalFocus={coverMenuTrigger}
+                            <Icon name="camera" />
+                          </Menu.Trigger>
+                          <Menu.Portal>
+                            <Menu.Positioner
+                              align="end"
+                              className={styles.mediaMenuPositioner}
+                              side="bottom"
+                              sideOffset={6}
                             >
-                              <Menu.Item
-                                className={styles.mediaMenuItem}
-                                onClick={() => coverInput.current?.click()}
+                              <Menu.Popup
+                                className={styles.mediaMenu}
+                                finalFocus={coverMenuTrigger}
                               >
-                                <Icon name="camera" />
-                                <span>更换封面</span>
-                              </Menu.Item>
-                              <Menu.Item
-                                className={`${styles.mediaMenuItem} ${styles.mediaMenuDanger}`}
-                                disabled={!coverPreview}
-                                onClick={() => removeAsset("cover")}
-                              >
-                                <Icon name="delete" />
-                                <span>移除封面</span>
-                              </Menu.Item>
-                            </Menu.Popup>
-                          </Menu.Positioner>
-                        </Menu.Portal>
-                      </Menu.Root>
+                                <Menu.Item
+                                  className={styles.mediaMenuItem}
+                                  onClick={() => coverInput.current?.click()}
+                                >
+                                  <Icon name="camera" />
+                                  <span>更换封面</span>
+                                </Menu.Item>
+                                <Menu.Item
+                                  className={`${styles.mediaMenuItem} ${styles.mediaMenuDanger}`}
+                                  disabled={!coverPreview}
+                                  onClick={() => removeAsset("cover")}
+                                >
+                                  <Icon name="delete" />
+                                  <span>移除封面</span>
+                                </Menu.Item>
+                              </Menu.Popup>
+                            </Menu.Positioner>
+                          </Menu.Portal>
+                        </Menu.Root>
+                      ) : null}
                     </div>
                     {coverState === "uploading" ? (
                       <small className={styles.coverUploadStatus}>
@@ -334,46 +341,48 @@ export function ProfileEditor({
                           <SiteAvatar site={{ ...site, avatarMediaId: null }} />
                         )}
                       </div>
-                      <Menu.Root>
-                        <Menu.Trigger
-                          aria-label="编辑头像"
-                          className={styles.avatarChangeButton}
-                          ref={avatarMenuTrigger}
-                          title="编辑头像"
-                          type="button"
-                        >
-                          <Icon name="camera" />
-                        </Menu.Trigger>
-                        <Menu.Portal>
-                          <Menu.Positioner
-                            align="start"
-                            className={styles.mediaMenuPositioner}
-                            side="bottom"
-                            sideOffset={6}
+                      {canUploadMedia ? (
+                        <Menu.Root>
+                          <Menu.Trigger
+                            aria-label="编辑头像"
+                            className={styles.avatarChangeButton}
+                            ref={avatarMenuTrigger}
+                            title="编辑头像"
+                            type="button"
                           >
-                            <Menu.Popup
-                              className={styles.mediaMenu}
-                              finalFocus={avatarMenuTrigger}
+                            <Icon name="camera" />
+                          </Menu.Trigger>
+                          <Menu.Portal>
+                            <Menu.Positioner
+                              align="start"
+                              className={styles.mediaMenuPositioner}
+                              side="bottom"
+                              sideOffset={6}
                             >
-                              <Menu.Item
-                                className={styles.mediaMenuItem}
-                                onClick={() => avatarInput.current?.click()}
+                              <Menu.Popup
+                                className={styles.mediaMenu}
+                                finalFocus={avatarMenuTrigger}
                               >
-                                <Icon name="camera" />
-                                <span>更换头像</span>
-                              </Menu.Item>
-                              <Menu.Item
-                                className={`${styles.mediaMenuItem} ${styles.mediaMenuDanger}`}
-                                disabled={!avatarPreview}
-                                onClick={() => removeAsset("avatar")}
-                              >
-                                <Icon name="delete" />
-                                <span>移除头像</span>
-                              </Menu.Item>
-                            </Menu.Popup>
-                          </Menu.Positioner>
-                        </Menu.Portal>
-                      </Menu.Root>
+                                <Menu.Item
+                                  className={styles.mediaMenuItem}
+                                  onClick={() => avatarInput.current?.click()}
+                                >
+                                  <Icon name="camera" />
+                                  <span>更换头像</span>
+                                </Menu.Item>
+                                <Menu.Item
+                                  className={`${styles.mediaMenuItem} ${styles.mediaMenuDanger}`}
+                                  disabled={!avatarPreview}
+                                  onClick={() => removeAsset("avatar")}
+                                >
+                                  <Icon name="delete" />
+                                  <span>移除头像</span>
+                                </Menu.Item>
+                              </Menu.Popup>
+                            </Menu.Positioner>
+                          </Menu.Portal>
+                        </Menu.Root>
+                      ) : null}
                     </div>
                     <div className={styles.identityCopy}>
                       <strong>{displayName.trim() || "未命名"}</strong>
@@ -385,22 +394,26 @@ export function ProfileEditor({
                   </div>
                 </section>
 
-                <input
-                  accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
-                  className={styles.fileInput}
-                  data-profile-media-input="cover"
-                  onChange={(event) => pick("cover", event)}
-                  ref={coverInput}
-                  type="file"
-                />
-                <input
-                  accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
-                  className={styles.fileInput}
-                  data-profile-media-input="avatar"
-                  onChange={(event) => pick("avatar", event)}
-                  ref={avatarInput}
-                  type="file"
-                />
+                {canUploadMedia ? (
+                  <>
+                    <input
+                      accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
+                      className={styles.fileInput}
+                      data-profile-media-input="cover"
+                      onChange={(event) => pick("cover", event)}
+                      ref={coverInput}
+                      type="file"
+                    />
+                    <input
+                      accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif"
+                      className={styles.fileInput}
+                      data-profile-media-input="avatar"
+                      onChange={(event) => pick("avatar", event)}
+                      ref={avatarInput}
+                      type="file"
+                    />
+                  </>
+                ) : null}
 
                 <section aria-label="个人资料字段" className={styles.fields}>
                   <label>

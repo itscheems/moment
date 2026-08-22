@@ -1453,6 +1453,122 @@ export function parseSiteIdentity(
   };
 }
 
+export type AccountRole = "owner" | "member";
+export type AccountStatus = "pending" | "active" | "suspended";
+
+/**
+ * One person on this instance.
+ *
+ * `status` and `usernameChosen` are moderation and onboarding facts that only
+ * the account itself and the site owner are allowed to read, so the public
+ * projection leaves them out. Null therefore means "this endpoint does not
+ * disclose it", never "the server does not know".
+ */
+export interface Account {
+  userId: string;
+  username: string;
+  displayName: string;
+  bio: string;
+  avatarMediaId: string | null;
+  coverMediaId: string | null;
+  role: AccountRole;
+  profileUrl: string;
+  status: AccountStatus | null;
+  usernameChosen: boolean | null;
+}
+
+const accountRoles = new Set(["owner", "member"]);
+const accountStatuses = new Set(["pending", "active", "suspended"]);
+
+export function parseAccount(value: unknown): Account {
+  if (!isRecord(value)) throw invalidResponse("account must be an object");
+  if (
+    !hasKeys(
+      value,
+      [
+        "user_id",
+        "username",
+        "display_name",
+        "bio",
+        "avatar_media_id",
+        "cover_media_id",
+        "role",
+        "profile_url",
+      ],
+      ["status", "username_chosen"],
+    )
+  ) {
+    throw invalidResponse("account contains unsupported fields");
+  }
+  const userId = stringField(value, "user_id");
+  const username = stringField(value, "username");
+  const displayName = stringField(value, "display_name");
+  const role = stringField(value, "role");
+  const profileUrl = stringField(value, "profile_url");
+  if (!/^[0-9a-f]{32}$/.test(userId)) {
+    throw invalidResponse("response field user_id must be an account ID");
+  }
+  if (!/^[a-z][a-z0-9_]{2,29}$/.test(username)) {
+    throw invalidResponse(
+      "response field username must be a canonical username",
+    );
+  }
+  if (!displayName.trim() || Array.from(displayName).length > 80) {
+    throw invalidResponse("response field display_name must be a display name");
+  }
+  if (!accountRoles.has(role)) {
+    throw invalidResponse("response field role must be an account role");
+  }
+  // The handle is the profile URL. Keeping that identity checked here is what
+  // lets a renderer link an account without re-deriving the path itself.
+  if (profileUrl !== `/${username}`) {
+    throw invalidResponse("response field profile_url must address the handle");
+  }
+  const avatarMediaId = nullableStringField(value, "avatar_media_id");
+  if (avatarMediaId !== null && !isCanonicalUlid(avatarMediaId)) {
+    throw invalidResponse("response field avatar_media_id must be a media ID");
+  }
+  const coverMediaId = nullableStringField(value, "cover_media_id");
+  if (coverMediaId !== null && !isCanonicalUlid(coverMediaId)) {
+    throw invalidResponse("response field cover_media_id must be a media ID");
+  }
+  const status =
+    value.status === undefined ? null : stringField(value, "status");
+  if (status !== null && !accountStatuses.has(status)) {
+    throw invalidResponse("response field status must be an account status");
+  }
+  return {
+    userId,
+    username,
+    displayName,
+    bio: stringField(value, "bio"),
+    avatarMediaId,
+    coverMediaId,
+    role: role as AccountRole,
+    profileUrl,
+    status: status as AccountStatus | null,
+    usernameChosen:
+      value.username_chosen === undefined
+        ? null
+        : booleanField(value, "username_chosen"),
+  };
+}
+
+/**
+ * The same account, read from an endpoint that is allowed to disclose the
+ * private fields: the account's own session, and the owner's roster.
+ *
+ * Only the public projection may leave `status` and `usernameChosen` out, so
+ * their absence anywhere else is a malformed response rather than discretion.
+ */
+export function parsePrivateAccount(value: unknown): Account {
+  const account = parseAccount(value);
+  if (account.status === null || account.usernameChosen === null) {
+    throw invalidResponse("account view must disclose status and onboarding");
+  }
+  return account;
+}
+
 export class PublicApi {
   private readonly fetcher: Fetcher;
 
@@ -1496,6 +1612,22 @@ export class PublicApi {
       instanceId ?? null,
       instanceInitializedAt ?? null,
     );
+  }
+
+  /**
+   * One account by handle.
+   *
+   * Public on purpose: a signed-out reader sees the same profile a signed-in
+   * one does. An account that is not active reads as absent rather than as
+   * hidden, so the server answers ACCOUNT_NOT_FOUND for both.
+   */
+  async user(username: string, signal?: AbortSignal): Promise<Account> {
+    const response = await this.fetcher(
+      `/api/v1/users/${encodeURIComponent(username)}`,
+      { headers: { Accept: "application/json" }, signal },
+    );
+    const { data } = await decodeResponse(response);
+    return parseAccount(data);
   }
 
   async mentionSuggestions(

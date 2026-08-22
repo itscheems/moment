@@ -3,19 +3,15 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { OAuthLoginProvider } from "../../api/owner";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
-import { Icon, type IconName } from "../../components/icons";
-import { useOwner } from "./OwnerProvider";
+import { Icon } from "../../components/icons";
+import { ownsSite, useOwner } from "./OwnerProvider";
+import { oauthStartUrl, PROVIDER_ICONS } from "./providers";
 import styles from "./Owner.module.css";
 
 // GitHub sits above Google on purpose: a meaningful share of this instance's
 // visitors are in mainland China, where Google is unreachable, so the option
 // that can actually complete has to be the first one they see.
 const PROVIDER_ORDER = ["github", "google"];
-
-const PROVIDER_ICONS: Record<string, IconName> = {
-  github: "github",
-  google: "google",
-};
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   OAUTH_PROVIDER_UNAVAILABLE:
@@ -25,6 +21,9 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   ACCOUNT_SUSPENDED: "这个账号已被停用。",
   REGISTRATION_CLOSED: "本站当前不接受新注册。",
   OAUTH_EXCHANGE_FAILED: "与登录服务通信失败，请重试。",
+  // Binding, not signing in: this comes back when the provider account is
+  // already attached to a different account on this instance.
+  IDENTITY_ALREADY_LINKED: "这个账号已经绑定到本站的另一个账户了。",
 };
 
 function safeReturnPath(value: string | null): string {
@@ -71,7 +70,11 @@ export function OwnerLogin({
   embedded?: boolean;
 }) {
   const { navigate } = useNavigation();
-  const { api, state, login, logout, retryStatus } = useOwner();
+  const { account, api, state, login, logout, retryStatus } = useOwner();
+  // This panel stands in for pages only the site owner may open, so a member
+  // reaching it is signed in and simply in the wrong place. Telling them they
+  // hold an owner session would be a plain lie.
+  const siteOwner = ownsSite(account);
   const [method, setMethod] = useState<"password" | "token">("password");
   const [credential, setCredential] = useState("");
   const [showCredential, setShowCredential] = useState(false);
@@ -172,9 +175,7 @@ export function OwnerLogin({
     );
     // A full page load, not a fetch: the provider owns the next screen and the
     // callback has to land back on this origin with its own cookies.
-    window.location.assign(
-      `/api/v1/login/oauth/${encodeURIComponent(name)}/start?return=${encodeURIComponent(returnPath)}`,
-    );
+    window.location.assign(oauthStartUrl(name, returnPath));
   };
 
   const endSession = async () => {
@@ -203,9 +204,13 @@ export function OwnerLogin({
   if (state === "owner")
     return (
       <section className={styles.loginGate}>
-        <p className={styles.eyebrow}>所有者会话</p>
-        <h2>可以继续记录</h2>
-        <p>此浏览器已通过身份验证。退出会同时清除当前实例的本地草稿。</p>
+        <p className={styles.eyebrow}>{siteOwner ? "所有者会话" : "已登录"}</p>
+        <h2>{siteOwner ? "可以继续记录" : "这一页只有站长能打开"}</h2>
+        <p>
+          {siteOwner
+            ? "此浏览器已通过身份验证。退出会同时清除当前实例的本地草稿。"
+            : "你的账户没有问题，只是发布和站点设置属于站长。可以回到时间流继续阅读和留言。"}
+        </p>
         {error ? <p role="alert">{error}</p> : null}
         <button
           className={styles.secondaryButton}
@@ -213,7 +218,7 @@ export function OwnerLogin({
           onClick={() => void endSession()}
           type="button"
         >
-          {pending ? "正在退出…" : "退出所有者模式"}
+          {pending ? "正在退出…" : siteOwner ? "退出所有者模式" : "退出登录"}
         </button>
       </section>
     );

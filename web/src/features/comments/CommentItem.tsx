@@ -30,7 +30,7 @@ import { formatMomentDate } from "../posts/dates";
 import { PostLocation } from "../posts/PostPresentation";
 import { ImageGrid } from "../media/ImageGrid";
 import { useOwner } from "../owner/OwnerProvider";
-import { Reauthenticate } from "./CommentComposer";
+import { Reauthenticate, type ReplyBlock } from "./CommentComposer";
 import styles from "./Comments.module.css";
 import ownerStyles from "../owner/Owner.module.css";
 
@@ -456,7 +456,14 @@ function useFoldedBody(contentHtml: string) {
  * Press, not hover: hovering an action the reader cannot use should not throw
  * a card over the comment they are reading.
  */
-function SignInToReplyPopover({ authorName }: { authorName: string }) {
+function SignInToReplyPopover({
+  authorName,
+  reason,
+}: {
+  authorName: string;
+  reason: ReplyBlock;
+}) {
+  const pending = reason === "pending";
   return (
     <Popover.Root>
       <Popover.Trigger
@@ -480,17 +487,21 @@ function SignInToReplyPopover({ authorName }: { authorName: string }) {
             onClick={(event) => event.stopPropagation()}
           >
             <Popover.Title className={styles.signInPopupTitle}>
-              登录后回复
+              {pending ? "正在等待站长批准" : "登录后回复"}
             </Popover.Title>
             <Popover.Description className={styles.signInPopupBody}>
-              发表回复需要登录。过往回复继续公开可读。
+              {pending
+                ? "你的账户正在等待站长批准，批准后就能留言。"
+                : "发表回复需要登录。过往回复继续公开可读。"}
             </Popover.Description>
-            <InternalLink
-              className={styles.signInPopupAction}
-              href="/owner/login"
-            >
-              登录
-            </InternalLink>
+            {pending ? null : (
+              <InternalLink
+                className={styles.signInPopupAction}
+                href="/owner/login"
+              >
+                登录
+              </InternalLink>
+            )}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
@@ -505,6 +516,7 @@ export function CommentItem({
   pinned,
   replyRoot,
   canReply = true,
+  replyBlockedBy = "signed-out",
   replyCount,
   focusTarget,
   onReply,
@@ -523,6 +535,11 @@ export function CommentItem({
    * reader has to sign in to do. The two want different answers on screen.
    */
   canReply?: boolean;
+  /**
+   * Why replying is unavailable, for when it is. Signed out points at the way
+   * in; waiting on approval is already inside and has nothing to press.
+   */
+  replyBlockedBy?: ReplyBlock;
   replyCount: number;
   focusTarget: RefObject<HTMLElement | null>;
   onReply: (root: PublicComment, target: PublicComment) => void;
@@ -798,7 +815,10 @@ export function CommentItem({
                 </button>
               </ActionTooltip>
             ) : (
-              <SignInToReplyPopover authorName={authorName} />
+              <SignInToReplyPopover
+                authorName={authorName}
+                reason={replyBlockedBy}
+              />
             )}
           </footer>
         ) : null}

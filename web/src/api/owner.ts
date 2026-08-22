@@ -5,9 +5,12 @@ import {
   parseComment,
   parseDeletedCommentMeta,
   parsePost,
+  parsePrivateAccount,
   parseSiteIdentity,
   PublicApiError,
   uploadMediaXHR,
+  type Account,
+  type AccountStatus,
   type CreatedComment,
   type PublicComment,
   type PublicPost,
@@ -42,6 +45,54 @@ export interface OwnerLoginOptions {
 export interface OAuthLoginProvider {
   name: string;
   label: string;
+}
+
+/**
+ * What a valid `moment_session` cookie is worth: the CSRF token every unsafe
+ * request needs, when it stops being worth anything, and who the browser is
+ * signed in as.
+ *
+ * This is the only endpoint that can restore a signed-in browser after a
+ * refresh. The owner status probe cannot: it answers 401 for a member, and
+ * reading that as "signed out" would sign every member out of every tab.
+ */
+export interface AccountSession {
+  csrfToken: string;
+  expiresAt: string;
+  account: Account;
+}
+
+/** A third-party login bound to an account. */
+export interface AccountIdentity {
+  provider: string;
+  /** What the provider calls this person. Empty when it published nothing. */
+  displayName: string;
+  /**
+   * Empty unless the provider published an address the server is willing to
+   * send to: a GitHub noreply alias reads as no address at all.
+   */
+  email: string;
+  linkedAt: string;
+  lastLoginAt: string;
+}
+
+/** One signed-in browser. */
+export interface AccountSessionEntry {
+  id: string;
+  issuedAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  surface: string;
+  /** True for the session making the request, which is never more than one. */
+  current: boolean;
+}
+
+export interface AccountProfileUpdate {
+  username?: string;
+  displayName?: string;
+  bio?: string;
+  avatarMediaId?: string | null;
+  coverMediaId?: string | null;
 }
 
 export interface SiteSettingsUpdate {
@@ -1828,6 +1879,89 @@ async function decodeExactOwnerSuccess(
   return data;
 }
 
+function parseAccountIdentity(value: unknown): AccountIdentity {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "provider",
+      "display_name",
+      "email",
+      "linked_at",
+      "last_login_at",
+    ])
+  ) {
+    throw invalidResponse("account identity contains unsupported fields");
+  }
+  const provider = stringField(value, "provider");
+  if (!/^[a-z][a-z0-9_]{0,31}$/.test(provider)) {
+    throw invalidResponse("account identity provider is invalid");
+  }
+  return {
+    provider,
+    // A provider that published no name, and an address the server will not
+    // send to, both arrive as empty strings. That is something to render
+    // around, never a reason to reject the response.
+    displayName: stringField(value, "display_name"),
+    email: stringField(value, "email"),
+    linkedAt: utcInstantField(value, "linked_at"),
+    lastLoginAt: utcInstantField(value, "last_login_at"),
+  };
+}
+
+function parseAccountSessionEntry(value: unknown): AccountSessionEntry {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "id",
+      "issued_at",
+      "last_seen_at",
+      "expires_at",
+      "surface",
+      "current",
+    ])
+  ) {
+    throw invalidResponse("account session contains unsupported fields");
+  }
+  const id = stringField(value, "id");
+  if (!id) throw invalidResponse("account session id cannot be empty");
+  return {
+    id,
+    issuedAt: utcInstantField(value, "issued_at"),
+    lastSeenAt: utcInstantField(value, "last_seen_at"),
+    expiresAt: utcInstantField(value, "expires_at"),
+    surface: stringField(value, "surface"),
+    current: booleanField(value, "current"),
+  };
+}
+
+function accountList(
+  data: unknown,
+  subject: string,
+): Record<string, unknown>[] {
+  if (!Array.isArray(data)) {
+    throw invalidResponse(`${subject} must be an array`);
+  }
+  return data as Record<string, unknown>[];
+}
+
+function accountProfilePayload(
+  update: AccountProfileUpdate,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (update.username !== undefined) payload.username = update.username;
+  if (update.displayName !== undefined) {
+    payload.display_name = update.displayName;
+  }
+  if (update.bio !== undefined) payload.bio = update.bio;
+  if (update.avatarMediaId !== undefined) {
+    payload.avatar_media_id = update.avatarMediaId;
+  }
+  if (update.coverMediaId !== undefined) {
+    payload.cover_media_id = update.coverMediaId;
+  }
+  return payload;
+}
+
 function sitePayload(update: SiteSettingsUpdate): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   if (update.username !== undefined) payload.username = update.username;
@@ -2023,6 +2157,114 @@ export class OwnerApi {
       }
       return { name, label };
     });
+  }
+
+  /**
+   * Read what the session cookie is currently worth.
+   *
+   * Safe method, so it needs no CSRF token -- which is what makes it the only
+   * way a browser can pick up a session it never exchanged itself, the way an
+   * OAuth callback leaves one behind.
+   */
+  async accountSession(signal?: AbortSignal): Promise<AccountSession> {
+    const response = await this.fetcher("/api/v1/account/session", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const record = objectData((await decodeResponse(response)).data);
+    if (!hasExactKeys(record, ["expires_at", "csrf_token", "account"])) {
+      throw invalidResponse("account session contains unsupported fields");
+    }
+    const expiresAt = stringField(record, "expires_at");
+    if (!Number.isFinite(Date.parse(expiresAt))) {
+      throw invalidResponse("response field expires_at must be an instant");
+    }
+    const csrfToken = stringField(record, "csrf_token");
+    if (!csrfToken) throw invalidResponse("csrf_token cannot be empty");
+    return {
+      csrfToken,
+      expiresAt,
+      account: parsePrivateAccount(record.account),
+    };
+  }
+
+  async updateAccountProfile(
+    csrfToken: string,
+    update: AccountProfileUpdate,
+  ): Promise<Account> {
+    const response = await this.fetcher(
+      "/api/v1/account/profile",
+      requestInit("PATCH", csrfToken, accountProfilePayload(update)),
+    );
+    const { data } = await decodeResponse(response);
+    return parsePrivateAccount(data);
+  }
+
+  async accountIdentities(signal?: AbortSignal): Promise<AccountIdentity[]> {
+    const response = await this.fetcher("/api/v1/account/identities", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const { data } = await decodeResponse(response);
+    return accountList(data, "account identities").map(parseAccountIdentity);
+  }
+
+  async unlinkIdentity(csrfToken: string, provider: string): Promise<void> {
+    const response = await this.fetcher(
+      `/api/v1/account/identities/${encodeURIComponent(provider)}`,
+      requestInit("DELETE", csrfToken),
+    );
+    const record = objectData((await decodeResponse(response)).data);
+    if (
+      !hasExactKeys(record, ["unlinked"]) ||
+      stringField(record, "unlinked") !== provider
+    ) {
+      throw invalidResponse("unlink response named a different provider");
+    }
+  }
+
+  async accountSessions(signal?: AbortSignal): Promise<AccountSessionEntry[]> {
+    const response = await this.fetcher("/api/v1/account/sessions", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const { data } = await decodeResponse(response);
+    return accountList(data, "account sessions").map(parseAccountSessionEntry);
+  }
+
+  /** Sign every browser out, this one included. Returns how many were ended. */
+  async revokeAccountSessions(csrfToken: string): Promise<number> {
+    const response = await this.fetcher(
+      "/api/v1/account/sessions",
+      requestInit("DELETE", csrfToken),
+    );
+    const record = objectData((await decodeResponse(response)).data);
+    if (!hasExactKeys(record, ["revoked"])) {
+      throw invalidResponse("session revocation contains unsupported fields");
+    }
+    return nonNegativeIntegerField(record, "revoked");
+  }
+
+  async ownerAccounts(signal?: AbortSignal): Promise<Account[]> {
+    const response = await this.fetcher("/api/v1/owner/accounts", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const { data } = await decodeResponse(response);
+    return accountList(data, "accounts").map(parsePrivateAccount);
+  }
+
+  async updateAccountStatus(
+    csrfToken: string,
+    userId: string,
+    status: AccountStatus,
+  ): Promise<Account> {
+    const response = await this.fetcher(
+      `/api/v1/owner/accounts/${encodeURIComponent(userId)}`,
+      requestInit("PATCH", csrfToken, { status }),
+    );
+    const { data } = await decodeResponse(response);
+    return parsePrivateAccount(data);
   }
 
   async status(signal?: AbortSignal): Promise<OwnerStatus> {

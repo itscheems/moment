@@ -15,8 +15,8 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { useOwner } from "../owner/OwnerProvider";
-import { CommentForm, SignInToReply, useCanComment } from "./CommentComposer";
+import { ownsSite, useOwner } from "../owner/OwnerProvider";
+import { CommentForm, SignInToReply, useReplyBlock } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import { PostReplyDialog } from "./PostReplyDialog";
 import {
@@ -124,6 +124,11 @@ export function CommentThread({
   replyDialogTriggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const owner = useOwner();
+  // Pinning and deleting a comment are the site owner's, and the server agrees;
+  // a signed-in member gets the reply action and nothing beyond it.
+  const ownerModerator =
+    (owner.state === "owner" || owner.state === "expired") &&
+    ownsSite(owner.account);
   const [items, setItems] = useState<PublicComment[] | null>(null);
   const [pinnedCommentId, setPinnedCommentId] = useState<string | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -143,7 +148,8 @@ export function CommentThread({
   const headingRef = useRef<HTMLHeadingElement>(null);
   const focusCommentRef = useRef<string | null>(null);
   const commentsEnabled = site.commentsEnabled && !closedByServer;
-  const canCompose = useCanComment();
+  const replyBlock = useReplyBlock();
+  const canCompose = replyBlock === null;
 
   const load = useCallback(() => setAttempt((value) => value + 1), []);
 
@@ -467,7 +473,7 @@ export function CommentThread({
                           ?.focus(),
                       );
                     }}
-                    owner={owner.state === "owner" || owner.state === "expired"}
+                    owner={ownerModerator}
                     pinned={comment.id === pinnedCommentId}
                     // A null root means there is nothing to reply to, which is
                     // a different thing from not being allowed to. Being
@@ -476,6 +482,7 @@ export function CommentThread({
                     // than vanishing and leaving a thread full of replies with
                     // no visible way to make one.
                     canReply={canCompose}
+                    replyBlockedBy={replyBlock ?? "signed-out"}
                     replyRoot={
                       comment.parentId === null
                         ? comment

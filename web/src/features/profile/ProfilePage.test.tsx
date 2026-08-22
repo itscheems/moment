@@ -52,6 +52,28 @@ function post(id: string, text: string) {
   };
 }
 
+function accountSessionEnvelope() {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-profile",
+      account: {
+        user_id: site.ownerId,
+        username: site.username,
+        display_name: site.displayName,
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "owner",
+        profile_url: `/${site.username}`,
+        status: "active",
+        username_chosen: true,
+      },
+    },
+    meta: { request_id: "req_account" },
+  };
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -137,6 +159,9 @@ describe("profile page", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (url === "/api/v1/account/session") {
+          return json(accountSessionEnvelope());
+        }
         if (url === "/api/v1/owner/status") {
           return json({
             data: {
@@ -372,16 +397,18 @@ describe("profile page", () => {
     );
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        json({
-          data: {
-            initialized: true,
-            password_enabled: false,
-            session_epoch: 1,
-            initialized_at: "2026-08-01T00:00:00Z",
-          },
-          meta: { request_id: "req_status" },
-        }),
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/v1/account/session"
+          ? json(accountSessionEnvelope())
+          : json({
+              data: {
+                initialized: true,
+                password_enabled: false,
+                session_epoch: 1,
+                initialized_at: "2026-08-01T00:00:00Z",
+              },
+              meta: { request_id: "req_status" },
+            }),
       ),
     );
     render(
