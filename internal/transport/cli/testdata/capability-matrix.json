@@ -1,437 +1,1743 @@
 {
   "schema_version": 1,
-  "allowed_meta_normalization": ["request_id", "duration_ms", "transport"],
+  "allowed_meta_normalization": [
+    "request_id",
+    "duration_ms",
+    "transport"
+  ],
   "commands": [
     {
       "command": "backup export",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "export_summary_v1_or_zip_stream",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "canonical_archive_summary_and_bytes"
     },
     {
       "command": "backup import",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive", "maintenance:exclusive", "media:exclusive"]},
-      "api": {"availability": "online_maintenance", "auth": "owner_token", "locks": ["server_managed_import_order"]},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive",
+          "maintenance:exclusive",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "online_maintenance",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed_import_order"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "import_plan_or_commit_status_v1",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "mode_specific_workflow_canonical_status"
     },
     {
       "command": "backup inspect",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["import:exclusive"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed_import"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed_import"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "import_inspection_v1",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "semantic_random_staging_token"
     },
     {
       "command": "backup merge",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive", "maintenance:exclusive", "media:exclusive"]},
-      "api": {"availability": "online_maintenance", "auth": "owner_token", "locks": ["server_managed_import_order"]},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive",
+          "maintenance:exclusive",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "online_maintenance",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed_import_order"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "merge_action_summary_or_commit_status_v1",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_selection_and_canonical_status"
     },
     {
       "command": "backup merge-discard",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed_import"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed_import"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "merge_discard_result_v1",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_plan_identity_and_effect"
     },
     {
       "command": "backup merge-plan",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed_import"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed_import"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "merge_plan_v1_and_private_selection",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "semantic_random_staging_token"
     },
     {
       "command": "backup status",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": []},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": []
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "import_commit_status_v1",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data"
     },
     {
       "command": "comment create",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "comment_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "deterministic_fixture_or_idempotent_replay"
     },
     {
       "command": "comment delete",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "comment_v1_with_delete_meta",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "comment list",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "comment_thread_v1",
-      "expected_exits": [0, 2, 3, 4, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data"
     },
     {
       "command": "comment pin",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": true, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": false
+      },
       "output_schema": "comment_pin_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "comment replies",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "comment_reply_page_v1",
-      "expected_exits": [0, 2, 3, 4, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data"
     },
     {
       "command": "comment reply",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "comment_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "deterministic_fixture_or_idempotent_replay"
     },
     {
       "command": "comment unpin",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": true, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": false
+      },
       "output_schema": "comment_pin_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "dev reset",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive", "maintenance:exclusive", "media:exclusive"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive",
+          "maintenance:exclusive",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "development_result_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "api_mode_unsupported"
     },
     {
       "command": "dev scenario",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive", "maintenance:exclusive", "media:exclusive"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive",
+          "maintenance:exclusive",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "development_result_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "api_mode_unsupported"
     },
     {
       "command": "dev seed",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive", "maintenance:exclusive", "media:exclusive"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive",
+          "maintenance:exclusive",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "development_result_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "api_mode_unsupported"
     },
     {
       "command": "doctor",
-      "direct": {"availability": "deep_or_summary", "auth": "local_data_access", "locks": ["import:shared", "maintenance:shared_or_exclusive", "media:shared"]},
-      "api": {"availability": "summary_only", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "deep_or_summary",
+        "auth": "local_data_access",
+        "locks": [
+          "import:shared",
+          "maintenance:shared_or_exclusive",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "summary_only",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "doctor_report_v1",
-      "expected_exits": [0, 2, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "summary_byte_identical_deep_mode_explicit"
     },
     {
       "command": "init",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "owner_credential_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "exact_alias_of_owner_init"
     },
     {
       "command": "link unfurl",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:exclusive"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "link_card_v1",
-      "expected_exits": [0, 2, 5, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        5,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "canonical_provider_snapshot"
     },
     {
       "command": "location nearby",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": []},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": []
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "location_results_v1",
-      "expected_exits": [0, 2, 5, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        5,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "canonical_provider_snapshot"
     },
     {
       "command": "location search",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": []},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": []
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "location_results_v1",
-      "expected_exits": [0, 2, 5, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        5,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "canonical_provider_snapshot"
     },
     {
       "command": "media add",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:exclusive"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "media_upload_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "semantic_random_media_identity"
     },
     {
       "command": "media get",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
-      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "media_get_v1_and_file",
-      "expected_exits": [0, 2, 3, 4, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_file"
     },
     {
       "command": "media list",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "media_list_v1",
-      "expected_exits": [0, 2, 3, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "api_mode_unsupported"
     },
     {
       "command": "media prune",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:exclusive"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "media_prune_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "api_mode_unsupported"
     },
     {
       "command": "media rebuild-previews",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:exclusive"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "preview_rebuild_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "api_mode_unsupported"
     },
     {
       "command": "media verify",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "media_verify_v1",
-      "expected_exits": [0, 2, 3, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "api_mode_unsupported"
     },
     {
       "command": "owner init",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["import:exclusive", "serve:exclusive"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "import:exclusive",
+          "serve:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "owner_credential_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "semantic_random_credential"
     },
     {
       "command": "owner rotate-token",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["serve:exclusive"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "serve:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "owner_credential_v1",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "semantic_random_credential_and_epoch"
     },
     {
       "command": "owner set-password",
-      "direct": {"availability": "offline", "auth": "local_data_access", "locks": ["serve:exclusive"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "offline",
+        "auth": "local_data_access",
+        "locks": [
+          "serve:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "owner_status_v1",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_safe_status_and_password_effect"
     },
     {
       "command": "owner status",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": []},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": []
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "owner_status_v1",
-      "expected_exits": [0, 2, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data"
     },
     {
       "command": "post create",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared_or_exclusive"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared_or_exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "post_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "deterministic_fixture_or_idempotent_replay"
     },
     {
       "command": "post delete",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "post_v1_with_delete_meta",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "post get",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "post_v1",
-      "expected_exits": [0, 2, 3, 4, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_error"
     },
     {
       "command": "post list",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "post_page_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_pagination_meta"
     },
     {
       "command": "post pin",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": true, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": false
+      },
       "output_schema": "site_settings_v1_with_pin",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "post repost",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "post_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "post unpin",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": true, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": false
+      },
       "output_schema": "site_settings_v1_with_pin",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "post unrepost",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "post_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "post update",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared", "media:shared_or_exclusive"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared_or_exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "post_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "search query",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "search_result_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_pagination_meta"
     },
     {
       "command": "search rebuild",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:exclusive"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": true, "supports_dry_run": true},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:exclusive"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
       "output_schema": "search_rebuild_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ],
       "parity_strategy": "api_mode_unsupported"
     },
     {
       "command": "serve",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["serve:exclusive_lifetime", "startup_recovery_order"]},
-      "api": {"availability": "unsupported", "auth": "not_applicable", "locks": []},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "serve:exclusive_lifetime",
+          "startup_recovery_order"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "serve_lifecycle_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "api_mode_unsupported"
     },
     {
       "command": "site get",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "site_settings_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data"
     },
     {
       "command": "site update",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "owner_token", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "site_settings_v1",
-      "expected_exits": [0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data_and_effect"
     },
     {
+      "command": "user approve",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "account_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "api_mode_unsupported"
+    },
+    {
+      "command": "user identities",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "account_identity_list_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "api_mode_unsupported"
+    },
+    {
+      "command": "user list",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "account_list_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "api_mode_unsupported"
+    },
+    {
       "command": "user suggest",
-      "direct": {"availability": "supported", "auth": "local_data_access", "locks": ["maintenance:shared"]},
-      "api": {"availability": "supported", "auth": "none", "locks": ["server_managed"]},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "mention_suggestion_list_v1",
-      "expected_exits": [0, 2, 4, 6, 7, 8, 9, 10],
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
       "parity_strategy": "byte_identical_data"
     },
     {
+      "command": "user suspend",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": false
+      },
+      "output_schema": "account_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "api_mode_unsupported"
+    },
+    {
       "command": "version",
-      "direct": {"availability": "supported", "auth": "none", "locks": []},
-      "api": {"availability": "supported", "auth": "none", "locks": []},
-      "destructive": {"requires_yes": false, "supports_dry_run": false},
+      "direct": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": []
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
       "output_schema": "build_info_v1",
-      "expected_exits": [0, 2, 10],
+      "expected_exits": [
+        0,
+        2,
+        10
+      ],
       "parity_strategy": "byte_identical_data"
     }
   ]

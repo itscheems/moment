@@ -276,8 +276,8 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"comment create":         "32c0e6f9d033f0a50d98cf533271111a03ed03cbbf8b893e888576f8b9a1e732",
 		"comment delete":         "1ae438d8870bb0da2d34306260131316228dc82b19c29e34215ac8e1eaf2c7d9",
 		"comment list":           "41532cca3d73777d12d94bd8b0c4d2feec3f8a2b055221f29952b567f783ec4a",
-		"comment replies":        "47eb1c8fb6a5b8fc6a09e72bcb2d398a92016d9864217e692c63a288541cbd42",
 		"comment pin":            "584f1e03045b9a85dd17fe5cf5ded482ae326f11033b3503b3ab31f8fc173d6a",
+		"comment replies":        "47eb1c8fb6a5b8fc6a09e72bcb2d398a92016d9864217e692c63a288541cbd42",
 		"comment reply":          "0a085ef08bacd2ebaf30871ca5c4c528fbbcc11ea82cb1cea3dd4332c528c045",
 		"comment unpin":          "b09b2234e10e25962623f4b638c0f1fdd9a3a69477dee847a2e1037b12eb2975",
 		"dev":                    "f3fbc09380185bb3d32d04b94712c5968c4e734067ceacb8ef00a3e6666e9a32",
@@ -321,8 +321,12 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"site":                   "09043ff9807f0d5b49d4192cca5f0acec67b53014304a19e85e31f1275ad8da7",
 		"site get":               "75894a8a50d52a6ed1b3d9d57232b7a89cea0b09127210fa712999079b264aa4",
 		"site update":            "27c74502530077eb51c20a727a3ac4e7000928e03e7f1121683aae42a1018dd8",
-		"user":                   "b644cbe3215126804d2967dbe3ede39aa707003647e3b6deabb92445b40a2db4",
+		"user":                   "c41c66e7dd581b2b884c7db4b0c7d8bff7d0379839f6312db8c62132893dc58e",
+		"user approve":           "827a75d91c6cb87218d40dc785fa539d88440858d09c5cedc0c02848ff4c1ba9",
+		"user identities":        "ebe0485d45296b3bf55dcf224aedcb4a6dd0ab01b53325d067ea96449f99b5cc",
+		"user list":              "0c2784e8dc42021acf0951a51833f30c79093cc2096b89236ad61a014454b004",
 		"user suggest":           "bdbd94abb523578a697bff57823b2435f3c1eb819b31006b04dffb7b1d97d854",
+		"user suspend":           "787b20ede89e452d917249a07a5def9832e0738b6ce06c53c3a8fed5e882b00c",
 		"version":                "0b69aae12549989186adc1cc9dd8066fcdb54f7f349a2b023e2df150d7f1dce1",
 	}
 
