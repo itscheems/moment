@@ -579,6 +579,9 @@ func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, 
 	if !reflect.DeepEqual(local.AuthorUserID, incoming.AuthorUserID) {
 		fields = append(fields, "author_user_id")
 	}
+	if !reflect.DeepEqual(local.ReplyToCommentID, incoming.ReplyToCommentID) {
+		fields = append(fields, "reply_to_comment_id")
+	}
 	if local.ContentMD != incoming.ContentMD {
 		fields = append(fields, "content_md")
 	}
@@ -719,6 +722,7 @@ func cloneArchiveEntry(value sqlitestore.ArchiveEntry) sqlitestore.ArchiveEntry 
 func cloneArchiveComment(value sqlitestore.ArchiveComment) sqlitestore.ArchiveComment {
 	value.ParentID = cloneString(value.ParentID)
 	value.AuthorUserID = cloneString(value.AuthorUserID)
+	value.ReplyToCommentID = cloneString(value.ReplyToCommentID)
 	value.Media = cloneUsages(value.Media)
 	value.Location = domain.CloneLocation(value.Location)
 	return value

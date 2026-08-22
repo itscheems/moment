@@ -389,6 +389,162 @@ func TestLegacyGuestCommentWithoutAuthorAccountRoundTrips(t *testing.T) {
 	}
 }
 
+// Who a reply answers is a v1 extension like the author account, with one
+// difference that matters everywhere identities move: it names a comment in the
+// same archive. The canonical thread order is (created_at_ms, id), so a reply
+// can be written before the sibling it answers whenever the two share a
+// millisecond — the case these IDs are chosen to produce.
+const (
+	threadEntryID    = "01ARZ3NDEKTSV4RRFFQ69G5FB6"
+	threadRootID     = "01ARZ3NDEKTSV4RRFFQ69G5FB7"
+	replyToLaterID   = "01ARZ3NDEKTSV4RRFFQ69G5FC0"
+	replyToRootID    = "01ARZ3NDEKTSV4RRFFQ69G5FC1"
+	replyToEarlierID = "01ARZ3NDEKTSV4RRFFQ69G5FC2"
+)
+
+func TestCommentReplyTargetRoundTripsThroughPortableArchive(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	insertReplyTargetFixture(t, fixture)
+
+	members, _ := readArchive(t, exportFixtureBytes(t, fixture))
+	order := commentLineOrder(t, members["data/comments.jsonl"])
+	// Guard the premise, not just the outcome: this archive really does name a
+	// target that has not been written yet, so an importer that links on insert
+	// cannot pass the tests below by accident.
+	if order[replyToLaterID] > order[replyToEarlierID] {
+		t.Fatalf("fixture no longer exercises a forward reply reference: %#v", order)
+	}
+
+	now := time.Date(2026, 8, 22, 5, 6, 7, 0, time.UTC)
+	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
+		context.Background(),
+		exportFixtureFile(t, fixture),
+		7,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := indexComments(stagedArchiveComments(t, fixture, result))
+	if len(staged) != 4 {
+		t.Fatalf("staged comments = %#v", staged)
+	}
+	if staged[threadRootID].ReplyToCommentID != nil {
+		t.Fatalf("a root comment gained a reply target: %#v", staged[threadRootID])
+	}
+	for _, expectation := range []struct{ comment, target string }{
+		{replyToRootID, threadRootID},
+		{replyToEarlierID, replyToRootID},
+		{replyToLaterID, replyToEarlierID},
+	} {
+		value := staged[expectation.comment].ReplyToCommentID
+		if value == nil || *value != expectation.target {
+			t.Fatalf("comment %s answers %s, want %s", expectation.comment, commentTargetText(value), expectation.target)
+		}
+	}
+}
+
+func TestArchiveWithoutCommentReplyTargetStillImports(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	insertReplyTargetFixture(t, fixture)
+
+	members, order := readArchive(t, exportFixtureBytes(t, fixture))
+	stripped := make([]byte, 0, len(members["data/comments.jsonl"]))
+	removed := 0
+	for _, line := range nonemptyLines(members["data/comments.jsonl"]) {
+		var record map[string]any
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatal(err)
+		}
+		if _, present := record["reply_to_comment_id"]; present {
+			removed++
+		}
+		delete(record, "reply_to_comment_id")
+		stripped = append(append(stripped, mustMarshalTest(t, record)...), '\n')
+	}
+	if removed != 3 {
+		t.Fatalf("stripped %d reply_to_comment_id keys, want 3", removed)
+	}
+	members["data/comments.jsonl"] = stripped
+	rebuildManifestExpanded(t, members)
+	rebuildChecksums(members)
+	name := filepath.Join(t.TempDir(), "legacy-without-comment-reply-target.zip")
+	writeArchive(t, name, members, order)
+
+	if err := ValidateFile(name); err != nil {
+		t.Fatalf("v1 archive without reply_to_comment_id was rejected: %v", err)
+	}
+	now := time.Date(2026, 8, 22, 6, 7, 8, 0, time.UTC)
+	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
+		context.Background(),
+		name,
+		7,
+	)
+	if err != nil {
+		t.Fatalf("v1 archive without reply_to_comment_id did not import: %v", err)
+	}
+	staged := stagedArchiveComments(t, fixture, result)
+	if len(staged) != 4 {
+		t.Fatalf("staged comments = %#v", staged)
+	}
+	for _, value := range staged {
+		if value.ReplyToCommentID != nil {
+			t.Fatalf("absent reply_to_comment_id was invented: %#v", value)
+		}
+	}
+}
+
+// insertReplyTargetFixture writes one thread whose replies answer the root, an
+// earlier sibling, and a later sibling. All three replies share a millisecond,
+// so canonical order falls back to ID and replyToLaterID is exported before the
+// sibling it names.
+func insertReplyTargetFixture(t *testing.T, fixture exportFixture) {
+	t.Helper()
+	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
+		if _, err := queries.ExecContext(context.Background(), `
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
+VALUES (?, 'moment', '一条有对话的动态', 1, 1, 1)`, threadEntryID); err != nil {
+			return err
+		}
+		if _, err := queries.ExecContext(context.Background(), `
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
+VALUES (?, ?, NULL, 'owner', 'Owner', '根评论', 1)`, threadRootID, threadEntryID); err != nil {
+			return err
+		}
+		// Written in answering order so the insert guard sees each target, then
+		// exported in canonical order, which is a different order.
+		for _, reply := range []struct{ id, target, body string }{
+			{replyToRootID, threadRootID, "回复根评论"},
+			{replyToEarlierID, replyToRootID, "回复更早的同级"},
+			{replyToLaterID, replyToEarlierID, "回复更晚的同级"},
+		} {
+			if _, err := queries.ExecContext(context.Background(), `
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, reply_to_comment_id, content_md, created_at_ms)
+VALUES (?, ?, ?, 'owner', 'Owner', ?, ?, 5)`, reply.id, threadEntryID, threadRootID, reply.target, reply.body); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// commentLineOrder maps each comment ID to its position in the JSONL member.
+func commentLineOrder(t *testing.T, data []byte) map[string]int {
+	t.Helper()
+	result := make(map[string]int)
+	for index, line := range nonemptyLines(data) {
+		var record struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatal(err)
+		}
+		result[record.ID] = index
+	}
+	return result
+}
+
 // insertCommentAuthorFixture adds one entry carrying two root comments: one
 // owner comment that references an account and one legacy guest comment that
 // never had an identity to reference. Their IDs order the pair deterministically
@@ -1213,4 +1369,58 @@ INSERT INTO entry_link_card (
 	if thumbnailID == "" {
 		t.Fatal("thumbnail reference was not restored")
 	}
+}
+
+func TestValidateFileRejectsReplyTargetOutsideTheConversation(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	insertReplyTargetFixture(t, fixture)
+	archiveBytes := exportFixtureBytes(t, fixture)
+	if err := ValidateFile(writeArchiveBytes(t, archiveBytes)); err != nil {
+		t.Fatalf("unmodified fixture archive was rejected: %v", err)
+	}
+	for name, target := range map[string]string{
+		// replyID is a reply under a different entry, so it fails the same
+		// same-conversation rule the database trigger applies.
+		"another entry": replyID,
+		// A target the archive never carries would reach staging as a
+		// foreign-key failure instead of a rejection.
+		"absent comment": "01ARZ3NDEKTSV4RRFFQ69G5FD9",
+	} {
+		t.Run(name, func(t *testing.T) {
+			members, order := readArchive(t, archiveBytes)
+			rewritten := make([]byte, 0, len(members["data/comments.jsonl"]))
+			retargeted := 0
+			for _, line := range nonemptyLines(members["data/comments.jsonl"]) {
+				var record map[string]any
+				if err := json.Unmarshal(line, &record); err != nil {
+					t.Fatal(err)
+				}
+				if record["id"] == replyToRootID {
+					record["reply_to_comment_id"] = target
+					retargeted++
+				}
+				rewritten = append(append(rewritten, mustMarshalTest(t, record)...), '\n')
+			}
+			if retargeted != 1 {
+				t.Fatalf("retargeted %d records, want 1", retargeted)
+			}
+			members["data/comments.jsonl"] = rewritten
+			rebuildManifestExpanded(t, members)
+			rebuildChecksums(members)
+			hostile := filepath.Join(t.TempDir(), "cross-conversation-reply.zip")
+			writeArchive(t, hostile, members, order)
+			if err := ValidateFile(hostile); !domain.HasCode(err, domain.CodeExportInvalid) {
+				t.Fatalf("cross-conversation reply target = %v", err)
+			}
+		})
+	}
+}
+
+func writeArchiveBytes(t *testing.T, data []byte) string {
+	t.Helper()
+	name := filepath.Join(t.TempDir(), "portable.zip")
+	if err := os.WriteFile(name, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return name
 }

@@ -194,6 +194,25 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 			}
 			resolvedComment.ParentID = &parentID
 		}
+		// The reply target names a comment, and MergeKeepBoth reissues comment
+		// identities, so the annotation follows the same remap parent_id gets or
+		// it lands on a stranger. The allocation loop above has already assigned
+		// every identity, so answering a sibling remapped in this same pass
+		// resolves regardless of the order the two are visited in.
+		//
+		// Where it parts company with parent_id is a target the selection drops:
+		// a parent is structure and its loss fails the merge, while this is an
+		// annotation, so it clears the way the schema clears it when the target
+		// row is deleted.
+		resolvedComment.ReplyToCommentID = nil
+		if value.ReplyToCommentID != nil {
+			if targetID, remapped := result.CommentRemap[*value.ReplyToCommentID]; remapped {
+				resolvedComment.ReplyToCommentID = &targetID
+			} else if _, localExists := comments[*value.ReplyToCommentID]; localExists {
+				targetID := *value.ReplyToCommentID
+				resolvedComment.ReplyToCommentID = &targetID
+			}
+		}
 		comments[resolvedComment.ID] = resolvedComment
 	}
 	result.Authority.Comments = topologicalComments(comments)

@@ -14,17 +14,31 @@ import (
 // inspection. It never accepts SQLite bytes from an archive and owns one
 // transaction until the complete portable graph has been validated.
 type PortableImporter struct {
-	tx            *sql.Tx
-	closed        bool
-	entries       int64
-	comments      int64
-	media         int64
-	pendingQuotes []pendingQuote
+	tx             *sql.Tx
+	closed         bool
+	entries        int64
+	comments       int64
+	media          int64
+	pendingQuotes  []pendingQuote
+	pendingReplies []pendingReplyTarget
 }
 
 type pendingQuote struct {
 	entryID  string
 	targetID *string
+}
+
+// pendingReplyTarget defers one reply_to_comment_id link until every comment
+// exists. The column has a foreign key and an insert guard that both require
+// the target row to be present, but a reply may answer a sibling that sorts
+// after it in canonical archive order: the two share a millisecond and the
+// tie is broken by a random ULID suffix. Writing the link on insert would
+// reject such an archive, so the row goes in unlinked and the link is applied
+// once ordering can no longer matter. The update guard enforces the same
+// same-conversation rule the insert guard would have.
+type pendingReplyTarget struct {
+	commentID string
+	targetID  string
 }
 
 // BeginPortableImport starts one isolated current-schema rebuild.
@@ -240,14 +254,25 @@ func (importer *PortableImporter) InsertComment(ctx context.Context, value Archi
 		}
 		parentID = &parsed
 	}
+	var replyToID *domain.ID
+	if value.ReplyToCommentID != nil {
+		parsed, err := domain.ParseID(*value.ReplyToCommentID)
+		if err != nil {
+			return err
+		}
+		replyToID = &parsed
+	}
 	comment := domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
 		AuthorKind: domain.CommentAuthorKind(value.AuthorKind), AuthorName: value.AuthorName,
-		AuthorUserID: value.AuthorUserID, ContentMD: value.ContentMD,
+		AuthorUserID: value.AuthorUserID, ReplyToCommentID: replyToID, ContentMD: value.ContentMD,
 		Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
 	}
 	if err := comment.Validate(); err != nil {
 		return err
+	}
+	if replyToID != nil {
+		importer.pendingReplies = append(importer.pendingReplies, pendingReplyTarget{commentID: value.ID, targetID: replyToID.String()})
 	}
 	usages := make([]domain.EntryMediaUsage, len(value.Media))
 	for index, usage := range value.Media {
@@ -362,6 +387,12 @@ func (importer *PortableImporter) Commit(ctx context.Context, expected ArchiveCo
 	for _, quote := range importer.pendingQuotes {
 		if _, err := importer.tx.ExecContext(ctx, `INSERT INTO entry_quotes (entry_id, quoted_entry_id) VALUES (?, ?)`, quote.entryID, quote.targetID); err != nil {
 			return fmt.Errorf("insert portable entry quote: %w", err)
+		}
+	}
+	for _, reply := range importer.pendingReplies {
+		if _, err := importer.tx.ExecContext(ctx, `
+UPDATE comments SET reply_to_comment_id = ? WHERE id = ?`, reply.targetID, reply.commentID); err != nil {
+			return fmt.Errorf("link portable comment %s to its reply target: %w", reply.commentID, err)
 		}
 	}
 	rows, err := importer.tx.QueryContext(ctx, `PRAGMA foreign_key_check`)
