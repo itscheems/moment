@@ -902,6 +902,16 @@
   background: var(--border-subtle);
 }
 
+/*
+ * The connector is drawn by sibling adjacency, so anything spliced between a
+ * comment and the replies below it — the inline composer, the 「共 N 条回复」
+ * row — is enough to break a bare `+ .replyComment` match and snap the line.
+ * Every row that can legally sit in that gap has to be named here, and the
+ * composer additionally carries the line across itself whenever a reply still
+ * comes after it.
+ */
+.commentItem:has(+ .replyBranch)::after,
+.commentItem:has(+ .replyComposerRow)::after,
 .commentItem:has(+ .replyComment)::after {
   content: "";
   position: absolute;
@@ -910,6 +920,95 @@
   inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
   inline-size: 2px;
   background: var(--border-subtle);
+}
+
+/*
+ * The tail of a root's branch, offering the replies that did not travel with
+ * the page. It sits at the same inset as a reply so the control reads as part
+ * of the branch it continues rather than as a sibling of the root.
+ */
+.replyBranch {
+  padding-inline-start: calc(
+    var(--space-4) + var(--target-size) + var(--space-3)
+  );
+  padding-block: var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.replyBranch button {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.replyBranch button:disabled {
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.replyBranch button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.replyBranch [role="alert"] {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+/*
+ * `ReplyBranch` is emitted after the last loaded reply of a branch but before
+ * the inline composer for that same comment, so the composer is the one row
+ * that can follow it and the line has to cross it to reach them. `.replyComment`
+ * is named alongside for the day the branch row moves above the replies it
+ * summarises; it cannot follow today.
+ */
+.replyBranch:has(+ .replyComposerRow),
+.replyBranch:has(+ .replyComment),
+.replyComposerRow:has(+ .replyComment) {
+  position: relative;
+}
+
+.replyBranch:has(+ .replyComposerRow)::before,
+.replyBranch:has(+ .replyComment)::before,
+.replyComposerRow:has(+ .replyComment)::before,
+.replyBranch:has(+ .replyComposerRow)::after,
+.replyBranch:has(+ .replyComment)::after,
+.replyComposerRow:has(+ .replyComment)::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: calc(var(--space-4) + (var(--target-size) / 2));
+  inline-size: 2px;
+  background: var(--border-subtle);
+}
+
+.replyComposerRow:has(+ .replyComment)::before {
+  inset-block-start: 0;
+  block-size: var(--space-3);
+}
+
+.replyComposerRow:has(+ .replyComment)::after {
+  inset-block-start: calc(var(--space-3) + var(--target-size));
+  inset-block-end: 0;
+}
+
+/*
+ * The branch row has no avatar to route the line around, so it carries one
+ * unbroken segment instead of the composer's two.
+ */
+.replyBranch:has(+ .replyComposerRow)::before,
+.replyBranch:has(+ .replyComment)::before {
+  inset-block: 0;
+}
+
+.replyBranch:has(+ .replyComposerRow)::after,
+.replyBranch:has(+ .replyComment)::after {
+  content: none;
 }
 
 .commentOwnerMenu {
@@ -1411,6 +1510,12 @@
     padding-inline-start: var(--space-3);
   }
 
+  .replyBranch {
+    padding-inline-start: calc(
+      var(--space-3) + var(--target-size) + var(--space-3)
+    );
+  }
+
   .replyDialogPopup > .formSurface,
   .replyDialogPopup > .signInNotice {
     padding-inline: var(--space-4);
@@ -1420,7 +1525,13 @@
     inset-inline-start: calc(var(--space-3) + (var(--target-size) / 2));
   }
 
-  .commentItem:has(+ .replyComment)::after {
+  .commentItem:has(+ .replyBranch)::after,
+  .commentItem:has(+ .replyComposerRow)::after,
+  .commentItem:has(+ .replyComment)::after,
+  .replyBranch:has(+ .replyComposerRow)::before,
+  .replyBranch:has(+ .replyComment)::before,
+  .replyComposerRow:has(+ .replyComment)::before,
+  .replyComposerRow:has(+ .replyComment)::after {
     inset-inline-start: calc(var(--space-3) + (var(--target-size) / 2));
   }
 
