@@ -277,20 +277,42 @@ func (host *liveServerHost) identityProviders(ctx context.Context, site *app.Sit
 }
 
 // publicBaseURL reports the address this site answers at, without a trailing
-// slash.
+// slash. An empty answer disables federated sign-in.
+//
+// The configured canonical URL always wins. The fallback keys off the listen
+// address being loopback rather than off the environment label, because those
+// are different questions and it is the address that decides: a provider
+// matches a redirect URI exactly and exempts loopback from its HTTPS rule, so
+// a production instance served on 127.0.0.1 has a perfectly valid redirect URI
+// and no configured base URL. Deciding by environment would refuse it.
+//
+// Nothing is guessed from the Host header. A redirect URI assembled from a
+// value the caller controls is a redirect URI an attacker chooses.
 func (host *liveServerHost) publicBaseURL(ctx context.Context, site *app.SiteService) string {
 	if settings, err := site.Get(ctx); err == nil && settings.PublicBaseURL != nil {
 		return strings.TrimRight(*settings.PublicBaseURL, "/")
 	}
-	// Development falls back to the loopback address being served. The literal
-	// 127.0.0.1 matters: a provider matches redirect URIs exactly, so
-	// "localhost" and "127.0.0.1" are two different registrations.
-	if host.secureCookies || host.listenAddress == "" {
+	if host.listenAddress == "" {
 		return ""
 	}
-	_, port, err := net.SplitHostPort(host.listenAddress)
+	address, port, err := net.SplitHostPort(host.listenAddress)
 	if err != nil || port == "" {
 		return ""
 	}
+	if !isLoopbackHost(address) {
+		return ""
+	}
+	// The literal 127.0.0.1 matters: "localhost" and "127.0.0.1" are two
+	// different registrations under exact matching.
 	return "http://127.0.0.1:" + port
+}
+
+// isLoopbackHost reports whether a listen host only ever accepts connections
+// from this machine.
+func isLoopbackHost(address string) bool {
+	if address == "" || address == "localhost" {
+		return true
+	}
+	parsed := net.ParseIP(address)
+	return parsed != nil && parsed.IsLoopback()
 }

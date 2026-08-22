@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -211,13 +212,40 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 	if err := validateArchiveSite(site, runtimeState.IsDevelopment()); err != nil {
 		return Summary{}, archiveInvalid("site settings are not portable", err)
 	}
-	if err := protocol.jsonMember("data/site.json", siteRecord{
-		OwnerID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName,
-		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone,
-		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID,
-		CommentsEnabled: site.CommentsEnabled,
-	}); err != nil {
+	if err := protocol.jsonMember("data/site.json", portableSiteRecord(site)); err != nil {
 		return Summary{}, err
+	}
+
+	// Accounts precede content because content refers to them: a comment names
+	// the account that wrote it, and reading the archive top to bottom should
+	// never meet a reference before the thing it refers to.
+	userCount, err := protocol.jsonLines("data/users.jsonl", func(write func(any) error) error {
+		return snapshot.Users(ctx, func(value sqlitestore.ArchiveUser) error {
+			if err := validateArchiveUser(value); err != nil {
+				return err
+			}
+			if exporter.recordYield != nil {
+				exporter.recordYield("user", 1)
+			}
+			return write(portableUserRecord(value))
+		})
+	})
+	if err != nil {
+		return Summary{}, archiveInvalid("accounts could not be exported", err)
+	}
+	identityCount, err := protocol.jsonLines("data/identities.jsonl", func(write func(any) error) error {
+		return snapshot.Identities(ctx, func(value sqlitestore.ArchiveIdentity) error {
+			if err := validateArchiveIdentity(value); err != nil {
+				return err
+			}
+			if exporter.recordYield != nil {
+				exporter.recordYield("identity", 1)
+			}
+			return write(portableIdentityRecord(value))
+		})
+	})
+	if err != nil {
+		return Summary{}, archiveInvalid("account identities could not be exported", err)
 	}
 
 	entryCount, err := protocol.jsonLines("data/entries.jsonl", func(write func(any) error) error {
@@ -225,18 +253,10 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			if err := validateArchiveEntry(value); err != nil {
 				return err
 			}
-			media := make([]usageRecord, len(value.Media))
-			for index, usage := range value.Media {
-				media[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
-			}
 			if exporter.recordYield != nil {
 				exporter.recordYield("entry", 1)
 			}
-			return write(entryRecord{
-				ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-				CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
-				PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: media, Location: portableLocation(value.Location), LinkCards: portableLinkCards(value.LinkCards),
-			})
+			return write(portableEntryRecord(value))
 		})
 	})
 	if err != nil {
@@ -247,20 +267,10 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			if err := validateArchiveComment(value); err != nil {
 				return err
 			}
-			media := make([]usageRecord, len(value.Media))
-			for index, usage := range value.Media {
-				media[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
-			}
 			if exporter.recordYield != nil {
 				exporter.recordYield("comment", 1)
 			}
-			return write(commentRecord{
-				ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
-				AuthorKind: value.AuthorKind, AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
-				ReplyToCommentID: value.ReplyToCommentID,
-				ContentMD:        value.ContentMD, CreatedAt: portableTime(value.CreatedAtMS), Media: media,
-				Location: portableLocation(value.Location), Pinned: value.Pinned,
-			})
+			return write(portableCommentRecord(value))
 		})
 	})
 	if err != nil {
@@ -274,16 +284,11 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 			if exporter.recordYield != nil {
 				exporter.recordYield("media", 1)
 			}
-			archivePath, err := mediaArchivePath(value)
+			record, err := portableMediaRecord(value)
 			if err != nil {
 				return err
 			}
-			return write(mediaRecord{
-				ID: value.ID, SHA256: value.SHA256, ArchivePath: archivePath,
-				OriginalName: value.OriginalName, MIMEType: value.MIMEType,
-				ByteSize: value.ByteSize, Width: value.Width, Height: value.Height,
-				CreatedAt: portableTime(value.CreatedAtMS),
-			})
+			return write(record)
 		})
 	})
 	if err != nil {
@@ -355,13 +360,17 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 	}
 
 	counts := snapshot.Counts()
-	if entryCount != counts.Entries || commentCount != counts.Comments || mediaCount != counts.Media || blobCount != counts.Media {
+	if entryCount != counts.Entries || commentCount != counts.Comments || mediaCount != counts.Media || blobCount != counts.Media ||
+		userCount != counts.Users || identityCount != counts.Identities {
 		return Summary{}, archiveInvalid("archive record counts changed inside one snapshot", nil)
 	}
 	manifestBytes, err := canonicalManifest(manifest{
 		Format: formatName, FormatVersion: FormatVersion, CreatedAt: createdAt.Format(time.RFC3339Nano),
 		Source: sourceManifest{AppVersion: exporter.appVersion, InstanceID: runtimeState.Instance.ID},
-		Counts: countManifest{Entries: counts.Entries, Comments: counts.Comments, Media: counts.Media},
+		Counts: countManifest{
+			Entries: counts.Entries, Comments: counts.Comments, Media: counts.Media,
+			Users: counts.Users, Identities: counts.Identities,
+		},
 	}, protocol.expandedBytes)
 	if err != nil {
 		return Summary{}, err
@@ -493,6 +502,13 @@ type countManifest struct {
 	Entries  int64 `json:"entries"`
 	Comments int64 `json:"comments"`
 	Media    int64 `json:"media"`
+	// Users and Identities are additive within format version 1 for the same
+	// reason every added record field is: the version is compared with strict
+	// equality, so an archive written before accounts existed must still
+	// import. They are omitted when absent, and their absence is what marks an
+	// archive as carrying no accounts members at all.
+	Users      int64 `json:"users,omitempty"`
+	Identities int64 `json:"identities,omitempty"`
 }
 
 type limitManifest struct {
@@ -511,6 +527,48 @@ type siteRecord struct {
 	CoverMediaID    *string `json:"cover_media_id"`
 	PinnedPostID    *string `json:"pinned_post_id"`
 	CommentsEnabled bool    `json:"comments_enabled"`
+}
+
+// userRecord is the v1 wire shape of one account.
+//
+// It duplicates five fields siteRecord already carries -- username, display
+// name, bio, avatar and cover -- because siteRecord cannot lose them without
+// breaking archives written before this member existed. The exporter reads both
+// from the same account row and the importer writes both from the same record,
+// so the duplication cannot drift; validation rejects an archive where the two
+// disagree rather than picking a winner.
+type userRecord struct {
+	ID            string  `json:"id"`
+	Username      string  `json:"username"`
+	DisplayName   string  `json:"display_name"`
+	Bio           string  `json:"bio"`
+	AvatarMediaID *string `json:"avatar_media_id"`
+	CoverMediaID  *string `json:"cover_media_id"`
+	Role          string  `json:"role"`
+	Status        string  `json:"status"`
+	// UsernameSetAt is absent while the handle is still the generated one, so
+	// null and missing mean the same thing here.
+	UsernameSetAt *string `json:"username_set_at,omitempty"`
+	CreatedAt     string  `json:"created_at"`
+	UpdatedAt     string  `json:"updated_at"`
+}
+
+// identityRecord is the v1 wire shape of one external credential.
+//
+// It carries no secret: a provider and the opaque account id that provider
+// issued are what let a returning person be recognised, and nothing here can be
+// replayed as a sign-in. Sessions are excluded from the archive entirely.
+type identityRecord struct {
+	Provider         string  `json:"provider"`
+	ProviderUserID   string  `json:"provider_user_id"`
+	UserID           string  `json:"user_id"`
+	Email            *string `json:"email"`
+	EmailVerified    bool    `json:"email_verified"`
+	EmailDeliverable bool    `json:"email_deliverable"`
+	DisplayName      string  `json:"display_name"`
+	AvatarURL        *string `json:"avatar_url"`
+	CreatedAt        string  `json:"created_at"`
+	LastLoginAt      string  `json:"last_login_at"`
 }
 
 type usageRecord struct {
@@ -612,6 +670,147 @@ type mediaRecord struct {
 	Width        uint32 `json:"width"`
 	Height       uint32 `json:"height"`
 	CreatedAt    string `json:"created_at"`
+}
+
+// The functions below are the single definition of how one authority row
+// becomes one wire record, and back.
+//
+// They exist because there used to be two independent hand-written copies of
+// every mapping: one in the exporter, and one in the staged-authority check
+// that compares a rebuilt database back against the archive it was built from.
+// That check decodes the archive side whole -- every field, automatically --
+// and rebuilt the database side field by field, then compared the two with
+// reflect.DeepEqual. A field the exporter wrote and the rebuild forgot produced
+// "staged comments do not match the portable archive": no field named, and only
+// when real data actually used the field, so tests and most archives stayed
+// green. That is exactly how the pinned flag was lost, and with it every backup
+// containing a pinned comment.
+//
+// With one definition per direction, a forgotten field is a compile error.
+// Nothing outside these functions may build a wire record from an authority row.
+
+func portableSiteRecord(value sqlitestore.ArchiveSite) siteRecord {
+	return siteRecord{
+		OwnerID: value.OwnerID, Username: value.Username, DisplayName: value.DisplayName,
+		Title: value.Title, Bio: value.Bio, Timezone: value.Timezone,
+		PublicBaseURL: value.PublicBaseURL, AvatarMediaID: value.AvatarMediaID,
+		CoverMediaID: value.CoverMediaID, PinnedPostID: value.PinnedPostID,
+		CommentsEnabled: value.CommentsEnabled,
+	}
+}
+
+func archiveSiteOf(value siteRecord) sqlitestore.ArchiveSite {
+	return sqlitestore.ArchiveSite{
+		OwnerID: value.OwnerID, Username: value.Username, DisplayName: value.DisplayName,
+		Title: value.Title, Bio: value.Bio, Timezone: value.Timezone,
+		PublicBaseURL: value.PublicBaseURL, AvatarMediaID: value.AvatarMediaID,
+		CoverMediaID: value.CoverMediaID, PinnedPostID: value.PinnedPostID,
+		CommentsEnabled: value.CommentsEnabled,
+	}
+}
+
+func portableUserRecord(value sqlitestore.ArchiveUser) userRecord {
+	return userRecord{
+		ID: value.ID, Username: value.Username, DisplayName: value.DisplayName, Bio: value.Bio,
+		AvatarMediaID: value.AvatarMediaID, CoverMediaID: value.CoverMediaID,
+		Role: value.Role, Status: value.Status,
+		UsernameSetAt: portableOptionalTime(value.UsernameSetAtMS),
+		CreatedAt:     portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
+	}
+}
+
+func archiveUserOf(value userRecord) (sqlitestore.ArchiveUser, error) {
+	created, err := parsePortableTimestamp(value.CreatedAt)
+	if err != nil {
+		return sqlitestore.ArchiveUser{}, err
+	}
+	updated, err := parsePortableTimestamp(value.UpdatedAt)
+	if err != nil {
+		return sqlitestore.ArchiveUser{}, err
+	}
+	result := sqlitestore.ArchiveUser{
+		ID: value.ID, Username: value.Username, DisplayName: value.DisplayName, Bio: value.Bio,
+		AvatarMediaID: value.AvatarMediaID, CoverMediaID: value.CoverMediaID,
+		Role: value.Role, Status: value.Status,
+		CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(),
+	}
+	if value.UsernameSetAt != nil {
+		moment, err := parsePortableTimestamp(*value.UsernameSetAt)
+		if err != nil {
+			return sqlitestore.ArchiveUser{}, err
+		}
+		millis := moment.UnixMilli()
+		result.UsernameSetAtMS = &millis
+	}
+	return result, nil
+}
+
+func portableIdentityRecord(value sqlitestore.ArchiveIdentity) identityRecord {
+	return identityRecord{
+		Provider: value.Provider, ProviderUserID: value.ProviderUserID, UserID: value.UserID,
+		Email: value.Email, EmailVerified: value.EmailVerified, EmailDeliverable: value.EmailDeliverable,
+		DisplayName: value.DisplayName, AvatarURL: value.AvatarURL,
+		CreatedAt: portableTime(value.CreatedAtMS), LastLoginAt: portableTime(value.LastLoginAtMS),
+	}
+}
+
+func archiveIdentityOf(value identityRecord) (sqlitestore.ArchiveIdentity, error) {
+	created, err := parsePortableTimestamp(value.CreatedAt)
+	if err != nil {
+		return sqlitestore.ArchiveIdentity{}, err
+	}
+	lastLogin, err := parsePortableTimestamp(value.LastLoginAt)
+	if err != nil {
+		return sqlitestore.ArchiveIdentity{}, err
+	}
+	return sqlitestore.ArchiveIdentity{
+		Provider: value.Provider, ProviderUserID: value.ProviderUserID, UserID: value.UserID,
+		Email: value.Email, EmailVerified: value.EmailVerified, EmailDeliverable: value.EmailDeliverable,
+		DisplayName: value.DisplayName, AvatarURL: value.AvatarURL,
+		CreatedAtMS: created.UnixMilli(), LastLoginAtMS: lastLogin.UnixMilli(),
+	}, nil
+}
+
+func portableUsageRecords(values []sqlitestore.ArchiveUsage) []usageRecord {
+	records := make([]usageRecord, len(values))
+	for index, usage := range values {
+		records[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
+	}
+	return records
+}
+
+func portableEntryRecord(value sqlitestore.ArchiveEntry) entryRecord {
+	return entryRecord{
+		ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
+		CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
+		PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS),
+		QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable,
+		Media: portableUsageRecords(value.Media), Location: portableLocation(value.Location),
+		LinkCards: portableLinkCards(value.LinkCards),
+	}
+}
+
+func portableCommentRecord(value sqlitestore.ArchiveComment) commentRecord {
+	return commentRecord{
+		ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
+		AuthorKind: value.AuthorKind, AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
+		ReplyToCommentID: value.ReplyToCommentID, ContentMD: value.ContentMD,
+		CreatedAt: portableTime(value.CreatedAtMS), Media: portableUsageRecords(value.Media),
+		Location: portableLocation(value.Location), Pinned: value.Pinned,
+	}
+}
+
+func portableMediaRecord(value sqlitestore.ArchiveMedia) (mediaRecord, error) {
+	archivePath, err := mediaArchivePath(value)
+	if err != nil {
+		return mediaRecord{}, err
+	}
+	return mediaRecord{
+		ID: value.ID, SHA256: value.SHA256, ArchivePath: archivePath,
+		OriginalName: value.OriginalName, MIMEType: value.MIMEType,
+		ByteSize: value.ByteSize, Width: value.Width, Height: value.Height,
+		CreatedAt: portableTime(value.CreatedAtMS),
+	}, nil
 }
 
 type protocolWriter struct {
@@ -1044,6 +1243,123 @@ func validateArchiveSite(value sqlitestore.ArchiveSite, development bool) error 
 	return nil
 }
 
+// maxPortableBioRunes is the bound the portable site record has always applied
+// to a bio, and therefore the bound an account's bio is held to as well. The
+// domain's own limit is lower, and deliberately not reused: it applies to what
+// a person may write next, not to what an older instance already stored, and
+// enforcing the smaller number here would make those backups unimportable.
+const maxPortableBioRunes = 500
+
+func validateArchiveUser(value sqlitestore.ArchiveUser) error {
+	for _, field := range []string{value.ID, value.Username, value.DisplayName, value.Bio, value.Role, value.Status} {
+		if !utf8.ValidString(field) || strings.ContainsRune(field, 0) {
+			return errors.New("account text is not canonical UTF-8")
+		}
+	}
+	if err := domain.ValidateUserID(value.ID); err != nil {
+		return err
+	}
+	// Shape only. The reserved-handle list is a write-time rule; applying it on
+	// read would invalidate an account every time the list grows.
+	if err := domain.ValidateStoredUsername(value.Username); err != nil {
+		return err
+	}
+	if strings.TrimSpace(value.DisplayName) != value.DisplayName || value.DisplayName == "" || len([]rune(value.DisplayName)) > domain.MaxDisplayNameLength {
+		return errors.New("account display name is invalid")
+	}
+	if len([]rune(value.Bio)) > maxPortableBioRunes {
+		return errors.New("account bio exceeds the portable limit")
+	}
+	if err := domain.ValidateUserRole(domain.UserRole(value.Role)); err != nil {
+		return err
+	}
+	if err := domain.ValidateAccountStatus(domain.AccountStatus(value.Status)); err != nil {
+		return err
+	}
+	for _, reference := range []*string{value.AvatarMediaID, value.CoverMediaID} {
+		if reference == nil {
+			continue
+		}
+		if _, err := domain.ParseID(*reference); err != nil {
+			return err
+		}
+	}
+	if value.CreatedAtMS <= 0 || value.UpdatedAtMS <= 0 || (value.UsernameSetAtMS != nil && *value.UsernameSetAtMS <= 0) {
+		return errors.New("account timestamps must be positive")
+	}
+	return nil
+}
+
+func validateArchiveIdentity(value sqlitestore.ArchiveIdentity) error {
+	fields := []string{value.Provider, value.ProviderUserID, value.UserID, value.DisplayName}
+	if value.Email != nil {
+		fields = append(fields, *value.Email)
+	}
+	if value.AvatarURL != nil {
+		fields = append(fields, *value.AvatarURL)
+	}
+	for _, field := range fields {
+		if !utf8.ValidString(field) || strings.ContainsRune(field, 0) {
+			return errors.New("identity text is not canonical UTF-8")
+		}
+	}
+	if err := domain.ValidateUserID(value.UserID); err != nil {
+		return err
+	}
+	// The provider name is an open set on purpose: rejecting a value some
+	// earlier version wrote is what would make that version's backups
+	// unimportable. Only the shape is checked -- lowercase, bounded, and
+	// without the colon that joins it to a provider account id when the pair
+	// has to travel as one string.
+	if value.Provider == "" || len(value.Provider) > 64 ||
+		strings.Trim(value.Provider, "abcdefghijklmnopqrstuvwxyz0123456789._-") != "" {
+		return errors.New("identity provider is not a canonical lowercase name")
+	}
+	if value.ProviderUserID == "" || len(value.ProviderUserID) > 255 {
+		return errors.New("identity provider account id is invalid")
+	}
+	if len([]rune(value.DisplayName)) > domain.MaxDisplayNameLength {
+		return errors.New("identity display name exceeds the portable limit")
+	}
+	if value.Email != nil && (*value.Email == "" || len(*value.Email) > 320) {
+		return errors.New("identity email is invalid")
+	}
+	if value.AvatarURL != nil && (*value.AvatarURL == "" || len(*value.AvatarURL) > 2048) {
+		return errors.New("identity avatar URL is invalid")
+	}
+	if value.CreatedAtMS <= 0 || value.LastLoginAtMS <= 0 {
+		return errors.New("identity timestamps must be positive")
+	}
+	return nil
+}
+
+// synthesizeOwnerAccount reconstructs the one account an archive written before
+// data/users.jsonl existed describes without naming.
+//
+// Such an archive is not accountless: its site record already carries the
+// owner's id, handle, name, bio and pictures, which is every field an account
+// row needs but its timestamps. Those come from when the archive itself was
+// written -- the only instant the archive states. The handle is stamped as
+// deliberately chosen because it was: it belonged to a person before the
+// rename prompt existed, and leaving it unstamped would ask them to pick a
+// username they already have.
+func synthesizeOwnerAccount(site siteRecord, archivedAt time.Time) (sqlitestore.ArchiveUser, error) {
+	if site.OwnerID == "" {
+		return sqlitestore.ArchiveUser{}, errors.New("archive states no owner identity to synthesize an account from")
+	}
+	millis := archivedAt.UnixMilli()
+	if millis <= 0 {
+		return sqlitestore.ArchiveUser{}, errors.New("archive creation instant cannot date an owner account")
+	}
+	stamped := millis
+	return sqlitestore.ArchiveUser{
+		ID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName, Bio: site.Bio,
+		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID,
+		Role: string(domain.UserRoleOwner), Status: string(domain.AccountActive),
+		UsernameSetAtMS: &stamped, CreatedAtMS: millis, UpdatedAtMS: millis,
+	}, nil
+}
+
 func validateArchiveMedia(value sqlitestore.ArchiveMedia) error {
 	if _, err := domain.ParseID(value.ID); err != nil {
 		return err
@@ -1176,6 +1492,54 @@ func createPartial(destination string) (*os.File, error) {
 	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 }
 
+// Format version 1 has two member layouts, and both are valid to read.
+//
+// accountPortableMembers is what an exporter writes today. legacyPortableMembers
+// is what one wrote before accounts existed. The format version is compared with
+// strict equality, so bumping it would make the backup a person took just before
+// upgrading unreadable by the binary they upgraded to -- which is the one moment
+// a backup exists for, since a schema migration only runs forwards. The rule
+// that already governs added fields therefore governs added members: always
+// write the newest layout, always accept either on read.
+var (
+	legacyPortableMembers = []string{
+		"README.txt", "data/site.json", "data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl",
+	}
+	accountPortableMembers = []string{
+		"README.txt", "data/site.json", "data/users.jsonl", "data/identities.jsonl",
+		"data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl",
+	}
+	portableTrailerMembers = []string{"manifest.json", "checksums.sha256"}
+)
+
+// portableLeadingMembers decides which layout an archive uses and proves every
+// member that layout requires is present. The two accounts members arrive
+// together or not at all: one without the other is neither layout.
+func portableLeadingMembers(seen map[string]struct{}) ([]string, error) {
+	_, users := seen["data/users.jsonl"]
+	_, identities := seen["data/identities.jsonl"]
+	if users != identities {
+		return nil, errors.New("portable accounts members must be present together")
+	}
+	leading := legacyPortableMembers
+	if users {
+		leading = accountPortableMembers
+	}
+	for _, required := range append(append([]string{}, leading...), portableTrailerMembers...) {
+		if _, exists := seen[required]; !exists {
+			return nil, fmt.Errorf("required member %q is missing", required)
+		}
+	}
+	return leading, nil
+}
+
+// archiveCarriesAccounts reports whether a ZIP holds the accounts members.
+func archiveCarriesAccounts(files map[string]*zip.File) bool {
+	_, users := files["data/users.jsonl"]
+	_, identities := files["data/identities.jsonl"]
+	return users && identities
+}
+
 // ValidateFile independently validates one complete v1 archive using only its
 // ZIP members. It performs bounded-memory checksum verification and therefore
 // doubles as the future import protocol's fail-closed inspection primitive.
@@ -1194,12 +1558,12 @@ func ValidateFileContext(ctx context.Context, name string) error {
 		return archiveInvalid("prepared ZIP central directory is invalid", err)
 	}
 	defer func() { _ = reader.Close() }()
-	if len(reader.File) < 7 {
+	if len(reader.File) < len(legacyPortableMembers)+len(portableTrailerMembers) {
 		return archiveInvalid("prepared ZIP is missing required members", nil)
 	}
 	seen := make(map[string]struct{}, len(reader.File))
 	files := make(map[string]*zip.File, len(reader.File))
-	for index, file := range reader.File {
+	for _, file := range reader.File {
 		if err := validateMemberName(file.Name); err != nil {
 			return archiveInvalid("prepared ZIP contains an unsafe member name", err)
 		}
@@ -1211,23 +1575,24 @@ func ValidateFileContext(ctx context.Context, name string) error {
 		if file.FileInfo().IsDir() || file.Mode()&os.ModeSymlink != 0 {
 			return archiveInvalid("prepared ZIP contains a non-regular member", nil)
 		}
-		if index < 5 {
-			expected := []string{"README.txt", "data/site.json", "data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl"}[index]
-			if file.Name != expected {
-				return archiveInvalid("prepared ZIP member order is not canonical", nil)
-			}
-		}
 	}
-	for _, required := range []string{"README.txt", "data/site.json", "data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl", "manifest.json", "checksums.sha256"} {
-		if _, exists := seen[required]; !exists {
-			return archiveInvalid("prepared ZIP is missing a required member", nil)
+	leading, err := portableLeadingMembers(seen)
+	if err != nil {
+		return archiveInvalid("prepared ZIP portable member set is not one known layout", err)
+	}
+	if len(reader.File) < len(leading)+len(portableTrailerMembers) {
+		return archiveInvalid("prepared ZIP is missing required members", nil)
+	}
+	for index, expected := range leading {
+		if reader.File[index].Name != expected {
+			return archiveInvalid("prepared ZIP member order is not canonical", nil)
 		}
 	}
 	if reader.File[len(reader.File)-2].Name != "manifest.json" || reader.File[len(reader.File)-1].Name != "checksums.sha256" {
 		return archiveInvalid("prepared ZIP trailer order is not canonical", nil)
 	}
 	lastMedia := ""
-	for _, file := range reader.File[5 : len(reader.File)-2] {
+	for _, file := range reader.File[len(leading) : len(reader.File)-2] {
 		if !strings.HasPrefix(file.Name, "media/") || file.Name <= lastMedia {
 			return archiveInvalid("prepared ZIP media member order is not canonical", nil)
 		}
@@ -1267,8 +1632,8 @@ func ValidateFileContext(ctx context.Context, name string) error {
 	if err != nil {
 		return archiveInvalid("prepared ZIP manifest timestamp is not canonical UTC", err)
 	}
-	portableMedia := make(map[string]media.Media, len(reader.File)-7)
-	if err := validatePortableRecords(ctx, files, reader.File[5:len(reader.File)-2], value, portableMedia); err != nil {
+	portableMedia := make(map[string]media.Media, len(reader.File)-len(leading)-len(portableTrailerMembers))
+	if err := validatePortableRecords(ctx, files, reader.File[len(leading):len(reader.File)-2], value, portableMedia); err != nil {
 		return archiveInvalid("prepared ZIP portable records are invalid", err)
 	}
 
@@ -1413,12 +1778,11 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	if err := requireNonNull(siteFields, "title", "bio", "timezone", "comments_enabled"); err != nil {
 		return err
 	}
-	if err := validateArchiveSite(sqlitestore.ArchiveSite{
-		OwnerID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName,
-		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone,
-		PublicBaseURL: site.PublicBaseURL, AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID,
-		CommentsEnabled: site.CommentsEnabled,
-	}, true); err != nil {
+	if err := validateArchiveSite(archiveSiteOf(site), true); err != nil {
+		return err
+	}
+	accountMediaIDs, err := validatePortableAccounts(ctx, files, document, site)
+	if err != nil {
 		return err
 	}
 
@@ -1696,7 +2060,127 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			return errors.New("site pin refers to an entry absent from the archive")
 		}
 	}
+	for id := range accountMediaIDs {
+		if _, exists := mediaIDs[id]; !exists {
+			return errors.New("an account picture refers to media absent from the archive")
+		}
+	}
 	return nil
+}
+
+// validatePortableAccounts validates the two accounts members and returns every
+// media id an account points at, for the reachability sweep the caller runs
+// once media records are known.
+//
+// An archive without those members is not rejected: it was written before they
+// existed and still states its one account, in the site record. The counts it
+// declares must then say so too, which is what stops a manifest from claiming
+// accounts an archive does not carry.
+func validatePortableAccounts(ctx context.Context, files map[string]*zip.File, document manifest, site siteRecord) (map[string]struct{}, error) {
+	pictures := make(map[string]struct{})
+	if !archiveCarriesAccounts(files) {
+		if document.Counts.Users != 0 || document.Counts.Identities != 0 {
+			return nil, errors.New("manifest declares accounts the archive does not carry")
+		}
+		return pictures, nil
+	}
+	// An archive that carries accounts states its owner in both places. The
+	// site record's copy is the one older readers see, so an archive that
+	// dropped it would restore under a different name depending on which
+	// version opened it.
+	if site.OwnerID == "" {
+		return nil, errors.New("an archive carrying accounts must name its owner in the site record")
+	}
+	userIDs := make(map[string]struct{})
+	usernames := make(map[string]struct{})
+	owners := 0
+	lastUserID := ""
+	users, err := validateJSONLines[userRecord](ctx, files["data/users.jsonl"], []string{
+		"id", "username", "display_name", "bio", "avatar_media_id", "cover_media_id", "role", "status", "created_at", "updated_at",
+	}, func(value userRecord, fields map[string]json.RawMessage) error {
+		if int64(len(userIDs)) >= document.Counts.Users {
+			return errors.New("account records exceed the manifest count")
+		}
+		if err := requireNonNull(fields, "id", "username", "display_name", "bio", "role", "status", "created_at", "updated_at"); err != nil {
+			return err
+		}
+		account, err := archiveUserOf(value)
+		if err != nil {
+			return err
+		}
+		if err := validateArchiveUser(account); err != nil {
+			return err
+		}
+		if value.ID <= lastUserID {
+			return errors.New("account records are not in strict ID order")
+		}
+		handle := strings.ToLower(value.Username)
+		if _, exists := usernames[handle]; exists {
+			return errors.New("account username is duplicated")
+		}
+		usernames[handle] = struct{}{}
+		if domain.UserRole(value.Role) == domain.UserRoleOwner {
+			owners++
+			// The site record's profile half is a second copy of these five
+			// fields. Rejecting a disagreement is the only honest option: with
+			// two answers and no tiebreak, picking one would silently rename
+			// the owner on restore.
+			if value.ID != site.OwnerID || value.Username != site.Username || value.DisplayName != site.DisplayName ||
+				value.Bio != site.Bio || !reflect.DeepEqual(value.AvatarMediaID, site.AvatarMediaID) ||
+				!reflect.DeepEqual(value.CoverMediaID, site.CoverMediaID) {
+				return errors.New("owner account and site record describe different owners")
+			}
+		}
+		for _, picture := range []*string{value.AvatarMediaID, value.CoverMediaID} {
+			if picture != nil {
+				pictures[*picture] = struct{}{}
+			}
+		}
+		userIDs[value.ID] = struct{}{}
+		lastUserID = value.ID
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if owners != 1 {
+		return nil, errors.New("portable accounts must contain exactly one owner")
+	}
+	lastProvider, lastProviderUserID := "", ""
+	seenIdentities := int64(0)
+	identities, err := validateJSONLines[identityRecord](ctx, files["data/identities.jsonl"], []string{
+		"provider", "provider_user_id", "user_id", "email", "email_verified", "email_deliverable", "display_name", "avatar_url", "created_at", "last_login_at",
+	}, func(value identityRecord, fields map[string]json.RawMessage) error {
+		if seenIdentities >= document.Counts.Identities {
+			return errors.New("identity records exceed the manifest count")
+		}
+		if err := requireNonNull(fields, "provider", "provider_user_id", "user_id", "email_verified", "email_deliverable", "display_name", "created_at", "last_login_at"); err != nil {
+			return err
+		}
+		identity, err := archiveIdentityOf(value)
+		if err != nil {
+			return err
+		}
+		if err := validateArchiveIdentity(identity); err != nil {
+			return err
+		}
+		if value.Provider < lastProvider || value.Provider == lastProvider && value.ProviderUserID <= lastProviderUserID {
+			return errors.New("identity records are not in strict provider and account order")
+		}
+		if _, exists := userIDs[value.UserID]; !exists {
+			return errors.New("identity refers to an account absent from the archive")
+		}
+		lastProvider, lastProviderUserID = value.Provider, value.ProviderUserID
+		seenIdentities++
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if users != document.Counts.Users || identities != document.Counts.Identities {
+		return nil, errors.New("manifest account counts do not match portable records")
+	}
+	return pictures, nil
 }
 
 func portableCommentUsages(value commentRecord, fields map[string]json.RawMessage) ([]sqlitestore.ArchiveUsage, error) {

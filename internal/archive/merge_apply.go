@@ -244,8 +244,21 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 	}
 	applySiteSelection(&result.Authority.Site, incoming.Site, siteChoices, result.EntryRemap, mediaRemap)
 	// Instance identity and canonical public URL always remain local.
+	//
+	// Keeping owner_id local used to be the entire account story, and it was
+	// enough only while there was exactly one account and it was implied by the
+	// site row. Now that accounts are real rows, this line would silently drop
+	// every account the backup carries -- including the ones the comments it is
+	// about to restore were written by. The accounts are resolved explicitly
+	// below; this line survives because which account owns the instance is
+	// still a property of the instance, not of the backup.
 	result.Authority.Site.OwnerID = local.Site.OwnerID
 	result.Authority.Site.PublicBaseURL = local.Site.PublicBaseURL
+
+	result.Authority.Users, result.Authority.Identities, err = resolveMergeAccounts(local, incoming, result.Authority.Site, mediaRemap)
+	if err != nil {
+		return ResolvedMerge{}, err
+	}
 
 	referenced := referencedMediaIDs(result.Authority)
 	for id := range referenced {
@@ -272,6 +285,104 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 	}
 	result.Authority.Media = sortedMedia(result.Authority.Media)
 	return result, nil
+}
+
+// resolveMergeAccounts decides which accounts and credentials the merged
+// generation holds. There is no selection to consult, on purpose.
+//
+// A local account is never replaced by its backup copy: a person's current
+// handle, status and role are facts about this instance now, and a backup is a
+// picture of a moment that has already passed. An account the backup knows and
+// this instance does not is added, because the comments being restored beside
+// it name it as their author and an account that is missing renders as plain
+// text with no way back.
+//
+// The owner is the one account whose profile a merge can change, and only
+// through the site fields, which is where the portable format states those five
+// columns. Copying the resolved site back onto the owner row here is what makes
+// choosing "use incoming" for a display name actually land on the account.
+//
+// Two accounts cannot share a handle, and nothing in a two-way merge can decide
+// which of two people gets renamed. That is refused rather than resolved.
+func resolveMergeAccounts(local, incoming PortableAuthority, site sqlitestore.ArchiveSite, mediaRemap map[string]string) ([]sqlitestore.ArchiveUser, []sqlitestore.ArchiveIdentity, error) {
+	if len(local.Users) == 0 && len(incoming.Users) == 0 {
+		// Neither side states any account, which is what an authority read from
+		// an archive written before accounts existed looks like. There is
+		// nothing to merge and nothing to lose; the rebuilt generation keeps
+		// the account its own migrations created.
+		return nil, nil, nil
+	}
+	accounts := map[string]sqlitestore.ArchiveUser{}
+	handles := map[string]string{}
+	claim := func(value sqlitestore.ArchiveUser) error {
+		handle := strings.ToLower(value.Username)
+		if holder, taken := handles[handle]; taken && holder != value.ID {
+			return domain.NewError(domain.CodeUsernameTaken, "the backup and this site both have an account using one username", map[string]any{
+				"username": value.Username, "local_user_id": holder, "incoming_user_id": value.ID,
+			})
+		}
+		handles[handle] = value.ID
+		accounts[value.ID] = value
+		return nil
+	}
+	for _, value := range sortedUsers(local.Users) {
+		if err := claim(value); err != nil {
+			return nil, nil, err
+		}
+	}
+	for _, value := range sortedUsers(incoming.Users) {
+		if _, exists := accounts[value.ID]; exists {
+			continue
+		}
+		added := cloneArchiveUser(value)
+		added.AvatarMediaID = remappedPointer(added.AvatarMediaID, mediaRemap)
+		added.CoverMediaID = remappedPointer(added.CoverMediaID, mediaRemap)
+		// The site has one owner and it is the local one. An incoming account
+		// that held the role elsewhere arrives as an ordinary member.
+		if added.ID != site.OwnerID {
+			added.Role = string(domain.UserRoleMember)
+		}
+		if err := claim(added); err != nil {
+			return nil, nil, err
+		}
+	}
+	owner, exists := accounts[site.OwnerID]
+	if !exists {
+		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "merged accounts do not contain the site owner", map[string]any{"owner_id": site.OwnerID})
+	}
+	delete(handles, strings.ToLower(owner.Username))
+	owner.Role = string(domain.UserRoleOwner)
+	owner.Username, owner.DisplayName, owner.Bio = site.Username, site.DisplayName, site.Bio
+	owner.AvatarMediaID, owner.CoverMediaID = cloneString(site.AvatarMediaID), cloneString(site.CoverMediaID)
+	if err := claim(owner); err != nil {
+		return nil, nil, err
+	}
+	users := make([]sqlitestore.ArchiveUser, 0, len(accounts))
+	for _, value := range accounts {
+		users = append(users, value)
+	}
+
+	credentials := map[string]sqlitestore.ArchiveIdentity{}
+	for _, value := range sortedIdentities(local.Identities) {
+		credentials[mergeIdentityID(value.Provider, value.ProviderUserID)] = value
+	}
+	for _, value := range sortedIdentities(incoming.Identities) {
+		key := mergeIdentityID(value.Provider, value.ProviderUserID)
+		if _, exists := credentials[key]; exists {
+			continue
+		}
+		if _, known := accounts[value.UserID]; !known {
+			return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "a backup credential names an account the merge did not keep", map[string]any{
+				"provider": value.Provider, "user_id": value.UserID,
+			})
+		}
+		credentials[key] = cloneArchiveIdentity(value)
+	}
+	identities := make([]sqlitestore.ArchiveIdentity, 0, len(credentials))
+	for _, value := range credentials {
+		identities = append(identities, value)
+	}
+	return sortedUsers(users), sortedIdentities(identities), nil
 }
 
 // clearStrandedReplyTargets drops every reply annotation the resolved graph
@@ -519,6 +630,15 @@ func referencedMediaIDs(authority PortableAuthority) map[string]struct{} {
 			result[*id] = struct{}{}
 		}
 	}
+	// Every account has pictures, not just the owner's, and a picture whose
+	// bytes are not carried across becomes a foreign key the rebuild refuses.
+	for _, account := range authority.Users {
+		for _, id := range []*string{account.AvatarMediaID, account.CoverMediaID} {
+			if id != nil {
+				result[*id] = struct{}{}
+			}
+		}
+	}
 	for _, entry := range authority.Entries {
 		for _, usage := range entry.Media {
 			result[usage.MediaID] = struct{}{}
@@ -592,6 +712,24 @@ func rebuildResolvedMergeGeneration(ctx context.Context, parent *runtimefs.Runti
 			return err
 		}
 	}
+	// Accounts precede comments because a comment names the account that wrote
+	// it, and the owner precedes every other account because it is the one that
+	// replaces the account this generation was created with.
+	for _, ownerPass := range []bool{true, false} {
+		for _, value := range resolved.Authority.Users {
+			if (domain.UserRole(value.Role) == domain.UserRoleOwner) != ownerPass {
+				continue
+			}
+			if err := importer.InsertUser(ctx, value); err != nil {
+				return err
+			}
+		}
+	}
+	for _, value := range resolved.Authority.Identities {
+		if err := importer.InsertIdentity(ctx, value); err != nil {
+			return err
+		}
+	}
 	for _, value := range sortedEntries(resolved.Authority.Entries) {
 		if err := importer.InsertEntry(ctx, value); err != nil {
 			return err
@@ -605,7 +743,11 @@ func rebuildResolvedMergeGeneration(ctx context.Context, parent *runtimefs.Runti
 	if err := importer.SetSite(ctx, resolved.Authority.Site); err != nil {
 		return err
 	}
-	expected := sqlitestore.ArchiveCounts{Entries: int64(len(resolved.Authority.Entries)), Comments: int64(len(resolved.Authority.Comments)), Media: int64(len(resolved.Authority.Media))}
+	expected := sqlitestore.ArchiveCounts{
+		Entries: int64(len(resolved.Authority.Entries)), Comments: int64(len(resolved.Authority.Comments)),
+		Media: int64(len(resolved.Authority.Media)), Users: int64(len(resolved.Authority.Users)),
+		Identities: int64(len(resolved.Authority.Identities)),
+	}
 	if err := importer.Commit(ctx, expected); err != nil {
 		return err
 	}

@@ -658,6 +658,10 @@ func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) 
 	site["avatar_media_id"] = nil
 	site["cover_media_id"] = nil
 	members["data/site.json"] = append(mustMarshalTest(t, site), '\n')
+	// The owner account carries the same two pictures, so clearing only the
+	// site record would describe two different owners rather than an archive
+	// whose media is genuinely unreferenced.
+	setAccountPictures(t, members, nil, nil)
 	rebuildManifestExpanded(t, members)
 	rebuildChecksums(members)
 	orphanPath := filepath.Join(t.TempDir(), "unreachable-media.zip")

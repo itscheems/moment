@@ -12,10 +12,16 @@ import (
 // ArchiveCounts are captured by the first statement in an archive read
 // transaction. That statement establishes the WAL snapshot used by every
 // subsequent archive query.
+//
+// Users and Identities join the three original counts because accounts are now
+// authoritative portable records. Every field here must be read by that same
+// first statement or it describes a different instant than the rest.
 type ArchiveCounts struct {
-	Entries  int64
-	Comments int64
-	Media    int64
+	Entries    int64
+	Comments   int64
+	Media      int64
+	Users      int64
+	Identities int64
 }
 
 // ArchiveImpact describes authoritative portable data currently selected by
@@ -38,6 +44,47 @@ type ArchiveSite struct {
 	CoverMediaID    *string
 	PinnedPostID    *string
 	CommentsEnabled bool
+}
+
+// ArchiveUser is one portable account.
+//
+// The five profile columns ArchiveSite still carries -- username, display name,
+// bio, avatar and cover -- live here now. ArchiveSite keeps its copy because it
+// is the v1 wire contract and archives written before accounts existed have no
+// other place to state who the owner was; the exporter reads both from this one
+// row, so the two can never disagree.
+type ArchiveUser struct {
+	ID            string
+	Username      string
+	DisplayName   string
+	Bio           string
+	AvatarMediaID *string
+	CoverMediaID  *string
+	Role          string
+	Status        string
+	// UsernameSetAtMS is nil while the handle is still the one generated from a
+	// provider display name, which is what the one-time rename prompt keys off.
+	UsernameSetAtMS *int64
+	CreatedAtMS     int64
+	UpdatedAtMS     int64
+}
+
+// ArchiveIdentity is one external credential bound to an ArchiveUser.
+//
+// Provider is carried verbatim rather than checked against a known set. The
+// importer writes stored values back unchanged, so narrowing the value domain
+// later would make every backup naming a retired provider unimportable.
+type ArchiveIdentity struct {
+	Provider         string
+	ProviderUserID   string
+	UserID           string
+	Email            *string
+	EmailVerified    bool
+	EmailDeliverable bool
+	DisplayName      string
+	AvatarURL        *string
+	CreatedAtMS      int64
+	LastLoginAtMS    int64
 }
 
 // ArchiveUsage is one ordered, nullable-alt media use.
@@ -172,10 +219,14 @@ func beginArchiveSnapshot(ctx context.Context, pool *sql.DB) (*ArchiveSnapshot, 
 SELECT
     (SELECT count(*) FROM entries),
     (SELECT count(*) FROM comments),
-    (SELECT count(*) FROM media WHERE `+mediaReferencedSQL+`)`).Scan(
+    (SELECT count(*) FROM media WHERE `+mediaReferencedSQL+`),
+    (SELECT count(*) FROM users),
+    (SELECT count(*) FROM identities)`).Scan(
 		&snapshot.counts.Entries,
 		&snapshot.counts.Comments,
 		&snapshot.counts.Media,
+		&snapshot.counts.Users,
+		&snapshot.counts.Identities,
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -241,6 +292,20 @@ WHERE child.parent_id IS NOT NULL
 	if siteRows != 1 {
 		return errors.New("archive snapshot does not contain exactly one site singleton")
 	}
+	// The site record's profile half is read through the owner account, so a
+	// missing or duplicated owner turns a complete export into a silently
+	// truncated one. Proving it here fails the export instead.
+	var ownerAccounts int64
+	if err := snapshot.tx.QueryRowContext(ctx, `
+SELECT count(*)
+FROM users AS account
+JOIN site_settings AS site ON site.owner_id = account.id
+WHERE site.id = 1 AND account.role = 'owner'`).Scan(&ownerAccounts); err != nil {
+		return fmt.Errorf("check archive owner account: %w", err)
+	}
+	if ownerAccounts != 1 {
+		return errors.New("archive snapshot does not contain exactly one owner account")
+	}
 	return nil
 }
 
@@ -252,10 +317,18 @@ func (snapshot *ArchiveSnapshot) Site(ctx context.Context) (ArchiveSite, error) 
 	var value ArchiveSite
 	var publicURL, avatar, cover, pinned sql.NullString
 	var comments int
+	// The owner's handle, name, self-description and pictures moved to the
+	// account in 0022. Reading them back through the join is what keeps the
+	// portable site record saying exactly what the account says; a second
+	// stored copy would be free to drift and neither side could prove which
+	// one was right.
 	err := snapshot.tx.QueryRowContext(ctx, `
-SELECT owner_id, username, display_name, title, bio, timezone, public_base_url, avatar_media_id, cover_media_id, pinned_entry_id, comments_enabled
-FROM site_settings
-WHERE id = 1`).Scan(&value.OwnerID, &value.Username, &value.DisplayName, &value.Title, &value.Bio, &value.Timezone, &publicURL, &avatar, &cover, &pinned, &comments)
+SELECT site.owner_id, account.username, account.display_name, site.title, account.bio, site.timezone,
+       site.public_base_url, account.avatar_media_id, account.cover_media_id, site.pinned_entry_id,
+       site.comments_enabled
+FROM site_settings AS site
+JOIN users AS account ON account.id = site.owner_id
+WHERE site.id = 1`).Scan(&value.OwnerID, &value.Username, &value.DisplayName, &value.Title, &value.Bio, &value.Timezone, &publicURL, &avatar, &cover, &pinned, &comments)
 	if err != nil {
 		return ArchiveSite{}, fmt.Errorf("read archive site settings: %w", err)
 	}
@@ -273,6 +346,100 @@ WHERE id = 1`).Scan(&value.OwnerID, &value.Username, &value.DisplayName, &value.
 	}
 	value.CommentsEnabled = comments == 1
 	return value, nil
+}
+
+// Users streams every account in stable ID order.
+func (snapshot *ArchiveSnapshot) Users(ctx context.Context, yield func(ArchiveUser) error) error {
+	if err := snapshot.requireOpen(); err != nil {
+		return err
+	}
+	if yield == nil {
+		return errors.New("archive user callback is required")
+	}
+	rows, err := snapshot.tx.QueryContext(ctx, `
+SELECT id, username, display_name, bio, avatar_media_id, cover_media_id,
+       role, status, username_set_at_ms, created_at_ms, updated_at_ms
+FROM users
+ORDER BY id`)
+	if err != nil {
+		return fmt.Errorf("query archive users: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var value ArchiveUser
+		var avatar, cover sql.NullString
+		var usernameSetAt sql.NullInt64
+		if err := rows.Scan(
+			&value.ID, &value.Username, &value.DisplayName, &value.Bio, &avatar, &cover,
+			&value.Role, &value.Status, &usernameSetAt, &value.CreatedAtMS, &value.UpdatedAtMS,
+		); err != nil {
+			return fmt.Errorf("scan archive user: %w", err)
+		}
+		if avatar.Valid {
+			value.AvatarMediaID = &avatar.String
+		}
+		if cover.Valid {
+			value.CoverMediaID = &cover.String
+		}
+		if usernameSetAt.Valid {
+			moment := usernameSetAt.Int64
+			value.UsernameSetAtMS = &moment
+		}
+		if err := yield(value); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate archive users: %w", err)
+	}
+	return nil
+}
+
+// Identities streams every external credential in stable natural-key order.
+// Sessions are deliberately excluded: a backup that carried them would revive
+// dead sign-ins on restore, which is exactly when that is least wanted.
+func (snapshot *ArchiveSnapshot) Identities(ctx context.Context, yield func(ArchiveIdentity) error) error {
+	if err := snapshot.requireOpen(); err != nil {
+		return err
+	}
+	if yield == nil {
+		return errors.New("archive identity callback is required")
+	}
+	rows, err := snapshot.tx.QueryContext(ctx, `
+SELECT provider, provider_user_id, user_id, email, email_verified, email_deliverable,
+       display_name, avatar_url, created_at_ms, last_login_at_ms
+FROM identities
+ORDER BY provider, provider_user_id`)
+	if err != nil {
+		return fmt.Errorf("query archive identities: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var value ArchiveIdentity
+		var email, avatarURL sql.NullString
+		var verified, deliverable int
+		if err := rows.Scan(
+			&value.Provider, &value.ProviderUserID, &value.UserID, &email, &verified, &deliverable,
+			&value.DisplayName, &avatarURL, &value.CreatedAtMS, &value.LastLoginAtMS,
+		); err != nil {
+			return fmt.Errorf("scan archive identity: %w", err)
+		}
+		if email.Valid {
+			value.Email = &email.String
+		}
+		if avatarURL.Valid {
+			value.AvatarURL = &avatarURL.String
+		}
+		value.EmailVerified = verified == 1
+		value.EmailDeliverable = deliverable == 1
+		if err := yield(value); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate archive identities: %w", err)
+	}
+	return nil
 }
 
 // Entries streams stable ID order while folding the bounded 0..8 usage join.
