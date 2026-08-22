@@ -252,3 +252,46 @@ func repeatHex(value string) string {
 	}
 	return result[:64]
 }
+
+// Migration 0020 backfilled author_user_id from the site owner, so every owner
+// comment in a live database carries a reference that the same comment in a
+// backup taken before that migration does not: the key is omitted and decodes
+// to nil. Both sides still render the same author, because a nil reference on
+// an owner row resolves to the site owner. Comparing the pointers instead of
+// the identity they resolve to turned every comment present on both sides into
+// a conflict, so restoring a pre-migration backup asked the reviewer to decide
+// the entire comment table one row at a time.
+func TestMergePlanTreatsABackfilledOwnerReferenceAsUnchanged(t *testing.T) {
+	ownerID := "0123456789abcdef0123456789abcdef"
+	otherID := "fedcba9876543210fedcba9876543210"
+	site := sqlitestore.ArchiveSite{OwnerID: ownerID, Username: "owner", DisplayName: "Owner", Timezone: "UTC", CommentsEnabled: true}
+	comment := func(id, kind string, authorUserID *string) sqlitestore.ArchiveComment {
+		return sqlitestore.ArchiveComment{ID: id, EntryID: "entry", AuthorKind: kind, AuthorName: "Owner", AuthorUserID: authorUserID, ContentMD: "same", CreatedAtMS: 1}
+	}
+	local := PortableAuthority{
+		Site:    site,
+		Entries: []sqlitestore.ArchiveEntry{{ID: "entry", Kind: "moment", ContentMD: "post", CreatedAtMS: 1, UpdatedAtMS: 1, PublishedAtMS: 1}},
+		Comments: []sqlitestore.ArchiveComment{
+			comment("comment-owner", "owner", &ownerID),
+			comment("comment-moved", "owner", &ownerID),
+			comment("comment-guest", "guest", nil),
+		},
+	}
+	incoming := local
+	incoming.Comments = []sqlitestore.ArchiveComment{
+		// Written before author_user_id existed: the key is absent and decodes
+		// to nil, and the reader resolves it to the site owner.
+		comment("comment-owner", "owner", nil),
+		// A different account is a real change and has to stay visible.
+		comment("comment-moved", "owner", &otherID),
+		comment("comment-guest", "guest", nil),
+	}
+	plan, err := ComparePortableAuthorities(MergePlanInput{ArchiveSHA256: repeatHex("a"), BaseGeneration: "generation", ExpiresAt: time.Unix(70, 0).UTC(), Local: local, Incoming: incoming})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := mergeItemsByKey(plan.Items)
+	assertMergeItem(t, items["comment\x00comment-owner"], MergeUnchanged, []string{})
+	assertMergeItem(t, items["comment\x00comment-guest"], MergeUnchanged, []string{})
+	assertMergeItem(t, items["comment\x00comment-moved"], MergeConflict, []string{"author_user_id"})
+}

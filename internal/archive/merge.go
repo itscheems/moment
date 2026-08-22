@@ -304,7 +304,7 @@ func comparePortableAuthorities(input MergePlanInput, requireSameOwner bool) (Me
 	for _, incoming := range sortedComments(input.Incoming.Comments) {
 		item := MergeItem{Kind: MergeComment, ID: incoming.ID, Selectable: true, ChangedFields: []string{}, Dependencies: commentDependencies(incoming)}
 		if local, exists := localComment[incoming.ID]; exists {
-			item.ChangedFields = commentChangedFields(local, incoming, localSHA, incomingSHA)
+			item.ChangedFields = commentChangedFields(local, incoming, localSHA, incomingSHA, input.Local.Site.OwnerID, input.Incoming.Site.OwnerID)
 			if len(item.ChangedFields) == 0 {
 				item.Classification = MergeUnchanged
 			} else {
@@ -562,7 +562,25 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	return fields
 }
 
-func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, incomingSHA map[string]string) []string {
+// resolvedCommentAuthor answers the question every reader of a comment asks —
+// which account wrote this — rather than reporting the reference as stored.
+//
+// An owner row written before author_user_id existed carries no reference of
+// its own and resolves to the site owner, which is by definition who wrote it;
+// resolveCommentAuthors does exactly this on the read path. Migration 0020
+// backfilled the same value into every existing owner row, so a live database
+// and a backup taken one migration earlier describe one author two ways.
+func resolvedCommentAuthor(value sqlitestore.ArchiveComment, ownerID string) string {
+	if value.AuthorUserID != nil {
+		return *value.AuthorUserID
+	}
+	if domain.CommentAuthorKind(value.AuthorKind) == domain.CommentAuthorOwner {
+		return ownerID
+	}
+	return ""
+}
+
+func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, incomingSHA map[string]string, localOwnerID, incomingOwnerID string) []string {
 	fields := []string{}
 	if local.EntryID != incoming.EntryID {
 		fields = append(fields, "entry_id")
@@ -576,7 +594,14 @@ func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, 
 	if local.AuthorName != incoming.AuthorName {
 		fields = append(fields, "author_name")
 	}
-	if !reflect.DeepEqual(local.AuthorUserID, incoming.AuthorUserID) {
+	// Compared as the account each side resolves to, not as the stored pointer.
+	// A nil reference on an owner row means "predates the field", and reading it
+	// as a different author than the backfilled owner id it stands for would
+	// turn every comment shared with a pre-migration backup into a conflict
+	// over a difference no reader can observe. Two distinct accounts still
+	// differ, and so does an owner row that lost or gained a reference against
+	// a guest row that never had one.
+	if resolvedCommentAuthor(local, localOwnerID) != resolvedCommentAuthor(incoming, incomingOwnerID) {
 		fields = append(fields, "author_user_id")
 	}
 	if !reflect.DeepEqual(local.ReplyToCommentID, incoming.ReplyToCommentID) {
