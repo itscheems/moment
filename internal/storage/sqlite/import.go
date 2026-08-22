@@ -243,7 +243,8 @@ func (importer *PortableImporter) InsertComment(ctx context.Context, value Archi
 	comment := domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
 		AuthorKind: domain.CommentAuthorKind(value.AuthorKind), AuthorName: value.AuthorName,
-		ContentMD: value.ContentMD, Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
+		AuthorUserID: value.AuthorUserID, ContentMD: value.ContentMD,
+		Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
 	}
 	if err := comment.Validate(); err != nil {
 		return err
@@ -260,8 +261,8 @@ func (importer *PortableImporter) InsertComment(ctx context.Context, value Archi
 		return err
 	}
 	if _, err := importer.tx.ExecContext(ctx, `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?)`, value.ID, value.EntryID, value.ParentID, value.AuthorKind, value.AuthorName, value.ContentMD, value.CreatedAtMS); err != nil {
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, value.ID, value.EntryID, value.ParentID, value.AuthorKind, value.AuthorName, value.AuthorUserID, value.ContentMD, value.CreatedAtMS); err != nil {
 		return fmt.Errorf("insert portable comment %s: %w", value.ID, err)
 	}
 	if value.Location != nil {

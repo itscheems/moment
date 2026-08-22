@@ -85,17 +85,22 @@ func ArchiveLinkCardsOf(values []ArchiveLinkCard) []domain.LinkCard {
 }
 
 // ArchiveComment is one portable comment record.
+//
+// AuthorUserID is the account the comment belongs to and is absent from every
+// archive written before accounts existed, so it is optional on read: a nil
+// pointer means the record predates the field, not that authorship was lost.
 type ArchiveComment struct {
-	ID          string
-	EntryID     string
-	ParentID    *string
-	AuthorKind  string
-	AuthorName  string
-	ContentMD   string
-	CreatedAtMS int64
-	Media       []ArchiveUsage
-	Location    *domain.Location
-	Pinned      bool
+	ID           string
+	EntryID      string
+	ParentID     *string
+	AuthorKind   string
+	AuthorName   string
+	AuthorUserID *string
+	ContentMD    string
+	CreatedAtMS  int64
+	Media        []ArchiveUsage
+	Location     *domain.Location
+	Pinned       bool
 }
 
 // ArchiveMedia contains portable metadata plus the private source path needed
@@ -429,7 +434,7 @@ func (snapshot *ArchiveSnapshot) Comments(ctx context.Context, yield func(Archiv
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
 SELECT comment.id, comment.entry_id, comment.parent_id, comment.author_kind,
-       comment.author_name, comment.content_md, comment.created_at_ms,
+       comment.author_name, comment.author_user_id, comment.content_md, comment.created_at_ms,
        location.name, location.display_name, location.country_code,
        location.country, location.region, location.city, location.district,
        location.category, location.provider, location.provider_place_id,
@@ -454,6 +459,7 @@ ORDER BY comment.entry_id,
 	for rows.Next() {
 		var value ArchiveComment
 		var parent sql.NullString
+		var authorUserID sql.NullString
 		var mediaID, alt sql.NullString
 		var position sql.NullInt64
 		var locationName, locationDisplayName, countryCode, country, region, city, district, category, provider, providerPlaceID sql.NullString
@@ -461,7 +467,7 @@ ORDER BY comment.entry_id,
 		var coordinateSystem sql.NullString
 		if err := rows.Scan(
 			&value.ID, &value.EntryID, &parent, &value.AuthorKind, &value.AuthorName,
-			&value.ContentMD, &value.CreatedAtMS, &locationName, &locationDisplayName,
+			&authorUserID, &value.ContentMD, &value.CreatedAtMS, &locationName, &locationDisplayName,
 			&countryCode, &country, &region, &city, &district, &category, &provider,
 			&providerPlaceID, &latitude, &longitude, &coordinateSystem,
 			&mediaID, &position, &alt, &value.Pinned,
@@ -470,6 +476,9 @@ ORDER BY comment.entry_id,
 		}
 		if parent.Valid {
 			value.ParentID = &parent.String
+		}
+		if authorUserID.Valid {
+			value.AuthorUserID = &authorUserID.String
 		}
 		if locationName.Valid {
 			if !locationDisplayName.Valid || !countryCode.Valid || !country.Valid || !region.Valid || !city.Valid ||

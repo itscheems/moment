@@ -267,6 +267,202 @@ VALUES (?, ?, NULL, 'guest', '访客', '置顶评论', 1)`, pinnedCommentID, pin
 	}
 }
 
+// The account a comment belongs to is a v1 extension: archives written before
+// it existed carry no author_user_id key at all, and those archives must keep
+// importing. These three tests pin both directions of that contract.
+const (
+	authorAccountEntryID   = "01ARZ3NDEKTSV4RRFFQ69G5FB3"
+	authorAccountCommentID = "01ARZ3NDEKTSV4RRFFQ69G5FB4"
+	legacyGuestCommentID   = "01ARZ3NDEKTSV4RRFFQ69G5FB5"
+	commentAuthorAccount   = "0123456789abcdef0123456789abcdef"
+)
+
+func TestCommentAuthorAccountRoundTripsThroughPortableArchive(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	insertCommentAuthorFixture(t, fixture)
+
+	members, _ := readArchive(t, exportFixtureBytes(t, fixture))
+	exported := decodeCommentLines(t, members["data/comments.jsonl"])
+	if len(exported) != 2 {
+		t.Fatalf("exported comment records = %d", len(exported))
+	}
+	if account, present := exported[authorAccountCommentID]["author_user_id"]; !present || account != commentAuthorAccount {
+		t.Fatalf("exported author_user_id = %v present=%v", account, present)
+	}
+	if _, present := exported[legacyGuestCommentID]["author_user_id"]; present {
+		t.Fatal("a comment without an account emitted an author_user_id key")
+	}
+
+	now := time.Date(2026, 8, 22, 2, 3, 4, 0, time.UTC)
+	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
+		context.Background(),
+		exportFixtureFile(t, fixture),
+		7,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := stagedArchiveComments(t, fixture, result)
+	if len(staged) != 2 {
+		t.Fatalf("staged comments = %#v", staged)
+	}
+	owner := staged[0]
+	if owner.ID != authorAccountCommentID || owner.AuthorUserID == nil || *owner.AuthorUserID != commentAuthorAccount {
+		t.Fatalf("staged owner comment = %#v", owner)
+	}
+	if staged[1].ID != legacyGuestCommentID || staged[1].AuthorUserID != nil {
+		t.Fatalf("staged guest comment = %#v", staged[1])
+	}
+}
+
+func TestArchiveWithoutCommentAuthorAccountStillImports(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	insertCommentAuthorFixture(t, fixture)
+
+	members, order := readArchive(t, exportFixtureBytes(t, fixture))
+	stripped := make([]byte, 0, len(members["data/comments.jsonl"]))
+	removed := 0
+	for _, line := range nonemptyLines(members["data/comments.jsonl"]) {
+		var record map[string]any
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatal(err)
+		}
+		if _, present := record["author_user_id"]; present {
+			removed++
+		}
+		delete(record, "author_user_id")
+		stripped = append(append(stripped, mustMarshalTest(t, record)...), '\n')
+	}
+	if removed != 1 {
+		t.Fatalf("stripped %d author_user_id keys, want 1", removed)
+	}
+	members["data/comments.jsonl"] = stripped
+	rebuildManifestExpanded(t, members)
+	rebuildChecksums(members)
+	name := filepath.Join(t.TempDir(), "legacy-without-comment-author-account.zip")
+	writeArchive(t, name, members, order)
+
+	if err := ValidateFile(name); err != nil {
+		t.Fatalf("v1 archive without author_user_id was rejected: %v", err)
+	}
+	now := time.Date(2026, 8, 22, 3, 4, 5, 0, time.UTC)
+	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
+		context.Background(),
+		name,
+		7,
+	)
+	if err != nil {
+		t.Fatalf("v1 archive without author_user_id did not import: %v", err)
+	}
+	staged := stagedArchiveComments(t, fixture, result)
+	if len(staged) != 2 {
+		t.Fatalf("staged comments = %#v", staged)
+	}
+	for _, value := range staged {
+		if value.AuthorUserID != nil {
+			t.Fatalf("absent author_user_id was invented: %#v", value)
+		}
+	}
+}
+
+func TestLegacyGuestCommentWithoutAuthorAccountRoundTrips(t *testing.T) {
+	fixture := newExportFixture(t, false)
+	insertCommentAuthorFixture(t, fixture)
+
+	now := time.Date(2026, 8, 22, 4, 5, 6, 0, time.UTC)
+	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
+		context.Background(),
+		exportFixtureFile(t, fixture),
+		7,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := stagedArchiveComments(t, fixture, result)
+	if len(staged) != 2 {
+		t.Fatalf("staged comments = %#v", staged)
+	}
+	guest := staged[1]
+	if guest.ID != legacyGuestCommentID || guest.AuthorKind != "guest" || guest.AuthorName != "访客" ||
+		guest.ContentMD != "匿名访客留下的评论" || guest.AuthorUserID != nil {
+		t.Fatalf("round-tripped legacy guest comment = %#v", guest)
+	}
+}
+
+// insertCommentAuthorFixture adds one entry carrying two root comments: one
+// owner comment that references an account and one legacy guest comment that
+// never had an identity to reference. Their IDs order the pair deterministically
+// in canonical thread order.
+func insertCommentAuthorFixture(t *testing.T, fixture exportFixture) {
+	t.Helper()
+	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
+		if _, err := queries.ExecContext(context.Background(), `
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms)
+VALUES (?, 'moment', '带评论的动态', 1, 1, 1)`, authorAccountEntryID); err != nil {
+			return err
+		}
+		if _, err := queries.ExecContext(context.Background(), `
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms)
+VALUES (?, ?, NULL, 'owner', 'Owner', ?, '站长的评论', 1)`, authorAccountCommentID, authorAccountEntryID, commentAuthorAccount); err != nil {
+			return err
+		}
+		_, err := queries.ExecContext(context.Background(), `
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms)
+VALUES (?, ?, NULL, 'guest', '访客', NULL, '匿名访客留下的评论', 2)`, legacyGuestCommentID, authorAccountEntryID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// decodeCommentLines indexes the raw exported comment records by ID so a test
+// can assert on the keys a record does and does not carry.
+func decodeCommentLines(t *testing.T, data []byte) map[string]map[string]any {
+	t.Helper()
+	result := make(map[string]map[string]any)
+	for _, line := range nonemptyLines(data) {
+		var record map[string]any
+		if err := json.Unmarshal(line, &record); err != nil {
+			t.Fatal(err)
+		}
+		id, _ := record["id"].(string)
+		if id == "" {
+			t.Fatalf("comment record without an ID: %s", line)
+		}
+		result[id] = record
+	}
+	return result
+}
+
+// stagedArchiveComments reads every comment back out of the staging generation
+// an inspection produced, in canonical archive order.
+func stagedArchiveComments(t *testing.T, fixture exportFixture, result Inspection) []sqlitestore.ArchiveComment {
+	t.Helper()
+	stageRoot := filepath.Join(fixture.runtime.Root, "staging", "import", result.GenerationID)
+	stagedRuntime := &runtimefs.Runtime{
+		Root: fixture.runtime.Root, Instance: fixture.runtime.Instance,
+		Current: stagingGeneration(stageRoot, result.GenerationID), Locks: fixture.runtime.Locks,
+	}
+	stagedDatabase, err := sqlitestore.Open(context.Background(), stagedRuntime, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stagedDatabase.Close() }()
+	snapshot, err := stagedDatabase.BeginArchiveSnapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = snapshot.Close() }()
+	var comments []sqlitestore.ArchiveComment
+	if err := snapshot.Comments(context.Background(), func(value sqlitestore.ArchiveComment) error {
+		comments = append(comments, value)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return comments
+}
+
 func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) {
 	source := newExportFixture(t, true)
 	validPath := exportFixtureFile(t, source)

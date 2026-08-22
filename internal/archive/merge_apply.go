@@ -143,7 +143,9 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 
 	comments := indexComments(local.Comments)
 	// First allocate all comment identities so replies can target a parent that
-	// appears later in archive order.
+	// appears later in archive order. Only identities this merge can reissue are
+	// remapped: entry, comment, and media IDs. AuthorUserID names an account,
+	// which this merge neither owns nor reissues, so it travels verbatim.
 	for _, value := range incoming.Comments {
 		choice := itemChoices[mergeChoiceKey(MergeComment, value.ID)]
 		switch choice {
