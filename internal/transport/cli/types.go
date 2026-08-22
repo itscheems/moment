@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/moment/moment/internal/observability"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -267,6 +268,16 @@ func (invocation Invocation) Log(level, message string) {
 // LogEvent writes a structured, redacted event to stderr.
 func (invocation Invocation) LogEvent(level, event string, fields map[string]any) {
 	invocation.logger.event(level, event, fields)
+}
+
+// LogEventOn writes a structured event attributed to another entry point.
+//
+// Only a long-running command needs this. `moment serve` is one CLI
+// invocation, but the operations it logs arrive from the browser, and
+// recording those as cli would make the classification useless precisely where
+// it is most wanted.
+func (invocation Invocation) LogEventOn(surface observability.Surface, level, event string, fields map[string]any) {
+	invocation.logger.eventOn(surface, level, event, fields)
 }
 
 // DirectTransport returns the direct target or an error when API mode is active.

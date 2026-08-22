@@ -20,10 +20,18 @@ import (
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/mediatype"
+	"github.com/moment/moment/internal/observability"
 )
 
 // LogFunc receives only bounded, preselected event fields.
 type LogFunc func(level, event string, fields map[string]any)
+
+// SurfaceLogFunc additionally carries the entry point the event belongs to.
+//
+// The HTTP stack cannot be scoped to one surface up front: it serves the
+// browser, the CLI in API mode and any script holding a token, and which one a
+// request came from is only knowable per request.
+type SurfaceLogFunc func(surface observability.Surface, level, event string, fields map[string]any)
 
 // ReadinessFunc reports whether authoritative application dependencies are
 // ready. A nil probe is deliberately unready rather than optimistically green.
@@ -62,6 +70,7 @@ type Config struct {
 	TrustedProxies        []string
 	RequestID             func() string
 	Log                   LogFunc
+	SurfaceLog            SurfaceLogFunc
 	Limits                BodyLimits
 	Register              func(*gin.Engine)
 }
@@ -94,6 +103,14 @@ func New(config Config) (*gin.Engine, error) {
 	if config.Log == nil {
 		config.Log = func(string, string, map[string]any) {}
 	}
+	surfaceLog := config.SurfaceLog
+	if surfaceLog == nil {
+		// Fall back to the plain logger so an embedder that has not opted in
+		// still gets its events, unattributed rather than misattributed.
+		surfaceLog = func(_ observability.Surface, level, event string, fields map[string]any) {
+			config.Log(level, event, fields)
+		}
+	}
 
 	releaseModeOnce.Do(func() { gin.SetMode(gin.ReleaseMode) })
 	engine := gin.New()
@@ -107,8 +124,8 @@ func New(config Config) (*gin.Engine, error) {
 	engine.Use(
 		requestIDMiddleware(config.RequestID),
 		securityHeadersMiddleware(),
-		accessLogMiddleware(config.Log),
-		recoveryMiddleware(config.Log),
+		accessLogMiddleware(surfaceLog),
+		recoveryMiddleware(surfaceLog),
 		bodyLimitMiddleware(config.Limits),
 	)
 

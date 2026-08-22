@@ -30,7 +30,9 @@ func newLogger(level, format string, writer io.Writer) (logger, error) {
 			"use --log-level error, warn, info, or debug",
 		)
 	}
-	events, err := observability.New(observability.Config{Level: level, Format: format, Writer: writer})
+	// A command a person typed. `moment serve` re-scopes this per event source:
+	// its HTTP middleware speaks for the browser, its lifecycle for no client.
+	events, err := observability.New(observability.Config{Level: level, Format: format, Writer: writer, Surface: observability.SurfaceCLI})
 	if err != nil {
 		return logger{}, invalidArgument(
 			fmt.Sprintf("invalid log format %q", format),
@@ -58,4 +60,12 @@ func (output logger) event(level, event string, fields map[string]any) {
 		return
 	}
 	output.events.Event(level, event, observability.Fields(fields))
+}
+
+// eventOn writes a structured event attributed to another entry point.
+func (output logger) eventOn(surface observability.Surface, level, event string, fields map[string]any) {
+	if output.events == nil {
+		return
+	}
+	output.events.On(surface).Event(level, event, observability.Fields(fields))
 }

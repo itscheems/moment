@@ -39,8 +39,71 @@ var priorities = map[string]int{
 // Fields contains non-sensitive structured event attributes.
 type Fields map[string]any
 
+// Surface names the client entry point an operation arrived through.
+//
+// It answers "where did this come from", not "which binary is running" — the
+// difference matters because `moment serve` is a CLI process whose every
+// browser request originates on the web. Classifying by process would stamp
+// every page interaction as cli, which is the same as not classifying at all.
+//
+// The set is open on purpose. A native client adds a constant here and nothing
+// downstream has to learn about it: no consumer switches exhaustively on this
+// value, and the field is a plain string on the wire.
+type Surface string
+
+const (
+	// SurfaceCLI marks an operation a person invoked in a terminal.
+	SurfaceCLI Surface = "cli"
+	// SurfaceWeb marks an operation that arrived over HTTP from the browser.
+	SurfaceWeb Surface = "web"
+	// SurfaceAPI marks a programmatic HTTP client: a script, curl, anything
+	// holding a bearer token that has not said what it is. It is deliberately
+	// separate from web — both arrive over HTTP, and collapsing them would
+	// make web mean "HTTP", which is the distinction this type exists to draw.
+	SurfaceAPI Surface = "api"
+	// SurfaceSystem marks an event that belongs to no client at all — process
+	// startup, background reclamation, scheduled work. Filing those under a
+	// client would be a convenient lie, and an audit trail that lies about
+	// provenance is worse than one that admits a third case.
+	SurfaceSystem Surface = "system"
+)
+
+// SurfaceHeader is how a client tells the server which entry point it is.
+//
+// It lives here rather than in the HTTP package so a client can name itself
+// without depending on the server it is talking to.
+const SurfaceHeader = "X-Moment-Surface"
+
+// ClientSurface reports whether a client-declared value names a surface a
+// client is allowed to claim.
+//
+// Only cli and api are claimable. A client cannot declare itself web: that is
+// inferred from holding a browser session, and letting a header assert it
+// would let any caller forge the one attribution the server can actually
+// verify. Nothing can declare itself system, which by definition has no client.
+func ClientSurface(declared string) (Surface, bool) {
+	switch Surface(declared) {
+	case SurfaceCLI:
+		return SurfaceCLI, true
+	case SurfaceAPI:
+		return SurfaceAPI, true
+	default:
+		return "", false
+	}
+}
+
 // Logger serializes complete events so concurrent requests cannot interleave.
+//
+// A logger is a surface bound to a shared writer. Deriving one for a different
+// surface must keep the same lock: whole-event serialization is this type's
+// core guarantee, and a derived logger holding its own mutex would let two
+// surfaces interleave halves of a line.
 type Logger struct {
+	shared  *sharedWriter
+	surface Surface
+}
+
+type sharedWriter struct {
 	level  int
 	format Format
 	writer io.Writer
@@ -54,6 +117,9 @@ type Config struct {
 	Format string
 	Writer io.Writer
 	Now    func() time.Time
+	// Surface is the entry point events default to. An empty value means the
+	// process could not say, which is recorded as such rather than guessed.
+	Surface Surface
 }
 
 // New validates and constructs a redacting event logger.
@@ -75,13 +141,33 @@ func New(config Config) (*Logger, error) {
 	if config.Now == nil {
 		config.Now = time.Now
 	}
-	return &Logger{level: level, format: format, writer: config.Writer, now: config.Now}, nil
+	shared := &sharedWriter{level: level, format: format, writer: config.Writer, now: config.Now}
+	return &Logger{shared: shared, surface: config.Surface}, nil
+}
+
+// On returns a logger writing through the same lock under another surface.
+//
+// `moment serve` needs exactly this: one process, whose HTTP middleware speaks
+// for the browser and whose lifecycle events speak for no client.
+func (logger *Logger) On(surface Surface) *Logger {
+	if logger == nil {
+		return nil
+	}
+	return &Logger{shared: logger.shared, surface: surface}
+}
+
+// Surface reports the entry point this logger stamps on its events.
+func (logger *Logger) Surface() Surface {
+	if logger == nil {
+		return ""
+	}
+	return logger.surface
 }
 
 // Enabled reports whether an event at level would be emitted.
 func (logger *Logger) Enabled(level string) bool {
 	priority, ok := priorities[level]
-	return logger != nil && ok && priority <= logger.level
+	return logger != nil && logger.shared != nil && ok && priority <= logger.shared.level
 }
 
 // Event writes one bounded event. Sensitive field names are redacted
@@ -90,24 +176,29 @@ func (logger *Logger) Event(level, event string, fields Fields) {
 	if !logger.Enabled(level) {
 		return
 	}
-	entry := make(map[string]any, len(fields)+3)
-	entry["time"] = logger.now().UTC().Format(time.RFC3339Nano)
+	entry := make(map[string]any, len(fields)+4)
+	entry["time"] = logger.shared.now().UTC().Format(time.RFC3339Nano)
 	entry["level"] = level
 	entry["event"] = safeEventName(event)
+	if logger.surface != "" {
+		entry["surface"] = string(logger.surface)
+	}
 	if len(fields) > maxLogCollectionLen {
 		entry["fields"] = redactedValue
 		fields = nil
 	}
 	for key, value := range fields {
 		key = safeFieldKey(key)
-		if key == "" || key == "time" || key == "level" || key == "event" {
+		// surface joins the reserved names. A provenance marker business code
+		// can overwrite is not a provenance marker.
+		if key == "" || key == "time" || key == "level" || key == "event" || key == "surface" {
 			continue
 		}
 		entry[key] = redactValue(key, value)
 	}
 
 	var line []byte
-	if logger.format == FormatJSON {
+	if logger.shared.format == FormatJSON {
 		encoded, err := json.Marshal(entry)
 		if err != nil {
 			return
@@ -117,9 +208,9 @@ func (logger *Logger) Event(level, event string, fields Fields) {
 		line = []byte(formatText(entry))
 	}
 	line = append(line, '\n')
-	logger.mu.Lock()
-	defer logger.mu.Unlock()
-	_, _ = logger.writer.Write(line)
+	logger.shared.mu.Lock()
+	defer logger.shared.mu.Unlock()
+	_, _ = logger.shared.writer.Write(line)
 }
 
 func safeEventName(event string) string {
@@ -281,15 +372,20 @@ func sensitiveField(key string) bool {
 func formatText(entry map[string]any) string {
 	keys := make([]string, 0, len(entry))
 	for key := range entry {
-		if key != "time" && key != "level" && key != "event" {
+		if key != "time" && key != "level" && key != "event" && key != "surface" {
 			keys = append(keys, key)
 		}
 	}
 	sort.Strings(keys)
+	// surface leads with the event rather than sorting in among the payload:
+	// it says who the event is about, which is read together with what it is.
 	parts := []string{
 		fmt.Sprintf("time=%s", entry["time"]),
 		fmt.Sprintf("level=%s", entry["level"]),
 		fmt.Sprintf("event=%s", entry["event"]),
+	}
+	if surface, ok := entry["surface"]; ok {
+		parts = append(parts, fmt.Sprintf("surface=%s", surface))
 	}
 	for _, key := range keys {
 		encoded, err := json.Marshal(entry[key])

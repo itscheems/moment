@@ -8,6 +8,7 @@ import (
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/buildinfo"
+	"github.com/moment/moment/internal/observability"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -92,9 +93,20 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 		return Result{}, err
 	}
 	board := server.NewSwitchboard()
+	// The HTTP stack serves more than one entry point — the browser, this same
+	// CLI in API mode, any script holding a token — so it decides per request
+	// and reports what it found. Scoping the whole stack to one surface would
+	// be the same mistake as scoping it by process.
+	httpLog := func(surface observability.Surface, level, event string, fields map[string]any) {
+		invocation.LogEventOn(surface, level, event, fields)
+	}
+	// The server's own lifecycle belongs to no client.
+	systemLog := func(level, event string, fields map[string]any) {
+		invocation.LogEventOn(observability.SurfaceSystem, level, event, fields)
+	}
 	host := &liveServerHost{
 		board: board, auth: authManager, assets: assets, trustedProxies: trustedProxies,
-		secureCookies: !runtime.IsDevelopment(), log: invocation.LogEvent, exporter: exporter,
+		secureCookies: !runtime.IsDevelopment(), log: httpLog, exporter: exporter,
 	}
 	host.committer = &hostedImportCommitter{core: committer, host: host}
 	retentionContext, cancelRetention := context.WithCancel(ctx)
@@ -123,7 +135,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 			board.EndMaintenance()
 			return nil
 		},
-		Address: listenAddress, Log: invocation.LogEvent,
+		Address: listenAddress, Log: systemLog,
 	}); err != nil {
 		switch {
 		case errors.Is(err, sqlitestore.ErrNotReady), errors.Is(err, sqlitestore.ErrMigrationDrift),

@@ -16,6 +16,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/observability"
 )
 
 type archiveExporterFunc func(context.Context, io.Writer) (archive.Summary, error)
@@ -135,7 +136,7 @@ func TestExportActiveStreamOutlivesGlobalWriteTimeout(t *testing.T) {
 		return archive.Summary{FormatVersion: 1}, nil
 	})
 	engine := gin.New()
-	engine.Use(recoveryMiddleware(func(string, string, map[string]any) {}))
+	engine.Use(recoveryMiddleware(func(observability.Surface, string, string, map[string]any) {}))
 	engine.GET("/export", streamExportWithBudgets(exporter, 50*time.Millisecond, 40*time.Millisecond))
 	server := httptest.NewUnstartedServer(engine)
 	server.Config.WriteTimeout = 25 * time.Millisecond
@@ -160,7 +161,7 @@ func TestExportPostFirstByteFailureAbortsTruncatedResponse(t *testing.T) {
 		return archive.Summary{}, errors.New("late archive failure")
 	})
 	engine := gin.New()
-	engine.Use(recoveryMiddleware(func(string, string, map[string]any) {}))
+	engine.Use(recoveryMiddleware(func(observability.Surface, string, string, map[string]any) {}))
 	engine.GET("/export", streamExportWithBudgets(exporter, time.Second, time.Second))
 	server := httptest.NewServer(engine)
 	defer server.Close()
@@ -189,7 +190,7 @@ func TestExportBlockedClientHitsWriteIdleDeadlineAndRequestCancelPropagates(t *t
 		return archive.Summary{}, nil
 	})
 	engine := gin.New()
-	engine.Use(recoveryMiddleware(func(string, string, map[string]any) {}))
+	engine.Use(recoveryMiddleware(func(observability.Surface, string, string, map[string]any) {}))
 	engine.GET("/export", streamExportWithBudgets(exporter, time.Second, 25*time.Millisecond))
 	server := httptest.NewUnstartedServer(engine)
 	server.Start()
@@ -222,7 +223,7 @@ func TestExportBlockedClientHitsWriteIdleDeadlineAndRequestCancelPropagates(t *t
 		return archive.Summary{}, ctx.Err()
 	})
 	cancelEngine := gin.New()
-	cancelEngine.Use(recoveryMiddleware(func(string, string, map[string]any) {}))
+	cancelEngine.Use(recoveryMiddleware(func(observability.Surface, string, string, map[string]any) {}))
 	cancelEngine.GET("/export", streamExportWithBudgets(cancelExporter, time.Second, time.Second))
 	cancelServer := httptest.NewServer(cancelEngine)
 	defer cancelServer.Close()
