@@ -79,6 +79,7 @@ type LinkCardProjection struct {
 	ThumbnailMIMEType string
 	ThumbnailWidth    uint32
 	ThumbnailHeight   uint32
+	FaviconMIMEType   string
 }
 
 // LinkCardsOf extracts the stored cards from their projections.
@@ -1009,7 +1010,7 @@ func hashCreatePost(content string, media []domain.EntryMediaUsage, location *do
 			for _, value := range []string{
 				card.SourceURL, card.CanonicalURL, string(card.Provider), string(card.Kind),
 				card.Title, card.Description, card.SiteName, card.AuthorName,
-				card.ThumbnailMediaID, card.EmbedURL,
+				card.ThumbnailMediaID, card.FaviconMediaID, card.EmbedURL,
 			} {
 				writeHashLength(digest, len(value))
 				_, _ = digest.Write([]byte(value))
@@ -1136,13 +1137,15 @@ func renderPost(entry domain.Entry, media []MediaUsageProjection, location *doma
 // linkCardMediaIDs collects the managed thumbnails a card set references so
 // reference reconciliation covers this source like any other.
 func linkCardMediaIDs(cards []domain.LinkCard) []domain.ID {
-	ids := make([]domain.ID, 0, len(cards))
+	ids := make([]domain.ID, 0, len(cards)*2)
 	for _, card := range cards {
-		if card.ThumbnailMediaID == "" {
-			continue
-		}
-		if id, err := domain.ParseID(card.ThumbnailMediaID); err == nil {
-			ids = append(ids, id)
+		for _, reference := range []string{card.ThumbnailMediaID, card.FaviconMediaID} {
+			if reference == "" {
+				continue
+			}
+			if id, err := domain.ParseID(reference); err == nil {
+				ids = append(ids, id)
+			}
 		}
 	}
 	return ids

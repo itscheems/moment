@@ -69,8 +69,12 @@ type LinkCard struct {
 	AuthorName       string
 	DurationSeconds  *int
 	ThumbnailMediaID string
-	EmbedURL         string
-	CapturedAt       int64
+	// FaviconMediaID is the site's own mark, captured into managed media so a
+	// card can show where it came from without the reader's browser touching
+	// the origin. Absent when the site published none in a supported format.
+	FaviconMediaID string
+	EmbedURL       string
+	CapturedAt     int64
 	// Engagement counts captured with the rest of the snapshot. They are
 	// deliberately provider-independent: a platform that publishes its stats as
 	// a prose blob has them parsed into these fields at capture time, so
@@ -122,9 +126,18 @@ func (card LinkCard) Validate() error {
 	if card.DurationSeconds != nil && (*card.DurationSeconds <= 0 || *card.DurationSeconds > MaxLinkCardDurationSeconds) {
 		return NewError(CodeInvalidArgument, "link card duration is out of range", map[string]any{"field": "duration_seconds", "limit": MaxLinkCardDurationSeconds})
 	}
-	if card.ThumbnailMediaID != "" {
-		if _, err := ParseID(card.ThumbnailMediaID); err != nil {
-			return NewError(CodeInvalidArgument, "link card thumbnail must reference managed media", map[string]any{"field": "thumbnail_media_id"})
+	for _, reference := range []struct {
+		field string
+		value string
+	}{
+		{"thumbnail_media_id", card.ThumbnailMediaID},
+		{"favicon_media_id", card.FaviconMediaID},
+	} {
+		if reference.value == "" {
+			continue
+		}
+		if _, err := ParseID(reference.value); err != nil {
+			return NewError(CodeInvalidArgument, "link card "+reference.field+" must reference managed media", map[string]any{"field": reference.field})
 		}
 	}
 	if card.Kind == LinkKindLink && card.EmbedURL != "" {

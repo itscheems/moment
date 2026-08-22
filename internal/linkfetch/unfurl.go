@@ -22,6 +22,7 @@ type Preview struct {
 	AuthorName      string
 	DurationSeconds *int
 	ImageURL        string
+	IconURL         string
 	EmbedURL        string
 	ViewCount       *int64
 	CommentCount    *int64
@@ -165,6 +166,7 @@ func (resolver *Resolver) Resolve(ctx context.Context, rawURL string) (Preview, 
 		AuthorName:      metadata.AuthorName,
 		DurationSeconds: metadata.DurationSeconds,
 		ImageURL:        metadata.ImageURL,
+		IconURL:         metadata.IconURL,
 		ViewCount:       metadata.ViewCount,
 		CommentCount:    metadata.CommentCount,
 		LikeCount:       metadata.LikeCount,

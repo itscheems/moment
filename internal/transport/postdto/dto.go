@@ -61,6 +61,7 @@ type LinkCard struct {
 	ViewCount         *int64  `json:"view_count"`
 	CommentCount      *int64  `json:"comment_count"`
 	LikeCount         *int64  `json:"like_count"`
+	FaviconMediaID    *string `json:"favicon_media_id"`
 	ThumbnailMediaID  *string `json:"thumbnail_media_id"`
 	ThumbnailMIMEType *string `json:"thumbnail_mime_type"`
 	ThumbnailWidth    *uint32 `json:"thumbnail_width"`
@@ -238,6 +239,10 @@ func linkCardProjections(cards []app.LinkCardProjection) []LinkCard {
 			ViewCount:       card.ViewCount,
 			CommentCount:    card.CommentCount,
 			LikeCount:       card.LikeCount,
+		}
+		if card.FaviconMediaID != "" && projection.FaviconMIMEType != "" {
+			favicon := card.FaviconMediaID
+			mapped.FaviconMediaID = &favicon
 		}
 		if card.ThumbnailMediaID != "" {
 			id := card.ThumbnailMediaID

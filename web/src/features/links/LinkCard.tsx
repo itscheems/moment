@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useState } from "react";
 import type { PublicLinkCard } from "../../api/public";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { Icon } from "../../components/icons";
+import { SiteMark } from "./SiteMark";
 import styles from "./LinkCard.module.css";
 
 function formatDuration(seconds: number): string {
@@ -91,63 +92,74 @@ export function LinkCard({ card }: { card: PublicLinkCard }) {
     />
   ) : null;
 
-  // Stats render from structured numbers, never by re-parsing platform prose,
+  // Stats render from structured fields, never by re-parsing platform prose,
   // so this row stays identical no matter which site a card came from.
   const stats: Array<{
     key: string;
     icon: ReactNode;
     label: string;
-    value: number;
+    display: string;
+    exact: string;
   }> = [];
-  if (card.viewCount !== null) {
+  if (card.authorName.trim()) {
     stats.push({
-      key: "views",
-      icon: <Icon name="play-count" />,
-      label: "播放",
-      value: card.viewCount,
+      key: "author",
+      icon: <Icon name="uploader" />,
+      label: "作者",
+      display: card.authorName.trim(),
+      exact: card.authorName.trim(),
     });
   }
-  if (card.commentCount !== null) {
-    stats.push({
+  for (const entry of [
+    { key: "views", icon: "play-count", label: "播放", value: card.viewCount },
+    {
       key: "comments",
-      icon: <Icon name="danmaku-count" />,
+      icon: "danmaku-count",
       label: "弹幕",
       value: card.commentCount,
-    });
-  }
-  if (card.likeCount !== null) {
+    },
+    { key: "likes", icon: "like-count", label: "点赞", value: card.likeCount },
+  ] as const) {
+    if (entry.value === null) continue;
     stats.push({
-      key: "likes",
-      icon: null,
-      label: "点赞",
-      value: card.likeCount,
+      key: entry.key,
+      icon: <Icon name={entry.icon} />,
+      label: entry.label,
+      display: formatCount(entry.value),
+      exact: entry.value.toLocaleString("zh-CN"),
     });
   }
 
   const meta = (
     <div className={styles.meta}>
-      <p className={styles.site}>{site}</p>
+      <p className={styles.site}>
+        <SiteMark
+          canonicalUrl={card.canonicalUrl}
+          faviconMediaId={card.faviconMediaId}
+        />
+        <span>{site}</span>
+      </p>
       {title ? <p className={styles.title}>{title}</p> : null}
+      {/* The description and the figures are independent: a platform that
+          publishes statistics puts them here instead of prose, while an
+          ordinary page keeps its summary and may still name an author. */}
+      {card.description.trim() ? (
+        <p className={styles.description}>{card.description.trim()}</p>
+      ) : null}
       {stats.length > 0 ? (
         <ul className={styles.stats}>
           {stats.map((stat) => (
             <li className={styles.stat} key={stat.key}>
-              {/* A glyph carries the meaning where one exists; otherwise the
-                  name is spelled out, so no figure is ever left unlabelled. */}
-              {stat.icon ?? (
-                <span aria-hidden="true" className={styles.statName}>
-                  {stat.label}
-                </span>
-              )}
-              <span aria-hidden="true">{formatCount(stat.value)}</span>
+              {/* The glyph carries the meaning visually; the name and the exact
+                  figure stay available to assistive technology. */}
+              {stat.icon}
+              <span aria-hidden="true">{stat.display}</span>
               <span className={styles.statLabel}>
-                {stat.label} {stat.value.toLocaleString("zh-CN")}
+                {stat.label} {stat.exact}
               </span>
             </li>
           ))}
         </ul>
-      ) : card.description.trim() ? (
-        <p className={styles.description}>{card.description.trim()}</p>
       ) : null}
     </div>
   );

@@ -30,6 +30,7 @@ type Card struct {
 	ViewCount         *int64  `json:"view_count"`
 	CommentCount      *int64  `json:"comment_count"`
 	LikeCount         *int64  `json:"like_count"`
+	FaviconMediaID    *string `json:"favicon_media_id"`
 	ThumbnailMediaID  *string `json:"thumbnail_media_id"`
 	ThumbnailMIMEType *string `json:"thumbnail_mime_type"`
 	ThumbnailWidth    *uint32 `json:"thumbnail_width"`
@@ -41,7 +42,7 @@ type Card struct {
 var cardFields = []string{
 	"source_url", "canonical_url", "provider", "card_kind", "title",
 	"description", "site_name", "author_name", "duration_seconds",
-	"view_count", "comment_count", "like_count",
+	"view_count", "comment_count", "like_count", "favicon_media_id",
 	"thumbnail_media_id", "thumbnail_mime_type", "thumbnail_width",
 	"thumbnail_height", "embed_url", "captured_at_ms",
 }
@@ -103,6 +104,9 @@ func (card Card) Domain(position int) (domain.LinkCard, error) {
 	if card.ThumbnailMediaID != nil {
 		value.ThumbnailMediaID = *card.ThumbnailMediaID
 	}
+	if card.FaviconMediaID != nil {
+		value.FaviconMediaID = *card.FaviconMediaID
+	}
 	if card.EmbedURL != nil && *card.EmbedURL != "" {
 		if !linkfetch.IsEmbeddable(*card.EmbedURL) {
 			return domain.LinkCard{}, domain.NewError(domain.CodeInvalidArgument, "embed_url origin is not permitted", map[string]any{"field": "embed_url"})
@@ -148,6 +152,10 @@ func FromPreview(preview app.LinkPreview) Card {
 	card.ViewCount = copyCount(preview.Card.ViewCount)
 	card.CommentCount = copyCount(preview.Card.CommentCount)
 	card.LikeCount = copyCount(preview.Card.LikeCount)
+	if preview.Card.FaviconMediaID != "" {
+		favicon := preview.Card.FaviconMediaID
+		card.FaviconMediaID = &favicon
+	}
 	if preview.Card.ThumbnailMediaID != "" {
 		id := preview.Card.ThumbnailMediaID
 		card.ThumbnailMediaID = &id
@@ -192,6 +200,10 @@ func FromDomainCard(card domain.LinkCard) Card {
 	if card.ThumbnailMediaID != "" {
 		id := card.ThumbnailMediaID
 		wire.ThumbnailMediaID = &id
+	}
+	if card.FaviconMediaID != "" {
+		favicon := card.FaviconMediaID
+		wire.FaviconMediaID = &favicon
 	}
 	if card.EmbedURL != "" {
 		embed := card.EmbedURL

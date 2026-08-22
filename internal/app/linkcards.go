@@ -33,6 +33,7 @@ type LinkPreview struct {
 	ThumbnailMIMEType string
 	ThumbnailWidth    uint32
 	ThumbnailHeight   uint32
+	FaviconMIMEType   string
 }
 
 // LinkPreviewService turns a URL into a storable card snapshot.
@@ -96,11 +97,20 @@ func (service *LinkPreviewService) Resolve(ctx context.Context, rawURL string) (
 
 	result := LinkPreview{}
 	if preview.ImageURL != "" && service.thumbnails != nil {
-		if id, mime, width, height, err := service.captureThumbnail(ctx, preview.ImageURL); err == nil {
+		if id, mime, width, height, err := service.captureImage(ctx, preview.ImageURL, "link-preview"); err == nil {
 			card.ThumbnailMediaID = id.String()
 			result.ThumbnailMIMEType = mime
 			result.ThumbnailWidth = width
 			result.ThumbnailHeight = height
+		}
+	}
+	// A site mark is optional in exactly the same way. Many sites publish only
+	// an ICO, which managed media refuses, and the card then shows no mark
+	// rather than reaching out to the origin from the reader's browser.
+	if preview.IconURL != "" && service.thumbnails != nil {
+		if id, mime, _, _, err := service.captureImage(ctx, preview.IconURL, "link-favicon"); err == nil {
+			card.FaviconMediaID = id.String()
+			result.FaviconMIMEType = mime
 		}
 	}
 
@@ -111,17 +121,16 @@ func (service *LinkPreviewService) Resolve(ctx context.Context, rawURL string) (
 	return result, nil
 }
 
-// captureThumbnail downloads a remote image through the guarded fetcher and
-// hands the bytes to the managed media store. The remote image receives no
-// exemption from the owner-upload rules: an SVG or an unsupported codec is
-// refused here exactly as it would be on upload, and the card simply renders
-// without an image.
-func (service *LinkPreviewService) captureThumbnail(ctx context.Context, imageURL string) (domain.ID, string, uint32, uint32, error) {
+// captureImage downloads a remote image through the guarded fetcher and hands
+// the bytes to the managed media store. The remote image receives no exemption
+// from the owner-upload rules: an SVG or an unsupported codec is refused here
+// exactly as it would be on upload, and the card simply renders without it.
+func (service *LinkPreviewService) captureImage(ctx context.Context, imageURL, name string) (domain.ID, string, uint32, uint32, error) {
 	response, err := service.resolver.Fetcher().Get(ctx, imageURL, []string{"image/*"}, linkfetch.DefaultMaxImageBytes)
 	if err != nil {
 		return "", "", 0, 0, err
 	}
-	id, mime, width, height, err := service.thumbnails.Ingest(ctx, "link-preview", bytes.NewReader(response.Body))
+	id, mime, width, height, err := service.thumbnails.Ingest(ctx, name, bytes.NewReader(response.Body))
 	if err != nil {
 		return "", "", 0, 0, err
 	}

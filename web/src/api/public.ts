@@ -66,6 +66,8 @@ export interface PublicLinkCard {
   viewCount: number | null;
   commentCount: number | null;
   likeCount: number | null;
+  /** The site's own mark, captured as managed media. Null when it published none. */
+  faviconMediaId: string | null;
   thumbnailMediaId: string | null;
   thumbnailMimeType: string | null;
   thumbnailWidth: number | null;
@@ -828,6 +830,7 @@ const linkCardKeys = [
   "view_count",
   "comment_count",
   "like_count",
+  "favicon_media_id",
   "thumbnail_media_id",
   "thumbnail_mime_type",
   "thumbnail_width",
@@ -890,6 +893,10 @@ function parseLinkCards(value: unknown): PublicLinkCard[] {
         item.like_count === null
           ? null
           : nonNegativeIntegerField(item, "like_count"),
+      faviconMediaId:
+        item.favicon_media_id === null
+          ? null
+          : stringField(item, "favicon_media_id"),
       thumbnailMediaId:
         item.thumbnail_media_id === null
           ? null

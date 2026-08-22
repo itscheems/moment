@@ -172,17 +172,16 @@ INSERT INTO entry_location (
 		if err := card.Card.Validate(); err != nil {
 			return err
 		}
-		var thumbnail any
-		if card.ThumbnailSHA256 != "" {
-			// The archive names the thumbnail by content hash because media
-			// identifiers are reassigned on import. Resolve it back here; a
-			// hash the archive never packaged is a broken reference, not a
-			// silently dropped image.
-			var mediaID string
-			if err := importer.tx.QueryRowContext(ctx, `SELECT id FROM media WHERE sha256 = ?`, card.ThumbnailSHA256).Scan(&mediaID); err != nil {
-				return fmt.Errorf("resolve portable link card thumbnail %s: %w", card.ThumbnailSHA256, err)
-			}
-			thumbnail = mediaID
+		// The archive names images by content hash because media identifiers
+		// are reassigned on import. Resolve them back here; a hash the archive
+		// never packaged is a broken reference, not a silently dropped image.
+		thumbnail, err := importer.resolvePortableMedia(ctx, card.ThumbnailSHA256)
+		if err != nil {
+			return err
+		}
+		favicon, err := importer.resolvePortableMedia(ctx, card.FaviconSHA256)
+		if err != nil {
+			return err
 		}
 		var duration any
 		if card.Card.DurationSeconds != nil {
@@ -192,20 +191,32 @@ INSERT INTO entry_location (
 INSERT INTO entry_link_card (
     entry_id, position, source_url, canonical_url, provider, card_kind, title,
     description, site_name, author_name, duration_seconds, thumbnail_media_id,
-    embed_url, captured_at_ms, view_count, comment_count, like_count
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    embed_url, captured_at_ms, view_count, comment_count, like_count,
+    favicon_media_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			value.ID, card.Card.Position, card.Card.SourceURL, card.Card.CanonicalURL,
 			string(card.Card.Provider), string(card.Card.Kind), card.Card.Title,
 			card.Card.Description, card.Card.SiteName, card.Card.AuthorName,
 			duration, thumbnail, card.Card.EmbedURL, card.Card.CapturedAt,
 			countArgument(card.Card.ViewCount), countArgument(card.Card.CommentCount),
-			countArgument(card.Card.LikeCount),
+			countArgument(card.Card.LikeCount), favicon,
 		); err != nil {
 			return fmt.Errorf("insert portable entry link card: %w", err)
 		}
 	}
 	importer.entries++
 	return nil
+}
+
+func (importer *PortableImporter) resolvePortableMedia(ctx context.Context, sha string) (any, error) {
+	if sha == "" {
+		return nil, nil
+	}
+	var mediaID string
+	if err := importer.tx.QueryRowContext(ctx, `SELECT id FROM media WHERE sha256 = ?`, sha).Scan(&mediaID); err != nil {
+		return nil, fmt.Errorf("resolve portable link card media %s: %w", sha, err)
+	}
+	return mediaID, nil
 }
 
 // InsertComment writes one domain-validated root or one-level reply.

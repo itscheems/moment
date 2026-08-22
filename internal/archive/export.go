@@ -550,6 +550,7 @@ type linkCardRecord struct {
 	AuthorName      string  `json:"author_name"`
 	DurationSeconds *int    `json:"duration_seconds"`
 	ThumbnailSHA256 *string `json:"thumbnail_sha256"`
+	FaviconSHA256   *string `json:"favicon_sha256,omitempty"`
 	EmbedURL        string  `json:"embed_url"`
 	CapturedAt      string  `json:"captured_at"`
 	ViewCount       *int64  `json:"view_count,omitempty"`
@@ -835,6 +836,10 @@ func portableLinkCards(values []sqlitestore.ArchiveLinkCard) []linkCardRecord {
 			sha := value.ThumbnailSHA256
 			record.ThumbnailSHA256 = &sha
 		}
+		if value.FaviconSHA256 != "" {
+			sha := value.FaviconSHA256
+			record.FaviconSHA256 = &sha
+		}
 		records = append(records, record)
 	}
 	return records
@@ -870,6 +875,9 @@ func domainLinkCards(values []linkCardRecord) ([]sqlitestore.ArchiveLinkCard, er
 		entry := sqlitestore.ArchiveLinkCard{Card: card}
 		if value.ThumbnailSHA256 != nil {
 			entry.ThumbnailSHA256 = *value.ThumbnailSHA256
+		}
+		if value.FaviconSHA256 != nil {
+			entry.FaviconSHA256 = *value.FaviconSHA256
 		}
 		cards = append(cards, entry)
 	}
@@ -1469,8 +1477,10 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			return err
 		}
 		for _, card := range linkCards {
-			if card.ThumbnailSHA256 != "" {
-				thumbnailSHAs[card.ThumbnailSHA256] = struct{}{}
+			for _, sha := range []string{card.ThumbnailSHA256, card.FaviconSHA256} {
+				if sha != "" {
+					thumbnailSHAs[sha] = struct{}{}
+				}
 			}
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
@@ -1634,7 +1644,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	// the packaged hashes rather than against reassigned identifiers.
 	for sha := range thumbnailSHAs {
 		if _, exists := mediaSHAs[sha]; !exists {
-			return errors.New("link card thumbnail refers to media absent from the archive")
+			return errors.New("link card image refers to media absent from the archive")
 		}
 	}
 	if site.AvatarMediaID != nil {

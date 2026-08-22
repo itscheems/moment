@@ -62,9 +62,37 @@
 }
 
 .site {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-inline-size: 0;
   color: var(--text-secondary);
   font-size: 0.8125rem;
   line-height: 1.25;
+}
+
+.site > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A brand mark keeps its own colours, so it is sized by height and left to
+   set its own width from its aspect ratio. */
+.brandMark {
+  flex: 0 0 auto;
+  block-size: 0.95rem;
+  inline-size: auto;
+  color: var(--text-primary);
+}
+
+/* A captured favicon is square and small; the site name carries the identity. */
+.favicon {
+  flex: 0 0 auto;
+  inline-size: 1rem;
+  block-size: 1rem;
+  border-radius: 0.2rem;
+  object-fit: contain;
 }
 
 .title {
@@ -183,8 +211,21 @@
 }
 
 .stat svg {
+  flex: 0 0 auto;
   inline-size: 1.05rem;
   block-size: 1.05rem;
+  /* The glyphs are deliberately quieter than the figures beside them: the
+     number is the content, the icon only says which number it is. */
+  color: #9499a1;
+}
+
+/* An author name is text, not a figure, so it may be long enough to need a
+   ceiling of its own. */
+.stat:first-child > span[aria-hidden] {
+  max-inline-size: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The glyph carries the meaning visually; the exact figure and its name stay
@@ -196,8 +237,4 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-.statName {
-  color: var(--text-secondary);
 }

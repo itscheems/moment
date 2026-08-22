@@ -30,6 +30,10 @@ const mediaReferencedSQL = `(
         SELECT 1 FROM entry_link_card AS card
         WHERE card.thumbnail_media_id = media.id
     )
+    OR EXISTS (
+        SELECT 1 FROM entry_link_card AS card
+        WHERE card.favicon_media_id = media.id
+    )
 )`
 
 // MediaReferenceRepository exposes the central resolver through transaction-

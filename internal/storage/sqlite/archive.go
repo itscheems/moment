@@ -69,6 +69,7 @@ type ArchiveEntry struct {
 type ArchiveLinkCard struct {
 	Card            domain.LinkCard
 	ThumbnailSHA256 string
+	FaviconSHA256   string
 }
 
 // ArchiveLinkCardsOf extracts the domain cards for list-level validation.
@@ -370,9 +371,10 @@ SELECT card.position, card.source_url, card.canonical_url, card.provider,
        card.card_kind, card.title, card.description, card.site_name,
        card.author_name, card.duration_seconds, card.embed_url,
        card.captured_at_ms, card.view_count, card.comment_count,
-       card.like_count, thumbnail.sha256
+       card.like_count, thumbnail.sha256, favicon.sha256
 FROM entry_link_card AS card
 LEFT JOIN media AS thumbnail ON thumbnail.id = card.thumbnail_media_id
+LEFT JOIN media AS favicon ON favicon.id = card.favicon_media_id
 WHERE card.entry_id = ?
 ORDER BY card.position`, entryID)
 	if err != nil {
@@ -383,12 +385,12 @@ ORDER BY card.position`, entryID)
 	for rows.Next() {
 		var card domain.LinkCard
 		var duration, views, comments, likes sql.NullInt64
-		var sha sql.NullString
+		var sha, faviconSHA sql.NullString
 		if err := rows.Scan(
 			&card.Position, &card.SourceURL, &card.CanonicalURL, &card.Provider,
 			&card.Kind, &card.Title, &card.Description, &card.SiteName,
 			&card.AuthorName, &duration, &card.EmbedURL, &card.CapturedAt,
-			&views, &comments, &likes, &sha,
+			&views, &comments, &likes, &sha, &faviconSHA,
 		); err != nil {
 			return nil, fmt.Errorf("scan archive entry link card: %w", err)
 		}
@@ -402,7 +404,11 @@ ORDER BY card.position`, entryID)
 		if err := card.Validate(); err != nil {
 			return nil, errors.New("archive entry link card is invalid")
 		}
-		cards = append(cards, ArchiveLinkCard{Card: card, ThumbnailSHA256: sha.String})
+		cards = append(cards, ArchiveLinkCard{
+			Card:            card,
+			ThumbnailSHA256: sha.String,
+			FaviconSHA256:   faviconSHA.String,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate archive entry link cards: %w", err)

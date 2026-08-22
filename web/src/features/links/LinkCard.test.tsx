@@ -5,6 +5,21 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { PublicLinkCard } from "../../api/public";
 import { LinkCard } from "./LinkCard";
 
+/**
+ * Find an SVG by its viewBox.
+ *
+ * A `[viewBox=...]` selector cannot be used: querySelector case-folds
+ * attribute names in an HTML document, so it would match nothing and any
+ * `not.toBeNull()` assertion on the result would pass vacuously.
+ */
+function svgWithViewBox(viewBox: string): SVGElement | null {
+  return (
+    [...document.querySelectorAll("svg")].find(
+      (node) => node.getAttribute("viewBox") === viewBox,
+    ) ?? null
+  );
+}
+
 afterEach(cleanup);
 
 function card(overrides: Partial<PublicLinkCard> = {}): PublicLinkCard {
@@ -20,6 +35,7 @@ function card(overrides: Partial<PublicLinkCard> = {}): PublicLinkCard {
     viewCount: null,
     commentCount: null,
     likeCount: null,
+    faviconMediaId: null,
     thumbnailMediaId: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     thumbnailMimeType: "image/jpeg",
     thumbnailWidth: 1280,
@@ -162,5 +178,89 @@ describe("LinkCard statistics", () => {
     render(<LinkCard card={card({ viewCount: 42, description: "" })} />);
     expect(screen.getByText("42")).toBeInTheDocument();
     expect(screen.queryByText(/弹幕/)).toBeNull();
+  });
+});
+
+describe("LinkCard site mark", () => {
+  it("renders a brand mark from the canonical host, not from the recognizer", () => {
+    // Keying on the stored URL rather than a provider label is what keeps a
+    // retired recognizer from changing how an existing card looks.
+    render(<LinkCard card={card()} />);
+    const mark = svgWithViewBox("0 0 93 20");
+    expect(mark).not.toBeNull();
+    expect(mark?.querySelector("path[fill='#FF0033']")).not.toBeNull();
+  });
+
+  it("renders the Bilibili mark in its own colour", () => {
+    render(
+      <LinkCard
+        card={card({
+          canonicalUrl: "https://www.bilibili.com/video/BV1fx3y6pEPD",
+          embedUrl: null,
+          cardKind: "link",
+        })}
+      />,
+    );
+    const mark = svgWithViewBox("0 0 2240 1024");
+    expect(mark).not.toBeNull();
+    expect(mark?.querySelector("path[fill='#00AEEC']")).not.toBeNull();
+  });
+
+  it("falls back to the captured favicon for an unknown site", () => {
+    render(
+      <LinkCard
+        card={card({
+          canonicalUrl: "https://example.com/a",
+          faviconMediaId: "01ARZ3NDEKTSV4RRFFQ69G5FAW",
+          embedUrl: null,
+          cardKind: "link",
+        })}
+      />,
+    );
+    const favicon = [...document.querySelectorAll("img")].find((image) =>
+      image.getAttribute("src")?.includes("01ARZ3NDEKTSV4RRFFQ69G5FAW"),
+    );
+    // Served from managed media, never hotlinked from the origin.
+    expect(favicon?.getAttribute("src")).toContain("/api/v1/media/");
+  });
+
+  it("shows no mark when the site published none in a supported format", () => {
+    render(
+      <LinkCard
+        card={card({
+          canonicalUrl: "https://example.com/a",
+          faviconMediaId: null,
+          thumbnailMediaId: null,
+          embedUrl: null,
+          cardKind: "link",
+        })}
+      />,
+    );
+    expect(document.querySelector("img")).toBeNull();
+    expect(svgWithViewBox("0 0 93 20")).toBeNull();
+  });
+
+  it("puts the uploader first, before the figures", () => {
+    render(
+      <LinkCard
+        card={card({
+          authorName: "崽崽阿阿_",
+          viewCount: 480312,
+          commentCount: 86,
+          likeCount: 10879,
+          description: "",
+        })}
+      />,
+    );
+    const order = [...document.querySelectorAll("li")].map((node) =>
+      node.querySelector("svg")?.getAttribute("data-icon"),
+    );
+    expect(order).toEqual([
+      "uploader",
+      "play-count",
+      "danmaku-count",
+      "like-count",
+    ]);
+    expect(screen.getByText("崽崽阿阿_")).toBeInTheDocument();
   });
 });

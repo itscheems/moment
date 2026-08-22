@@ -100,6 +100,7 @@ export interface OwnerLinkCard {
   view_count: number | null;
   comment_count: number | null;
   like_count: number | null;
+  favicon_media_id: string | null;
   thumbnail_media_id: string | null;
   thumbnail_mime_type: string | null;
   thumbnail_width: number | null;
@@ -121,6 +122,7 @@ const ownerLinkCardKeys = [
   "view_count",
   "comment_count",
   "like_count",
+  "favicon_media_id",
   "thumbnail_media_id",
   "thumbnail_mime_type",
   "thumbnail_width",
