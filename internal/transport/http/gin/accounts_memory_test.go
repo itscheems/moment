@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
@@ -171,6 +172,17 @@ func (store *memoryAccounts) ListAccounts(_ context.Context) ([]domain.User, err
 	}
 	sort.Slice(users, func(left, right int) bool { return users[left].ID < users[right].ID })
 	return users, nil
+}
+
+// MediaExists and ReconcileMediaReferences are inert here. These tests are
+// about routes and authorisation; media reachability has its own tests against
+// real SQLite, where the predicate actually means something.
+func (store *memoryAccounts) MediaExists(_ context.Context, _ domain.ID) (bool, error) {
+	return true, nil
+}
+
+func (store *memoryAccounts) ReconcileMediaReferences(_ context.Context, _ []domain.ID, _ time.Time) error {
+	return nil
 }
 
 func (store *memoryAccounts) OwnerUserID(_ context.Context) (string, error) {

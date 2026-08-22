@@ -218,7 +218,12 @@ func writeAccountError(ctx *gin.Context, err error) {
 	case domain.CodeInvalidArgument, domain.CodeUsernameTaken, domain.CodeUsernameReserved,
 		domain.CodeIdentityAlreadyLinked, domain.CodeLastCredential:
 		status := http.StatusBadRequest
-		if domainErr.Code == domain.CodeUsernameTaken || domainErr.Code == domain.CodeIdentityAlreadyLinked {
+		switch domainErr.Code {
+		// These three are conflicts with the state of the world, not faults in
+		// what was sent. "This is the only way back into your account" is a
+		// true statement about a well-formed request, and a client should be
+		// able to tell it apart from a malformed one without reading the code.
+		case domain.CodeUsernameTaken, domain.CodeIdentityAlreadyLinked, domain.CodeLastCredential:
 			status = http.StatusConflict
 		}
 		Failure(ctx, status, string(domainErr.Code), domainErr.Message, domainErr.Details)

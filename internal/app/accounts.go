@@ -41,6 +41,12 @@ type AccountStore interface {
 
 	OwnerUserID(ctx context.Context) (string, error)
 	RegistrationMode(ctx context.Context) (domain.RegistrationMode, error)
+
+	// The two media operations an account write needs, and no more. Widening
+	// this to the whole reference store would make every implementation carry
+	// methods it never calls.
+	MediaExists(ctx context.Context, id domain.ID) (bool, error)
+	ReconcileMediaReferences(ctx context.Context, ids []domain.ID, now time.Time) error
 }
 
 // SessionStore persists live sign-ins.
@@ -505,15 +511,48 @@ func (service *AccountService) UpdateProfile(ctx context.Context, userID string,
 			}
 			user.Bio = bio
 		}
+		previousAvatar, previousCover := user.AvatarMediaID, user.CoverMediaID
 		if update.AvatarMediaID != nil {
 			user.AvatarMediaID = update.AvatarMediaID.Value
 		}
 		if update.CoverMediaID != nil {
 			user.CoverMediaID = update.CoverMediaID.Value
 		}
+		for field, id := range map[string]*string{
+			"avatar_media_id": user.AvatarMediaID,
+			"cover_media_id":  user.CoverMediaID,
+		} {
+			if id == nil {
+				continue
+			}
+			mediaID, parseErr := domain.ParseID(*id)
+			if parseErr != nil {
+				return domain.NewError(domain.CodeInvalidArgument, field+" must be a valid managed media ID", map[string]any{"field": field})
+			}
+			exists, lookupErr := accounts.MediaExists(ctx, mediaID)
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if !exists {
+				return domain.NewError(domain.CodeMediaNotFound, "media "+mediaID.String()+" does not exist", map[string]any{"media_id": mediaID.String()})
+			}
+		}
 		user.UpdatedAtMS = nowMS
 		if err := accounts.UpdateProfile(ctx, user); err != nil {
 			return err
+		}
+		// A picture that stopped being someone's avatar has to be told so.
+		// Reachability is recomputed at collection time, so skipping this
+		// cannot delete a picture that is in use -- but it does leave a
+		// replaced one referenced forever, which is a leak rather than a loss.
+		if update.AvatarMediaID != nil || update.CoverMediaID != nil {
+			affected, affectedErr := uniqueMediaIDs(previousAvatar, user.AvatarMediaID, previousCover, user.CoverMediaID)
+			if affectedErr != nil {
+				return domain.NewError(domain.CodeDataIntegrityFailed, "stored profile media ID is invalid", nil)
+			}
+			if err := accounts.ReconcileMediaReferences(ctx, affected, domain.NormalizeTime(service.clock())); err != nil {
+				return err
+			}
 		}
 		result = user
 		return nil

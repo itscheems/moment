@@ -202,7 +202,7 @@ func completeOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 				return
 			}
 			config.record(ctx, "info", "auth_identity_linked", map[string]any{"user_id": flow.LinkUserID, "provider": flow.Provider})
-			redirectToReturn(ctx, flow.ReturnPath, "linked")
+			redirectToReturn(ctx, flow.ReturnPath, "linked", flow.Provider)
 			return
 		}
 
@@ -232,7 +232,7 @@ func completeOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 		config.record(ctx, "info", "auth_session_issued", map[string]any{
 			"user_id": outcome.User.ID, "method": "oauth", "provider": flow.Provider,
 		})
-		redirectToReturn(ctx, flow.ReturnPath, "ok")
+		redirectToReturn(ctx, flow.ReturnPath, "ok", "")
 	}
 }
 
@@ -306,13 +306,24 @@ func redirectToSignIn(ctx *gin.Context, code domain.Code) {
 	redirect(ctx, signInPath+"?auth_error="+url.QueryEscape(string(code)))
 }
 
-func redirectToReturn(ctx *gin.Context, returnPath, outcome string) {
+// redirectToReturn sends the browser back where it came from with the outcome
+// attached.
+//
+// The provider name rides along on a link so the page can say what was bound.
+// Without it the browser has to remember across a full navigation what it was
+// in the middle of, which is a moving part that exists only because the answer
+// was omitted here.
+func redirectToReturn(ctx *gin.Context, returnPath, outcome, provider string) {
 	target := safeReturnPath(returnPath)
 	separator := "?"
 	if strings.Contains(target, "?") {
 		separator = "&"
 	}
-	redirect(ctx, target+separator+"auth="+url.QueryEscape(outcome))
+	location := target + separator + "auth=" + url.QueryEscape(outcome)
+	if provider != "" {
+		location += "&provider=" + url.QueryEscape(provider)
+	}
+	redirect(ctx, location)
 }
 
 func setOAuthCookie(ctx *gin.Context, value string, options CookieOptions) {

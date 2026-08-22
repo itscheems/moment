@@ -122,9 +122,12 @@ func (repository *AccountRepository) WriteAccounts(ctx context.Context, operatio
 
 type accountStore struct {
 	queries Queries
+	mediaReferenceStore
 }
 
-func newAccountStore(queries Queries) accountStore { return accountStore{queries: queries} }
+func newAccountStore(queries Queries) accountStore {
+	return accountStore{queries: queries, mediaReferenceStore: newMediaReferenceStore(queries)}
+}
 
 var (
 	_ app.AccountStore = accountStore{}
@@ -220,6 +223,17 @@ func (store accountStore) UsersByIDs(ctx context.Context, ids []string) (map[str
 		return nil, fmt.Errorf("iterate accounts: %w", err)
 	}
 	return result, nil
+}
+
+// MediaExists reports whether a managed media id names a real row, so a bad
+// reference is refused with an answer rather than with a constraint failure.
+func (store accountStore) MediaExists(ctx context.Context, id domain.ID) (bool, error) {
+	var exists int
+	err := store.queries.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM media WHERE id = ?)`, id.String()).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check account media: %w", err)
+	}
+	return exists == 1, nil
 }
 
 func (store accountStore) UsernameAvailable(ctx context.Context, username string) (bool, error) {
