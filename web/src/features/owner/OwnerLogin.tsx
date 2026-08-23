@@ -365,15 +365,11 @@ export function OwnerLogin({
             {showCredential ? "隐藏" : "显示"}
           </button>
         </div>
-        <small>
-          {method === "password" ? (
-            "密码只发送到当前 Moment 实例，不会进入帖子导出。"
-          ) : (
-            <>
-              本地开发令牌保存在 <code>.moment-local/owner.token</code>。
-            </>
-          )}
-        </small>
+        {method === "token" ? (
+          <small>
+            本地开发令牌保存在 <code>.moment-local/owner.token</code>。
+          </small>
+        ) : null}
         {error ? <p role="alert">{error}</p> : null}
         <button
           className={styles.primaryButton}
