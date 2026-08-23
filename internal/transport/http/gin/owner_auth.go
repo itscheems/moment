@@ -12,6 +12,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/domain"
 )
 
 const (
@@ -30,6 +31,12 @@ type CookieOptions struct {
 }
 
 type sessionRequest struct {
+	// Username names who is signing in. It is optional because the owner token
+	// is a break-glass credential that has to keep working when nothing else
+	// does, including when nobody remembers the handle. When it is sent it is
+	// enforced: a form that collects a name and then ignores it would sign
+	// every correct password in as the owner no matter what was typed above it.
+	Username *string `json:"username"`
 	Token    *string `json:"token"`
 	Password *string `json:"password"`
 }
@@ -97,6 +104,9 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			writeAccountError(ctx, err)
 			return
 		}
+		if request.Username != nil && !gate.usernameSignsInHere(ctx, *request.Username, owner) {
+			return
+		}
 		sessionID, err := app.NewSessionID()
 		if err != nil {
 			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "owner session could not be issued", nil)
@@ -125,6 +135,31 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 		setSessionCookie(ctx, cookieValue, session.ExpiresAt, cookies)
 		Success(ctx, http.StatusOK, sessionResponse{ExpiresAt: session.ExpiresAt, CSRFToken: session.CSRFToken}, nil)
 	}
+}
+
+// usernameSignsInHere reports whether a typed handle may hold the credential
+// this request carries, writing its own refusal when it may not.
+//
+// Only the owner has a password or a token; every other account reaches this
+// instance through a provider. Saying so is more use than a wrong-password
+// message, and it leaks nothing -- handles are already public, since each one
+// addresses a profile page at the site root.
+func (gate *Gate) usernameSignsInHere(ctx *gin.Context, typed string, owner domain.User) bool {
+	normalized, err := domain.NormalizeUsername(typed)
+	if err != nil {
+		Failure(ctx, http.StatusUnauthorized, "ACCOUNT_NOT_FOUND", "no account here holds that username", nil)
+		return false
+	}
+	if strings.EqualFold(normalized, owner.Username) {
+		return true
+	}
+	if _, err := gate.accounts.AccountByUsername(ctx.Request.Context(), normalized); err != nil {
+		Failure(ctx, http.StatusUnauthorized, "ACCOUNT_NOT_FOUND", "no account here holds that username", nil)
+		return false
+	}
+	Failure(ctx, http.StatusUnauthorized, "PASSWORD_NOT_AVAILABLE",
+		"that account signs in through a third-party provider", nil)
+	return false
 }
 
 func setPassword(manager *auth.Manager) gin.HandlerFunc {
