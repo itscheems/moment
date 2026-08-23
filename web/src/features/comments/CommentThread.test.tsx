@@ -22,6 +22,7 @@ import { NavigationProvider } from "../../app/navigation";
 import { OwnerProvider, useOwner } from "../owner/OwnerProvider";
 import { CommentThread } from "./CommentThread";
 import commentsCss from "./Comments.module.css?inline";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const postId = "01K2ABCDEF0123456789ABCDE0";
 const rootId = "01K2ABCDEF0123456789ABCDE1";
@@ -292,6 +293,7 @@ function accountSessionEnvelope(username = "owner") {
         status: "active",
         username_chosen: true,
       },
+      limits: makeAccountLimits(),
     },
     meta: { request_id: "req_account_session" },
   };
@@ -932,6 +934,7 @@ describe("public comment thread", () => {
               status: "pending",
               username_chosen: true,
             },
+            limits: makeAccountLimits(),
           },
           meta: { request_id: "req_pending" },
         });

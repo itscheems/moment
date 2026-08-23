@@ -225,6 +225,10 @@ export function SettingsPage({
   onSaved: (site: SiteIdentity) => void;
 }) {
   const navigation = useNavigation();
+  // Filled in by the members list below once it has read the roster. Nobody is
+  // waiting until the server says so, which is why this starts at zero rather
+  // than at "unknown": a badge that flickers on every visit is noise.
+  const [waitingAccounts, setWaitingAccounts] = useState(0);
   const {
     account,
     api,
@@ -683,6 +687,14 @@ export function SettingsPage({
                 onClick={(event) => navigateToSection(event, section.id)}
               >
                 {section.label}
+                {section.id === "members" && waitingAccounts > 0 ? (
+                  <span
+                    aria-label={`${waitingAccounts} 个账户待批准`}
+                    className={styles.navBadge}
+                  >
+                    {waitingAccounts}
+                  </span>
+                ) : null}
               </a>
             ))}
         </nav>
@@ -1030,9 +1042,13 @@ export function SettingsPage({
                 <h2 id="members-title" tabIndex={-1}>
                   成员
                 </h2>
-                <span>本站的账户，以及他们现在能做什么。</span>
+                <span>
+                  {waitingAccounts > 0
+                    ? `本站的账户，以及他们现在能做什么。有 ${waitingAccounts} 个账户在等待批准。`
+                    : "本站的账户，以及他们现在能做什么。"}
+                </span>
               </header>
-              <MembersSection />
+              <MembersSection onWaitingChange={setWaitingAccounts} />
             </section>
           ) : null}
 

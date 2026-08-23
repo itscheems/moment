@@ -9,7 +9,11 @@ import {
   useState,
 } from "react";
 
-import { OwnerApi, type OwnerSession } from "../../api/owner";
+import {
+  OwnerApi,
+  type AccountLimits,
+  type OwnerSession,
+} from "../../api/owner";
 import { PublicApiError, type Account } from "../../api/public";
 import { notify } from "../../components/Feedback";
 import { clearComposeDraft } from "./draft";
@@ -66,6 +70,14 @@ interface OwnerContextValue {
    * the absence of an owner role.
    */
   account: Account | null;
+  /**
+   * The bounds the server enforces on this account, as it published them.
+   *
+   * Travels with the account because it arrives in the same response, and is
+   * null for exactly as long as the account is: a caller that has somebody to
+   * render controls for has the numbers those controls need.
+   */
+  limits: AccountLimits | null;
   login: (credential: string, method?: "password" | "token") => Promise<void>;
   logout: (instanceId: string | null) => Promise<void>;
   /**
@@ -325,6 +337,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
   );
   const [state, setState] = useState<OwnerState>("checking");
   const [account, setAccount] = useState<Account | null>(null);
+  const [limits, setLimits] = useState<AccountLimits | null>(null);
   const [statusAttempt, setStatusAttempt] = useState(0);
   const [authOutcome] = useState(readAuthOutcome);
   const sessionRef = useRef(session);
@@ -354,7 +367,10 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       // An expired session still belongs to the same person, and the pages
       // that offer re-login inline need to keep knowing who that is. Only a
       // real sign-out forgets them.
-      if (nextState === "guest") setAccount(null);
+      if (nextState === "guest") {
+        setAccount(null);
+        setLimits(null);
+      }
       return true;
     },
     [],
@@ -453,6 +469,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       .then((restored) => {
         if (controller.signal.aborted) return;
         setAccount(restored.account);
+        setLimits(restored.limits);
         // A session this tab already holds is kept as it is: its CSRF token
         // came from the same cookie, and taking a new marker for it would make
         // an ordinary reload look like a fresh login to every other tab.
@@ -487,7 +504,10 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
     void api
       .accountSession(controller.signal)
       .then((restored) => {
-        if (!controller.signal.aborted) setAccount(restored.account);
+        if (!controller.signal.aborted) {
+          setAccount(restored.account);
+          setLimits(restored.limits);
+        }
       })
       .catch(() => {
         if (!controller.signal.aborted) setState("unavailable");
@@ -524,7 +544,9 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       // would put every tab through a frame of "signed in, role unknown", and
       // that frame decides whether owner controls are on screen.
       try {
-        setAccount((await api.accountSession()).account);
+        const restored = await api.accountSession();
+        setAccount(restored.account);
+        setLimits(restored.limits);
       } catch {
         // The session is real either way. The restore effect above notices the
         // missing account and reports it rather than stranding the sign-in.
@@ -590,6 +612,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       state,
       session,
       account,
+      limits,
       login,
       logout,
       forgetSession,
@@ -605,6 +628,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       expireAfterTokenRotation,
       expireIfInvalidSession,
       forgetSession,
+      limits,
       login,
       logout,
       retryStatus,

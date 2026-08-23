@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import { makeAccountLimits } from "../test/accountFixtures";
 
 class FakeVisualViewport extends EventTarget {
   height: number;
@@ -129,6 +130,7 @@ function accountSessionEnvelope(username = "owner") {
         status: "active",
         username_chosen: true,
       },
+      limits: makeAccountLimits(),
     },
     meta: { request_id: "req_account_session" },
   };

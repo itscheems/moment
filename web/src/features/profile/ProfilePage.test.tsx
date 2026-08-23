@@ -15,6 +15,7 @@ import { FeedbackProvider } from "../../components/Feedback";
 import { OwnerProvider } from "../owner/OwnerProvider";
 import { announceOwnerPost } from "../owner/postEvents";
 import { ProfilePage } from "./ProfilePage";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const pinnedId = "01K2ABCDEF0123456789ABCDE0";
 const otherId = "01K2ABCDEF0123456789ABCDE1";
@@ -69,6 +70,7 @@ function accountSessionEnvelope() {
         status: "active",
         username_chosen: true,
       },
+      limits: makeAccountLimits(),
     },
     meta: { request_id: "req_account" },
   };

@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  makeImportCounts,
+  makeReviewComment,
+  makeReviewEntry,
+  makeReviewIdentity,
+  makeReviewUser,
+} from "../test/archiveFixtures";
 import { OwnerApi } from "./owner";
 
 function json(body: unknown, status = 200): Response {
@@ -28,7 +35,7 @@ function planData(archiveBytes: number) {
     dry_run: true,
     format_version: 1,
     archive_sha256: archiveSHA,
-    counts: { entries: 1, comments: 2, media: 1 },
+    counts: makeImportCounts({ entries: 1, comments: 2, media: 1 }),
     time_range: {
       from: "2026-08-10T00:00:00Z",
       to: "2026-08-10T00:00:00.1Z",
@@ -49,7 +56,13 @@ function planData(archiveBytes: number) {
       space_ok: true,
     },
     replacement: {
-      counts: { entries: 8, comments: 13, media: 5 },
+      counts: makeImportCounts({
+        entries: 8,
+        comments: 13,
+        media: 5,
+        users: 2,
+        identities: 3,
+      }),
       media_bytes: 1_000,
       data_bytes: replacementDataBytes,
     },
@@ -71,9 +84,9 @@ function mergePlanData() {
       expires_at: "2999-08-11T02:00:00Z",
       summary: {
         unchanged: 0,
-        incoming_only: 1,
+        incoming_only: 2,
         local_only: 0,
-        conflict: 1,
+        conflict: 2,
       },
       items: [
         {
@@ -92,6 +105,26 @@ function mergePlanData() {
           dependencies: [{ kind: "entry", id: "post-conflict" }],
           selectable: true,
         },
+        // Reported, never selectable -- the plan carries accounts so a
+        // reviewer can see who a restore brings with it.
+        {
+          kind: "user",
+          id: "11111111111111111111111111111111",
+          classification: "conflict",
+          changed_fields: ["display_name"],
+          dependencies: [],
+          selectable: false,
+        },
+        {
+          kind: "identity",
+          id: "github:4242",
+          classification: "incoming_only",
+          changed_fields: [],
+          dependencies: [
+            { kind: "user", id: "11111111111111111111111111111111" },
+          ],
+          selectable: false,
+        },
       ],
       site_fields: [],
       default_selection: {
@@ -108,7 +141,7 @@ function mergePlanData() {
     },
     review: {
       incoming_only: {
-        total: 1,
+        total: 2,
         truncated: false,
         items: [
           {
@@ -116,21 +149,25 @@ function mergePlanData() {
             id: "comment-new",
             classification: "incoming_only",
             changed_fields: [],
-            incoming: {
+            incoming: makeReviewComment({
               id: "comment-new",
               content_md: "incoming reply",
               entry_id: "post-conflict",
-              author_kind: "guest",
               author_name: "Guest",
-              created_at: "2026-08-11T00:00:00Z",
-              media: [],
-            },
+            }),
+          },
+          {
+            kind: "identity",
+            id: "github:4242",
+            classification: "incoming_only",
+            changed_fields: [],
+            incoming: makeReviewIdentity(),
           },
         ],
       },
       local_only: { total: 0, truncated: false, items: [] },
       conflicts: {
-        total: 1,
+        total: 2,
         truncated: false,
         items: [
           {
@@ -138,28 +175,34 @@ function mergePlanData() {
             id: "post-conflict",
             classification: "conflict",
             changed_fields: ["content_md"],
-            local: {
+            local: makeReviewEntry({
               id: "post-conflict",
               content_md: "local post",
-              created_at: "2026-08-10T00:00:00Z",
-              updated_at: "2026-08-10T00:00:00Z",
-              published_at: "2026-08-10T00:00:00Z",
-              media: [],
-            },
-            incoming: {
+            }),
+            incoming: makeReviewEntry({
               id: "post-conflict",
               content_md: "backup post",
-              created_at: "2026-08-10T00:00:00Z",
               updated_at: "2026-08-11T00:00:00Z",
-              published_at: "2026-08-10T00:00:00Z",
-              media: [],
-            },
+            }),
+          },
+          {
+            kind: "user",
+            id: "11111111111111111111111111111111",
+            classification: "conflict",
+            changed_fields: ["display_name"],
+            local: makeReviewUser(),
+            incoming: makeReviewUser({ display_name: "林林（备份）" }),
           },
         ],
       },
       site_fields: [],
     },
-    incoming_counts: { entries: 1, comments: 1, media: 0 },
+    incoming_counts: makeImportCounts({
+      entries: 1,
+      comments: 1,
+      users: 3,
+      identities: 3,
+    }),
     incoming_media_bytes: 0,
     disk: importPlan.disk,
     replacement: importPlan.replacement,
@@ -295,11 +338,144 @@ describe("backup and restore owner API", () => {
     request.respond(planData(file.size));
     await expect(pending).resolves.toMatchObject({
       archiveSHA256: archiveSHA,
-      counts: { entries: 1, comments: 2, media: 1 },
+      counts: makeImportCounts({ entries: 1, comments: 2, media: 1 }),
       disk: { spaceOK: true },
     });
     expect(progress).toHaveBeenLastCalledWith(100);
   });
+
+  /**
+   * The archive counts the server sends today, decoded whole.
+   *
+   * Hand-written three-field fixtures kept this green while every real
+   * response threw: the account dimensions are the ones an owner most needs
+   * before a replacement, and they are exactly the ones an exact-key check
+   * rejects the moment the server starts sending them.
+   */
+  it("accepts every dimension the archive counts now carry", async () => {
+    const file = new File(["zip bytes"], "counts.zip", {
+      type: "application/zip",
+    });
+    const api = new OwnerApi(vi.fn() as typeof fetch);
+    const pending = api.planImport("csrf-owner", file);
+    const data = planData(file.size);
+    data.counts = makeImportCounts({
+      entries: 1,
+      comments: 1,
+      media: 0,
+      users: 3,
+      identities: 3,
+    });
+    FakeArchiveRequest.requests[0].respond(data);
+
+    const plan = await pending;
+    expect(plan.counts).toEqual({
+      entries: 1,
+      comments: 1,
+      media: 0,
+      users: 3,
+      identities: 3,
+    });
+    // The replacement side is the same object read through a second call site,
+    // and an owner deciding whether to overwrite needs both halves of it.
+    expect(plan.replacement.counts).toEqual({
+      entries: 8,
+      comments: 13,
+      media: 5,
+      users: 2,
+      identities: 3,
+    });
+  });
+
+  /**
+   * Every kind of row a real review contains, decoded.
+   *
+   * One Go struct serves posts, comments, accounts and identities, and each
+   * projection sets a different subset of its 37 fields. The client's
+   * allow-list had eleven, so a review containing anything at all threw before
+   * a reviewer saw a single row -- and the fixtures were narrow enough to
+   * agree with it.
+   */
+  it.each([
+    [
+      "post",
+      "entry",
+      "post-1",
+      () => makeReviewEntry(),
+      { kind: "moment", quote_unavailable: false },
+    ],
+    [
+      "comment",
+      "comment",
+      "comment-1",
+      () => makeReviewComment(),
+      { pinned: false, author_kind: "guest" },
+    ],
+    [
+      "account",
+      "user",
+      "11111111111111111111111111111111",
+      () => makeReviewUser(),
+      { username: "linlin", role: "member", status: "active" },
+    ],
+    [
+      "identity",
+      "identity",
+      "github:4242",
+      () => makeReviewIdentity(),
+      { provider: "github", email: "linlin@example.com" },
+    ],
+  ])(
+    "decodes a %s row the way the server actually sends it",
+    async (_label, kind, id, entity, expected) => {
+      const file = new File(["zip bytes"], "review.zip", {
+        type: "application/zip",
+      });
+      const api = new OwnerApi(vi.fn() as typeof fetch);
+      const pending = api.planMergeImport("csrf-owner", file);
+      const data = mergePlanData();
+      data.plan.summary = {
+        unchanged: 0,
+        incoming_only: 1,
+        local_only: 0,
+        conflict: 0,
+      };
+      data.plan.items = [
+        {
+          kind,
+          id,
+          classification: "incoming_only",
+          changed_fields: [],
+          dependencies: [],
+          selectable: kind === "entry" || kind === "comment",
+        },
+      ];
+      data.plan.default_selection.items =
+        kind === "entry" || kind === "comment"
+          ? [{ kind, id, action: "add" }]
+          : [];
+      data.review.incoming_only = {
+        total: 1,
+        truncated: false,
+        items: [
+          {
+            kind,
+            id,
+            classification: "incoming_only",
+            changed_fields: [],
+            incoming: entity(),
+          },
+        ],
+      };
+      data.review.conflicts = { total: 0, truncated: false, items: [] };
+      FakeArchiveRequest.requests[0].respond(data, 201);
+
+      const inspection = await pending;
+      const row = inspection.review.incoming_only.items[0];
+      expect(row.kind).toBe(kind);
+      expect(row.incoming).toMatchObject(expected);
+    },
+  );
 
   it("plans and commits a strictly bound merge selection", async () => {
     const file = new File(["zip bytes"], "merge.zip", {
@@ -321,7 +497,7 @@ describe("backup and restore owner API", () => {
       stagingToken: mergeToken,
       plan: {
         plan_id: mergePlanID,
-        summary: { incoming_only: 1, conflict: 1 },
+        summary: { incoming_only: 2, conflict: 2 },
       },
     });
     inspection.plan.default_selection.items[0].action = "keep_both";
@@ -367,7 +543,7 @@ describe("backup and restore owner API", () => {
 
     const badSummary = api.planMergeImport("csrf", file);
     const summaryData = mergePlanData();
-    summaryData.plan.summary.conflict = 2;
+    summaryData.plan.summary.conflict = 3;
     FakeArchiveRequest.requests[0].respond(summaryData, 201);
     await expect(badSummary).rejects.toMatchObject({
       code: "API_RESPONSE_INVALID",

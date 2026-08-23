@@ -23,6 +23,7 @@ import { Icon } from "../../components/icons";
 import { ActionTooltip } from "../../components/TimelineInteractions";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { useOwner } from "./OwnerProvider";
+import { providerLabel } from "./providers";
 import styles from "./Settings.module.css";
 
 type TransferState = "idle" | "running" | "failed" | "complete";
@@ -98,7 +99,60 @@ function mergeKindLabel(kind: MergeEntityKind): string {
       return "评论";
     case "media":
       return "媒体";
+    case "user":
+      return "账户";
+    case "identity":
+      return "登录方式";
   }
+}
+
+/**
+ * Why an account row carries no controls.
+ *
+ * Stated in full wherever accounts appear, because "not selectable" on its own
+ * reads as something missing. It is a rule, and the rule has a reason: an
+ * account is a person, and the choices that make sense for content do not make
+ * sense for one.
+ */
+const ACCOUNT_DECISION_NOTE =
+  "账户和登录方式只能看，不能选。备份里的一个账户就是一个人：" +
+  "“两者都保留”会把同一个人拆成两个，“使用备份版本”则等于让一份旧备份" +
+  "在正在运行的站点上给人改名、或重新放行一个已经停用的账户。" +
+  "它们按固定规则处理——同一个账户以当前站点为准，备份里独有的账户会被加进来——" +
+  "列在这里是为了让你在决定之前，看见一次恢复会顺带带来什么。";
+
+function accountStatusLabel(status: string | undefined): string {
+  switch (status) {
+    case "pending":
+      return "待批准";
+    case "active":
+      return "已启用";
+    case "suspended":
+      return "已停用";
+    default:
+      return status ?? "未知状态";
+  }
+}
+
+function accountRoleLabel(role: string | undefined): string {
+  return role === "owner" ? "站长" : "成员";
+}
+
+/**
+ * What the fixed rule will do with this row, said plainly.
+ *
+ * A reviewer cannot change any of it, so the only useful thing to show beside
+ * an account is the outcome it is already headed for.
+ */
+function accountOutcomeLabel(
+  item: MergeReviewItem,
+  importMode: "merge" | "restore",
+): string {
+  if (item.classification === "incoming_only") return "备份独有 · 会被加入";
+  if (item.classification === "local_only") {
+    return importMode === "restore" ? "当前独有 · 将移除" : "当前独有 · 会保留";
+  }
+  return "两侧都有 · 以当前站点为准";
 }
 
 function mergeValue(value: unknown): string {
@@ -222,12 +276,48 @@ function ReviewEntityCard({
           }).format(new Date(entity.published_at ?? entity.created_at))}
         </time>
       </header>
-      {entity.author_name ? (
-        <p className={styles.reviewAuthor}>{entity.author_name}</p>
-      ) : null}
-      <p className={styles.reviewContent}>
-        {entity.content_md || "（无文字内容）"}
-      </p>
+      {entity.username !== undefined ? (
+        // An account row. `content_md` exists on the wire and is always empty
+        // here, so rendering it would print "（无文字内容）" over a person.
+        <dl className={styles.reviewAccount}>
+          <div>
+            <dt>用户名</dt>
+            <dd>@{entity.username}</dd>
+          </div>
+          <div>
+            <dt>显示名称</dt>
+            <dd>{entity.display_name || "未命名"}</dd>
+          </div>
+          <div>
+            <dt>身份</dt>
+            <dd>{accountRoleLabel(entity.role)}</dd>
+          </div>
+          <div>
+            <dt>状态</dt>
+            <dd>{accountStatusLabel(entity.status)}</dd>
+          </div>
+        </dl>
+      ) : entity.provider !== undefined ? (
+        <dl className={styles.reviewAccount}>
+          <div>
+            <dt>登录方式</dt>
+            <dd>{providerLabel(entity.provider)}</dd>
+          </div>
+          <div>
+            <dt>邮箱</dt>
+            <dd>{entity.email || "该账号没有公开邮箱"}</dd>
+          </div>
+        </dl>
+      ) : (
+        <>
+          {entity.author_name ? (
+            <p className={styles.reviewAuthor}>{entity.author_name}</p>
+          ) : null}
+          <p className={styles.reviewContent}>
+            {entity.content_md || "（无文字内容）"}
+          </p>
+        </>
+      )}
       {entity.location ? (
         <p
           className={styles.reviewLocation}
@@ -1250,7 +1340,30 @@ export function BackupRestore({
   const currentStatus = status
     ? statusCopy(status, importMode === "merge")
     : null;
-  const mergeItemConflicts = mergeInspection?.review.conflicts.items ?? [];
+  const conflictItems = mergeInspection?.review.conflicts.items ?? [];
+  // Accounts are reported, never chosen, so they cannot share a list with the
+  // rows that carry decision controls -- a radio group beside a person is an
+  // offer the server would refuse. They are gathered out of all three buckets
+  // into one read-only section instead, where the rule can be stated once
+  // rather than implied by an absence of buttons next to a post.
+  const isAccountRow = (item: MergeReviewItem) =>
+    item.kind === "user" || item.kind === "identity";
+  const mergeItemConflicts = conflictItems.filter(
+    (item) => !isAccountRow(item),
+  );
+  const mergeLocalOnly =
+    mergeInspection?.review.local_only.items.filter(
+      (item) => !isAccountRow(item),
+    ) ?? [];
+  const mergeIncomingOnly =
+    mergeInspection?.review.incoming_only.items.filter(
+      (item) => !isAccountRow(item),
+    ) ?? [];
+  const mergeAccountRows = [
+    ...conflictItems,
+    ...(mergeInspection?.review.incoming_only.items ?? []),
+    ...(mergeInspection?.review.local_only.items ?? []),
+  ].filter(isAccountRow);
   const mergeSiteConflicts =
     mergeInspection?.review.site_fields.filter(
       (field) => field.classification !== "unchanged",
@@ -1561,7 +1674,7 @@ export function BackupRestore({
             </span>
           </div>
 
-          {mergeInspection.review.local_only.items.length ? (
+          {mergeLocalOnly.length ? (
             <section className={styles.reviewSection}>
               <div className={styles.reviewSectionHeading}>
                 <h4>
@@ -1572,7 +1685,7 @@ export function BackupRestore({
                 <span>{mergeInspection.review.local_only.total} 项</span>
               </div>
               <div className={styles.reviewList}>
-                {mergeInspection.review.local_only.items.map((item) => (
+                {mergeLocalOnly.map((item) => (
                   <ReviewItem
                     inspection={mergeInspection}
                     item={item}
@@ -1589,20 +1702,51 @@ export function BackupRestore({
             </section>
           ) : null}
 
-          {mergeInspection.review.incoming_only.items.length ? (
+          {mergeIncomingOnly.length ? (
             <section className={styles.reviewSection}>
               <div className={styles.reviewSectionHeading}>
                 <h4>备份新增</h4>
                 <span>{mergeInspection.review.incoming_only.total} 项</span>
               </div>
               <div className={styles.reviewList}>
-                {mergeInspection.review.incoming_only.items.map((item) => (
+                {mergeIncomingOnly.map((item) => (
                   <ReviewItem
                     inspection={mergeInspection}
                     item={item}
                     key={`${item.kind}:${item.id}`}
                     restoreMode={importMode === "restore"}
                   />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {mergeAccountRows.length ? (
+            <section
+              aria-labelledby="account-rows"
+              className={styles.reviewSection}
+            >
+              <div className={styles.reviewSectionHeading}>
+                <h4 id="account-rows">账户与登录方式</h4>
+                <span>{mergeAccountRows.length} 项</span>
+              </div>
+              <p className={styles.dataNotice}>{ACCOUNT_DECISION_NOTE}</p>
+              <div className={styles.reviewList}>
+                {mergeAccountRows.map((item) => (
+                  <div
+                    className={styles.reviewAccountRow}
+                    key={`${item.kind}:${item.id}`}
+                  >
+                    <div className={styles.reviewConflictHeading}>
+                      <strong>{mergeKindLabel(item.kind)}</strong>
+                      <small>{accountOutcomeLabel(item, importMode)}</small>
+                    </div>
+                    <ReviewItem
+                      inspection={mergeInspection}
+                      item={item}
+                      restoreMode={importMode === "restore"}
+                    />
+                  </div>
                 ))}
               </div>
             </section>
@@ -1922,14 +2066,24 @@ export function BackupRestore({
                       Moment、
                       {mergeInspection.incomingCounts.comments} 条评论和
                       {mergeInspection.incomingCounts.media}{" "}
-                      个媒体记录会成为完整站点。
+                      个媒体记录会成为完整站点。站内账户也会整体换成备份里的{" "}
+                      {mergeInspection.incomingCounts.users} 个，现在的账户与
+                      {mergeInspection.replacement.counts.identities}{" "}
+                      个已关联登录方式随之消失。
                     </Dialog.Description>
                     <div className={styles.dialogImpact}>
                       <div>
                         <span>备份内容</span>
                         <strong>
                           {mergeInspection.incomingCounts.entries} Moment ·{" "}
-                          {mergeInspection.incomingCounts.comments} 评论
+                          {mergeInspection.incomingCounts.comments} 评论 ·{" "}
+                          {mergeInspection.incomingCounts.users} 账户
+                        </strong>
+                      </div>
+                      <div>
+                        <span>现有账户</span>
+                        <strong>
+                          {mergeInspection.replacement.counts.users} 个将被替换
                         </strong>
                       </div>
                       <div>

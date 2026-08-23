@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Account, AccountStatus } from "../../api/public";
 import { useOwner } from "./OwnerProvider";
@@ -39,7 +39,19 @@ function ordered(accounts: Account[]): Account[] {
  * Owner-only, and the server says so too -- this renders the same decisions it
  * would enforce anyway, so a member who reached the markup gains nothing.
  */
-export function MembersSection() {
+export function MembersSection({
+  onWaitingChange,
+}: {
+  /**
+   * How many accounts are waiting on a decision, reported upward.
+   *
+   * The list already lives here and already moves when the owner approves
+   * somebody, so lifting the number keeps the hint that draws them down the
+   * page honest -- a badge fed by its own request would still be advertising
+   * three people a moment after the third was approved.
+   */
+  onWaitingChange?: (waiting: number) => void;
+} = {}) {
   const { api, session, account, expireIfInvalidSession } = useOwner();
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -69,6 +81,16 @@ export function MembersSection() {
       });
     return () => controller.abort();
   }, [api, attempt, expireIfInvalidSession]);
+
+  const waiting = useMemo(
+    () =>
+      (accounts ?? []).filter(
+        (entry) => entry.role !== "owner" && entry.status === "pending",
+      ).length,
+    [accounts],
+  );
+
+  useEffect(() => onWaitingChange?.(waiting), [onWaitingChange, waiting]);
 
   const decide = useCallback(
     async (userId: string, status: AccountStatus) => {

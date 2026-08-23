@@ -288,7 +288,6 @@ export function PostPresentation({
       <MarkdownContent
         className={styles.quoteMarkdown}
         html={quoted.contentHtml}
-        mentionUsername={site.username}
       />
       {quoted.location ? <PostLocation location={quoted.location} /> : null}
       <ImageGrid media={quoted.media} />
@@ -316,7 +315,6 @@ export function PostPresentation({
           <MarkdownContent
             className={styles.markdown}
             html={contentHtml ?? post.contentHtml}
-            mentionUsername={site.username}
           />
           {linkCard}
           {post.location ? <PostLocation location={post.location} /> : null}
@@ -383,7 +381,6 @@ export function PostPresentation({
         <MarkdownContent
           className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
           html={contentHtml ?? post.contentHtml}
-          mentionUsername={site.username}
         />
         {collapsed ? (
           <InternalLink

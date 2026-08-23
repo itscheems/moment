@@ -11,6 +11,12 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
+import {
+  makeImportCounts,
+  makeReviewIdentity,
+  makeReviewUser,
+} from "../../test/archiveFixtures";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const sessionKey = "moment.owner.session.v1";
 const operationID = "import-20260811T013000000Z-0011223344556677";
@@ -100,9 +106,9 @@ function mergePlanData() {
       expires_at: "2999-08-11T02:00:00Z",
       summary: {
         unchanged: 0,
-        incoming_only: 1,
+        incoming_only: 2,
         local_only: 1,
-        conflict: 2,
+        conflict: 3,
       },
       items: [
         {
@@ -129,6 +135,25 @@ function mergePlanData() {
           dependencies: [],
           selectable: false,
         },
+        // Reported, never selectable.
+        {
+          kind: "user",
+          id: "11111111111111111111111111111111",
+          classification: "conflict",
+          changed_fields: ["display_name"],
+          dependencies: [],
+          selectable: false,
+        },
+        {
+          kind: "identity",
+          id: "github:4242",
+          classification: "incoming_only",
+          changed_fields: [],
+          dependencies: [
+            { kind: "user", id: "11111111111111111111111111111111" },
+          ],
+          selectable: false,
+        },
       ],
       site_fields: [
         {
@@ -143,7 +168,7 @@ function mergePlanData() {
     },
     review: {
       incoming_only: {
-        total: 1,
+        total: 2,
         truncated: false,
         items: [
           {
@@ -158,6 +183,13 @@ function mergePlanData() {
               published_at: "2026-08-10T08:00:00Z",
               media: [],
             },
+          },
+          {
+            kind: "identity",
+            id: "github:4242",
+            classification: "incoming_only",
+            changed_fields: [],
+            incoming: makeReviewIdentity(),
           },
         ],
       },
@@ -196,9 +228,17 @@ function mergePlanData() {
         ],
       },
       conflicts: {
-        total: 1,
+        total: 2,
         truncated: false,
         items: [
+          {
+            kind: "user",
+            id: "11111111111111111111111111111111",
+            classification: "conflict",
+            changed_fields: ["display_name"],
+            local: makeReviewUser(),
+            incoming: makeReviewUser({ display_name: "林林（备份）" }),
+          },
           {
             kind: "entry",
             id: "post-conflict",
@@ -230,7 +270,11 @@ function mergePlanData() {
         },
       ],
     },
-    incoming_counts: { entries: 2, comments: 0, media: 0 },
+    incoming_counts: makeImportCounts({
+      entries: 2,
+      users: 3,
+      identities: 3,
+    }),
     incoming_media_bytes: 0,
     disk: {
       archive_bytes: 5,
@@ -245,7 +289,7 @@ function mergePlanData() {
       space_ok: true,
     },
     replacement: {
-      counts: { entries: 3, comments: 0, media: 0 },
+      counts: makeImportCounts({ entries: 3, users: 2, identities: 2 }),
       media_bytes: 0,
       data_bytes: 2_000,
     },
@@ -384,6 +428,7 @@ function accountSessionEnvelope() {
         status: "active",
         username_chosen: true,
       },
+      limits: makeAccountLimits(),
     },
     meta: { request_id: "req_account_session" },
   };
@@ -505,6 +550,36 @@ describe("owner backup and restore", () => {
     expect(screen.getByText("导出备份后新发布的 Moment")).toBeInTheDocument();
     expect(screen.getByText("当前站点修改后的正文")).toBeInTheDocument();
     expect(screen.getByText("备份文件中的旧正文")).toBeInTheDocument();
+
+    // Accounts are reported, never chosen. They get their own section with the
+    // reason stated, rather than a row of controls the server would refuse or
+    // -- worse -- a silent omission of the people a restore brings with it.
+    const accounts = screen.getByRole("region", { name: "账户与登录方式" });
+    // Both sides of the conflict are shown, so the handle appears twice.
+    expect(within(accounts).getAllByText("@linlin")).toHaveLength(2);
+    expect(within(accounts).getAllByText("成员").length).toBeGreaterThan(0);
+    expect(within(accounts).getAllByText("已启用").length).toBeGreaterThan(0);
+    expect(within(accounts).getByText("林林（备份）")).toBeInTheDocument();
+    expect(within(accounts).getByText("GitHub")).toBeInTheDocument();
+    expect(
+      within(accounts).getByText("linlin@example.com"),
+    ).toBeInTheDocument();
+    expect(
+      within(accounts).getByText("两侧都有 · 以当前站点为准"),
+    ).toBeInTheDocument();
+    expect(
+      within(accounts).getByText("备份独有 · 会被加入"),
+    ).toBeInTheDocument();
+    expect(
+      within(accounts).getByText(/“两者都保留”会把同一个人拆成两个/),
+    ).toBeInTheDocument();
+    expect(within(accounts).queryAllByRole("radio")).toHaveLength(0);
+    expect(within(accounts).queryAllByRole("radiogroup")).toHaveLength(0);
+    // And they stay out of the lists that do carry controls.
+    expect(
+      screen.queryByRole("radiogroup", { name: /账户/ }),
+    ).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("radio", { name: "两者都保留" }));
     fireEvent.click(screen.getByRole("radio", { name: "使用备份值" }));
     expect(
@@ -782,6 +857,13 @@ describe("owner backup and restore", () => {
       name: "完全替换当前站点？",
     });
     expect(within(dialog).getByText("1 项将移除")).toBeInTheDocument();
+    // A replacement takes the account graph with it, so the confirmation has
+    // to say how many accounts arrive and how many stop existing. Reading
+    // that number off the archive is the whole reason the server sends it.
+    expect(
+      within(dialog).getByText("2 Moment · 0 评论 · 3 账户"),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("2 个将被替换")).toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", { name: "关闭覆盖恢复确认" }),
     ).toBeInTheDocument();

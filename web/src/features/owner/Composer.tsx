@@ -1181,10 +1181,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     <Icon name="close" />
                   </button>
                 </header>
-                <MarkdownContent
-                  html={quotedPost.contentHtml}
-                  mentionUsername={site.username}
-                />
+                <MarkdownContent html={quotedPost.contentHtml} />
                 {quotedPost.location ? (
                   <p className={styles.quoteComposerLocation}>
                     <Icon name="location" />

@@ -758,7 +758,6 @@ export function CommentItem({
             <MarkdownContent
               className={styles.commentMarkdown}
               html={comment.contentHtml}
-              mentionUsername={site.username}
             />
           </div>
         ) : null}

@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
 import settingsCss from "./Settings.module.css?inline";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const sessionKey = "moment.owner.session.v1";
 const avatarID = "01K2ABCDEF0123456789ABCDE7";
@@ -180,6 +181,7 @@ function accountSessionEnvelope() {
         status: "active",
         username_chosen: true,
       },
+      limits: makeAccountLimits(),
     },
     meta: { request_id: "req_account_session" },
   };
@@ -202,6 +204,7 @@ function memberSessionEnvelope() {
         status: "pending",
         username_chosen: true,
       },
+      limits: makeAccountLimits(),
     },
     meta: { request_id: "req_member_session" },
   };
@@ -797,6 +800,89 @@ describe("owner site settings", () => {
       );
     },
   );
+
+  it("counts the accounts waiting on the owner, in the nav and on the section", async () => {
+    const roster = (linlinStatus: "pending" | "active") => ({
+      data: [
+        {
+          user_id: "00000000000000000000000000000000",
+          username: "owner",
+          display_name: "乔乔",
+          bio: "",
+          avatar_media_id: null,
+          cover_media_id: null,
+          role: "owner",
+          profile_url: "/owner",
+          status: "active",
+          username_chosen: true,
+        },
+        {
+          user_id: "11111111111111111111111111111111",
+          username: "linlin",
+          display_name: "林林",
+          bio: "",
+          avatar_media_id: null,
+          cover_media_id: null,
+          role: "member",
+          profile_url: "/linlin",
+          status: linlinStatus,
+          username_chosen: true,
+        },
+        {
+          user_id: "22222222222222222222222222222222",
+          username: "haohao",
+          display_name: "浩浩",
+          bio: "",
+          avatar_media_id: null,
+          cover_media_id: null,
+          role: "member",
+          profile_url: "/haohao",
+          status: "pending",
+          username_chosen: true,
+        },
+      ],
+      meta: { count: 3, registration_mode: "open", request_id: "req_roster" },
+    });
+    installFetch(async (url, init) => {
+      if (url === "/api/v1/site") return json(siteEnvelope());
+      if (url === "/api/v1/owner/status") return json(statusEnvelope());
+      if (url === "/api/v1/owner/accounts") return json(roster("pending"));
+      const approved = url.match(
+        /^\/api\/v1\/owner\/accounts\/([0-9a-f]{32})$/,
+      );
+      if (approved && init?.method === "PATCH") {
+        const entry = roster("pending").data.find(
+          (candidate) => candidate.user_id === approved[1],
+        )!;
+        return json({
+          data: { ...entry, status: "active" },
+          meta: { request_id: "req_approve" },
+        });
+      }
+      return json({}, 404);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "网站" });
+
+    // Somebody waiting is the one thing on this page that is about a person
+    // rather than a setting, and it used to be visible only to an owner who
+    // happened to scroll far enough.
+    const navigation = screen.getByRole("navigation", { name: "设置分区" });
+    expect(
+      await within(navigation).findByLabelText("2 个账户待批准"),
+    ).toHaveTextContent("2");
+    expect(screen.getByText(/有 2 个账户在等待批准/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "批准" })[0]);
+
+    // The count comes off the same list the buttons act on, so approving
+    // somebody takes them out of it rather than leaving the badge lying.
+    await waitFor(() =>
+      expect(
+        within(navigation).getByLabelText("1 个账户待批准"),
+      ).toHaveTextContent("1"),
+    );
+  });
 
   it("shows a member their own account and none of the site's", async () => {
     const fetcher = installFetch(async (url) => {

@@ -612,6 +612,7 @@ export function parseComment(
   const media = parseMediaUsages(value.media, 4, "comment");
   let location: PublicPostLocation | null = null;
   if (value.location !== undefined && value.location !== null) {
+    // mirrors postdto.Location (internal/transport/postdto/dto.go)
     if (
       !isRecord(value.location) ||
       !hasExactKeys(value.location, ["name", "display_name"])
@@ -664,6 +665,7 @@ export function parseComment(
  * between the two would render a link that goes nowhere.
  */
 function parseCommentAuthor(value: unknown): PublicCommentAuthor {
+  // mirrors commentdto.Author (internal/transport/commentdto/dto.go)
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
@@ -706,6 +708,7 @@ function parseCommentReplyTarget(
   commentId: string,
 ): PublicCommentReplyTarget | null {
   if (value === undefined || value === null) return null;
+  // mirrors commentdto.ReplyTarget (internal/transport/commentdto/dto.go)
   if (!isRecord(value) || !hasExactKeys(value, ["comment_id", "author"])) {
     throw invalidResponse("comment reply target is invalid");
   }
@@ -725,6 +728,7 @@ function parseMediaUsages(
     throw invalidResponse(`${subject} media must be a bounded array`);
   }
   return value.map((item, index): PublicMediaUsage => {
+    // mirrors postdto.MediaProjection (internal/transport/postdto/dto.go)
     if (
       !isRecord(item) ||
       !hasExactKeys(item, [
@@ -843,6 +847,7 @@ function parseCommentReplyPage(
   rootId: string,
   nextCursor: string | null,
 ): CommentReplyPage {
+  // mirrors locationdto.Results (internal/transport/locationdto/dto.go)
   if (
     !isRecord(value) ||
     !hasExactKeys(value, ["items"]) ||
@@ -879,6 +884,8 @@ export function parsePost(value: unknown): PublicPost {
     "media",
     "link_cards",
   ];
+  // mirrors postdto.Post (internal/transport/postdto/dto.go)
+  // mirrors postdto.Post (internal/transport/postdto/dto.go)
   if (
     (!hasExactKeys(value, postKeys) &&
       !hasExactKeys(value, [...postKeys, "location"]) &&
@@ -893,6 +900,7 @@ export function parsePost(value: unknown): PublicPost {
   const linkCards = parseLinkCards(value.link_cards);
   let location: PublicPostLocation | null = null;
   if (value.location !== undefined && value.location !== null) {
+    // mirrors postdto.Location (internal/transport/postdto/dto.go)
     if (
       !isRecord(value.location) ||
       !hasExactKeys(value.location, ["name", "display_name"])
@@ -909,6 +917,7 @@ export function parsePost(value: unknown): PublicPost {
   let quotedPost: PublicQuotedPost | null = null;
   if (value.quoted_post !== undefined && value.quoted_post !== null) {
     const quoted = value.quoted_post;
+    // mirrors postdto.QuotedPost (internal/transport/postdto/dto.go)
     if (
       !isRecord(quoted) ||
       !hasExactKeys(quoted, [
@@ -944,6 +953,7 @@ export function parsePost(value: unknown): PublicPost {
       }
       let quotedLocation: PublicPostLocation | null = null;
       if (quoted.location !== null) {
+        // mirrors postdto.Location (internal/transport/postdto/dto.go)
         if (
           !isRecord(quoted.location) ||
           !hasExactKeys(quoted.location, ["name", "display_name"])
@@ -1024,6 +1034,7 @@ function parseLinkCards(value: unknown): PublicLinkCard[] {
     throw invalidResponse("a Moment carries at most one link card");
   }
   return value.map((item, index) => {
+    // mirrors postdto.LinkCard (internal/transport/postdto/dto.go)
     if (!isRecord(item) || !hasExactKeys(item, linkCardKeys)) {
       throw invalidResponse(
         "link card contains an unsupported or missing field",
@@ -1139,6 +1150,9 @@ function parseSearchHit(value: unknown): SearchHit {
     "link_cards",
     "snippet",
   ];
+  // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post
+  // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post
+  // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post
   if (
     !isRecord(value) ||
     (!hasExactKeys(value, searchKeys) &&
@@ -1164,6 +1178,7 @@ function parseYearCounts(value: unknown): SearchPage["yearCounts"] {
     throw invalidResponse("year_counts must be an array");
   }
   return value.map((item, index, items) => {
+    // mirrors searchdto.YearCount (internal/transport/searchdto/dto.go)
     if (!isRecord(item) || !hasExactKeys(item, ["year", "count"])) {
       throw invalidResponse("year count must contain only year and count");
     }
@@ -1185,6 +1200,7 @@ function parseYearCounts(value: unknown): SearchPage["yearCounts"] {
 }
 
 function parseArchiveMonths(value: unknown): ArchiveMonths {
+  // mirrors locationdto.Results (internal/transport/locationdto/dto.go)
   if (
     !isRecord(value) ||
     !hasExactKeys(value, ["items"]) ||
@@ -1193,6 +1209,7 @@ function parseArchiveMonths(value: unknown): ArchiveMonths {
     throw invalidResponse("archive months must contain only an items array");
   }
   const items = value.items.map((item, index, values) => {
+    // mirrors searchdto.MonthCount (internal/transport/searchdto/dto.go)
     if (!isRecord(item) || !hasExactKeys(item, ["year", "month", "count"])) {
       throw invalidResponse("archive month count is invalid");
     }
@@ -1225,6 +1242,7 @@ function parseArchiveMonth(
   value: unknown,
   expectedMonth: string,
 ): ArchiveMonth {
+  // mirrors searchdto.MonthData (internal/transport/searchdto/dto.go)
   if (
     !isRecord(value) ||
     !hasExactKeys(value, ["month", "days"]) ||
@@ -1240,6 +1258,7 @@ function parseArchiveMonth(
     Date.UTC(Number(yearText), Number(monthText), 0),
   ).getUTCDate();
   const days = value.days.map((item, index, items) => {
+    // mirrors searchdto.DayCount (internal/transport/searchdto/dto.go)
     if (!isRecord(item) || !hasExactKeys(item, ["day", "count"])) {
       throw invalidResponse("archive day count is invalid");
     }
@@ -1321,6 +1340,7 @@ export async function decodeResponse(
       throw invalidResponse("success response must use application/json");
     }
   }
+  // mirrors ginhttp.successEnvelope (internal/transport/http/gin/response.go)
   if (
     options.strictSuccessEnvelope &&
     !hasExactKeys(payload, ["data", "meta"])
@@ -1344,6 +1364,7 @@ async function decodeDiscoveryResponse(
   if (response.status !== 200) {
     throw invalidResponse("discovery success response must return HTTP 200");
   }
+  // mirrors the Success envelope's meta (internal/transport/http/gin/response.go)
   if (
     !hasExactKeys(result.meta, ["request_id", ...metaKeys]) ||
     !stringField(result.meta, "request_id")
@@ -1362,6 +1383,7 @@ export async function decodeCommentResponse(
     requireJsonSuccess: true,
   });
   const expectedMetaKeys = ["request_id", ...metaKeys];
+  // mirrors the Success envelope's meta (internal/transport/http/gin/response.go)
   if (!hasExactKeys(result.meta, expectedMetaKeys)) {
     throw invalidResponse("comment success response metadata is invalid");
   }
@@ -1379,6 +1401,7 @@ export function parseSiteIdentity(
   instanceInitializedAt: string | null = null,
 ): SiteIdentity {
   if (!isRecord(data)) throw invalidResponse("site data must be an object");
+  // mirrors app.SiteSettings (internal/app/site.go)
   if (
     !hasExactKeys(data, [
       "owner_id",
@@ -1643,6 +1666,7 @@ export class PublicApi {
     if (!Array.isArray(data))
       throw invalidResponse("mention suggestions must be an array");
     return data.map((item) => {
+      // mirrors app.MentionSuggestion (internal/app/site.go)
       if (
         !isRecord(item) ||
         !hasExactKeys(item, [
@@ -1718,6 +1742,7 @@ export class PublicApi {
     const { data, meta } = await decodeDiscoveryResponse(response, [
       "next_cursor",
     ]);
+    // mirrors searchdto.SearchData (internal/transport/searchdto/dto.go)
     if (
       !isRecord(data) ||
       !hasExactKeys(data, ["items", "year_counts"]) ||
@@ -1928,6 +1953,7 @@ export function uploadMediaXHR(
         requireJsonSuccess: request.status === 201,
       })
         .then(({ data, meta }) => {
+          // mirrors the Success envelope's meta (internal/transport/http/gin/response.go)
           if (
             request.status !== 201 ||
             !hasExactKeys(meta, ["request_id"]) ||
@@ -1964,6 +1990,7 @@ export function uploadMediaXHR(
 }
 
 function parseUploadedMedia(data: unknown): UploadedMedia {
+  // mirrors media.UploadResult (internal/media/types.go)
   if (
     !isRecord(data) ||
     !hasExactKeys(data, ["media", "preview", "original_url", "preview_url"]) ||

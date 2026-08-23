@@ -8,10 +8,12 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { SiteIdentity } from "../../api/public";
+import { mediaPreviewUrl } from "../../api/mediaUrls";
+import type { Account, SiteIdentity } from "../../api/public";
 import { FeedbackProvider } from "../../components/Feedback";
 import { OwnerProvider } from "../owner/OwnerProvider";
 import { ProfileEditor } from "./ProfileEditor";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const sessionKey = "moment.owner.session.v1";
 const mediaId = "01ARZ3NDEKTSV4RRFFQ69G5FAY";
@@ -33,6 +35,7 @@ function accountSessionEnvelope() {
         status: "active",
         username_chosen: true,
       },
+      limits: makeAccountLimits(),
     },
     meta: { request_id: "req_account_session" },
   };
@@ -294,5 +297,294 @@ describe("profile editor", () => {
     expect(screen.getByRole("img", { name: "封面预览" })).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "头像预览" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+  });
+});
+
+const memberID = "11111111111111111111111111111111";
+
+function memberWire(
+  status: "active" | "pending",
+  avatarMediaID: string | null = null,
+) {
+  return {
+    user_id: memberID,
+    username: "linlin",
+    display_name: "林林",
+    bio: "在这里记下路过的天气",
+    avatar_media_id: avatarMediaID,
+    cover_media_id: null,
+    role: "member",
+    profile_url: "/linlin",
+    status,
+    username_chosen: true,
+  };
+}
+
+function memberAccount(
+  status: "active" | "pending",
+  avatarMediaId: string | null = null,
+): Account {
+  return {
+    userId: memberID,
+    username: "linlin",
+    displayName: "林林",
+    bio: "在这里记下路过的天气",
+    avatarMediaId,
+    coverMediaId: null,
+    role: "member",
+    profileUrl: "/linlin",
+    status,
+    usernameChosen: true,
+  };
+}
+
+function memberSession(status: "active" | "pending") {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-from-cookie",
+      account: memberWire(status),
+      limits: makeAccountLimits(),
+    },
+    meta: { request_id: "req_member_session" },
+  };
+}
+
+function refusal(code: string, status: number): Response {
+  return json(
+    {
+      error: {
+        code,
+        message: code,
+        details: {},
+        request_id: "req_picture",
+      },
+    },
+    status,
+  );
+}
+
+function png(name = "face.png"): File {
+  return new File(["image bytes"], name, { type: "image/png" });
+}
+
+/**
+ * A member editing their own account.
+ *
+ * The owner's editor writes to the site row and reaches media through the
+ * owner routes; neither is available to a member, and the whole point of the
+ * account picture endpoints is that they need neither. These cases hold the
+ * member half of that union to the shape it actually has to have.
+ */
+describe("profile editor for a member", () => {
+  beforeEach(() => {
+    window.sessionStorage.setItem(
+      sessionKey,
+      JSON.stringify({
+        csrf_token: "csrf-member",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    vi.stubGlobal("scrollTo", vi.fn());
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:local-preview");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    window.sessionStorage.clear();
+  });
+
+  async function openEditor(account: Account, onSaved = vi.fn()) {
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <ProfileEditor account={account} onSaved={onSaved} />
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "编辑资料" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    return onSaved;
+  }
+
+  function selectAvatar(file = png()) {
+    const input = document.querySelector<HTMLInputElement>(
+      'input[data-profile-media-input="avatar"]',
+    )!;
+    expect(input).not.toBeNull();
+    fireEvent.change(input, { target: { files: [file] } });
+  }
+
+  it("binds an approved member's picture in one request and adopts the answer", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, init });
+        if (url === "/api/v1/account/session")
+          return json(memberSession("active"));
+        if (url === "/api/v1/account/avatar") {
+          return json({
+            data: memberWire("active", mediaId),
+            meta: { request_id: "req_avatar" },
+          });
+        }
+        return json({}, 404);
+      }),
+    );
+    const onSaved = await openEditor(memberAccount("active"));
+
+    // No note stands between an approved member and the control.
+    expect(screen.queryByText("账户通过审核后就能上传图片")).toBeNull();
+    selectAvatar();
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(onSaved.mock.calls[0][0]).toMatchObject({
+      userId: memberID,
+      avatarMediaId: mediaId,
+      status: "active",
+    });
+    // Bound, not merely uploaded: the editor shows the stored picture rather
+    // than the local blob it was previewing a moment ago, and says so.
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: "头像预览" })).toHaveAttribute(
+        "src",
+        mediaPreviewUrl(mediaId),
+      ),
+    );
+    expect(await screen.findByText("头像已更新")).toBeInTheDocument();
+    // Nothing is left for the save button to carry.
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+
+    const upload = calls.find((call) => call.url === "/api/v1/account/avatar")!;
+    expect(upload.init?.method).toBe("POST");
+    expect(upload.init?.credentials).toBe("same-origin");
+    expect(new Headers(upload.init?.headers).get("X-CSRF-Token")).toBe(
+      "csrf-member",
+    );
+    // The browser has to write the multipart boundary, so naming the type here
+    // would make the body unreadable.
+    expect(new Headers(upload.init?.headers).get("Content-Type")).toBeNull();
+    const body = upload.init?.body as FormData;
+    expect(body).toBeInstanceOf(FormData);
+    expect((body.get("file") as File).name).toBe("face.png");
+  });
+
+  it("keeps a pending member's controls on screen and says what unlocks them", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/v1/account/session"
+          ? json(memberSession("pending"))
+          : json({}, 404),
+      ),
+    );
+    await openEditor(memberAccount("pending", mediaId));
+
+    // Disabled, never absent: a control that disappears reads as a feature
+    // this site does not have.
+    expect(screen.getByText("账户通过审核后就能上传图片")).toBeInTheDocument();
+    const avatarAction = screen.getByRole("button", { name: "编辑头像" });
+    expect(avatarAction).toBeInTheDocument();
+    fireEvent.click(avatarAction);
+    expect(screen.getByRole("menuitem", { name: "更换头像" })).toHaveAttribute(
+      "data-disabled",
+    );
+    // Clearing a picture is a text write, and pending accounts keep those.
+    expect(
+      screen.getByRole("menuitem", { name: "移除头像" }),
+    ).not.toHaveAttribute("data-disabled");
+  });
+
+  it.each([
+    ["ACCOUNT_NOT_APPROVED", 403, "账户通过审核后就能上传图片"],
+    ["MEDIA_TOO_LARGE", 413, "图片不能超过 8 MB"],
+    ["MEDIA_TYPE_UNSUPPORTED", 415, "这里只能放图片"],
+  ])(
+    "renders %s as something a reader can act on",
+    async (code, status, message) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url === "/api/v1/account/session") {
+            return json(memberSession("active"));
+          }
+          if (url === "/api/v1/account/avatar") return refusal(code, status);
+          return json({}, 404);
+        }),
+      );
+      await openEditor(memberAccount("active"));
+      selectAvatar();
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(message);
+      // A refusal is not an expired session: the editor stays open and the
+      // account keeps the picture it already had.
+      expect(
+        screen.getByRole("dialog", { name: "编辑资料" }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it("refuses an oversized picture before spending the upload", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/api/v1/account/session"
+        ? json(memberSession("active"))
+        : json({}, 404),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    await openEditor(memberAccount("active"));
+    selectAvatar(
+      new File([new Uint8Array(9 * 1024 * 1024)], "huge.png", {
+        type: "image/png",
+      }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "图片不能超过 8 MB",
+    );
+    expect(
+      fetcher.mock.calls.some(
+        (call) => String(call[0]) === "/api/v1/account/avatar",
+      ),
+    ).toBe(false);
+  });
+
+  it("sends a member's text edits to the account route, not the site", async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/v1/account/session") {
+          return json(memberSession("active"));
+        }
+        if (url === "/api/v1/account/profile") {
+          bodies.push(JSON.parse(String(init?.body)));
+          return json({
+            data: { ...memberWire("active"), display_name: "林林之外" },
+            meta: { request_id: "req_profile" },
+          });
+        }
+        return json({}, 404);
+      }),
+    );
+    const onSaved = await openEditor(memberAccount("active"));
+
+    // The site title belongs to the site, and a member has no site.
+    expect(screen.queryByLabelText("站点标题")).toBeNull();
+    fireEvent.change(screen.getByLabelText("显示名称"), {
+      target: { value: "林林之外" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(bodies).toEqual([{ display_name: "林林之外" }]);
   });
 });

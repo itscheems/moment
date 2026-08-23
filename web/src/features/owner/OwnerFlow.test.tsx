@@ -23,6 +23,7 @@ import {
   composeDraftKey,
   loadComposeDraft,
 } from "./draft";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const instance = "0123456789abcdef0123456789abcdef";
 const sessionKey = "moment.owner.session.v1";
@@ -267,6 +268,7 @@ function accountSession(overrides: Record<string, unknown> = {}) {
       expires_at: "2999-08-11T01:00:00.000Z",
       csrf_token: "csrf-from-cookie",
       account: account(overrides),
+      limits: makeAccountLimits(),
     },
     meta: { request_id: "req_account_session" },
   });
