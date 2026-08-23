@@ -130,10 +130,22 @@ func startOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 		// provider to the account I am using", not "become someone else".
 		// Deciding that here, and sealing it into the flow, is what stops the
 		// callback from having to guess.
-		if session, err := ctx.Request.Cookie(SessionCookieName); err == nil {
-			if issued, _, authErr := gate.manager.AuthorizeSession(session.Value); authErr == nil {
-				flow.LinkUserID = issued.UserID
-			}
+		//
+		// The gate answers who that is, rather than the cookie. A signature
+		// only proves this server issued the value; it says nothing about
+		// whether the session was signed out afterwards or the account
+		// suspended since, and a permanent new way into an account is the last
+		// thing a credential that stopped working should still be able to buy.
+		// The route stays open to a caller with no session because signing in
+		// is what it is for, so an unanswered question here simply means this
+		// is a sign-in rather than a link.
+		//
+		// A pending account may link. Adding a second way to reach your own
+		// account reaches nobody else, which is the same reason RequireAccount
+		// admits pending accounts to everything else they do to themselves; a
+		// suspended one never gets this far, because the gate refuses it.
+		if account, signedIn := gate.VerifiedAccount(ctx); signedIn {
+			flow.LinkUserID = account.ID
 		}
 
 		payload, err := json.Marshal(flow)

@@ -286,9 +286,15 @@ func (store accountStore) IdentityLookup(ctx context.Context, provider, provider
 	return identity, true, nil
 }
 
+// IdentitiesForUser lists what an account signs in with.
+//
+// provider_user_id joins the ordering because provider alone does not decide it
+// when an account holds two identities from the same provider, and the caller
+// that removes one names only the provider -- so which row that is has to be
+// the same answer every time it is asked.
 func (store accountStore) IdentitiesForUser(ctx context.Context, userID string) ([]domain.Identity, error) {
 	rows, err := store.queries.QueryContext(ctx,
-		`SELECT `+identityColumns+` FROM identities WHERE user_id = ? ORDER BY provider`, userID)
+		`SELECT `+identityColumns+` FROM identities WHERE user_id = ? ORDER BY provider, provider_user_id`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("read account identities: %w", err)
 	}
@@ -349,9 +355,19 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	return nil
 }
 
-func (store accountStore) UnlinkIdentity(ctx context.Context, userID, provider string) error {
+// UnlinkIdentity removes the one row it was handed.
+//
+// The primary key is (provider, provider_user_id) and nothing makes
+// (user_id, provider) unique, so a delete written against the account and the
+// provider name removes every identity that account holds from that provider --
+// which is more than the caller asked for the moment there is more than one.
+// user_id stays in the WHERE clause as a belt: it cannot select a row the key
+// does not already select, and it means a stale identity from another account
+// removes nothing rather than something.
+func (store accountStore) UnlinkIdentity(ctx context.Context, identity domain.Identity) error {
 	result, err := store.queries.ExecContext(ctx,
-		`DELETE FROM identities WHERE user_id = ? AND provider = ?`, userID, provider)
+		`DELETE FROM identities WHERE provider = ? AND provider_user_id = ? AND user_id = ?`,
+		identity.Provider, identity.ProviderUserID, identity.UserID)
 	if err != nil {
 		return fmt.Errorf("unlink identity: %w", err)
 	}
@@ -360,7 +376,7 @@ func (store accountStore) UnlinkIdentity(ctx context.Context, userID, provider s
 		return fmt.Errorf("inspect identity removal: %w", err)
 	}
 	if changed == 0 {
-		return domain.NewError(domain.CodeAccountNotFound, "that provider is not linked to this account", map[string]any{"provider": provider})
+		return domain.NewError(domain.CodeAccountNotFound, "that provider is not linked to this account", map[string]any{"provider": identity.Provider})
 	}
 	return nil
 }

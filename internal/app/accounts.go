@@ -32,7 +32,7 @@ type AccountStore interface {
 	IdentitiesForUser(ctx context.Context, userID string) ([]domain.Identity, error)
 	CreateAccountWithIdentity(ctx context.Context, user domain.User, identity domain.Identity) error
 	LinkIdentity(ctx context.Context, identity domain.Identity) error
-	UnlinkIdentity(ctx context.Context, userID, provider string) error
+	UnlinkIdentity(ctx context.Context, identity domain.Identity) error
 	RefreshIdentity(ctx context.Context, identity domain.Identity) error
 
 	UpdateProfile(ctx context.Context, user domain.User) error
@@ -266,6 +266,18 @@ func (service *AccountService) LinkIdentity(ctx context.Context, userID string, 
 	}
 	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
+		// Whether this account may take on a credential is asked here and now,
+		// rather than inherited from whatever authorised the flow that led
+		// here. A federated link is authorised minutes before it completes, and
+		// an account suspended in between must not still be collecting
+		// permanent new ways in.
+		user, err := accounts.UserByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if !user.CanSignIn() {
+			return domain.NewError(domain.CodeAccountSuspended, "this account has been suspended", nil)
+		}
 		existing, found, err := accounts.IdentityLookup(ctx, external.Provider, external.ProviderUserID)
 		if err != nil {
 			return err
@@ -276,28 +288,56 @@ func (service *AccountService) LinkIdentity(ctx context.Context, userID string, 
 			}
 			return domain.NewError(domain.CodeIdentityAlreadyLinked, "that provider account is already linked to another account here", map[string]any{"provider": external.Provider})
 		}
+		// One identity per provider per account, decided here rather than by a
+		// unique constraint. 0022 wrote down why the schema does not narrow
+		// after the fact: the archive importer writes stored rows back
+		// verbatim, so a constraint an older version could already have
+		// violated makes those backups unimportable. Legality that lives in Go
+		// can tighten without invalidating history.
+		//
+		// Two GitHub identities on one account cannot be told apart by the
+		// person holding them -- the list names a provider, the remove route is
+		// keyed by one, and neither can say which -- so the second is refused.
+		linked, err := accounts.IdentitiesForUser(ctx, userID)
+		if err != nil {
+			return err
+		}
+		for _, identity := range linked {
+			if identity.Provider == external.Provider {
+				return domain.NewError(domain.CodeIdentityAlreadyLinked,
+					"this account already signs in with "+external.Provider,
+					map[string]any{"provider": external.Provider})
+			}
+		}
 		return accounts.LinkIdentity(ctx, identityFrom(external, userID, nowMS))
 	})
 }
 
-// UnlinkIdentity detaches a provider from an account, refusing to remove the
-// last way that account can get back in.
+// UnlinkIdentity detaches one provider identity from an account, refusing to
+// remove the last way that account can get back in.
+//
+// The row is chosen here and then removed by name. Counting providers and then
+// deleting by provider was one rule stated twice, and the two disagreed the
+// moment an account held two identities from the same provider: the count read
+// a pair as "your only way in" and refused, while the delete that follows it
+// took both rows for one click.
 func (service *AccountService) UnlinkIdentity(ctx context.Context, user domain.User, provider string) error {
 	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
 		identities, err := accounts.IdentitiesForUser(ctx, user.ID)
 		if err != nil {
 			return err
 		}
+		var target domain.Identity
+		found := false
 		remaining := 0
-		present := false
 		for _, identity := range identities {
-			if identity.Provider == provider {
-				present = true
+			if !found && identity.Provider == provider {
+				target, found = identity, true
 				continue
 			}
 			remaining++
 		}
-		if !present {
+		if !found {
 			return domain.NewError(domain.CodeAccountNotFound, "that provider is not linked to this account", map[string]any{"provider": provider})
 		}
 		// The owner keeps a password and a bearer token in secrets.json, so
@@ -305,7 +345,7 @@ func (service *AccountService) UnlinkIdentity(ctx context.Context, user domain.U
 		if remaining == 0 && !user.IsOwner() {
 			return domain.NewError(domain.CodeLastCredential, "this is the only way to sign in to this account", map[string]any{"provider": provider})
 		}
-		return accounts.UnlinkIdentity(ctx, user.ID, provider)
+		return accounts.UnlinkIdentity(ctx, target)
 	})
 }
 
@@ -392,9 +432,19 @@ func refreshedIdentity(stored domain.Identity, external ExternalIdentity, nowMS 
 
 	if external.Email != "" {
 		email := external.Email
+		// The flags fold the same way the address does, and for the same
+		// reason. GitHub answers /user/emails with 403 often enough that the
+		// adapter falls back to the public profile address, which nothing has
+		// verified -- and overwriting the flags with that answer turns an
+		// address a provider once vouched for into an unverified one forever,
+		// which is exactly the erasure this function exists to prevent.
+		//
+		// What was proven is proven about an address, not about an account, so
+		// it only carries forward while the address is the same one.
+		sameAddress := stored.Email != nil && strings.EqualFold(*stored.Email, email)
 		refreshed.Email = &email
-		refreshed.EmailVerified = external.EmailVerified
-		refreshed.EmailDeliverable = external.EmailDeliverable
+		refreshed.EmailVerified = external.EmailVerified || (sameAddress && stored.EmailVerified)
+		refreshed.EmailDeliverable = external.EmailDeliverable || (sameAddress && stored.EmailDeliverable)
 	}
 	if external.DisplayName != "" {
 		refreshed.DisplayName = external.DisplayName
@@ -802,7 +852,12 @@ func (service *AccountService) CaptureAvatar(ctx context.Context, userID, avatar
 	if err != nil {
 		return err
 	}
-	id, _, _, _, err := service.avatars.Ingest(fetchCtx, "account-avatar", bytes.NewReader(response.Body))
+	// The request context, not the download's. The budget above bounds how
+	// long sign-in waits for a provider's image host; ingesting the bytes
+	// already in hand is local work, and charging it to what is left of a
+	// three second network budget makes a picture fail for having been slow to
+	// arrive rather than for anything about the picture.
+	id, _, _, _, err := service.avatars.Ingest(ctx, "account-avatar", bytes.NewReader(response.Body))
 	if err != nil {
 		return err
 	}

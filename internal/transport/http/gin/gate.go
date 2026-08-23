@@ -31,6 +31,11 @@ const (
 //	RequireActiveAccount  + approved                          -- write things others see
 //	RequireOwner          + owns the site                     -- everything else
 //
+// VerifiedAccount is not a fourth level. It is the same resolution the three
+// share, handed to a route that has to stay open to a caller with no session
+// at all, so that route can still learn who is signed in without asking the
+// cookie itself.
+//
 // No handler is permitted to inspect role or status for itself. If a new rule
 // is needed it belongs in this file.
 type Gate struct {
@@ -84,8 +89,9 @@ func (gate *Gate) RequireOwner() gin.HandlerFunc {
 // admit runs the shared credential resolution and then one extra test.
 func (gate *Gate) admit(check func(domain.User) error) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		user, ok := gate.resolve(ctx)
-		if !ok {
+		user, err := gate.authenticate(ctx)
+		if err != nil {
+			writeGateError(ctx, err)
 			return
 		}
 		if failure := check(user); failure != nil {
@@ -96,71 +102,97 @@ func (gate *Gate) admit(check func(domain.User) error) gin.HandlerFunc {
 	}
 }
 
-// resolve authenticates the request and stores the account on the context. It
-// writes its own failure response and reports false when it does.
-func (gate *Gate) resolve(ctx *gin.Context) (domain.User, bool) {
+// VerifiedAccount reports who is signed in, and reports nobody without
+// answering the request.
+//
+// A route that must remain reachable without a session still has to know when
+// one is present -- starting a federated sign-in is the whole example, because
+// doing it while signed in means "attach this provider to me". Reading that
+// from the cookie is how a signed-out or suspended account keeps being treated
+// as signed in: the signature proves this server issued the value, never that
+// it is still supposed to work. Coming through here instead is what keeps the
+// answer to "who is this" in one place.
+func (gate *Gate) VerifiedAccount(ctx *gin.Context) (domain.User, bool) {
+	user, err := gate.authenticate(ctx)
+	if err != nil {
+		return domain.User{}, false
+	}
+	return user, true
+}
+
+// errNoCredential is "nothing here names a caller".
+//
+// It stays a sentinel rather than a domain error because it describes no
+// account: whether none was presented or the one presented is not honoured is
+// not a difference the answer is allowed to reveal.
+var errNoCredential = errors.New("no usable credential was presented")
+
+// errCSRFRequired is a browser session used for a write without the token
+// bound into it.
+var errCSRFRequired = errors.New("a CSRF token is required")
+
+// authenticate turns the request's credential into an account and stores it on
+// the context. It writes nothing; every refusal is returned.
+func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 	authorizationValues := ctx.Request.Header.Values("Authorization")
 	if len(authorizationValues) > 1 {
-		unauthorized(ctx)
-		return domain.User{}, false
+		return domain.User{}, errNoCredential
 	}
 
 	if len(authorizationValues) == 1 {
 		// A bearer token is the owner's own credential, kept outside the
-		// database so it still works when the database does not. It names no
-		// account, so the owner account is looked up rather than carried.
+		// database so it still works when the database does not.
 		if strings.TrimSpace(authorizationValues[0]) == "" {
-			unauthorized(ctx)
-			return domain.User{}, false
+			return domain.User{}, errNoCredential
 		}
 		parts := strings.Fields(authorizationValues[0])
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			unauthorized(ctx)
-			return domain.User{}, false
+			return domain.User{}, errNoCredential
 		}
 		grant, err := gate.manager.AuthorizeBearer(parts[1])
 		if err != nil {
-			unauthorized(ctx)
-			return domain.User{}, false
-		}
-		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
-		if err != nil {
-			writeAccountError(ctx, err)
-			return domain.User{}, false
+			return domain.User{}, errNoCredential
 		}
 		ctx.Set(ownerSourceKey, "bearer")
 		ctx.Set(ownerGrantKey, grant)
+		// The token names no account, so the owner row is read to put a name to
+		// it -- but that read does not get to decide admission. Requiring it
+		// would take doctor and credential repair away at exactly the moment
+		// they are wanted, which is the moment the database is what is broken,
+		// and the token was kept outside the database precisely so that could
+		// not happen. A caller admitted without the row keeps every power the
+		// token carries and loses only its name, so a handler that has to
+		// attribute work to an account finds none and refuses on its own.
+		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
+		if err != nil {
+			return unnamedOwner, nil
+		}
 		ctx.Set(accountKey, owner)
-		return owner, true
+		return owner, nil
 	}
 
 	cookie, err := ctx.Request.Cookie(SessionCookieName)
 	if err != nil {
-		unauthorized(ctx)
-		return domain.User{}, false
+		return domain.User{}, errNoCredential
 	}
 	session, grant, err := gate.manager.AuthorizeSession(cookie.Value)
 	if err != nil {
-		unauthorized(ctx)
-		return domain.User{}, false
+		return domain.User{}, errNoCredential
 	}
 	if isUnsafeMethod(ctx.Request.Method) && !constantTimeEqual(ctx.GetHeader(CSRFHeaderName), session.CSRFToken) {
-		Failure(ctx, http.StatusForbidden, "CSRF_INVALID", "a valid CSRF token is required", nil)
-		return domain.User{}, false
+		return domain.User{}, errCSRFRequired
 	}
 
 	resolved, err := gate.accounts.ResolveSession(ctx.Request.Context(), session.SessionID)
 	if err != nil {
-		writeAccountError(ctx, err)
-		return domain.User{}, false
+		return domain.User{}, err
 	}
 	// The signature already proves the cookie was issued here, so a mismatch
 	// between the two halves is not something an attacker can reach. It would
 	// mean the session row and the signed payload disagree about whose session
 	// this is, which is corruption rather than a request to be answered.
 	if resolved.Session.UserID != session.UserID {
-		unauthorized(ctx)
-		return domain.User{}, false
+		return domain.User{}, errNoCredential
 	}
 	// Best effort: a request that cannot record its own recency is still a
 	// valid request.
@@ -170,7 +202,26 @@ func (gate *Gate) resolve(ctx *gin.Context) (domain.User, bool) {
 	ctx.Set(ownerGrantKey, grant)
 	ctx.Set(accountKey, resolved.User)
 	ctx.Set(accountSessionKey, resolved.Session)
-	return resolved.User, true
+	return resolved.User, nil
+}
+
+// unnamedOwner is everything a bearer token proves without reading a row: the
+// owner's authority, and no identity to attribute anything to.
+//
+// It is deliberately never stored as the current account. An id of "" that
+// reached CurrentAccount would be authored content signed by nobody.
+var unnamedOwner = domain.User{Role: domain.UserRoleOwner, Status: domain.AccountActive}
+
+// writeGateError answers a refusal authenticate returned.
+func writeGateError(ctx *gin.Context, err error) {
+	switch {
+	case errors.Is(err, errNoCredential):
+		unauthorized(ctx)
+	case errors.Is(err, errCSRFRequired):
+		Failure(ctx, http.StatusForbidden, "CSRF_INVALID", "a valid CSRF token is required", nil)
+	default:
+		writeAccountError(ctx, err)
+	}
 }
 
 // CurrentAccount reports the account a gate admitted for this request.

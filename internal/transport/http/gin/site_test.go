@@ -21,6 +21,9 @@ type httpSiteTransactions struct {
 	settings app.SiteSettings
 	media    map[string]bool
 	entries  map[string]bool
+	// updateErr stands in for a constraint the database enforces and this
+	// fixture cannot. The store below is a map; users_username_unique is not.
+	updateErr error
 }
 
 func (transactions *httpSiteTransactions) Read(ctx context.Context, operation func(app.SiteStore) error) error {
@@ -39,7 +42,7 @@ func (transactions *httpSiteTransactions) Write(ctx context.Context, operation f
 		return err
 	}
 	cloned := transactions.settings
-	store := &httpSiteStore{settings: &cloned, media: transactions.media, entries: transactions.entries}
+	store := &httpSiteStore{settings: &cloned, media: transactions.media, entries: transactions.entries, updateErr: transactions.updateErr}
 	if err := operation(store); err != nil {
 		return err
 	}
@@ -48,9 +51,10 @@ func (transactions *httpSiteTransactions) Write(ctx context.Context, operation f
 }
 
 type httpSiteStore struct {
-	settings *app.SiteSettings
-	media    map[string]bool
-	entries  map[string]bool
+	settings  *app.SiteSettings
+	media     map[string]bool
+	entries   map[string]bool
+	updateErr error
 }
 
 func (store *httpSiteStore) SiteSettings(context.Context) (app.SiteSettings, error) {
@@ -66,6 +70,9 @@ func (store *httpSiteStore) EntryExists(_ context.Context, id domain.ID) (bool, 
 }
 
 func (store *httpSiteStore) UpdateSiteSettings(_ context.Context, settings app.SiteSettings) error {
+	if store.updateErr != nil {
+		return store.updateErr
+	}
 	*store.settings = settings
 	return nil
 }
@@ -93,7 +100,7 @@ func newSiteHTTPFixture(t *testing.T) (ownerTestFixture, *httpSiteTransactions) 
 		t.Fatal(err)
 	}
 	transactions := &httpSiteTransactions{
-		settings: app.SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true},
+		settings: app.SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval},
 		media:    map[string]bool{httpAvatarID: true},
 	}
 	service, err := app.NewSiteService(transactions, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
@@ -248,24 +255,71 @@ func TestSitePublicJSONContainsOnlyStableDTOFields(t *testing.T) {
 	}
 }
 
-func TestMentionSuggestionsExposeOnlyCurrentOwner(t *testing.T) {
-	fixture, _ := newSiteHTTPFixture(t)
-	response := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/users/mention-suggestions?q=own&limit=8", ""))
-	if response.Code != http.StatusOK {
-		t.Fatalf("mention suggestions = %d, body = %s", response.Code, response.Body.String())
+// One handle column, one answer, whichever form the owner reached it from.
+//
+// The account route refuses a reserved handle with USERNAME_RESERVED and a
+// handle somebody else holds with 409 USERNAME_TAKEN. This route validated the
+// shape only and reported the constraint failure as INTERNAL, so the settings
+// form showed "operation failed" for a refusal it already has words for.
+func TestOwnerSitePatchAnswersHandleRefusalsLikeTheAccountRoute(t *testing.T) {
+	fixture, transactions := newSiteHTTPFixture(t)
+
+	reserved := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"username":"search"}`)
+	reserved.Header.Set("Authorization", "Bearer "+fixture.token)
+	response := performRequest(fixture.engine, reserved)
+	if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "USERNAME_RESERVED" {
+		t.Fatalf("reserved status = %d, body = %s", response.Code, response.Body.String())
 	}
-	var envelope struct {
-		Data []app.MentionSuggestion `json:"data"`
-		Meta map[string]any          `json:"meta"`
+	if transactions.settings.Username != "" {
+		t.Fatalf("reserved handle persisted: %#v", transactions.settings)
 	}
-	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
-		t.Fatal(err)
+
+	transactions.updateErr = domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})
+	taken := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"username":"meihua"}`)
+	taken.Header.Set("Authorization", "Bearer "+fixture.token)
+	response = performRequest(fixture.engine, taken)
+	if response.Code != http.StatusConflict || decodeError(t, response.Body).Error.Code != "USERNAME_TAKEN" {
+		t.Fatalf("taken status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if len(envelope.Data) != 1 || envelope.Data[0].Username != "owner" || envelope.Data[0].ProfileURL != "/owner" || envelope.Meta["count"] != float64(1) {
-		t.Fatalf("mention envelope = %#v", envelope)
+}
+
+// The owner can close registration without editing the database.
+//
+// The field existed on SiteUpdate and on the row, and nothing in between could
+// carry a value from one to the other: the request struct had no member for it
+// and DisallowUnknownFields turned the attempt into a 400. It stays out of the
+// public projection, which is what TestSitePublicJSONContainsOnlyStableDTOFields
+// holds the line on.
+func TestOwnerSitePatchWritesRegistrationModeWithoutPublishingIt(t *testing.T) {
+	fixture, transactions := newSiteHTTPFixture(t)
+
+	for _, mode := range []string{"open", "closed", "approval"} {
+		request := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"registration_mode":"`+mode+`"}`)
+		request.Header.Set("Authorization", "Bearer "+fixture.token)
+		response := performRequest(fixture.engine, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("mode %q status = %d, body = %s", mode, response.Code, response.Body.String())
+		}
+		if string(transactions.settings.RegistrationMode) != mode {
+			t.Fatalf("stored registration mode = %q, want %q", transactions.settings.RegistrationMode, mode)
+		}
+		if _, published := decodeDataMap(t, response)["registration_mode"]; published {
+			t.Fatalf("owner response published registration_mode: %s", response.Body.String())
+		}
 	}
-	invalid := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/users/mention-suggestions?limit=0", ""))
-	if invalid.Code != http.StatusBadRequest || decodeError(t, invalid.Body).Error.Code != "INVALID_ARGUMENT" {
-		t.Fatalf("invalid limit = %d, body = %s", invalid.Code, invalid.Body.String())
+
+	rejected := ownerRequest(http.MethodPatch, "/api/v1/owner/site", `{"registration_mode":"everyone"}`)
+	rejected.Header.Set("Authorization", "Bearer "+fixture.token)
+	response := performRequest(fixture.engine, rejected)
+	if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
+		t.Fatalf("invalid mode status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if transactions.settings.RegistrationMode != "approval" {
+		t.Fatalf("invalid mode changed the row: %#v", transactions.settings)
+	}
+
+	public := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/site", ""))
+	if _, published := decodeDataMap(t, public)["registration_mode"]; published {
+		t.Fatalf("public site published registration_mode: %s", public.Body.String())
 	}
 }

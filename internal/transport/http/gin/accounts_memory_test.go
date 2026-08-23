@@ -2,6 +2,8 @@ package ginhttp
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -101,13 +103,30 @@ func (store *memoryAccounts) IdentitiesForUser(_ context.Context, userID string)
 			found = append(found, identity)
 		}
 	}
-	sort.Slice(found, func(left, right int) bool { return found[left].Provider < found[right].Provider })
+	// (provider, provider_user_id), which is what the SQL orders by. Provider
+	// alone leaves two identities from one provider in map order, and the
+	// caller that removes one of them names only the provider.
+	sort.Slice(found, func(left, right int) bool {
+		if found[left].Provider != found[right].Provider {
+			return found[left].Provider < found[right].Provider
+		}
+		return found[left].ProviderUserID < found[right].ProviderUserID
+	})
 	return found, nil
 }
 
 func (store *memoryAccounts) CreateAccountWithIdentity(ctx context.Context, user domain.User, identity domain.Identity) error {
 	if _, taken := store.users[user.ID]; taken {
 		return domain.NewError(domain.CodeUsernameTaken, "account exists", nil)
+	}
+	// users.username carries a case-insensitive unique index, so the real store
+	// refuses this even when the id is free. A fake that accepted it would let
+	// the allocator's collision handling look correct here while the same input
+	// failed against SQLite.
+	for _, existing := range store.users {
+		if strings.EqualFold(existing.Username, user.Username) {
+			return domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})
+		}
 	}
 	store.users[user.ID] = user
 	return store.LinkIdentity(ctx, identity)
@@ -122,12 +141,11 @@ func (store *memoryAccounts) LinkIdentity(_ context.Context, identity domain.Ide
 	return nil
 }
 
-func (store *memoryAccounts) UnlinkIdentity(_ context.Context, userID, provider string) error {
-	for key, identity := range store.identities {
-		if identity.UserID == userID && identity.Provider == provider {
-			delete(store.identities, key)
-			return nil
-		}
+func (store *memoryAccounts) UnlinkIdentity(_ context.Context, identity domain.Identity) error {
+	key := identityKey(identity.Provider, identity.ProviderUserID)
+	if stored, found := store.identities[key]; found && stored.UserID == identity.UserID {
+		delete(store.identities, key)
+		return nil
 	}
 	return domain.NewError(domain.CodeAccountNotFound, "not linked", nil)
 }
@@ -187,7 +205,15 @@ func (store *memoryAccounts) ListAccounts(_ context.Context) ([]domain.User, err
 	for _, user := range store.users {
 		users = append(users, user)
 	}
-	sort.Slice(users, func(left, right int) bool { return users[left].ID < users[right].ID })
+	// (created_at_ms, id), which is what the SQL orders by. Account ids are
+	// random hex rather than time-ordered, so sorting by id alone put the
+	// owner's review list in an order the real store never produces.
+	sort.Slice(users, func(left, right int) bool {
+		if users[left].CreatedAtMS != users[right].CreatedAtMS {
+			return users[left].CreatedAtMS < users[right].CreatedAtMS
+		}
+		return users[left].ID < users[right].ID
+	})
 	return users, nil
 }
 
@@ -294,6 +320,151 @@ func (store *memoryAccounts) PurgeExpiredSessions(_ context.Context, beforeMS in
 		}
 	}
 	return purged, nil
+}
+
+// A fake is only worth having while it is wrong in no way a route test could
+// notice. These two disagreements were both reachable: the owner's review
+// screen is rendered in list order, and every account created through a
+// provider goes through the handle allocator.
+func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
+	ctx := context.Background()
+	runtimeState, err := runtimefs.Initialize(ctx, runtimefs.Config{DataDir: t.TempDir(), Environment: runtimefs.EnvironmentDevelopment})
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	repository, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Ids that sort against the order the accounts are created in, which is the
+	// only arrangement that can tell the two orderings apart. Real ids are
+	// random hex, so this is the ordinary case rather than a contrived one.
+	ids := []string{"ffffffffffffffffffffffffffffff01", "00000000000000000000000000000002"}
+	now := time.UnixMilli(1000).UTC()
+	build := func(transactions app.AccountTransactions) *app.AccountService {
+		t.Helper()
+		index := 0
+		service, err := app.NewAccountService(transactions,
+			app.WithAccountClock(func() time.Time { return now }),
+			app.WithAccountIDGenerator(func() (string, error) {
+				id := ids[index]
+				index++
+				return id, nil
+			}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return service
+	}
+
+	stored := build(repository)
+	owner, err := stored.OwnerAccount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := newMemoryAccounts(owner)
+	remembered := build(store)
+
+	for _, seed := range []struct {
+		providerUserID string
+		displayName    string
+		atMS           int64
+	}{
+		{"1", "Ada Lovelace", 1000},
+		{"2", "Grace Hopper", 2000},
+	} {
+		now = time.UnixMilli(seed.atMS).UTC()
+		for _, service := range []*app.AccountService{stored, remembered} {
+			if _, err := service.SignIn(ctx, app.ExternalIdentity{
+				Provider: "google", ProviderUserID: seed.providerUserID, DisplayName: seed.displayName,
+			}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	listed := func(service *app.AccountService) []string {
+		t.Helper()
+		accounts, err := service.List(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		order := make([]string, 0, len(accounts))
+		for _, account := range accounts {
+			order = append(order, account.Username)
+		}
+		return order
+	}
+	fromSQLite, fromMemory := listed(stored), listed(remembered)
+	if !slices.Equal(fromSQLite, fromMemory) {
+		t.Fatalf("list order: sqlite = %v, memory = %v", fromSQLite, fromMemory)
+	}
+	if len(fromSQLite) != 3 || fromSQLite[0] != owner.Username {
+		t.Fatalf("list = %v, want the oldest account first", fromSQLite)
+	}
+
+	// Two identities from one provider list in the same order in both, which
+	// is what decides which of them a remove keyed by a provider name takes.
+	member, err := stored.Account(ctx, ids[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	listedIdentities := func(transactions app.AccountTransactions) []string {
+		t.Helper()
+		var order []string
+		if err := transactions.WriteAccounts(ctx, func(accounts app.AccountStore, _ app.SessionStore) error {
+			for _, providerUserID := range []string{"999999999", "216108319"} {
+				if err := accounts.LinkIdentity(ctx, domain.Identity{
+					Provider: "github", ProviderUserID: providerUserID, UserID: member.ID,
+					CreatedAtMS: 4000, LastLoginAtMS: 4000,
+				}); err != nil {
+					return err
+				}
+			}
+			identities, err := accounts.IdentitiesForUser(ctx, member.ID)
+			if err != nil {
+				return err
+			}
+			for _, identity := range identities {
+				order = append(order, identity.Provider+":"+identity.ProviderUserID)
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return order
+	}
+	if fromSQLite, fromMemory := listedIdentities(repository), listedIdentities(store); !slices.Equal(fromSQLite, fromMemory) {
+		t.Fatalf("identity order: sqlite = %v, memory = %v", fromSQLite, fromMemory)
+	}
+
+	// The handle is unique in the database whether or not the caller checked.
+	duplicate := func(transactions app.AccountTransactions) error {
+		return transactions.WriteAccounts(ctx, func(accounts app.AccountStore, _ app.SessionStore) error {
+			return accounts.CreateAccountWithIdentity(ctx,
+				domain.User{
+					ID: "0123456789abcdef0123456789abcdef", Username: owner.Username, DisplayName: "Impostor",
+					Role: domain.UserRoleMember, Status: domain.AccountPending, CreatedAtMS: 3000, UpdatedAtMS: 3000,
+				},
+				domain.Identity{
+					Provider: "google", ProviderUserID: "3", UserID: "0123456789abcdef0123456789abcdef",
+					CreatedAtMS: 3000, LastLoginAtMS: 3000,
+				})
+		})
+	}
+	for name, transactions := range map[string]app.AccountTransactions{"sqlite": repository, "memory": store} {
+		var refusal *domain.Error
+		err := duplicate(transactions)
+		if !errors.As(err, &refusal) || refusal.Code != domain.CodeUsernameTaken {
+			t.Fatalf("%s accepted a duplicate handle: %v", name, err)
+		}
+	}
 }
 
 // testOwnerAccount is the account every transport fixture signs in as.
