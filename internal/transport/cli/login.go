@@ -62,7 +62,8 @@ func registerLogin(application *Application) {
 			"the account that signed in and the file the session was written to are the result.",
 		Errors: "A code nobody approved in time returns OAUTH_DEVICE_EXPIRED and a refused one returns " +
 			"OAUTH_DEVICE_DENIED. A site not accepting new accounts returns REGISTRATION_CLOSED; " +
-			"a provider with no device flow returns OAUTH_PROVIDER_UNAVAILABLE.",
+			"a provider with no device flow returns OAUTH_PROVIDER_UNAVAILABLE. A --session-file " +
+			"holding a session some other server issued returns SESSION_INSTANCE_MISMATCH.",
 		Example:     "moment --url http://127.0.0.1:8080 login github",
 		Args:        cobra.ExactArgs(1),
 		Capability:  CapabilityAPIOnly,
@@ -173,7 +174,7 @@ func runLogin(ctx context.Context, invocation Invocation, input CommandInput) (R
 	// here is what turns "the file was written" into "the file works": a
 	// credential nothing can load and present is worse than none at all,
 	// because it looks like being signed in.
-	stored, err := readStoredSession(sessionFile)
+	stored, err := readStoredSession(sessionFile, target.BaseURL())
 	if err != nil {
 		return Result{}, err
 	}
@@ -474,8 +475,9 @@ func writeStoredSession(path string, credential storedSession) error {
 	return nil
 }
 
-// readStoredSession loads a credential a previous login left behind.
-func readStoredSession(path string) (storedSession, error) {
+// readStoredSession loads a credential a previous login left behind, and only
+// when the server that issued it is the one this command is aimed at.
+func readStoredSession(path string, instance *url.URL) (storedSession, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return storedSession{}, NewCommandError(
@@ -496,7 +498,38 @@ func readStoredSession(path string) (storedSession, error) {
 		return storedSession{}, invalidArgument("the session file does not contain a stored session",
 			"run 'moment --url <server> login <provider>' to sign in again")
 	}
+	if !sameInstance(credential.BaseURL, instance) {
+		return storedSession{}, NewCommandError(
+			"SESSION_INSTANCE_MISMATCH",
+			"the stored session was issued by a different Moment server",
+			"sign in to this server, or point --session-file at the credential it issued",
+			ExitUnauthorized,
+		)
+	}
 	return credential, nil
+}
+
+// sameInstance reports whether a stored session was issued by the server this
+// command is aimed at.
+//
+// A session is only ever meaningful to the instance that signed it: presenting
+// one anywhere else hands a credential to a server that has no business seeing
+// it, and gets an unauthorized answer for a reason nothing on screen explains.
+// The comparison is by address rather than by text because --url is kept
+// exactly as it was typed, so one server reached as http://host:8080 and as
+// http://host:8080/ would otherwise look like two. Nothing beyond scheme, host
+// and base path can appear here; --url refuses the rest when it is parsed.
+func sameInstance(stored string, instance *url.URL) bool {
+	if instance == nil {
+		return false
+	}
+	issuer, err := url.Parse(strings.TrimSpace(stored))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(issuer.Scheme, instance.Scheme) &&
+		strings.EqualFold(issuer.Host, instance.Host) &&
+		strings.TrimRight(issuer.Path, "/") == strings.TrimRight(instance.Path, "/")
 }
 
 func sessionFileError(cause error) error {

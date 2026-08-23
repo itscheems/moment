@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/moment/moment/internal/app"
@@ -72,6 +73,24 @@ func TestAccountReviewCommandsAcceptAUsername(t *testing.T) {
 		t.Fatalf("no applicant in %#v", listed)
 	}
 
+	// The human listing puts each account on a line of its own. Nothing read it
+	// before, which is how a hand-rolled line joiner sat beside strings.Join for
+	// as long as it did without anyone noticing either.
+	human := execute(application, "", "user", "list", "--data-dir", dataDir)
+	if human.exit != ExitSuccess || human.stderr != "" {
+		t.Fatalf("human listing = %#v", human)
+	}
+	for _, item := range listed {
+		username := item.(map[string]any)["username"].(string)
+		onItsOwnLine := false
+		for _, line := range strings.Split(human.stdout, "\n") {
+			onItsOwnLine = onItsOwnLine || strings.HasPrefix(line, username+" ")
+		}
+		if !onItsOwnLine {
+			t.Fatalf("%s has no line of its own in:\n%s", username, human.stdout)
+		}
+	}
+
 	identities := commandList(t, execute(application, "", "user", "identities", applicant, "--data-dir", dataDir, "--json"))
 	if len(identities) != 1 {
 		t.Fatalf("identities = %#v", identities)
@@ -83,6 +102,15 @@ func TestAccountReviewCommandsAcceptAUsername(t *testing.T) {
 	approved := commandData(t, execute(application, "", "user", "approve", applicant, "--data-dir", dataDir, "--json"))
 	if approved["status"] != string(domain.AccountActive) {
 		t.Fatalf("approved = %#v", approved)
+	}
+
+	// The handle a person types is not the handle that was stored. Handles are
+	// lowercase and NormalizeUsername folds case on the way in, but the argument
+	// was passed through as typed -- so `moment user approve Alex` answered
+	// ACCOUNT_NOT_FOUND for the account the browser shows as @alex.
+	shouted := commandData(t, execute(application, "", "user", "approve", strings.ToUpper(applicant), "--data-dir", dataDir, "--json"))
+	if shouted["username"] != applicant {
+		t.Fatalf("an upper-case handle reached %#v", shouted)
 	}
 
 	suspended := commandData(t, execute(application, "", "user", "suspend", applicant, "--data-dir", dataDir, "--yes", "--json"))
@@ -120,6 +148,33 @@ func TestAccountReviewCommandsAcceptAUsername(t *testing.T) {
 			output := execute(application, "", args...)
 			if output.exit == ExitSuccess {
 				t.Fatalf("expected a refusal, got %#v", output)
+			}
+		})
+	}
+}
+
+// singleAccountArgument is where all four review commands agree on what a
+// handle is, so it is where the folding has to happen and where a regression
+// would land.
+func TestAnAccountArgumentIsFoldedToTheStoredHandle(t *testing.T) {
+	for _, typed := range []string{"alex", "Alex", "ALEX", "  aLeX  "} {
+		got, err := singleAccountArgument(CommandInput{args: []string{typed}})
+		if err != nil {
+			t.Fatalf("%q: %v", typed, err)
+		}
+		if got != "alex" {
+			t.Fatalf("%q became %q", typed, got)
+		}
+	}
+	for name, args := range map[string][]string{
+		"nothing at all":  nil,
+		"whitespace only": {"   "},
+		"an empty string": {""},
+		"two of them":     {"alex", "sam"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := singleAccountArgument(CommandInput{args: args}); err == nil {
+				t.Fatalf("%#v was accepted as one username", args)
 			}
 		})
 	}

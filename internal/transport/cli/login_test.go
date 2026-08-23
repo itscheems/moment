@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -221,7 +222,7 @@ func TestLoginWaitsForApprovalThenStoresASessionItCanPresent(t *testing.T) {
 		t.Fatalf("two polls took %s; the reported interval was not waited out", elapsed)
 	}
 
-	stored, err := readStoredSession(sessionFile)
+	stored, err := readStoredSession(sessionFile, mustParseURL(t, fake.server.URL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,6 +414,7 @@ func TestAStoredSessionIsPresentedAsACookieAndACSRFHeader(t *testing.T) {
 
 func TestLoginRefusesAStoredSessionFileThatIsNotOne(t *testing.T) {
 	directory := t.TempDir()
+	instance := mustParseURL(t, "http://x")
 	for name, contents := range map[string]string{
 		"not JSON at all":        "signed.session.value\n",
 		"an empty session":       `{"base_url":"http://x","session":"","csrf_token":"c","expires_at":"2026-01-01T00:00:00Z"}`,
@@ -423,12 +425,72 @@ func TestLoginRefusesAStoredSessionFileThatIsNotOne(t *testing.T) {
 			if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := readStoredSession(path); err == nil {
+			if _, err := readStoredSession(path, instance); err == nil {
 				t.Fatal("a file that is not a stored session was accepted as one")
 			}
 		})
 	}
-	if _, err := readStoredSession(filepath.Join(directory, "absent.json")); err == nil {
+	if _, err := readStoredSession(filepath.Join(directory, "absent.json"), instance); err == nil {
 		t.Fatal("a missing session file was accepted")
 	}
+}
+
+// The instance is recorded beside the credential so that presenting a session
+// to a server that never issued it is refused here rather than discovered from
+// that server's answer. It was recorded and never read, which made the field a
+// note to nobody.
+func TestAStoredSessionIsRefusedByEveryOtherInstance(t *testing.T) {
+	directory := t.TempDir()
+	write := func(t *testing.T, name, baseURL string) string {
+		t.Helper()
+		path := filepath.Join(directory, name+".json")
+		if err := writeStoredSession(path, storedSession{
+			BaseURL:   baseURL,
+			Session:   "signed.session.value",
+			CSRFToken: "csrf-token",
+			ExpiresAt: time.Now().UTC().Add(time.Hour).Truncate(time.Second),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	issued := write(t, "issued", "http://127.0.0.1:8080")
+	for name, presentedTo := range map[string]string{
+		"another port":      "http://127.0.0.1:9090",
+		"another host":      "http://moments.example",
+		"another scheme":    "https://127.0.0.1:8080",
+		"another base path": "http://127.0.0.1:8080/journal",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := readStoredSession(issued, mustParseURL(t, presentedTo)); err == nil {
+				t.Fatalf("a session issued elsewhere was accepted for %s", presentedTo)
+			}
+		})
+	}
+
+	// The same server spelt the two ways --url accepts is one server. --url is
+	// kept exactly as typed, so a guard comparing text would refuse the
+	// credential it had just written.
+	for _, spelling := range []string{"http://127.0.0.1:8080", "http://127.0.0.1:8080/"} {
+		if _, err := readStoredSession(issued, mustParseURL(t, spelling)); err != nil {
+			t.Fatalf("the issuing server spelt %q was refused its own session: %v", spelling, err)
+		}
+	}
+
+	// A file naming no instance at all is exactly the file this field exists to
+	// prevent, so it is not admitted by default.
+	anonymous := write(t, "anonymous", "")
+	if _, err := readStoredSession(anonymous, mustParseURL(t, "http://127.0.0.1:8080")); err == nil {
+		t.Fatal("a session naming no instance was accepted")
+	}
+}
+
+func mustParseURL(t *testing.T, value string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed
 }

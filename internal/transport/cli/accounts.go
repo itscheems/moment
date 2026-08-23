@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -178,7 +179,7 @@ func runAccountList(ctx context.Context, invocation Invocation, input CommandInp
 	return Result{
 		Data: items,
 		Meta: map[string]any{"count": len(items)},
-		Text: joinLines(lines),
+		Text: strings.Join(lines, "\n"),
 	}, nil
 }
 
@@ -249,15 +250,24 @@ func runAccountIdentities(ctx context.Context, invocation Invocation, input Comm
 	if len(items) == 0 {
 		lines = append(lines, "no linked sign-in methods")
 	}
-	return Result{Data: items, Meta: map[string]any{"count": len(items)}, Text: joinLines(lines)}, nil
+	return Result{Data: items, Meta: map[string]any{"count": len(items)}, Text: strings.Join(lines, "\n")}, nil
 }
 
 func singleAccountArgument(input CommandInput) (string, error) {
 	args := input.Args()
-	if len(args) != 1 || args[0] == "" {
+	if len(args) != 1 {
 		return "", invalidArgument("one username is required", "pass exactly one username")
 	}
-	return args[0], nil
+	// Handles are stored lowercase and NormalizeUsername folds case on the way
+	// in, so `moment user approve Alex` has to reach the same account the
+	// browser shows as @alex rather than answer ACCOUNT_NOT_FOUND. Only the
+	// case is folded here: running the whole normaliser would refuse a stored
+	// handle that the reserved list grew to cover after it was created.
+	username := strings.ToLower(strings.TrimSpace(args[0]))
+	if username == "" {
+		return "", invalidArgument("one username is required", "pass exactly one username")
+	}
+	return username, nil
 }
 
 // accountCLIError maps account failures onto the CLI's stable codes.
@@ -274,17 +284,6 @@ func accountCLIError(err error) error {
 	default:
 		return err
 	}
-}
-
-func joinLines(lines []string) string {
-	out := ""
-	for index, line := range lines {
-		if index > 0 {
-			out += "\n"
-		}
-		out += line
-	}
-	return out
 }
 
 func runAccountDelete(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {

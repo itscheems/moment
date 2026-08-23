@@ -19,6 +19,7 @@ import (
 	"github.com/moment/moment/internal/linkfetch"
 	locationprovider "github.com/moment/moment/internal/location"
 	"github.com/moment/moment/internal/media"
+	"github.com/moment/moment/internal/observability"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -41,6 +42,13 @@ type liveServerHost struct {
 	// session janitor sweeps whichever generation is current rather than one
 	// captured when the process started.
 	accounts *app.AccountService
+	// google is the Google adapter this process has already built, with the
+	// callback address it was built for. It is kept on the host rather than in
+	// a package variable because there is one host per server process and a
+	// cache nothing resets is a cache tests inherit from each other.
+	googleMu       sync.Mutex
+	google         *oauth.Google
+	googleCallback string
 }
 
 type hostedImportCommitter struct {
@@ -244,24 +252,29 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 // which travels with the data directory: an OAuth client belongs to a
 // deployment and its redirect URI, not to the content.
 func (host *liveServerHost) identityProviders(ctx context.Context, site *app.SiteService) (*oauth.Registry, error) {
+	googleCredentials := oauth.Credentials{
+		ClientID:     os.Getenv("MOMENT_GOOGLE_CLIENT_ID"),
+		ClientSecret: os.Getenv("MOMENT_GOOGLE_CLIENT_SECRET"),
+	}
+	githubCredentials := oauth.Credentials{
+		ClientID:     os.Getenv("MOMENT_GITHUB_CLIENT_ID"),
+		ClientSecret: os.Getenv("MOMENT_GITHUB_CLIENT_SECRET"),
+	}
 	base := host.publicBaseURL(ctx, site)
 	if base == "" {
 		// Without a canonical address there is no redirect URI to register,
 		// and a redirect URI is matched exactly by every provider. Guessing one
 		// from the Host header would make the address an attacker-supplied
 		// value, so sign-in stays off instead.
+		host.reportUnusedCredentials(googleCredentials, githubCredentials)
 		return oauth.NewRegistry(), nil
 	}
 	callback := func(provider string) string {
 		return base + "/api/v1/login/oauth/" + provider + "/callback"
 	}
 	registered := make([]oauth.Provider, 0, 2)
-	googleCredentials := oauth.Credentials{
-		ClientID:     os.Getenv("MOMENT_GOOGLE_CLIENT_ID"),
-		ClientSecret: os.Getenv("MOMENT_GOOGLE_CLIENT_SECRET"),
-	}
 	if googleCredentials.Configured() {
-		google, err := oauth.NewGoogle(ctx, googleCredentials, callback(oauth.GoogleName))
+		google, err := host.googleProvider(ctx, googleCredentials, callback(oauth.GoogleName))
 		if err != nil {
 			return nil, err
 		}
@@ -269,16 +282,67 @@ func (host *liveServerHost) identityProviders(ctx context.Context, site *app.Sit
 			registered = append(registered, google)
 		}
 	}
-	githubCredentials := oauth.Credentials{
-		ClientID:     os.Getenv("MOMENT_GITHUB_CLIENT_ID"),
-		ClientSecret: os.Getenv("MOMENT_GITHUB_CLIENT_SECRET"),
-	}
 	if githubCredentials.Configured() {
 		if github := oauth.NewGitHub(githubCredentials, callback(oauth.GitHubName)); github != nil {
 			registered = append(registered, github)
 		}
 	}
 	return oauth.NewRegistry(registered...), nil
+}
+
+// newGoogleProvider is oauth.NewGoogle behind a variable, so a test can tell
+// whether a call reached a provider at all. Production has one implementation.
+var newGoogleProvider = oauth.NewGoogle
+
+// googleProvider builds the Google adapter at most once per callback address.
+//
+// Building one fetches Google's discovery document over the network, and that
+// document describes the deployment rather than this generation. Activate is
+// also what restores the previous generation after a failed import commit, so
+// re-fetching it there buys nothing, stalls every commit's maintenance window
+// on a third party, and lets an unreachable Google turn a rollback into a
+// second failure on top of the one being recovered from. The callback address
+// is the key rather than nothing at all because an imported generation can
+// carry a different public_base_url, and a provider matches a redirect URI
+// exactly.
+func (host *liveServerHost) googleProvider(ctx context.Context, credentials oauth.Credentials, callback string) (*oauth.Google, error) {
+	host.googleMu.Lock()
+	defer host.googleMu.Unlock()
+	if host.google != nil && host.googleCallback == callback {
+		return host.google, nil
+	}
+	google, err := newGoogleProvider(ctx, credentials, callback)
+	if err != nil {
+		return nil, err
+	}
+	host.google, host.googleCallback = google, callback
+	return google, nil
+}
+
+// reportUnusedCredentials says out loud that configured sign-in credentials are
+// being discarded.
+//
+// A deployment that binds a public address and names no canonical URL answers
+// the provider list empty, which is byte-identical to a build nobody ever
+// configured sign-in for. The operator did their half; this line is the only
+// thing that tells the two apart.
+func (host *liveServerHost) reportUnusedCredentials(google, github oauth.Credentials) {
+	configured := make([]string, 0, 2)
+	if google.Configured() {
+		configured = append(configured, oauth.GoogleName)
+	}
+	if github.Configured() {
+		configured = append(configured, oauth.GitHubName)
+	}
+	if len(configured) == 0 || host.log == nil {
+		return
+	}
+	host.log(observability.SurfaceSystem, "warn", "oauth_credentials_unused", map[string]any{
+		"providers": configured,
+		"listen":    host.listenAddress,
+		"reason":    "this deployment has no canonical address to register a redirect URI against",
+		"remedy":    "run 'moment site update --public-base-url <address>' with the address browsers reach this site at",
+	})
 }
 
 // publicBaseURL reports the address this site answers at, without a trailing
@@ -314,8 +378,15 @@ func (host *liveServerHost) publicBaseURL(ctx context.Context, site *app.SiteSer
 
 // isLoopbackHost reports whether a listen host only ever accepts connections
 // from this machine.
+//
+// An empty host is how `--listen :8080` spells the wildcard bind, so it answers
+// no. Reading it as loopback is what registered a 127.0.0.1 redirect URI for a
+// server the whole network can reach: the sign-in buttons were drawn on a
+// public site, and every remote visitor who pressed one was either refused for
+// a redirect_uri mismatch or sent back to their own machine holding the
+// authorization code.
 func isLoopbackHost(address string) bool {
-	if address == "" || address == "localhost" {
+	if address == "localhost" {
 		return true
 	}
 	parsed := net.ParseIP(address)

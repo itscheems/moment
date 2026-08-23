@@ -1725,7 +1725,7 @@
       },
       "api": {
         "availability": "supported",
-        "auth": "none",
+        "auth": "owner_token",
         "locks": [
           "server_managed"
         ]
