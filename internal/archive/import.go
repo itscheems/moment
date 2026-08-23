@@ -77,10 +77,18 @@ type InspectOptions struct {
 }
 
 // ImportCounts are portable record counts safe for Web and CLI preview.
+//
+// Users and Identities are reported for the same reason the other three are:
+// commit replaces the whole authority, so a preview that names only content is
+// telling the owner about part of what they are about to lose. Neither field is
+// omitted when zero -- a preview that silently drops "users" reads as an import
+// that leaves accounts alone, which is the one thing it never does.
 type ImportCounts struct {
-	Entries  int64 `json:"entries"`
-	Comments int64 `json:"comments"`
-	Media    int64 `json:"media"`
+	Entries    int64 `json:"entries"`
+	Comments   int64 `json:"comments"`
+	Media      int64 `json:"media"`
+	Users      int64 `json:"users"`
+	Identities int64 `json:"identities"`
 }
 
 // ImportTimeRange describes the published range that will replace the site.
@@ -583,7 +591,7 @@ func (inspector *Inspector) newClaim(ctx context.Context, state stagingMetadata,
 		Generation: stagingGeneration(stageRoot, state.GenerationID), MetadataPath: filepath.Join(stageRoot, "staging.json"),
 		StageRoot: stageRoot, ArchiveSHA: state.ArchiveSHA, ExpiresAt: time.UnixMilli(state.ExpiresAtMS).UTC(),
 		SessionEpoch:  state.SessionEpoch,
-		Counts:        ImportCounts{Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media},
+		Counts:        portable.counts,
 		ExpandedBytes: document.Limits.ExpandedBytes, MediaBytes: portable.mediaBytes,
 	}, nil
 }
@@ -797,7 +805,7 @@ func summarizePortable(ctx context.Context, archivePath string, document manifes
 	for _, file := range reader.File {
 		files[file.Name] = file
 	}
-	result := portableSummary{counts: ImportCounts{Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media}}
+	result := portableSummary{counts: portableImportCounts(document, archiveCarriesAccounts(files))}
 	_, err = validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
 		if _, err := domainLocation(value.Location); err != nil {
 			return err
@@ -872,8 +880,13 @@ func (inspector *Inspector) currentReplacementImpact(ctx context.Context, runtim
 	if err != nil {
 		return ReplacementImpact{}, err
 	}
+	// These are the rows commit would delete, so the accounts already on this
+	// site are counted here rather than the ones arriving in the archive.
 	return ReplacementImpact{
-		Counts:     ImportCounts{Entries: impact.Entries, Comments: impact.Comments, Media: impact.Media},
+		Counts: ImportCounts{
+			Entries: impact.Entries, Comments: impact.Comments, Media: impact.Media,
+			Users: impact.Users, Identities: impact.Identities,
+		},
 		MediaBytes: impact.MediaBytes, DataBytes: dataBytes,
 	}, nil
 }
@@ -1369,6 +1382,17 @@ func portableExpectedCounts(document manifest, carriesAccounts bool) sqlitestore
 		counts.Users, counts.Identities = 1, 0
 	}
 	return counts
+}
+
+// portableImportCounts is what a preview must say the archive holds. It is
+// derived from portableExpectedCounts so the number shown before the decision
+// and the number the rebuilt generation is held to are the same number.
+func portableImportCounts(document manifest, carriesAccounts bool) ImportCounts {
+	expected := portableExpectedCounts(document, carriesAccounts)
+	return ImportCounts{
+		Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media,
+		Users: expected.Users, Identities: expected.Identities,
+	}
 }
 
 // importPortableAccounts writes every account the archive describes.

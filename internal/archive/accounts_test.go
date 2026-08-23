@@ -157,6 +157,15 @@ func TestAccountsRoundTripThroughPortableArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The preview is what an owner reads before an irreversible replacement, so
+	// it has to say the archive carries accounts, and that this site has three
+	// of its own that commit would delete.
+	if result.Counts != (ImportCounts{Entries: 1, Comments: 1, Users: 3, Identities: 3}) {
+		t.Fatalf("accounts archive preview counts = %#v", result.Counts)
+	}
+	if result.Replacement.Counts != (ImportCounts{Entries: 1, Comments: 1, Users: 3, Identities: 3}) {
+		t.Fatalf("accounts replacement counts = %#v", result.Replacement.Counts)
+	}
 	stagedUsers, stagedIdentities, stagedSite := stagedAccounts(t, fixture, result)
 	if !reflect.DeepEqual(sourceUsers, stagedUsers) {
 		t.Fatalf("staged users = %#v want %#v", stagedUsers, sourceUsers)
@@ -242,8 +251,20 @@ func TestArchiveWithoutAccountMembersSynthesizesTheOwner(t *testing.T) {
 		t.Fatalf("staged site = %#v", site)
 	}
 	// The comments that archive carried still resolve to the account it named.
-	if result.Counts.Comments != 2 || result.Counts.Entries != 1 {
+	//
+	// The account count is the reason this assertion names all five numbers.
+	// A seven-member archive carries no accounts member, but importing it is
+	// still an account-replacing operation: it produces the one owner its site
+	// record describes. Reporting zero here would tell the owner that restoring
+	// this backup leaves their accounts alone, and it does not -- it replaces
+	// every account on the site with that single synthesized owner.
+	if result.Counts != (ImportCounts{Entries: 1, Comments: 2, Media: 2, Users: 1, Identities: 0}) {
 		t.Fatalf("legacy import counts = %#v", result.Counts)
+	}
+	// The target was a freshly initialized site, which is never accountless
+	// either: the migrations made its owner, and commit would replace it.
+	if result.Replacement.Counts != (ImportCounts{Users: 1}) {
+		t.Fatalf("legacy replacement counts = %#v", result.Replacement.Counts)
 	}
 }
 

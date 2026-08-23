@@ -167,6 +167,25 @@ additional bytes, estimated peak footprint, available bytes, replacement
 counts, time range, media bytes, and warnings. Insufficient space returns
 `IMPORT_DISK_SPACE_INSUFFICIENT` before a ready token exists.
 
+Preview counts are `entries`, `comments`, `media`, `users`, and `identities`,
+on both the incoming archive and the replacement impact. Unlike the manifest's
+`counts.users` and `counts.identities`, none of the five is ever omitted: a
+preview that drops a zero reads as an import that leaves that dimension alone,
+and commit leaves nothing alone. The incoming `users` count is what the archive
+*describes*, not what its members list — a seven-member archive with no
+accounts members previews as `users: 1`, the owner its site record names and
+the importer will synthesize, and `identities: 0`. The replacement counts are
+read from the live database, so they name the accounts this site has now, all
+of which commit deletes. Both are computed from the same rule the rebuilt
+generation is later validated against, so the number shown before the decision
+and the number enforced after it cannot disagree.
+
+Adding the two account counts changed the preview response shape. The CLI reads
+it with an exact field set — every declared name required, no other name
+allowed — so a CLI and a server from either side of this change cannot talk to
+each other about import preview, in either direction. Matching binaries are
+already the expectation for direct mode; in API mode, upgrade both.
+
 Successful inspection persists `archive.zip`, the rebuilt generation, and a
 private `staging.json`. Only a SHA-256 token hash is stored. The plaintext token
 is returned once, expires after 30 minutes, and is bound to archive hash,
