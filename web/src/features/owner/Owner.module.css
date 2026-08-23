@@ -1459,7 +1459,7 @@
   align-self: center;
   inline-size: 2.25rem;
   block-size: 2.25rem;
-  border-radius: var(--space-2);
+  color: var(--accent);
 }
 
 .headlineBlock {
@@ -1544,10 +1544,12 @@
     background: var(--accent);
   }
 
-  .brandPanel img {
-    inline-size: min(20rem, 42%);
+  /* The glyph takes the panel's own contrast colour, which is checked against
+     every accent by the visual contract, so this reads on all seven. */
+  .brandPanel svg {
+    inline-size: min(20rem, 45%);
     block-size: auto;
-    border-radius: var(--radius-panel);
+    color: var(--accent-contrast);
   }
 
   .actionPanel {

@@ -1,5 +1,6 @@
 import type { SiteIdentity } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
+import { MomentMark } from "../../components/MomentMark";
 import { OwnerLogin } from "./OwnerLogin";
 import styles from "./Owner.module.css";
 
@@ -24,10 +25,10 @@ export function LoginPage({ site }: { site: SiteIdentity }) {
         {/* Decorative: the mark is repeated at a readable size in the column
             beside it, so a screen reader gains nothing from meeting it twice. */}
         <div aria-hidden="true" className={styles.brandPanel}>
-          <img alt="" src="/moment-mark.svg" />
+          <MomentMark />
         </div>
         <main className={styles.actionPanel}>
-          <img alt="" className={styles.actionMark} src="/moment-mark.svg" />
+          <MomentMark className={styles.actionMark} />
           <div className={styles.headlineBlock}>
             <h1 className={styles.displayHeadline}>{title}</h1>
             <p className={styles.subHeadline}>登录后继续记录此刻。</p>
