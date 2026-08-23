@@ -428,6 +428,24 @@ func (store accountStore) SetStatus(ctx context.Context, userID string, status d
 	return nil
 }
 
+// DeleteAccount removes one account row. Identities and sessions follow by
+// cascade; comments deliberately do not, because author_user_id carries no
+// foreign key and the text belongs to the site.
+func (store accountStore) DeleteAccount(ctx context.Context, userID string) error {
+	result, err := store.queries.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, userID)
+	if err != nil {
+		return fmt.Errorf("delete account: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect account removal: %w", err)
+	}
+	if changed != 1 {
+		return domain.NewError(domain.CodeAccountNotFound, "no such account", nil)
+	}
+	return nil
+}
+
 func (store accountStore) ListAccounts(ctx context.Context) ([]domain.User, error) {
 	rows, err := store.queries.QueryContext(ctx,
 		`SELECT `+userColumns+` FROM users ORDER BY created_at_ms, id`)

@@ -79,6 +79,20 @@ func registerAccounts(application *Application) {
 		Run:        runAccountStatus(domain.AccountSuspended),
 	})
 	application.MustRegisterLeaf(LeafSpec{
+		Path: []string{"user", "delete"}, Short: "Remove an account",
+		ArgsUsage:  "<username>",
+		Long:       "Remove one account and the sign-in methods and sessions that only described it. Comments it wrote stay, attributed to a name rather than an account.",
+		Inputs:     "One username.",
+		Output:     "The account that was removed.",
+		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; the owner account cannot be removed.",
+		Example:    "moment user delete visitor --data-dir ./moment-data --yes",
+		Args:       cobra.ExactArgs(1),
+		Capability: CapabilityDirectOnly,
+		Safety:     "Destructive and irreversible. The account, its linked sign-in methods and its sessions are removed. Comments it wrote are kept and render under the name stored on each one.",
+		Policy:     SafetyPolicy{Destructive: true, Confirmation: "delete"},
+		Run:        runAccountDelete,
+	})
+	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"user", "identities"}, Short: "Show how an account signs in",
 		ArgsUsage:  "<username>",
 		Long:       "List the external identities linked to one account.",
@@ -271,4 +285,29 @@ func joinLines(lines []string) string {
 		out += line
 	}
 	return out
+}
+
+func runAccountDelete(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	username, err := singleAccountArgument(input)
+	if err != nil {
+		return Result{}, err
+	}
+	service, database, err := openDirectAccounts(ctx, invocation)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() { _ = database.Close() }()
+
+	user, err := service.AccountByUsername(ctx, username)
+	if err != nil {
+		return Result{}, accountCLIError(err)
+	}
+	removed, err := service.Delete(ctx, user.ID)
+	if err != nil {
+		return Result{}, accountCLIError(err)
+	}
+	return Result{
+		Data: accountViewOf(removed),
+		Text: fmt.Sprintf("%s was removed", removed.Username),
+	}, nil
 }

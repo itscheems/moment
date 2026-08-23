@@ -164,6 +164,24 @@ func (store *memoryAccounts) SetStatus(_ context.Context, userID string, status 
 	return nil
 }
 
+func (store *memoryAccounts) DeleteAccount(_ context.Context, userID string) error {
+	if _, found := store.users[userID]; !found {
+		return domain.NewError(domain.CodeAccountNotFound, "no such account", nil)
+	}
+	delete(store.users, userID)
+	for key, identity := range store.identities {
+		if identity.UserID == userID {
+			delete(store.identities, key)
+		}
+	}
+	for key, session := range store.sessions {
+		if session.UserID == userID {
+			delete(store.sessions, key)
+		}
+	}
+	return nil
+}
+
 func (store *memoryAccounts) ListAccounts(_ context.Context) ([]domain.User, error) {
 	users := make([]domain.User, 0, len(store.users))
 	for _, user := range store.users {

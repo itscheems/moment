@@ -1591,6 +1591,37 @@
       "parity_strategy": "api_mode_unsupported"
     },
     {
+      "command": "user delete",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": false
+      },
+      "output_schema": "account_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "api_mode_unsupported"
+    },
+    {
       "command": "user identities",
       "direct": {
         "availability": "supported",

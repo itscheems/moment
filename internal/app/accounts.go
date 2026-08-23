@@ -37,6 +37,7 @@ type AccountStore interface {
 
 	UpdateProfile(ctx context.Context, user domain.User) error
 	SetStatus(ctx context.Context, userID string, status domain.AccountStatus, atMS int64) error
+	DeleteAccount(ctx context.Context, userID string) error
 	ListAccounts(ctx context.Context) ([]domain.User, error)
 
 	OwnerUserID(ctx context.Context) (string, error)
@@ -852,6 +853,47 @@ func (service *AccountService) SweepExpiredSessions(ctx context.Context) (int, e
 		count, err := sessions.PurgeExpiredSessions(ctx, cutoff)
 		removed = count
 		return err
+	})
+	return removed, err
+}
+
+// Delete removes an account and everything that only existed to describe it.
+//
+// Its identities and sessions go with it by cascade. Its comments do not: the
+// text is the site's content rather than the account's property, and
+// author_user_id carries no foreign key, so those rows keep pointing at an id
+// that no longer resolves and render as the stored name in plain text -- the
+// same treatment a legacy guest row gets. doctor reports the count.
+//
+// The owner cannot be removed. The database would refuse it anyway, because the
+// site row references it, but a message beats a constraint error.
+func (service *AccountService) Delete(ctx context.Context, userID string) (domain.User, error) {
+	var removed domain.User
+	err := service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+		user, err := accounts.UserByID(ctx, userID)
+		if err != nil {
+			return err
+		}
+		if user.IsOwner() {
+			return domain.NewError(domain.CodeInvalidArgument, "the owner account cannot be removed", map[string]any{"field": "username"})
+		}
+		if err := accounts.DeleteAccount(ctx, userID); err != nil {
+			return err
+		}
+		// The pictures it held are now referenced by nobody. Saying so is what
+		// makes them collectable; without it they stay on disk forever, which
+		// is the same leak an unreconciled avatar change used to cause.
+		if user.AvatarMediaID != nil || user.CoverMediaID != nil {
+			affected, affectedErr := uniqueMediaIDs(user.AvatarMediaID, user.CoverMediaID)
+			if affectedErr != nil {
+				return domain.NewError(domain.CodeDataIntegrityFailed, "stored profile media ID is invalid", nil)
+			}
+			if err := accounts.ReconcileMediaReferences(ctx, affected, domain.NormalizeTime(service.clock())); err != nil {
+				return err
+			}
+		}
+		removed = user
+		return nil
 	})
 	return removed, err
 }
