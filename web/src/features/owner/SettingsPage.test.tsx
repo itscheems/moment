@@ -8,6 +8,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
@@ -498,6 +499,47 @@ describe("owner site settings", () => {
       within(leaveDialog).getByRole("button", { name: "仍然离开" }),
     );
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
+  });
+
+  /**
+   * A save has to be able to finish twice over the life of one page.
+   *
+   * mountedRef was only ever set to false, so StrictMode's development
+   * remount pinned it there: every guarded update after a request was dropped,
+   * savePending never cleared, and the save button stayed disabled with the
+   * notice still reading "正在保存站点设置…" for a save the server had accepted.
+   */
+  it("finishes a save after a StrictMode remount", async () => {
+    installFetch(async (url, init) => {
+      if (url === "/api/v1/site") return json(siteEnvelope());
+      if (url === "/api/v1/owner/status") return json(statusEnvelope());
+      if (url === "/api/v1/owner/site" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return json({
+          data: { ...siteEnvelope().data, ...body },
+          meta: { request_id: "req_saved" },
+        });
+      }
+      return json({}, 404);
+    });
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await screen.findByRole("heading", { name: "网站" });
+    await waitForRestoreStatus();
+
+    fireEvent.click(screen.getByRole("switch", { name: /允许新评论/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+
+    expect(await screen.findByText("设置已保存。")).toBeInTheDocument();
+    // And the form is ready for the next edit rather than held by a pending
+    // flag nothing will ever clear.
+    fireEvent.click(screen.getByRole("switch", { name: /允许新评论/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "保存设置" })).toBeEnabled(),
+    );
   });
 
   it("preserves dirty fields across a failed save and patches only changed values on retry", async () => {

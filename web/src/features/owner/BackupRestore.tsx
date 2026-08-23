@@ -107,6 +107,25 @@ function mergeKindLabel(kind: MergeEntityKind): string {
 }
 
 /**
+ * Why this backup cannot be merged, in the reader's words.
+ *
+ * The server names a code because there is now more than one way a merge can
+ * be impossible, and both are things no choice on this screen can settle. A
+ * single sentence about owner identity was right while that was the only
+ * reason and became a lie the moment a second one existed.
+ */
+function mergeBlockedMessage(reason: string | null): string {
+  switch (reason) {
+    case "USERNAME_TAKEN":
+      return "备份里有一个账户和当前站点的另一个账户用了同一个用户名，合并无法决定该给谁改名；仍可在核对实际内容后完全替换。";
+    case "IMPORT_OWNER_MISMATCH":
+      return "这份备份来自另一套所有者身份，不能安全合并；仍可在核对实际内容后完全替换。";
+    default:
+      return "这份备份不能安全合并；仍可在核对实际内容后完全替换。";
+  }
+}
+
+/**
  * Why an account row carries no controls.
  *
  * Stated in full wherever accounts appear, because "not selectable" on its own
@@ -1346,6 +1365,12 @@ export function BackupRestore({
   // offer the server would refuse. They are gathered out of all three buckets
   // into one read-only section instead, where the rule can be stated once
   // rather than implied by an absence of buttons next to a post.
+  //
+  // Which is why each section heading counts its own rows rather than the
+  // bucket total the server sent: the total includes the account rows that
+  // were just moved out of it, so an archive carrying accounts made every
+  // heading claim more items than the list beneath it holds. Truncation is
+  // said in words underneath instead, where it can say what it means.
   const isAccountRow = (item: MergeReviewItem) =>
     item.kind === "user" || item.kind === "identity";
   const mergeItemConflicts = conflictItems.filter(
@@ -1648,7 +1673,7 @@ export function BackupRestore({
           </div>
           {!mergeInspection.mergeAllowed ? (
             <p className={styles.dataNotice}>
-              这份备份来自另一套所有者身份，不能安全合并；仍可在核对实际内容后完全替换。
+              {mergeBlockedMessage(mergeInspection.mergeBlockedReason)}
             </p>
           ) : null}
           <div aria-label="合并分类摘要" className={styles.mergeSummary}>
@@ -1682,7 +1707,7 @@ export function BackupRestore({
                     ? "当前独有 · 会保留"
                     : "当前独有 · 将移除"}
                 </h4>
-                <span>{mergeInspection.review.local_only.total} 项</span>
+                <span>{mergeLocalOnly.length} 项</span>
               </div>
               <div className={styles.reviewList}>
                 {mergeLocalOnly.map((item) => (
@@ -1706,7 +1731,7 @@ export function BackupRestore({
             <section className={styles.reviewSection}>
               <div className={styles.reviewSectionHeading}>
                 <h4>备份新增</h4>
-                <span>{mergeInspection.review.incoming_only.total} 项</span>
+                <span>{mergeIncomingOnly.length} 项</span>
               </div>
               <div className={styles.reviewList}>
                 {mergeIncomingOnly.map((item) => (
@@ -1718,6 +1743,11 @@ export function BackupRestore({
                   />
                 ))}
               </div>
+              {mergeInspection.review.incoming_only.truncated ? (
+                <p className={styles.dataNotice}>
+                  这里只显示最近 200 项；完整选择可用 CLI 审阅。
+                </p>
+              ) : null}
             </section>
           ) : null}
 

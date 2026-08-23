@@ -336,9 +336,21 @@ describe("backup and restore owner API", () => {
     );
     expect(progress).toHaveBeenCalledWith(50);
     request.respond(planData(file.size));
+    // Written out rather than built from the same factory the fixture used.
+    // Comparing makeImportCounts(x) to makeImportCounts(x) passes whatever the
+    // decoder does with the fields -- including dropping them -- and passes
+    // just as happily if the factory's own defaults change underneath both
+    // sides. These are the numbers an owner reads before an irreversible
+    // replacement, so the test states them.
     await expect(pending).resolves.toMatchObject({
       archiveSHA256: archiveSHA,
-      counts: makeImportCounts({ entries: 1, comments: 2, media: 1 }),
+      counts: {
+        entries: 1,
+        comments: 2,
+        media: 1,
+        users: 1,
+        identities: 1,
+      },
       disk: { spaceOK: true },
     });
     expect(progress).toHaveBeenLastCalledWith(100);

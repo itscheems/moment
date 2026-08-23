@@ -619,6 +619,74 @@ describe("owner backup and restore", () => {
     });
   });
 
+  /**
+   * A section heading has to count the section.
+   *
+   * Account rows are lifted out of these two lists into their own read-only
+   * section, and the headings went on printing the server's untouched bucket
+   * total -- so an archive carrying accounts made every heading claim more
+   * items than the list beneath it held, and the difference was exactly the
+   * people the reader had just been shown somewhere else.
+   */
+  it("counts the rows each merge section actually shows", async () => {
+    installFetch(async () => failure("IMPORT_STAGING_INVALID", 409));
+    await renderSettings();
+    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+      target: {
+        files: [new File(["merge"], "merge.zip", { type: "application/zip" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    ArchiveRequest.requests.at(-1)!.respond(mergePlanData(), 201);
+
+    await screen.findByRole("heading", { name: "审阅并合并" });
+
+    // The backup's incoming-only bucket holds two rows and one of them is a
+    // credential, which this section does not render.
+    const incoming = screen.getByRole("heading", { name: "备份新增" });
+    expect(incoming.nextElementSibling).toHaveTextContent(/^1 项$/);
+    expect(screen.getByText("备份里新增的 Moment 正文")).toBeInTheDocument();
+
+    // The current-only bucket carries no accounts, so nothing moved.
+    const localOnly = screen.getByRole("heading", {
+      name: "当前独有 · 会保留",
+    });
+    expect(localOnly.nextElementSibling).toHaveTextContent(/^1 项$/);
+  });
+
+  /**
+   * There is more than one way a merge can be impossible, and the notice used
+   * to name only the first of them.
+   *
+   * A handle claimed by two different people is refused at plan time now, and
+   * telling that reader their backup "comes from another owner identity" would
+   * send them looking for something that is not wrong.
+   */
+  it("says which refusal blocked the merge", async () => {
+    installFetch(async () => failure("IMPORT_STAGING_INVALID", 409));
+    await renderSettings();
+    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+      target: {
+        files: [new File(["merge"], "merge.zip", { type: "application/zip" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    ArchiveRequest.requests.at(-1)!.respond(
+      {
+        ...mergePlanData(),
+        merge_allowed: false,
+        merge_blocked_reason: "USERNAME_TAKEN",
+      },
+      201,
+    );
+
+    await screen.findByRole("heading", { name: "审阅覆盖恢复" });
+    expect(
+      screen.getByText(/同一个用户名，合并无法决定该给谁改名/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "安全合并" })).toBeDisabled();
+  });
+
   it("discards an uncommitted merge plan when leaving settings so a later file can be inspected", async () => {
     const fetcher = installFetch(
       async () => failure("IMPORT_STAGING_INVALID", 409),

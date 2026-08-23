@@ -120,6 +120,25 @@ export interface AccountProfileUpdate {
   coverMediaId?: string | null;
 }
 
+/** What happens to an external identity the site has not seen before. */
+export type RegistrationMode = "open" | "approval" | "closed";
+
+const registrationModes = new Set<string>(["open", "approval", "closed"]);
+
+/**
+ * Everyone with an account here, and the policy the next arrival will meet.
+ *
+ * The two travel together because they answer one question -- who is on this
+ * site and who may join it -- and because this response is the only one that
+ * carries the mode. GET /api/v1/site is public, and whether applications are
+ * being accepted is the owner's to publish, not a field that leaks by sharing
+ * a struct with the site's name.
+ */
+export interface OwnerRoster {
+  accounts: Account[];
+  registrationMode: RegistrationMode;
+}
+
 export interface SiteSettingsUpdate {
   username?: string;
   displayName?: string;
@@ -130,6 +149,7 @@ export interface SiteSettingsUpdate {
   avatarMediaId?: string | null;
   coverMediaId?: string | null;
   commentsEnabled?: boolean;
+  registrationMode?: RegistrationMode;
 }
 
 export interface DeletedComment {
@@ -2238,6 +2258,9 @@ function sitePayload(update: SiteSettingsUpdate): Record<string, unknown> {
   if (update.commentsEnabled !== undefined) {
     payload.comments_enabled = update.commentsEnabled;
   }
+  if (update.registrationMode !== undefined) {
+    payload.registration_mode = update.registrationMode;
+  }
   return payload;
 }
 
@@ -2580,13 +2603,20 @@ export class OwnerApi {
     return nonNegativeIntegerField(record, "revoked");
   }
 
-  async ownerAccounts(signal?: AbortSignal): Promise<Account[]> {
+  async ownerAccounts(signal?: AbortSignal): Promise<OwnerRoster> {
     const response = await this.fetcher("/api/v1/owner/accounts", {
       ...requestInit("GET"),
       signal,
     });
-    const { data } = await decodeResponse(response);
-    return accountList(data, "accounts").map(parsePrivateAccount);
+    const { data, meta } = await decodeResponse(response);
+    const mode = meta.registration_mode;
+    if (typeof mode !== "string" || !registrationModes.has(mode)) {
+      throw invalidResponse("account roster must state the registration mode");
+    }
+    return {
+      accounts: accountList(data, "accounts").map(parsePrivateAccount),
+      registrationMode: mode as RegistrationMode,
+    };
   }
 
   async updateAccountStatus(

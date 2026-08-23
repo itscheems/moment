@@ -90,6 +90,7 @@ export function ProfilePage({
   onSiteSaved: (site: SiteIdentity) => void;
 }) {
   const owner = useOwner();
+  const { account: viewerAccount, applyAccount } = owner;
   // This is the site owner's own page, so the editor and the per-post actions
   // belong to them alone. A signed-in member reads it like anyone else.
   const ownerView = owner.state === "owner" && ownsSite(owner.account);
@@ -136,6 +137,48 @@ export function ProfilePage({
     onCreated: createdFromProfile,
     site,
   });
+
+  /**
+   * Adopt what the server just saved, and follow the handle if it moved.
+   *
+   * The owner's handle is the address of this page, so renaming from here left
+   * the browser standing at a path that had just stopped belonging to anybody:
+   * the site knew the new name, the URL still held the old one, and the app
+   * answered by rendering somebody else's profile that no longer exists. The
+   * account this editor is editing is also the viewer's own, so its copy in the
+   * owner context is restamped too -- the left rail links to it, and the
+   * /profile redirect resolves through it.
+   *
+   * MemberProfilePage.adopt is the same move for a member editing their own
+   * page. Both belong on the page that owns the address, not in the dialog.
+   */
+  const adoptSite = useCallback(
+    (saved: SiteIdentity) => {
+      onSiteSaved(saved);
+      if (viewerAccount) {
+        applyAccount({
+          ...viewerAccount,
+          username: saved.username,
+          displayName: saved.displayName,
+          bio: saved.bio,
+          avatarMediaId: saved.avatarMediaId,
+          coverMediaId: saved.coverMediaId,
+          profileUrl: siteProfileHref(saved),
+        });
+      }
+      // Only when the browser is standing on the handle that just stopped
+      // existing. /profile is an alias a rename cannot break, and moving
+      // somebody off it would change their URL for no reason.
+      const vacated = siteProfileHref(site);
+      if (
+        saved.username !== site.username &&
+        navigation.pathname.replace(/\/+$/, "") === vacated
+      ) {
+        navigation.navigate(siteProfileHref(saved));
+      }
+    },
+    [applyAccount, navigation, onSiteSaved, site, viewerAccount],
+  );
 
   const handleOwnerPostEvent = useCallback((event: OwnerPostEvent) => {
     setPosts((current) => reconcileTimelineEvent(current, event));
@@ -328,7 +371,7 @@ export function ProfilePage({
           />
           {ownerView ? (
             <div className={styles.profileEditorSlot}>
-              <ProfileEditor onSaved={onSiteSaved} site={site} />
+              <ProfileEditor onSaved={adoptSite} site={site} />
             </div>
           ) : null}
         </div>

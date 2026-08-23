@@ -290,12 +290,16 @@ export function SettingsPage({
 
   useDocumentScrollLock(leaveDialogOpen);
 
-  useEffect(
-    () => () => {
+  // Claimed on every mount, not only released on unmount. StrictMode's
+  // development remount would otherwise leave it false for good, and a false
+  // mountedRef swallows the end of every save: the pending flag never clears
+  // and the save button stays disabled with nothing said about why.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   useEffect(() => {
     const syncFromLocation = (focusHeading: boolean) => {
