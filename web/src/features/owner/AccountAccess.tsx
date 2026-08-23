@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Tooltip } from "@base-ui/react/tooltip";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { AccountIdentity, AccountSessionEntry } from "../../api/owner";
 import { PublicApiError } from "../../api/public";
@@ -11,7 +18,70 @@ import styles from "./Settings.module.css";
 
 const RETURN_PATH = "/owner/settings";
 
+// `surface` is the server's own vocabulary for where a request came from. It
+// reads as a category name rather than as a device, which is what a person
+// scanning this list is actually trying to recognise.
+const SURFACE_LABELS: Record<string, string> = {
+  web: "浏览器",
+  api: "API 客户端",
+  cli: "命令行",
+};
+
+function surfaceLabel(surface: string): string {
+  return SURFACE_LABELS[surface] ?? (surface || "未知来源");
+}
+
 type PanelState = "loading" | "ready" | "failed";
+
+/**
+ * The facts behind one row, on hover and on focus.
+ *
+ * They are worth having and not worth reading every time: three stacked lines
+ * under every entry turned two short lists into a wall of timestamps nobody
+ * was looking for. The trigger is a real button rather than the row itself so
+ * that a keyboard reaches everything a pointer reaches.
+ */
+function RowDetails({
+  children,
+  label,
+  lines,
+}: {
+  children: ReactNode;
+  label: string;
+  lines: Array<[string, string]>;
+}) {
+  return (
+    <Tooltip.Root>
+      <Tooltip.Trigger
+        aria-label={label}
+        className={styles.rowDetailsTrigger}
+        closeDelay={80}
+        delay={200}
+      >
+        {children}
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Positioner
+          align="start"
+          className={styles.rowDetailsPositioner}
+          side="bottom"
+          sideOffset={6}
+        >
+          <Tooltip.Popup className={styles.rowDetails}>
+            <dl>
+              {lines.map(([term, value]) => (
+                <div key={term}>
+                  <dt>{term}</dt>
+                  <dd>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </Tooltip.Popup>
+        </Tooltip.Positioner>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
 
 function unlinkMessage(error: unknown, expired: boolean): string {
   if (expired) return "会话已过期。请重新登录后再解绑。";
@@ -201,21 +271,33 @@ export function AccountAccess({
               const icon = PROVIDER_ICONS[identity.provider];
               return (
                 <li className={styles.accountRow} key={identity.provider}>
-                  <span className={styles.accountRowMain}>
-                    <strong>
-                      {icon ? <Icon name={icon} /> : null}
-                      {label}
-                    </strong>
-                    <small>
-                      {identity.displayName ||
-                        identity.email ||
-                        "该账号没有公开名称"}
-                    </small>
-                    <small>
-                      关联于 {formatInstant(identity.linkedAt, timezone)} · 最后
-                      登录 {formatInstant(identity.lastLoginAt, timezone)}
-                    </small>
-                  </span>
+                  <RowDetails
+                    label={`${label} 的关联详情`}
+                    lines={[
+                      [
+                        "账号",
+                        identity.displayName || "该账号没有公开名称",
+                      ],
+                      ["邮箱", identity.email || "该账号没有公开邮箱"],
+                      ["关联于", formatInstant(identity.linkedAt, timezone)],
+                      [
+                        "最后登录",
+                        formatInstant(identity.lastLoginAt, timezone),
+                      ],
+                    ]}
+                  >
+                    <span className={styles.accountRowMain}>
+                      <strong>
+                        {icon ? <Icon name={icon} /> : null}
+                        {label}
+                      </strong>
+                      <small>
+                        {identity.displayName ||
+                          identity.email ||
+                          "该账号没有公开名称"}
+                      </small>
+                    </span>
+                  </RowDetails>
                   <ConfirmDialog
                     confirmLabel="解绑"
                     danger
@@ -281,14 +363,21 @@ export function AccountAccess({
           <ul className={styles.accountList}>
             {sessions.map((entry) => (
               <li className={styles.accountRow} key={entry.id}>
-                <span className={styles.accountRowMain}>
-                  <strong>{entry.surface || "未知设备"}</strong>
-                  <small>
-                    登录于 {formatInstant(entry.issuedAt, timezone)} · 最近活动{" "}
-                    {formatInstant(entry.lastSeenAt, timezone)}
-                  </small>
-                  <small>到期 {formatInstant(entry.expiresAt, timezone)}</small>
-                </span>
+                <RowDetails
+                  label="这次登录的详情"
+                  lines={[
+                    ["登录于", formatInstant(entry.issuedAt, timezone)],
+                    ["最近活动", formatInstant(entry.lastSeenAt, timezone)],
+                    ["到期", formatInstant(entry.expiresAt, timezone)],
+                  ]}
+                >
+                  <span className={styles.accountRowMain}>
+                    <strong>{surfaceLabel(entry.surface)}</strong>
+                    <small>
+                      最近活动 {formatInstant(entry.lastSeenAt, timezone)}
+                    </small>
+                  </span>
+                </RowDetails>
                 {entry.current ? (
                   <span className={styles.accountBadge} data-tone="current">
                     当前设备

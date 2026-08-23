@@ -1611,3 +1611,76 @@
   font-size: var(--text-sm);
   line-height: 1.6;
 }
+
+/* The row itself is the hover target, so the trigger has to disappear as a
+   button while keeping the focus behaviour that makes it reachable. */
+.rowDetailsTrigger {
+  min-inline-size: 12rem;
+  flex: 1;
+  display: block;
+  border: 0;
+  border-radius: var(--radius-action);
+  padding: 0;
+  margin: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: default;
+}
+
+.rowDetailsTrigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.rowDetailsPositioner {
+  z-index: var(--layer-popover);
+}
+
+.rowDetails {
+  max-inline-size: min(20rem, calc(100vw - 2rem));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  padding: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: 0 0.4rem 1.2rem rgb(15 20 25 / 14%);
+  font-size: var(--text-sm);
+  transition:
+    opacity var(--motion-menu) var(--ease-out),
+    transform var(--motion-menu) var(--ease-out);
+}
+
+.rowDetails[data-starting-style],
+.rowDetails[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-0.2rem);
+}
+
+.rowDetails dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem var(--space-3);
+  margin: 0;
+}
+
+.rowDetails dl > div {
+  display: contents;
+}
+
+.rowDetails dt {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.rowDetails dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.accountBadge[data-tone="current"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
