@@ -107,7 +107,8 @@ export function AccountAccess({
   instanceId: string | null;
   onSignedOut: () => void;
 }) {
-  const { api, session, expireIfInvalidSession, forgetSession } = useOwner();
+  const { api, session, expireIfInvalidSession, forgetSession, logout } =
+    useOwner();
   const [identities, setIdentities] = useState<AccountIdentity[]>([]);
   const [identitiesState, setIdentitiesState] = useState<PanelState>("loading");
   const [identityAttempt, setIdentityAttempt] = useState(0);
@@ -119,6 +120,7 @@ export function AccountAccess({
   const [sessionAttempt, setSessionAttempt] = useState(0);
   const [revoking, setRevoking] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
   const mountedRef = useRef(true);
 
   useEffect(
@@ -237,6 +239,39 @@ export function AccountAccess({
     onSignedOut,
     revoking,
     session,
+  ]);
+
+  // Ending this one session, as opposed to ending all of them. Leaving only
+  // the second meant that signing out on the machine in front of you also
+  // signed out the phone in your pocket, so the ordinary case was reachable
+  // only through the sign-in page.
+  const signOut = useCallback(async () => {
+    if (signingOut || revoking) return;
+    setSigningOut(true);
+    setRevokeError(null);
+    try {
+      await logout(instanceId);
+      onSignedOut();
+    } catch (error) {
+      if (!mountedRef.current) return;
+      setSigningOut(false);
+      // An expired session is already signed out. Reporting a failure would be
+      // describing the transport rather than the outcome the person asked for.
+      if (expireIfInvalidSession(error)) {
+        forgetSession(instanceId);
+        onSignedOut();
+        return;
+      }
+      setRevokeError("没有退出成功。当前会话仍然有效，可以重试。");
+    }
+  }, [
+    expireIfInvalidSession,
+    forgetSession,
+    instanceId,
+    logout,
+    onSignedOut,
+    revoking,
+    signingOut,
   ]);
 
   const bound = new Set(identities.map((entry) => entry.provider));
@@ -396,6 +431,14 @@ export function AccountAccess({
           </p>
         ) : null}
         <div className={styles.inlineActions}>
+          <button
+            className={styles.secondaryButton}
+            disabled={!session || signingOut || revoking}
+            onClick={() => void signOut()}
+            type="button"
+          >
+            {signingOut ? "正在退出…" : "退出登录"}
+          </button>
           <ConfirmDialog
             confirmLabel="全部退出"
             danger
