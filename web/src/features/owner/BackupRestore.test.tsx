@@ -11,6 +11,12 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
+import {
+  makeImportCounts,
+  makeReviewIdentity,
+  makeReviewUser,
+} from "../../test/archiveFixtures";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const sessionKey = "moment.owner.session.v1";
 const operationID = "import-20260811T013000000Z-0011223344556677";
@@ -100,9 +106,9 @@ function mergePlanData() {
       expires_at: "2999-08-11T02:00:00Z",
       summary: {
         unchanged: 0,
-        incoming_only: 1,
+        incoming_only: 2,
         local_only: 1,
-        conflict: 2,
+        conflict: 3,
       },
       items: [
         {
@@ -129,6 +135,25 @@ function mergePlanData() {
           dependencies: [],
           selectable: false,
         },
+        // Reported, never selectable.
+        {
+          kind: "user",
+          id: "11111111111111111111111111111111",
+          classification: "conflict",
+          changed_fields: ["display_name"],
+          dependencies: [],
+          selectable: false,
+        },
+        {
+          kind: "identity",
+          id: "github:4242",
+          classification: "incoming_only",
+          changed_fields: [],
+          dependencies: [
+            { kind: "user", id: "11111111111111111111111111111111" },
+          ],
+          selectable: false,
+        },
       ],
       site_fields: [
         {
@@ -143,7 +168,7 @@ function mergePlanData() {
     },
     review: {
       incoming_only: {
-        total: 1,
+        total: 2,
         truncated: false,
         items: [
           {
@@ -158,6 +183,13 @@ function mergePlanData() {
               published_at: "2026-08-10T08:00:00Z",
               media: [],
             },
+          },
+          {
+            kind: "identity",
+            id: "github:4242",
+            classification: "incoming_only",
+            changed_fields: [],
+            incoming: makeReviewIdentity(),
           },
         ],
       },
@@ -196,9 +228,17 @@ function mergePlanData() {
         ],
       },
       conflicts: {
-        total: 1,
+        total: 2,
         truncated: false,
         items: [
+          {
+            kind: "user",
+            id: "11111111111111111111111111111111",
+            classification: "conflict",
+            changed_fields: ["display_name"],
+            local: makeReviewUser(),
+            incoming: makeReviewUser({ display_name: "林林（备份）" }),
+          },
           {
             kind: "entry",
             id: "post-conflict",
@@ -230,7 +270,11 @@ function mergePlanData() {
         },
       ],
     },
-    incoming_counts: { entries: 2, comments: 0, media: 0 },
+    incoming_counts: makeImportCounts({
+      entries: 2,
+      users: 3,
+      identities: 3,
+    }),
     incoming_media_bytes: 0,
     disk: {
       archive_bytes: 5,
@@ -245,7 +289,7 @@ function mergePlanData() {
       space_ok: true,
     },
     replacement: {
-      counts: { entries: 3, comments: 0, media: 0 },
+      counts: makeImportCounts({ entries: 3, users: 2, identities: 2 }),
       media_bytes: 0,
       data_bytes: 2_000,
     },
@@ -367,6 +411,40 @@ function installSession() {
   );
 }
 
+function accountSessionEnvelope() {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-from-cookie",
+      account: {
+        user_id: "00000000000000000000000000000000",
+        username: "owner",
+        display_name: "乔乔",
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "owner",
+        profile_url: "/owner",
+        status: "active",
+        username_chosen: true,
+      },
+      limits: makeAccountLimits(),
+    },
+    meta: { request_id: "req_account_session" },
+  };
+}
+
+function signedOutEnvelope() {
+  return {
+    error: {
+      code: "UNAUTHORIZED",
+      message: "auth required",
+      details: {},
+      request_id: "req_auth",
+    },
+  };
+}
+
 function installFetch(
   importStatus: () => Promise<Response> = async () =>
     failure("IMPORT_STAGING_INVALID", 409),
@@ -377,6 +455,11 @@ function installFetch(
       const url = String(input);
       if (url === "/api/v1/site") return json(siteEnvelope());
       if (url === "/api/v1/owner/status") return json(ownerStatusEnvelope());
+      if (url === "/api/v1/account/session") {
+        return window.sessionStorage.getItem(sessionKey)
+          ? json(accountSessionEnvelope())
+          : json(signedOutEnvelope(), 401);
+      }
       if (url === "/api/v1/owner/import/status") return importStatus();
       const routed = extra?.(url, init);
       if (routed) return routed;
@@ -467,6 +550,36 @@ describe("owner backup and restore", () => {
     expect(screen.getByText("导出备份后新发布的 Moment")).toBeInTheDocument();
     expect(screen.getByText("当前站点修改后的正文")).toBeInTheDocument();
     expect(screen.getByText("备份文件中的旧正文")).toBeInTheDocument();
+
+    // Accounts are reported, never chosen. They get their own section with the
+    // reason stated, rather than a row of controls the server would refuse or
+    // -- worse -- a silent omission of the people a restore brings with it.
+    const accounts = screen.getByRole("region", { name: "账户与登录方式" });
+    // Both sides of the conflict are shown, so the handle appears twice.
+    expect(within(accounts).getAllByText("@linlin")).toHaveLength(2);
+    expect(within(accounts).getAllByText("成员").length).toBeGreaterThan(0);
+    expect(within(accounts).getAllByText("已启用").length).toBeGreaterThan(0);
+    expect(within(accounts).getByText("林林（备份）")).toBeInTheDocument();
+    expect(within(accounts).getByText("GitHub")).toBeInTheDocument();
+    expect(
+      within(accounts).getByText("linlin@example.com"),
+    ).toBeInTheDocument();
+    expect(
+      within(accounts).getByText("两侧都有 · 以当前站点为准"),
+    ).toBeInTheDocument();
+    expect(
+      within(accounts).getByText("备份独有 · 会被加入"),
+    ).toBeInTheDocument();
+    expect(
+      within(accounts).getByText(/“两者都保留”会把同一个人拆成两个/),
+    ).toBeInTheDocument();
+    expect(within(accounts).queryAllByRole("radio")).toHaveLength(0);
+    expect(within(accounts).queryAllByRole("radiogroup")).toHaveLength(0);
+    // And they stay out of the lists that do carry controls.
+    expect(
+      screen.queryByRole("radiogroup", { name: /账户/ }),
+    ).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("radio", { name: "两者都保留" }));
     fireEvent.click(screen.getByRole("radio", { name: "使用备份值" }));
     expect(
@@ -504,6 +617,74 @@ describe("owner backup and restore", () => {
       field: "title",
       action: "use_incoming",
     });
+  });
+
+  /**
+   * A section heading has to count the section.
+   *
+   * Account rows are lifted out of these two lists into their own read-only
+   * section, and the headings went on printing the server's untouched bucket
+   * total -- so an archive carrying accounts made every heading claim more
+   * items than the list beneath it held, and the difference was exactly the
+   * people the reader had just been shown somewhere else.
+   */
+  it("counts the rows each merge section actually shows", async () => {
+    installFetch(async () => failure("IMPORT_STAGING_INVALID", 409));
+    await renderSettings();
+    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+      target: {
+        files: [new File(["merge"], "merge.zip", { type: "application/zip" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    ArchiveRequest.requests.at(-1)!.respond(mergePlanData(), 201);
+
+    await screen.findByRole("heading", { name: "审阅并合并" });
+
+    // The backup's incoming-only bucket holds two rows and one of them is a
+    // credential, which this section does not render.
+    const incoming = screen.getByRole("heading", { name: "备份新增" });
+    expect(incoming.nextElementSibling).toHaveTextContent(/^1 项$/);
+    expect(screen.getByText("备份里新增的 Moment 正文")).toBeInTheDocument();
+
+    // The current-only bucket carries no accounts, so nothing moved.
+    const localOnly = screen.getByRole("heading", {
+      name: "当前独有 · 会保留",
+    });
+    expect(localOnly.nextElementSibling).toHaveTextContent(/^1 项$/);
+  });
+
+  /**
+   * There is more than one way a merge can be impossible, and the notice used
+   * to name only the first of them.
+   *
+   * A handle claimed by two different people is refused at plan time now, and
+   * telling that reader their backup "comes from another owner identity" would
+   * send them looking for something that is not wrong.
+   */
+  it("says which refusal blocked the merge", async () => {
+    installFetch(async () => failure("IMPORT_STAGING_INVALID", 409));
+    await renderSettings();
+    fireEvent.change(screen.getByLabelText("选择 Moment 备份 ZIP"), {
+      target: {
+        files: [new File(["merge"], "merge.zip", { type: "application/zip" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查备份" }));
+    ArchiveRequest.requests.at(-1)!.respond(
+      {
+        ...mergePlanData(),
+        merge_allowed: false,
+        merge_blocked_reason: "USERNAME_TAKEN",
+      },
+      201,
+    );
+
+    await screen.findByRole("heading", { name: "审阅覆盖恢复" });
+    expect(
+      screen.getByText(/同一个用户名，合并无法决定该给谁改名/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "安全合并" })).toBeDisabled();
   });
 
   it("discards an uncommitted merge plan when leaving settings so a later file can be inspected", async () => {
@@ -744,6 +925,13 @@ describe("owner backup and restore", () => {
       name: "完全替换当前站点？",
     });
     expect(within(dialog).getByText("1 项将移除")).toBeInTheDocument();
+    // A replacement takes the account graph with it, so the confirmation has
+    // to say how many accounts arrive and how many stop existing. Reading
+    // that number off the archive is the whole reason the server sends it.
+    expect(
+      within(dialog).getByText("2 Moment · 0 评论 · 3 账户"),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("2 个将被替换")).toBeInTheDocument();
     expect(
       within(dialog).getByRole("button", { name: "关闭覆盖恢复确认" }),
     ).toBeInTheDocument();

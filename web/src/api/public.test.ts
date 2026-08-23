@@ -38,7 +38,7 @@ const ownerAuthor = {
   username: "owner",
   display_name: "Moment",
   avatar_media_id: null,
-  profile_url: "/@owner",
+  profile_url: "/owner",
 };
 
 const rootComment = {
@@ -880,6 +880,63 @@ describe("public API client", () => {
           },
         },
       ],
+    });
+  });
+
+  // author_name is the writer's display name, which the server bounds at 80
+  // code points. The browser bounded it at 40 -- and parseComment throws from
+  // inside the map over the thread's items, so one comment by an account with a
+  // longer name turned the whole conversation into an error for every reader,
+  // not just that row.
+  it("renders a thread whose author holds a display name at the server's ceiling", async () => {
+    const longName = "长".repeat(80);
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            items: [
+              {
+                ...rootComment,
+                author_kind: "owner",
+                author_name: longName,
+                author: { ...ownerAuthor, display_name: longName },
+              },
+            ],
+            pinned_comment_id: null,
+            pinned: [],
+          },
+          meta: { next_cursor: null, request_id: "req" },
+        }),
+      ) as typeof fetch,
+    );
+
+    await expect(api.comments(post.id)).resolves.toMatchObject({
+      items: [{ authorName: longName }],
+    });
+  });
+
+  it("still refuses an author name past the server's ceiling", async () => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            items: [
+              {
+                ...rootComment,
+                author_kind: "owner",
+                author_name: "长".repeat(81),
+              },
+            ],
+            pinned_comment_id: null,
+            pinned: [],
+          },
+          meta: { next_cursor: null, request_id: "req" },
+        }),
+      ) as typeof fetch,
+    );
+
+    await expect(api.comments(post.id)).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
     });
   });
 

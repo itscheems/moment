@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/linkdto"
 )
@@ -18,9 +17,9 @@ import (
 // Only an authenticated owner can make Moment request an arbitrary URL. A
 // visitor comment is never unfurled: doing so would turn an anonymous text box
 // into an outbound request trigger.
-func RegisterLinkRoutes(engine *gin.Engine, links *app.LinkPreviewService, manager *auth.Manager) {
+func RegisterLinkRoutes(engine *gin.Engine, links *app.LinkPreviewService, gate *Gate) {
 	owner := engine.Group("/api/v1/owner/links")
-	owner.Use(RequireOwner(manager))
+	owner.Use(gate.RequireOwner())
 	owner.GET("/unfurl", unfurlLink(links))
 }
 

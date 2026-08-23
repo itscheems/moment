@@ -11,16 +11,15 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 )
 
 // RegisterSiteRoutes installs the public settings read and owner-only partial
 // mutation over one application service.
-func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, manager *auth.Manager, instanceID string, instanceInitializedAt time.Time) {
+func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, gate *Gate, instanceID string, instanceInitializedAt time.Time) {
 	engine.GET("/api/v1/site", getSiteSettings(service, instanceID, instanceInitializedAt))
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(RequireOwner(manager))
+	owner.Use(gate.RequireOwner())
 	owner.PATCH("/site", updateSiteSettings(service))
 }
 
@@ -123,6 +122,10 @@ type siteUpdateRequest struct {
 	AvatarMediaID   optionalStringField `json:"avatar_media_id"`
 	CoverMediaID    optionalStringField `json:"cover_media_id"`
 	CommentsEnabled requiredBoolField   `json:"comments_enabled"`
+	// Accepted on the write and absent from the read: the route is owner-only,
+	// while GET /api/v1/site is public and SiteSettings is serialised straight
+	// to it. Whether applications are being accepted is the owner's to publish.
+	RegistrationMode requiredStringField `json:"registration_mode"`
 }
 
 func decodeSiteUpdate(body []byte) (app.SiteUpdate, error) {
@@ -163,6 +166,9 @@ func decodeSiteUpdate(body []byte) (app.SiteUpdate, error) {
 	if request.CommentsEnabled.set {
 		update.CommentsEnabled = &request.CommentsEnabled.value
 	}
+	if request.RegistrationMode.set {
+		update.RegistrationMode = &request.RegistrationMode.value
+	}
 	return update, nil
 }
 
@@ -177,8 +183,13 @@ func writeSiteError(ctx *gin.Context, err error) {
 		return
 	}
 	switch domainErr.Code {
-	case domain.CodeInvalidArgument:
+	case domain.CodeInvalidArgument, domain.CodeUsernameReserved:
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	// A conflict with the state of the world rather than a fault in what was
+	// sent, and the same status the account route answers with -- one handle
+	// column, one answer, whichever form the owner reached it from.
+	case domain.CodeUsernameTaken:
+		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeMediaNotFound:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodePostNotFound:

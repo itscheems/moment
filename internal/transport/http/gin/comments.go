@@ -14,7 +14,6 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/commentdto"
 	"github.com/moment/moment/internal/transport/postdto"
@@ -31,15 +30,22 @@ import (
 // Removal is a write-side decision only. Rows an earlier version accepted stay
 // readable: author_kind still admits 'guest' wherever a comment is read, so an
 // archive taken before this change imports and renders unchanged.
-func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, manager *auth.Manager) {
+func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, gate *Gate) {
 	engine.GET("/api/v1/posts/:id/comments", listComments(service))
 	engine.GET("/api/v1/posts/:id/comments/:comment_id/replies", listCommentReplies(service))
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(RequireOwner(manager))
-	owner.POST("/posts/:id/comments", createOwnerComment(service))
-	owner.PUT("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, true))
-	owner.DELETE("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, false))
-	owner.DELETE("/comments/:id", deleteOwnerComment(service))
+	// Writing a comment and moderating the conversation are two authorities,
+	// and they were one group until a second account could exist. Pinning
+	// somebody else's comment or removing it is the site owner's; writing one,
+	// and removing your own, belongs to any approved account.
+	authored := engine.Group("/api/v1/owner")
+	authored.Use(gate.RequireActiveAccount())
+	authored.POST("/posts/:id/comments", createComment(service))
+	authored.DELETE("/comments/:id", deleteComment(service))
+
+	moderation := engine.Group("/api/v1/owner")
+	moderation.Use(gate.RequireOwner())
+	moderation.PUT("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, true))
+	moderation.DELETE("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, false))
 }
 
 func changeOwnerCommentPin(service *app.CommentService, active bool) gin.HandlerFunc {
@@ -154,7 +160,7 @@ func commentPageQuery(value *url.URL) (string, int, error) {
 	return query.Get("cursor"), limit, nil
 }
 
-func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
+func createComment(service *app.CommentService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		postID, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
@@ -171,7 +177,12 @@ func createOwnerComment(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.CreateOwner(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ReplyToCommentID: request.ReplyToCommentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key})
+		author, ok := CurrentAccount(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		result, err := service.Create(ctx.Request.Context(), app.CreateCommentInput{EntryID: postID, ParentID: request.ParentID, ReplyToCommentID: request.ReplyToCommentID, ContentMD: request.ContentMD, Media: request.Media, Location: request.Location, IdempotencyKey: key, Author: author})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -188,7 +199,7 @@ func writeCreatedComment(ctx *gin.Context, result app.CreateCommentResult) {
 	Success(ctx, status, commentdto.FromComment(result.Comment), map[string]any{"replayed": result.Replayed})
 }
 
-func deleteOwnerComment(service *app.CommentService) gin.HandlerFunc {
+func deleteComment(service *app.CommentService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		id, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
@@ -200,7 +211,12 @@ func deleteOwnerComment(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		result, err := service.Delete(ctx.Request.Context(), id, dryRun)
+		actor, ok := CurrentAccount(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		result, err := service.DeleteBy(ctx.Request.Context(), id, actor, dryRun)
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -396,7 +412,11 @@ func writeCommentError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeCommentDepthExceeded, domain.CodeIdempotencyKeyReused:
 		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
-	case domain.CodeCommentsDisabled:
+	// Known caller, refused action. Every route that can raise these sits
+	// behind the account gate, so authentication already succeeded and 401
+	// would tell the caller to sign in again to no effect; both used to fall
+	// through to the default and report a refusal as a server fault.
+	case domain.CodeCommentsDisabled, domain.CodeUnauthorized, domain.CodeAccountNotApproved:
 		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeRateLimited:
 		Failure(ctx, http.StatusTooManyRequests, string(domainErr.Code), domainErr.Message, domainErr.Details)

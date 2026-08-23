@@ -92,7 +92,7 @@ func newPostCLIFixture(t *testing.T) postCLIFixture {
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:    fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
-		OwnerAuth: manager, SiteSettings: site, Posts: posts, Search: search, Media: mediaStore,
+		OwnerAuth: manager, Accounts: testAccountService(t, database, runtimeState), SiteSettings: site, Posts: posts, Search: search, Media: mediaStore,
 		Readiness: func(ctx context.Context) error { return database.Ready(ctx) },
 	})
 	if err != nil {

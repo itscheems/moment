@@ -16,8 +16,11 @@ import type {
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
+import { AccountAccess } from "./AccountAccess";
 import { BackupRestore } from "./BackupRestore";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { formatInstant } from "./instants";
+import { MembersSection } from "./MembersSection";
 import { OwnerLogin } from "./OwnerLogin";
 import { useOwner } from "./OwnerProvider";
 import styles from "./Settings.module.css";
@@ -37,16 +40,34 @@ const settingsSections = [
   { id: "identity", label: "网站" },
   { id: "conversation", label: "回复" },
   { id: "access", label: "登录与安全" },
+  // Only the site owner is shown this one, and the server enforces the same
+  // rule; it stays in the table so section anchors and the scroll spy keep one
+  // definition of what a section is.
+  { id: "members", label: "成员" },
   { id: "data", label: "备份" },
 ] as const;
 
 type SettingsSectionId = (typeof settingsSections)[number]["id"];
 
-function sectionFromHash(hash: string): SettingsSectionId {
+/**
+ * Which sections this account has any business with.
+ *
+ * Only "登录与安全" is about the account itself; everything else on this page
+ * writes to the site, which the server lets nobody but its owner do.
+ */
+function visibleSection(id: SettingsSectionId, siteOwner: boolean): boolean {
+  return siteOwner || id === "access";
+}
+
+function sectionFromHash(hash: string, siteOwner: boolean): SettingsSectionId {
   const id = hash.replace(/^#/, "");
-  return settingsSections.some((section) => section.id === id)
-    ? (id as SettingsSectionId)
-    : "identity";
+  const section = settingsSections.find(
+    (candidate) =>
+      candidate.id === id && visibleSection(candidate.id, siteOwner),
+  );
+  // A hash naming a section this account cannot see -- an owner's link, most
+  // likely -- lands on the one it can, rather than on nothing at all.
+  return section?.id ?? (siteOwner ? "identity" : "access");
 }
 
 function sectionAtViewportAnchor(
@@ -196,23 +217,6 @@ function serverErrorMessage(error: unknown): string {
   return "设置没有保存。当前更改仍保留，可以安全重试。";
 }
 
-function formatInstant(value: string | null, timezone: string): string {
-  if (!value) return "尚无记录";
-  try {
-    return new Intl.DateTimeFormat("zh-CN", {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: timezone,
-    }).format(new Date(value));
-  } catch {
-    return new Intl.DateTimeFormat("zh-CN", {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: "UTC",
-    }).format(new Date(value));
-  }
-}
-
 export function SettingsPage({
   site,
   onSaved,
@@ -221,8 +225,19 @@ export function SettingsPage({
   onSaved: (site: SiteIdentity) => void;
 }) {
   const navigation = useNavigation();
-  const { api, session, expireIfInvalidSession, expireAfterTokenRotation } =
-    useOwner();
+  // Filled in by the members list below once it has read the roster. Nobody is
+  // waiting until the server says so, which is why this starts at zero rather
+  // than at "unknown": a badge that flickers on every visit is noise.
+  const [waitingAccounts, setWaitingAccounts] = useState(0);
+  const {
+    account,
+    api,
+    session,
+    expireIfInvalidSession,
+    expireAfterTokenRotation,
+  } = useOwner();
+  // Every section but one acts on the site, which only its owner may change.
+  const siteOwner = account?.role === "owner";
   const [baseline, setBaseline] = useState(site);
   const [form, setForm] = useState(() => formFromSite(site));
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
@@ -246,7 +261,7 @@ export function SettingsPage({
   const [passwordPending, setPasswordPending] = useState(false);
   const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>(() =>
-    sectionFromHash(window.location.hash),
+    sectionFromHash(window.location.hash, siteOwner),
   );
   const [leaveDialogOpen, setLeaveDialogOpen] = useState(false);
   const [leaveMessage, setLeaveMessage] = useState("");
@@ -259,6 +274,10 @@ export function SettingsPage({
   const leaveFocusRef = useRef<HTMLElement | null>(null);
   const settingsNavRef = useRef<HTMLElement>(null);
 
+  // The backup section renders for the owner alone, so nobody else is ever
+  // waiting on a restore. Without this a member would inherit its "busy"
+  // default and be held on a page that shows them no restore at all.
+  const restoreBusy = siteOwner && dataRestoreBusy;
   const validation = useMemo(() => validateForm(form), [form]);
   const update = changedSiteFields(form, baseline);
   const dirty = hasFields(update);
@@ -266,21 +285,25 @@ export function SettingsPage({
     hasFields(update) &&
     Object.keys(validation).length === 0 &&
     !savePending &&
-    !dataRestoreBusy &&
+    !restoreBusy &&
     session !== null;
 
   useDocumentScrollLock(leaveDialogOpen);
 
-  useEffect(
-    () => () => {
+  // Claimed on every mount, not only released on unmount. StrictMode's
+  // development remount would otherwise leave it false for good, and a false
+  // mountedRef swallows the end of every save: the pending flag never clears
+  // and the save button stays disabled with nothing said about why.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   useEffect(() => {
     const syncFromLocation = (focusHeading: boolean) => {
-      const next = sectionFromHash(window.location.hash);
+      const next = sectionFromHash(window.location.hash, siteOwner);
       setActiveSection(next);
       const target = document.getElementById(next);
       target?.scrollIntoView?.({ block: "start" });
@@ -301,7 +324,7 @@ export function SettingsPage({
       window.removeEventListener("hashchange", syncFromHistory);
       window.removeEventListener("popstate", syncFromHistory);
     };
-  }, []);
+  }, [siteOwner]);
 
   useEffect(() => {
     const sections = settingsSections.flatMap(({ id }) => {
@@ -338,7 +361,10 @@ export function SettingsPage({
   }, [activeSection]);
 
   useEffect(() => {
-    if (!session || rotated) {
+    // `/api/v1/owner/status` answers 401 to anyone else, and this page treats
+    // a 401 as an expired session -- so a member asking it would sign
+    // themselves out of the page they came here to use.
+    if (!session || rotated || !siteOwner) {
       setStatusPending(false);
       return;
     }
@@ -358,11 +384,11 @@ export function SettingsPage({
         if (!controller.signal.aborted) setStatusPending(false);
       });
     return () => controller.abort();
-  }, [api, expireIfInvalidSession, rotated, session, statusAttempt]);
+  }, [api, expireIfInvalidSession, rotated, session, siteOwner, statusAttempt]);
 
   useEffect(() => {
     const protectOneTimeCredential = rotated !== null;
-    const shouldBlock = dirty || protectOneTimeCredential || dataRestoreBusy;
+    const shouldBlock = dirty || protectOneTimeCredential || restoreBusy;
     const confirmLeave = (resume: () => void) => {
       if (allowLeaveRef.current) return true;
       leaveFocusRef.current =
@@ -371,7 +397,7 @@ export function SettingsPage({
           : null;
       pendingLeaveRef.current = resume;
       setLeaveMessage(
-        dataRestoreBusy
+        restoreBusy
           ? "恢复仍在服务器继续运行。离开后不会中止操作，返回备份页可重新查询状态。"
           : protectOneTimeCredential
             ? "新的所有者凭据只显示这一次。请确认已经安全保存后再离开。"
@@ -394,13 +420,13 @@ export function SettingsPage({
       window.removeEventListener("beforeunload", beforeUnload);
       navigation.setNavigationBlocker(navigationBlockerId.current, null);
     };
-  }, [dataRestoreBusy, dirty, navigation, rotated]);
+  }, [restoreBusy, dirty, navigation, rotated]);
 
   const updateForm = <Key extends keyof SettingsForm>(
     field: Key,
     value: SettingsForm[Key],
   ) => {
-    if (dataRestoreBusy) return;
+    if (restoreBusy) return;
     const next = { ...formRef.current, [field]: value };
     formRef.current = next;
     formRevisionRef.current += 1;
@@ -412,7 +438,7 @@ export function SettingsPage({
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if (dataRestoreBusy) return;
+    if (restoreBusy) return;
     const errors = validateForm(form);
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0 || !canSave || !session) return;
@@ -481,7 +507,7 @@ export function SettingsPage({
   };
 
   const rotate = async () => {
-    if (!session || rotationPending || dataRestoreBusy) return;
+    if (!session || rotationPending || restoreBusy) return;
     setRotationPending(true);
     setRotationError(null);
     setCopyState("idle");
@@ -557,11 +583,16 @@ export function SettingsPage({
     }
   };
 
+  const leaveToLogin = () => {
+    allowLeaveRef.current = true;
+    navigation.navigate("/login");
+  };
+
   const goToLogin = () => {
     allowLeaveRef.current = true;
     setRotated(null);
     setRotationOutcomeUnknown(false);
-    navigation.navigate("/owner/login?return=/owner/settings");
+    navigation.navigate("/login?return=/owner/settings");
   };
 
   const navigateToSection = (
@@ -648,142 +679,157 @@ export function SettingsPage({
           className={styles.settingsNav}
           ref={settingsNavRef}
         >
-          {settingsSections.map((section) => (
-            <a
-              aria-current={
-                activeSection === section.id ? "location" : undefined
-              }
-              href={`#${section.id}`}
-              key={section.id}
-              onClick={(event) => navigateToSection(event, section.id)}
-            >
-              {section.label}
-            </a>
-          ))}
+          {settingsSections
+            .filter((section) => visibleSection(section.id, siteOwner))
+            .map((section) => (
+              <a
+                aria-current={
+                  activeSection === section.id ? "location" : undefined
+                }
+                href={`#${section.id}`}
+                key={section.id}
+                onClick={(event) => navigateToSection(event, section.id)}
+              >
+                {section.label}
+                {section.id === "members" && waitingAccounts > 0 ? (
+                  <span
+                    aria-label={`${waitingAccounts} 个账户待批准`}
+                    className={styles.navBadge}
+                  >
+                    {waitingAccounts}
+                  </span>
+                ) : null}
+              </a>
+            ))}
         </nav>
 
         <div className={styles.settingsContent}>
-          <form
-            aria-disabled={dataRestoreBusy}
-            inert={dataRestoreBusy ? true : undefined}
-            noValidate
-            onSubmit={(event) => void save(event)}
-          >
-            <section aria-labelledby="identity-title" id="identity">
-              <header className={styles.sectionHeader}>
-                <h2 id="identity-title" tabIndex={-1}>
-                  网站
-                </h2>
-              </header>
+          {siteOwner ? (
+            <form
+              aria-disabled={restoreBusy}
+              inert={restoreBusy ? true : undefined}
+              noValidate
+              onSubmit={(event) => void save(event)}
+            >
+              <section aria-labelledby="identity-title" id="identity">
+                <header className={styles.sectionHeader}>
+                  <h2 id="identity-title" tabIndex={-1}>
+                    网站
+                  </h2>
+                </header>
 
-              <div className={styles.fieldGrid}>
-                <label>
-                  <span>时区</span>
-                  <input
-                    aria-describedby={
-                      effectiveErrors.timezone ? "timezone-error" : undefined
-                    }
-                    aria-invalid={Boolean(effectiveErrors.timezone)}
-                    list="moment-timezones"
-                    disabled={dataRestoreBusy}
-                    onChange={(event) =>
-                      updateForm("timezone", event.target.value)
-                    }
-                    spellCheck={false}
-                    value={form.timezone}
-                  />
-                  <datalist id="moment-timezones">
-                    {commonTimezones.map((timezone) => (
-                      <option key={timezone} value={timezone} />
-                    ))}
-                  </datalist>
-                  {effectiveErrors.timezone ? (
-                    <small className={styles.fieldError} id="timezone-error">
-                      {effectiveErrors.timezone}
-                    </small>
-                  ) : (
-                    <small>用于显示时间和归档日期。</small>
-                  )}
-                </label>
-                <label>
-                  <span>公开站点地址</span>
-                  <input
-                    aria-describedby={
-                      effectiveErrors.publicBaseUrl
-                        ? "public-url-error"
-                        : undefined
-                    }
-                    aria-invalid={Boolean(effectiveErrors.publicBaseUrl)}
-                    inputMode="url"
-                    disabled={dataRestoreBusy}
-                    onChange={(event) =>
-                      updateForm("publicBaseUrl", event.target.value)
-                    }
-                    placeholder="https://moment.example.com"
-                    spellCheck={false}
-                    type="url"
-                    value={form.publicBaseUrl}
-                  />
-                  {effectiveErrors.publicBaseUrl ? (
-                    <small className={styles.fieldError} id="public-url-error">
-                      {effectiveErrors.publicBaseUrl}
-                    </small>
-                  ) : (
-                    <small>用于分享链接；留空时使用当前网站地址。</small>
-                  )}
-                </label>
-              </div>
-            </section>
+                <div className={styles.fieldGrid}>
+                  <label>
+                    <span>时区</span>
+                    <input
+                      aria-describedby={
+                        effectiveErrors.timezone ? "timezone-error" : undefined
+                      }
+                      aria-invalid={Boolean(effectiveErrors.timezone)}
+                      list="moment-timezones"
+                      disabled={restoreBusy}
+                      onChange={(event) =>
+                        updateForm("timezone", event.target.value)
+                      }
+                      spellCheck={false}
+                      value={form.timezone}
+                    />
+                    <datalist id="moment-timezones">
+                      {commonTimezones.map((timezone) => (
+                        <option key={timezone} value={timezone} />
+                      ))}
+                    </datalist>
+                    {effectiveErrors.timezone ? (
+                      <small className={styles.fieldError} id="timezone-error">
+                        {effectiveErrors.timezone}
+                      </small>
+                    ) : (
+                      <small>用于显示时间和归档日期。</small>
+                    )}
+                  </label>
+                  <label>
+                    <span>公开站点地址</span>
+                    <input
+                      aria-describedby={
+                        effectiveErrors.publicBaseUrl
+                          ? "public-url-error"
+                          : undefined
+                      }
+                      aria-invalid={Boolean(effectiveErrors.publicBaseUrl)}
+                      inputMode="url"
+                      disabled={restoreBusy}
+                      onChange={(event) =>
+                        updateForm("publicBaseUrl", event.target.value)
+                      }
+                      placeholder="https://moment.example.com"
+                      spellCheck={false}
+                      type="url"
+                      value={form.publicBaseUrl}
+                    />
+                    {effectiveErrors.publicBaseUrl ? (
+                      <small
+                        className={styles.fieldError}
+                        id="public-url-error"
+                      >
+                        {effectiveErrors.publicBaseUrl}
+                      </small>
+                    ) : (
+                      <small>用于分享链接；留空时使用当前网站地址。</small>
+                    )}
+                  </label>
+                </div>
+              </section>
 
-            <section aria-labelledby="conversation-title" id="conversation">
-              <header className={styles.sectionHeader}>
-                <h2 id="conversation-title" tabIndex={-1}>
-                  回复
-                </h2>
-              </header>
-              <label className={styles.toggleRow}>
-                <span>
-                  <strong>允许新评论</strong>
-                  <small>
-                    关闭后已有评论仍可阅读，只停止新的访客评论与回复。
-                  </small>
-                </span>
-                <input
-                  checked={form.commentsEnabled}
-                  disabled={dataRestoreBusy}
-                  onChange={(event) =>
-                    updateForm("commentsEnabled", event.target.checked)
+              <section aria-labelledby="conversation-title" id="conversation">
+                <header className={styles.sectionHeader}>
+                  <h2 id="conversation-title" tabIndex={-1}>
+                    回复
+                  </h2>
+                </header>
+                <label className={styles.toggleRow}>
+                  <span>
+                    <strong>允许新评论</strong>
+                    <small>
+                      关闭后已有评论仍可阅读，只停止新的访客评论与回复。
+                    </small>
+                  </span>
+                  <input
+                    checked={form.commentsEnabled}
+                    disabled={restoreBusy}
+                    onChange={(event) =>
+                      updateForm("commentsEnabled", event.target.checked)
+                    }
+                    role="switch"
+                    type="checkbox"
+                  />
+                </label>
+              </section>
+
+              <footer className={styles.saveBar}>
+                <p
+                  data-state={
+                    savePending
+                      ? "submitting"
+                      : saveError
+                        ? "failed"
+                        : dirty
+                          ? "dirty"
+                          : "saved"
                   }
-                  role="switch"
-                  type="checkbox"
-                />
-              </label>
-            </section>
-
-            <footer className={styles.saveBar}>
-              <p
-                data-state={
-                  savePending
-                    ? "submitting"
-                    : saveError
-                      ? "failed"
-                      : dirty
-                        ? "dirty"
-                        : "saved"
-                }
-                role={saveError ? "alert" : "status"}
-              >
-                {saveError ?? saveNotice}
-              </p>
-              <button
-                className={styles.primaryButton}
-                disabled={!canSave}
-                type="submit"
-              >
-                {savePending ? "正在保存…" : "保存设置"}
-              </button>
-            </footer>
-          </form>
+                  role={saveError ? "alert" : "status"}
+                >
+                  {saveError ?? saveNotice}
+                </p>
+                <button
+                  className={styles.primaryButton}
+                  disabled={!canSave}
+                  type="submit"
+                >
+                  {savePending ? "正在保存…" : "保存设置"}
+                </button>
+              </footer>
+            </form>
+          ) : null}
 
           <section aria-labelledby="access-title" id="access">
             <header className={styles.sectionHeader}>
@@ -791,7 +837,12 @@ export function SettingsPage({
                 登录与安全
               </h2>
             </header>
-            {statusPending ? (
+            {account?.status === "pending" ? (
+              <p className={styles.accountPending} role="status">
+                你的账户正在等待站长批准。批准之前可以浏览和修改自己的资料，还不能留言。
+              </p>
+            ) : null}
+            {!siteOwner ? null : statusPending ? (
               <p aria-busy="true">正在读取认证状态…</p>
             ) : statusError ? (
               <div className={styles.inlineError} role="alert">
@@ -833,7 +884,15 @@ export function SettingsPage({
               </>
             ) : null}
 
-            {session && !rotated && !rotationOutcomeUnknown ? (
+            {session ? (
+              <AccountAccess
+                instanceId={site.instanceId}
+                onSignedOut={leaveToLogin}
+                timezone={form.timezone}
+              />
+            ) : null}
+
+            {siteOwner && session && !rotated && !rotationOutcomeUnknown ? (
               <form
                 className={styles.passwordCard}
                 onSubmit={(event) => void savePassword(event)}
@@ -888,7 +947,7 @@ export function SettingsPage({
               </form>
             ) : null}
 
-            {rotated ? (
+            {!siteOwner ? null : rotated ? (
               <div className={styles.oneTimeCredential} role="status">
                 <p>只显示这一次</p>
                 <h3>新的登录密钥已经生成</h3>
@@ -961,7 +1020,7 @@ export function SettingsPage({
                     <button
                       className={styles.dangerButton}
                       disabled={
-                        !session || rotationPending || dirty || dataRestoreBusy
+                        !session || rotationPending || dirty || restoreBusy
                       }
                       type="button"
                     >
@@ -981,19 +1040,37 @@ export function SettingsPage({
             ) : null}
           </section>
 
-          <section aria-labelledby="data-title" id="data">
-            <header className={styles.sectionHeader}>
-              <h2 id="data-title" tabIndex={-1}>
-                备份与恢复
-              </h2>
-            </header>
-            <BackupRestore
-              onRestoreBusyChange={setDataRestoreBusy}
-              settingsBlocked={
-                dirty || savePending || rotationPending || rotated !== null
-              }
-            />
-          </section>
+          {siteOwner ? (
+            <section aria-labelledby="members-title" id="members">
+              <header className={styles.sectionHeader}>
+                <h2 id="members-title" tabIndex={-1}>
+                  成员
+                </h2>
+                <span>
+                  {waitingAccounts > 0
+                    ? `本站的账户，以及他们现在能做什么。有 ${waitingAccounts} 个账户在等待批准。`
+                    : "本站的账户，以及他们现在能做什么。"}
+                </span>
+              </header>
+              <MembersSection onWaitingChange={setWaitingAccounts} />
+            </section>
+          ) : null}
+
+          {siteOwner ? (
+            <section aria-labelledby="data-title" id="data">
+              <header className={styles.sectionHeader}>
+                <h2 id="data-title" tabIndex={-1}>
+                  备份与恢复
+                </h2>
+              </header>
+              <BackupRestore
+                onRestoreBusyChange={setDataRestoreBusy}
+                settingsBlocked={
+                  dirty || savePending || rotationPending || rotated !== null
+                }
+              />
+            </section>
+          ) : null}
         </div>
       </div>
     </div>

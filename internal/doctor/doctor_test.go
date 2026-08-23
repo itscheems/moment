@@ -86,7 +86,7 @@ func TestRegistryJSONV1AndHealthyReadOnlyModes(t *testing.T) {
 	}
 
 	ids := Registry()
-	if len(ids) != 21 {
+	if len(ids) != 22 {
 		t.Fatalf("registry length = %d", len(ids))
 	}
 	seen := make(map[string]bool, len(ids))

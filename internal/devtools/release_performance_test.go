@@ -332,12 +332,18 @@ func validateEmptyTargetImportPlan(
 	archiveSHA256 string,
 	replacementDataBytes int64,
 ) error {
-	expectedArchiveCounts := archive.ImportCounts{Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media}
+	// Counts carries no account dimension because the fixture recipes create
+	// none: a generated authority holds exactly the owner the migrations made,
+	// and nothing signs in to it, so every fixture archive and every freshly
+	// initialized target is one account and no linked identity.
+	expectedArchiveCounts := archive.ImportCounts{
+		Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media, Users: 1,
+	}
 	if !plan.DryRun || plan.FormatVersion != 1 || plan.ArchiveSHA256 != archiveSHA256 ||
 		plan.Counts != expectedArchiveCounts || plan.MediaBytes != expected.MediaBytes {
 		return fmt.Errorf("empty-target import archive plan = %#v", plan)
 	}
-	if plan.Replacement.Counts != (archive.ImportCounts{}) || plan.Replacement.MediaBytes != 0 ||
+	if plan.Replacement.Counts != (archive.ImportCounts{Users: 1}) || plan.Replacement.MediaBytes != 0 ||
 		plan.Replacement.DataBytes != replacementDataBytes {
 		return fmt.Errorf("empty-target replacement impact = %#v, data bytes want %d", plan.Replacement, replacementDataBytes)
 	}
@@ -360,8 +366,9 @@ func TestEmptyTargetImportPlanContractRejectsSemanticDrift(t *testing.T) {
 	const archiveSHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	plan := archive.ImportPlan{
 		DryRun: true, FormatVersion: 1, ArchiveSHA256: archiveSHA,
-		Counts: archive.ImportCounts{Entries: 4, Comments: 8, Media: 6}, MediaBytes: expected.MediaBytes,
-		Replacement: archive.ReplacementImpact{DataBytes: replacementBytes},
+		Counts:      archive.ImportCounts{Entries: 4, Comments: 8, Media: 6, Users: 1},
+		MediaBytes:  expected.MediaBytes,
+		Replacement: archive.ReplacementImpact{Counts: archive.ImportCounts{Users: 1}, DataBytes: replacementBytes},
 		Disk: archive.DiskEstimate{
 			ArchiveBytes: archiveBytes, ExpandedBytes: 28_000, StagingBytes: 26_000,
 			PreImportBackupBytes: replacementBytes, RollbackReserveBytes: replacementBytes,
@@ -377,6 +384,12 @@ func TestEmptyTargetImportPlanContractRejectsSemanticDrift(t *testing.T) {
 		"replacement counts": func() archive.ImportPlan {
 			value := plan
 			value.Replacement.Counts.Entries = 4
+			return value
+		}(),
+		"archive accounts": func() archive.ImportPlan { value := plan; value.Counts.Users = 0; return value }(),
+		"replacement accounts": func() archive.ImportPlan {
+			value := plan
+			value.Replacement.Counts.Identities = 1
 			return value
 		}(),
 		"disk formula": func() archive.ImportPlan { value := plan; value.Disk.RequiredAdditionalBytes++; return value }(),
@@ -461,8 +474,8 @@ func TestAuthorityTreeSnapshotIgnoresDirectorySizeAndDetectsRegularFileChanges(t
 
 func validateRestoredDoctorRegistry(checks []doctor.Check) error {
 	registry := doctor.Registry()
-	if len(registry) != 21 {
-		return fmt.Errorf("doctor schema v1 registry contains %d checks, want 21", len(registry))
+	if len(registry) != 22 {
+		return fmt.Errorf("doctor schema v1 registry contains %d checks, want 22", len(registry))
 	}
 	if len(checks) != len(registry) {
 		return fmt.Errorf("restored doctor returned %d checks, want %d", len(checks), len(registry))

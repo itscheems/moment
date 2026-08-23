@@ -18,9 +18,9 @@ func registerUsers(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"user", "suggest"}, Short: "Search users for an @mention",
 		Long:       "Return bounded public identities ranked by the same lightweight service used by the browser composer.",
-		Inputs:     "An optional --query username or display-name fragment and --limit from 1 to 20. Public API mode requires no owner token.",
+		Inputs:     "An optional --query username or display-name fragment and --limit from 1 to 20. API mode authenticates through MOMENT_TOKEN or --token-file.",
 		Output:     "A stable JSON list containing immutable owner_id, username, display_name, avatar_media_id, and profile_url.",
-		Errors:     "Invalid limits return INVALID_ARGUMENT; unavailable APIs use dependency exit codes.",
+		Errors:     "Invalid limits return INVALID_ARGUMENT; API authentication failures return UNAUTHORIZED; unavailable APIs use dependency exit codes.",
 		Example:    "moment user suggest --data-dir ./moment-data --query che --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
@@ -44,7 +44,7 @@ func runUserSuggest(ctx context.Context, invocation Invocation, input CommandInp
 	var meta map[string]any
 	switch invocation.Mode() {
 	case ModeDirect:
-		service, database, openErr := openDirectSite(ctx, invocation)
+		service, database, openErr := openDirectAccounts(ctx, invocation)
 		if openErr != nil {
 			return Result{}, openErr
 		}
@@ -52,7 +52,7 @@ func runUserSuggest(ctx context.Context, invocation Invocation, input CommandInp
 		items, err = service.SuggestMentions(ctx, query, limit)
 	case ModeAPI:
 		params := url.Values{"q": []string{query}, "limit": []string{fmt.Sprint(limit)}}
-		meta, err = publicListAPIRequest(ctx, invocation, "/api/v1/users/mention-suggestions", params, &items)
+		meta, err = userAPIRequest(ctx, invocation, "/api/v1/users/mention-suggestions", params, &items)
 	default:
 		err = errors.New("unsupported user suggestion transport")
 	}
@@ -62,8 +62,19 @@ func runUserSuggest(ctx context.Context, invocation Invocation, input CommandInp
 	return Result{Data: items, Meta: meta, Text: fmt.Sprintf("%d mention suggestion(s)", len(items))}, nil
 }
 
-func publicListAPIRequest(ctx context.Context, invocation Invocation, endpoint string, query url.Values, destination any) (map[string]any, error) {
+// userAPIRequest reads one bounded account listing under the owner credential.
+//
+// The mention endpoint answers with the account roster, which is not a public
+// fact about a site, so it no longer admits a caller who presents nothing. The
+// credential goes on every call rather than only after a refusal, because
+// learning that authentication was required from a 401 means having already
+// made the request that did not carry it.
+func userAPIRequest(ctx context.Context, invocation Invocation, endpoint string, query url.Values, destination any) (map[string]any, error) {
 	target, err := invocation.APITransport()
+	if err != nil {
+		return nil, err
+	}
+	token, err := readAPIToken(target)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +91,7 @@ func publicListAPIRequest(ctx context.Context, invocation Invocation, endpoint s
 	if err != nil {
 		return nil, err
 	}
+	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

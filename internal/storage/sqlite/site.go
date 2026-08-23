@@ -159,12 +159,22 @@ func (store siteStore) SiteSettings(ctx context.Context) (app.SiteSettings, erro
 		coverID   sql.NullString
 		pinnedID  sql.NullString
 		comments  int
+
+		registration string
 	)
+	// The owner's name, picture and self-description belong to the account
+	// now; the site row keeps only what is a property of the site. Joining
+	// here rather than duplicating the columns is what stops the two from
+	// ever disagreeing -- and the wire shape stays exactly as it was, so no
+	// adapter above this line has to know the move happened.
 	err := store.queries.QueryRowContext(ctx, `
-SELECT owner_id, username, display_name, title, bio, timezone, public_base_url, avatar_media_id, cover_media_id, pinned_entry_id, comments_enabled
-FROM site_settings
-WHERE id = 1`).Scan(
-		&settings.OwnerID, &settings.Username, &settings.DisplayName, &settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &coverID, &pinnedID, &comments,
+SELECT site.owner_id, account.username, account.display_name, site.title, account.bio, site.timezone,
+       site.public_base_url, account.avatar_media_id, account.cover_media_id, site.pinned_entry_id,
+       site.comments_enabled, site.registration_mode
+FROM site_settings AS site
+JOIN users AS account ON account.id = site.owner_id
+WHERE site.id = 1`).Scan(
+		&settings.OwnerID, &settings.Username, &settings.DisplayName, &settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &coverID, &pinnedID, &comments, &registration,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return app.SiteSettings{}, domain.NewError(domain.CodeDataIntegrityFailed, "site settings singleton is missing", nil)
@@ -185,6 +195,7 @@ WHERE id = 1`).Scan(
 		settings.PinnedPostID = &pinnedID.String
 	}
 	settings.CommentsEnabled = comments == 1
+	settings.RegistrationMode = domain.RegistrationMode(registration)
 	return settings, nil
 }
 
@@ -206,12 +217,16 @@ func (store siteStore) EntryExists(ctx context.Context, id domain.ID) (bool, err
 	return exists == 1, nil
 }
 
+// UpdateSiteSettings writes one caller's intent across the two tables that now
+// hold it. Both statements run on the caller's transaction, so a failure in
+// either leaves neither applied -- which is the property that keeps the site
+// row and the owner account from drifting apart.
 func (store siteStore) UpdateSiteSettings(ctx context.Context, settings app.SiteSettings) error {
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE site_settings
-SET username = ?, display_name = ?, title = ?, bio = ?, timezone = ?, public_base_url = ?, avatar_media_id = ?, cover_media_id = ?, pinned_entry_id = ?, comments_enabled = ?
+SET title = ?, timezone = ?, public_base_url = ?, pinned_entry_id = ?, comments_enabled = ?, registration_mode = ?
 WHERE id = 1`,
-		settings.Username, settings.DisplayName, settings.Title, settings.Bio, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID), optionalString(settings.PinnedPostID), boolInteger(settings.CommentsEnabled),
+		settings.Title, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.PinnedPostID), boolInteger(settings.CommentsEnabled), string(settings.RegistrationMode),
 	)
 	if err != nil {
 		return fmt.Errorf("update site settings: %w", err)
@@ -222,6 +237,37 @@ WHERE id = 1`,
 	}
 	if changed != 1 {
 		return fmt.Errorf("site settings update changed %d rows", changed)
+	}
+
+	// Callers that only touch site fields -- pinning a post, for instance --
+	// leave UpdatedAtMS unset. Stamping zero would violate the account row's
+	// own constraint, so an unstamped write keeps whatever was already there
+	// rather than claiming the profile changed.
+	profile, err := store.queries.ExecContext(ctx, `
+UPDATE users
+SET username = ?, display_name = ?, bio = ?, avatar_media_id = ?, cover_media_id = ?,
+    updated_at_ms = CASE WHEN ? > 0 THEN ? ELSE updated_at_ms END
+WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`,
+		settings.Username, settings.DisplayName, settings.Bio, optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID),
+		settings.UpdatedAtMS, settings.UpdatedAtMS,
+	)
+	if err != nil {
+		// users_username_unique guards this column for every writer, so the
+		// owner renaming onto a member's handle lands here rather than in the
+		// account service's availability check. Reported the same way from
+		// both, because it is the same refusal and the settings form already
+		// knows what to say about it.
+		if isUniqueViolation(err) {
+			return domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})
+		}
+		return fmt.Errorf("update owner profile: %w", err)
+	}
+	changedProfile, err := profile.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("inspect owner profile update: %w", err)
+	}
+	if changedProfile != 1 {
+		return fmt.Errorf("owner profile update changed %d rows", changedProfile)
 	}
 	return nil
 }

@@ -8,12 +8,20 @@ import { DetailPage } from "../features/timeline/DetailPage";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { Composer, type ComposerHandle } from "../features/owner/Composer";
 import { EditPage } from "../features/owner/EditPage";
+import { LoginPage } from "../features/owner/LoginPage";
+import { MentionProvider } from "./mentions";
 import { OwnerLogin } from "../features/owner/OwnerLogin";
-import { OwnerProvider, useOwner } from "../features/owner/OwnerProvider";
+import {
+  OwnerProvider,
+  ownsSite,
+  useOwner,
+} from "../features/owner/OwnerProvider";
 import { SettingsPage } from "../features/owner/SettingsPage";
+import { UsernameSetup } from "../features/owner/UsernameSetup";
 import { ArchivePage } from "../features/memory/ArchivePage";
 import { hasValidRawQueryEncoding } from "../features/memory/memoryState";
 import { SearchPage } from "../features/memory/SearchPage";
+import { MemberProfilePage } from "../features/profile/MemberProfilePage";
 import { ProfilePage } from "../features/profile/ProfilePage";
 import { ThemeProvider } from "../theme/ThemeProvider";
 import { FeedbackProvider } from "../components/Feedback";
@@ -61,7 +69,9 @@ function editId(pathname: string): string {
 }
 
 function profileUsername(pathname: string): string | null {
-  return pathname.match(/^\/@([a-z][a-z0-9_]{2,29})\/?$/)?.[1] ?? null;
+  // `/profile` is the owner's own handle-free entry point, not a handle lookup.
+  if (pathname === "/profile" || pathname === "/profile/") return null;
+  return pathname.match(/^\/([a-z][a-z0-9_]{2,29})\/?$/)?.[1] ?? null;
 }
 
 function editableTarget(target: EventTarget | null): boolean {
@@ -113,6 +123,17 @@ function PublicApp() {
   const overlayComposer = useRef<ComposerHandle>(null);
   const [composeExitOpen, setComposeExitOpen] = useState(false);
   const siteIdentityReady = !siteLoading && !siteError;
+  // Accounts arrived, so being signed in stopped meaning owning the site.
+  // Every owner-only surface asks the account instead of the session state. A
+  // session with no account behind it -- an instance that cannot answer for
+  // accounts, or a lookup that failed -- keeps the pre-accounts answer, so the
+  // single owner such an instance has is never locked out of it.
+  const siteOwner = ownsSite(owner.account);
+  const ownerSession = owner.state === "owner" && siteOwner;
+  // An expired session still renders the pages behind it; they carry their own
+  // inline re-login rather than throwing the reader back to a login screen.
+  const signedIn = owner.state === "owner" || owner.state === "expired";
+  const ownerCapable = signedIn && siteOwner;
 
   useDocumentScrollLock(
     (overlayCompose && siteIdentityReady) || composeExitOpen,
@@ -153,6 +174,24 @@ function PublicApp() {
     }
   }, [displayLocation.search, homeVisited, route.id]);
 
+  // `/profile` means "mine", and only a session says whose. A visitor without
+  // one is asking for a page that does not exist for them, so they are sent to
+  // sign in; anyone signed in is sent to their own handle, which is the page
+  // they were actually asking for. It used to render the site owner's profile
+  // to whoever opened it, so a signed-in member met somebody else's page.
+  useEffect(() => {
+    const pathname = displayLocation.pathname;
+    if (pathname !== "/profile" && pathname !== "/profile/") return;
+    // Still resolving, or unable to say. Neither is an answer to act on.
+    if (owner.state === "checking" || owner.state === "unavailable") return;
+    const own = owner.account?.profileUrl;
+    // A session handed over by a sibling tab arrives before the account behind
+    // it does, so "signed in but nobody yet" is a third state and not a guest.
+    // Treating it as one sent a fully signed-in reader to the sign-in page.
+    if (own === undefined && owner.state !== "guest") return;
+    location.navigate(own ?? "/login?return=%2Fprofile");
+  }, [displayLocation.pathname, location, owner.account, owner.state]);
+
   useEffect(() => {
     const siteTitle = site.title.trim() || "Moment";
     const titleRoute = overlayCompose ? requestedRoute : route;
@@ -173,7 +212,7 @@ function PublicApp() {
     const newMoment = (event: KeyboardEvent) => {
       if (
         !siteIdentityReady ||
-        owner.state !== "owner" ||
+        !ownerSession ||
         event.defaultPrevented ||
         event.key.toLowerCase() !== "n" ||
         event.metaKey ||
@@ -202,7 +241,7 @@ function PublicApp() {
       document.removeEventListener("compositionend", endComposition);
       window.removeEventListener("keydown", newMoment);
     };
-  }, [location, owner.state, siteIdentityReady]);
+  }, [location, ownerSession, siteIdentityReady]);
 
   useEffect(() => {
     let composing = false;
@@ -249,7 +288,7 @@ function PublicApp() {
   const placeholderRoute =
     route.id !== "home" &&
     route.id !== "detail" &&
-    route.id !== "owner-login" &&
+    route.id !== "login" &&
     route.id !== "owner-compose" &&
     route.id !== "owner-edit" &&
     route.id !== "owner-settings" &&
@@ -257,7 +296,10 @@ function PublicApp() {
     route.id !== "archive" &&
     route.id !== "profile";
   const requestedProfileUsername = profileUsername(displayLocation.pathname);
-  const profileExists =
+  // `/profile` and the owner's own handle are the site page, which already has
+  // every fact it needs. Any other handle is somebody else on this instance,
+  // and only the server can say whether that somebody exists.
+  const ownProfile =
     requestedProfileUsername === null ||
     requestedProfileUsername === site.username;
 
@@ -265,14 +307,22 @@ function PublicApp() {
     route.id === "search" || route.id === "archive"
       ? discoveryYears
       : memoryYears;
+
+  // Sign-in is the whole page, not a panel inside the shell. Every hook above
+  // has already run, so returning here changes what is rendered without
+  // changing what is evaluated.
+  if (route.id === "login") return <LoginPage site={site} />;
+
   return (
-    <>
+    // The owner's handle is the one this app knows without asking. Anything
+    // else a body mentions is resolved against the server before it becomes a
+    // link, because a mention is text somebody typed and not a reference
+    // anything checked.
+    <MentionProvider known={siteIdentityReady ? [site.username] : []}>
       <AppShell
         memoryYears={shellYears}
-        ownerSettingsAvailable={
-          siteIdentityReady &&
-          (owner.state === "owner" || owner.state === "expired")
-        }
+        ownerSettingsAvailable={siteIdentityReady && signedIn}
+        profileHref={owner.account?.profileUrl ?? undefined}
         route={route}
         site={site}
         state={state}
@@ -290,9 +340,7 @@ function PublicApp() {
         ) : null}
         {hasTimeline ? (
           <div hidden={route.id !== "home"}>
-            {siteIdentityReady &&
-            !mobileViewport &&
-            (owner.state === "owner" || owner.state === "expired") ? (
+            {siteIdentityReady && !mobileViewport && ownerCapable ? (
               <Composer
                 active={route.id === "home"}
                 site={site}
@@ -305,7 +353,7 @@ function PublicApp() {
               onYearsChange={siteIdentityReady ? setMemoryYears : undefined}
               onSiteChanged={setSite}
               site={site}
-              owner={siteIdentityReady && owner.state === "owner"}
+              owner={siteIdentityReady && ownerSession}
             />
           </div>
         ) : null}
@@ -313,7 +361,7 @@ function PublicApp() {
           <DetailPage
             api={api}
             id={detailId(displayLocation.pathname)}
-            owner={siteIdentityReady && owner.state === "owner"}
+            owner={siteIdentityReady && ownerSession}
             onSiteChanged={setSite}
             site={site}
           />
@@ -324,7 +372,7 @@ function PublicApp() {
             key={routeSearchKey(displayLocation.search)}
             onYearsChange={siteIdentityReady ? setDiscoveryYears : undefined}
             onSiteChanged={setSite}
-            owner={siteIdentityReady && owner.state === "owner"}
+            owner={siteIdentityReady && ownerSession}
             search={displayLocation.search}
             site={site}
           />
@@ -334,37 +382,29 @@ function PublicApp() {
             api={api}
             key={routeSearchKey(displayLocation.search)}
             onYearsChange={siteIdentityReady ? setDiscoveryYears : undefined}
-            owner={siteIdentityReady && owner.state === "owner"}
+            owner={siteIdentityReady && ownerSession}
             search={displayLocation.search}
             site={site}
           />
         ) : null}
-        {siteIdentityReady && route.id === "profile" && profileExists ? (
+        {siteIdentityReady && route.id === "profile" && ownProfile ? (
           <ProfilePage api={api} onSiteSaved={setSite} site={site} />
         ) : null}
-        {siteIdentityReady && route.id === "profile" && !profileExists ? (
-          <ShellState
-            route={{
-              id: "not-found",
-              title: "没有这个用户",
-              eyebrow: "",
-              href: "/",
-            }}
-            state={null}
-          />
-        ) : null}
-        {siteIdentityReady && route.id === "owner-login" ? (
-          <OwnerLogin site={site} />
+        {siteIdentityReady &&
+        route.id === "profile" &&
+        !ownProfile &&
+        requestedProfileUsername ? (
+          <MemberProfilePage api={api} username={requestedProfileUsername} />
         ) : null}
         {siteIdentityReady && route.id === "owner-compose" ? (
-          owner.state === "owner" || owner.state === "expired" ? (
+          ownerCapable ? (
             <Composer quotedPostId={quotedPostId} site={site} variant="page" />
           ) : (
             <OwnerLogin embedded site={site} />
           )
         ) : null}
         {siteIdentityReady && route.id === "owner-edit" ? (
-          owner.state === "owner" || owner.state === "expired" ? (
+          ownerCapable ? (
             <EditPage
               api={api}
               id={editId(displayLocation.pathname)}
@@ -375,7 +415,9 @@ function PublicApp() {
           )
         ) : null}
         {siteIdentityReady && route.id === "owner-settings" ? (
-          owner.state === "owner" || owner.state === "expired" ? (
+          // Any signed-in account may open this page. What it shows them is the
+          // page's own decision, section by section.
+          signedIn ? (
             <SettingsPage onSaved={setSite} site={site} />
           ) : (
             <OwnerLogin embedded site={site} />
@@ -399,7 +441,7 @@ function PublicApp() {
                 <Dialog.Title className={styles.srOnly}>
                   发布 Moment
                 </Dialog.Title>
-                {owner.state === "owner" || owner.state === "expired" ? (
+                {ownerCapable ? (
                   <Composer
                     quotedPostId={quotedPostId}
                     ref={overlayComposer}
@@ -413,6 +455,16 @@ function PublicApp() {
             </Dialog.Viewport>
           </Dialog.Portal>
         </Dialog.Root>
+      ) : null}
+      {/* An expired session cannot write a profile, and a prompt whose only
+          two buttons are both refused is a trap; it comes back with the next
+          session, which is the point at which it can be answered. */}
+      {owner.session && owner.account?.usernameChosen === false ? (
+        <UsernameSetup
+          account={owner.account}
+          api={api}
+          onSiteChanged={setSite}
+        />
       ) : null}
       <Dialog.Root onOpenChange={setComposeExitOpen} open={composeExitOpen}>
         <Dialog.Portal>
@@ -454,7 +506,7 @@ function PublicApp() {
           </Dialog.Viewport>
         </Dialog.Portal>
       </Dialog.Root>
-    </>
+    </MentionProvider>
   );
 }
 

@@ -164,7 +164,11 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain(
       'url("/fonts/twitter-chirp-heavy.woff") format("woff")',
     );
-    expect(globalCss.match(/font-display: swap/g)).toHaveLength(4);
+    // Four Chirp weights plus the extended-heavy cut the sign-in display line
+    // uses. It is its own family rather than a fifth weight, so that asking for
+    // 800 anywhere else still gets the normal-width face.
+    expect(globalCss.match(/font-display: swap/g)).toHaveLength(5);
+    expect(globalCss).toContain('font-family: "TwitterChirpExtendedHeavy"');
     expect(globalCss).toContain("font-optical-sizing: auto");
     expect(globalCss).toContain('"calt" 1');
     expect(globalCss).toContain("--tracking-display: -0.022em");
@@ -389,6 +393,31 @@ describe("visual foundation contract", () => {
     );
     expect(ownerCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\._composerPublishButton_[\w-]+\s*\{\s*transition: none/,
+    );
+  });
+
+  // Dragging across a headline this size fills half the panel with selection
+  // highlight and copies nothing anybody wanted. Losing this rule looks wrong
+  // and tests green, so it is asserted rather than remembered.
+  it("refuses selection on the sign-in display line", () => {
+    // The lookbehind matters: without it `-webkit-user-select: none` satisfies
+    // the match on its own, and the unprefixed property -- the one that
+    // actually governs -- could be lost with the assertion still green.
+    expect(ownerCss).toMatch(
+      /\._displayHeadline_[\w-]+\s*\{[^}]*(?<!-)user-select: none/s,
+    );
+  });
+
+  // The alternative sign-in methods sit under the provider buttons and read as
+  // one of them, so they share their axis. `.loginMethodSwitch` centres itself
+  // with justify-self, which does nothing without a grid parent -- the kind of
+  // regression that leaves the page looking wrong and every test green.
+  it("centres the alternative sign-in methods on the provider buttons' axis", () => {
+    expect(ownerCss).toMatch(
+      /\._otherMethods_[\w-]+\s*\{[^}]*display: grid;[^}]*justify-items: center;/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._loginMethodSwitch_[\w-]+\s*\{[^}]*justify-self: center/s,
     );
   });
 

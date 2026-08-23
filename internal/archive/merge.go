@@ -40,7 +40,22 @@ const (
 	MergeEntry   MergeEntityKind = "entry"
 	MergeComment MergeEntityKind = "comment"
 	MergeMedia   MergeEntityKind = "media"
+	// MergeUser and MergeIdentity are reported but never selectable. An
+	// account is not content: "keep both" would fork a person into two, and
+	// "use incoming" would let a backup rename or re-admit somebody on the
+	// live instance. They are resolved by a fixed rule -- local wins, unknown
+	// incoming accounts are added -- and appear in the plan so a reviewer can
+	// see what a restore is about to bring with it.
+	MergeUser     MergeEntityKind = "user"
+	MergeIdentity MergeEntityKind = "identity"
 )
+
+// mergeIdentityID is the plan identity of one external credential. The natural
+// key is a pair, and a plan item carries one string; the provider's shape
+// forbids a colon so the join is unambiguous.
+func mergeIdentityID(provider, providerUserID string) string {
+	return provider + ":" + providerUserID
+}
 
 // MergeAction is an explicit selection decision. Media actions are derived
 // from selected references and are therefore never independently selectable.
@@ -59,10 +74,12 @@ const (
 // comparison. It intentionally excludes secrets, previews, FTS, idempotency
 // rows, and runtime state.
 type PortableAuthority struct {
-	Site     sqlitestore.ArchiveSite
-	Entries  []sqlitestore.ArchiveEntry
-	Comments []sqlitestore.ArchiveComment
-	Media    []sqlitestore.ArchiveMedia
+	Site       sqlitestore.ArchiveSite
+	Users      []sqlitestore.ArchiveUser
+	Identities []sqlitestore.ArchiveIdentity
+	Entries    []sqlitestore.ArchiveEntry
+	Comments   []sqlitestore.ArchiveComment
+	Media      []sqlitestore.ArchiveMedia
 }
 
 // MergeRef is a stable dependency or equivalence reference.
@@ -167,6 +184,18 @@ func ReadPortableAuthority(ctx context.Context, database archiveSnapshotDatabase
 	}
 	authority.Site, err = snapshot.Site(ctx)
 	if err != nil {
+		return PortableAuthority{}, err
+	}
+	if err := snapshot.Users(ctx, func(value sqlitestore.ArchiveUser) error {
+		authority.Users = append(authority.Users, cloneArchiveUser(value))
+		return nil
+	}); err != nil {
+		return PortableAuthority{}, err
+	}
+	if err := snapshot.Identities(ctx, func(value sqlitestore.ArchiveIdentity) error {
+		authority.Identities = append(authority.Identities, cloneArchiveIdentity(value))
+		return nil
+	}); err != nil {
 		return PortableAuthority{}, err
 	}
 	if err := snapshot.Entries(ctx, func(value sqlitestore.ArchiveEntry) error {
@@ -320,6 +349,51 @@ func comparePortableAuthorities(input MergePlanInput, requireSameOwner bool) (Me
 			plan.addItem(MergeItem{Kind: MergeComment, ID: local.ID, Classification: MergeLocalOnly, ChangedFields: []string{}, Dependencies: []MergeRef{}})
 		}
 	}
+	// Accounts are compared by identity, never offered as a choice. The owner's
+	// own profile is still decided through the site fields below, because that
+	// is where those five columns are stated in the portable format.
+	localUser, incomingUser := indexUsers(input.Local.Users), indexUsers(input.Incoming.Users)
+	for _, incoming := range sortedUsers(input.Incoming.Users) {
+		item := MergeItem{Kind: MergeUser, ID: incoming.ID, ChangedFields: []string{}, Dependencies: userDependencies(incoming)}
+		if local, exists := localUser[incoming.ID]; exists {
+			item.ChangedFields = userChangedFields(local, incoming, localSHA, incomingSHA)
+			if len(item.ChangedFields) == 0 {
+				item.Classification = MergeUnchanged
+			} else {
+				item.Classification = MergeConflict
+			}
+		} else {
+			item.Classification = MergeIncomingOnly
+		}
+		plan.addItem(item)
+	}
+	for _, local := range sortedUsers(input.Local.Users) {
+		if _, exists := incomingUser[local.ID]; !exists {
+			plan.addItem(MergeItem{Kind: MergeUser, ID: local.ID, Classification: MergeLocalOnly, ChangedFields: []string{}, Dependencies: []MergeRef{}})
+		}
+	}
+	localIdentity, incomingIdentity := indexIdentities(input.Local.Identities), indexIdentities(input.Incoming.Identities)
+	for _, incoming := range sortedIdentities(input.Incoming.Identities) {
+		id := mergeIdentityID(incoming.Provider, incoming.ProviderUserID)
+		item := MergeItem{Kind: MergeIdentity, ID: id, ChangedFields: []string{}, Dependencies: []MergeRef{{Kind: MergeUser, ID: incoming.UserID}}}
+		if local, exists := localIdentity[id]; exists {
+			item.ChangedFields = identityChangedFields(local, incoming)
+			if len(item.ChangedFields) == 0 {
+				item.Classification = MergeUnchanged
+			} else {
+				item.Classification = MergeConflict
+			}
+		} else {
+			item.Classification = MergeIncomingOnly
+		}
+		plan.addItem(item)
+	}
+	for _, local := range sortedIdentities(input.Local.Identities) {
+		id := mergeIdentityID(local.Provider, local.ProviderUserID)
+		if _, exists := incomingIdentity[id]; !exists {
+			plan.addItem(MergeItem{Kind: MergeIdentity, ID: id, Classification: MergeLocalOnly, ChangedFields: []string{}, Dependencies: []MergeRef{}})
+		}
+	}
 	plan.SiteFields = compareSiteFields(input.Local.Site, input.Incoming.Site, localSHA, incomingSHA)
 	for _, field := range plan.SiteFields {
 		plan.increment(field.Classification)
@@ -391,11 +465,13 @@ func normalizeAuthority(authority PortableAuthority) any {
 		mediaValues[index].StoragePath = ""
 	}
 	return struct {
-		Site     sqlitestore.ArchiveSite      `json:"site"`
-		Entries  []sqlitestore.ArchiveEntry   `json:"entries"`
-		Comments []sqlitestore.ArchiveComment `json:"comments"`
-		Media    []sqlitestore.ArchiveMedia   `json:"media"`
-	}{authority.Site, entries, comments, mediaValues}
+		Site       sqlitestore.ArchiveSite       `json:"site"`
+		Users      []sqlitestore.ArchiveUser     `json:"users"`
+		Identities []sqlitestore.ArchiveIdentity `json:"identities"`
+		Entries    []sqlitestore.ArchiveEntry    `json:"entries"`
+		Comments   []sqlitestore.ArchiveComment  `json:"comments"`
+		Media      []sqlitestore.ArchiveMedia    `json:"media"`
+	}{authority.Site, sortedUsers(authority.Users), sortedIdentities(authority.Identities), entries, comments, mediaValues}
 }
 
 func compareSiteFields(local, incoming sqlitestore.ArchiveSite, localSHA, incomingSHA map[string]string) []MergeSiteField {
@@ -625,6 +701,85 @@ func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, 
 	return fields
 }
 
+// userDependencies names the pictures an account points at. They are media
+// like any other, and a plan that omitted them would let a restore keep an
+// avatar whose bytes were never carried across.
+func userDependencies(value sqlitestore.ArchiveUser) []MergeRef {
+	result := make([]MergeRef, 0, 2)
+	for _, picture := range []*string{value.AvatarMediaID, value.CoverMediaID} {
+		if picture != nil {
+			result = append(result, MergeRef{Kind: MergeMedia, ID: *picture})
+		}
+	}
+	return uniqueRefs(result)
+}
+
+func userChangedFields(local, incoming sqlitestore.ArchiveUser, localSHA, incomingSHA map[string]string) []string {
+	fields := []string{}
+	if local.Username != incoming.Username {
+		fields = append(fields, "username")
+	}
+	if local.DisplayName != incoming.DisplayName {
+		fields = append(fields, "display_name")
+	}
+	if local.Bio != incoming.Bio {
+		fields = append(fields, "bio")
+	}
+	// Pictures compare by content, not by identifier: media ids are reassigned
+	// on import while the bytes are the same picture on both sides.
+	if !reflect.DeepEqual(referencedSHA(local.AvatarMediaID, localSHA), referencedSHA(incoming.AvatarMediaID, incomingSHA)) {
+		fields = append(fields, "avatar_media_id")
+	}
+	if !reflect.DeepEqual(referencedSHA(local.CoverMediaID, localSHA), referencedSHA(incoming.CoverMediaID, incomingSHA)) {
+		fields = append(fields, "cover_media_id")
+	}
+	if local.Role != incoming.Role {
+		fields = append(fields, "role")
+	}
+	if local.Status != incoming.Status {
+		fields = append(fields, "status")
+	}
+	if !reflect.DeepEqual(local.UsernameSetAtMS, incoming.UsernameSetAtMS) {
+		fields = append(fields, "username_set_at")
+	}
+	if local.CreatedAtMS != incoming.CreatedAtMS {
+		fields = append(fields, "created_at")
+	}
+	if local.UpdatedAtMS != incoming.UpdatedAtMS {
+		fields = append(fields, "updated_at")
+	}
+	return fields
+}
+
+func identityChangedFields(local, incoming sqlitestore.ArchiveIdentity) []string {
+	fields := []string{}
+	if local.UserID != incoming.UserID {
+		fields = append(fields, "user_id")
+	}
+	if !reflect.DeepEqual(local.Email, incoming.Email) {
+		fields = append(fields, "email")
+	}
+	if local.EmailVerified != incoming.EmailVerified {
+		fields = append(fields, "email_verified")
+	}
+	if local.EmailDeliverable != incoming.EmailDeliverable {
+		fields = append(fields, "email_deliverable")
+	}
+	if local.DisplayName != incoming.DisplayName {
+		fields = append(fields, "display_name")
+	}
+	if !reflect.DeepEqual(local.AvatarURL, incoming.AvatarURL) {
+		fields = append(fields, "avatar_url")
+	}
+	if local.CreatedAtMS != incoming.CreatedAtMS {
+		fields = append(fields, "created_at")
+	}
+	if local.LastLoginAtMS != incoming.LastLoginAtMS {
+		fields = append(fields, "last_login_at")
+	}
+	return fields
+}
+
 func mediaChangedFields(local, incoming sqlitestore.ArchiveMedia) []string {
 	fields := []string{}
 	if local.SHA256 != incoming.SHA256 {
@@ -689,6 +844,45 @@ func mediaSHAs(values []sqlitestore.ArchiveMedia) map[string]string {
 	}
 	return result
 }
+func indexUsers(values []sqlitestore.ArchiveUser) map[string]sqlitestore.ArchiveUser {
+	result := map[string]sqlitestore.ArchiveUser{}
+	for _, v := range values {
+		result[v.ID] = v
+	}
+	return result
+}
+
+func indexIdentities(values []sqlitestore.ArchiveIdentity) map[string]sqlitestore.ArchiveIdentity {
+	result := map[string]sqlitestore.ArchiveIdentity{}
+	for _, v := range values {
+		result[mergeIdentityID(v.Provider, v.ProviderUserID)] = v
+	}
+	return result
+}
+
+func sortedUsers(values []sqlitestore.ArchiveUser) []sqlitestore.ArchiveUser {
+	result := make([]sqlitestore.ArchiveUser, len(values))
+	for i, v := range values {
+		result[i] = cloneArchiveUser(v)
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].ID < result[j].ID })
+	return result
+}
+
+func sortedIdentities(values []sqlitestore.ArchiveIdentity) []sqlitestore.ArchiveIdentity {
+	result := make([]sqlitestore.ArchiveIdentity, len(values))
+	for i, v := range values {
+		result[i] = cloneArchiveIdentity(v)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Provider != result[j].Provider {
+			return result[i].Provider < result[j].Provider
+		}
+		return result[i].ProviderUserID < result[j].ProviderUserID
+	})
+	return result
+}
+
 func indexEntries(values []sqlitestore.ArchiveEntry) map[string]sqlitestore.ArchiveEntry {
 	result := map[string]sqlitestore.ArchiveEntry{}
 	for _, v := range values {
@@ -752,6 +946,22 @@ func cloneArchiveComment(value sqlitestore.ArchiveComment) sqlitestore.ArchiveCo
 	value.Location = domain.CloneLocation(value.Location)
 	return value
 }
+func cloneArchiveUser(value sqlitestore.ArchiveUser) sqlitestore.ArchiveUser {
+	value.AvatarMediaID = cloneString(value.AvatarMediaID)
+	value.CoverMediaID = cloneString(value.CoverMediaID)
+	if value.UsernameSetAtMS != nil {
+		moment := *value.UsernameSetAtMS
+		value.UsernameSetAtMS = &moment
+	}
+	return value
+}
+
+func cloneArchiveIdentity(value sqlitestore.ArchiveIdentity) sqlitestore.ArchiveIdentity {
+	value.Email = cloneString(value.Email)
+	value.AvatarURL = cloneString(value.AvatarURL)
+	return value
+}
+
 func cloneUsages(values []sqlitestore.ArchiveUsage) []sqlitestore.ArchiveUsage {
 	result := make([]sqlitestore.ArchiveUsage, len(values))
 	for i, v := range values {

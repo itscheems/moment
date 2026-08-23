@@ -9,12 +9,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/moment/moment/internal/buildinfo"
+	"github.com/spf13/cobra"
 )
 
 //go:embed testdata/capability-matrix.json
@@ -193,6 +196,31 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		"backup merge-discard": {"merge-selection.json"},
 		"dev scenario":         {"timeline-empty"},
 		"link unfurl":          {"https://example.com/a"},
+		"login":                {"github"},
+		"user approve":         {"applicant"},
+		"user suspend":         {"applicant"},
+		"user identities":      {"applicant"},
+		"user delete":          {"applicant"},
+	}
+	// A leaf that takes a positional argument and has no entry above would be
+	// executed here with none, and a leaf that takes one without declaring it
+	// would never be reached at all. Both shipped once: three account review
+	// commands answered "unknown command <username>" because they omitted
+	// Args, and nothing noticed because nothing ran them with an argument.
+	for _, leaf := range production.leaves {
+		command := strings.Join(leaf.Path, " ")
+		if leaf.ArgsUsage == "" {
+			continue
+		}
+		if leaf.Args == nil {
+			t.Fatalf("%s documents %q but declares no Args, so cobra reads it as a subcommand", command, leaf.ArgsUsage)
+		}
+		// Only a required argument needs an entry. Asking the validator itself
+		// rather than reading the brackets in ArgsUsage keeps the two from
+		// disagreeing about which arguments are optional.
+		if _, present := positional[command]; !present && leaf.Args(&cobra.Command{}, nil) != nil {
+			t.Fatalf("%s requires %q but this test would execute it with no argument", command, leaf.ArgsUsage)
+		}
 	}
 	for _, row := range matrix.Commands {
 		for _, modeCase := range []struct {
@@ -263,68 +291,7 @@ func TestEveryLeafHelpIsDiscoverableAndScoped(t *testing.T) {
 
 func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 	application := NewMoment(buildinfo.Info{Version: "dev", Commit: "unknown", BuildDate: "unknown"})
-	expected := map[string]string{
-		"backup":                 "b4e985e599b0a59cf7cc357d777aa08d81d3704d986bd833dc7f5853d757c802",
-		"backup export":          "41c2c59d7320e821b4bb80b6a605df0285f9fb6903d7dff0a22d3adaf795c9c2",
-		"backup import":          "eccbd5ccc42fb93abb68350404f07cf3368cdb8929d23dfa61805f978b5f1ba5",
-		"backup inspect":         "ecc5db494ffe8401cdaeab289d84f8a44b7d701f5584774a036cf185b002ab10",
-		"backup merge":           "b161c3f508eba9a3fffc2f4a824de6d48b6dca21ec3d47758b31eee14de39e65",
-		"backup merge-discard":   "48f213411c4676e6cd6af1400aef5029bf8d5307fd2ced4dff53b4cd1cc8c8ea",
-		"backup merge-plan":      "f9ea98401a607bc62eb672b7e0cabc316a86c9d654d29b8389e9cfbad522f822",
-		"backup status":          "2ad2eb8806b33a180826d201157e189c2488d7747aa9169bb79c42411118cb9e",
-		"comment":                "230133520bafcd6cc7473c2db58288a7244e3b467bdce00000960f8181afe1d8",
-		"comment create":         "32c0e6f9d033f0a50d98cf533271111a03ed03cbbf8b893e888576f8b9a1e732",
-		"comment delete":         "1ae438d8870bb0da2d34306260131316228dc82b19c29e34215ac8e1eaf2c7d9",
-		"comment list":           "41532cca3d73777d12d94bd8b0c4d2feec3f8a2b055221f29952b567f783ec4a",
-		"comment replies":        "47eb1c8fb6a5b8fc6a09e72bcb2d398a92016d9864217e692c63a288541cbd42",
-		"comment pin":            "584f1e03045b9a85dd17fe5cf5ded482ae326f11033b3503b3ab31f8fc173d6a",
-		"comment reply":          "0a085ef08bacd2ebaf30871ca5c4c528fbbcc11ea82cb1cea3dd4332c528c045",
-		"comment unpin":          "b09b2234e10e25962623f4b638c0f1fdd9a3a69477dee847a2e1037b12eb2975",
-		"dev":                    "f3fbc09380185bb3d32d04b94712c5968c4e734067ceacb8ef00a3e6666e9a32",
-		"dev reset":              "623279be28439377ce7e723b4351046fb758f7126e5c81db39a55646fc2621ce",
-		"dev scenario":           "008cd54831c7ef825cf0e41d7370ba3026e19e9452aab49202d958cbc793b5d8",
-		"dev seed":               "652cb437617e1c3e6d94d016bb75f325710cf092008899ccc6da9dcf13d7fdbb",
-		"doctor":                 "6dd90e5897b539b1f8048d016a8e091ffdaf91392ae22902c256ab5dfcffe44e",
-		"init":                   "1dd44779f406db30589ba2b0d248a147ab21a109273421425d95ebd1492edf8f",
-		"link":                   "175714f000b50b006c997661226dd64008e57f4cafcaf6d07e9e8bc9715f8f84",
-		"link unfurl":            "13e7f5d505af46600335b81a187428e8b6c6345420f6178a2181de981f39c823",
-		"location":               "26b587f599def76745ccc2b145fdedd6443d1bd1b44c4e70f354ffba6be1472d",
-		"location nearby":        "85c27f5fda0617bb0cc70a3d68d155e8521207e456adf61b2e20363cfbc36cf2",
-		"location search":        "1fa980dd1019997d94d26f7baa5bb872b7d2359fb906ec619bebaa1355c6afd0",
-		"media":                  "18d3cfca2f27ecd8ad62bc09d6ad8d88fdd36a6678331a8abfd5276e1a1ae489",
-		"media add":              "41308df6ac040740cde176c81e2543d5eb2facaa5bfc383473e017a7aa81a2b9",
-		"media get":              "6840a6e4053f84760e7a1a92efdd31c9a77965a502a2b9e41d57c9696e2618f5",
-		"media list":             "6fc9294aa50466b8ccfa034dc9280b40efbcffa56c02fb76e1cb237446f2c69f",
-		"media prune":            "f2719f2b81bbba418e0ad4527416b14e13b54cf7dc804c6f8e15ba773ecbc54d",
-		"media rebuild-previews": "3b52ab84b61f18541b637bcd2248ea1be45967e350f9824cf3f839e5fcdf8e9e",
-		"media verify":           "6440583fd5a92254431d459066dfad2c2376f6145816f68ea59b142a4789ef4e",
-		"moment":                 "269d1c9a1436cf4f4fa839a0792ecf75fd9951eae0f6419b16daabb33ecf6056",
-		"owner":                  "2530fef4d511ab7ac40281ee35487342a0200f57b78baaaa44dd49077ac56182",
-		"owner init":             "e79729458feaa3e8d4599971244aefaffa11e9f57e67cd15ffafc48255ace663",
-		"owner rotate-token":     "3e34b359dcfd5ced8c32ea28d9160947ab67a314d327fe9a3d213142bced6e0c",
-		"owner set-password":     "b1d70c130537b43fe989dffcd474b11dbc4dcc0ec4bba5f4148448e1decca7c9",
-		"owner status":           "ca4e6635f78403f88e14f77f225d3aad619123cf25c0e73b57f3daa61eb39d34",
-		"post":                   "218eac009d9d9de2dc0c755b6837f147126ec7d7a1aacf7a3a5e2cb6f92732e7",
-		"post create":            "4118a02d1b5c332dd65ebd1dffe46640a8cecd28f5331b9869851e4d02bb994c",
-		"post delete":            "f053d4498c17f292e84b660b8b8abcb9dcb00daa9291433c0f5eb643233226e6",
-		"post get":               "48690ea66ae796353be0b4cdd94f1fc0b4352abc9e2c834f7964ad2f79104a8e",
-		"post list":              "6afa5e64cd9dee4cafd2f868cb9745ec45e45ee1845dbc81ff9d19ab35fb8739",
-		"post pin":               "9bf12d6c579ea7841516e480defb99ded3dd4afcb8a23114ca97ab9a432800da",
-		"post repost":            "fccb8d7b349ec397041cf9765e9565a2452dd7027cf83dc7d009bc3d5a872874",
-		"post unpin":             "a821d706f49eab46b124084299862a0b9b325dc5a724b3d4dc0e91462eb159e8",
-		"post unrepost":          "53ff90231dba9e088133db1b36e8cd93642383a6775d5503e1c3cec367e6d74f",
-		"post update":            "86c35ea1c4410594f0e6b13b1f7d20e1d13e1cc606449824015740b463195ad1",
-		"search":                 "6d87f554839c4d517bb1b4be03d897a5e7f571af0e5be6b8c63351f693dc31a1",
-		"search query":           "b9b05f473ce5193c2c3970af09381c42934faaced45199f11751a1c08ac58e6a",
-		"search rebuild":         "dd03cd5a216bca7e503f4f6d03d96c032db91e13f66ef8411045df7f6e37eb28",
-		"serve":                  "3916e71755d97d99ae6c697b16380776e65ed083b1537a6272dfcdefe8916636",
-		"site":                   "09043ff9807f0d5b49d4192cca5f0acec67b53014304a19e85e31f1275ad8da7",
-		"site get":               "75894a8a50d52a6ed1b3d9d57232b7a89cea0b09127210fa712999079b264aa4",
-		"site update":            "27c74502530077eb51c20a727a3ac4e7000928e03e7f1121683aae42a1018dd8",
-		"user":                   "b644cbe3215126804d2967dbe3ede39aa707003647e3b6deabb92445b40a2db4",
-		"user suggest":           "bdbd94abb523578a697bff57823b2435f3c1eb819b31006b04dffb7b1d97d854",
-		"version":                "0b69aae12549989186adc1cc9dd8066fcdb54f7f349a2b023e2df150d7f1dce1",
-	}
+	expected := readHelpDigests(t)
 
 	paths := map[string][]string{"moment": nil}
 	for _, group := range application.groups {
@@ -333,9 +300,10 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 	for _, leaf := range application.leaves {
 		paths[strings.Join(leaf.Path, " ")] = append([]string(nil), leaf.Path...)
 	}
-	if len(expected) > 0 && len(expected) != len(paths) {
-		t.Fatalf("help golden entries=%d registered surfaces=%d", len(expected), len(paths))
+	if !updatingGolden() && len(expected) != len(paths) {
+		t.Fatalf("help golden entries=%d registered surfaces=%d; rerun with %s=1 to record", len(expected), len(paths), updateGoldenEnv)
 	}
+	recorded := make(map[string]string, len(paths))
 	commands := make([]string, 0, len(paths))
 	for command := range paths {
 		commands = append(commands, command)
@@ -348,16 +316,61 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 			t.Fatalf("%s help output = %#v", command, output)
 		}
 		digest := fmt.Sprintf("%x", sha256.Sum256([]byte(output.stdout)))
+		recorded[command] = digest
+		if updatingGolden() {
+			continue
+		}
 		want, present := expected[command]
 		if !present {
-			t.Logf("%q: %q,", command, digest)
-			continue
+			t.Fatalf("%s has no recorded help digest; rerun with %s=1 to record", command, updateGoldenEnv)
 		}
 		if digest != want {
 			t.Fatalf("%s help digest=%s want=%s\n%s", command, digest, want, output.stdout)
 		}
 	}
-	if len(expected) == 0 {
-		t.Fatal("record the logged full help-tree golden digests")
+	if updatingGolden() {
+		writeHelpDigests(t, recorded)
+		t.Logf("recorded %d help digests; rerun without %s to assert them", len(recorded), updateGoldenEnv)
+	}
+}
+
+// updateGoldenEnv regenerates the help digests instead of asserting them.
+//
+// The digests used to live inline in this file, which made adding one command a
+// four step manual dance: blank the map, run with -v, scrape the logged lines,
+// paste them back. Every step of that is a chance to record a digest for output
+// nobody looked at. Writing the file the test already knows how to read removes
+// the dance without removing the assertion -- the default path still fails on
+// any drift, and the recorded file is reviewable in the diff.
+const updateGoldenEnv = "MOMENT_UPDATE_HELP_GOLDEN"
+
+func updatingGolden() bool { return os.Getenv(updateGoldenEnv) == "1" }
+
+func helpDigestPath() string { return filepath.Join("testdata", "help-digests.json") }
+
+func readHelpDigests(t *testing.T) map[string]string {
+	t.Helper()
+	contents, err := os.ReadFile(helpDigestPath())
+	if err != nil {
+		if updatingGolden() {
+			return map[string]string{}
+		}
+		t.Fatalf("read help digests: %v", err)
+	}
+	var digests map[string]string
+	if err := json.Unmarshal(contents, &digests); err != nil {
+		t.Fatalf("decode help digests: %v", err)
+	}
+	return digests
+}
+
+func writeHelpDigests(t *testing.T, digests map[string]string) {
+	t.Helper()
+	encoded, err := json.MarshalIndent(digests, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(helpDigestPath(), append(encoded, '\n'), 0o600); err != nil {
+		t.Fatalf("write help digests: %v", err)
 	}
 }

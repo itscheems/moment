@@ -942,7 +942,8 @@ func TestBackupInspectAPIRejectsMalformedSuccessEnvelopes(t *testing.T) {
 		{name: "duplicate nested field", raw: func(value map[string]any) []byte {
 			data := value["data"].(map[string]any)
 			counts := data["counts"].(map[string]any)
-			data["counts"] = json.RawMessage(fmt.Sprintf(`{"entries":%v,"entries":%v,"comments":%v,"media":%v}`, counts["entries"], counts["entries"], counts["comments"], counts["media"]))
+			data["counts"] = json.RawMessage(fmt.Sprintf(`{"entries":%v,"entries":%v,"comments":%v,"media":%v,"users":%v,"identities":%v}`,
+				counts["entries"], counts["entries"], counts["comments"], counts["media"], counts["users"], counts["identities"]))
 			body, _ := json.Marshal(value)
 			return body
 		}},
@@ -1018,6 +1019,76 @@ func TestDecodeImportInspectionAPIExpiryBounds(t *testing.T) {
 	}
 }
 
+// TestImportCountsWireFieldsMatchTheStrictDecoder holds the server's encoding
+// of archive.ImportCounts and this client's exact-field-set reader together.
+//
+// The reader rejects an unknown key and requires every declared one, so a count
+// field added on the server without being declared here, an omitempty tag that
+// drops a zero count off the wire, or a name declared here that the struct does
+// not carry, each turn a healthy server into DEPENDENCY_INVALID_RESPONSE. The
+// zero value is the interesting one to encode: it is where omitempty would bite.
+func TestImportCountsWireFieldsMatchTheStrictDecoder(t *testing.T) {
+	encoded, err := json.Marshal(archive.ImportCounts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields, err := decodeExactJSONObject(encoded, importCountsFields...)
+	if err != nil || len(fields) != len(importCountsFields) {
+		t.Fatalf("archive.ImportCounts encodes as %s, which the strict reader answered %v with %d of %d fields",
+			encoded, err, len(fields), len(importCountsFields))
+	}
+}
+
+// TestDecodeImportInspectionAPIAcceptsServerEncodedCounts runs the real
+// server-side type through the client's validation instead of a hand-written
+// map, because a hand-written map is exactly what hides a client DTO that has
+// drifted from the response it is reading.
+func TestDecodeImportInspectionAPIAcceptsServerEncodedCounts(t *testing.T) {
+	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
+	envelope := validImportInspectionAPIEnvelope(11, now.Add(importInspectionTokenTTL))
+	data := envelope["data"].(map[string]any)
+	incoming, err := json.Marshal(archive.ImportCounts{Entries: 1, Comments: 2, Media: 3, Users: 4, Identities: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced, err := json.Marshal(archive.ImportCounts{Users: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data["counts"] = json.RawMessage(incoming)
+	data["replacement"].(map[string]any)["counts"] = json.RawMessage(replaced)
+	body, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection, _, err := decodeImportInspectionAPI(body, 11, now)
+	if err != nil {
+		t.Fatalf("server-encoded counts were rejected: %v", err)
+	}
+	if inspection.Counts != (archive.ImportCounts{Entries: 1, Comments: 2, Media: 3, Users: 4, Identities: 5}) ||
+		inspection.Replacement.Counts != (archive.ImportCounts{Users: 1}) {
+		t.Fatalf("decoded counts = %#v / %#v", inspection.Counts, inspection.Replacement.Counts)
+	}
+}
+
+// TestImportPreviewRejectsAnAccountlessArchive pins the one account rule at the
+// client boundary: every Moment authority has an owner, so an incoming archive
+// that previews as zero accounts is describing a replacement no importer can
+// produce, and the preview is not something to show an owner.
+func TestImportPreviewRejectsAnAccountlessArchive(t *testing.T) {
+	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
+	envelope := validImportInspectionAPIEnvelope(11, now.Add(importInspectionTokenTTL))
+	counts := envelope["data"].(map[string]any)["counts"].(map[string]any)
+	counts["users"] = int64(0)
+	body, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := decodeImportInspectionAPI(body, 11, now); err == nil {
+		t.Fatal("an import preview claiming no accounts was accepted")
+	}
+}
+
 func validImportInspectionAPIEnvelope(archiveBytes int64, expiresAt time.Time) map[string]any {
 	const safetyMargin = int64(2 << 30)
 	const replacementBytes = int64(1)
@@ -1030,7 +1101,10 @@ func validImportInspectionAPIEnvelope(archiveBytes int64, expiresAt time.Time) m
 		"data": map[string]any{
 			"format_version": archive.FormatVersion, "archive_sha256": strings.Repeat("a", 64),
 			"generation_id": "import-20260811T020000000Z-0102030405060708",
-			"counts":        map[string]any{"entries": int64(1), "comments": int64(2), "media": int64(3)},
+			"counts": map[string]any{
+				"entries": int64(1), "comments": int64(2), "media": int64(3),
+				"users": int64(4), "identities": int64(5),
+			},
 			"time_range": map[string]any{
 				"from": "2026-08-10T01:02:03Z", "to": "2026-08-11T01:02:03.123Z",
 			},
@@ -1043,7 +1117,10 @@ func validImportInspectionAPIEnvelope(archiveBytes int64, expiresAt time.Time) m
 				"available_bytes":                requiredBytes + 100, "space_ok": true,
 			},
 			"replacement": map[string]any{
-				"counts":      map[string]any{"entries": int64(0), "comments": int64(0), "media": int64(0)},
+				"counts": map[string]any{
+					"entries": int64(0), "comments": int64(0), "media": int64(0),
+					"users": int64(1), "identities": int64(0),
+				},
 				"media_bytes": int64(0), "data_bytes": replacementBytes,
 			},
 			"warnings": []string{}, "expires_at": expiresAt.UTC().Format(time.RFC3339Nano), "staging_token": token,

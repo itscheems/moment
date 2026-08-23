@@ -18,13 +18,14 @@ import {
   SiteCover,
   siteDisplayName,
   siteHandle,
+  siteProfileHref,
 } from "../../components/SiteIdentity";
 import {
   ExactTimeTooltip,
   ShareMenu,
 } from "../../components/TimelineInteractions";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
-import { useOwner } from "../owner/OwnerProvider";
+import { ownsSite, useOwner } from "../owner/OwnerProvider";
 import { listenForOwnerPosts, type OwnerPostEvent } from "../owner/postEvents";
 import { PostPresentation } from "../posts/PostPresentation";
 import { formatMomentDate } from "../posts/dates";
@@ -89,6 +90,10 @@ export function ProfilePage({
   onSiteSaved: (site: SiteIdentity) => void;
 }) {
   const owner = useOwner();
+  const { account: viewerAccount, applyAccount } = owner;
+  // This is the site owner's own page, so the editor and the per-post actions
+  // belong to them alone. A signed-in member reads it like anyone else.
+  const ownerView = owner.state === "owner" && ownsSite(owner.account);
   const navigation = useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
   const [pinnedPost, setPinnedPost] = useState<PublicPost | null>(null);
@@ -132,6 +137,48 @@ export function ProfilePage({
     onCreated: createdFromProfile,
     site,
   });
+
+  /**
+   * Adopt what the server just saved, and follow the handle if it moved.
+   *
+   * The owner's handle is the address of this page, so renaming from here left
+   * the browser standing at a path that had just stopped belonging to anybody:
+   * the site knew the new name, the URL still held the old one, and the app
+   * answered by rendering somebody else's profile that no longer exists. The
+   * account this editor is editing is also the viewer's own, so its copy in the
+   * owner context is restamped too -- the left rail links to it, and the
+   * /profile redirect resolves through it.
+   *
+   * MemberProfilePage.adopt is the same move for a member editing their own
+   * page. Both belong on the page that owns the address, not in the dialog.
+   */
+  const adoptSite = useCallback(
+    (saved: SiteIdentity) => {
+      onSiteSaved(saved);
+      if (viewerAccount) {
+        applyAccount({
+          ...viewerAccount,
+          username: saved.username,
+          displayName: saved.displayName,
+          bio: saved.bio,
+          avatarMediaId: saved.avatarMediaId,
+          coverMediaId: saved.coverMediaId,
+          profileUrl: siteProfileHref(saved),
+        });
+      }
+      // Only when the browser is standing on the handle that just stopped
+      // existing. /profile is an alias a rename cannot break, and moving
+      // somebody off it would change their URL for no reason.
+      const vacated = siteProfileHref(site);
+      if (
+        saved.username !== site.username &&
+        navigation.pathname.replace(/\/+$/, "") === vacated
+      ) {
+        navigation.navigate(siteProfileHref(saved));
+      }
+    },
+    [applyAccount, navigation, onSiteSaved, site, viewerAccount],
+  );
 
   const handleOwnerPostEvent = useCallback((event: OwnerPostEvent) => {
     setPosts((current) => reconcileTimelineEvent(current, event));
@@ -310,7 +357,7 @@ export function ProfilePage({
         <div className={styles.profileActions}>
           <ShareMenu
             baseUrl={site.publicBaseUrl}
-            href={`/@${site.username}`}
+            href={siteProfileHref(site)}
             title={`${title} 的个人资料`}
             trigger={
               <button
@@ -322,9 +369,9 @@ export function ProfilePage({
               </button>
             }
           />
-          {owner.state === "owner" ? (
+          {ownerView ? (
             <div className={styles.profileEditorSlot}>
-              <ProfileEditor onSaved={onSiteSaved} site={site} />
+              <ProfileEditor onSaved={adoptSite} site={site} />
             </div>
           ) : null}
         </div>
@@ -377,7 +424,7 @@ export function ProfilePage({
                 onReply={(event) => openReply(pinnedPost, event)}
                 onReposted={handleReposted}
                 onSiteChanged={onSiteSaved}
-                owner={owner.state === "owner"}
+                owner={ownerView}
                 pinned
                 post={pinnedPost}
                 site={site}
@@ -396,7 +443,7 @@ export function ProfilePage({
                   onReply={(event) => openReply(post, event)}
                   onReposted={handleReposted}
                   onSiteChanged={onSiteSaved}
-                  owner={owner.state === "owner"}
+                  owner={ownerView}
                   post={post}
                   site={site}
                   timelineDensity
@@ -430,7 +477,7 @@ export function ProfilePage({
             ) : null}
           </div>
         ) : (
-          <PublicEmpty context="profile" owner={owner.state === "owner"} />
+          <PublicEmpty context="profile" owner={ownerView} />
         )
       ) : null}
       {replyDialog}

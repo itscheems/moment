@@ -30,6 +30,18 @@
   font-display: swap;
 }
 
+/* A separate family rather than a fifth weight of TwitterChirp: this is the
+   extended cut, wider at the same weight, and asking for it by weight would
+   make every heavy heading on the site change shape. Only the sign-in display
+   line uses it. */
+@font-face {
+  font-family: "TwitterChirpExtendedHeavy";
+  src: url("/fonts/twitter-chirp-extended-heavy.woff") format("woff");
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+
 :root {
   color-scheme: light;
   font-family: var(--font-body);
@@ -55,6 +67,9 @@
   --font-timeline:
     "TwitterChirp", -apple-system, "system-ui", "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
+  --font-signin-display:
+    "TwitterChirpExtendedHeavy", "TwitterChirp", -apple-system, "system-ui",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --tracking-display: -0.022em;
   --tracking-body: -0.006em;

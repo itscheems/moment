@@ -59,7 +59,7 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1
 	}
 	var logs []string
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: manager, Doctor: reporter,
+		Assets: testAssets(), OwnerAuth: manager, Accounts: testAccountsForRuntime(t, runtimeState), Doctor: reporter,
 		RequestID: func() string { return "req_doctor" },
 		Log: func(level, event string, fields map[string]any) {
 			logs = append(logs, fmt.Sprintf("%s:%s:%v", level, event, fields))
@@ -142,7 +142,7 @@ func (cancelledDoctorReporter) Run(context.Context, doctor.Mode) (doctor.Report,
 
 func TestDoctorHTTPWrappedCancellationIsTimeout(t *testing.T) {
 	fixture := newOwnerTestFixture(t, false)
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Doctor: cancelledDoctorReporter{}})
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, Doctor: cancelledDoctorReporter{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestDoctorHTTPPanicIsRedactedAndConfigRequiresAuth(t *testing.T) {
 	fixture := newOwnerTestFixture(t, false)
 	var logs []string
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, Doctor: panicDoctorReporter{},
+		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, Doctor: panicDoctorReporter{},
 		RequestID: func() string { return "req_doctor_panic" },
 		Log: func(level, event string, fields map[string]any) {
 			logs = append(logs, fmt.Sprintf("%s:%s:%v", level, event, fields))

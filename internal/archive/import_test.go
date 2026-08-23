@@ -36,7 +36,7 @@ func TestInspectBuildsRestartableCurrentSchemaWithoutTouchingCurrent(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.FormatVersion != 1 || result.Counts != (ImportCounts{Entries: 1, Comments: 2, Media: 2}) || result.MissingAlt != 1 || result.StagingToken == "" {
+	if result.FormatVersion != 1 || result.Counts != (ImportCounts{Entries: 1, Comments: 2, Media: 2, Users: 1}) || result.MissingAlt != 1 || result.StagingToken == "" {
 		t.Fatalf("inspection = %#v", result)
 	}
 	if !result.Disk.SpaceOK || result.Disk.RequiredAdditionalBytes <= 0 || result.Disk.SafetyMarginBytes < minimumSafetyMarginBytes {
@@ -658,6 +658,10 @@ func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) 
 	site["avatar_media_id"] = nil
 	site["cover_media_id"] = nil
 	members["data/site.json"] = append(mustMarshalTest(t, site), '\n')
+	// The owner account carries the same two pictures, so clearing only the
+	// site record would describe two different owners rather than an archive
+	// whose media is genuinely unreferenced.
+	setAccountPictures(t, members, nil, nil)
 	rebuildManifestExpanded(t, members)
 	rebuildChecksums(members)
 	orphanPath := filepath.Join(t.TempDir(), "unreachable-media.zip")

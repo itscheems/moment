@@ -227,9 +227,18 @@ func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runt
 		return MergeInspection{}, err
 	}
 	var mergeBlockedReason *string
-	if !mergeAllowed {
+	switch {
+	case !mergeAllowed:
 		reason := string(domain.CodeImportOwnerMismatch)
 		mergeBlockedReason = &reason
+	// A handle two different people claim is not something any choice on the
+	// review screen can settle, so saying so here is the difference between a
+	// reviewer being told before they work through the whole plan and being
+	// told after. resolveMergeAccounts still refuses it at apply time; this is
+	// the earlier of the two answers, not a replacement for it.
+	case mergeUsernameCollision(local, incoming) != nil:
+		reason := string(domain.CodeUsernameTaken)
+		mergeAllowed, mergeBlockedReason = false, &reason
 	}
 	return MergeInspection{
 		Plan: plan, Review: review, Counts: inspection.Counts, MediaBytes: inspection.MediaBytes,

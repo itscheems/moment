@@ -56,21 +56,72 @@ type MergeReviewLocation struct {
 	CoordinateSystem *domain.CoordinateSystem `json:"coordinate_system"`
 }
 
-// MergeReviewEntity contains recognizable post/comment content. The plan ID
-// and selection remain the only commit authority; this projection is only for
-// humans and agents to understand a decision.
+// MergeReviewLinkCard is a display-only card summary. A card can be the only
+// difference between two versions of a post, so a review that omitted it would
+// show two identical-looking sides beside the words "link_cards changed".
+type MergeReviewLinkCard struct {
+	Position     int    `json:"position"`
+	SourceURL    string `json:"source_url"`
+	CanonicalURL string `json:"canonical_url"`
+	Provider     string `json:"provider"`
+	CardKind     string `json:"card_kind"`
+	Title        string `json:"title"`
+	SiteName     string `json:"site_name"`
+}
+
+// MergeReviewEntity contains recognizable post, comment or account content.
+// The plan ID and selection remain the only commit authority; this projection
+// is only for humans and agents to understand a decision.
+//
+// Every field a changed-field comparator can name must appear here. A field
+// that is compared but not projected produces the worst possible review: two
+// sides rendered identically under a label saying they differ, with no way to
+// tell whether the plan is wrong or the display is. mergeReviewFieldKeys states
+// that correspondence and a test holds the two comparators to it.
 type MergeReviewEntity struct {
-	ID          string               `json:"id"`
-	ContentMD   string               `json:"content_md"`
-	EntryID     *string              `json:"entry_id,omitempty"`
-	ParentID    *string              `json:"parent_id,omitempty"`
-	AuthorKind  *string              `json:"author_kind,omitempty"`
-	AuthorName  *string              `json:"author_name,omitempty"`
-	CreatedAt   time.Time            `json:"created_at"`
-	UpdatedAt   *time.Time           `json:"updated_at,omitempty"`
-	PublishedAt *time.Time           `json:"published_at,omitempty"`
-	Location    *MergeReviewLocation `json:"location,omitempty"`
-	Media       []MergeReviewMedia   `json:"media"`
+	ID        string  `json:"id"`
+	ContentMD string  `json:"content_md"`
+	EntryID   *string `json:"entry_id,omitempty"`
+	ParentID  *string `json:"parent_id,omitempty"`
+	// Kind is the post kind; comments and accounts leave it unset.
+	Kind             *string    `json:"kind,omitempty"`
+	AuthorKind       *string    `json:"author_kind,omitempty"`
+	AuthorName       *string    `json:"author_name,omitempty"`
+	AuthorUserID     *string    `json:"author_user_id,omitempty"`
+	ReplyToCommentID *string    `json:"reply_to_comment_id,omitempty"`
+	Pinned           *bool      `json:"pinned,omitempty"`
+	RepostedAt       *time.Time `json:"reposted_at,omitempty"`
+	QuotedEntryID    *string    `json:"quoted_entry_id,omitempty"`
+	QuoteUnavailable *bool      `json:"quote_unavailable,omitempty"`
+	// Username through UsernameSetAt describe an account rather than content.
+	Username    *string `json:"username,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
+	Bio         *string `json:"bio,omitempty"`
+	Role        *string `json:"role,omitempty"`
+	Status      *string `json:"status,omitempty"`
+	// AvatarMediaID and CoverMediaID are shown as identifiers as well as
+	// pictures. The picture resolves only when the referenced original is in
+	// the same authority, and a changed avatar that resolves on neither side
+	// would otherwise be a difference with nothing to see.
+	AvatarMediaID    *string               `json:"avatar_media_id,omitempty"`
+	CoverMediaID     *string               `json:"cover_media_id,omitempty"`
+	UsernameSetAt    *time.Time            `json:"username_set_at,omitempty"`
+	UpdatedAt        *time.Time            `json:"updated_at,omitempty"`
+	Provider         *string               `json:"provider,omitempty"`
+	ProviderUserID   *string               `json:"provider_user_id,omitempty"`
+	UserID           *string               `json:"user_id,omitempty"`
+	Email            *string               `json:"email,omitempty"`
+	EmailVerified    *bool                 `json:"email_verified,omitempty"`
+	EmailDeliverable *bool                 `json:"email_deliverable,omitempty"`
+	AvatarURL        *string               `json:"avatar_url,omitempty"`
+	LastLoginAt      *time.Time            `json:"last_login_at,omitempty"`
+	CreatedAt        time.Time             `json:"created_at"`
+	PublishedAt      *time.Time            `json:"published_at,omitempty"`
+	Location         *MergeReviewLocation  `json:"location,omitempty"`
+	Media            []MergeReviewMedia    `json:"media"`
+	LinkCards        []MergeReviewLinkCard `json:"link_cards,omitempty"`
+	Avatar           *MergeReviewMedia     `json:"avatar,omitempty"`
+	Cover            *MergeReviewMedia     `json:"cover,omitempty"`
 }
 
 // MergeReviewItem places the actual local and incoming versions beside the
@@ -113,9 +164,45 @@ type MergeReview struct {
 	SiteFields   []MergeReviewSiteField `json:"site_fields"`
 }
 
+// mergeReviewFieldKeys maps every name a changed-field comparator can produce
+// to the MergeReviewEntity JSON key that shows it.
+//
+// It is the standing answer to a failure this review has already had: a field
+// compared but never projected renders two sides identically under a label
+// saying they differ. The table is asserted against the comparators by test, so
+// adding a comparison without a projection fails there rather than in a
+// reviewer's face.
+var mergeReviewFieldKeys = map[MergeEntityKind]map[string]string{
+	MergeEntry: {
+		"kind": "kind", "content_md": "content_md", "created_at": "created_at",
+		"updated_at": "updated_at", "published_at": "published_at", "reposted_at": "reposted_at",
+		"quoted_entry_id": "quoted_entry_id", "quote_unavailable": "quote_unavailable",
+		"media": "media", "location": "location", "link_cards": "link_cards",
+	},
+	MergeComment: {
+		"entry_id": "entry_id", "parent_id": "parent_id", "author_kind": "author_kind",
+		"author_name": "author_name", "author_user_id": "author_user_id",
+		"reply_to_comment_id": "reply_to_comment_id", "content_md": "content_md",
+		"created_at": "created_at", "media": "media", "location": "location", "pinned": "pinned",
+	},
+	MergeUser: {
+		"username": "username", "display_name": "display_name", "bio": "bio",
+		"avatar_media_id": "avatar_media_id", "cover_media_id": "cover_media_id", "role": "role",
+		"status": "status", "username_set_at": "username_set_at",
+		"created_at": "created_at", "updated_at": "updated_at",
+	},
+	MergeIdentity: {
+		"user_id": "user_id", "email": "email", "email_verified": "email_verified",
+		"email_deliverable": "email_deliverable", "display_name": "display_name",
+		"avatar_url": "avatar_url", "created_at": "created_at", "last_login_at": "last_login_at",
+	},
+}
+
 func buildMergeReview(plan MergePlan, local, incoming PortableAuthority) (MergeReview, error) {
 	localEntries, incomingEntries := indexEntries(local.Entries), indexEntries(incoming.Entries)
 	localComments, incomingComments := indexComments(local.Comments), indexComments(incoming.Comments)
+	localUsers, incomingUsers := indexUsers(local.Users), indexUsers(incoming.Users)
+	localIdentities, incomingIdentities := indexIdentities(local.Identities), indexIdentities(incoming.Identities)
 	localMedia, _ := indexMedia(local.Media)
 	incomingMedia, _ := indexMedia(incoming.Media)
 
@@ -150,6 +237,24 @@ func buildMergeReview(plan MergePlan, local, incoming PortableAuthority) (MergeR
 			}
 			if comment, ok := incomingComments[item.ID]; ok {
 				entity := reviewComment(comment, MergeReviewIncoming, incomingMedia)
+				value.Incoming = &entity
+			}
+		case MergeUser:
+			if account, ok := localUsers[item.ID]; ok {
+				entity := reviewUser(account, MergeReviewLocal, localMedia)
+				value.Local = &entity
+			}
+			if account, ok := incomingUsers[item.ID]; ok {
+				entity := reviewUser(account, MergeReviewIncoming, incomingMedia)
+				value.Incoming = &entity
+			}
+		case MergeIdentity:
+			if identity, ok := localIdentities[item.ID]; ok {
+				entity := reviewIdentity(identity)
+				value.Local = &entity
+			}
+			if identity, ok := incomingIdentities[item.ID]; ok {
+				entity := reviewIdentity(identity)
 				value.Incoming = &entity
 			}
 		default:
@@ -226,20 +331,75 @@ func reviewSortTime(item MergeReviewItem) time.Time {
 
 func reviewEntry(value sqlitestore.ArchiveEntry, source MergeReviewSource, mediaByID map[string]sqlitestore.ArchiveMedia) MergeReviewEntity {
 	created, updated, published := archiveTime(value.CreatedAtMS), archiveTime(value.UpdatedAtMS), archiveTime(value.PublishedAtMS)
-	return MergeReviewEntity{
-		ID: value.ID, ContentMD: value.ContentMD, CreatedAt: created,
+	kind, quoteUnavailable := value.Kind, value.QuoteUnavailable
+	entity := MergeReviewEntity{
+		ID: value.ID, ContentMD: value.ContentMD, CreatedAt: created, Kind: &kind,
 		UpdatedAt: &updated, PublishedAt: &published, Location: reviewLocation(value.Location),
-		Media: reviewUsages(value.Media, source, mediaByID),
+		QuotedEntryID: cloneString(value.QuotedEntryID), QuoteUnavailable: &quoteUnavailable,
+		Media: reviewUsages(value.Media, source, mediaByID), LinkCards: reviewLinkCards(value.LinkCards),
 	}
+	if value.RepostedAtMS != nil {
+		reposted := archiveTime(*value.RepostedAtMS)
+		entity.RepostedAt = &reposted
+	}
+	return entity
 }
 
 func reviewComment(value sqlitestore.ArchiveComment, source MergeReviewSource, mediaByID map[string]sqlitestore.ArchiveMedia) MergeReviewEntity {
-	entryID, authorKind, authorName := value.EntryID, value.AuthorKind, value.AuthorName
+	entryID, authorKind, authorName, pinned := value.EntryID, value.AuthorKind, value.AuthorName, value.Pinned
 	return MergeReviewEntity{
 		ID: value.ID, ContentMD: value.ContentMD, EntryID: &entryID,
 		ParentID: cloneString(value.ParentID), AuthorKind: &authorKind, AuthorName: &authorName,
+		AuthorUserID: cloneString(value.AuthorUserID), ReplyToCommentID: cloneString(value.ReplyToCommentID),
+		Pinned: &pinned, Location: reviewLocation(value.Location),
 		CreatedAt: archiveTime(value.CreatedAtMS), Media: reviewUsages(value.Media, source, mediaByID),
 	}
+}
+
+func reviewUser(value sqlitestore.ArchiveUser, source MergeReviewSource, mediaByID map[string]sqlitestore.ArchiveMedia) MergeReviewEntity {
+	username, displayName, bio, role, status := value.Username, value.DisplayName, value.Bio, value.Role, value.Status
+	updated := archiveTime(value.UpdatedAtMS)
+	entity := MergeReviewEntity{
+		ID: value.ID, Username: &username, DisplayName: &displayName, Bio: &bio,
+		Role: &role, Status: &status, CreatedAt: archiveTime(value.CreatedAtMS), UpdatedAt: &updated,
+		AvatarMediaID: cloneString(value.AvatarMediaID), CoverMediaID: cloneString(value.CoverMediaID),
+		Media:  []MergeReviewMedia{},
+		Avatar: reviewReferencedMedia(value.AvatarMediaID, source, mediaByID),
+		Cover:  reviewReferencedMedia(value.CoverMediaID, source, mediaByID),
+	}
+	if value.UsernameSetAtMS != nil {
+		stamped := archiveTime(*value.UsernameSetAtMS)
+		entity.UsernameSetAt = &stamped
+	}
+	return entity
+}
+
+func reviewIdentity(value sqlitestore.ArchiveIdentity) MergeReviewEntity {
+	provider, providerUserID, userID := value.Provider, value.ProviderUserID, value.UserID
+	displayName, verified, deliverable := value.DisplayName, value.EmailVerified, value.EmailDeliverable
+	lastLogin := archiveTime(value.LastLoginAtMS)
+	return MergeReviewEntity{
+		ID: mergeIdentityID(value.Provider, value.ProviderUserID), Provider: &provider,
+		ProviderUserID: &providerUserID, UserID: &userID, DisplayName: &displayName,
+		Email: cloneString(value.Email), EmailVerified: &verified, EmailDeliverable: &deliverable,
+		AvatarURL: cloneString(value.AvatarURL), LastLoginAt: &lastLogin,
+		CreatedAt: archiveTime(value.CreatedAtMS), Media: []MergeReviewMedia{},
+	}
+}
+
+func reviewLinkCards(values []sqlitestore.ArchiveLinkCard) []MergeReviewLinkCard {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make([]MergeReviewLinkCard, 0, len(values))
+	for _, value := range values {
+		result = append(result, MergeReviewLinkCard{
+			Position: value.Card.Position, SourceURL: value.Card.SourceURL,
+			CanonicalURL: value.Card.CanonicalURL, Provider: string(value.Card.Provider),
+			CardKind: string(value.Card.Kind), Title: value.Card.Title, SiteName: value.Card.SiteName,
+		})
+	}
+	return result
 }
 
 func reviewUsages(values []sqlitestore.ArchiveUsage, source MergeReviewSource, mediaByID map[string]sqlitestore.ArchiveMedia) []MergeReviewMedia {

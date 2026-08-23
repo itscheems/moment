@@ -30,6 +30,19 @@ type SiteSettings struct {
 	CoverMediaID    *string `json:"cover_media_id"`
 	PinnedPostID    *string `json:"pinned_post_id"`
 	CommentsEnabled bool    `json:"comments_enabled"`
+	// RegistrationMode decides what happens to an external identity the site
+	// has not seen before.
+	//
+	// It is never serialised here. GET /api/v1/site is public, and this value
+	// is site policy rather than public identity -- telling an anonymous reader
+	// whether applications are being accepted is the owner's decision to
+	// publish, not a field that leaks by being in the same struct. The owner
+	// reads it from the account review endpoint, which is already about
+	// exactly this.
+	RegistrationMode domain.RegistrationMode `json:"-"`
+	// UpdatedAtMS stamps the owner account row when a write touches profile
+	// fields. It is not part of the public projection.
+	UpdatedAtMS int64 `json:"-"`
 }
 
 // MentionSuggestion is the bounded public identity projection used by
@@ -49,21 +62,23 @@ type NullableString struct {
 
 // SiteUpdate contains transport-independent partial update intent.
 type SiteUpdate struct {
-	Username        *string
-	DisplayName     *string
-	Title           *string
-	Bio             *string
-	Timezone        *string
-	PublicBaseURL   *NullableString
-	AvatarMediaID   *NullableString
-	CoverMediaID    *NullableString
-	CommentsEnabled *bool
+	Username         *string
+	DisplayName      *string
+	Title            *string
+	Bio              *string
+	Timezone         *string
+	PublicBaseURL    *NullableString
+	AvatarMediaID    *NullableString
+	CoverMediaID     *NullableString
+	CommentsEnabled  *bool
+	RegistrationMode *string
 }
 
 // Empty reports whether an update carries no fields.
 func (update SiteUpdate) Empty() bool {
 	return update.Username == nil && update.DisplayName == nil && update.Title == nil && update.Bio == nil && update.Timezone == nil &&
-		update.PublicBaseURL == nil && update.AvatarMediaID == nil && update.CoverMediaID == nil && update.CommentsEnabled == nil
+		update.PublicBaseURL == nil && update.AvatarMediaID == nil && update.CoverMediaID == nil && update.CommentsEnabled == nil &&
+		update.RegistrationMode == nil
 }
 
 // SiteStore is the transaction-bound settings persistence surface.
@@ -184,33 +199,6 @@ func (service *SiteService) Get(ctx context.Context) (SiteSettings, error) {
 	return cloneSiteSettings(settings), nil
 }
 
-// SuggestMentions searches the instance's public owner identity. Moment is a
-// single-owner product today, so querying the indexed singleton is both the
-// lightest and most accurate implementation; the response remains a list for
-// future expansion without changing browser or CLI contracts.
-func (service *SiteService) SuggestMentions(ctx context.Context, query string, limit int) ([]MentionSuggestion, error) {
-	if limit < 1 || limit > 20 {
-		return nil, domain.NewError(domain.CodeInvalidArgument, "limit must be between 1 and 20", map[string]any{"field": "limit"})
-	}
-	query = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(query, "@")))
-	if len([]rune(query)) > 30 {
-		return nil, domain.NewError(domain.CodeInvalidArgument, "mention query must not exceed 30 characters", map[string]any{"field": "query"})
-	}
-	settings, err := service.Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-	username := strings.ToLower(settings.Username)
-	displayName := strings.ToLower(settings.DisplayName)
-	if query != "" && !strings.HasPrefix(username, query) && !strings.Contains(displayName, query) {
-		return []MentionSuggestion{}, nil
-	}
-	return []MentionSuggestion{{
-		OwnerID: settings.OwnerID, Username: settings.Username, DisplayName: settings.DisplayName,
-		AvatarMediaID: cloneString(settings.AvatarMediaID), ProfileURL: "/@" + settings.Username,
-	}}, nil
-}
-
 // Ready verifies that the singleton and its managed avatar reference remain
 // valid. It is composed with database readiness by the server.
 func (service *SiteService) Ready(ctx context.Context) error {
@@ -320,6 +308,10 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 			return err
 		}
 		next := applySiteUpdate(current, prepared)
+		// The owner's half of this value lives on the account row now, and
+		// that row records when it last changed. Stamping here rather than in
+		// the store keeps the clock in the one layer that owns it.
+		next.UpdatedAtMS = domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 		for _, media := range []struct {
 			field string
 			id    *string
@@ -365,25 +357,39 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 
 func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 	prepared := update
+	// The owner edits the same three columns from two places -- here and
+	// PATCH /api/v1/account/profile -- so both go through the domain
+	// normalizers rather than restating the rules. A second copy of the rules
+	// is a second set of values one route accepts and the other refuses, and
+	// the column cannot hold both answers.
 	if update.Username != nil {
-		value := strings.ToLower(strings.TrimSpace(*update.Username))
-		if !validUsername(value) {
-			return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "username must contain 3 to 30 lowercase letters, numbers, or underscores and start with a letter", map[string]any{"field": "username"})
+		value, err := domain.NormalizeUsername(*update.Username)
+		if err != nil {
+			return SiteUpdate{}, err
 		}
 		prepared.Username = &value
 	}
 	if update.DisplayName != nil {
-		value := strings.TrimSpace(*update.DisplayName)
-		if value == "" || len([]rune(value)) > 80 {
-			return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "display_name must contain 1 to 80 characters", map[string]any{"field": "display_name"})
+		value, err := domain.NormalizeDisplayName(*update.DisplayName)
+		if err != nil {
+			return SiteUpdate{}, err
 		}
 		prepared.DisplayName = &value
 	}
 	if update.Title != nil && (strings.TrimSpace(*update.Title) == "" || len([]rune(*update.Title)) > 120) {
 		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "title must contain 1 to 120 characters", map[string]any{"field": "title"})
 	}
-	if update.Bio != nil && len([]rune(*update.Bio)) > 500 {
-		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "bio must not exceed 500 characters", map[string]any{"field": "bio"})
+	if update.Bio != nil {
+		value, err := domain.NormalizeBio(*update.Bio)
+		if err != nil {
+			return SiteUpdate{}, err
+		}
+		prepared.Bio = &value
+	}
+	if update.RegistrationMode != nil {
+		if err := domain.ValidateRegistrationMode(domain.RegistrationMode(*update.RegistrationMode)); err != nil {
+			return SiteUpdate{}, err
+		}
 	}
 	if update.Timezone != nil {
 		if err := validateTimezone(*update.Timezone); err != nil {
@@ -415,8 +421,13 @@ func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 }
 
 func (service *SiteService) validateStored(ctx context.Context, store SiteStore, settings SiteSettings) error {
-	if !validOwnerID(settings.OwnerID) || !validUsername(settings.Username) || strings.TrimSpace(settings.DisplayName) != settings.DisplayName || settings.DisplayName == "" || len([]rune(settings.DisplayName)) > 80 ||
-		strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > 500 {
+	// Shape only, deliberately: the reserved list and the character rules are
+	// write-time constraints on creating something broken. Re-checking a
+	// stored row against a list that grew, or against a rule tightened after
+	// the row was written, would turn an owner's own settings page into the
+	// screen that refuses to load and refuses to let them fix it.
+	if !validOwnerID(settings.OwnerID) || domain.ValidateStoredUsername(settings.Username) != nil || strings.TrimSpace(settings.DisplayName) != settings.DisplayName || settings.DisplayName == "" || len([]rune(settings.DisplayName)) > domain.MaxDisplayNameLength ||
+		strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > domain.MaxBioLength {
 		return domain.NewError(domain.CodeDataIntegrityFailed, "stored site identity text is invalid", nil)
 	}
 	if err := validateTimezone(settings.Timezone); err != nil {
@@ -499,19 +510,10 @@ func applySiteUpdate(current SiteSettings, update SiteUpdate) SiteSettings {
 	if update.CommentsEnabled != nil {
 		next.CommentsEnabled = *update.CommentsEnabled
 	}
+	if update.RegistrationMode != nil {
+		next.RegistrationMode = domain.RegistrationMode(*update.RegistrationMode)
+	}
 	return next
-}
-
-func validUsername(value string) bool {
-	if len(value) < 3 || len(value) > 30 || value[0] < 'a' || value[0] > 'z' {
-		return false
-	}
-	for _, character := range value {
-		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '_' {
-			return false
-		}
-	}
-	return true
 }
 
 func validOwnerID(value string) bool {

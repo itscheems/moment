@@ -75,6 +75,70 @@
   line-height: 1.65;
 }
 
+.oauthOptions {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+}
+
+/* `.loginGate button` above resets the border for every button in this gate, so
+   these rules have to out-rank it from inside the same ancestor. */
+.loginGate .oauthButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.loginGate .oauthButton:hover:not(:disabled),
+.loginGate .oauthButton:focus-visible:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.loginGate .oauthButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+/* The Google mark is fixed four-color artwork and keeps its own fills; the
+   GitHub silhouette inherits the label colour. */
+.oauthButton svg {
+  flex: none;
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.oauthSeparator {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.oauthRule {
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+/* The separator already draws the divider above the form. */
+.oauthSeparator + .loginForm {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+
+.loginGate > .authError {
+  margin: 0 0 var(--space-4);
+  color: var(--danger);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
 .loginForm {
   display: grid;
   gap: var(--space-3);
@@ -1288,4 +1352,214 @@
   margin: var(--space-3) 0 0;
   color: var(--text-secondary);
   font-size: 0.8125rem;
+}
+
+.usernameForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+}
+
+.usernameForm label {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.usernameForm small {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.usernameField {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline-start: var(--space-3);
+  background: var(--surface);
+}
+
+.usernameField > span {
+  color: var(--text-tertiary);
+}
+
+.usernameField input {
+  min-block-size: var(--target-size);
+  flex: 1;
+  border: 0;
+  padding-inline-end: var(--space-3);
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+.usernameField input:focus {
+  outline: none;
+}
+
+.usernameField:focus-within {
+  border-color: var(--accent);
+}
+
+/* The switch sits under the provider buttons and reads as one of them, so it
+   is centred on the same axis rather than left-aligned against nothing.
+   `.loginMethodSwitch` centres itself with justify-self, which needs a grid
+   parent -- as a child of the plain block above it, it silently did nothing. */
+.otherMethods {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-4);
+}
+
+.otherMethods .secondaryButton {
+  inline-size: 100%;
+}
+
+/* The sign-in page stands on its own rather than inside the reading shell.
+   A visitor here is not browsing, and the sidebars offer navigation that every
+   destination behind them would bounce straight back to this page.
+
+   `.loginGate` itself is deliberately untouched by all of this: it still
+   renders as a self-contained panel at the four places that embed it inside
+   another page. What the layout below does is host it, not restyle it. */
+.loginScreen {
+  display: grid;
+  min-block-size: 100dvh;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: var(--canvas);
+}
+
+.loginSplit {
+  display: grid;
+  min-block-size: 0;
+}
+
+/* The brand panel carries no information, so it is the first thing to go when
+   there is not room for both columns -- not stacked above the form, where it
+   would push the only actionable part of the page below the fold. */
+.brandPanel {
+  display: none;
+}
+
+.actionPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-5);
+}
+
+.headlineBlock {
+  display: flex;
+  inline-size: 100%;
+  max-inline-size: 22rem;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* The extended-heavy cut, which is the display face this layout is drawn
+   around. The tracking is reset because `:where(h1)` applies --tracking-display
+   globally and negative tracking reads as cramped on both this face and on
+   Chinese glyphs -- the same reason AppShell resets it. */
+.displayHeadline {
+  margin: 0;
+  font-family: var(--font-signin-display);
+  font-size: clamp(2.25rem, 5vw, 3.75rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: normal;
+  word-break: break-word;
+  /* Suppress large selection highlights while keeping the headline available
+     to assistive technology, find-in-page, and browser translation. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.subHeadline {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-signin-display);
+  font-size: var(--text-xl);
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: normal;
+}
+
+.loginScreen .loginGate {
+  inline-size: 100%;
+  max-inline-size: 22rem;
+  margin: 0;
+  padding: 0;
+}
+
+.loginFoot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.loginBack {
+  border: 0;
+  background: none;
+  padding: var(--space-2);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.loginBack:hover,
+.loginBack:focus-visible {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+/* 1280 is one of this project's two shell breakpoints, so the tablet range gets
+   the single column rather than a 45vw panel with no room to breathe. */
+@media (min-width: 1280px) {
+  .loginSplit {
+    grid-template-columns: minmax(0, 1fr) 45vw;
+  }
+
+  .brandPanel {
+    position: relative;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background-color: var(--accent);
+    background-image: url("/login-banner.png");
+    background-position: center;
+    background-size: cover;
+  }
+
+  .actionPanel {
+    align-items: start;
+    gap: var(--space-8);
+    padding: var(--space-10) clamp(var(--space-8), 6vw, 4.5rem);
+  }
+
+  .headlineBlock {
+    max-inline-size: 26rem;
+  }
+
+  .loginFoot {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 719px) {
+  .actionPanel {
+    padding: var(--space-6) var(--space-4) var(--space-8);
+  }
 }

@@ -1,0 +1,140 @@
+{
+  "accountLimitsView": [
+    "bio_length",
+    "display_name_length",
+    "profile_picture_bytes"
+  ],
+  "accountSessionView": [
+    "account",
+    "csrf_token",
+    "expires_at",
+    "limits"
+  ],
+  "accountView": [
+    "avatar_media_id",
+    "bio",
+    "cover_media_id",
+    "display_name",
+    "profile_url",
+    "role",
+    "user_id",
+    "username"
+  ],
+  "app.MentionSuggestion": [
+    "avatar_media_id",
+    "display_name",
+    "owner_id",
+    "profile_url",
+    "username"
+  ],
+  "app.SiteSettings": [
+    "avatar_media_id",
+    "bio",
+    "comments_enabled",
+    "cover_media_id",
+    "display_name",
+    "owner_id",
+    "pinned_post_id",
+    "public_base_url",
+    "timezone",
+    "title",
+    "username"
+  ],
+  "archive.ImportCounts": [
+    "comments",
+    "entries",
+    "identities",
+    "media",
+    "users"
+  ],
+  "archive.MergeReviewEntity": [
+    "author_kind",
+    "author_name",
+    "author_user_id",
+    "avatar",
+    "avatar_media_id",
+    "avatar_url",
+    "bio",
+    "content_md",
+    "cover",
+    "cover_media_id",
+    "created_at",
+    "display_name",
+    "email",
+    "email_deliverable",
+    "email_verified",
+    "entry_id",
+    "id",
+    "kind",
+    "last_login_at",
+    "link_cards",
+    "location",
+    "media",
+    "parent_id",
+    "pinned",
+    "provider",
+    "provider_user_id",
+    "published_at",
+    "quote_unavailable",
+    "quoted_entry_id",
+    "reply_to_comment_id",
+    "reposted_at",
+    "role",
+    "status",
+    "updated_at",
+    "user_id",
+    "username",
+    "username_set_at"
+  ],
+  "commentdto.Author": [
+    "avatar_media_id",
+    "display_name",
+    "profile_url",
+    "user_id",
+    "username"
+  ],
+  "commentdto.Comment": [
+    "author",
+    "author_kind",
+    "author_name",
+    "content_html",
+    "content_md",
+    "created_at",
+    "depth",
+    "id",
+    "location",
+    "media",
+    "parent_id",
+    "post_id",
+    "replies_next_cursor",
+    "reply_count",
+    "reply_to"
+  ],
+  "identityView": [
+    "display_name",
+    "email",
+    "last_login_at",
+    "linked_at",
+    "provider"
+  ],
+  "privateAccountView": [
+    "avatar_media_id",
+    "bio",
+    "cover_media_id",
+    "display_name",
+    "profile_url",
+    "role",
+    "status",
+    "user_id",
+    "username",
+    "username_chosen"
+  ],
+  "sessionListItem": [
+    "current",
+    "expires_at",
+    "id",
+    "issued_at",
+    "last_seen_at",
+    "surface"
+  ]
+}

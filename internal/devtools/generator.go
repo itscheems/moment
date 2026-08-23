@@ -197,17 +197,32 @@ func (builder *fixtureBuilder) createComments(ctx context.Context, entryID domai
 		// archive tests rather than seeded here: a fixture generator that
 		// produced rows no live code path can produce would drift away from
 		// what an actual instance looks like.
+		// The generator writes as the owner account because that is the only
+		// account a fixture has. Reading it from the site rather than assuming
+		// one keeps the fixture honest about who actually authored the rows.
+		settings, settingsErr := builder.site.Get(ctx)
+		if settingsErr != nil {
+			return index, settingsErr
+		}
+		input.Author = domain.User{
+			ID:          settings.OwnerID,
+			Username:    settings.Username,
+			DisplayName: settings.DisplayName,
+			Role:        domain.UserRoleOwner,
+			Status:      domain.AccountActive,
+		}
+
 		var result app.CreateCommentResult
 		var err error
 		switch {
 		case index == 0 || index%3 == 0:
-			result, err = builder.comments.CreateOwner(ctx, input)
+			result, err = builder.comments.Create(ctx, input)
 			if err == nil && index == 0 {
 				root = result.Comment.Comment.ID
 			}
 		default:
 			input.ParentID = &root
-			result, err = builder.comments.CreateOwner(ctx, input)
+			result, err = builder.comments.Create(ctx, input)
 		}
 		if err != nil {
 			return index, err

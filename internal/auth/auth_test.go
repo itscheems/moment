@@ -15,6 +15,15 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 )
 
+// testSubject is a syntactically valid account and session pair. Sessions now
+// name who they belong to, so every issuance in these tests needs one.
+func testSubject() Subject {
+	return Subject{
+		UserID:    "0123456789abcdef0123456789abcdef",
+		SessionID: "fedcba9876543210fedcba9876543210",
+	}
+}
+
 type stagedRandomReader struct {
 	mu      sync.Mutex
 	call    int
@@ -129,7 +138,7 @@ func TestBearerSessionsExpireAndRotationRevokesAllOldCredentials(t *testing.T) {
 	if !manager.AuthenticateBearer(credential.Token) || manager.AuthenticateBearer(credential.Token+"x") {
 		t.Fatal("bearer authentication mismatch")
 	}
-	cookie, session, err := manager.IssueSession(credential.Token)
+	cookie, session, err := manager.IssueSession(credential.Token, testSubject())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,11 +176,11 @@ func TestBearerSessionsExpireAndRotationRevokesAllOldCredentials(t *testing.T) {
 	if _, err := manager.ValidateSession(cookie); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("old session error = %v", err)
 	}
-	if _, _, err := manager.IssueSession(credential.Token); !errors.Is(err, ErrUnauthorized) {
+	if _, _, err := manager.IssueSession(credential.Token, testSubject()); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("old bearer session exchange error = %v", err)
 	}
 
-	newCookie, _, err := manager.IssueSession(rotated.Token)
+	newCookie, _, err := manager.IssueSession(rotated.Token, testSubject())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +201,7 @@ func TestPasswordSessionsAndRotationPreserveHumanLogin(t *testing.T) {
 	if err := manager.Load(); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := manager.IssuePasswordSession("not-configured"); !errors.Is(err, ErrUnauthorized) {
+	if _, _, err := manager.IssuePasswordSession("not-configured", testSubject()); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("password before setup error = %v", err)
 	}
 	grant, err := manager.AuthorizeBearer(credential.Token)
@@ -203,10 +212,10 @@ func TestPasswordSessionsAndRotationPreserveHumanLogin(t *testing.T) {
 	if err != nil || !status.PasswordEnabled || status.SessionEpoch != 1 {
 		t.Fatalf("set password status = %#v, err = %v", status, err)
 	}
-	if _, _, err := manager.IssuePasswordSession("wrong password"); !errors.Is(err, ErrUnauthorized) {
+	if _, _, err := manager.IssuePasswordSession("wrong password", testSubject()); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("wrong password error = %v", err)
 	}
-	cookie, session, err := manager.IssuePasswordSession("correct horse battery staple")
+	cookie, session, err := manager.IssuePasswordSession("correct horse battery staple", testSubject())
 	if err != nil || session.CSRFToken == "" {
 		t.Fatalf("password session = %#v, err = %v", session, err)
 	}
@@ -224,7 +233,7 @@ func TestPasswordSessionsAndRotationPreserveHumanLogin(t *testing.T) {
 	if !rotated.Initialized || rotated.SessionEpoch != 2 {
 		t.Fatalf("rotated = %#v", rotated)
 	}
-	if _, _, err := manager.IssuePasswordSession("correct horse battery staple"); err != nil {
+	if _, _, err := manager.IssuePasswordSession("correct horse battery staple", testSubject()); err != nil {
 		t.Fatalf("rotation unexpectedly removed password: %v", err)
 	}
 	if _, err := manager.ValidateSession(cookie); !errors.Is(err, ErrUnauthorized) {
@@ -384,7 +393,7 @@ func TestStaleSessionGrantCannotRotateCurrentAuthority(t *testing.T) {
 	if err := manager.Load(); err != nil {
 		t.Fatal(err)
 	}
-	cookie, _, err := manager.IssueSession(original.Token)
+	cookie, _, err := manager.IssueSession(original.Token, testSubject())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,7 +441,7 @@ func TestSessionIssuanceAndRotationShareOneAuthorityDecision(t *testing.T) {
 	}
 	issued := make(chan sessionResult, 1)
 	go func() {
-		cookie, session, issueErr := manager.IssueSession(original.Token)
+		cookie, session, issueErr := manager.IssueSession(original.Token, testSubject())
 		issued <- sessionResult{cookie: cookie, session: session, err: issueErr}
 	}()
 	<-random.entered[0]

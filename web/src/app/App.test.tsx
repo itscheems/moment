@@ -10,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
+import { makeAccountLimits } from "../test/accountFixtures";
 
 class FakeVisualViewport extends EventTarget {
   height: number;
@@ -112,15 +113,58 @@ function preauthenticate() {
   );
 }
 
+function accountSessionEnvelope(username = "owner") {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-from-cookie",
+      account: {
+        user_id: "00000000000000000000000000000000",
+        username,
+        display_name: "乔乔",
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "owner",
+        profile_url: `/${username}`,
+        status: "active",
+        username_chosen: true,
+      },
+      limits: makeAccountLimits(),
+    },
+    meta: { request_id: "req_account_session" },
+  };
+}
+
+function signedOutEnvelope() {
+  return {
+    error: {
+      code: "UNAUTHORIZED",
+      message: "auth required",
+      details: {},
+      request_id: "req_auth",
+    },
+  };
+}
+
 function installApi(
   handler: (url: string) => Promise<Response> = async (url) => {
     if (url === "/api/v1/site") return json(siteEnvelope);
     return json(timelineEnvelope());
   },
 ) {
-  const fetcher = vi.fn(async (input: RequestInfo | URL) =>
-    handler(String(input)),
-  );
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    // Restoring a signed-in browser goes through the account session now, so
+    // every route in this suite has to answer it. A stored session stands in
+    // for the cookie the server would be reading.
+    if (url === "/api/v1/account/session") {
+      return window.sessionStorage.getItem("moment.owner.session.v1")
+        ? json(accountSessionEnvelope())
+        : json(signedOutEnvelope(), 401);
+    }
+    return handler(url);
+  });
   vi.stubGlobal("fetch", fetcher);
   return fetcher;
 }
@@ -357,7 +401,7 @@ describe("App shell and public routes", () => {
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "所有者登录" }),
     );
-    await waitFor(() => expect(window.location.pathname).toBe("/owner/login"));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
   });
 
   it("uses five distinct mobile destinations and omits the inline owner composer", async () => {
@@ -538,9 +582,200 @@ describe("App shell and public routes", () => {
     );
   });
 
+  // `/profile` resolves to whoever is asking, which is right for the server and
+  // wrong for a link somebody reads before clicking: it hides the handle, and a
+  // signed-in member following it lands on a page addressed as though it were
+  // nobody's.
+  it("points the profile link at the signed-in account's own address", async () => {
+    preauthenticate();
+    // Stubbed directly rather than through installApi: that helper answers the
+    // account session itself, so a handler passed to it never sees the route
+    // whose handle this test is about. The handle differs from the site's on
+    // purpose -- a member's own page is not the site's page.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/v1/account/session") {
+          return json(accountSessionEnvelope("cheemschen"));
+        }
+        if (url === "/api/v1/site") return json(siteEnvelope);
+        return json(timelineEnvelope());
+      }),
+    );
+    render(<App />);
+
+    // The rail renders before the account session answers, so the handle-free
+    // fallback is on screen first and the assertion has to be about where the
+    // link settles rather than where it starts.
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "个人资料" })).toHaveAttribute(
+        "href",
+        "/cheemschen",
+      );
+    });
+  });
+
+  it("falls back to the handle-free entry point for a visitor with no session", async () => {
+    render(<App />);
+
+    const profileLink = await screen.findByRole("link", { name: "个人资料" });
+    expect(profileLink).toHaveAttribute("href", "/profile");
+  });
+
+  // Signing in is the whole page. Everything the shell offers either needs the
+  // session this page exists to obtain or is somewhere the visitor was already
+  // turned away from, so framing the form with that navigation made it read as
+  // one panel among many rather than the one thing left to do.
+  it("gives sign-in its own page instead of a panel inside the shell", async () => {
+    window.history.replaceState({}, "", "/login");
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/login/methods") {
+        return json({
+          data: { methods: ["password", "token"] },
+          meta: { request_id: "req_options" },
+        });
+      }
+      if (url === "/api/v1/login/oauth/providers") {
+        return json({
+          data: { providers: [] },
+          meta: { request_id: "req_providers" },
+        });
+      }
+      return json(timelineEnvelope());
+    });
+    render(<App />);
+
+    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(screen.getByLabelText("密码")).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "站点导航" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
+    // The product's line, not the instance's name. A visitor arrives here
+    // before knowing whose instance they are on, and the site title above a
+    // sign-in form read as a greeting to somebody who had not said who they
+    // were yet.
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Happening now" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("乔乔的 Moment")).toBeNull();
+  });
+
+  // `/profile` means "mine", and only a session says whose. It used to render
+  // the site owner's page to whoever opened it, so a signed-in member met
+  // somebody else's profile and a visitor met a page that was not theirs.
+  it("sends a visitor with no session from /profile to sign in", async () => {
+    window.history.replaceState({}, "", "/profile");
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/login/methods") {
+        return json({
+          data: { methods: ["password", "token"] },
+          meta: { request_id: "req_methods" },
+        });
+      }
+      if (url === "/api/v1/login/oauth/providers") {
+        return json({
+          data: { providers: [] },
+          meta: { request_id: "req_providers" },
+        });
+      }
+      return json(timelineEnvelope());
+    });
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+  });
+
+  // A sibling tab hands over a working session before the account behind it is
+  // known, so "signed in but nobody yet" is a third state. Reading it as a
+  // guest sent a fully signed-in reader to the sign-in page.
+  it("waits on /profile while a handed-over session is still nameless", async () => {
+    window.history.replaceState({}, "", "/profile");
+
+    const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+    class OfferingChannel {
+      addEventListener(
+        type: string,
+        listener: (event: MessageEvent<unknown>) => void,
+      ) {
+        if (type !== "message") return;
+        listeners.add(listener);
+        // The offer lands as soon as this tab starts listening, which is what
+        // puts a session in hand before any account lookup can answer.
+        queueMicrotask(() => {
+          listener(
+            new MessageEvent("message", {
+              data: {
+                type: "offer-session",
+                request_id: null,
+                session: {
+                  csrf_token: "csrf-from-sibling",
+                  expires_at: "2999-08-11T01:00:00.000Z",
+                  issued_at: 1,
+                  version: "sibling-tab-0001",
+                },
+              },
+            }),
+          );
+        });
+      }
+      removeEventListener(
+        _type: string,
+        listener: (event: MessageEvent<unknown>) => void,
+      ) {
+        listeners.delete(listener);
+      }
+      postMessage() {}
+      close() {
+        listeners.clear();
+      }
+    }
+    vi.stubGlobal("BroadcastChannel", OfferingChannel);
+
+    // The account lookup never answers, so the only thing this tab knows is
+    // that it holds a session.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/v1/account/session") return new Promise<Response>(() => {});
+        if (url === "/api/v1/site") return json(siteEnvelope);
+        return json(timelineEnvelope());
+      }),
+    );
+    render(<App />);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(window.location.pathname).toBe("/profile");
+  });
+
+  it("sends a signed-in account from /profile to its own handle", async () => {
+    window.history.replaceState({}, "", "/profile");
+    preauthenticate();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/v1/account/session") {
+          return json(accountSessionEnvelope("cheemschen"));
+        }
+        if (url === "/api/v1/site") return json(siteEnvelope);
+        return json(timelineEnvelope());
+      }),
+    );
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/cheemschen"));
+  });
+
   it("renders the public profile as a first-class route", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
-    window.history.replaceState({}, "", "/profile");
+    // The handle, not `/profile`: a public page has a public address, and
+    // `/profile` now means "mine" and needs a session to mean anything.
+    window.history.replaceState({}, "", "/owner");
     installApi(async (url) => {
       if (url === "/api/v1/site") return json(siteEnvelope);
       if (url.startsWith("/api/v1/posts?")) {
@@ -571,7 +806,7 @@ describe("App shell and public routes", () => {
 
   it("returns to the timeline from the profile header", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
-    window.history.replaceState({}, "", "/profile");
+    window.history.replaceState({}, "", "/owner");
     installApi(async (url) => {
       if (url === "/api/v1/site") return json(siteEnvelope);
       if (url.startsWith("/api/v1/posts?")) {

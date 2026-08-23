@@ -22,6 +22,7 @@ import { NavigationProvider } from "../../app/navigation";
 import { OwnerProvider, useOwner } from "../owner/OwnerProvider";
 import { CommentThread } from "./CommentThread";
 import commentsCss from "./Comments.module.css?inline";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const postId = "01K2ABCDEF0123456789ABCDE0";
 const rootId = "01K2ABCDEF0123456789ABCDE1";
@@ -95,7 +96,7 @@ function comment(
       // what makes these fixtures a faithful stand-in for a real response.
       display_name: options.owner ? site.displayName : authorName,
       avatar_media_id: null,
-      profile_url: options.owner ? `/@${site.username}` : null,
+      profile_url: options.owner ? `/${site.username}` : null,
     },
     reply_to: null,
     reply_count: 0,
@@ -275,6 +276,40 @@ function preauthenticate() {
   );
 }
 
+function accountSessionEnvelope(username = "owner") {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-from-cookie",
+      account: {
+        user_id: "00000000000000000000000000000000",
+        username,
+        display_name: "乔乔",
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "owner",
+        profile_url: `/${username}`,
+        status: "active",
+        username_chosen: true,
+      },
+      limits: makeAccountLimits(),
+    },
+    meta: { request_id: "req_account_session" },
+  };
+}
+
+function signedOutEnvelope() {
+  return {
+    error: {
+      code: "UNAUTHORIZED",
+      message: "auth required",
+      details: {},
+      request_id: "req_auth",
+    },
+  };
+}
+
 function installApi(
   handler: (
     url: string,
@@ -286,6 +321,11 @@ function installApi(
       const url = String(input);
       const response = await handler(url, init);
       if (response) return response;
+      if (url === "/api/v1/account/session") {
+        return window.sessionStorage.getItem(sessionKey)
+          ? json(accountSessionEnvelope())
+          : json(signedOutEnvelope(), 401);
+      }
       if (url === "/api/v1/owner/status") {
         // OwnerProvider throws away a stored session the moment status answers
         // 401, so a preauthenticated test has to be answered as signed in
@@ -844,7 +884,7 @@ describe("public comment thread", () => {
     expect(await screen.findByText("登录后回复")).toBeVisible();
     expect(screen.getByRole("link", { name: "登录" })).toHaveAttribute(
       "href",
-      "/owner/login",
+      "/login",
     );
     expect(
       screen.queryByRole("form", { name: "发表回复" }),
@@ -868,10 +908,58 @@ describe("public comment thread", () => {
     expect(within(prompt).getByText("登录后回复")).toBeInTheDocument();
     expect(within(prompt).getByRole("link", { name: "登录" })).toHaveAttribute(
       "href",
-      "/owner/login",
+      "/login",
     );
     // Pressing it must not open a composer it cannot submit.
     expect(screen.queryByLabelText("回复内容")).not.toBeInTheDocument();
+  });
+
+  it("tells an account still waiting on approval why it cannot reply", async () => {
+    preauthenticate();
+    installApi((url, init) => {
+      if (url === "/api/v1/account/session") {
+        return json({
+          data: {
+            expires_at: "2999-08-11T01:00:00.000Z",
+            csrf_token: "csrf-from-cookie",
+            account: {
+              user_id: "1".repeat(32),
+              username: "linlin",
+              display_name: "林林",
+              bio: "",
+              avatar_media_id: null,
+              cover_media_id: null,
+              role: "member",
+              profile_url: "/linlin",
+              status: "pending",
+              username_chosen: true,
+            },
+            limits: makeAccountLimits(),
+          },
+          meta: { request_id: "req_pending" },
+        });
+      }
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [root] });
+      }
+    });
+    renderThread();
+
+    // Signed in, and still refused by the server. Finding that out after
+    // typing a reply is the worst possible moment, so the composer never
+    // appears -- and neither does a login link, which would send somebody who
+    // is already signed in around a loop.
+    expect(await screen.findByText("正在等待站长批准")).toBeVisible();
+    expect(
+      screen.getByText("你的账户正在等待站长批准，批准后就能留言。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("回复内容")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "登录" })).toBeNull();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^回复 / })[0]);
+    const prompt = await screen.findByRole("dialog");
+    expect(within(prompt).getByText("正在等待站长批准")).toBeInTheDocument();
+    expect(within(prompt).queryByRole("link", { name: "登录" })).toBeNull();
   });
 
   it("offers sign-in inside the reply dialog while signed out", async () => {
@@ -895,7 +983,7 @@ describe("public comment thread", () => {
     expect(within(dialog).getByText("登录后回复")).toBeVisible();
     expect(within(dialog).getByRole("link", { name: "登录" })).toHaveAttribute(
       "href",
-      "/owner/login",
+      "/login",
     );
     expect(within(dialog).queryByLabelText("回复内容")).not.toBeInTheDocument();
     // The Moment being replied to stays on screen: the reader keeps the
@@ -1598,7 +1686,7 @@ describe("public comment thread", () => {
         if (url.endsWith("/comments") && init?.method !== "POST") {
           return success({ items: [root] });
         }
-        if (url === "/api/v1/owner/session" && init?.method === "POST") {
+        if (url === "/api/v1/login/session" && init?.method === "POST") {
           return success({
             csrf_token: "csrf-new",
             expires_at: "2999-08-11T01:00:00Z",
@@ -1780,7 +1868,7 @@ describe("public comment thread", () => {
       if (url.endsWith("/comments") && init?.method !== "DELETE") {
         return success({ items: [root] });
       }
-      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
         return success({
           csrf_token: "csrf-new",
           expires_at: "2999-08-11T01:00:00Z",
@@ -1836,7 +1924,7 @@ describe("public comment thread", () => {
       if (url.endsWith("/comments") && init?.method !== "DELETE") {
         return success({ items: [root] });
       }
-      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
         return success({
           csrf_token: "csrf-new",
           expires_at: "2999-08-11T01:00:00Z",

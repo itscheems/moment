@@ -49,7 +49,7 @@ func (service *Service) runLockedDevelopment(ctx context.Context, mode Mode) (Re
 		}))
 	} else {
 		builder.set(failed(CheckCurrentGeneration, "CURRENT does not select the pinned complete generation", "restore a valid CURRENT pointer explicitly; never promote CURRENT.next automatically", map[string]any{"valid": false, "resolved": currentErr == nil, "id_matches": current.ID == expected.ID, "authority_matches": authorityErr == nil}, failureIntegrity))
-		for _, id := range []string{CheckDatabaseOpen, CheckSchemaVersion, CheckSiteConfiguration} {
+		for _, id := range []string{CheckDatabaseOpen, CheckSchemaVersion, CheckSiteConfiguration, CheckAccountIntegrity} {
 			builder.set(skipped(id, "current_generation_failed"))
 		}
 		if mode == ModeDeep {
@@ -71,6 +71,7 @@ func (service *Service) runLockedDevelopment(ctx context.Context, mode Mode) (Re
 		builder.set(failed(CheckDatabaseOpen, "the selected database cannot be opened read-only", "restore database readability or recover a valid generation", map[string]any{"opened": false, "bounded": false}, failureIntegrity))
 		builder.set(skipped(CheckSchemaVersion, "database_not_open"))
 		builder.set(skipped(CheckSiteConfiguration, "database_not_open"))
+		builder.set(skipped(CheckAccountIntegrity, "database_not_open"))
 		if mode == ModeDeep {
 			service.skipDatabaseAndMediaDeep(builder, "database_not_open")
 		}

@@ -28,6 +28,7 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 		newSequenceClock(rootAt, replyAt, deletedAt).Now,
 		commentIDs(commentOne, commentTwo),
 	)
+	author := testCommentAuthor(t, database, runtimeState)
 	postID, _ := domain.ParseID(entryOne)
 	one, _ := domain.ParseID(mediaOne)
 	two, _ := domain.ParseID(mediaTwo)
@@ -39,14 +40,14 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 	}
 	replyMedia := []domain.EntryMediaUsage{{MediaID: two, Position: 0, AltText: &description}}
 
-	root, err := service.CreateOwner(ctx, app.CreateCommentInput{
+	root, err := service.Create(ctx, app.CreateCommentInput{Author: author,
 		EntryID: postID, ContentMD: "root with images",
 		Media: rootMedia, IdempotencyKey: "comment-media-root",
 	})
 	if err != nil || !reflect.DeepEqual(root.Comment.Media, expectedMediaProjections(rootMedia)) {
 		t.Fatalf("create root = %#v, %v", root, err)
 	}
-	reply, err := service.CreateOwner(ctx, app.CreateCommentInput{
+	reply, err := service.Create(ctx, app.CreateCommentInput{Author: author,
 		EntryID: postID, ParentID: &root.Comment.Comment.ID, ContentMD: "reply with image",
 		Media: replyMedia, IdempotencyKey: "comment-media-reply",
 	})
@@ -62,7 +63,7 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 		!reflect.DeepEqual(thread.Items[1].Media, expectedMediaProjections(replyMedia)) {
 		t.Fatalf("thread = %#v, %v", thread, err)
 	}
-	replayed, err := service.CreateOwner(ctx, app.CreateCommentInput{
+	replayed, err := service.Create(ctx, app.CreateCommentInput{Author: author,
 		EntryID: postID, ContentMD: "root with images",
 		Media: rootMedia, IdempotencyKey: "comment-media-root",
 	})
@@ -96,22 +97,23 @@ func TestCommentMediaRejectsMissingOverLimitAndOversizeAtomically(t *testing.T) 
 	one, _ := domain.ParseID(mediaOne)
 	missing, _ := domain.ParseID(mediaTwo)
 	service := newTestCommentService(t, database, runtimeState, func() time.Time { return createdAt.Add(time.Hour) }, commentIDs(commentOne, commentTwo, commentThree))
+	author := testCommentAuthor(t, database, runtimeState)
 
-	if _, err := service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ContentMD: "missing", Media: []domain.EntryMediaUsage{{MediaID: missing, Position: 0}}}); !domain.HasCode(err, domain.CodeMediaNotFound) {
+	if _, err := service.Create(ctx, app.CreateCommentInput{Author: author, EntryID: postID, ContentMD: "missing", Media: []domain.EntryMediaUsage{{MediaID: missing, Position: 0}}}); !domain.HasCode(err, domain.CodeMediaNotFound) {
 		t.Fatalf("missing media = %v", err)
 	}
 	overLimit := make([]domain.EntryMediaUsage, domain.MaxCommentMediaUsages+1)
 	for index := range overLimit {
 		overLimit[index] = domain.EntryMediaUsage{MediaID: one, Position: index}
 	}
-	if _, err := service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ContentMD: "too many", Media: overLimit}); !domain.HasCode(err, domain.CodeInvalidArgument) {
+	if _, err := service.Create(ctx, app.CreateCommentInput{Author: author, EntryID: postID, ContentMD: "too many", Media: overLimit}); !domain.HasCode(err, domain.CodeInvalidArgument) {
 		t.Fatalf("over limit = %v", err)
 	}
 	if _, err := database.write.ExecContext(ctx, `UPDATE media SET byte_size = ? WHERE id = ?`, 21<<20, mediaOne); err != nil {
 		t.Fatal(err)
 	}
 	tooLarge := []domain.EntryMediaUsage{{MediaID: one, Position: 0}, {MediaID: one, Position: 1}}
-	if _, err := service.CreateOwner(ctx, app.CreateCommentInput{EntryID: postID, ContentMD: "too large", Media: tooLarge}); !domain.HasCode(err, domain.CodeMediaTooLarge) {
+	if _, err := service.Create(ctx, app.CreateCommentInput{Author: author, EntryID: postID, ContentMD: "too large", Media: tooLarge}); !domain.HasCode(err, domain.CodeMediaTooLarge) {
 		t.Fatalf("too large = %v", err)
 	}
 	assertCount(t, database.read, `SELECT count(*) FROM comments`, 0)
@@ -134,12 +136,13 @@ func TestBatchedCommentMediaMatchesPerCommentLoading(t *testing.T) {
 	service := newTestCommentService(t, database, runtimeState,
 		newSequenceClock(seededAt.Add(time.Hour), seededAt.Add(2*time.Hour), seededAt.Add(3*time.Hour)).Now,
 		commentIDs(commentOne, commentTwo, commentThree))
+	author := testCommentAuthor(t, database, runtimeState)
 	postID, _ := domain.ParseID(entryOne)
 	one, _ := domain.ParseID(mediaOne)
 	two, _ := domain.ParseID(mediaTwo)
 	described := "street at night"
 
-	withMedia := mustOwnerComment(t, service, app.CreateCommentInput{
+	withMedia := mustOwnerComment(t, service, author, app.CreateCommentInput{
 		EntryID: postID, ContentMD: "two images",
 		Media: []domain.EntryMediaUsage{
 			{MediaID: one, Position: 0},
@@ -150,7 +153,7 @@ func TestBatchedCommentMediaMatchesPerCommentLoading(t *testing.T) {
 	// A comment with no attachments at all has to come back as an empty slice
 	// rather than be absent from the batch, or the caller reading the map by
 	// key would silently render nothing for it.
-	bare := mustOwnerComment(t, service, app.CreateCommentInput{
+	bare := mustOwnerComment(t, service, author, app.CreateCommentInput{
 		EntryID: postID, ParentID: &rootID, ContentMD: "no images",
 	})
 	bareID := bare.Comment.Comment.ID

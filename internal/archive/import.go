@@ -36,6 +36,8 @@ const (
 	defaultMaxEntries        = int64(100_000)
 	defaultMaxComments       = int64(500_000)
 	defaultMaxMedia          = int64(100_000)
+	defaultMaxUsers          = int64(100_000)
+	defaultMaxIdentities     = int64(500_000)
 	defaultMaxCompression    = uint64(1_000)
 	defaultInspectionTTL     = 30 * time.Minute
 	minimumSafetyMarginBytes = int64(2 << 30)
@@ -57,6 +59,8 @@ type InspectLimits struct {
 	MaxEntries       int64
 	MaxComments      int64
 	MaxMedia         int64
+	MaxUsers         int64
+	MaxIdentities    int64
 	MaxCompression   uint64
 }
 
@@ -73,10 +77,18 @@ type InspectOptions struct {
 }
 
 // ImportCounts are portable record counts safe for Web and CLI preview.
+//
+// Users and Identities are reported for the same reason the other three are:
+// commit replaces the whole authority, so a preview that names only content is
+// telling the owner about part of what they are about to lose. Neither field is
+// omitted when zero -- a preview that silently drops "users" reads as an import
+// that leaves accounts alone, which is the one thing it never does.
 type ImportCounts struct {
-	Entries  int64 `json:"entries"`
-	Comments int64 `json:"comments"`
-	Media    int64 `json:"media"`
+	Entries    int64 `json:"entries"`
+	Comments   int64 `json:"comments"`
+	Media      int64 `json:"media"`
+	Users      int64 `json:"users"`
+	Identities int64 `json:"identities"`
 }
 
 // ImportTimeRange describes the published range that will replace the site.
@@ -197,6 +209,12 @@ func NewInspector(options InspectOptions) (*Inspector, error) {
 	if limits.MaxMedia == 0 {
 		limits.MaxMedia = defaultMaxMedia
 	}
+	if limits.MaxUsers == 0 {
+		limits.MaxUsers = defaultMaxUsers
+	}
+	if limits.MaxIdentities == 0 {
+		limits.MaxIdentities = defaultMaxIdentities
+	}
 	if limits.MaxCompression == 0 {
 		limits.MaxCompression = defaultMaxCompression
 	}
@@ -205,6 +223,8 @@ func NewInspector(options InspectOptions) (*Inspector, error) {
 		limits.MaxEntries < 1 || limits.MaxEntries > defaultMaxEntries ||
 		limits.MaxComments < 1 || limits.MaxComments > defaultMaxComments ||
 		limits.MaxMedia < 1 || limits.MaxMedia > defaultMaxMedia ||
+		limits.MaxUsers < 1 || limits.MaxUsers > defaultMaxUsers ||
+		limits.MaxIdentities < 1 || limits.MaxIdentities > defaultMaxIdentities ||
 		limits.MaxCompression < 1 || limits.MaxCompression > defaultMaxCompression {
 		return nil, errors.New("import inspection limits must be positive and no greater than product ceilings")
 	}
@@ -571,7 +591,7 @@ func (inspector *Inspector) newClaim(ctx context.Context, state stagingMetadata,
 		Generation: stagingGeneration(stageRoot, state.GenerationID), MetadataPath: filepath.Join(stageRoot, "staging.json"),
 		StageRoot: stageRoot, ArchiveSHA: state.ArchiveSHA, ExpiresAt: time.UnixMilli(state.ExpiresAtMS).UTC(),
 		SessionEpoch:  state.SessionEpoch,
-		Counts:        ImportCounts{Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media},
+		Counts:        portable.counts,
 		ExpandedBytes: document.Limits.ExpandedBytes, MediaBytes: portable.mediaBytes,
 	}, nil
 }
@@ -665,8 +685,10 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 		return manifest{}, importInvalid("archive ZIP central directory is invalid", err)
 	}
 	defer func() { _ = reader.Close() }()
-	maxMembers := inspector.limits.MaxMedia + 7
-	if int64(len(reader.File)) > maxMembers || len(reader.File) < 7 {
+	// The budget is stated against the larger of the two v1 layouts, and the
+	// floor against the smaller, so both remain readable.
+	maxMembers := inspector.limits.MaxMedia + int64(len(accountPortableMembers)+len(portableTrailerMembers))
+	if int64(len(reader.File)) > maxMembers || len(reader.File) < len(legacyPortableMembers)+len(portableTrailerMembers) {
 		return manifest{}, importInvalid("archive ZIP member count exceeds the inspection budget", nil)
 	}
 	seen := make(map[string]struct{}, len(reader.File))
@@ -735,6 +757,8 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 	if document.Counts.Entries < 0 || document.Counts.Entries > inspector.limits.MaxEntries ||
 		document.Counts.Comments < 0 || document.Counts.Comments > inspector.limits.MaxComments ||
 		document.Counts.Media < 0 || document.Counts.Media > inspector.limits.MaxMedia ||
+		document.Counts.Users < 0 || document.Counts.Users > inspector.limits.MaxUsers ||
+		document.Counts.Identities < 0 || document.Counts.Identities > inspector.limits.MaxIdentities ||
 		document.Limits.ExpandedBytes < 1 || document.Limits.ExpandedBytes > inspector.limits.MaxExpandedBytes {
 		return manifest{}, importInvalid("archive manifest counts or expanded bytes exceed the inspection budget", nil)
 	}
@@ -781,7 +805,7 @@ func summarizePortable(ctx context.Context, archivePath string, document manifes
 	for _, file := range reader.File {
 		files[file.Name] = file
 	}
-	result := portableSummary{counts: ImportCounts{Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media}}
+	result := portableSummary{counts: portableImportCounts(document, archiveCarriesAccounts(files))}
 	_, err = validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
 		if _, err := domainLocation(value.Location); err != nil {
 			return err
@@ -856,8 +880,13 @@ func (inspector *Inspector) currentReplacementImpact(ctx context.Context, runtim
 	if err != nil {
 		return ReplacementImpact{}, err
 	}
+	// These are the rows commit would delete, so the accounts already on this
+	// site are counted here rather than the ones arriving in the archive.
 	return ReplacementImpact{
-		Counts:     ImportCounts{Entries: impact.Entries, Comments: impact.Comments, Media: impact.Media},
+		Counts: ImportCounts{
+			Entries: impact.Entries, Comments: impact.Comments, Media: impact.Media,
+			Users: impact.Users, Identities: impact.Identities,
+		},
 		MediaBytes: impact.MediaBytes, DataBytes: dataBytes,
 	}, nil
 }
@@ -1201,6 +1230,19 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		return err
 	}
 
+	// The site record is read before content because it answers who the owner
+	// is, and the owner account has to exist before anything can refer to it.
+	site, err := readPortableSite(ctx, files)
+	if err != nil {
+		return err
+	}
+	if err := validateArchiveSite(archiveSiteOf(site), parent.IsDevelopment()); err != nil {
+		return err
+	}
+	if err := importPortableAccounts(ctx, importer, files, document, site); err != nil {
+		return err
+	}
+
 	_, err = validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
 		created, err := parsePortableTimestamp(value.CreatedAt)
 		if err != nil {
@@ -1268,29 +1310,10 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		return err
 	}
 
-	siteData, err := readSmallZIPMember(ctx, files["data/site.json"], maxPortableRecordBytes)
-	if err != nil {
+	if err := importer.SetSite(ctx, archiveSiteOf(site)); err != nil {
 		return err
 	}
-	var site siteRecord
-	if _, err := decodePortableJSONObject(siteData, &site, []string{"title", "bio", "timezone", "public_base_url", "avatar_media_id", "comments_enabled"}); err != nil {
-		return err
-	}
-	if err := validateArchiveSite(sqlitestore.ArchiveSite{
-		OwnerID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName,
-		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone, PublicBaseURL: site.PublicBaseURL,
-		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID, CommentsEnabled: site.CommentsEnabled,
-	}, parent.IsDevelopment()); err != nil {
-		return err
-	}
-	if err := importer.SetSite(ctx, sqlitestore.ArchiveSite{
-		OwnerID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName,
-		Title: site.Title, Bio: site.Bio, Timezone: site.Timezone, PublicBaseURL: site.PublicBaseURL,
-		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID, PinnedPostID: site.PinnedPostID, CommentsEnabled: site.CommentsEnabled,
-	}); err != nil {
-		return err
-	}
-	expected := sqlitestore.ArchiveCounts{Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media}
+	expected := portableExpectedCounts(document, archiveCarriesAccounts(files))
 	if err := importer.Commit(ctx, expected); err != nil {
 		return err
 	}
@@ -1314,6 +1337,116 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 	}
 	defer func() { resultErr = errors.Join(resultErr, snapshot.Close()) }()
 	return snapshot.ValidateIntegrity(ctx)
+}
+
+// portableUserFields and portableIdentityFields are the keys a reader requires
+// of an accounts record. They are shared by validation and rebuild so the two
+// cannot disagree about what a well-formed record contains.
+var (
+	portableUserFields = []string{
+		"id", "username", "display_name", "bio", "avatar_media_id", "cover_media_id",
+		"role", "status", "created_at", "updated_at",
+	}
+	portableIdentityFields = []string{
+		"provider", "provider_user_id", "user_id", "email", "email_verified",
+		"email_deliverable", "display_name", "avatar_url", "created_at", "last_login_at",
+	}
+)
+
+func readPortableSite(ctx context.Context, files map[string]*zip.File) (siteRecord, error) {
+	data, err := readSmallZIPMember(ctx, files["data/site.json"], maxPortableRecordBytes)
+	if err != nil {
+		return siteRecord{}, err
+	}
+	var site siteRecord
+	if _, err := decodePortableJSONObject(data, &site, []string{"title", "bio", "timezone", "public_base_url", "avatar_media_id", "comments_enabled"}); err != nil {
+		return siteRecord{}, err
+	}
+	return site, nil
+}
+
+// portableExpectedCounts states what a generation rebuilt from this archive
+// must hold.
+//
+// An archive without the accounts members still describes exactly one account:
+// its site record names the owner, and that owner is synthesized on import. An
+// archive that names no owner at all keeps the account the migrations
+// generated. Either way the answer is one, which is why every valid Moment
+// database has an owner and none has two.
+func portableExpectedCounts(document manifest, carriesAccounts bool) sqlitestore.ArchiveCounts {
+	counts := sqlitestore.ArchiveCounts{
+		Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media,
+		Users: document.Counts.Users, Identities: document.Counts.Identities,
+	}
+	if !carriesAccounts {
+		counts.Users, counts.Identities = 1, 0
+	}
+	return counts
+}
+
+// portableImportCounts is what a preview must say the archive holds. It is
+// derived from portableExpectedCounts so the number shown before the decision
+// and the number the rebuilt generation is held to are the same number.
+func portableImportCounts(document manifest, carriesAccounts bool) ImportCounts {
+	expected := portableExpectedCounts(document, carriesAccounts)
+	return ImportCounts{
+		Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media,
+		Users: expected.Users, Identities: expected.Identities,
+	}
+}
+
+// importPortableAccounts writes every account the archive describes.
+//
+// The owner is written first, in its own pass over the member, because the
+// generation it lands in is not accountless: the migrations already created an
+// owner there, holding both the single-owner index and, by default, the handle
+// "owner". Adopting it before any other account is inserted is what keeps an
+// incoming member named "owner" from colliding with a row that is about to
+// stop existing.
+func importPortableAccounts(ctx context.Context, importer *sqlitestore.PortableImporter, files map[string]*zip.File, document manifest, site siteRecord) error {
+	if !archiveCarriesAccounts(files) {
+		return importSynthesizedOwner(ctx, importer, document, site)
+	}
+	for _, ownerPass := range []bool{true, false} {
+		if _, err := validateJSONLines[userRecord](ctx, files["data/users.jsonl"], portableUserFields, func(value userRecord, _ map[string]json.RawMessage) error {
+			if (domain.UserRole(value.Role) == domain.UserRoleOwner) != ownerPass {
+				return nil
+			}
+			account, err := archiveUserOf(value)
+			if err != nil {
+				return err
+			}
+			if ownerPass {
+				account = admittedOwner(account)
+			}
+			return importer.InsertUser(ctx, account)
+		}); err != nil {
+			return err
+		}
+	}
+	_, err := validateJSONLines[identityRecord](ctx, files["data/identities.jsonl"], portableIdentityFields, func(value identityRecord, _ map[string]json.RawMessage) error {
+		identity, err := archiveIdentityOf(value)
+		if err != nil {
+			return err
+		}
+		return importer.InsertIdentity(ctx, identity)
+	})
+	return err
+}
+
+func importSynthesizedOwner(ctx context.Context, importer *sqlitestore.PortableImporter, document manifest, site siteRecord) error {
+	if site.OwnerID == "" {
+		return importer.KeepGeneratedOwner(ctx)
+	}
+	archivedAt, err := parsePortableTimestamp(document.CreatedAt)
+	if err != nil {
+		return err
+	}
+	owner, err := synthesizeOwnerAccount(site, archivedAt)
+	if err != nil {
+		return err
+	}
+	return importer.InsertUser(ctx, owner)
 }
 
 func portableStoragePath(sha, mimeType string) (string, error) {
@@ -1581,9 +1714,11 @@ type stagingAuthorityDatabase interface {
 }
 
 func validateStagingAuthority(ctx context.Context, generation runtimefs.Generation, archivePath string, document manifest, database stagingAuthorityDatabase) error {
-	if err := database.ValidatePortableReady(ctx, sqlitestore.ArchiveCounts{
-		Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media,
-	}); err != nil {
+	carriesAccounts, err := archiveFileCarriesAccounts(archivePath)
+	if err != nil {
+		return err
+	}
+	if err := database.ValidatePortableReady(ctx, portableExpectedCounts(document, carriesAccounts)); err != nil {
 		return err
 	}
 	snapshot, err := database.BeginArchiveSnapshot(ctx)
@@ -1594,7 +1729,7 @@ func validateStagingAuthority(ctx context.Context, generation runtimefs.Generati
 	if err := snapshot.ValidateIntegrity(ctx); err != nil {
 		return err
 	}
-	if err := validatePortableAuthority(ctx, snapshot, archivePath); err != nil {
+	if err := validatePortableAuthority(ctx, snapshot, archivePath, document); err != nil {
 		return err
 	}
 	return snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
@@ -1677,7 +1812,30 @@ func validatePortableGenerationTree(ctx context.Context, generation runtimefs.Ge
 	return nil
 }
 
-func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, archivePath string) error {
+func archiveFileCarriesAccounts(archivePath string) (bool, error) {
+	reader, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = reader.Close() }()
+	files := make(map[string]*zip.File, len(reader.File))
+	for _, file := range reader.File {
+		files[file.Name] = file
+	}
+	return archiveCarriesAccounts(files), nil
+}
+
+// validatePortableAuthority proves a rebuilt generation says exactly what the
+// archive it was built from says.
+//
+// Both sides of every comparison are produced by the same conversion function.
+// That is the whole point: this check used to decode the archive side whole and
+// rebuild the database side field by field, and the two hand-written halves
+// were free to drift. When they did, the message was "staged X do not match the
+// portable archive" with no field named, and it only appeared once real data
+// used the forgotten field -- which is how a lost pinned flag made every backup
+// containing a pinned comment unrestorable while every test stayed green.
+func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, archivePath string, document manifest) error {
 	reader, err := zip.OpenReader(archivePath)
 	if err != nil {
 		return err
@@ -1687,24 +1845,19 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 	for _, file := range reader.File {
 		files[file.Name] = file
 	}
-	siteBytes, err := readSmallZIPMember(ctx, files["data/site.json"], maxPortableRecordBytes)
+	expectedSite, err := readPortableSite(ctx, files)
 	if err != nil {
-		return err
-	}
-	var expectedSite siteRecord
-	if _, err := decodePortableJSONObject(siteBytes, &expectedSite, []string{"title", "bio", "timezone", "public_base_url", "avatar_media_id", "comments_enabled"}); err != nil {
 		return err
 	}
 	actualSite, err := snapshot.Site(ctx)
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(expectedSite, siteRecord{
-		OwnerID: actualSite.OwnerID, Username: actualSite.Username, DisplayName: actualSite.DisplayName,
-		Title: actualSite.Title, Bio: actualSite.Bio, Timezone: actualSite.Timezone,
-		PublicBaseURL: actualSite.PublicBaseURL, AvatarMediaID: actualSite.AvatarMediaID, CoverMediaID: actualSite.CoverMediaID, PinnedPostID: actualSite.PinnedPostID, CommentsEnabled: actualSite.CommentsEnabled,
-	}) {
+	if !reflect.DeepEqual(expectedSite, portableSiteRecord(actualSite)) {
 		return errors.New("staged site settings do not match the portable archive")
+	}
+	if err := validateStagedAccounts(ctx, snapshot, files, document, expectedSite); err != nil {
+		return err
 	}
 	expectedEntries := make([]entryRecord, 0)
 	if _, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
@@ -1716,14 +1869,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 	sort.Slice(expectedEntries, func(i, j int) bool { return expectedEntries[i].ID < expectedEntries[j].ID })
 	actualEntries := make([]entryRecord, 0, len(expectedEntries))
 	entriesErr := snapshot.Entries(ctx, func(value sqlitestore.ArchiveEntry) error {
-		usages := make([]usageRecord, len(value.Media))
-		for index, usage := range value.Media {
-			usages[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
-		}
-		actualEntries = append(actualEntries, entryRecord{
-			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS), PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: portableLocation(value.Location), LinkCards: portableLinkCards(value.LinkCards),
-		})
+		actualEntries = append(actualEntries, portableEntryRecord(value))
 		return nil
 	})
 	sort.Slice(actualEntries, func(i, j int) bool { return actualEntries[i].ID < actualEntries[j].ID })
@@ -1736,10 +1882,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		if err != nil {
 			return err
 		}
-		value.Media = make([]usageRecord, len(usages))
-		for index, usage := range usages {
-			value.Media[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
-		}
+		value.Media = portableUsageRecords(usages)
 		expectedComments = append(expectedComments, value)
 		return nil
 	}); err != nil {
@@ -1748,16 +1891,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 	sort.Slice(expectedComments, func(i, j int) bool { return expectedComments[i].ID < expectedComments[j].ID })
 	actualComments := make([]commentRecord, 0, len(expectedComments))
 	commentsErr := snapshot.Comments(ctx, func(value sqlitestore.ArchiveComment) error {
-		usages := make([]usageRecord, len(value.Media))
-		for index, usage := range value.Media {
-			usages[index] = usageRecord{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
-		}
-		actualComments = append(actualComments, commentRecord{
-			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID, AuthorKind: value.AuthorKind,
-			AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
-			ReplyToCommentID: value.ReplyToCommentID, ContentMD: value.ContentMD,
-			CreatedAt: portableTime(value.CreatedAtMS), Media: usages, Location: portableLocation(value.Location), Pinned: value.Pinned,
-		})
+		actualComments = append(actualComments, portableCommentRecord(value))
 		return nil
 	})
 	sort.Slice(actualComments, func(i, j int) bool { return actualComments[i].ID < actualComments[j].ID })
@@ -1774,19 +1908,94 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 	sort.Slice(expectedMedia, func(i, j int) bool { return expectedMedia[i].ID < expectedMedia[j].ID })
 	actualMedia := make([]mediaRecord, 0, len(expectedMedia))
 	mediaErr := snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
-		archiveMember, err := mediaArchivePath(value)
+		record, err := portableMediaRecord(value)
 		if err != nil {
 			return err
 		}
-		actualMedia = append(actualMedia, mediaRecord{
-			ID: value.ID, SHA256: value.SHA256, ArchivePath: archiveMember, OriginalName: value.OriginalName,
-			MIMEType: value.MIMEType, ByteSize: value.ByteSize, Width: value.Width, Height: value.Height, CreatedAt: portableTime(value.CreatedAtMS),
-		})
+		actualMedia = append(actualMedia, record)
 		return nil
 	})
 	sort.Slice(actualMedia, func(i, j int) bool { return actualMedia[i].ID < actualMedia[j].ID })
 	if mediaErr != nil || !reflect.DeepEqual(expectedMedia, actualMedia) {
 		return errors.Join(errors.New("staged media metadata do not match the portable archive"), mediaErr)
+	}
+	return nil
+}
+
+// validateStagedAccounts compares the staged accounts against the archive.
+//
+// When the archive predates the accounts members, the expectation is the same
+// account the importer synthesized -- derived from the site record and the
+// archive's own creation instant -- so this still compares two independently
+// produced answers rather than trusting the import.
+func validateStagedAccounts(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, files map[string]*zip.File, document manifest, site siteRecord) error {
+	expectedUsers := make([]userRecord, 0)
+	expectedIdentities := make([]identityRecord, 0)
+	switch {
+	case archiveCarriesAccounts(files):
+		if _, err := validateJSONLines[userRecord](ctx, files["data/users.jsonl"], portableUserFields, func(value userRecord, _ map[string]json.RawMessage) error {
+			// The one field the rebuild does not take the archive's word for.
+			// Expecting it back verbatim would fail every import of a backup
+			// naming a suspended owner -- the exact backups this admission
+			// exists to make restorable.
+			if domain.UserRole(value.Role) == domain.UserRoleOwner {
+				value.Status = string(domain.AccountActive)
+			}
+			expectedUsers = append(expectedUsers, value)
+			return nil
+		}); err != nil {
+			return err
+		}
+		if _, err := validateJSONLines[identityRecord](ctx, files["data/identities.jsonl"], portableIdentityFields, func(value identityRecord, _ map[string]json.RawMessage) error {
+			expectedIdentities = append(expectedIdentities, value)
+			return nil
+		}); err != nil {
+			return err
+		}
+	case site.OwnerID != "":
+		archivedAt, err := parsePortableTimestamp(document.CreatedAt)
+		if err != nil {
+			return err
+		}
+		owner, err := synthesizeOwnerAccount(site, archivedAt)
+		if err != nil {
+			return err
+		}
+		expectedUsers = append(expectedUsers, portableUserRecord(owner))
+	default:
+		// The archive names no owner, so the generated account kept the site
+		// and there is nothing in the archive to compare its fields against.
+		// ValidatePortableReady has already proved there is exactly one, and it
+		// owns the site.
+		return nil
+	}
+	sort.Slice(expectedUsers, func(i, j int) bool { return expectedUsers[i].ID < expectedUsers[j].ID })
+	actualUsers := make([]userRecord, 0, len(expectedUsers))
+	usersErr := snapshot.Users(ctx, func(value sqlitestore.ArchiveUser) error {
+		actualUsers = append(actualUsers, portableUserRecord(value))
+		return nil
+	})
+	sort.Slice(actualUsers, func(i, j int) bool { return actualUsers[i].ID < actualUsers[j].ID })
+	if usersErr != nil || !reflect.DeepEqual(expectedUsers, actualUsers) {
+		return errors.Join(errors.New("staged accounts do not match the portable archive"), usersErr)
+	}
+	identityOrder := func(values []identityRecord) func(int, int) bool {
+		return func(i, j int) bool {
+			if values[i].Provider != values[j].Provider {
+				return values[i].Provider < values[j].Provider
+			}
+			return values[i].ProviderUserID < values[j].ProviderUserID
+		}
+	}
+	sort.Slice(expectedIdentities, identityOrder(expectedIdentities))
+	actualIdentities := make([]identityRecord, 0, len(expectedIdentities))
+	identitiesErr := snapshot.Identities(ctx, func(value sqlitestore.ArchiveIdentity) error {
+		actualIdentities = append(actualIdentities, portableIdentityRecord(value))
+		return nil
+	})
+	sort.Slice(actualIdentities, identityOrder(actualIdentities))
+	if identitiesErr != nil || !reflect.DeepEqual(expectedIdentities, actualIdentities) {
+		return errors.Join(errors.New("staged account identities do not match the portable archive"), identitiesErr)
 	}
 	return nil
 }

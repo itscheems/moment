@@ -132,6 +132,11 @@ function messageFor(error: unknown, replying: boolean): string {
         : "这条回复已不存在。文字仍保留，可以重新加载后再试。";
     case "COMMENTS_DISABLED":
       return "回复刚刚被关闭；这段文字仍保留在当前页面。";
+    // Reachable when approval is withdrawn, or granted and then withdrawn,
+    // while a composer is already open. Retrying will not help, so this is one
+    // of the few failures that does not offer it.
+    case "ACCOUNT_NOT_APPROVED":
+      return "你的账户正在等待站长批准，暂时还不能留言。文字已保留。";
     case "COMMENT_REJECTED":
       return "这次回复没有通过防滥用检查，文字仍保留。";
     case "IDEMPOTENCY_KEY_REUSED":
@@ -151,17 +156,35 @@ function messageFor(error: unknown, replying: boolean): string {
  * the same textarea instead of dropping what the writer already typed. Every
  * other state gets `SignInToReply`.
  *
+ * An account still waiting on the owner is the one signed-in state that
+ * answers no. The server refuses its comments, and finding that out after
+ * typing one is the worst possible moment to learn it.
+ *
  * Note that `OwnerState`'s `"guest"` means "no owner session in this browser".
  * It is a session state and it survives the retirement of guest commenting —
  * it has nothing to do with `PublicComment.authorKind === "guest"`.
  */
 export function useCanComment(): boolean {
+  return useReplyBlock() === null;
+}
+
+export type ReplyBlock = "signed-out" | "pending";
+
+/**
+ * Why this reader cannot reply, or null when they can.
+ *
+ * The same rule as `useCanComment`, read for its reason: the two answers point
+ * at different next steps, and a reader who is already signed in should never
+ * be handed a login link.
+ */
+export function useReplyBlock(): ReplyBlock | null {
   const owner = useOwner();
-  return (
-    owner.state === "owner" ||
+  if (owner.account?.status === "pending") return "pending";
+  return owner.state === "owner" ||
     owner.state === "expired" ||
     owner.session !== null
-  );
+    ? null
+    : "signed-out";
 }
 
 /**
@@ -173,11 +196,22 @@ export function useCanComment(): boolean {
  * and point at the way in.
  */
 export function SignInToReply() {
+  const block = useReplyBlock();
+  // Signed in already, just not cleared to write yet. Offering them a login
+  // link would send them round a loop they have already been through.
+  if (block === "pending") {
+    return (
+      <div className={styles.signInNotice} role="status">
+        <strong>正在等待站长批准</strong>
+        <span>你的账户正在等待站长批准，批准后就能留言。</span>
+      </div>
+    );
+  }
   return (
     <div className={styles.signInNotice} role="status">
       <strong>登录后回复</strong>
       <span>发表回复需要登录。过往回复继续公开可读。</span>
-      <InternalLink href="/owner/login">登录</InternalLink>
+      <InternalLink href="/login">登录</InternalLink>
     </div>
   );
 }

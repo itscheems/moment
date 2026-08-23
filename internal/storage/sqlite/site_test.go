@@ -167,3 +167,104 @@ INSERT INTO media (
 )
 VALUES (?, ?, ?, 'avatar.jpg', 'image/jpeg', 10, 32, 32, 1, 1)`, id, sha, path)
 }
+
+// The owner renaming onto a member's handle is a conflict, not a server fault.
+//
+// users_username_unique guards this column for every writer, and the account
+// route reports its refusal as USERNAME_TAKEN. The owner's route wrapped the
+// same constraint failure as an opaque error, so the settings form was told
+// "operation failed" for a refusal it already carries the words for.
+func TestOwnerRenameOntoAMemberHandleIsReportedAsAConflict(t *testing.T) {
+	ctx := context.Background()
+	database, runtimeState := openTestDatabase(t, Options{})
+
+	accountRepository, err := NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := app.NewAccountService(accountRepository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := accounts.SignIn(ctx, app.ExternalIdentity{
+		Provider: "google", ProviderUserID: "member-1", DisplayName: "Meihua",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	taken := "meihua"
+	if _, err := accounts.UpdateProfile(ctx, member.User.ID, app.ProfileUpdate{Username: &taken}); err != nil {
+		t.Fatal(err)
+	}
+
+	siteRepository, err := NewSiteRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	site, err := app.NewSiteService(siteRepository, app.SiteOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Update(ctx, app.SiteUpdate{Username: &taken}); !domain.HasCode(err, domain.CodeUsernameTaken) {
+		t.Fatalf("rename onto a held handle = %v", err)
+	}
+
+	// The refused write left both rows alone, and a free handle still lands.
+	free := "itscheems"
+	saved, err := site.Update(ctx, app.SiteUpdate{Username: &free})
+	if err != nil || saved.Username != free {
+		t.Fatalf("free handle = %#v, err = %v", saved, err)
+	}
+	held, err := accounts.Account(ctx, member.User.ID)
+	if err != nil || held.Username != taken {
+		t.Fatalf("member handle = %#v, err = %v", held, err)
+	}
+}
+
+// registration_mode is site policy the owner sets, and the row has to keep it.
+func TestSiteRegistrationModeRoundTripsThroughTheRow(t *testing.T) {
+	ctx := context.Background()
+	database, runtimeState := openTestDatabase(t, Options{})
+	repository, err := NewSiteRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := app.NewSiteService(repository, app.SiteOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The migration default is the owner's deliberate choice, not a placeholder.
+	fresh, err := service.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh.RegistrationMode != domain.RegistrationApproval {
+		t.Fatalf("fresh registration mode = %q", fresh.RegistrationMode)
+	}
+
+	closed := string(domain.RegistrationClosed)
+	if _, err := service.Update(ctx, app.SiteUpdate{RegistrationMode: &closed}); err != nil {
+		t.Fatal(err)
+	}
+	reread, err := service.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reread.RegistrationMode != domain.RegistrationClosed {
+		t.Fatalf("stored registration mode = %q", reread.RegistrationMode)
+	}
+
+	// Everything the site row holds beside it is untouched by that write.
+	title := "Portable identity"
+	if _, err := service.Update(ctx, app.SiteUpdate{Title: &title}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := service.Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.RegistrationMode != domain.RegistrationClosed || after.Title != title {
+		t.Fatalf("after unrelated write = %#v", after)
+	}
+}

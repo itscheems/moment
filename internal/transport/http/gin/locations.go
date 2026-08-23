@@ -8,17 +8,20 @@ import (
 
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/locationdto"
 )
 
 // RegisterLocationRoutes mounts owner-authenticated place discovery endpoints.
-func RegisterLocationRoutes(engine *gin.Engine, locations *app.LocationService, manager *auth.Manager) {
-	owner := engine.Group("/api/v1/owner/locations")
-	owner.Use(RequireOwner(manager))
-	owner.GET("/search", searchLocations(locations))
-	owner.GET("/nearby", nearbyLocations(locations))
+func RegisterLocationRoutes(engine *gin.Engine, locations *app.LocationService, gate *Gate) {
+	// A comment can carry a place, and the comment group admits approved
+	// accounts, so the lookup behind the picker has to admit them too. These
+	// are reads against a third-party geocoder rather than writes to this
+	// instance, which is why approval is the whole of the bar.
+	places := engine.Group("/api/v1/owner/locations")
+	places.Use(gate.RequireActiveAccount())
+	places.GET("/search", searchLocations(locations))
+	places.GET("/nearby", nearbyLocations(locations))
 }
 
 func searchLocations(locations *app.LocationService) gin.HandlerFunc {

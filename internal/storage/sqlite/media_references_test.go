@@ -104,7 +104,7 @@ VALUES (?, 'moment', 'with media', ?, ?, ?)`, entryOne, created.UnixMilli(), cre
 INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
 VALUES (?, ?, NULL, 'guest', 'Guest', 'comment image', ?)`, commentRoot, entryOne, created.UnixMilli())
 	mustWrite(t, database, `INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, '')`, commentRoot, mediaTwo)
-	mustWrite(t, database, `UPDATE site_settings SET avatar_media_id = ? WHERE id = 1`, mediaOne)
+	mustWrite(t, database, `UPDATE users SET avatar_media_id = ? WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`, mediaOne)
 	mustWrite(t, database, `UPDATE media SET unreferenced_since_ms = NULL WHERE id IN (?, ?)`, mediaOne, mediaTwo)
 	repository, err := NewPostRepository(database, runtimeState.Locks)
 	if err != nil {

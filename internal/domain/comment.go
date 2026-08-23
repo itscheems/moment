@@ -1,15 +1,23 @@
 package domain
 
 import (
+	"fmt"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 )
 
-// MaxCommentAuthorNameCodePoints is the v0 Unicode code-point limit for a
-// public display name.
-const MaxCommentAuthorNameCodePoints = 40
+// MaxCommentAuthorNameCodePoints bounds the name stored beside a comment.
+//
+// It is defined as the display name bound rather than as a number of its own,
+// because writing a comment stamps the author's display name into this field.
+// Two independent numbers meant a name an account was allowed to hold could be
+// one a comment was not allowed to carry: while every comment was the owner's
+// and the stored name was the literal "Owner", nothing reached the smaller
+// limit, and the day the real name went in instead, a display name of 41 to 80
+// characters made every comment that account tried to write fail validation.
+const MaxCommentAuthorNameCodePoints = MaxDisplayNameLength
 
 // CommentAuthorKind separates the accounts that can write from the anonymous
 // visitors that once could.
@@ -56,7 +64,7 @@ type Comment struct {
 }
 
 // ValidateAuthorUserID accepts the 32 lowercase hex digits an account
-// identifier is written with, matching site_settings.owner_id.
+// identifier is written with, matching users.id.
 func ValidateAuthorUserID(value string) error {
 	if len(value) != 32 {
 		return NewError(CodeInvalidArgument, "comment author user id must be 32 hex digits", map[string]any{"field": "author_user_id"})
@@ -78,7 +86,10 @@ func NormalizeCommentAuthorName(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	count := utf8.RuneCountInString(value)
 	if count == 0 || count > MaxCommentAuthorNameCodePoints {
-		return "", NewError(CodeInvalidArgument, "comment author name must contain between 1 and 40 code points", map[string]any{"field": "author_name", "limit": MaxCommentAuthorNameCodePoints})
+		// Both halves of the refusal read the constant. Spelling the ceiling
+		// out here once said 40 while the details map said 80, which is a
+		// message that argues with itself in front of whoever tripped it.
+		return "", NewError(CodeInvalidArgument, fmt.Sprintf("comment author name must contain between 1 and %d code points", MaxCommentAuthorNameCodePoints), map[string]any{"field": "author_name", "limit": MaxCommentAuthorNameCodePoints})
 	}
 	for _, character := range value {
 		if unicode.IsControl(character) {

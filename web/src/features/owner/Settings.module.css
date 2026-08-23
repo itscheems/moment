@@ -73,6 +73,22 @@
   font-weight: 700;
 }
 
+.settingsNav a .navBadge {
+  min-inline-size: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  margin-inline-start: var(--space-2);
+  padding-inline: 0.35rem;
+  color: var(--button-primary-contrast);
+  background: var(--accent);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1.25rem;
+}
+
 .settingsContent {
   min-inline-size: 0;
 }
@@ -512,6 +528,38 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
+}
+
+.reviewAccount {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.reviewAccount > div {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+.reviewAccount dt {
+  min-inline-size: 4.5rem;
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.reviewAccount dd {
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+.reviewAccountRow {
+  display: grid;
+  gap: var(--space-2);
 }
 
 .reviewMediaGrid {
@@ -1455,4 +1503,233 @@
   .leaveDialog {
     transition: none;
   }
+}
+
+.accountBlock {
+  border-block-start: 1px solid var(--border-subtle);
+  margin-block-start: var(--space-5);
+  padding-block-start: var(--space-5);
+}
+
+.accountBlockHeader strong {
+  display: block;
+  font-weight: 650;
+}
+
+.accountBlockHeader p {
+  margin: var(--space-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.accountEmpty {
+  margin: var(--space-4) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.accountList {
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.accountRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  padding-block: var(--space-3);
+}
+
+.accountRow:first-child {
+  border-block-start: 1px solid var(--border-subtle);
+}
+
+.accountRowMain {
+  min-inline-size: 12rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.accountRowMain strong {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 650;
+}
+
+.accountRowMain svg {
+  inline-size: 1.05rem;
+  block-size: 1.05rem;
+}
+
+.accountRowMain small {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.accountBadge {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0.15rem var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 650;
+}
+
+.accountBadge[data-tone="pending"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.accountBadge[data-tone="danger"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.accountRowActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.accountPending {
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-action);
+  margin-block-start: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+/* The row itself is the hover target, so the trigger has to disappear as a
+   button while keeping the focus behaviour that makes it reachable. */
+.rowDetailsTrigger {
+  min-inline-size: 12rem;
+  flex: 1;
+  display: block;
+  border: 0;
+  border-radius: var(--radius-action);
+  padding: 0;
+  margin: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: default;
+}
+
+.rowDetailsTrigger:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.rowDetailsPositioner {
+  z-index: var(--layer-popover);
+}
+
+.rowDetails {
+  max-inline-size: min(20rem, calc(100vw - 2rem));
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  padding: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: 0 0.4rem 1.2rem rgb(15 20 25 / 14%);
+  font-size: var(--text-sm);
+  transition:
+    opacity var(--motion-menu) var(--ease-out),
+    transform var(--motion-menu) var(--ease-out);
+}
+
+.rowDetails[data-starting-style],
+.rowDetails[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-0.2rem);
+}
+
+.rowDetails dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem var(--space-3);
+  margin: 0;
+}
+
+.rowDetails dl > div {
+  display: contents;
+}
+
+.rowDetails dt {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.rowDetails dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.accountBadge[data-tone="current"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.registrationModes {
+  margin: 0;
+  border: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.registrationModes legend {
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.registrationMode {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+
+.registrationMode input {
+  margin-block-start: 0.2rem;
+  accent-color: var(--accent);
+}
+
+.registrationMode > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.registrationMode strong {
+  font-weight: 650;
+}
+
+.registrationMode small {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.registrationMode:has(input:disabled) {
+  cursor: default;
+  opacity: 0.6;
 }

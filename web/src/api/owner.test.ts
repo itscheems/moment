@@ -39,7 +39,7 @@ const comment = {
     username: "owner",
     display_name: "Moment",
     avatar_media_id: null,
-    profile_url: "/@owner",
+    profile_url: "/owner",
   },
   reply_to: null,
   content_md: "所有者回应",
@@ -706,7 +706,7 @@ describe("owner API client", () => {
     await api.create("csrf-only", post.content_md, "web-retry-1");
 
     const exchange = fetcher.mock.calls[0];
-    expect(exchange[0]).toBe("/api/v1/owner/session");
+    expect(exchange[0]).toBe("/api/v1/login/session");
     expect(exchange[1]?.body).toBe(JSON.stringify({ token: "bearer-secret" }));
     const mutation = fetcher.mock.calls[1][1] as RequestInit;
     const headers = new Headers(mutation.headers);

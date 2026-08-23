@@ -5,16 +5,21 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"net"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/auth/oauth"
 	"github.com/moment/moment/internal/doctor"
 	"github.com/moment/moment/internal/linkfetch"
 	locationprovider "github.com/moment/moment/internal/location"
 	"github.com/moment/moment/internal/media"
+	"github.com/moment/moment/internal/observability"
 	"github.com/moment/moment/internal/runtimefs"
 	"github.com/moment/moment/internal/server"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -28,10 +33,22 @@ type liveServerHost struct {
 	assets         fs.FS
 	trustedProxies []string
 	secureCookies  bool
+	listenAddress  string
 	log            ginhttp.SurfaceLogFunc
 	exporter       *archive.Exporter
 	committer      *hostedImportCommitter
 	database       *sqlitestore.Database
+	// accounts follows the live generation the same way database does, so the
+	// session janitor sweeps whichever generation is current rather than one
+	// captured when the process started.
+	accounts *app.AccountService
+	// google is the Google adapter this process has already built, with the
+	// callback address it was built for. It is kept on the host rather than in
+	// a package variable because there is one host per server process and a
+	// cache nothing resets is a cache tests inherit from each other.
+	googleMu       sync.Mutex
+	google         *oauth.Google
+	googleCallback string
 }
 
 type hostedImportCommitter struct {
@@ -136,8 +153,11 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	if err != nil {
 		return fail(err)
 	}
+	// One resolver, one hardened transport. Link thumbnails and account
+	// pictures are both remote images and share the same address filter.
+	linkResolver := linkfetch.NewResolver(linkfetch.ResolverOptions{})
 	linkService, err := app.NewLinkPreviewService(
-		linkfetch.NewResolver(linkfetch.ResolverOptions{}),
+		linkResolver,
 		media.NewLinkThumbnailAdapter(mediaStore),
 		app.LinkPreviewOptions{},
 	)
@@ -172,8 +192,25 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	if err != nil {
 		return fail(err)
 	}
+	accountRepository, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		return fail(err)
+	}
+	accountService, err := app.NewAccountService(accountRepository,
+		// An account picture is fetched through the same hardened transport a
+		// link thumbnail is, and ingested through the same media path an owner
+		// upload uses. Remote bytes get no exemption from either.
+		app.WithAvatarCapture(linkResolver.Fetcher(), media.NewLinkThumbnailAdapter(mediaStore)),
+	)
+	if err != nil {
+		return fail(err)
+	}
+	providers, err := host.identityProviders(ctx, siteService)
+	if err != nil {
+		return fail(err)
+	}
 	engine, err := ginhttp.New(ginhttp.Config{
-		Assets: host.assets, OwnerAuth: host.auth, SiteSettings: siteService, InstanceID: runtimeState.Instance.ID, InstanceInitializedAt: runtimeState.Instance.InitializedAt,
+		Assets: host.assets, OwnerAuth: host.auth, Accounts: accountService, OAuthProviders: providers, SiteSettings: siteService, InstanceID: runtimeState.Instance.ID, InstanceInitializedAt: runtimeState.Instance.InitializedAt,
 		Media: mediaStore, Posts: postService, Locations: locationService, Links: linkService, Comments: commentService, Search: searchService,
 		ShareMetadata: shareMetadata, Archive: host.exporter, ImportInspector: inspector, ImportCommitter: host.committer, Doctor: doctorService,
 		SecureCookies: host.secureCookies, TrustedProxies: host.trustedProxies, SurfaceLog: host.log,
@@ -199,9 +236,191 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	host.mu.Lock()
 	previous := host.database
 	host.database = database
+	host.accounts = accountService
 	host.mu.Unlock()
 	if previous != nil && previous != database {
 		return errors.Join(errors.New("live activation replaced an unclosed database"), previous.Close())
 	}
 	return nil
+}
+
+// identityProviders builds the federated sign-in registry for this deployment.
+//
+// Credentials come from the environment, matching how the location providers
+// are configured, and a provider missing either half is simply absent -- the
+// sign-in page then draws no button for it. They are not kept in secrets.json,
+// which travels with the data directory: an OAuth client belongs to a
+// deployment and its redirect URI, not to the content.
+func (host *liveServerHost) identityProviders(ctx context.Context, site *app.SiteService) (*oauth.Registry, error) {
+	googleCredentials := oauth.Credentials{
+		ClientID:     os.Getenv("MOMENT_GOOGLE_CLIENT_ID"),
+		ClientSecret: os.Getenv("MOMENT_GOOGLE_CLIENT_SECRET"),
+	}
+	githubCredentials := oauth.Credentials{
+		ClientID:     os.Getenv("MOMENT_GITHUB_CLIENT_ID"),
+		ClientSecret: os.Getenv("MOMENT_GITHUB_CLIENT_SECRET"),
+	}
+	base := host.publicBaseURL(ctx, site)
+	if base == "" {
+		// Without a canonical address there is no redirect URI to register,
+		// and a redirect URI is matched exactly by every provider. Guessing one
+		// from the Host header would make the address an attacker-supplied
+		// value, so sign-in stays off instead.
+		host.reportUnusedCredentials(googleCredentials, githubCredentials)
+		return oauth.NewRegistry(), nil
+	}
+	callback := func(provider string) string {
+		return base + "/api/v1/login/oauth/" + provider + "/callback"
+	}
+	registered := make([]oauth.Provider, 0, 2)
+	if googleCredentials.Configured() {
+		google, err := host.googleProvider(ctx, googleCredentials, callback(oauth.GoogleName))
+		if err != nil {
+			return nil, err
+		}
+		if google != nil {
+			registered = append(registered, google)
+		}
+	}
+	if githubCredentials.Configured() {
+		if github := oauth.NewGitHub(githubCredentials, callback(oauth.GitHubName)); github != nil {
+			registered = append(registered, github)
+		}
+	}
+	return oauth.NewRegistry(registered...), nil
+}
+
+// newGoogleProvider is oauth.NewGoogle behind a variable, so a test can tell
+// whether a call reached a provider at all. Production has one implementation.
+var newGoogleProvider = oauth.NewGoogle
+
+// googleProvider builds the Google adapter at most once per callback address.
+//
+// Building one fetches Google's discovery document over the network, and that
+// document describes the deployment rather than this generation. Activate is
+// also what restores the previous generation after a failed import commit, so
+// re-fetching it there buys nothing, stalls every commit's maintenance window
+// on a third party, and lets an unreachable Google turn a rollback into a
+// second failure on top of the one being recovered from. The callback address
+// is the key rather than nothing at all because an imported generation can
+// carry a different public_base_url, and a provider matches a redirect URI
+// exactly.
+func (host *liveServerHost) googleProvider(ctx context.Context, credentials oauth.Credentials, callback string) (*oauth.Google, error) {
+	host.googleMu.Lock()
+	defer host.googleMu.Unlock()
+	if host.google != nil && host.googleCallback == callback {
+		return host.google, nil
+	}
+	google, err := newGoogleProvider(ctx, credentials, callback)
+	if err != nil {
+		return nil, err
+	}
+	host.google, host.googleCallback = google, callback
+	return google, nil
+}
+
+// reportUnusedCredentials says out loud that configured sign-in credentials are
+// being discarded.
+//
+// A deployment that binds a public address and names no canonical URL answers
+// the provider list empty, which is byte-identical to a build nobody ever
+// configured sign-in for. The operator did their half; this line is the only
+// thing that tells the two apart.
+func (host *liveServerHost) reportUnusedCredentials(google, github oauth.Credentials) {
+	configured := make([]string, 0, 2)
+	if google.Configured() {
+		configured = append(configured, oauth.GoogleName)
+	}
+	if github.Configured() {
+		configured = append(configured, oauth.GitHubName)
+	}
+	if len(configured) == 0 || host.log == nil {
+		return
+	}
+	host.log(observability.SurfaceSystem, "warn", "oauth_credentials_unused", map[string]any{
+		"providers": configured,
+		"listen":    host.listenAddress,
+		"reason":    "this deployment has no canonical address to register a redirect URI against",
+		"remedy":    "run 'moment site update --public-base-url <address>' with the address browsers reach this site at",
+	})
+}
+
+// publicBaseURL reports the address this site answers at, without a trailing
+// slash. An empty answer disables federated sign-in.
+//
+// The configured canonical URL always wins. The fallback keys off the listen
+// address being loopback rather than off the environment label, because those
+// are different questions and it is the address that decides: a provider
+// matches a redirect URI exactly and exempts loopback from its HTTPS rule, so
+// a production instance served on 127.0.0.1 has a perfectly valid redirect URI
+// and no configured base URL. Deciding by environment would refuse it.
+//
+// Nothing is guessed from the Host header. A redirect URI assembled from a
+// value the caller controls is a redirect URI an attacker chooses.
+func (host *liveServerHost) publicBaseURL(ctx context.Context, site *app.SiteService) string {
+	if settings, err := site.Get(ctx); err == nil && settings.PublicBaseURL != nil {
+		return strings.TrimRight(*settings.PublicBaseURL, "/")
+	}
+	if host.listenAddress == "" {
+		return ""
+	}
+	address, port, err := net.SplitHostPort(host.listenAddress)
+	if err != nil || port == "" {
+		return ""
+	}
+	if !isLoopbackHost(address) {
+		return ""
+	}
+	// The literal 127.0.0.1 matters: "localhost" and "127.0.0.1" are two
+	// different registrations under exact matching.
+	return "http://127.0.0.1:" + port
+}
+
+// isLoopbackHost reports whether a listen host only ever accepts connections
+// from this machine.
+//
+// An empty host is how `--listen :8080` spells the wildcard bind, so it answers
+// no. Reading it as loopback is what registered a 127.0.0.1 redirect URI for a
+// server the whole network can reach: the sign-in buttons were drawn on a
+// public site, and every remote visitor who pressed one was either refused for
+// a redirect_uri mismatch or sent back to their own machine holding the
+// authorization code.
+func isLoopbackHost(address string) bool {
+	if address == "localhost" {
+		return true
+	}
+	parsed := net.ParseIP(address)
+	return parsed != nil && parsed.IsLoopback()
+}
+
+// RunSessionRetention removes sessions that stopped meaning anything.
+//
+// It lives here rather than beside the account service because the service is
+// rebuilt on every generation swap: reading the current one per sweep is what
+// keeps an import commit from leaving the janitor pointed at a closed database.
+//
+// Nothing reads an expired session -- the signed cookie's own expiry is checked
+// before the row is -- so this is housekeeping. It exists because the table
+// otherwise only grew: every sign-in added a row and nothing ever removed one.
+func (host *liveServerHost) RunSessionRetention(ctx context.Context) {
+	sweep := func() {
+		host.mu.RLock()
+		accounts := host.accounts
+		host.mu.RUnlock()
+		if accounts == nil {
+			return
+		}
+		_, _ = accounts.SweepExpiredSessions(ctx)
+	}
+	sweep()
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
 }

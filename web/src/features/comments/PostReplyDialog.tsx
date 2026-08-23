@@ -98,7 +98,6 @@ export function PostReplyDialog({
                 <MarkdownContent
                   className={styles.replyContextContent}
                   html={post.contentHtml}
-                  mentionUsername={site.username}
                 />
                 <p className={styles.replyContextTarget}>
                   正在回复 <span>@{site.username}</span>

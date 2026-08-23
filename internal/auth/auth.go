@@ -86,6 +86,10 @@ type Credential struct {
 
 // Session is the verified, non-secret identity carried by a signed cookie.
 type Session struct {
+	// UserID and SessionID name who this session belongs to and which
+	// sign-in it is. Both are 32 lowercase hex digits.
+	UserID    string
+	SessionID string
 	ExpiresAt time.Time
 	Epoch     uint64
 	CSRFToken string
@@ -128,10 +132,38 @@ type snapshot struct {
 	passwordHash    []byte
 }
 
+// sessionPayload is the authenticated body of a browser session cookie.
+//
+// UserID and SessionID are what turned this from a yes/no answer into a name.
+// Until accounts existed the only question was "is this the owner", so the
+// payload carried no subject at all; every consumer downstream asked the same
+// single question and got the same single answer.
+//
+// SessionID is the half that makes revocation expressible. The signature alone
+// proves the cookie was issued here, which is not the same as it still being
+// meant to work: the id is what a revoked row is found by.
 type sessionPayload struct {
+	UserID      string `json:"user_id"`
+	SessionID   string `json:"session_id"`
 	ExpiresAtMS int64  `json:"expires_at_ms"`
 	Epoch       uint64 `json:"session_epoch"`
 	CSRFToken   string `json:"csrf_token"`
+}
+
+// Subject names the account a session belongs to.
+//
+// It is supplied by the caller rather than resolved here on purpose. This
+// package knows about credentials and signatures and deliberately owns no
+// storage; the transport layer, which already reaches the database on every
+// request, is where an account can be looked up.
+type Subject struct {
+	UserID    string
+	SessionID string
+}
+
+// Valid reports whether a subject is complete enough to sign.
+func (subject Subject) Valid() bool {
+	return len(subject.UserID) == 32 && len(subject.SessionID) == 32
 }
 
 // Manager serves one in-memory auth snapshot. Load is intentionally separate
@@ -479,20 +511,20 @@ func (manager *Manager) AuthorizeBearer(token string) (Grant, error) {
 
 // IssueSession exchanges a valid bearer for a signed, expiring, epoch-bound
 // browser session plus a CSRF token embedded in its authenticated payload.
-func (manager *Manager) IssueSession(token string) (string, Session, error) {
+func (manager *Manager) IssueSession(token string, subject Subject) (string, Session, error) {
 	manager.mutationMu.Lock()
 	defer manager.mutationMu.Unlock()
 	current := manager.current.Load()
 	if !authenticateBearer(current, token) {
 		return "", Session{}, ErrUnauthorized
 	}
-	return manager.issueSession(current)
+	return manager.issueSession(current, subject)
 }
 
 // IssuePasswordSession exchanges the configured human password for the same
 // short-lived browser session used by bearer login. Passwords are never used
 // as API bearer credentials.
-func (manager *Manager) IssuePasswordSession(password string) (string, Session, error) {
+func (manager *Manager) IssuePasswordSession(password string, subject Subject) (string, Session, error) {
 	manager.mutationMu.Lock()
 	defer manager.mutationMu.Unlock()
 	current := manager.current.Load()
@@ -500,16 +532,42 @@ func (manager *Manager) IssuePasswordSession(password string) (string, Session, 
 		bcrypt.CompareHashAndPassword(current.passwordHash, []byte(password)) != nil {
 		return "", Session{}, ErrUnauthorized
 	}
-	return manager.issueSession(current)
+	return manager.issueSession(current, subject)
 }
 
-func (manager *Manager) issueSession(current *snapshot) (string, Session, error) {
+// IssueSessionForVerifiedSubject signs a session for an account this package
+// did not authenticate itself.
+//
+// It exists for federated sign-in, where the proof of identity is a provider's
+// answer rather than a credential stored here. The name is deliberately
+// awkward: this function performs no verification, and its safety rests
+// entirely on the caller having done so. The OAuth callback is its only caller.
+func (manager *Manager) IssueSessionForVerifiedSubject(subject Subject) (string, Session, error) {
+	manager.mutationMu.Lock()
+	defer manager.mutationMu.Unlock()
+	current := manager.current.Load()
+	if current == nil {
+		return "", Session{}, ErrNotInitialized
+	}
+	return manager.issueSession(current, subject)
+}
+
+func (manager *Manager) issueSession(current *snapshot, subject Subject) (string, Session, error) {
+	if !subject.Valid() {
+		return "", Session{}, ErrUnauthorized
+	}
 	csrf, err := randomToken(manager.random, csrfTokenBytes)
 	if err != nil {
 		return "", Session{}, fmt.Errorf("generate CSRF token: %w", err)
 	}
 	expiresAt := manager.now().UTC().Add(manager.sessionTTL)
-	payload := sessionPayload{ExpiresAtMS: expiresAt.UnixMilli(), Epoch: current.sessionEpoch, CSRFToken: csrf}
+	payload := sessionPayload{
+		UserID:      subject.UserID,
+		SessionID:   subject.SessionID,
+		ExpiresAtMS: expiresAt.UnixMilli(),
+		Epoch:       current.sessionEpoch,
+		CSRFToken:   csrf,
+	}
 	encodedPayload, err := json.Marshal(payload)
 	if err != nil {
 		return "", Session{}, err
@@ -517,7 +575,13 @@ func (manager *Manager) issueSession(current *snapshot) (string, Session, error)
 	payloadPart := base64.RawURLEncoding.EncodeToString(encodedPayload)
 	signature := sign(current.signingKey[:], payloadPart)
 	value := payloadPart + "." + base64.RawURLEncoding.EncodeToString(signature)
-	return value, Session{ExpiresAt: expiresAt, Epoch: current.sessionEpoch, CSRFToken: csrf}, nil
+	return value, Session{
+		UserID:    subject.UserID,
+		SessionID: subject.SessionID,
+		ExpiresAt: expiresAt,
+		Epoch:     current.sessionEpoch,
+		CSRFToken: csrf,
+	}, nil
 }
 
 // SetPasswordAuthorized configures or replaces the owner password after a
@@ -609,6 +673,12 @@ func (manager *Manager) AuthorizeSession(value string) (Session, Grant, error) {
 	if err := decoder.Decode(&payload); err != nil || payload.Epoch == 0 || payload.CSRFToken == "" {
 		return Session{}, Grant{}, ErrUnauthorized
 	}
+	// A cookie without a subject is one this build cannot act on. Sessions
+	// issued before accounts existed decode to exactly that, so upgrading
+	// signs everyone out once rather than admitting an unnamed caller.
+	if !(Subject{UserID: payload.UserID, SessionID: payload.SessionID}).Valid() {
+		return Session{}, Grant{}, ErrUnauthorized
+	}
 	if decoder.Decode(&struct{}{}) != io.EOF {
 		return Session{}, Grant{}, ErrUnauthorized
 	}
@@ -616,7 +686,13 @@ func (manager *Manager) AuthorizeSession(value string) (Session, Grant, error) {
 	if payload.Epoch != current.sessionEpoch || !expiresAt.After(manager.now().UTC()) {
 		return Session{}, Grant{}, ErrUnauthorized
 	}
-	return Session{ExpiresAt: expiresAt, Epoch: payload.Epoch, CSRFToken: payload.CSRFToken}, Grant{authority: current}, nil
+	return Session{
+		UserID:    payload.UserID,
+		SessionID: payload.SessionID,
+		ExpiresAt: expiresAt,
+		Epoch:     payload.Epoch,
+		CSRFToken: payload.CSRFToken,
+	}, Grant{authority: current}, nil
 }
 
 // RotateAuthorized changes the live authority only if the caller's grant still
@@ -835,4 +911,53 @@ func cloneSnapshot(value *snapshot) *snapshot {
 	cloned.rotatedAtMS = cloneInt64(value.rotatedAtMS)
 	cloned.passwordHash = append([]byte(nil), value.passwordHash...)
 	return &cloned
+}
+
+// SealState signs a short-lived value with the instance signing key and
+// returns it in the same two-part encoding a session cookie uses.
+//
+// It exists so a federated sign-in can carry its own state -- the CSRF nonce,
+// the PKCE verifier, where to return to -- in a cookie instead of in a table.
+// There is no server-side scratch space in this product, and a value that lives
+// for ten minutes does not justify inventing one; signing with the key that
+// already authenticates sessions makes the cookie exactly as forgeable as a
+// session, which is to say not.
+func (manager *Manager) SealState(payload []byte) (string, error) {
+	current := manager.current.Load()
+	if current == nil {
+		return "", ErrNotInitialized
+	}
+	if len(payload) == 0 || len(payload) > maxSessionBytes {
+		return "", ErrUnauthorized
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(payload)
+	signature := sign(current.signingKey[:], encoded)
+	return encoded + "." + base64.RawURLEncoding.EncodeToString(signature), nil
+}
+
+// OpenState verifies a value produced by SealState and returns its payload.
+func (manager *Manager) OpenState(value string) ([]byte, error) {
+	current := manager.current.Load()
+	if current == nil || value == "" || len(value) > maxSessionBytes {
+		return nil, ErrUnauthorized
+	}
+	parts := strings.Split(value, ".")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, ErrUnauthorized
+	}
+	providedSignature, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil || !hmac.Equal(providedSignature, sign(current.signingKey[:], parts[0])) {
+		return nil, ErrUnauthorized
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil || len(payload) > maxSessionBytes {
+		return nil, ErrUnauthorized
+	}
+	return payload, nil
+}
+
+// RandomToken exposes the manager's entropy source for callers that need a
+// value bound to the same instance, such as an OAuth state or PKCE verifier.
+func (manager *Manager) RandomToken(size int) (string, error) {
+	return randomToken(manager.random, size)
 }

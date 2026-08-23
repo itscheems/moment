@@ -23,6 +23,7 @@ import {
   composeDraftKey,
   loadComposeDraft,
 } from "./draft";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const instance = "0123456789abcdef0123456789abcdef";
 const sessionKey = "moment.owner.session.v1";
@@ -245,6 +246,34 @@ function ownerStatus() {
   });
 }
 
+function account(overrides: Record<string, unknown> = {}) {
+  const merged = {
+    user_id: "00000000000000000000000000000000",
+    username: "owner",
+    display_name: "乔乔",
+    bio: "",
+    avatar_media_id: null,
+    cover_media_id: null,
+    role: "owner",
+    status: "active",
+    username_chosen: true,
+    ...overrides,
+  };
+  return { ...merged, profile_url: `/${String(merged.username)}` };
+}
+
+function accountSession(overrides: Record<string, unknown> = {}) {
+  return json({
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-from-cookie",
+      account: account(overrides),
+      limits: makeAccountLimits(),
+    },
+    meta: { request_id: "req_account_session" },
+  });
+}
+
 function unauthorized() {
   return json(
     {
@@ -303,6 +332,19 @@ function installApi(
       if (response) return response;
       if (url === "/api/v1/site") return json(siteEnvelope);
       if (url === "/api/v1/owner/status") return ownerStatus();
+      if (url === "/api/v1/account/session") {
+        // The server answers this from the session cookie; a stored session is
+        // this suite's stand-in for a browser that holds one.
+        return window.sessionStorage.getItem(sessionKey)
+          ? accountSession()
+          : unauthorized();
+      }
+      if (url === "/api/v1/login/oauth/providers") {
+        return json({
+          data: { providers: [] },
+          meta: { request_id: "req_providers" },
+        });
+      }
       if (url.startsWith("/api/v1/posts?")) {
         return json({
           data: { items: [] },
@@ -356,7 +398,7 @@ describe("owner composing flow", () => {
           ? ownerStatus()
           : unauthorized();
       }
-      if (url === "/api/v1/owner/session") {
+      if (url === "/api/v1/login/session") {
         return json({
           data: {
             csrf_token: "csrf-exchanged",
@@ -379,7 +421,7 @@ describe("owner composing flow", () => {
     expect(window.sessionStorage.getItem(sessionKey)).not.toContain(bearer);
     expect(JSON.stringify(window.localStorage)).not.toContain(bearer);
     const exchange = fetcher.mock.calls.find(
-      ([url]) => String(url) === "/api/v1/owner/session",
+      ([url]) => String(url) === "/api/v1/login/session",
     );
     expect(exchange?.[1]?.body).toBe(JSON.stringify({ token: bearer }));
   });
@@ -396,7 +438,7 @@ describe("owner composing flow", () => {
               username: "owner",
               display_name: "乔乔",
               avatar_media_id: null,
-              profile_url: "/@owner",
+              profile_url: "/owner",
             },
           ],
           meta: { request_id: "req_mentions" },
@@ -965,7 +1007,7 @@ describe("owner composing flow", () => {
         current = post("不会丢的编辑", item.id);
         return json({ data: current, meta: {} });
       }
-      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
         return json({
           data: {
             csrf_token: "csrf-after-reauth",
@@ -1019,7 +1061,7 @@ describe("owner composing flow", () => {
               meta: {},
             });
       }
-      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
         return json({
           data: {
             csrf_token: "csrf-after-conflict",
@@ -2067,7 +2109,7 @@ describe("owner composing flow", () => {
 
   it("clears the instance draft and CSRF cache after confirmed logout", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/login");
+    window.history.replaceState({}, "", "/login");
     window.localStorage.setItem(
       composeDraftKey(instance),
       JSON.stringify({
@@ -2076,7 +2118,7 @@ describe("owner composing flow", () => {
       }),
     );
     installApi((url, init) => {
-      if (url === "/api/v1/owner/session" && init?.method === "DELETE") {
+      if (url === "/api/v1/login/session" && init?.method === "DELETE") {
         return json({ data: { logged_out: true }, meta: {} });
       }
     });
@@ -2087,5 +2129,108 @@ describe("owner composing flow", () => {
     await waitFor(() => expect(window.location.pathname).toBe("/"));
     expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
+  });
+
+  it("turns a provider callback into a session this browser can see", async () => {
+    window.history.replaceState({}, "", "/owner/compose?auth=ok");
+    const fetcher = installApi((url) => {
+      // The callback left a cookie behind and nothing else: no exchange ever
+      // happened in this tab, so session storage is empty.
+      if (url === "/api/v1/account/session") return accountSession();
+    });
+    render(<App />);
+
+    expect(await screen.findByLabelText("此刻想到什么？")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem(sessionKey)).toContain(
+      "csrf-from-cookie",
+    );
+    expect(window.location.search).toBe("");
+    expect(
+      FakeBroadcastChannel.posted.some(
+        (message) => (message as { type?: string }).type === "offer-session",
+      ),
+    ).toBe(true);
+    expect(
+      fetcher.mock.calls.filter(
+        ([url]) => String(url) === "/api/v1/account/session",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("names the provider a completed binding just attached", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/?auth=linked&provider=github");
+    installApi();
+    render(<App />);
+
+    // The callback says what it bound, so nothing has to be remembered across
+    // the round trip for the confirmation to name it.
+    expect(await screen.findByText("已绑定 GitHub")).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+  });
+
+  it("keeps a member signed in when the owner probe refuses them", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    installApi((url) => {
+      // Only the site owner may read the owner probe. Reading its refusal as
+      // "signed out" is what would sign every member out on every refresh.
+      if (url === "/api/v1/owner/status") return unauthorized();
+      if (url === "/api/v1/account/session") {
+        return accountSession({
+          user_id: "1".repeat(32),
+          username: "linlin",
+          display_name: "林林",
+          role: "member",
+        });
+      }
+    });
+    render(<App />);
+
+    // Signed in, and told the truth about where they are: not handed a login
+    // form as though the session had gone, and not told they hold an owner
+    // session they do not have.
+    expect(await screen.findByText("这一页只有站长能打开")).toBeInTheDocument();
+    expect(screen.queryByLabelText("此刻想到什么？")).toBeNull();
+    expect(screen.queryByLabelText("密码")).toBeNull();
+    expect(window.sessionStorage.getItem(sessionKey)).toContain(
+      "csrf-from-session",
+    );
+  });
+
+  it("asks a first provider sign-in for a handle and writes down a skip", async () => {
+    preauthenticate();
+    const patches: unknown[] = [];
+    installApi((url, init) => {
+      if (url === "/api/v1/account/session") {
+        return accountSession({
+          username: "cheems_9f2",
+          username_chosen: false,
+        });
+      }
+      if (url === "/api/v1/account/profile" && init?.method === "PATCH") {
+        patches.push(JSON.parse(String(init.body)));
+        return json({
+          data: account({ username: "cheems_9f2" }),
+          meta: { request_id: "req_profile" },
+        });
+      }
+    });
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "给自己起个用户名",
+    });
+    expect(within(dialog).getByLabelText("用户名")).toHaveValue("cheems_9f2");
+    fireEvent.click(within(dialog).getByRole("button", { name: "跳过" }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "给自己起个用户名" }),
+      ).toBeNull(),
+    );
+    // Skipping is an answer, not a dismissal: the generated handle is saved so
+    // the server stops treating it as unchosen and no other device asks again.
+    expect(patches).toEqual([{ username: "cheems_9f2" }]);
   });
 });

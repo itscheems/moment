@@ -129,6 +129,17 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "MEDIA_PREVIEW_FAILED":
 		exit = ExitIO
 		suggestion = "verify originals, then rerun 'moment media rebuild-previews --data-dir <path> --yes --json'"
+	// A device sign-in ends in one of these far more often than it ends in a
+	// fault, and each one asks something different of the person waiting.
+	case "OAUTH_DEVICE_EXPIRED":
+		exit = ExitTimeout
+		suggestion = "run the login command again to request a new code"
+	case "OAUTH_DEVICE_DENIED":
+		exit = ExitUnauthorized
+		suggestion = "approve the code at the provider, or run the login command again"
+	case "OAUTH_PROVIDER_UNAVAILABLE":
+		exit = ExitUnavailable
+		suggestion = "check that the provider is configured on the selected Moment server"
 	case "UNAUTHORIZED", "CSRF_INVALID", "OWNER_TOKEN_REQUIRED":
 		exit = ExitUnauthorized
 		suggestion = "update MOMENT_TOKEN or --token-file with the current owner token"

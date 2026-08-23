@@ -117,7 +117,7 @@ func TestImportReviewReplacementAndMediaContracts(t *testing.T) {
 			return media.Asset{Contents: []byte("image"), MIMEType: "image/png", ETag: `"sha256-image"`}, nil
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, ImportCommitter: committer})
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 			return nil
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, ImportCommitter: committer, RequestID: func() string { return "req_merge" }})
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer, RequestID: func() string { return "req_merge" }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
 		},
 	}
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, ImportCommitter: fake,
+		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake,
 		Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_commit" },
 	})
 	if err != nil {
@@ -309,7 +309,7 @@ func TestImportCommitMapsDomainFailure(t *testing.T) {
 			return archive.CommitStatus{}, domain.NewError(domain.CodeDataIntegrityFailed, "needs attention", nil)
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, ImportCommitter: fake})
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +339,7 @@ func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
 		}, nil
 	})
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, ImportInspector: inspector,
+		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector,
 		Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_import" },
 	})
 	if err != nil {
@@ -413,7 +413,7 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 			}}, nil
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, ImportInspector: inspector, ImportCommitter: committer, RequestID: func() string { return "req_archive" }})
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector, ImportCommitter: committer, RequestID: func() string { return "req_archive" }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +488,7 @@ func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
 				limit = 1 << 20
 			}
 			engine, err := New(Config{
-				Assets: testAssets(), OwnerAuth: fixture.manager, ImportInspector: test.inspector,
+				Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportInspector: test.inspector,
 				Readiness: func(context.Context) error { return nil }, Limits: BodyLimits{Archive: limit},
 			})
 			if err != nil {

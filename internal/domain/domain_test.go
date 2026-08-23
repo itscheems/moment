@@ -189,3 +189,39 @@ func TestDayRangeRespectsDSTAndUTCMapping(t *testing.T) {
 		t.Fatalf("API time must be UTC: %s", FormatTime(instant))
 	}
 }
+
+// Every name an account may hold has to survive being stamped on a comment.
+//
+// These two limits were independent numbers, and nothing reached the smaller
+// one while every comment carried the literal "Owner". The moment a comment
+// started carrying its author's real name, a display name between the two --
+// forty-one to eighty characters, which is an ordinary length for a name a
+// provider hands over -- became a name an account could hold and could never
+// write a comment under.
+func TestEveryStorableDisplayNameCanAuthorAComment(t *testing.T) {
+	for name, candidate := range map[string]string{
+		"an ordinary long latin name": "Alexander Constantine Featherstonehaugh-Smythe",
+		"exactly at the ceiling":      strings.Repeat("a", MaxDisplayNameLength),
+		"the ceiling in code points":  strings.Repeat("字", MaxDisplayNameLength),
+		"a single character":          "x",
+	} {
+		t.Run(name, func(t *testing.T) {
+			display, err := NormalizeDisplayName(candidate)
+			if err != nil {
+				t.Fatalf("display name rejected: %v", err)
+			}
+			if _, err := NormalizeCommentAuthorName(display); err != nil {
+				t.Fatalf("a storable display name cannot author a comment: %v", err)
+			}
+		})
+	}
+
+	// And the ceiling is a ceiling in both.
+	tooLong := strings.Repeat("a", MaxDisplayNameLength+1)
+	if _, err := NormalizeDisplayName(tooLong); err == nil {
+		t.Fatal("a display name past the ceiling was accepted")
+	}
+	if _, err := NormalizeCommentAuthorName(tooLong); err == nil {
+		t.Fatal("a comment author name past the ceiling was accepted")
+	}
+}

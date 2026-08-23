@@ -15,16 +15,19 @@ import (
 // mediaReferencedSQL is the one SQLite definition of v0 reachability. Every
 // resolver operation below composes this predicate; no consumer owns a local
 // entry_media/avatar query.
+//
+// Avatars and covers are read from users rather than site_settings because
+// 0022 moved them there. Every account's picture has to appear here, not just
+// the owner's: a name missing from this predicate is not a stale query, it is
+// a file the collector is entitled to delete.
 const mediaReferencedSQL = `(
     EXISTS (SELECT 1 FROM entry_media AS usage WHERE usage.media_id = media.id)
     OR EXISTS (SELECT 1 FROM comment_media AS usage WHERE usage.media_id = media.id)
     OR EXISTS (
-        SELECT 1 FROM site_settings AS site
-        WHERE site.id = 1 AND site.avatar_media_id = media.id
+        SELECT 1 FROM users AS account WHERE account.avatar_media_id = media.id
     )
     OR EXISTS (
-        SELECT 1 FROM site_settings AS site
-        WHERE site.id = 1 AND site.cover_media_id = media.id
+        SELECT 1 FROM users AS account WHERE account.cover_media_id = media.id
     )
     OR EXISTS (
         SELECT 1 FROM entry_link_card AS card

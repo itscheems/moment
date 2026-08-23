@@ -1,0 +1,195 @@
+package cli
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/moment/moment/internal/app"
+	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/domain"
+	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
+)
+
+// The account review commands take a username, and nothing executed them with
+// one until this test existed.
+//
+// That is how all three shipped broken: a leaf that does not declare its
+// positional arguments makes cobra read the username as a subcommand it has
+// never heard of, so `moment user approve someone` answered "unknown command"
+// rather than approving anyone. The capability matrix walks every leaf but
+// never passes an argument, and the help golden only renders --help, so both
+// stayed green. Running the real command with the real argument is the only
+// thing that would have caught it, which is what this does.
+func TestAccountReviewCommandsAcceptAUsername(t *testing.T) {
+	runtimeState, dataDir := initializeSiteCLIData(t)
+	if _, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+
+	database, err := sqlitestore.Open(context.Background(), runtimeState, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := app.NewAccountService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.SignIn(context.Background(), app.ExternalIdentity{
+		Provider:         "google",
+		ProviderUserID:   "108214906739283746501",
+		Email:            "applicant@example.test",
+		EmailVerified:    true,
+		EmailDeliverable: true,
+		DisplayName:      "Applicant Example",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	application := momentTestApplication()
+
+	listed := commandList(t, execute(application, "", "user", "list", "--data-dir", dataDir, "--json"))
+	applicant := ""
+	for _, item := range listed {
+		record, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("account entry = %#v", item)
+		}
+		if record["role"] == string(domain.UserRoleMember) {
+			if record["status"] != string(domain.AccountPending) {
+				t.Fatalf("a new account landed as %v, want pending", record["status"])
+			}
+			applicant, _ = record["username"].(string)
+		}
+	}
+	if applicant == "" {
+		t.Fatalf("no applicant in %#v", listed)
+	}
+
+	// The human listing puts each account on a line of its own. Nothing read it
+	// before, which is how a hand-rolled line joiner sat beside strings.Join for
+	// as long as it did without anyone noticing either.
+	human := execute(application, "", "user", "list", "--data-dir", dataDir)
+	if human.exit != ExitSuccess || human.stderr != "" {
+		t.Fatalf("human listing = %#v", human)
+	}
+	for _, item := range listed {
+		username := item.(map[string]any)["username"].(string)
+		onItsOwnLine := false
+		for _, line := range strings.Split(human.stdout, "\n") {
+			onItsOwnLine = onItsOwnLine || strings.HasPrefix(line, username+" ")
+		}
+		if !onItsOwnLine {
+			t.Fatalf("%s has no line of its own in:\n%s", username, human.stdout)
+		}
+	}
+
+	identities := commandList(t, execute(application, "", "user", "identities", applicant, "--data-dir", dataDir, "--json"))
+	if len(identities) != 1 {
+		t.Fatalf("identities = %#v", identities)
+	}
+	if record, ok := identities[0].(map[string]any); !ok || record["provider"] != "google" {
+		t.Fatalf("identity = %#v", identities[0])
+	}
+
+	approved := commandData(t, execute(application, "", "user", "approve", applicant, "--data-dir", dataDir, "--json"))
+	if approved["status"] != string(domain.AccountActive) {
+		t.Fatalf("approved = %#v", approved)
+	}
+
+	// The handle a person types is not the handle that was stored. Handles are
+	// lowercase and NormalizeUsername folds case on the way in, but the argument
+	// was passed through as typed -- so `moment user approve Alex` answered
+	// ACCOUNT_NOT_FOUND for the account the browser shows as @alex.
+	shouted := commandData(t, execute(application, "", "user", "approve", strings.ToUpper(applicant), "--data-dir", dataDir, "--json"))
+	if shouted["username"] != applicant {
+		t.Fatalf("an upper-case handle reached %#v", shouted)
+	}
+
+	suspended := commandData(t, execute(application, "", "user", "suspend", applicant, "--data-dir", dataDir, "--yes", "--json"))
+	if suspended["status"] != string(domain.AccountSuspended) {
+		t.Fatalf("suspended = %#v", suspended)
+	}
+
+	// Removal is the completion of review: an owner who mistakenly signed in
+	// with their own provider account, and so created a member holding the
+	// identity they wanted on the owner, otherwise has no way out of it.
+	removed := commandData(t, execute(application, "", "user", "delete", applicant, "--data-dir", dataDir, "--yes", "--json"))
+	if removed["username"] != applicant {
+		t.Fatalf("removed = %#v", removed)
+	}
+	after := commandList(t, execute(application, "", "user", "list", "--data-dir", dataDir, "--json"))
+	for _, item := range after {
+		if record, ok := item.(map[string]any); ok && record["username"] == applicant {
+			t.Fatalf("the account survived removal: %#v", after)
+		}
+	}
+	if output := execute(application, "", "user", "identities", applicant, "--data-dir", dataDir, "--json"); output.exit == ExitSuccess {
+		t.Fatalf("identities outlived their account: %#v", output)
+	}
+
+	for name, args := range map[string][]string{
+		"no username at all":       {"user", "approve", "--data-dir", dataDir, "--json"},
+		"more than one username":   {"user", "approve", applicant, "someone-else", "--data-dir", dataDir, "--json"},
+		"a username nobody holds":  {"user", "approve", "nobodyhere", "--data-dir", dataDir, "--json"},
+		"a username nobody can be": {"user", "identities", "Not A Username", "--data-dir", dataDir, "--json"},
+		// The site row references the owner, so the database would refuse this
+		// too -- but a message is better than a constraint error.
+		"removing the owner": {"user", "delete", "owner", "--data-dir", dataDir, "--yes", "--json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			output := execute(application, "", args...)
+			if output.exit == ExitSuccess {
+				t.Fatalf("expected a refusal, got %#v", output)
+			}
+		})
+	}
+}
+
+// singleAccountArgument is where all four review commands agree on what a
+// handle is, so it is where the folding has to happen and where a regression
+// would land.
+func TestAnAccountArgumentIsFoldedToTheStoredHandle(t *testing.T) {
+	for _, typed := range []string{"alex", "Alex", "ALEX", "  aLeX  "} {
+		got, err := singleAccountArgument(CommandInput{args: []string{typed}})
+		if err != nil {
+			t.Fatalf("%q: %v", typed, err)
+		}
+		if got != "alex" {
+			t.Fatalf("%q became %q", typed, got)
+		}
+	}
+	for name, args := range map[string][]string{
+		"nothing at all":  nil,
+		"whitespace only": {"   "},
+		"an empty string": {""},
+		"two of them":     {"alex", "sam"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := singleAccountArgument(CommandInput{args: args}); err == nil {
+				t.Fatalf("%#v was accepted as one username", args)
+			}
+		})
+	}
+}
+
+// commandList decodes a command's JSON list payload.
+func commandList(t *testing.T, output commandOutput) []any {
+	t.Helper()
+	if output.exit != ExitSuccess {
+		t.Fatalf("command failed: %#v", output)
+	}
+	payload := decodeOneDocument(t, output.stdout)
+	items, ok := payload["data"].([]any)
+	if !ok {
+		t.Fatalf("data is not a list: %#v", payload)
+	}
+	return items
+}

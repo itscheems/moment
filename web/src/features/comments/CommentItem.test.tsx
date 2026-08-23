@@ -55,7 +55,7 @@ const ownerAuthor: PublicCommentAuthor = {
   username: "itscheems",
   displayName: "Cheems",
   avatarMediaId: "01M08A31N0WNK66SC39ZAQFK6M",
-  profileUrl: "/@itscheems",
+  profileUrl: "/itscheems",
 };
 
 const guestAuthor: PublicCommentAuthor = {
@@ -71,7 +71,7 @@ const strangerAuthor: PublicCommentAuthor = {
   username: "someone",
   displayName: "别人",
   avatarMediaId: "01M08A31N0WNK66SC39ZAQFK6N",
-  profileUrl: "/@someone",
+  profileUrl: "/someone",
 };
 
 function comment(
@@ -212,8 +212,8 @@ describe("comment identity", () => {
 
     const name = screen.getByRole("link", { name: "Cheems" });
     const handle = screen.getByRole("link", { name: "@itscheems" });
-    expect(name).toHaveAttribute("href", "/@itscheems");
-    expect(handle).toHaveAttribute("href", "/@itscheems");
+    expect(name).toHaveAttribute("href", "/itscheems");
+    expect(handle).toHaveAttribute("href", "/itscheems");
     expect(screen.queryByText("Moment 站点")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Cheems的回复")).toBeInTheDocument();
     expect(screen.getByText("所有者")).toBeInTheDocument();
@@ -258,11 +258,42 @@ describe("comment identity", () => {
     // Linked, because the account has a profile...
     expect(screen.getByRole("link", { name: "别人" })).toHaveAttribute(
       "href",
-      "/@someone",
+      "/someone",
     );
     expect(screen.getByRole("link", { name: "@someone" })).toBeInTheDocument();
-    // ...but nothing of this site's is borrowed for it: no avatar image, and no
-    // preview card trigger, because both would show the owner's own material.
+    // ...but nothing of this site's is borrowed for it. The face is the
+    // author's own media, never the site avatar, and there is no preview card
+    // trigger, which would show the owner's cover and bio under this name.
+    const avatar = document.querySelector("img");
+    expect(avatar).toHaveAttribute(
+      "src",
+      expect.stringContaining(strangerAuthor.avatarMediaId as string),
+    );
+    expect(avatar).not.toHaveAttribute(
+      "src",
+      expect.stringContaining(site.avatarMediaId as string),
+    );
+  });
+
+  // The server already resolves and ships avatar_media_id for every author.
+  // Deciding the face on "is this the site owner" discarded it for everybody
+  // else, so every member wore a letter beside their own picture.
+  it("draws a member's own avatar rather than their initial", () => {
+    renderItem(comment(rootId, "别人写的", { author: strangerAuthor }));
+
+    expect(screen.queryByText("别")).not.toBeInTheDocument();
+    const avatar = screen.getByRole("link", { name: "查看 别人 的个人资料" });
+    expect(avatar).toHaveAttribute("href", "/someone");
+    expect(avatar.querySelector("img")).toBeInTheDocument();
+  });
+
+  it("falls back to the initial for a member who has no picture", () => {
+    renderItem(
+      comment(rootId, "别人写的", {
+        author: { ...strangerAuthor, avatarMediaId: null },
+      }),
+    );
+
     expect(document.querySelector("img")).toBeNull();
     expect(screen.getByText("别")).toBeInTheDocument();
   });
@@ -481,7 +512,7 @@ describe("the composer's reply target", () => {
           username: "itscheems",
           display_name: "Cheems",
           avatar_media_id: null,
-          profile_url: "/@itscheems",
+          profile_url: "/itscheems",
         },
         reply_to: { comment_id: siblingId, author: null },
         content_md: "接着说",
@@ -611,7 +642,7 @@ describe("comment action bar", () => {
     expect(within(prompt).getByText("登录后回复")).toBeInTheDocument();
     expect(within(prompt).getByRole("link", { name: "登录" })).toHaveAttribute(
       "href",
-      "/owner/login",
+      "/login",
     );
   });
 

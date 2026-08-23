@@ -13,11 +13,31 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
+// commentCreateIdempotencyScope names one account's key namespace for writing
+// a comment.
+//
+// The account belongs in the scope rather than in the request digest because
+// the two answer different questions. The digest asks whether this is the same
+// request, and a mismatch is IDEMPOTENCY_KEY_REUSED -- a true answer for the
+// caller that minted the key and a lie for anybody else, who would be told a
+// key they had never used was already spent and be left unable to write with
+// it. The scope asks whose keys these are, and a lookup in the wrong namespace
+// simply misses, so one account's retry of a key another holds writes its own
+// comment. This was a single constant for the whole site, which made every key
+// collide with every other account's; where the two digests also agreed -- same
+// text, and the same display name, which the digest used to cover -- the second
+// account was handed the first account's comment ID stamped as its own work.
+//
 // Replay records written by the retired anonymous path still carry the scope
-// "comments.guest.create.v1". Nothing produces that scope any more, and the
-// rows are deliberately left in place: deleting them would change the replay
-// answer for keys a caller may still hold.
-const ownerCommentCreateIdempotencyScope = "comments.owner.create.v1"
+// "comments.guest.create.v1", and records written before the account joined the
+// scope carry "comments.owner.create.v1". Nothing produces either any more and
+// no lookup reaches either, so a key still in flight across this change writes
+// a second comment instead of replaying the first. The rows stay where they
+// are: an idempotency key is a short-lived retry token, and deleting rows for
+// tidiness is not worth a migration.
+func commentCreateIdempotencyScope(authorID string) string {
+	return "comments.account.create.v1." + authorID
+}
 
 // CommentStore is the complete comment authority available within one
 // repository transaction.
@@ -43,6 +63,7 @@ type CommentStore interface {
 	ReplaceCommentMediaUsages(context.Context, domain.ID, []domain.EntryMediaUsage) error
 	CommentCascadeMediaIDs(context.Context, domain.ID) ([]domain.ID, error)
 	CountCommentReplies(context.Context, domain.ID) (int, error)
+	CountCommentRepliesByOthers(context.Context, domain.ID, string) (int, error)
 	DeleteComment(context.Context, domain.ID) (bool, error)
 	ReplacePinnedComment(context.Context, domain.ID, *domain.ID) error
 	IdempotencyRecord(context.Context, string, string) (IdempotencyRecord, bool, error)
@@ -158,18 +179,22 @@ type CommentPin struct {
 	PinnedCommentID *domain.ID
 }
 
-// CreateCommentInput contains owner/guest application identity, never network
-// identity. Adapters cannot use it to persist an IP address.
+// CreateCommentInput contains application identity, never network identity.
+// Adapters cannot use it to persist an IP address.
 type CreateCommentInput struct {
 	EntryID          domain.ID
 	ParentID         *domain.ID
 	ReplyToCommentID *domain.ID
 	AuthorKind       domain.CommentAuthorKind
 	AuthorName       string
-	ContentMD        string
-	Media            []domain.EntryMediaUsage
-	Location         *domain.Location
-	IdempotencyKey   string
+	// Author names the account writing this comment. It is supplied by the
+	// caller because only the transport knows who was admitted; the service
+	// refuses to write without it rather than falling back to the owner.
+	Author         domain.User
+	ContentMD      string
+	Media          []domain.EntryMediaUsage
+	Location       *domain.Location
+	IdempotencyKey string
 }
 
 // CreateCommentResult reports a safe idempotent retry.
@@ -248,12 +273,26 @@ func NewCommentService(transactions CommentTransactions, options ...CommentServi
 	return service, nil
 }
 
-// CreateOwner persists an owner-marked comment. It is the only way to write a
-// comment: every adapter reaches the thread through an authenticated owner
-// route, so no caller can choose the author kind.
-func (service *CommentService) CreateOwner(ctx context.Context, input CreateCommentInput) (CreateCommentResult, error) {
+// Create persists a comment written by an authenticated account.
+//
+// It is the only way to write a comment, and the author is the account the
+// transport admitted rather than the site owner. Stamping the owner here was
+// correct while the owner was the only account that could exist; the moment a
+// second one could, it meant a member's words were published under someone
+// else's name.
+//
+// AuthorKind stays 'owner' for every account. Its remaining job is marking rows
+// a legacy guest wrote, and which account -- and what role it holds now -- is
+// answered by AuthorUserID against users.
+func (service *CommentService) Create(ctx context.Context, input CreateCommentInput) (CreateCommentResult, error) {
+	if err := domain.ValidateUserID(input.Author.ID); err != nil {
+		return CreateCommentResult{}, domain.NewError(domain.CodeUnauthorized, "a comment needs an authenticated author", nil)
+	}
+	if !input.Author.CanWritePublicContent() {
+		return CreateCommentResult{}, domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by the site owner", nil)
+	}
 	input.AuthorKind = domain.CommentAuthorOwner
-	input.AuthorName = "Owner"
+	input.AuthorName = input.Author.DisplayName
 	return service.create(ctx, input)
 }
 
@@ -289,7 +328,7 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 		}
 	}
 	requestHash := hashCreateComment(input)
-	idempotencyScope := ownerCommentCreateIdempotencyScope
+	idempotencyScope := commentCreateIdempotencyScope(input.Author.ID)
 	if input.IdempotencyKey != "" {
 		replayed, found, replayErr := service.loadCommentReplay(ctx, input, idempotencyScope, requestHash)
 		if replayErr != nil {
@@ -318,11 +357,7 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 				return storeErr
 			}
 			if found {
-				replayOwnerID, replayErr := store.SiteOwnerID(ctx)
-				if replayErr != nil {
-					return replayErr
-				}
-				comment, replayErr := reconstructCommentReplay(input, replayOwnerID, idempotencyScope, requestHash, record)
+				comment, replayErr := reconstructCommentReplay(input, idempotencyScope, requestHash, record)
 				if replayErr != nil {
 					return replayErr
 				}
@@ -395,14 +430,8 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 		if generateErr != nil {
 			return generateErr
 		}
-		// The authoring account is stamped inside the transaction that writes
-		// the row, so a rename racing the insert cannot leave the comment
-		// pointing at an identity that never wrote it.
-		ownerID, ownerErr := store.SiteOwnerID(ctx)
-		if ownerErr != nil {
-			return ownerErr
-		}
-		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), ReplyToCommentID: cloneCommentID(input.ReplyToCommentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: now}
+		authorID := input.Author.ID
+		comment := domain.Comment{ID: id, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), ReplyToCommentID: cloneCommentID(input.ReplyToCommentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &authorID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: now}
 		if validateErr := comment.Validate(); validateErr != nil {
 			return validateErr
 		}
@@ -464,11 +493,7 @@ func (service *CommentService) loadCommentReplay(ctx context.Context, input Crea
 		if storeErr != nil || !found {
 			return storeErr
 		}
-		ownerID, storeErr := store.SiteOwnerID(ctx)
-		if storeErr != nil {
-			return storeErr
-		}
-		recordComment, storeErr = reconstructCommentReplay(input, ownerID, scope, requestHash, record)
+		recordComment, storeErr = reconstructCommentReplay(input, scope, requestHash, record)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -869,8 +894,31 @@ func (service *CommentService) changePin(ctx context.Context, entryID, commentID
 	return result, nil
 }
 
+// DeleteBy removes a comment on behalf of one account.
+//
+// The owner may remove anything -- moderating the site is theirs. Anybody else
+// may remove only what they wrote, and only where removing it takes nothing of
+// anybody else's with it; authorizeCommentRemoval holds that rule. Deciding it
+// down there, where the stored row is in hand, is what keeps the transport from
+// having to read the comment first and then make the same judgement with a
+// staler copy of it.
+func (service *CommentService) DeleteBy(ctx context.Context, id domain.ID, actor domain.User, dryRun bool) (DeleteCommentResult, error) {
+	return service.delete(ctx, id, &actor, dryRun)
+}
+
 // Delete previews or executes owner moderation. SQLite owns reply cascade.
 func (service *CommentService) Delete(ctx context.Context, id domain.ID, dryRun bool) (DeleteCommentResult, error) {
+	return service.delete(ctx, id, nil, dryRun)
+}
+
+// delete does the work for both. A nil actor is the owner authority itself,
+// which is what the CLI holds and what Delete offers.
+//
+// The judgement runs inside the same transaction as the removal rather than in
+// a read before it. Read first and the reply that decides the answer can arrive
+// between the two, so the check would pass against a conversation nobody had
+// answered yet and the cascade would still take the answer with it.
+func (service *CommentService) delete(ctx context.Context, id domain.ID, actor *domain.User, dryRun bool) (DeleteCommentResult, error) {
 	if err := contextError(ctx); err != nil {
 		return DeleteCommentResult{}, err
 	}
@@ -885,6 +933,9 @@ func (service *CommentService) Delete(ctx context.Context, id domain.ID, dryRun 
 		}
 		if !found {
 			return commentNotFound(id)
+		}
+		if err := authorizeCommentRemoval(ctx, store, record, actor); err != nil {
+			return err
 		}
 		result.RepliesAffected, err = store.CountCommentReplies(ctx, id)
 		if err != nil {
@@ -937,37 +988,78 @@ func (service *CommentService) Delete(ctx context.Context, id domain.ID, dryRun 
 	return result, nil
 }
 
+// authorizeCommentRemoval decides whether this actor may take this comment and
+// everything the cascade removes with it.
+//
+// What somebody wrote has to be read as including what removing it takes away.
+// parent_id cascades, so a root leaves with every reply under it; that cascade
+// was moderation for as long as removing a comment was an owner-only route, and
+// the day an approved member could reach it, deleting your own comment became a
+// way to delete other people's. So a non-owner is refused whenever the cascade
+// would reach a reply somebody else wrote. The preview is refused on the same
+// rule rather than allowed through: it exists to report what the removal would
+// take, and for a removal that cannot happen that is only a count of another
+// person's replies.
+func authorizeCommentRemoval(ctx context.Context, store CommentStore, record domain.Comment, actor *domain.User) error {
+	if actor == nil || actor.IsOwner() {
+		return nil
+	}
+	if record.AuthorUserID == nil || *record.AuthorUserID != actor.ID {
+		return domain.NewError(domain.CodeUnauthorized, "only the author or the site owner can remove a comment", nil)
+	}
+	repliesByOthers, err := store.CountCommentRepliesByOthers(ctx, record.ID, actor.ID)
+	if err != nil {
+		return err
+	}
+	if repliesByOthers > 0 {
+		return domain.NewError(domain.CodeUnauthorized, "removing this comment would remove replies other people wrote, which only the site owner can do", map[string]any{"comment_id": record.ID.String(), "replies_by_others": repliesByOthers})
+	}
+	return nil
+}
+
 // reconstructCommentReplay rebuilds the stored comment from the request that
 // produced it. The request hash proves the input is byte-identical, so every
 // field the input carries reconstructs exactly.
 //
-// ownerID covers the one field it does not carry. The account that authored a
-// comment is stamped by the server, not supplied by the caller, and owner_id
-// is minted once at migration and never updated — SiteUpdate has no field for
-// it — so reading it now yields the same value the original write stamped.
-func reconstructCommentReplay(input CreateCommentInput, ownerID, scope, requestHash string, record IdempotencyRecord) (domain.Comment, error) {
+// The author comes from the same admitted account the original write used, so
+// a replay reconstructs the identity it was written under rather than looking
+// one up. That is sound because an idempotency key belongs to the caller that
+// minted it: the scope carries the account, so a different caller looking the
+// same key up never finds this record at all.
+func reconstructCommentReplay(input CreateCommentInput, scope, requestHash string, record IdempotencyRecord) (domain.Comment, error) {
 	if record.Scope != scope || record.Key != input.IdempotencyKey || !validRequestHash(record.RequestHash) {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
 	if record.RequestHash != requestHash {
 		return domain.Comment{}, domain.NewError(domain.CodeIdempotencyKeyReused, "idempotency key was already used with different comment input", map[string]any{"field": "idempotency_key"})
 	}
-	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), ReplyToCommentID: cloneCommentID(input.ReplyToCommentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &ownerID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: record.CreatedAt}
+	replayAuthorID := input.Author.ID
+	comment := domain.Comment{ID: record.ResponseResourceID, EntryID: input.EntryID, ParentID: cloneCommentID(input.ParentID), ReplyToCommentID: cloneCommentID(input.ReplyToCommentID), AuthorKind: input.AuthorKind, AuthorName: input.AuthorName, AuthorUserID: &replayAuthorID, ContentMD: input.ContentMD, Location: domain.CloneLocation(input.Location), CreatedAt: record.CreatedAt}
 	if err := comment.Validate(); err != nil {
 		return domain.Comment{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored idempotency result violates the comment contract", nil)
 	}
 	return comment, nil
 }
 
+// hashCreateComment digests what the caller actually sent, and nothing the
+// server stamped on top of it.
+//
+// Version 3 drops the author name and the author kind. Create derives both from
+// the admitted account, so neither is part of the request: somebody who renamed
+// themselves between a write and its retry sent identical bytes the second time
+// and was answered IDEMPOTENCY_KEY_REUSED for a request that had not changed.
+// Which account is writing is the scope's business now, not the digest's.
+//
+// Version 2 added the reply target. A digest that ignored it would let one
+// idempotency key replay a stored comment for a request that named a different
+// target, returning a perfectly well-formed answer to the wrong comment.
+// Retiring a version costs nothing here: the scope moved in the same change, so
+// a key minted under an older digest is out of reach of the namespace the new
+// one is looked up in.
 func hashCreateComment(input CreateCommentInput) string {
 	digest := sha256.New()
-	// Version 2 adds the reply target. A digest that ignored it would let one
-	// idempotency key replay a stored comment for a request that named a
-	// different target, returning a perfectly well-formed answer to the wrong
-	// comment. Retiring v1 costs nothing: a key reused across the two versions
-	// reads as a changed request, which is exactly what it is.
-	_, _ = digest.Write([]byte("moment-comment-create-v2\x00"))
-	for _, value := range []string{input.EntryID.String(), commentIDString(input.ParentID), commentIDString(input.ReplyToCommentID), string(input.AuthorKind), input.AuthorName, input.ContentMD} {
+	_, _ = digest.Write([]byte("moment-comment-create-v3\x00"))
+	for _, value := range []string{input.EntryID.String(), commentIDString(input.ParentID), commentIDString(input.ReplyToCommentID), input.ContentMD} {
 		var length [8]byte
 		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
 		_, _ = digest.Write(length[:])
@@ -1109,7 +1201,7 @@ func resolveCommentAuthors(ctx context.Context, store CommentStore, records []do
 		authors[record.ID] = CommentAuthor{
 			UserID: identity.UserID, Username: identity.Username,
 			DisplayName: identity.DisplayName, AvatarMediaID: identity.AvatarMediaID,
-			ProfileURL: "/@" + identity.Username,
+			ProfileURL: domain.ProfileURL(identity.Username),
 		}
 	}
 	return authors, nil

@@ -5,9 +5,12 @@ import {
   parseComment,
   parseDeletedCommentMeta,
   parsePost,
+  parsePrivateAccount,
   parseSiteIdentity,
   PublicApiError,
   uploadMediaXHR,
+  type Account,
+  type AccountStatus,
   type CreatedComment,
   type PublicComment,
   type PublicPost,
@@ -35,8 +38,105 @@ export interface RotatedCredential {
   rotatedAt: string;
 }
 
-export interface OwnerLoginOptions {
-  passwordEnabled: boolean;
+/**
+ * The credential kinds this instance accepts.
+ *
+ * A list rather than a flag per kind: a shape like `{password_enabled}` has to
+ * grow a field every time a way of signing in is added, and every reader has to
+ * learn the new one. Mirrors ginhttp.signInMethods.
+ */
+export type SignInMethod = "password" | "token";
+
+export interface SignInMethods {
+  methods: SignInMethod[];
+}
+
+export interface OAuthLoginProvider {
+  name: string;
+  label: string;
+}
+
+/**
+ * What a valid `moment_session` cookie is worth: the CSRF token every unsafe
+ * request needs, when it stops being worth anything, and who the browser is
+ * signed in as.
+ *
+ * This is the only endpoint that can restore a signed-in browser after a
+ * refresh. The owner status probe cannot: it answers 401 for a member, and
+ * reading that as "signed out" would sign every member out of every tab.
+ */
+/**
+ * The bounds the server enforces, published so a client need not keep a second
+ * copy of them.
+ *
+ * The picture ceiling used to reach a browser only as details on a rejection,
+ * which is after the upload has already been spent -- so anything that wanted
+ * to refuse an oversized file before sending it had to carry its own number
+ * and keep it in step by hand.
+ */
+export interface AccountLimits {
+  profilePictureBytes: number;
+  displayNameLength: number;
+  bioLength: number;
+}
+
+export interface AccountSession {
+  csrfToken: string;
+  expiresAt: string;
+  account: Account;
+  limits: AccountLimits;
+}
+
+/** A third-party login bound to an account. */
+export interface AccountIdentity {
+  provider: string;
+  /** What the provider calls this person. Empty when it published nothing. */
+  displayName: string;
+  /**
+   * Empty unless the provider published an address the server is willing to
+   * send to: a GitHub noreply alias reads as no address at all.
+   */
+  email: string;
+  linkedAt: string;
+  lastLoginAt: string;
+}
+
+/** One signed-in browser. */
+export interface AccountSessionEntry {
+  id: string;
+  issuedAt: string;
+  lastSeenAt: string;
+  expiresAt: string;
+  surface: string;
+  /** True for the session making the request, which is never more than one. */
+  current: boolean;
+}
+
+export interface AccountProfileUpdate {
+  username?: string;
+  displayName?: string;
+  bio?: string;
+  avatarMediaId?: string | null;
+  coverMediaId?: string | null;
+}
+
+/** What happens to an external identity the site has not seen before. */
+export type RegistrationMode = "open" | "approval" | "closed";
+
+const registrationModes = new Set<string>(["open", "approval", "closed"]);
+
+/**
+ * Everyone with an account here, and the policy the next arrival will meet.
+ *
+ * The two travel together because they answer one question -- who is on this
+ * site and who may join it -- and because this response is the only one that
+ * carries the mode. GET /api/v1/site is public, and whether applications are
+ * being accepted is the owner's to publish, not a field that leaks by sharing
+ * a struct with the site's name.
+ */
+export interface OwnerRoster {
+  accounts: Account[];
+  registrationMode: RegistrationMode;
 }
 
 export interface SiteSettingsUpdate {
@@ -49,6 +149,7 @@ export interface SiteSettingsUpdate {
   avatarMediaId?: string | null;
   coverMediaId?: string | null;
   commentsEnabled?: boolean;
+  registrationMode?: RegistrationMode;
 }
 
 export interface DeletedComment {
@@ -132,6 +233,7 @@ const ownerLinkCardKeys = [
 ];
 
 function parseOwnerLinkCard(value: unknown): OwnerLinkCard {
+  // mirrors linkdto.Card (internal/transport/linkdto/dto.go)
   if (
     typeof value !== "object" ||
     value === null ||
@@ -167,6 +269,14 @@ export interface ImportCounts {
   entries: number;
   comments: number;
   media: number;
+  /**
+   * Accounts carried by the archive, and the third-party logins bound to
+   * them. A restore replaces the account graph wholesale, so these are the
+   * two numbers that say who disappears -- which makes them the ones an owner
+   * needs before an irreversible decision, not after it.
+   */
+  users: number;
+  identities: number;
 }
 
 export interface ImportDiskEstimate {
@@ -202,7 +312,17 @@ export type MergeClassification =
   "unchanged" | "incoming_only" | "local_only" | "conflict";
 export type MergeAction =
   "skip" | "add" | "keep_local" | "use_incoming" | "keep_both";
-export type MergeEntityKind = "entry" | "comment" | "media";
+/**
+ * What a merge plan can name.
+ *
+ * `user` and `identity` are reported but never selectable. An account is not
+ * content: "keep both" would fork a person into two, and "use incoming" would
+ * let a backup rename or re-admit somebody on the live instance. They are
+ * resolved by a fixed rule -- local wins, unknown incoming accounts are added
+ * -- and appear so a reviewer can see what a restore brings with it.
+ */
+export type MergeEntityKind =
+  "entry" | "comment" | "media" | "user" | "identity";
 
 export interface MergeSelection {
   plan_id: string;
@@ -261,18 +381,75 @@ export interface MergeReviewMedia {
   alt_text: string | null;
 }
 
+export interface MergeReviewLinkCard {
+  position: number;
+  source_url: string;
+  canonical_url: string;
+  provider: string;
+  card_kind: string;
+  title: string;
+  site_name: string;
+}
+
+/**
+ * One row of a merge review, whatever kind of thing it describes.
+ *
+ * A single struct serves posts, comments, accounts and identities, and each
+ * projection fills a different part of it -- so all but the four fields below
+ * are absent on most rows rather than merely null. That is why this is
+ * validated as a whitelist and not as an exact key set: an exact set would
+ * have to enumerate one combination per kind per nullable column, and would
+ * break again the first time a projection learned to omit one more.
+ */
 export interface MergeReviewEntity {
   id: string;
+  /** Empty on an account or identity row, which the Go field still emits. */
   content_md: string;
+  created_at: string;
+  media: MergeReviewMedia[];
+
+  // A post.
+  kind?: string;
+  updated_at?: string;
+  published_at?: string;
+  reposted_at?: string;
+  quoted_entry_id?: string;
+  quote_unavailable?: boolean;
+  link_cards?: MergeReviewLinkCard[];
+
+  // A comment.
   entry_id?: string;
   parent_id?: string;
   author_kind?: string;
   author_name?: string;
-  created_at: string;
-  updated_at?: string;
-  published_at?: string;
+  author_user_id?: string;
+  reply_to_comment_id?: string;
+  pinned?: boolean;
+
+  // A post or a comment.
   location?: OwnerLocation;
-  media: MergeReviewMedia[];
+
+  // An account.
+  username?: string;
+  display_name?: string;
+  bio?: string;
+  role?: string;
+  status?: string;
+  avatar_media_id?: string;
+  cover_media_id?: string;
+  username_set_at?: string;
+  avatar?: MergeReviewMedia;
+  cover?: MergeReviewMedia;
+
+  // A third-party login bound to an account.
+  provider?: string;
+  provider_user_id?: string;
+  user_id?: string;
+  email?: string;
+  email_verified?: boolean;
+  email_deliverable?: boolean;
+  avatar_url?: string;
+  last_login_at?: string;
 }
 
 export interface MergeReviewItem {
@@ -502,18 +679,30 @@ function compareCanonicalUTC(left: string, right: string): number {
 
 function parseImportCounts(value: unknown): ImportCounts {
   const record = objectData(value);
-  if (!hasExactKeys(record, ["entries", "comments", "media"])) {
+  // mirrors archive.ImportCounts (internal/archive/import.go)
+  if (
+    !hasExactKeys(record, [
+      "entries",
+      "comments",
+      "media",
+      "users",
+      "identities",
+    ])
+  ) {
     throw invalidResponse("import counts contain unsupported fields");
   }
   return {
     entries: nonNegativeIntegerField(record, "entries"),
     comments: nonNegativeIntegerField(record, "comments"),
     media: nonNegativeIntegerField(record, "media"),
+    users: nonNegativeIntegerField(record, "users"),
+    identities: nonNegativeIntegerField(record, "identities"),
   };
 }
 
 function parseMergeInspection(value: unknown): MergeInspection {
   const record = objectData(value);
+  // mirrors archive.MergeInspection (internal/archive/merge_commit.go)
   if (
     !hasExactKeys(record, [
       "plan",
@@ -532,6 +721,7 @@ function parseMergeInspection(value: unknown): MergeInspection {
     throw invalidResponse("merge inspection contains unsupported fields");
   }
   const planRecord = objectData(record.plan);
+  // mirrors archive.MergePlan (internal/archive/merge.go)
   if (
     !hasExactKeys(planRecord, [
       "version",
@@ -573,6 +763,7 @@ function parseMergeInspection(value: unknown): MergeInspection {
     throw invalidResponse("merge plan identity is invalid");
   }
   const summary = objectData(planRecord.summary);
+  // mirrors archive.MergeSummary (internal/archive/merge.go)
   if (
     !hasExactKeys(summary, [
       "unchanged",
@@ -595,7 +786,13 @@ function parseMergeInspection(value: unknown): MergeInspection {
   ) {
     throw invalidResponse("merge plan entity lists are invalid");
   }
-  const kinds = new Set<MergeEntityKind>(["entry", "comment", "media"]);
+  const kinds = new Set<MergeEntityKind>([
+    "entry",
+    "comment",
+    "media",
+    "user",
+    "identity",
+  ]);
   const classifications = new Set<MergeClassification>([
     "unchanged",
     "incoming_only",
@@ -608,6 +805,7 @@ function parseMergeInspection(value: unknown): MergeInspection {
     }
     return value.map((dependency) => {
       const candidate = objectData(dependency);
+      // mirrors archive.MergeRef (internal/archive/merge.go)
       if (!hasExactKeys(candidate, ["kind", "id"])) {
         throw invalidResponse("merge dependency contains unsupported fields");
       }
@@ -693,6 +891,7 @@ function parseMergeInspection(value: unknown): MergeInspection {
   const siteFields: MergePlan["site_fields"] = planRecord.site_fields.map(
     (field) => {
       const candidate = objectData(field);
+      // mirrors archive.MergeSiteField (internal/archive/merge.go)
       if (
         !hasExactKeys(candidate, [
           "field",
@@ -748,6 +947,7 @@ function parseMergeInspection(value: unknown): MergeInspection {
     throw invalidResponse("merge summary does not match the plan");
   }
   const selection = objectData(planRecord.default_selection);
+  // mirrors archive.MergeSelection (internal/archive/merge.go)
   if (
     !hasExactKeys(selection, [
       "plan_id",
@@ -787,6 +987,7 @@ function parseMergeInspection(value: unknown): MergeInspection {
   const selectionItems: MergeSelection["items"] = selection.items.map(
     (item) => {
       const candidate = objectData(item);
+      // mirrors archive.MergeSelectionItem (internal/archive/merge.go)
       if (!hasExactKeys(candidate, ["kind", "id", "action"])) {
         throw invalidResponse("merge default item decision is invalid");
       }
@@ -817,6 +1018,7 @@ function parseMergeInspection(value: unknown): MergeInspection {
   const selectionSiteFields: MergeSelection["site_fields"] =
     selection.site_fields.map((field) => {
       const candidate = objectData(field);
+      // mirrors archive.MergeSiteSelection (internal/archive/merge.go)
       if (!hasExactKeys(candidate, ["field", "action"])) {
         throw invalidResponse("merge default profile decision is invalid");
       }
@@ -854,7 +1056,9 @@ function parseMergeInspection(value: unknown): MergeInspection {
   if (
     incomingCounts.entries > 100_000 ||
     incomingCounts.comments > 500_000 ||
-    incomingCounts.media > 100_000
+    incomingCounts.media > 100_000 ||
+    incomingCounts.users > 100_000 ||
+    incomingCounts.identities > 500_000
   ) {
     throw invalidResponse("merge incoming counts exceed supported limits");
   }
@@ -880,6 +1084,7 @@ function parseMergeInspection(value: unknown): MergeInspection {
     },
   };
   const replacementRecord = objectData(record.replacement);
+  // mirrors archive.ReplacementImpact (internal/archive/import.go)
   if (
     !hasExactKeys(replacementRecord, ["counts", "media_bytes", "data_bytes"])
   ) {
@@ -917,6 +1122,7 @@ function parseMergeInspection(value: unknown): MergeInspection {
 
 function parseMergeReviewMedia(value: unknown): MergeReviewMedia {
   const record = objectData(value);
+  // mirrors archive.MergeReviewMedia (internal/archive/merge_review.go)
   if (
     !hasExactKeys(record, [
       "source",
@@ -953,60 +1159,155 @@ function parseMergeReviewMedia(value: unknown): MergeReviewMedia {
   };
 }
 
+// mirrors archive.MergeReviewLinkCard (internal/archive/merge_review.go)
+function parseMergeReviewLinkCard(value: unknown): MergeReviewLinkCard {
+  const record = objectData(value);
+  if (
+    !hasExactKeys(record, [
+      "position",
+      "source_url",
+      "canonical_url",
+      "provider",
+      "card_kind",
+      "title",
+      "site_name",
+    ])
+  ) {
+    throw invalidResponse("merge review link card contains unsupported fields");
+  }
+  return {
+    position: nonNegativeIntegerField(record, "position"),
+    source_url: stringField(record, "source_url"),
+    canonical_url: stringField(record, "canonical_url"),
+    provider: stringField(record, "provider"),
+    card_kind: stringField(record, "card_kind"),
+    title: stringField(record, "title"),
+    site_name: stringField(record, "site_name"),
+  };
+}
+
+/**
+ * Every key `archive.MergeReviewEntity` can carry, grouped by how it decodes.
+ *
+ * Four of them are always on the wire because their Go fields carry no
+ * `omitempty`: a zero `content_md` still serialises, which is how an account
+ * row satisfies a field that means nothing to it. The rest are pointers or
+ * slices that vanish when unset, and which of them appear is decided by the
+ * projection that built the row.
+ */
+/**
+ * The kinds a review bucket can contain.
+ *
+ * Media never reaches one -- the Go builder skips it -- while accounts and
+ * identities do, precisely so a reviewer can see who a restore brings with it.
+ */
+const REVIEW_ITEM_KINDS = new Set(["entry", "comment", "user", "identity"]);
+
+const REVIEW_ENTITY_REQUIRED = ["id", "content_md", "created_at", "media"];
+const REVIEW_ENTITY_STRINGS = [
+  "entry_id",
+  "parent_id",
+  "kind",
+  "author_kind",
+  "author_name",
+  "author_user_id",
+  "reply_to_comment_id",
+  "quoted_entry_id",
+  "username",
+  "display_name",
+  "bio",
+  "role",
+  "status",
+  "avatar_media_id",
+  "cover_media_id",
+  "provider",
+  "provider_user_id",
+  "user_id",
+  "email",
+  "avatar_url",
+];
+const REVIEW_ENTITY_BOOLEANS = [
+  "pinned",
+  "quote_unavailable",
+  "email_verified",
+  "email_deliverable",
+];
+const REVIEW_ENTITY_INSTANTS = [
+  "reposted_at",
+  "updated_at",
+  "published_at",
+  "username_set_at",
+  "last_login_at",
+];
+const REVIEW_ENTITY_ALLOWED = new Set([
+  ...REVIEW_ENTITY_REQUIRED,
+  ...REVIEW_ENTITY_STRINGS,
+  ...REVIEW_ENTITY_BOOLEANS,
+  ...REVIEW_ENTITY_INSTANTS,
+  "location",
+  "link_cards",
+  "avatar",
+  "cover",
+]);
+
+/**
+ * mirrors archive.MergeReviewEntity (internal/archive/merge_review.go)
+ *
+ * Checked as a whitelist rather than as an exact key set, which is the one
+ * place in this client where that distinction is forced. One struct serves
+ * posts, comments, accounts and identities; each projection fills a different
+ * quarter of it, and every field outside the four required ones disappears
+ * when unset. An exact set would need one entry per kind per nullable column,
+ * and would break again the next time a column went null.
+ */
 function parseMergeReviewEntity(value: unknown): MergeReviewEntity {
   const record = objectData(value);
-  const required = ["id", "content_md", "created_at", "media"];
-  const optional = [
-    "entry_id",
-    "parent_id",
-    "author_kind",
-    "author_name",
-    "updated_at",
-    "published_at",
-    "location",
-  ];
   if (
-    !required.every((field) => field in record) ||
-    !Object.keys(record).every((field) =>
-      [...required, ...optional].includes(field),
-    ) ||
+    !REVIEW_ENTITY_REQUIRED.every((field) => field in record) ||
+    !Object.keys(record).every((field) => REVIEW_ENTITY_ALLOWED.has(field)) ||
     !Array.isArray(record.media)
   ) {
     throw invalidResponse("merge review entity contains unsupported fields");
   }
-  const optionalString = (field: string): string | undefined =>
-    field in record ? stringField(record, field) : undefined;
+  // Assembled through an index signature because the value type differs per
+  // key; the interface above states the shape and the checks below enforce it.
+  const optional: Record<string, unknown> = {};
+  for (const field of REVIEW_ENTITY_STRINGS) {
+    if (field in record) optional[field] = stringField(record, field);
+  }
+  for (const field of REVIEW_ENTITY_BOOLEANS) {
+    if (field in record) optional[field] = booleanField(record, field);
+  }
+  for (const field of REVIEW_ENTITY_INSTANTS) {
+    if (field in record) optional[field] = canonicalUTCField(record, field);
+  }
+  if ("location" in record) {
+    optional.location = parseOwnerLocation(record.location);
+  }
+  if ("link_cards" in record) {
+    if (!Array.isArray(record.link_cards)) {
+      throw invalidResponse("merge review link cards must be an array");
+    }
+    optional.link_cards = record.link_cards.map(parseMergeReviewLinkCard);
+  }
+  if ("avatar" in record) {
+    optional.avatar = parseMergeReviewMedia(record.avatar);
+  }
+  if ("cover" in record) {
+    optional.cover = parseMergeReviewMedia(record.cover);
+  }
   return {
+    ...optional,
     id: stringField(record, "id"),
     content_md: stringField(record, "content_md"),
     created_at: canonicalUTCField(record, "created_at"),
-    ...(optionalString("entry_id") === undefined
-      ? {}
-      : { entry_id: optionalString("entry_id") }),
-    ...(optionalString("parent_id") === undefined
-      ? {}
-      : { parent_id: optionalString("parent_id") }),
-    ...(optionalString("author_kind") === undefined
-      ? {}
-      : { author_kind: optionalString("author_kind") }),
-    ...(optionalString("author_name") === undefined
-      ? {}
-      : { author_name: optionalString("author_name") }),
-    ...(optionalString("updated_at") === undefined
-      ? {}
-      : { updated_at: canonicalUTCField(record, "updated_at") }),
-    ...(optionalString("published_at") === undefined
-      ? {}
-      : { published_at: canonicalUTCField(record, "published_at") }),
-    ...(record.location === undefined
-      ? {}
-      : { location: parseOwnerLocation(record.location) }),
     media: record.media.map(parseMergeReviewMedia),
-  };
+  } as MergeReviewEntity;
 }
 
 function parseMergeReview(value: unknown, plan: MergePlan): MergeReview {
   const record = objectData(value);
+  // mirrors archive.MergeReview (internal/archive/merge_review.go)
   if (
     !hasExactKeys(record, [
       "incoming_only",
@@ -1026,6 +1327,7 @@ function parseMergeReview(value: unknown, plan: MergePlan): MergeReview {
     classification: "incoming_only" | "local_only" | "conflict",
   ): MergeReviewBucket => {
     const bucket = objectData(candidate);
+    // mirrors archive.MergeReviewBucket (internal/archive/merge_review.go)
     if (
       !hasExactKeys(bucket, ["total", "truncated", "items"]) ||
       !Array.isArray(bucket.items)
@@ -1054,14 +1356,14 @@ function parseMergeReview(value: unknown, plan: MergePlan): MergeReview {
       ) {
         throw invalidResponse("merge review item is invalid");
       }
-      const kind = stringField(current, "kind") as Exclude<
-        MergeEntityKind,
-        "media"
-      >;
+      const named = stringField(current, "kind");
+      if (!REVIEW_ITEM_KINDS.has(named)) {
+        throw invalidResponse("merge review item does not match its plan");
+      }
+      const kind = named as Exclude<MergeEntityKind, "media">;
       const id = stringField(current, "id");
       const planned = planItems.get(`${kind}\u0000${id}`);
       if (
-        (kind !== "entry" && kind !== "comment") ||
         current.classification !== classification ||
         planned?.classification !== classification ||
         !current.changed_fields.every((field) => typeof field === "string")
@@ -1176,6 +1478,7 @@ function parseImportDisk(value: unknown): ImportDiskEstimate {
     "available_bytes",
     "space_ok",
   ];
+  // mirrors archive.ImportTimeRange (internal/archive/import.go)
   if (!hasExactKeys(record, fields)) {
     throw invalidResponse("import disk estimate contains unsupported fields");
   }
@@ -1224,6 +1527,7 @@ function parseImportPlan(
   expectedArchiveBytes: number,
 ): ImportPlan {
   const record = objectData(data);
+  // mirrors archive.ImportPlan (internal/archive/import.go)
   if (
     !hasExactKeys(record, [
       "dry_run",
@@ -1247,6 +1551,8 @@ function parseImportPlan(
     throw invalidResponse("import plan archive SHA-256 is invalid");
   }
   const timeRange = objectData(record.time_range);
+  // mirrors archive.ImportTimeRange (internal/archive/import.go); both tags
+  // carry omitempty, so the expected list is filtered to what actually arrived
   if (
     !hasExactKeys(
       timeRange,
@@ -1265,6 +1571,7 @@ function parseImportPlan(
     throw invalidResponse("import time range is inconsistent");
   }
   const replacement = objectData(record.replacement);
+  // mirrors archive.ReplacementImpact (internal/archive/import.go)
   if (!hasExactKeys(replacement, ["counts", "media_bytes", "data_bytes"])) {
     throw invalidResponse(
       "import replacement impact contains unsupported fields",
@@ -1401,6 +1708,7 @@ function parseImportStatus(data: unknown): ImportStatus {
     "updated_at",
   ];
   const optional = ["backup_name", "error_code", "completed_at"];
+  // mirrors archive.CommitStatus (internal/archive/commit.go)
   if (
     !hasExactKeys(record, [
       ...required,
@@ -1577,6 +1885,7 @@ async function decodeImportSuccess(
     strictSuccessEnvelope: response.ok,
     requireJsonSuccess: response.ok,
   });
+  // mirrors the Success envelope's meta (internal/transport/http/gin/response.go)
   const requestID = hasExactKeys(meta, ["request_id"])
     ? stringField(meta, "request_id")
     : "";
@@ -1806,6 +2115,7 @@ async function decodeExactOwnerSuccess(
   if (response.status !== 200) {
     throw invalidResponse("owner settings success must return HTTP 200");
   }
+  // mirrors the Success envelope's meta (internal/transport/http/gin/response.go)
   if (
     !hasExactKeys(result.meta, ["request_id"]) ||
     !stringField(result.meta, "request_id")
@@ -1817,10 +2127,115 @@ async function decodeExactOwnerSuccess(
     ...dataKeys,
     ...optionalDataKeys.filter((key) => key in data),
   ];
+  // mirrors ginhttp.identityView (internal/transport/http/gin/accounts.go)
   if (!hasExactKeys(data, expectedDataKeys)) {
     throw invalidResponse("owner settings data contains unsupported fields");
   }
   return data;
+}
+
+function parseAccountIdentity(value: unknown): AccountIdentity {
+  // mirrors ginhttp.identityView (internal/transport/http/gin/accounts.go)
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "provider",
+      "display_name",
+      "email",
+      "linked_at",
+      "last_login_at",
+    ])
+  ) {
+    throw invalidResponse("account identity contains unsupported fields");
+  }
+  const provider = stringField(value, "provider");
+  if (!/^[a-z][a-z0-9_]{0,31}$/.test(provider)) {
+    throw invalidResponse("account identity provider is invalid");
+  }
+  return {
+    provider,
+    // A provider that published no name, and an address the server will not
+    // send to, both arrive as empty strings. That is something to render
+    // around, never a reason to reject the response.
+    displayName: stringField(value, "display_name"),
+    email: stringField(value, "email"),
+    linkedAt: utcInstantField(value, "linked_at"),
+    lastLoginAt: utcInstantField(value, "last_login_at"),
+  };
+}
+
+function parseAccountSessionEntry(value: unknown): AccountSessionEntry {
+  // mirrors ginhttp.sessionListItem (internal/transport/http/gin/accounts.go)
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "id",
+      "issued_at",
+      "last_seen_at",
+      "expires_at",
+      "surface",
+      "current",
+    ])
+  ) {
+    throw invalidResponse("account session contains unsupported fields");
+  }
+  const id = stringField(value, "id");
+  if (!id) throw invalidResponse("account session id cannot be empty");
+  return {
+    id,
+    issuedAt: utcInstantField(value, "issued_at"),
+    lastSeenAt: utcInstantField(value, "last_seen_at"),
+    expiresAt: utcInstantField(value, "expires_at"),
+    surface: stringField(value, "surface"),
+    current: booleanField(value, "current"),
+  };
+}
+
+// mirrors ginhttp.accountLimitsView (internal/transport/http/gin/accounts.go)
+function parseAccountLimits(value: unknown): AccountLimits {
+  const record = objectData(value);
+  if (
+    !hasExactKeys(record, [
+      "profile_picture_bytes",
+      "display_name_length",
+      "bio_length",
+    ])
+  ) {
+    throw invalidResponse("account limits contain unsupported fields");
+  }
+  return {
+    profilePictureBytes: positiveIntegerField(record, "profile_picture_bytes"),
+    displayNameLength: positiveIntegerField(record, "display_name_length"),
+    bioLength: positiveIntegerField(record, "bio_length"),
+  };
+}
+
+function accountList(
+  data: unknown,
+  subject: string,
+): Record<string, unknown>[] {
+  if (!Array.isArray(data)) {
+    throw invalidResponse(`${subject} must be an array`);
+  }
+  return data as Record<string, unknown>[];
+}
+
+function accountProfilePayload(
+  update: AccountProfileUpdate,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {};
+  if (update.username !== undefined) payload.username = update.username;
+  if (update.displayName !== undefined) {
+    payload.display_name = update.displayName;
+  }
+  if (update.bio !== undefined) payload.bio = update.bio;
+  if (update.avatarMediaId !== undefined) {
+    payload.avatar_media_id = update.avatarMediaId;
+  }
+  if (update.coverMediaId !== undefined) {
+    payload.cover_media_id = update.coverMediaId;
+  }
+  return payload;
 }
 
 function sitePayload(update: SiteSettingsUpdate): Record<string, unknown> {
@@ -1842,6 +2257,9 @@ function sitePayload(update: SiteSettingsUpdate): Record<string, unknown> {
   }
   if (update.commentsEnabled !== undefined) {
     payload.comments_enabled = update.commentsEnabled;
+  }
+  if (update.registrationMode !== undefined) {
+    payload.registration_mode = update.registrationMode;
   }
   return payload;
 }
@@ -1885,6 +2303,7 @@ function parseOwnerLocation(value: unknown): OwnerLocation {
     "longitude",
     "coordinate_system",
   ];
+  // mirrors the caller's Go type; see each exactObject call
   if (!hasExactKeys(value, keys)) {
     throw invalidResponse("location contains unsupported fields");
   }
@@ -1967,10 +2386,16 @@ export class OwnerApi {
   async exchange(
     credential: string,
     method: "password" | "token" = "password",
+    username?: string,
   ): Promise<OwnerSession> {
+    // The handle is sent so the server can refuse a credential typed under
+    // somebody else's name. Omitting it is still allowed, which is what keeps
+    // the token usable as the break-glass credential it exists to be.
+    const payload: Record<string, string> = { [method]: credential };
+    if (username) payload.username = username;
     const response = await this.fetcher(
-      "/api/v1/owner/session",
-      requestInit("POST", undefined, { [method]: credential }),
+      "/api/v1/login/session",
+      requestInit("POST", undefined, payload),
     );
     const { data } = await decodeResponse(response);
     const record = objectData(data);
@@ -1983,16 +2408,228 @@ export class OwnerApi {
     return { csrfToken, expiresAt };
   }
 
-  async loginOptions(signal?: AbortSignal): Promise<OwnerLoginOptions> {
-    const response = await this.fetcher("/api/v1/owner/login-options", {
+  async signInMethods(signal?: AbortSignal): Promise<SignInMethods> {
+    const response = await this.fetcher("/api/v1/login/methods", {
       ...requestInit("GET"),
       signal,
     });
     const record = objectData((await decodeResponse(response)).data);
-    if (!hasExactKeys(record, ["password_enabled"])) {
-      throw invalidResponse("login options response has unexpected fields");
+    // mirrors the map built by ginhttp.signInMethods (internal/transport/http/gin/owner_auth.go)
+    if (!hasExactKeys(record, ["methods"])) {
+      throw invalidResponse("sign-in methods response has unexpected fields");
     }
-    return { passwordEnabled: booleanField(record, "password_enabled") };
+    const raw = record.methods;
+    if (!Array.isArray(raw)) {
+      throw invalidResponse("sign-in methods must be a list");
+    }
+    const methods: SignInMethod[] = [];
+    for (const value of raw) {
+      // An instance newer than this client can name a way of signing in that
+      // this build has no screen for. Dropping it keeps the ones it does know
+      // usable, where refusing the whole response would leave no way in at all.
+      if (value === "password" || value === "token") methods.push(value);
+    }
+    return { methods };
+  }
+
+  // Third-party sign-in is advertised through its own endpoint so that the
+  // password/token login options above stay a separate contract.
+  async loginProviders(signal?: AbortSignal): Promise<OAuthLoginProvider[]> {
+    const response = await this.fetcher("/api/v1/login/oauth/providers", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const data = await decodeExactOwnerSuccess(response, ["providers"]);
+    const providers = data.providers;
+    if (!Array.isArray(providers)) {
+      throw invalidResponse("login providers must be an array");
+    }
+    return providers.map((entry) => {
+      // mirrors oauth.Descriptor (internal/auth/oauth/provider.go)
+      if (!isRecord(entry) || !hasExactKeys(entry, ["name", "label"])) {
+        throw invalidResponse("login provider contains unsupported fields");
+      }
+      const name = stringField(entry, "name");
+      const label = stringField(entry, "label");
+      if (!/^[a-z][a-z0-9_]{0,31}$/.test(name) || !label.trim()) {
+        throw invalidResponse("login provider identity is invalid");
+      }
+      return { name, label };
+    });
+  }
+
+  /**
+   * Read what the session cookie is currently worth.
+   *
+   * Safe method, so it needs no CSRF token -- which is what makes it the only
+   * way a browser can pick up a session it never exchanged itself, the way an
+   * OAuth callback leaves one behind.
+   */
+  async accountSession(signal?: AbortSignal): Promise<AccountSession> {
+    const response = await this.fetcher("/api/v1/account/session", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const record = objectData((await decodeResponse(response)).data);
+    // mirrors ginhttp.accountSessionView (internal/transport/http/gin/accounts.go)
+    if (
+      !hasExactKeys(record, ["expires_at", "csrf_token", "account", "limits"])
+    ) {
+      throw invalidResponse("account session contains unsupported fields");
+    }
+    const expiresAt = stringField(record, "expires_at");
+    if (!Number.isFinite(Date.parse(expiresAt))) {
+      throw invalidResponse("response field expires_at must be an instant");
+    }
+    const csrfToken = stringField(record, "csrf_token");
+    if (!csrfToken) throw invalidResponse("csrf_token cannot be empty");
+    return {
+      csrfToken,
+      expiresAt,
+      account: parsePrivateAccount(record.account),
+      limits: parseAccountLimits(record.limits),
+    };
+  }
+
+  async updateAccountProfile(
+    csrfToken: string,
+    update: AccountProfileUpdate,
+  ): Promise<Account> {
+    const response = await this.fetcher(
+      "/api/v1/account/profile",
+      requestInit("PATCH", csrfToken, accountProfilePayload(update)),
+    );
+    const { data } = await decodeResponse(response);
+    return parsePrivateAccount(data);
+  }
+
+  /**
+   * Put a picture on this account and keep it, in a single request.
+   *
+   * The owner's flow is two steps -- ingest into the media store, then point
+   * the site row at what came back -- because owner media has a life of its
+   * own that a post may also reference. An account picture has no such life:
+   * the endpoint ingests and binds together, so there is no window in which
+   * bytes sit on disk attached to nothing, and nothing to undo when a browser
+   * walks away half way through an edit.
+   *
+   * Plain `fetch` rather than the XHR upload path on purpose. That path exists
+   * to report progress and to parse an `UploadedMedia`; this returns an
+   * account, and a picture small enough to be capped at 8 MiB finishes before
+   * a progress bar would say anything a spinner does not.
+   */
+  private async uploadAccountPicture(
+    kind: "avatar" | "cover",
+    csrfToken: string,
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<Account> {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    const response = await this.fetcher(`/api/v1/account/${kind}`, {
+      method: "POST",
+      credentials: "same-origin",
+      // Content-Type is left to the browser deliberately: only it knows the
+      // multipart boundary it just generated, and naming the media type
+      // without that boundary makes the body unreadable to the server.
+      headers: { Accept: "application/json", "X-CSRF-Token": csrfToken },
+      body,
+      signal,
+    });
+    const { data } = await decodeResponse(response);
+    return parsePrivateAccount(data);
+  }
+
+  async uploadAccountAvatar(
+    csrfToken: string,
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<Account> {
+    return this.uploadAccountPicture("avatar", csrfToken, file, signal);
+  }
+
+  async uploadAccountCover(
+    csrfToken: string,
+    file: File,
+    signal?: AbortSignal,
+  ): Promise<Account> {
+    return this.uploadAccountPicture("cover", csrfToken, file, signal);
+  }
+
+  async accountIdentities(signal?: AbortSignal): Promise<AccountIdentity[]> {
+    const response = await this.fetcher("/api/v1/account/identities", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const { data } = await decodeResponse(response);
+    return accountList(data, "account identities").map(parseAccountIdentity);
+  }
+
+  async unlinkIdentity(csrfToken: string, provider: string): Promise<void> {
+    const response = await this.fetcher(
+      `/api/v1/account/identities/${encodeURIComponent(provider)}`,
+      requestInit("DELETE", csrfToken),
+    );
+    const record = objectData((await decodeResponse(response)).data);
+    // mirrors the map built by ginhttp.unlinkOwnIdentity (internal/transport/http/gin/accounts.go)
+    if (
+      !hasExactKeys(record, ["unlinked"]) ||
+      stringField(record, "unlinked") !== provider
+    ) {
+      throw invalidResponse("unlink response named a different provider");
+    }
+  }
+
+  async accountSessions(signal?: AbortSignal): Promise<AccountSessionEntry[]> {
+    const response = await this.fetcher("/api/v1/account/sessions", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const { data } = await decodeResponse(response);
+    return accountList(data, "account sessions").map(parseAccountSessionEntry);
+  }
+
+  /** Sign every browser out, this one included. Returns how many were ended. */
+  async revokeAccountSessions(csrfToken: string): Promise<number> {
+    const response = await this.fetcher(
+      "/api/v1/account/sessions",
+      requestInit("DELETE", csrfToken),
+    );
+    const record = objectData((await decodeResponse(response)).data);
+    // mirrors the map built by ginhttp.revokeOwnSessions (internal/transport/http/gin/accounts.go)
+    if (!hasExactKeys(record, ["revoked"])) {
+      throw invalidResponse("session revocation contains unsupported fields");
+    }
+    return nonNegativeIntegerField(record, "revoked");
+  }
+
+  async ownerAccounts(signal?: AbortSignal): Promise<OwnerRoster> {
+    const response = await this.fetcher("/api/v1/owner/accounts", {
+      ...requestInit("GET"),
+      signal,
+    });
+    const { data, meta } = await decodeResponse(response);
+    const mode = meta.registration_mode;
+    if (typeof mode !== "string" || !registrationModes.has(mode)) {
+      throw invalidResponse("account roster must state the registration mode");
+    }
+    return {
+      accounts: accountList(data, "accounts").map(parsePrivateAccount),
+      registrationMode: mode as RegistrationMode,
+    };
+  }
+
+  async updateAccountStatus(
+    csrfToken: string,
+    userId: string,
+    status: AccountStatus,
+  ): Promise<Account> {
+    const response = await this.fetcher(
+      `/api/v1/owner/accounts/${encodeURIComponent(userId)}`,
+      requestInit("PATCH", csrfToken, { status }),
+    );
+    const { data } = await decodeResponse(response);
+    return parsePrivateAccount(data);
   }
 
   async status(signal?: AbortSignal): Promise<OwnerStatus> {
@@ -2127,6 +2764,7 @@ export class OwnerApi {
         signal,
       ),
     );
+    // mirrors archive.CommitResult (internal/archive/commit.go)
     if (!hasExactKeys(data, ["status"])) {
       throw invalidResponse("restore result contains unsupported fields");
     }
@@ -2192,6 +2830,7 @@ export class OwnerApi {
       signal,
     });
     const data = objectData(await decodeImportSuccess(response, 200));
+    // mirrors archive.CommitResult (internal/archive/commit.go)
     if (!hasExactKeys(data, ["status"])) {
       throw invalidResponse(
         "reviewed replacement result contains unsupported fields",
@@ -2247,6 +2886,7 @@ export class OwnerApi {
       signal,
     });
     const data = objectData(await decodeImportSuccess(response, 200));
+    // mirrors archive.CommitResult (internal/archive/commit.go)
     if (!hasExactKeys(data, ["status"])) {
       throw invalidResponse("merge result contains unsupported fields");
     }
@@ -2271,6 +2911,7 @@ export class OwnerApi {
       signal,
     });
     const data = objectData(await decodeImportSuccess(response, 200));
+    // mirrors the gin.H built by ginhttp.discardMergeImport (internal/transport/http/gin/import.go)
     if (!hasExactKeys(data, ["discarded"]) || data.discarded !== true) {
       throw invalidResponse("merge discard result is invalid");
     }
@@ -2286,7 +2927,7 @@ export class OwnerApi {
 
   async logout(csrfToken: string): Promise<void> {
     const response = await this.fetcher(
-      "/api/v1/owner/session",
+      "/api/v1/login/session",
       requestInit("DELETE", csrfToken),
     );
     const { data } = await decodeResponse(response);
@@ -2329,10 +2970,12 @@ export class OwnerApi {
       signal,
     });
     const { data, meta } = await decodeResponse(response);
+    // mirrors the Success envelope's meta (internal/transport/http/gin/response.go)
     if (!hasExactKeys(meta, ["request_id"])) {
       throw invalidResponse("location metadata is invalid");
     }
     const record = objectData(data);
+    // mirrors locationdto.Results (internal/transport/locationdto/dto.go)
     if (!hasExactKeys(record, ["items"]) || !Array.isArray(record.items)) {
       throw invalidResponse("location results are invalid");
     }

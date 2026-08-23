@@ -49,6 +49,7 @@ func TestUserSuggestDirectAPIParity(t *testing.T) {
 	engine, err := ginhttp.New(ginhttp.Config{
 		Assets:       fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
 		OwnerAuth:    manager,
+		Accounts:     testAccountService(t, database, runtimeState),
 		SiteSettings: service,
 		Readiness:    service.Ready,
 	})
@@ -73,7 +74,7 @@ func TestUserSuggestDirectAPIParity(t *testing.T) {
 		t.Fatalf("suggestions = %#v", items)
 	}
 	item := items[0].(map[string]any)
-	if item["username"] != "cheems" || item["display_name"] != "Cheems" || item["profile_url"] != "/@cheems" {
+	if item["username"] != "cheems" || item["display_name"] != "Cheems" || item["profile_url"] != "/cheems" {
 		t.Fatalf("suggestion = %#v", item)
 	}
 

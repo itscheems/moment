@@ -104,6 +104,7 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 	engine, err := New(Config{
 		Assets:       testAssets(),
 		OwnerAuth:    manager,
+		Accounts:     testAccounts(t, database, runtimeState),
 		SiteSettings: site,
 		Posts:        posts,
 		Media:        mediaStore,
@@ -561,7 +562,7 @@ func TestPostRoutesRequireAuthAndSiteAuthority(t *testing.T) {
 	if _, err := New(Config{Assets: testAssets(), Posts: fixture.posts, SiteSettings: fixture.site}); err == nil {
 		t.Fatal("post routes without owner auth were accepted")
 	}
-	if _, err := New(Config{Assets: testAssets(), Posts: fixture.posts, OwnerAuth: fixture.manager}); err == nil {
+	if _, err := New(Config{Assets: testAssets(), Posts: fixture.posts, OwnerAuth: fixture.manager, Accounts: fixture.accounts}); err == nil {
 		t.Fatal("post routes without site settings were accepted")
 	}
 }

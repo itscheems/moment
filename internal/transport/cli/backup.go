@@ -168,8 +168,9 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 		if planErr != nil {
 			return Result{}, backupImportCLIError(planErr)
 		}
-		text := fmt.Sprintf("Import dry-run validated with no persistent staging\nEntries: %d\nComments: %d\nMedia: %d\nRequired additional bytes: %d\nAvailable bytes: %d",
-			plan.Counts.Entries, plan.Counts.Comments, plan.Counts.Media, plan.Disk.RequiredAdditionalBytes, plan.Disk.AvailableBytes)
+		text := fmt.Sprintf("Import dry-run validated with no persistent staging\nEntries: %d\nComments: %d\nMedia: %d\nAccounts: %d\nLinked identities: %d\nRequired additional bytes: %d\nAvailable bytes: %d",
+			plan.Counts.Entries, plan.Counts.Comments, plan.Counts.Media, plan.Counts.Users, plan.Counts.Identities,
+			plan.Disk.RequiredAdditionalBytes, plan.Disk.AvailableBytes)
 		return Result{Data: plan, Text: text, Meta: meta}, nil
 	}
 	var confirmedPlan archive.ImportPlan
@@ -304,11 +305,16 @@ func importScopeConfirmation(plan archive.ImportPlan) string {
 	if len(plan.Warnings) != 0 {
 		warnings = strings.Join(plan.Warnings, "; ")
 	}
+	// Accounts belong in the sentence the owner is answering yes to. Commit
+	// replaces them along with everything else, and this prompt is the last
+	// place that can be said before it happens.
 	return fmt.Sprintf(
-		"Import preview\nArchive SHA-256: %s\nIncoming: %d entries, %d comments, %d media (%d bytes)\nReplacing: %d entries, %d comments, %d media (%d bytes)\nDisk: %d additional bytes required, %d available\nWarnings: %s\nReplace the active Moment dataset with this exact archive?",
+		"Import preview\nArchive SHA-256: %s\nIncoming: %d entries, %d comments, %d media (%d bytes), %d accounts, %d linked identities\nReplacing: %d entries, %d comments, %d media (%d bytes), %d accounts, %d linked identities\nDisk: %d additional bytes required, %d available\nWarnings: %s\nReplace the active Moment dataset with this exact archive?",
 		plan.ArchiveSHA256,
 		plan.Counts.Entries, plan.Counts.Comments, plan.Counts.Media, plan.MediaBytes,
+		plan.Counts.Users, plan.Counts.Identities,
 		plan.Replacement.Counts.Entries, plan.Replacement.Counts.Comments, plan.Replacement.Counts.Media, plan.Replacement.DataBytes,
+		plan.Replacement.Counts.Users, plan.Replacement.Counts.Identities,
 		plan.Disk.RequiredAdditionalBytes, plan.Disk.AvailableBytes, warnings,
 	)
 }
@@ -376,8 +382,9 @@ func runBackupInspect(ctx context.Context, invocation Invocation, input CommandI
 	if err != nil {
 		return Result{}, backupInspectCLIError(err)
 	}
-	text := fmt.Sprintf("Archive inspected into restartable staging\nFormat: v%d\nEntries: %d\nComments: %d\nMedia: %d\nRequired additional bytes: %d\nAvailable bytes: %d\nExpires: %s\nStaging token: %s",
+	text := fmt.Sprintf("Archive inspected into restartable staging\nFormat: v%d\nEntries: %d\nComments: %d\nMedia: %d\nAccounts: %d\nLinked identities: %d\nRequired additional bytes: %d\nAvailable bytes: %d\nExpires: %s\nStaging token: %s",
 		result.FormatVersion, result.Counts.Entries, result.Counts.Comments, result.Counts.Media,
+		result.Counts.Users, result.Counts.Identities,
 		result.Disk.RequiredAdditionalBytes, result.Disk.AvailableBytes, result.ExpiresAt.Format(time.RFC3339), result.StagingToken)
 	return Result{Data: result, Text: text, Meta: meta}, nil
 }
@@ -649,7 +656,7 @@ func decodeImportPlanAPI(body []byte, expectedArchiveBytes int64) (archive.Impor
 	if err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(data["counts"], "entries", "comments", "media"); err != nil {
+	if _, err := decodeExactJSONObject(data["counts"], importCountsFields...); err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
 	timeRange, err := decodeImportTimeRangeObject(data["time_range"])
@@ -666,7 +673,7 @@ func decodeImportPlanAPI(body []byte, expectedArchiveBytes int64) (archive.Impor
 	if err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(replacement["counts"], "entries", "comments", "media"); err != nil {
+	if _, err := decodeExactJSONObject(replacement["counts"], importCountsFields...); err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
 	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
@@ -921,7 +928,7 @@ func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64, observed
 	if err != nil {
 		return archive.Inspection{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(data["counts"], "entries", "comments", "media"); err != nil {
+	if _, err := decodeExactJSONObject(data["counts"], importCountsFields...); err != nil {
 		return archive.Inspection{}, nil, err
 	}
 	timeRange, err := decodeImportTimeRangeObject(data["time_range"])
@@ -938,7 +945,7 @@ func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64, observed
 	if err != nil {
 		return archive.Inspection{}, nil, err
 	}
-	if _, err := decodeExactJSONObject(replacement["counts"], "entries", "comments", "media"); err != nil {
+	if _, err := decodeExactJSONObject(replacement["counts"], importCountsFields...); err != nil {
 		return archive.Inspection{}, nil, err
 	}
 	metadata, err := decodeExactJSONObject(envelope["meta"], "request_id")
@@ -960,6 +967,12 @@ func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64, observed
 	}
 	return inspection, map[string]any{"request_id": requestID}, nil
 }
+
+// importCountsFields is the wire field set of archive.ImportCounts. The
+// decoder below is an exact-field-set reader: every name here must appear and
+// nothing else may, so this list and the struct's JSON tags are one contract.
+// TestImportCountsWireFieldsMatchTheStrictDecoder holds them together.
+var importCountsFields = []string{"entries", "comments", "media", "users", "identities"}
 
 func decodeExactJSONObject(raw []byte, expectedKeys ...string) (map[string]json.RawMessage, error) {
 	return decodeJSONObjectWithOptional(raw, expectedKeys, nil)
@@ -1136,10 +1149,16 @@ func validImportGenerationID(value string) bool {
 }
 
 func validImportCounts(value archive.ImportCounts, enforcePortableLimits bool) bool {
-	if value.Entries < 0 || value.Comments < 0 || value.Media < 0 {
+	if value.Entries < 0 || value.Comments < 0 || value.Media < 0 || value.Users < 0 || value.Identities < 0 {
 		return false
 	}
-	return !enforcePortableLimits || value.Entries <= 100_000 && value.Comments <= 500_000 && value.Media <= 100_000
+	// Every authority has an owner, so an incoming archive that claims no
+	// account at all is describing something the importer cannot produce.
+	if enforcePortableLimits && value.Users < 1 {
+		return false
+	}
+	return !enforcePortableLimits || value.Entries <= 100_000 && value.Comments <= 500_000 && value.Media <= 100_000 &&
+		value.Users <= 100_000 && value.Identities <= 500_000
 }
 
 func decodeCanonicalUTCTime(raw json.RawMessage) (time.Time, error) {

@@ -1,0 +1,207 @@
+import "@testing-library/jest-dom/vitest";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { PublicApi } from "../../api/public";
+import { NavigationProvider } from "../../app/navigation";
+import { FeedbackProvider } from "../../components/Feedback";
+import { OwnerProvider } from "../owner/OwnerProvider";
+import { MemberProfilePage } from "./MemberProfilePage";
+import { makeAccountLimits } from "../../test/accountFixtures";
+
+const sessionKey = "moment.owner.session.v1";
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function memberEnvelope() {
+  return {
+    data: {
+      user_id: "11111111111111111111111111111111",
+      username: "linlin",
+      display_name: "林林",
+      bio: "在这里记下路过的天气",
+      avatar_media_id: null,
+      cover_media_id: null,
+      role: "member",
+      profile_url: "/linlin",
+    },
+    meta: { request_id: "req_user" },
+  };
+}
+
+/**
+ * A signed-in browser, or none.
+ *
+ * The page asks who is reading before it decides whether to offer the editor,
+ * so every case has to answer that question one way or the other -- a silent
+ * network failure would leave the answer pending and quietly hide the control
+ * the case is about.
+ */
+function signedIn(username: string | null) {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input) !== "/api/v1/account/session") return json({}, 404);
+    if (username === null) {
+      return json(
+        {
+          error: {
+            code: "UNAUTHORIZED",
+            message: "sign in",
+            details: {},
+            request_id: "req_guest",
+          },
+        },
+        401,
+      );
+    }
+    return json({
+      data: {
+        expires_at: "2999-08-11T01:00:00.000Z",
+        csrf_token: "csrf-from-cookie",
+        account: {
+          user_id:
+            username === "linlin"
+              ? "11111111111111111111111111111111"
+              : "22222222222222222222222222222222",
+          username,
+          display_name: username,
+          bio: "",
+          avatar_media_id: null,
+          cover_media_id: null,
+          role: "member",
+          profile_url: `/${username}`,
+          status: "active",
+          username_chosen: true,
+        },
+        limits: makeAccountLimits(),
+      },
+      meta: { request_id: "req_session" },
+    });
+  });
+}
+
+function mount(api: PublicApi, username: string) {
+  return render(
+    <FeedbackProvider>
+      <NavigationProvider>
+        <OwnerProvider>
+          <MemberProfilePage api={api} username={username} />
+        </OwnerProvider>
+      </NavigationProvider>
+    </FeedbackProvider>,
+  );
+}
+
+function notFound() {
+  return json(
+    {
+      error: {
+        code: "ACCOUNT_NOT_FOUND",
+        message: "account not found",
+        details: {},
+        request_id: "req_missing",
+      },
+    },
+    404,
+  );
+}
+
+describe("member profile", () => {
+  beforeEach(() => {
+    window.sessionStorage.setItem(
+      sessionKey,
+      JSON.stringify({
+        csrf_token: "csrf-member",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    vi.stubGlobal("scrollTo", vi.fn());
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    window.sessionStorage.clear();
+  });
+
+  it("renders another account's identity over the plain cover band", async () => {
+    const requested: string[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return json(memberEnvelope());
+    });
+    vi.stubGlobal("fetch", signedIn(null));
+    const { container } = mount(
+      new PublicApi(fetcher as unknown as typeof fetch),
+      "linlin",
+    );
+
+    expect(await screen.findByRole("heading", { name: "林林" })).toBeVisible();
+    expect(screen.getByText("@linlin")).toBeInTheDocument();
+    expect(screen.getByText("在这里记下路过的天气")).toBeInTheDocument();
+    // No cover of their own falls back to the same colour band the site page
+    // uses, rather than to an empty strip that reads as a failed image.
+    expect(container.querySelector('[class*="coverFallback"]')).not.toBeNull();
+    expect(container.querySelector("img[alt='']")).toBeNull();
+    expect(requested).toEqual(["/api/v1/users/linlin"]);
+    // A reader who is not this account gets an identity and nothing to press.
+    expect(screen.queryByRole("button", { name: "编辑资料" })).toBeNull();
+  });
+
+  it("reads an account that is not there as a page that is not there", async () => {
+    vi.stubGlobal("fetch", signedIn(null));
+    mount(
+      new PublicApi(vi.fn(async () => notFound()) as unknown as typeof fetch),
+      "ghost",
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "页面不存在" }),
+    ).toBeVisible();
+  });
+
+  it("gives the account behind the page somewhere to edit it", async () => {
+    vi.stubGlobal("fetch", signedIn("linlin"));
+    mount(
+      new PublicApi(
+        vi.fn(async () => json(memberEnvelope())) as unknown as typeof fetch,
+      ),
+      "linlin",
+    );
+
+    // Settings is about the account; this page is about the face on it, and
+    // until now a member had no way to change what it said.
+    const edit = await screen.findByRole("button", { name: "编辑资料" });
+    fireEvent.click(edit);
+    expect(
+      await screen.findByRole("dialog", { name: "编辑资料" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("显示名称")).toHaveValue("林林");
+  });
+
+  it("offers a member no editor on somebody else's page", async () => {
+    vi.stubGlobal("fetch", signedIn("other"));
+    mount(
+      new PublicApi(
+        vi.fn(async () => json(memberEnvelope())) as unknown as typeof fetch,
+      ),
+      "linlin",
+    );
+
+    expect(await screen.findByRole("heading", { name: "林林" })).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "编辑资料" })).toBeNull(),
+    );
+  });
+});

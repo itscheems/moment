@@ -8,14 +8,23 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../../app/App";
 import settingsCss from "./Settings.module.css?inline";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const sessionKey = "moment.owner.session.v1";
 const avatarID = "01K2ABCDEF0123456789ABCDE7";
-const sectionIDs = ["identity", "conversation", "access", "data"] as const;
+// Document order, which is what the scroll spy measures against.
+const sectionIDs = [
+  "identity",
+  "conversation",
+  "access",
+  "members",
+  "data",
+] as const;
 let intersectionCallback: IntersectionObserverCallback | undefined;
 let intersectionObserver: IntersectionObserver;
 
@@ -113,6 +122,95 @@ function statusEnvelope(epoch = 3) {
   };
 }
 
+function providersEnvelope() {
+  return {
+    data: {
+      providers: [
+        { name: "github", label: "GitHub" },
+        { name: "google", label: "Google" },
+      ],
+    },
+    meta: { request_id: "req_providers" },
+  };
+}
+
+function identitiesEnvelope() {
+  return {
+    data: [
+      {
+        provider: "github",
+        display_name: "cheems",
+        email: "cheems@example.com",
+        linked_at: "2026-08-01T00:00:00Z",
+        last_login_at: "2026-08-20T10:00:00Z",
+      },
+    ],
+    meta: { count: 1, request_id: "req_identities" },
+  };
+}
+
+function accountSessionsEnvelope() {
+  return {
+    data: [
+      {
+        id: "01K2ABCDEF0123456789ABCDF0",
+        issued_at: "2026-08-20T10:00:00Z",
+        last_seen_at: "2026-08-22T09:00:00Z",
+        expires_at: "2026-09-20T10:00:00Z",
+        surface: "Chrome · macOS",
+        current: true,
+      },
+    ],
+    meta: { count: 1, request_id: "req_sessions" },
+  };
+}
+
+function accountSessionEnvelope() {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-from-cookie",
+      account: {
+        user_id: "00000000000000000000000000000000",
+        username: "owner",
+        display_name: "乔乔",
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "owner",
+        profile_url: "/owner",
+        status: "active",
+        username_chosen: true,
+      },
+      limits: makeAccountLimits(),
+    },
+    meta: { request_id: "req_account_session" },
+  };
+}
+
+function memberSessionEnvelope() {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-settings",
+      account: {
+        user_id: "11111111111111111111111111111111",
+        username: "linlin",
+        display_name: "林林",
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "member",
+        profile_url: "/linlin",
+        status: "pending",
+        username_chosen: true,
+      },
+      limits: makeAccountLimits(),
+    },
+    meta: { request_id: "req_member_session" },
+  };
+}
+
 function installSession() {
   window.sessionStorage.setItem(
     sessionKey,
@@ -131,12 +229,22 @@ function installFetch(
     if (url === "/api/v1/owner/status") return json(statusEnvelope());
     return json({}, 404);
   },
+  accountSession: () => unknown = accountSessionEnvelope,
 ) {
   const fetcher = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/api/v1/owner/import/status") {
         return failure("IMPORT_STAGING_INVALID", 409);
+      }
+      // Every test here renders the settings page for somebody, and who that
+      // somebody is now comes from the account session rather than from the
+      // owner probe. Answered ahead of the handler so each test only has to
+      // describe what it is actually about.
+      if (url === "/api/v1/account/session") {
+        return window.sessionStorage.getItem(sessionKey)
+          ? json(accountSession())
+          : failure("UNAUTHORIZED", 401);
       }
       return handler(url, init);
     },
@@ -288,7 +396,8 @@ describe("owner site settings", () => {
     const rects: Record<(typeof sectionIDs)[number], DOMRect> = {
       identity: boundedSectionRect(-1_900, -1_250),
       conversation: boundedSectionRect(-1_250, -730),
-      access: boundedSectionRect(-730, 215),
+      access: boundedSectionRect(-730, -250),
+      members: boundedSectionRect(-250, 215),
       data: boundedSectionRect(215, 1_100),
     };
     sectionIDs.forEach((id) => {
@@ -390,6 +499,47 @@ describe("owner site settings", () => {
       within(leaveDialog).getByRole("button", { name: "仍然离开" }),
     );
     await waitFor(() => expect(window.location.pathname).toBe("/search"));
+  });
+
+  /**
+   * A save has to be able to finish twice over the life of one page.
+   *
+   * mountedRef was only ever set to false, so StrictMode's development
+   * remount pinned it there: every guarded update after a request was dropped,
+   * savePending never cleared, and the save button stayed disabled with the
+   * notice still reading "正在保存站点设置…" for a save the server had accepted.
+   */
+  it("finishes a save after a StrictMode remount", async () => {
+    installFetch(async (url, init) => {
+      if (url === "/api/v1/site") return json(siteEnvelope());
+      if (url === "/api/v1/owner/status") return json(statusEnvelope());
+      if (url === "/api/v1/owner/site" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return json({
+          data: { ...siteEnvelope().data, ...body },
+          meta: { request_id: "req_saved" },
+        });
+      }
+      return json({}, 404);
+    });
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+    await screen.findByRole("heading", { name: "网站" });
+    await waitForRestoreStatus();
+
+    fireEvent.click(screen.getByRole("switch", { name: /允许新评论/ }));
+    fireEvent.click(screen.getByRole("button", { name: "保存设置" }));
+
+    expect(await screen.findByText("设置已保存。")).toBeInTheDocument();
+    // And the form is ready for the next edit rather than held by a pending
+    // flag nothing will ever clear.
+    fireEvent.click(screen.getByRole("switch", { name: /允许新评论/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "保存设置" })).toBeEnabled(),
+    );
   });
 
   it("preserves dirty fields across a failed save and patches only changed values on retry", async () => {
@@ -692,4 +842,164 @@ describe("owner site settings", () => {
       );
     },
   );
+
+  it("counts the accounts waiting on the owner, in the nav and on the section", async () => {
+    const roster = (linlinStatus: "pending" | "active") => ({
+      data: [
+        {
+          user_id: "00000000000000000000000000000000",
+          username: "owner",
+          display_name: "乔乔",
+          bio: "",
+          avatar_media_id: null,
+          cover_media_id: null,
+          role: "owner",
+          profile_url: "/owner",
+          status: "active",
+          username_chosen: true,
+        },
+        {
+          user_id: "11111111111111111111111111111111",
+          username: "linlin",
+          display_name: "林林",
+          bio: "",
+          avatar_media_id: null,
+          cover_media_id: null,
+          role: "member",
+          profile_url: "/linlin",
+          status: linlinStatus,
+          username_chosen: true,
+        },
+        {
+          user_id: "22222222222222222222222222222222",
+          username: "haohao",
+          display_name: "浩浩",
+          bio: "",
+          avatar_media_id: null,
+          cover_media_id: null,
+          role: "member",
+          profile_url: "/haohao",
+          status: "pending",
+          username_chosen: true,
+        },
+      ],
+      meta: { count: 3, registration_mode: "open", request_id: "req_roster" },
+    });
+    installFetch(async (url, init) => {
+      if (url === "/api/v1/site") return json(siteEnvelope());
+      if (url === "/api/v1/owner/status") return json(statusEnvelope());
+      if (url === "/api/v1/owner/accounts") return json(roster("pending"));
+      const approved = url.match(
+        /^\/api\/v1\/owner\/accounts\/([0-9a-f]{32})$/,
+      );
+      if (approved && init?.method === "PATCH") {
+        const entry = roster("pending").data.find(
+          (candidate) => candidate.user_id === approved[1],
+        )!;
+        return json({
+          data: { ...entry, status: "active" },
+          meta: { request_id: "req_approve" },
+        });
+      }
+      return json({}, 404);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "网站" });
+
+    // Somebody waiting is the one thing on this page that is about a person
+    // rather than a setting, and it used to be visible only to an owner who
+    // happened to scroll far enough.
+    const navigation = screen.getByRole("navigation", { name: "设置分区" });
+    expect(
+      await within(navigation).findByLabelText("2 个账户待批准"),
+    ).toHaveTextContent("2");
+    expect(screen.getByText(/有 2 个账户在等待批准/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "批准" })[0]);
+
+    // The count comes off the same list the buttons act on, so approving
+    // somebody takes them out of it rather than leaving the badge lying.
+    await waitFor(() =>
+      expect(
+        within(navigation).getByLabelText("1 个账户待批准"),
+      ).toHaveTextContent("1"),
+    );
+  });
+
+  it("shows a member their own account and none of the site's", async () => {
+    const fetcher = installFetch(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope());
+      if (url === "/api/v1/account/identities") {
+        return json(identitiesEnvelope());
+      }
+      if (url === "/api/v1/account/sessions") {
+        return json(accountSessionsEnvelope());
+      }
+      return json({}, 404);
+    }, memberSessionEnvelope);
+    render(<App />);
+
+    // Login methods and active sessions belong to whoever is signed in; the
+    // site's own settings do not, and the server would refuse them anyway.
+    await screen.findByRole("heading", { name: "登录与安全" });
+    expect(await screen.findByText("GitHub")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "网站" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "成员" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "备份与恢复" })).toBeNull();
+    expect(
+      screen.getByRole("navigation", { name: "设置分区" }),
+    ).toHaveTextContent("登录与安全");
+    expect(await screen.findByText(/正在等待站长批准/)).toBeInTheDocument();
+
+    // The owner probe answers 401 to a member, and this page reads a 401 as an
+    // expired session, so asking it would sign them out of the page they came
+    // here to use.
+    expect(
+      fetcher.mock.calls.some(
+        ([url]) => String(url) === "/api/v1/owner/status",
+      ),
+    ).toBe(false);
+  });
+
+  it("says why the last way into an account cannot be unlinked", async () => {
+    installFetch(async (url, init) => {
+      if (url === "/api/v1/site") return json(siteEnvelope());
+      if (url === "/api/v1/owner/status") return json(statusEnvelope());
+      if (url === "/api/v1/login/oauth/providers") {
+        return json(providersEnvelope());
+      }
+      if (url === "/api/v1/account/identities") {
+        return json(identitiesEnvelope());
+      }
+      if (
+        url === "/api/v1/account/identities/github" &&
+        init?.method === "DELETE"
+      ) {
+        // A conflict with the state of the world, not a malformed request.
+        return failure("LAST_CREDENTIAL", 409);
+      }
+      if (url === "/api/v1/account/sessions") {
+        return json(accountSessionsEnvelope());
+      }
+      return json({}, 404);
+    });
+    render(<App />);
+    await screen.findByRole("heading", { name: "登录与安全" });
+
+    // Only what is not already bound is worth offering.
+    expect(
+      await screen.findByRole("button", { name: "绑定 Google" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "绑定 GitHub" })).toBeNull();
+    expect(screen.getByText("当前设备")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "解绑" }));
+    const dialog = await screen.findByRole("dialog", { name: "解绑 GitHub？" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "解绑" }));
+
+    expect(
+      await screen.findByText(/这是这个账户唯一的登录方式/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("GitHub")).toBeInTheDocument();
+  });
 });

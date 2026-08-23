@@ -10,7 +10,9 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/domain"
 )
 
 const (
@@ -29,6 +31,12 @@ type CookieOptions struct {
 }
 
 type sessionRequest struct {
+	// Username names who is signing in. It is optional because the owner token
+	// is a break-glass credential that has to keep working when nothing else
+	// does, including when nobody remembers the handle. When it is sent it is
+	// enforced: a form that collects a name and then ignores it would sign
+	// every correct password in as the owner no matter what was typed above it.
+	Username *string `json:"username"`
 	Token    *string `json:"token"`
 	Password *string `json:"password"`
 }
@@ -43,28 +51,55 @@ type sessionResponse struct {
 }
 
 // RegisterOwnerRoutes installs the complete authentication transport. Future
-// owner feature groups can reuse RequireOwner rather than decode credentials.
-func RegisterOwnerRoutes(engine *gin.Engine, manager *auth.Manager, cookies CookieOptions) {
-	owner := engine.Group("/api/v1/owner")
-	owner.GET("/login-options", loginOptions(manager))
-	owner.POST("/session", exchangeSession(manager, cookies))
+// owner feature groups can reuse the gate rather than decode credentials.
+func RegisterOwnerRoutes(engine *gin.Engine, gate *Gate, cookies CookieOptions) {
+	manager := gate.manager
 
-	protected := owner.Group("")
-	protected.Use(RequireOwner(manager))
-	protected.DELETE("/session", logoutSession(cookies))
-	protected.GET("/status", ownerStatus(manager))
-	protected.POST("/token/rotate", rotateToken(manager))
-	protected.PUT("/password", setPassword(manager))
+	// Signing in and signing out belong to whoever is doing them, not to the
+	// owner, so they sit beside the provider and device routes rather than
+	// under /owner. Ending a session was owner-scoped until now, which meant a
+	// member who signed in through a provider and landed unapproved could not
+	// sign out again: the refusal that protects owner powers was standing in
+	// front of the one action that takes a power away.
+	login := engine.Group("/api/v1/login")
+	login.GET("/methods", signInMethods(gate))
+	login.POST("/session", exchangeSession(gate, cookies))
+	ending := login.Group("")
+	ending.Use(gate.RequireAccount())
+	ending.DELETE("/session", logoutSession(gate, cookies))
+
+	// What remains under /owner is administration of the instance's own
+	// credentials, which is the owner's alone.
+	owner := engine.Group("/api/v1/owner")
+	owner.Use(gate.RequireOwner())
+	owner.GET("/status", ownerStatus(manager))
+	owner.POST("/token/rotate", rotateToken(manager))
+	owner.PUT("/password", setPassword(manager))
 }
 
-func loginOptions(manager *auth.Manager) gin.HandlerFunc {
+// signInMethods reports the credential kinds this instance accepts.
+//
+// It answers for the site rather than for a named account on purpose: a
+// per-handle answer would tell an anonymous caller which handles exist and what
+// each one carries, which is an enumeration oracle in exchange for nothing the
+// form needs before somebody has typed a secret.
+func signInMethods(gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		status, err := manager.Status()
+		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
+		if err != nil {
+			writeAccountError(ctx, err)
+			return
+		}
+		methods, err := gate.SignInMethods(ctx.Request.Context(), owner)
 		if err != nil {
 			Failure(ctx, http.StatusServiceUnavailable, "OWNER_NOT_INITIALIZED", "owner authentication is not initialized", nil)
 			return
 		}
-		Success(ctx, http.StatusOK, map[string]bool{"password_enabled": status.PasswordEnabled}, nil)
+		names := make([]string, 0, len(methods))
+		for _, method := range methods {
+			names = append(names, string(method))
+		}
+		Success(ctx, http.StatusOK, map[string]any{"methods": names}, nil)
 	}
 }
 
@@ -72,55 +107,7 @@ func loginOptions(manager *auth.Manager) gin.HandlerFunc {
 // session. An Authorization header always takes precedence; malformed/invalid
 // bearer input never falls back to cookies. Unsafe cookie-authenticated requests
 // additionally require the CSRF token bound into the signed session.
-func RequireOwner(manager *auth.Manager) gin.HandlerFunc {
-	return func(ctx *gin.Context) {
-		authorizationValues := ctx.Request.Header.Values("Authorization")
-		if len(authorizationValues) > 1 {
-			unauthorized(ctx)
-			return
-		}
-		if len(authorizationValues) == 1 {
-			if strings.TrimSpace(authorizationValues[0]) == "" {
-				unauthorized(ctx)
-				return
-			}
-			parts := strings.Fields(authorizationValues[0])
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-				unauthorized(ctx)
-				return
-			}
-			grant, err := manager.AuthorizeBearer(parts[1])
-			if err != nil {
-				unauthorized(ctx)
-				return
-			}
-			ctx.Set(ownerSourceKey, "bearer")
-			ctx.Set(ownerGrantKey, grant)
-			ctx.Next()
-			return
-		}
-
-		cookie, err := ctx.Request.Cookie(SessionCookieName)
-		if err != nil {
-			unauthorized(ctx)
-			return
-		}
-		session, grant, err := manager.AuthorizeSession(cookie.Value)
-		if err != nil {
-			unauthorized(ctx)
-			return
-		}
-		if isUnsafeMethod(ctx.Request.Method) && !constantTimeEqual(ctx.GetHeader(CSRFHeaderName), session.CSRFToken) {
-			Failure(ctx, http.StatusForbidden, "CSRF_INVALID", "a valid CSRF token is required", nil)
-			return
-		}
-		ctx.Set(ownerSourceKey, "session")
-		ctx.Set(ownerGrantKey, grant)
-		ctx.Next()
-	}
-}
-
-func exchangeSession(manager *auth.Manager, cookies CookieOptions) gin.HandlerFunc {
+func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		body, ok := readBody(ctx)
 		if !ok {
@@ -135,21 +122,89 @@ func exchangeSession(manager *auth.Manager, cookies CookieOptions) gin.HandlerFu
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "exactly one owner password or token is required", nil)
 			return
 		}
-		var cookieValue string
-		var session auth.Session
-		var err error
-		if request.Password != nil {
-			cookieValue, session, err = manager.IssuePasswordSession(*request.Password)
+		kind := domain.CredentialPassword
+		secret := ""
+		if request.Token != nil {
+			kind, secret = domain.CredentialToken, *request.Token
 		} else {
-			cookieValue, session, err = manager.IssueSession(*request.Token)
+			secret = *request.Password
 		}
+
+		account, ok := gate.signingInAs(ctx, request.Username)
+		if !ok {
+			return
+		}
+		sessionID, err := app.NewSessionID()
 		if err != nil {
+			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "the session could not be issued", nil)
+			return
+		}
+		subject := auth.Subject{UserID: account.ID, SessionID: sessionID}
+
+		// Whether this account signs in this way is the credential layer's
+		// question, not this handler's. Answering it here would put the same
+		// judgement in two voices, and the second one always drifts.
+		cookieValue, session, err := gate.IssueSignIn(ctx.Request.Context(), account, kind, secret, subject)
+		if err != nil {
+			var refusal *domain.Error
+			if errors.As(err, &refusal) {
+				writeAccountError(ctx, err)
+				return
+			}
+			// Anything else is a secret that did not verify. It says nothing
+			// about the account, so neither does the answer.
 			unauthorized(ctx)
+			return
+		}
+		// The row is written before the cookie is handed out, so a cookie a
+		// caller holds always has something to be revoked by.
+		if _, err := gate.accounts.StartSession(ctx.Request.Context(), account.ID, sessionID,
+			string(requestSurface(ctx)), session.ExpiresAt.UnixMilli()); err != nil {
+			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "the session could not be recorded", nil)
 			return
 		}
 		setSessionCookie(ctx, cookieValue, session.ExpiresAt, cookies)
 		Success(ctx, http.StatusOK, sessionResponse{ExpiresAt: session.ExpiresAt, CSRFToken: session.CSRFToken}, nil)
 	}
+}
+
+// signingInAs resolves the account a sign-in is for, writing its own refusal
+// when no account answers to the handle.
+//
+// It does not judge what that account may present -- resolving who is signing
+// in and deciding what they can sign in with are two questions, and keeping
+// them apart is what lets the second one change without this one noticing.
+//
+// A missing handle resolves to the owner. That is the break-glass path: the
+// owner token has to work when the database is what needs repairing, including
+// when nobody remembers the handle.
+func (gate *Gate) signingInAs(ctx *gin.Context, typed *string) (domain.User, bool) {
+	if typed == nil || strings.TrimSpace(*typed) == "" {
+		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
+		if err != nil {
+			writeAccountError(ctx, err)
+			return domain.User{}, false
+		}
+		return owner, true
+	}
+	// A handle that could never exist and one nobody holds are the same fact,
+	// and splitting them would only describe the validator. Handles are public
+	// -- each addresses a profile page at the site root -- so saying which half
+	// of the form was wrong leaks nothing and saves a password reset that was
+	// never going to help.
+	normalized, err := domain.NormalizeUsername(*typed)
+	if err != nil {
+		Failure(ctx, http.StatusUnauthorized, string(domain.CodeAccountNotFound),
+			"no account here holds that username", nil)
+		return domain.User{}, false
+	}
+	account, err := gate.accounts.AccountByUsername(ctx.Request.Context(), normalized)
+	if err != nil {
+		Failure(ctx, http.StatusUnauthorized, string(domain.CodeAccountNotFound),
+			"no account here holds that username", nil)
+		return domain.User{}, false
+	}
+	return account, true
 }
 
 func setPassword(manager *auth.Manager) gin.HandlerFunc {
@@ -187,8 +242,19 @@ func setPassword(manager *auth.Manager) gin.HandlerFunc {
 	}
 }
 
-func logoutSession(cookies CookieOptions) gin.HandlerFunc {
+// logoutSession revokes the session it was called with, then clears the cookie.
+//
+// Clearing the cookie alone was the previous behaviour and was not a logout: a
+// copied cookie value stayed valid for the rest of its twelve hours, because
+// nothing server-side had been told to stop honouring it.
+func logoutSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
+		if session, ok := CurrentSession(ctx); ok {
+			if err := gate.accounts.EndSession(ctx.Request.Context(), session.ID); err != nil {
+				Failure(ctx, http.StatusInternalServerError, "INTERNAL", "session could not be ended", nil)
+				return
+			}
+		}
 		clearSessionCookie(ctx, cookies)
 		Success(ctx, http.StatusOK, map[string]bool{"logged_out": true}, nil)
 	}

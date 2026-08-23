@@ -12,9 +12,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicApi, type SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
-import { OwnerProvider } from "../owner/OwnerProvider";
+import { OwnerProvider, useOwner } from "../owner/OwnerProvider";
 import { announceOwnerPost } from "../owner/postEvents";
 import { ProfilePage } from "./ProfilePage";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const pinnedId = "01K2ABCDEF0123456789ABCDE0";
 const otherId = "01K2ABCDEF0123456789ABCDE1";
@@ -52,6 +53,43 @@ function post(id: string, text: string) {
   };
 }
 
+function accountSessionEnvelope() {
+  return {
+    data: {
+      expires_at: "2999-08-11T01:00:00.000Z",
+      csrf_token: "csrf-profile",
+      account: {
+        user_id: site.ownerId,
+        username: site.username,
+        display_name: site.displayName,
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "owner",
+        profile_url: `/${site.username}`,
+        status: "active",
+        username_chosen: true,
+      },
+      limits: makeAccountLimits(),
+    },
+    meta: { request_id: "req_account" },
+  };
+}
+
+/**
+ * What the owner context believes its own address is.
+ *
+ * The left rail and the /profile redirect both read it, and neither renders
+ * inside this page -- so the probe is how a test standing here can tell that
+ * a rename reached the account the viewer is signed in as.
+ */
+function AccountProbe() {
+  const owner = useOwner();
+  return (
+    <p data-testid="viewer-profile-url">{owner.account?.profileUrl ?? ""}</p>
+  );
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -67,7 +105,7 @@ function page(items: unknown[], nextCursor: string | null): Response {
 }
 
 beforeEach(() => {
-  window.history.replaceState({}, "", "/@owner");
+  window.history.replaceState({}, "", "/owner");
   vi.stubGlobal("scrollTo", vi.fn());
 });
 
@@ -137,6 +175,9 @@ describe("profile page", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (url === "/api/v1/account/session") {
+          return json(accountSessionEnvelope());
+        }
         if (url === "/api/v1/owner/status") {
           return json({
             data: {
@@ -372,16 +413,18 @@ describe("profile page", () => {
     );
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        json({
-          data: {
-            initialized: true,
-            password_enabled: false,
-            session_epoch: 1,
-            initialized_at: "2026-08-01T00:00:00Z",
-          },
-          meta: { request_id: "req_status" },
-        }),
+      vi.fn(async (input: RequestInfo | URL) =>
+        String(input) === "/api/v1/account/session"
+          ? json(accountSessionEnvelope())
+          : json({
+              data: {
+                initialized: true,
+                password_enabled: false,
+                session_epoch: 1,
+                initialized_at: "2026-08-01T00:00:00Z",
+              },
+              meta: { request_id: "req_status" },
+            }),
       ),
     );
     render(
@@ -449,7 +492,7 @@ describe("profile page", () => {
     window.history.replaceState(
       { momentScrollY: 640 },
       "",
-      "/@owner?loaded_through=cursor-one",
+      "/owner?loaded_through=cursor-one",
     );
     const first = post(pinnedId, "资料页第一页");
     const second = post(otherId, "资料页第二页");
@@ -482,5 +525,181 @@ describe("profile page", () => {
         behavior: "auto",
       }),
     );
+  });
+
+  /**
+   * A handle is the address of this page, so renaming from it moved the owner
+   * off the URL they were standing on.
+   *
+   * The site branch of the editor handed the saved identity upward and stopped
+   * there. App re-rendered with the new username against the old pathname,
+   * decided this was somebody else's profile, and asked the server for a handle
+   * that had just stopped existing. MemberProfilePage.adopt had solved exactly
+   * this for members; the owner's page had no equivalent.
+   */
+  it("follows the owner's handle when it is renamed from their own page", async () => {
+    window.history.replaceState({}, "", "/owner");
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-rename",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/v1/account/session") {
+          return json(accountSessionEnvelope());
+        }
+        if (url === "/api/v1/owner/status") {
+          return json({
+            data: {
+              initialized: true,
+              password_enabled: false,
+              session_epoch: 1,
+              initialized_at: "2026-08-01T00:00:00Z",
+            },
+            meta: { request_id: "req_owner" },
+          });
+        }
+        if (url === "/api/v1/owner/site") {
+          return json({
+            data: {
+              owner_id: site.ownerId,
+              username: "cheems2",
+              display_name: site.displayName,
+              title: site.title,
+              bio: site.bio,
+              timezone: site.timezone,
+              public_base_url: null,
+              avatar_media_id: null,
+              cover_media_id: null,
+              pinned_post_id: null,
+              comments_enabled: true,
+            },
+            meta: { request_id: "req_rename" },
+          });
+        }
+        return json({}, 404);
+      }),
+    );
+    const onSiteSaved = vi.fn();
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={
+                new PublicApi(vi.fn(async () => page([], null)) as typeof fetch)
+              }
+              onSiteSaved={onSiteSaved}
+              site={{ ...site, pinnedPostId: null }}
+            />
+            <AccountProbe />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "编辑资料" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /用户名/ }), {
+      target: { value: "cheems2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(onSiteSaved).toHaveBeenCalledTimes(1));
+    // The browser stands on the handle that now exists, not the one that just
+    // stopped existing.
+    await waitFor(() => expect(window.location.pathname).toBe("/cheems2"));
+    // And the viewer's own account carries the new address, so the left rail
+    // and the /profile redirect do not keep pointing at the dead one.
+    await waitFor(() =>
+      expect(screen.getByTestId("viewer-profile-url")).toHaveTextContent(
+        "/cheems2",
+      ),
+    );
+  });
+
+  it("leaves the /profile alias alone when the handle changes", async () => {
+    window.history.replaceState({}, "", "/profile");
+    window.sessionStorage.setItem(
+      "moment.owner.session.v1",
+      JSON.stringify({
+        csrf_token: "csrf-alias",
+        expires_at: "2999-08-11T01:00:00.000Z",
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/v1/account/session") {
+          return json(accountSessionEnvelope());
+        }
+        if (url === "/api/v1/owner/status") {
+          return json({
+            data: {
+              initialized: true,
+              password_enabled: false,
+              session_epoch: 1,
+              initialized_at: "2026-08-01T00:00:00Z",
+            },
+            meta: { request_id: "req_owner" },
+          });
+        }
+        if (url === "/api/v1/owner/site") {
+          return json({
+            data: {
+              owner_id: site.ownerId,
+              username: "cheems3",
+              display_name: site.displayName,
+              title: site.title,
+              bio: site.bio,
+              timezone: site.timezone,
+              public_base_url: null,
+              avatar_media_id: null,
+              cover_media_id: null,
+              pinned_post_id: null,
+              comments_enabled: true,
+            },
+            meta: { request_id: "req_rename" },
+          });
+        }
+        return json({}, 404);
+      }),
+    );
+    const onSiteSaved = vi.fn();
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={
+                new PublicApi(vi.fn(async () => page([], null)) as typeof fetch)
+              }
+              onSiteSaved={onSiteSaved}
+              site={{ ...site, pinnedPostId: null }}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "编辑资料" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "编辑资料" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /用户名/ }), {
+      target: { value: "cheems3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(onSiteSaved).toHaveBeenCalledTimes(1));
+    expect(window.location.pathname).toBe("/profile");
   });
 });

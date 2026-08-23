@@ -30,7 +30,7 @@ import { formatMomentDate } from "../posts/dates";
 import { PostLocation } from "../posts/PostPresentation";
 import { ImageGrid } from "../media/ImageGrid";
 import { useOwner } from "../owner/OwnerProvider";
-import { Reauthenticate } from "./CommentComposer";
+import { Reauthenticate, type ReplyBlock } from "./CommentComposer";
 import styles from "./Comments.module.css";
 import ownerStyles from "../owner/Owner.module.css";
 
@@ -456,7 +456,14 @@ function useFoldedBody(contentHtml: string) {
  * Press, not hover: hovering an action the reader cannot use should not throw
  * a card over the comment they are reading.
  */
-function SignInToReplyPopover({ authorName }: { authorName: string }) {
+function SignInToReplyPopover({
+  authorName,
+  reason,
+}: {
+  authorName: string;
+  reason: ReplyBlock;
+}) {
+  const pending = reason === "pending";
   return (
     <Popover.Root>
       <Popover.Trigger
@@ -480,17 +487,18 @@ function SignInToReplyPopover({ authorName }: { authorName: string }) {
             onClick={(event) => event.stopPropagation()}
           >
             <Popover.Title className={styles.signInPopupTitle}>
-              登录后回复
+              {pending ? "正在等待站长批准" : "登录后回复"}
             </Popover.Title>
             <Popover.Description className={styles.signInPopupBody}>
-              发表回复需要登录。过往回复继续公开可读。
+              {pending
+                ? "你的账户正在等待站长批准，批准后就能留言。"
+                : "发表回复需要登录。过往回复继续公开可读。"}
             </Popover.Description>
-            <InternalLink
-              className={styles.signInPopupAction}
-              href="/owner/login"
-            >
-              登录
-            </InternalLink>
+            {pending ? null : (
+              <InternalLink className={styles.signInPopupAction} href="/login">
+                登录
+              </InternalLink>
+            )}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
@@ -505,6 +513,7 @@ export function CommentItem({
   pinned,
   replyRoot,
   canReply = true,
+  replyBlockedBy = "signed-out",
   replyCount,
   focusTarget,
   onReply,
@@ -523,6 +532,11 @@ export function CommentItem({
    * reader has to sign in to do. The two want different answers on screen.
    */
   canReply?: boolean;
+  /**
+   * Why replying is unavailable, for when it is. Signed out points at the way
+   * in; waiting on approval is already inside and has nothing to press.
+   */
+  replyBlockedBy?: ReplyBlock;
   replyCount: number;
   focusTarget: RefObject<HTMLElement | null>;
   onReply: (root: PublicComment, target: PublicComment) => void;
@@ -545,6 +559,32 @@ export function CommentItem({
     author.username !== null && author.profileUrl !== null
       ? { profileUrl: author.profileUrl, username: author.username }
       : null;
+  // The face is read from the same projection as the name, for every account
+  // and not just the owner's. It used to come from the site identity, which is
+  // the owner's own picture — site.avatar_media_id reads that account's row —
+  // so every member fell through to a letter while the server was already
+  // shipping their avatar_media_id. A comment author has no cover of its own;
+  // SiteAvatar does not read one.
+  const authorFace = {
+    displayName: authorName,
+    avatarMediaId: author.avatarMediaId,
+    coverMediaId: null,
+  };
+  const avatar = account ? (
+    <InternalLink
+      aria-label={`查看 ${authorName} 的个人资料`}
+      className={styles.commentAvatar}
+      href={account.profileUrl}
+    >
+      <SiteAvatar site={authorFace} />
+    </InternalLink>
+  ) : (
+    // A legacy guest row has no account behind it and never had a picture, so
+    // the name the visitor typed is the only thing left to draw with.
+    <span aria-hidden="true" className={styles.commentAvatar}>
+      {Array.from(authorName)[0]?.toLocaleUpperCase() ?? "M"}
+    </span>
+  );
   const headerRef = useRef<HTMLElement>(null);
   const restoreScrollRef = useRef(false);
   const flashTimerRef = useRef<number | null>(null);
@@ -628,24 +668,16 @@ export function CommentItem({
             replyCount={replyCount}
           />
         ) : null}
+        {/*
+         * Only the owner gets the hover card, for the reason the byline below
+         * gives: the card wants a whole SiteIdentity, and this site's is the
+         * owner's. The picture itself needs no such lookup, so it is drawn for
+         * everybody.
+         */}
         {ownerAccount && account ? (
-          <SiteIdentityPreview site={site}>
-            <InternalLink
-              aria-label={`查看 ${authorName} 的个人资料`}
-              className={styles.commentAvatar}
-              href={account.profileUrl}
-            >
-              <SiteAvatar site={site} />
-            </InternalLink>
-          </SiteIdentityPreview>
+          <SiteIdentityPreview site={site}>{avatar}</SiteIdentityPreview>
         ) : (
-          // Everything that is not the owner's account falls back to an
-          // initial. The day a second account can comment, this needs the
-          // author's own avatar — `author.avatarMediaId` already carries it —
-          // and the branch above needs a real identity to preview.
-          <span aria-hidden="true" className={styles.commentAvatar}>
-            {Array.from(authorName)[0]?.toLocaleUpperCase() ?? "M"}
-          </span>
+          avatar
         )}
         {pinned ? (
           <p className={styles.pinnedCommentMark}>
@@ -741,7 +773,6 @@ export function CommentItem({
             <MarkdownContent
               className={styles.commentMarkdown}
               html={comment.contentHtml}
-              mentionUsername={site.username}
             />
           </div>
         ) : null}
@@ -798,7 +829,10 @@ export function CommentItem({
                 </button>
               </ActionTooltip>
             ) : (
-              <SignInToReplyPopover authorName={authorName} />
+              <SignInToReplyPopover
+                authorName={authorName}
+                reason={replyBlockedBy}
+              />
             )}
           </footer>
         ) : null}

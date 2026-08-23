@@ -52,7 +52,8 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	}
 	members, order := readArchive(t, first.Bytes())
 	wantOrder := []string{
-		"README.txt", "data/site.json", "data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl",
+		"README.txt", "data/site.json", "data/users.jsonl", "data/identities.jsonl",
+		"data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl",
 	}
 	blobs := []string{"media/" + fixture.mediaOneSHA + ".jpg", "media/" + fixture.mediaTwoSHA + ".png"}
 	sort.Strings(blobs)
@@ -76,7 +77,7 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	if document.Format != formatName || document.FormatVersion != 1 || document.Source.InstanceID != fixture.runtime.Instance.ID || len(document.Source.InstanceID) != 32 {
 		t.Fatalf("manifest identity = %#v", document)
 	}
-	if document.Counts != (countManifest{Entries: 1, Comments: 2, Media: 2}) {
+	if document.Counts != (countManifest{Entries: 1, Comments: 2, Media: 2, Users: 1}) {
 		t.Fatalf("counts = %#v", document.Counts)
 	}
 	var exportedSite siteRecord
@@ -147,7 +148,10 @@ func TestExportV1EmptyArchiveAndManifestFixedPointBoundaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	members, order := readArchive(t, output.Bytes())
-	if len(order) != 7 || len(members["data/entries.jsonl"]) != 0 || len(members["data/comments.jsonl"]) != 0 || len(members["data/media.jsonl"]) != 0 {
+	// An empty site is still not an accountless one: the owner is always there.
+	if len(order) != 9 || len(members["data/entries.jsonl"]) != 0 || len(members["data/comments.jsonl"]) != 0 ||
+		len(members["data/media.jsonl"]) != 0 || len(members["data/identities.jsonl"]) != 0 ||
+		len(nonemptyLines(members["data/users.jsonl"])) != 1 {
 		t.Fatalf("empty archive = %#v", order)
 	}
 	parseChecksums(t, members)
@@ -624,7 +628,11 @@ func TestValidateFileIgnoresUnknownFieldsAndBoundsUntrustedCounts(t *testing.T) 
 		t.Fatalf("unknown v1 extensions were not ignored: %v", err)
 	}
 
+	// A v1 archive from before the cover and pin extensions also predates the
+	// accounts members, so it is stripped to that whole shape rather than to a
+	// site record no exporter ever wrote.
 	legacyMembers, legacyOrder := readArchive(t, output.Bytes())
+	legacyOrder = stripAccountMembers(t, legacyMembers, legacyOrder)
 	var legacySite map[string]any
 	_ = json.Unmarshal(legacyMembers["data/site.json"], &legacySite)
 	delete(legacySite, "cover_media_id")
@@ -863,7 +871,8 @@ func newExportFixture(t *testing.T, full bool) exportFixture {
 			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, []any{rootCommentID, mediaOneID}},
 			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 1, '街景')`, []any{rootCommentID, mediaTwoID}},
 			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, '')`, []any{replyID, mediaTwoID}},
-			{`UPDATE site_settings SET title = '我的 Moment', bio = 'portable', timezone = 'Asia/Shanghai', public_base_url = 'http://localhost:8080', avatar_media_id = ?, cover_media_id = ?, pinned_entry_id = ?, comments_enabled = 1 WHERE id = 1`, []any{mediaOneID, mediaTwoID, entryID}},
+			{`UPDATE site_settings SET title = '我的 Moment', timezone = 'Asia/Shanghai', public_base_url = 'http://localhost:8080', pinned_entry_id = ?, comments_enabled = 1 WHERE id = 1`, []any{entryID}},
+			{`UPDATE users SET bio = 'portable', avatar_media_id = ?, cover_media_id = ? WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`, []any{mediaOneID, mediaTwoID}},
 			{`UPDATE media SET unreferenced_since_ms = NULL WHERE id IN (?, ?)`, []any{mediaOneID, mediaTwoID}},
 		}
 		for _, statement := range statements {
@@ -983,6 +992,57 @@ func nonemptyLines(data []byte) [][]byte {
 }
 
 func shaHex(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
+
+// stripAccountMembers turns a current archive into one an older binary would
+// have written: the two accounts members gone and the manifest silent about
+// them. It is how the backward-compatibility tests get a genuine pre-accounts
+// archive without keeping a fixture binary around.
+func stripAccountMembers(t *testing.T, members map[string][]byte, order []string) []string {
+	t.Helper()
+	delete(members, "data/users.jsonl")
+	delete(members, "data/identities.jsonl")
+	remaining := make([]string, 0, len(order))
+	for _, name := range order {
+		if name == "data/users.jsonl" || name == "data/identities.jsonl" {
+			continue
+		}
+		remaining = append(remaining, name)
+	}
+	var document map[string]json.RawMessage
+	if err := json.Unmarshal(members["manifest.json"], &document); err != nil {
+		t.Fatal(err)
+	}
+	var counts map[string]json.RawMessage
+	if err := json.Unmarshal(document["counts"], &counts); err != nil {
+		t.Fatal(err)
+	}
+	delete(counts, "users")
+	delete(counts, "identities")
+	document["counts"] = mustMarshalTest(t, counts)
+	members["manifest.json"] = append(mustMarshalTest(t, document), '\n')
+	rebuildManifestExpanded(t, members)
+	rebuildChecksums(members)
+	return remaining
+}
+
+// setAccountPictures rewrites every account's avatar and cover in place, so a
+// fixture that changes the site record's pictures can keep the account rows it
+// duplicates in agreement.
+func setAccountPictures(t *testing.T, members map[string][]byte, avatar, cover any) {
+	t.Helper()
+	var rebuilt []byte
+	for _, line := range nonemptyLines(members["data/users.jsonl"]) {
+		var value map[string]any
+		if err := json.Unmarshal(line, &value); err != nil {
+			t.Fatal(err)
+		}
+		value["avatar_media_id"] = avatar
+		value["cover_media_id"] = cover
+		rebuilt = append(rebuilt, mustMarshalTest(t, value)...)
+		rebuilt = append(rebuilt, '\n')
+	}
+	members["data/users.jsonl"] = rebuilt
+}
 
 func rebuildChecksums(members map[string][]byte) {
 	paths := make([]string, 0, len(members)-1)
