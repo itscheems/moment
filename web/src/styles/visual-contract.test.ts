@@ -164,7 +164,11 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain(
       'url("/fonts/twitter-chirp-heavy.woff") format("woff")',
     );
-    expect(globalCss.match(/font-display: swap/g)).toHaveLength(4);
+    // Four Chirp weights plus the extended-heavy cut the sign-in display line
+    // uses. It is its own family rather than a fifth weight, so that asking for
+    // 800 anywhere else still gets the normal-width face.
+    expect(globalCss.match(/font-display: swap/g)).toHaveLength(5);
+    expect(globalCss).toContain('font-family: "TwitterChirpExtendedHeavy"');
     expect(globalCss).toContain("font-optical-sizing: auto");
     expect(globalCss).toContain('"calt" 1');
     expect(globalCss).toContain("--tracking-display: -0.022em");
