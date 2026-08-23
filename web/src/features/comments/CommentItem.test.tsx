@@ -261,8 +261,39 @@ describe("comment identity", () => {
       "/someone",
     );
     expect(screen.getByRole("link", { name: "@someone" })).toBeInTheDocument();
-    // ...but nothing of this site's is borrowed for it: no avatar image, and no
-    // preview card trigger, because both would show the owner's own material.
+    // ...but nothing of this site's is borrowed for it. The face is the
+    // author's own media, never the site avatar, and there is no preview card
+    // trigger, which would show the owner's cover and bio under this name.
+    const avatar = document.querySelector("img");
+    expect(avatar).toHaveAttribute(
+      "src",
+      expect.stringContaining(strangerAuthor.avatarMediaId as string),
+    );
+    expect(avatar).not.toHaveAttribute(
+      "src",
+      expect.stringContaining(site.avatarMediaId as string),
+    );
+  });
+
+  // The server already resolves and ships avatar_media_id for every author.
+  // Deciding the face on "is this the site owner" discarded it for everybody
+  // else, so every member wore a letter beside their own picture.
+  it("draws a member's own avatar rather than their initial", () => {
+    renderItem(comment(rootId, "别人写的", { author: strangerAuthor }));
+
+    expect(screen.queryByText("别")).not.toBeInTheDocument();
+    const avatar = screen.getByRole("link", { name: "查看 别人 的个人资料" });
+    expect(avatar).toHaveAttribute("href", "/someone");
+    expect(avatar.querySelector("img")).toBeInTheDocument();
+  });
+
+  it("falls back to the initial for a member who has no picture", () => {
+    renderItem(
+      comment(rootId, "别人写的", {
+        author: { ...strangerAuthor, avatarMediaId: null },
+      }),
+    );
+
     expect(document.querySelector("img")).toBeNull();
     expect(screen.getByText("别")).toBeInTheDocument();
   });

@@ -424,6 +424,21 @@ function instantField(record: Record<string, unknown>, field: string): string {
 
 const ULID_PATTERN = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
 
+/**
+ * The code-point ceiling on a display name, mirroring MaxDisplayNameLength in
+ * internal/domain/user.go.
+ *
+ * A comment's author_name is the writer's display name — the server stamps it
+ * there on every write — so one number bounds both, exactly as
+ * domain.MaxCommentAuthorNameCodePoints is defined as domain.MaxDisplayNameLength
+ * rather than as a figure of its own. Spelling a second, smaller number beside
+ * author_name meant that a single comment by an account with a 41-to-80
+ * character name was rejected here, and because the rejection is thrown from
+ * inside the map over the thread's items, the whole conversation rendered as an
+ * error for every reader rather than that one row.
+ */
+const MAX_DISPLAY_NAME_CODE_POINTS = 80;
+
 export function isCanonicalUlid(value: string): boolean {
   return ULID_PATTERN.test(value);
 }
@@ -599,7 +614,11 @@ export function parseComment(
   if (authorKind !== "owner" && authorKind !== "guest") {
     throw invalidResponse("comment author_kind is invalid");
   }
-  const authorName = commentTextField(value, "author_name", 40);
+  const authorName = commentTextField(
+    value,
+    "author_name",
+    MAX_DISPLAY_NAME_CODE_POINTS,
+  );
   if (
     authorName !== authorName.trim() ||
     Array.from(authorName).some((character) => {
@@ -1438,7 +1457,7 @@ export function parseSiteIdentity(
   if (
     !displayName.trim() ||
     displayName.trim() !== displayName ||
-    Array.from(displayName).length > 80
+    Array.from(displayName).length > MAX_DISPLAY_NAME_CODE_POINTS
   ) {
     throw invalidResponse("response field display_name must be a display name");
   }
@@ -1536,7 +1555,10 @@ export function parseAccount(value: unknown): Account {
       "response field username must be a canonical username",
     );
   }
-  if (!displayName.trim() || Array.from(displayName).length > 80) {
+  if (
+    !displayName.trim() ||
+    Array.from(displayName).length > MAX_DISPLAY_NAME_CODE_POINTS
+  ) {
     throw invalidResponse("response field display_name must be a display name");
   }
   if (!accountRoles.has(role)) {

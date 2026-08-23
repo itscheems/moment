@@ -10,6 +10,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/archive"
+	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/commentdto"
 )
 
@@ -44,9 +45,39 @@ var browserMirroredTypes = map[string]struct {
 	"app.SiteSettings":          {app.SiteSettings{}, "web/src/api/public.ts parseSiteIdentity"},
 }
 
+// browserMirroredBounds are the numeric limits a browser parser enforces by
+// copying the constant, and where the copy lives.
+//
+// A bound drifts the same way a key set does and fails far more quietly. A key
+// the parser does not know breaks the page for the first reader who loads it; a
+// ceiling raised on this side and not on that one breaks it only once somebody
+// reaches the new headroom -- and parseComment throws from inside the loop over
+// a thread's items, so the one comment that reached it takes the whole
+// conversation down with it for every reader. That is the failure this map is
+// here for: MaxCommentAuthorNameCodePoints moved from 40 to 80 when comments
+// started carrying the writer's real display name, the parser stayed at 40, and
+// nothing said so.
+//
+// Recording the number cannot check what the TypeScript says -- nothing here
+// reads it. What it does is refuse to let this side move in silence, in a
+// message naming the file that has to follow, which is the whole job the key
+// set contract does too.
+var browserMirroredBounds = map[string]struct {
+	value  int
+	mirror string
+}{
+	"domain.MaxCommentAuthorNameCodePoints": {domain.MaxCommentAuthorNameCodePoints, "web/src/api/public.ts MAX_DISPLAY_NAME_CODE_POINTS"},
+	"domain.MaxDisplayNameLength":           {domain.MaxDisplayNameLength, "web/src/api/public.ts MAX_DISPLAY_NAME_CODE_POINTS"},
+	"domain.MaxCommentContentCodePoints":    {domain.MaxCommentContentCodePoints, "web/src/api/public.ts parseComment content_md"},
+	"domain.MaxCommentMediaUsages":          {domain.MaxCommentMediaUsages, "web/src/api/public.ts parseComment parseMediaUsages"},
+	"domain.MaxMediaAltCodePoints":          {domain.MaxMediaAltCodePoints, "web/src/api/public.ts parseMediaUsages alt_text"},
+}
+
 const browserContractEnv = "MOMENT_UPDATE_BROWSER_CONTRACT"
 
 func browserContractPath() string { return filepath.Join("testdata", "browser-wire-keys.json") }
+
+func browserBoundsPath() string { return filepath.Join("testdata", "browser-wire-bounds.json") }
 
 // jsonKeys reports the wire keys a struct serialises, including through
 // embedded structs, and without omitempty hiding the ones a zero value drops.
@@ -133,6 +164,48 @@ func TestBrowserMirroredWireShapesHaveNotDrifted(t *testing.T) {
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s wire keys changed\n  now:  %v\n  was:  %v\nThe browser refuses a response carrying a key it does not know. Widen %s, then rerun with %s=1.",
 				name, got, want, browserMirroredTypes[name].mirror, browserContractEnv)
+		}
+	}
+}
+
+func TestBrowserMirroredBoundsHaveNotDrifted(t *testing.T) {
+	recorded := make(map[string]int, len(browserMirroredBounds))
+	for name, mirrored := range browserMirroredBounds {
+		recorded[name] = mirrored.value
+	}
+
+	if os.Getenv(browserContractEnv) == "1" {
+		encoded, err := json.MarshalIndent(recorded, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(browserBoundsPath(), append(encoded, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("recorded %d bounds; update the browser parsers named above, then rerun without %s",
+			len(recorded), browserContractEnv)
+		return
+	}
+
+	contents, err := os.ReadFile(browserBoundsPath())
+	if err != nil {
+		t.Fatalf("read browser bound contract: %v", err)
+	}
+	var expected map[string]int
+	if err := json.Unmarshal(contents, &expected); err != nil {
+		t.Fatalf("decode browser bound contract: %v", err)
+	}
+	if len(expected) != len(recorded) {
+		t.Fatalf("contract records %d bounds, %d are declared; rerun with %s=1", len(expected), len(recorded), browserContractEnv)
+	}
+	for name, want := range expected {
+		got, declared := recorded[name]
+		if !declared {
+			t.Fatalf("%s is recorded but no longer declared; rerun with %s=1", name, browserContractEnv)
+		}
+		if got != want {
+			t.Fatalf("%s changed from %d to %d.\nThe browser copies this number and refuses anything past it, which fails the whole response rather than the one field. Update %s, then rerun with %s=1.",
+				name, want, got, browserMirroredBounds[name].mirror, browserContractEnv)
 		}
 	}
 }

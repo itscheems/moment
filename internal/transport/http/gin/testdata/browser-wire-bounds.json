@@ -1,0 +1,7 @@
+{
+  "domain.MaxCommentAuthorNameCodePoints": 80,
+  "domain.MaxCommentContentCodePoints": 2000,
+  "domain.MaxCommentMediaUsages": 4,
+  "domain.MaxDisplayNameLength": 80,
+  "domain.MaxMediaAltCodePoints": 1000
+}

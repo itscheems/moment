@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"fmt"
 	"strings"
 	"time"
 	"unicode"
@@ -85,7 +86,10 @@ func NormalizeCommentAuthorName(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	count := utf8.RuneCountInString(value)
 	if count == 0 || count > MaxCommentAuthorNameCodePoints {
-		return "", NewError(CodeInvalidArgument, "comment author name must contain between 1 and 40 code points", map[string]any{"field": "author_name", "limit": MaxCommentAuthorNameCodePoints})
+		// Both halves of the refusal read the constant. Spelling the ceiling
+		// out here once said 40 while the details map said 80, which is a
+		// message that argues with itself in front of whoever tripped it.
+		return "", NewError(CodeInvalidArgument, fmt.Sprintf("comment author name must contain between 1 and %d code points", MaxCommentAuthorNameCodePoints), map[string]any{"field": "author_name", "limit": MaxCommentAuthorNameCodePoints})
 	}
 	for _, character := range value {
 		if unicode.IsControl(character) {

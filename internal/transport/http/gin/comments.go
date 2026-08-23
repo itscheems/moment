@@ -412,7 +412,11 @@ func writeCommentError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeCommentDepthExceeded, domain.CodeIdempotencyKeyReused:
 		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
-	case domain.CodeCommentsDisabled:
+	// Known caller, refused action. Every route that can raise these sits
+	// behind the account gate, so authentication already succeeded and 401
+	// would tell the caller to sign in again to no effect; both used to fall
+	// through to the default and report a refusal as a server fault.
+	case domain.CodeCommentsDisabled, domain.CodeUnauthorized, domain.CodeAccountNotApproved:
 		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeRateLimited:
 		Failure(ctx, http.StatusTooManyRequests, string(domainErr.Code), domainErr.Message, domainErr.Details)

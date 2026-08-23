@@ -785,6 +785,197 @@ func TestReplyPreviewsMatchPerRootPaging(t *testing.T) {
 	}
 }
 
+// A root leaves with every reply under it -- parent_id cascades in SQL, and
+// nothing above it counted whose replies those were. That cascade was the
+// owner's moderation for as long as removing a comment was an owner-only route.
+// The day an approved member could reach it, "delete my own comment" became a
+// way to delete anybody who had answered it.
+func TestAMemberDeletingTheirOwnCommentCannotTakeAnotherAccountsReply(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	clock := newSequenceClock(base, base.Add(time.Second))
+	service := newTestCommentService(t, db, runtimeState, clock.Now, commentIDs(commentOne, commentTwo))
+	owner := testCommentAuthor(t, db, runtimeState)
+	member := testCommentMember(t, db, runtimeState, "member-with-a-guest", "Lin Lin")
+	postID, _ := domain.ParseID(entryOne)
+
+	root := mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "member root"})
+	rootID := root.Comment.Comment.ID
+	ownerReply := mustOwnerComment(t, service, owner, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "owner reply"})
+
+	// The preview is refused too. It reports the reach of a delete that cannot
+	// happen, which leaves it reporting how many replies somebody else wrote.
+	for name, dryRun := range map[string]bool{"preview": true, "removal": false} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := service.DeleteBy(context.Background(), rootID, member, dryRun); !domain.HasCode(err, domain.CodeUnauthorized) {
+				t.Fatalf("member %s = %v, want a refusal", name, err)
+			}
+		})
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id = ?`, 1, ownerReply.Comment.Comment.ID.String())
+	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id = ?`, 1, rootID.String())
+
+	// The owner keeps the cascade, because moderating the site is what it is
+	// for. Nothing about the refusal above narrows that.
+	deleted, err := service.DeleteBy(context.Background(), rootID, owner, false)
+	if err != nil || !deleted.Deleted || deleted.RepliesAffected != 1 {
+		t.Fatalf("owner delete = %+v, %v", deleted, err)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM comments`, 0)
+}
+
+// The refusal is about whose words the cascade reaches, not about the cascade.
+// A conversation a member held with themselves is theirs to withdraw whole.
+func TestAMemberRemovesTheirOwnCommentTogetherWithTheirOwnReplies(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	clock := newSequenceClock(base, base.Add(time.Second))
+	service := newTestCommentService(t, db, runtimeState, clock.Now, commentIDs(commentOne, commentTwo))
+	member := testCommentMember(t, db, runtimeState, "member-alone", "Lin Lin")
+	postID, _ := domain.ParseID(entryOne)
+
+	root := mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "member root"})
+	rootID := root.Comment.Comment.ID
+	mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "member reply"})
+
+	preview, err := service.DeleteBy(context.Background(), rootID, member, true)
+	if err != nil || preview.Deleted || preview.RepliesAffected != 1 {
+		t.Fatalf("member preview = %+v, %v", preview, err)
+	}
+	deleted, err := service.DeleteBy(context.Background(), rootID, member, false)
+	if err != nil || !deleted.Deleted || deleted.RepliesAffected != 1 {
+		t.Fatalf("member delete = %+v, %v", deleted, err)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM comments`, 0)
+}
+
+// A legacy guest reply has no account behind it, so it is nobody's to withdraw
+// but the owner's. Counting it as the member's own -- which a NULL author_user_id
+// compared for equality would do -- would put the anonymous visitors an archive
+// still holds inside a member's cascade.
+func TestAMemberCannotTakeALegacyGuestReplyWithTheirOwnComment(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	service := newTestCommentService(t, db, runtimeState, func() time.Time { return base }, commentIDs(commentOne))
+	member := testCommentMember(t, db, runtimeState, "member-with-a-ghost", "Lin Lin")
+	postID, _ := domain.ParseID(entryOne)
+
+	root := mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "member root"})
+	rootID := root.Comment.Comment.ID
+	if err := db.WriteTx(context.Background(), func(queries Queries) error {
+		_, execErr := queries.ExecContext(context.Background(), `
+INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
+VALUES (?, ?, ?, 'guest', 'Somebody passing', 'guest reply', ?)`, commentTwo, entryOne, rootID.String(), base.UnixMilli())
+		return execErr
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.DeleteBy(context.Background(), rootID, member, false); !domain.HasCode(err, domain.CodeUnauthorized) {
+		t.Fatalf("member delete over a guest reply = %v, want a refusal", err)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id = ?`, 1, commentTwo)
+}
+
+// An idempotency key is minted by one caller and means nothing to another. It
+// was looked up in a single site-wide namespace, so a key one account chose
+// answered for every account: a second account offering the same key was told
+// its own first attempt had already been spent.
+func TestAnIdempotencyKeyIsOneAccountsAndNotTheSites(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	service := newTestCommentService(t, db, runtimeState, func() time.Time { return base }, commentIDs(commentOne, commentTwo))
+	owner := testCommentAuthor(t, db, runtimeState)
+	// The same display name on both, so the two requests differ in nothing the
+	// digest can see. This is the case that used to hand the second account the
+	// first account's comment rather than merely refusing it.
+	member := testCommentMember(t, db, runtimeState, "twin", owner.DisplayName)
+	postID, _ := domain.ParseID(entryOne)
+
+	first := mustOwnerComment(t, service, owner, app.CreateCommentInput{EntryID: postID, ContentMD: "same words", IdempotencyKey: "shared"})
+	second := mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "same words", IdempotencyKey: "shared"})
+
+	if second.Replayed {
+		t.Fatal("the second account was told its first attempt had already been made")
+	}
+	if second.Comment.Comment.ID == first.Comment.Comment.ID {
+		t.Fatalf("both accounts hold comment %s", first.Comment.Comment.ID)
+	}
+	if second.Comment.Comment.AuthorUserID == nil || *second.Comment.Comment.AuthorUserID != member.ID {
+		t.Fatalf("second comment author = %v, want %s", second.Comment.Comment.AuthorUserID, member.ID)
+	}
+	// Each account still replays its own key, which is the property the scope
+	// has to keep while it narrows who the key answers for.
+	replay, err := service.Create(context.Background(), app.CreateCommentInput{Author: member, EntryID: postID, ContentMD: "same words", IdempotencyKey: "shared"})
+	if err != nil || !replay.Replayed || replay.Comment.Comment.ID != second.Comment.Comment.ID {
+		t.Fatalf("member replay = %+v, %v", replay, err)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM comments`, 2)
+}
+
+// The digest describes the request, and a display name is not part of one:
+// Create stamps it from the account after the caller has stopped speaking. A
+// person who renamed themselves between a write and its retry sent identical
+// bytes and was answered IDEMPOTENCY_KEY_REUSED.
+func TestARenameDoesNotTurnARetryIntoAConflict(t *testing.T) {
+	db, runtimeState := openTestDatabase(t, Options{})
+	insertEntry(t, db, entryOne, "post")
+	base := time.UnixMilli(1_700_000_000_000)
+	service := newTestCommentService(t, db, runtimeState, func() time.Time { return base }, commentIDs(commentOne))
+	accounts := testAccountService(t, db, runtimeState)
+	author := testCommentAuthor(t, db, runtimeState)
+	postID, _ := domain.ParseID(entryOne)
+
+	written := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "unchanged words", IdempotencyKey: "retried-across-a-rename"})
+
+	renamed, err := accounts.UpdateProfile(context.Background(), author.ID, app.ProfileUpdate{DisplayName: strptr("A Different Name")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := service.Create(context.Background(), app.CreateCommentInput{Author: renamed, EntryID: postID, ContentMD: "unchanged words", IdempotencyKey: "retried-across-a-rename"})
+	if err != nil || !replay.Replayed || replay.Comment.Comment.ID != written.Comment.Comment.ID {
+		t.Fatalf("replay after a rename = %+v, %v", replay, err)
+	}
+	assertCount(t, db.read, `SELECT count(*) FROM comments`, 1)
+}
+
+// testAccountService builds the account authority these fixtures need alongside
+// the comment service, against the same database.
+func testAccountService(t *testing.T, database *Database, runtimeState *runtimefs.Runtime) *app.AccountService {
+	t.Helper()
+	repository, err := NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := app.NewAccountService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
+// testCommentMember signs a second account in and approves it. Signing in is
+// the only way an account that is not the owner comes to exist.
+func testCommentMember(t *testing.T, database *Database, runtimeState *runtimefs.Runtime, providerUserID, displayName string) domain.User {
+	t.Helper()
+	service := testAccountService(t, database, runtimeState)
+	outcome, err := service.SignIn(context.Background(), app.ExternalIdentity{
+		Provider: "google", ProviderUserID: providerUserID, DisplayName: displayName,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := service.SetStatus(context.Background(), outcome.User.ID, domain.AccountActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return member
+}
+
 // testCommentAuthor is the account fixture comment writes are attributed to.
 // A comment names its author now, so a write without one is refused.
 func testCommentAuthor(t *testing.T, database *Database, runtimeState *runtimefs.Runtime) domain.User {
