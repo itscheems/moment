@@ -46,10 +46,30 @@ function unavailableCredentialMessage(details: Record<string, unknown>): string 
   return `这个账户不能这样登录，可以改用${named.join("或")}。`;
 }
 
+/**
+ * Where a sign-in returns somebody to, refused unless it is a path on this
+ * origin. Mirrors ginhttp.safeReturnPath (internal/transport/http/gin/oauth.go).
+ *
+ * The server already refuses backslashes, bare newlines and anything carrying a
+ * host or a scheme; this side stopped at the leading slash. That gap does not
+ * open a redirect -- the server is what performs one -- but it does hand
+ * `pushState` a value some browsers normalise into an off-origin URL, and the
+ * throw lands in the catch that reports a *successful* sign-in as a failure.
+ */
 function safeReturnPath(value: string | null): string {
-  return value && value.startsWith("/") && !value.startsWith("//")
-    ? value
-    : "/";
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return "/";
+  // A backslash is a path separator to some URL parsers and a literal to
+  // others, which is the whole trick; CR and LF split a header.
+  if (/[\\\r\n]/.test(value)) return "/";
+  try {
+    // Any origin at all means this was not a path. The base is arbitrary: what
+    // matters is whether the candidate replaced it.
+    const resolved = new URL(value, "https://moment.invalid");
+    if (resolved.origin !== "https://moment.invalid") return "/";
+  } catch {
+    return "/";
+  }
+  return value;
 }
 
 function orderedProviders(

@@ -523,3 +523,63 @@ describe("owner login offers the methods the server reports", () => {
     expect(await screen.findByLabelText("所有者令牌")).toBeInTheDocument();
   });
 });
+
+// The server refuses backslashes, bare newlines and anything carrying a host;
+// this side stopped at the leading slash. The gap opens no redirect -- the
+// server performs those -- but it hands `pushState` a value some browsers
+// normalise off-origin, and that throw lands in the catch that reports a
+// successful sign-in as a failure.
+describe("owner login refuses a return path the server would refuse", () => {
+  beforeEach(() => {
+    window.sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    // The raw characters, not their percent-encodings: URLSearchParams decodes
+    // on the way out, so what safeReturnPath sees is what a browser would act
+    // on. `%5C` reaching it undecoded is just a path with a percent sign in it.
+    ["a backslash escape", "/\\evil.test"],
+    ["a protocol-relative address", "//evil.test"],
+    ["an absolute address", "https://evil.test/"],
+    ["a smuggled newline", "/ok\nevil"],
+    ["a smuggled carriage return", "/ok\revil"],
+  ])("sends %s to the site root instead", async (_name, candidate) => {
+    window.history.replaceState(
+      {},
+      "",
+      `/login?return=${encodeURIComponent(candidate)}`,
+    );
+    installApi([{ name: "github", label: "GitHub" }]);
+    const assign = captureRedirect();
+    renderLogin();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "使用 GitHub 登录" }),
+    );
+
+    expect(assign).toHaveBeenCalledWith(
+      "/api/v1/login/oauth/github/start?return=%2F",
+    );
+  });
+
+  it("keeps a path on this origin", async () => {
+    window.history.replaceState({}, "", "/login?return=%2Fowner%2Fsettings");
+    installApi([{ name: "github", label: "GitHub" }]);
+    const assign = captureRedirect();
+    renderLogin();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "使用 GitHub 登录" }),
+    );
+
+    expect(assign).toHaveBeenCalledWith(
+      "/api/v1/login/oauth/github/start?return=%2Fowner%2Fsettings",
+    );
+  });
+});
