@@ -357,25 +357,39 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 
 func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 	prepared := update
+	// The owner edits the same three columns from two places -- here and
+	// PATCH /api/v1/account/profile -- so both go through the domain
+	// normalizers rather than restating the rules. A second copy of the rules
+	// is a second set of values one route accepts and the other refuses, and
+	// the column cannot hold both answers.
 	if update.Username != nil {
-		value := strings.ToLower(strings.TrimSpace(*update.Username))
-		if !validUsername(value) {
-			return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "username must contain 3 to 30 lowercase letters, numbers, or underscores and start with a letter", map[string]any{"field": "username"})
+		value, err := domain.NormalizeUsername(*update.Username)
+		if err != nil {
+			return SiteUpdate{}, err
 		}
 		prepared.Username = &value
 	}
 	if update.DisplayName != nil {
-		value := strings.TrimSpace(*update.DisplayName)
-		if value == "" || len([]rune(value)) > 80 {
-			return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "display_name must contain 1 to 80 characters", map[string]any{"field": "display_name"})
+		value, err := domain.NormalizeDisplayName(*update.DisplayName)
+		if err != nil {
+			return SiteUpdate{}, err
 		}
 		prepared.DisplayName = &value
 	}
 	if update.Title != nil && (strings.TrimSpace(*update.Title) == "" || len([]rune(*update.Title)) > 120) {
 		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "title must contain 1 to 120 characters", map[string]any{"field": "title"})
 	}
-	if update.Bio != nil && len([]rune(*update.Bio)) > domain.MaxBioLength {
-		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "bio is too long", map[string]any{"field": "bio"})
+	if update.Bio != nil {
+		value, err := domain.NormalizeBio(*update.Bio)
+		if err != nil {
+			return SiteUpdate{}, err
+		}
+		prepared.Bio = &value
+	}
+	if update.RegistrationMode != nil {
+		if err := domain.ValidateRegistrationMode(domain.RegistrationMode(*update.RegistrationMode)); err != nil {
+			return SiteUpdate{}, err
+		}
 	}
 	if update.Timezone != nil {
 		if err := validateTimezone(*update.Timezone); err != nil {
@@ -407,7 +421,12 @@ func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 }
 
 func (service *SiteService) validateStored(ctx context.Context, store SiteStore, settings SiteSettings) error {
-	if !validOwnerID(settings.OwnerID) || !validUsername(settings.Username) || strings.TrimSpace(settings.DisplayName) != settings.DisplayName || settings.DisplayName == "" || len([]rune(settings.DisplayName)) > 80 ||
+	// Shape only, deliberately: the reserved list and the character rules are
+	// write-time constraints on creating something broken. Re-checking a
+	// stored row against a list that grew, or against a rule tightened after
+	// the row was written, would turn an owner's own settings page into the
+	// screen that refuses to load and refuses to let them fix it.
+	if !validOwnerID(settings.OwnerID) || domain.ValidateStoredUsername(settings.Username) != nil || strings.TrimSpace(settings.DisplayName) != settings.DisplayName || settings.DisplayName == "" || len([]rune(settings.DisplayName)) > domain.MaxDisplayNameLength ||
 		strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > domain.MaxBioLength {
 		return domain.NewError(domain.CodeDataIntegrityFailed, "stored site identity text is invalid", nil)
 	}
@@ -491,19 +510,10 @@ func applySiteUpdate(current SiteSettings, update SiteUpdate) SiteSettings {
 	if update.CommentsEnabled != nil {
 		next.CommentsEnabled = *update.CommentsEnabled
 	}
+	if update.RegistrationMode != nil {
+		next.RegistrationMode = domain.RegistrationMode(*update.RegistrationMode)
+	}
 	return next
-}
-
-func validUsername(value string) bool {
-	if len(value) < 3 || len(value) > 30 || value[0] < 'a' || value[0] > 'z' {
-		return false
-	}
-	for _, character := range value {
-		if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '_' {
-			return false
-		}
-	}
-	return true
 }
 
 func validOwnerID(value string) bool {

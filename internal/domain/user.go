@@ -2,6 +2,7 @@ package domain
 
 import (
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -237,6 +238,12 @@ func ValidateStoredUsername(value string) error { return validateUsernameShape(v
 
 // NormalizeDisplayName trims surrounding whitespace and rejects control
 // characters, matching how comment author names are handled.
+//
+// The match has to be exact, not approximate. CommentService stamps this value
+// onto every comment the account writes, where NormalizeCommentAuthorName
+// refuses any unicode.IsControl rune -- so a display name this function admits
+// and that one refuses is an account that can be saved and can never comment,
+// under an error naming a field its owner never typed.
 func NormalizeDisplayName(value string) (string, error) {
 	if !utf8.ValidString(value) {
 		return "", NewError(CodeInvalidArgument, "display name must be valid UTF-8", map[string]any{"field": "display_name"})
@@ -248,7 +255,7 @@ func NormalizeDisplayName(value string) (string, error) {
 	if utf8.RuneCountInString(value) > MaxDisplayNameLength {
 		return "", NewError(CodeInvalidArgument, "display name is too long", map[string]any{"field": "display_name"})
 	}
-	if strings.ContainsFunc(value, isRejectedControl) {
+	if strings.ContainsFunc(value, unicode.IsControl) {
 		return "", NewError(CodeInvalidArgument, "display name must not contain control characters", map[string]any{"field": "display_name"})
 	}
 	return value, nil
@@ -263,14 +270,21 @@ func NormalizeBio(value string) (string, error) {
 	if utf8.RuneCountInString(value) > MaxBioLength {
 		return "", NewError(CodeInvalidArgument, "bio is too long", map[string]any{"field": "bio"})
 	}
-	if strings.ContainsFunc(value, isRejectedControl) {
+	if strings.ContainsFunc(value, isRejectedBioControl) {
 		return "", NewError(CodeInvalidArgument, "bio must not contain control characters", map[string]any{"field": "bio"})
 	}
 	return value, nil
 }
 
-func isRejectedControl(character rune) bool {
-	return character != '\n' && character != '\t' && character < 0x20 || character == 0x7f
+// isRejectedBioControl is unicode.IsControl minus the two characters a bio is
+// allowed to contain.
+//
+// A bio is edited in a textarea and is nobody's identity: it is read as a
+// paragraph and never flattened into a single line the way a name is, so
+// keeping the line breaks somebody typed costs nothing. The exemption stops
+// here for that reason -- a display name gets no such allowance.
+func isRejectedBioControl(character rune) bool {
+	return unicode.IsControl(character) && character != '\n' && character != '\t'
 }
 
 // ValidateUserRole accepts the roles an account may hold.

@@ -352,3 +352,126 @@ func cloneSettingsPointer(settings *SiteSettings) *SiteSettings {
 }
 
 func ptr(value string) *string { return &value }
+
+// The owner's handle is one column with one gate, whichever form reaches it.
+//
+// This path validated the shape and stopped there, so a name the account route
+// answers USERNAME_RESERVED for saved here without complaint -- and a handle
+// like "search" or "profile" is matched by the route table before the profile
+// route ever sees it, leaving the owner's own page permanently unreachable and
+// every profile_url the server emits pointing at the wrong screen.
+func TestSiteHandleWritesPassTheGateTheAccountRouteUses(t *testing.T) {
+	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
+	service := newTestSiteService(t, transactions, false)
+
+	for _, handle := range []string{"search", "api", "login", "assets", "archive", "profile"} {
+		t.Run(handle, func(t *testing.T) {
+			if _, err := service.Update(context.Background(), SiteUpdate{Username: &handle}); !domain.HasCode(err, domain.CodeUsernameReserved) {
+				t.Fatalf("reserved handle %q error = %v", handle, err)
+			}
+			if !reflect.DeepEqual(*transactions.settings, initial) {
+				t.Fatalf("reserved handle changed settings: %#v", transactions.settings)
+			}
+		})
+	}
+
+	for name, handle := range map[string]string{
+		"too short":          "ab",
+		"leading digit":      "1cheems",
+		"leading underscore": "_cheems",
+		"illegal character":  "che-ems",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := service.Update(context.Background(), SiteUpdate{Username: &handle}); !domain.HasCode(err, domain.CodeInvalidArgument) {
+				t.Fatalf("malformed handle %q error = %v", handle, err)
+			}
+		})
+	}
+
+	accepted := "  ITSCheems  "
+	saved, err := service.Update(context.Background(), SiteUpdate{Username: &accepted})
+	if err != nil || saved.Username != "itscheems" {
+		t.Fatalf("accepted handle = %q, err = %v", saved.Username, err)
+	}
+}
+
+// Profile text reaches users.display_name and users.bio from here too, so it
+// meets the normalizers the account route meets.
+//
+// Emptiness and a rune count were the whole of it before, which let a display
+// name carrying a newline into the column that CommentService stamps onto every
+// comment the owner writes -- an account that saves fine and can never comment.
+func TestSiteProfileTextIsNormalizedNotJustMeasured(t *testing.T) {
+	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
+	service := newTestSiteService(t, transactions, false)
+
+	for name, update := range map[string]SiteUpdate{
+		"display name with a newline": {DisplayName: ptr("Che\nems")},
+		"display name with a tab":     {DisplayName: ptr("Che\tems")},
+		"display name of only space":  {DisplayName: ptr("   ")},
+		"bio with a zero byte":        {Bio: ptr("\x00")},
+		"bio with a carriage return":  {Bio: ptr("first\rsecond")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := service.Update(context.Background(), update); !domain.HasCode(err, domain.CodeInvalidArgument) {
+				t.Fatalf("error = %v", err)
+			}
+			if !reflect.DeepEqual(*transactions.settings, initial) {
+				t.Fatalf("rejected text changed settings: %#v", transactions.settings)
+			}
+		})
+	}
+
+	// What the normalizers keep, they keep: surrounding whitespace goes, and a
+	// bio holds the line breaks somebody typed into the textarea.
+	saved, err := service.Update(context.Background(), SiteUpdate{
+		DisplayName: ptr("  Cheems  "),
+		Bio:         ptr("  first\nsecond  "),
+	})
+	if err != nil || saved.DisplayName != "Cheems" || saved.Bio != "first\nsecond" {
+		t.Fatalf("normalized = %#v, err = %v", saved, err)
+	}
+}
+
+// registration_mode was a field nothing could write.
+//
+// SiteUpdate declared it and Empty counted it, so a caller that set it ran the
+// whole write transaction; applySiteUpdate then dropped it and the handler
+// answered 200 having changed nothing. Every instance stayed on the migration
+// default forever, with no way to close registration short of editing the
+// database.
+func TestSiteRegistrationModeIsWrittenAndValidated(t *testing.T) {
+	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval}
+	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
+	service := newTestSiteService(t, transactions, false)
+
+	for _, mode := range []domain.RegistrationMode{domain.RegistrationOpen, domain.RegistrationClosed, domain.RegistrationApproval} {
+		value := string(mode)
+		saved, err := service.Update(context.Background(), SiteUpdate{RegistrationMode: &value})
+		if err != nil {
+			t.Fatalf("registration mode %q: %v", mode, err)
+		}
+		if saved.RegistrationMode != mode || transactions.settings.RegistrationMode != mode {
+			t.Fatalf("registration mode = %q stored %q, want %q", saved.RegistrationMode, transactions.settings.RegistrationMode, mode)
+		}
+	}
+
+	for name, mode := range map[string]string{
+		"not a mode":  "everyone",
+		"empty":       "",
+		"wrong case":  "Open",
+		"with spaces": " open ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := *transactions.settings
+			if _, err := service.Update(context.Background(), SiteUpdate{RegistrationMode: &mode}); !domain.HasCode(err, domain.CodeInvalidArgument) {
+				t.Fatalf("error = %v", err)
+			}
+			if !reflect.DeepEqual(*transactions.settings, before) {
+				t.Fatalf("rejected mode changed settings: %#v", transactions.settings)
+			}
+		})
+	}
+}

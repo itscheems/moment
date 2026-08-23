@@ -252,6 +252,14 @@ WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`,
 		settings.UpdatedAtMS, settings.UpdatedAtMS,
 	)
 	if err != nil {
+		// users_username_unique guards this column for every writer, so the
+		// owner renaming onto a member's handle lands here rather than in the
+		// account service's availability check. Reported the same way from
+		// both, because it is the same refusal and the settings form already
+		// knows what to say about it.
+		if isUniqueViolation(err) {
+			return domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})
+		}
 		return fmt.Errorf("update owner profile: %w", err)
 	}
 	changedProfile, err := profile.RowsAffected()
