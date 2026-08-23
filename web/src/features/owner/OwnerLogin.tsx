@@ -26,6 +26,14 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   IDENTITY_ALREADY_LINKED: "这个账号已经绑定到本站的另一个账户了。",
 };
 
+// Refusals the sign-in form itself can get back, as opposed to the ones a
+// provider round trip comes home with.
+const CREDENTIAL_ERROR_MESSAGES: Record<string, string> = {
+  ACCOUNT_NOT_FOUND: "本站没有这个用户名。",
+  PASSWORD_NOT_AVAILABLE:
+    "这个账户是用第三方登录的，没有密码。请在下方选择 GitHub 或 Google。",
+};
+
 function safeReturnPath(value: string | null): string {
   return value && value.startsWith("/") && !value.startsWith("//")
     ? value
@@ -42,6 +50,26 @@ function orderedProviders(
   // Array#sort is stable, so anything the server adds later keeps its own
   // order behind the two we position deliberately.
   return [...providers].sort((left, right) => rank(left) - rank(right));
+}
+
+// The handle the server rejected is worth naming apart from the secret: being
+// told the password is wrong when the username is the part that is wrong sends
+// people to reset a credential that was never the problem.
+function credentialErrorMessage(
+  error: unknown,
+  method: "password" | "token",
+): string {
+  if (!(error instanceof PublicApiError)) {
+    return "登录没有完成。输入内容仍只留在当前输入框中，可以安全重试。";
+  }
+  const named = CREDENTIAL_ERROR_MESSAGES[error.code];
+  if (named) return named;
+  if (error.status === 401) {
+    return method === "password"
+      ? "密码不正确，请重试。"
+      : "这个所有者令牌无效，请检查后重试。";
+  }
+  return "登录没有完成。输入内容仍只留在当前输入框中，可以安全重试。";
 }
 
 function authErrorMessage(code: string | null): string | null {
@@ -76,6 +104,7 @@ export function OwnerLogin({
   // hold an owner session would be a plain lie.
   const siteOwner = ownsSite(account);
   const [method, setMethod] = useState<"password" | "token">("password");
+  const [username, setUsername] = useState("");
   const [credential, setCredential] = useState("");
   const [showCredential, setShowCredential] = useState(false);
   const [pending, setPending] = useState(false);
@@ -145,7 +174,7 @@ export function OwnerLogin({
     setPending(true);
     setError(null);
     try {
-      await login(credential, method);
+      await login(credential, method, username.trim() || undefined);
       setCredential("");
       if (!embedded)
         navigate(
@@ -154,13 +183,7 @@ export function OwnerLogin({
           ),
         );
     } catch (nextError) {
-      setError(
-        nextError instanceof PublicApiError && nextError.status === 401
-          ? method === "password"
-            ? "密码不正确，请重试。"
-            : "这个所有者令牌无效，请检查后重试。"
-          : "登录没有完成。输入内容仍只留在当前输入框中，可以安全重试。",
-      );
+      setError(credentialErrorMessage(nextError, method));
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -226,19 +249,13 @@ export function OwnerLogin({
   return (
     <section className={styles.loginGate}>
       <p className={styles.eyebrow}>
-        {state === "expired" ? "会话已过期" : "所有者登录"}
+        {state === "expired" ? "会话已过期" : "登录"}
       </p>
-      <h2>
-        {state === "expired"
-          ? "重新登录"
-          : method === "password"
-            ? `欢迎回来，${site.displayName}`
-            : "使用所有者令牌"}
-      </h2>
+      <h2>{state === "expired" ? "重新登录" : `登录 ${site.title || "Moment"}`}</h2>
       <p>
         {method === "password"
-          ? "输入此实例的所有者密码。Moment 不需要公开注册、邮箱或账号选择。"
-          : "令牌用于初始化、CLI 和恢复；只在尚未设置密码或紧急访问时使用。"}
+          ? "输入你的用户名和密码，或用下方的第三方账号登录。"
+          : "所有者令牌用于初始化、CLI 和紧急访问，在密码不可用时使用。"}
       </p>
       {authError ? (
         <p className={styles.authError} role="alert">
@@ -253,41 +270,23 @@ export function OwnerLogin({
           </button>
         </div>
       ) : null}
-      {providers.length > 0 ? (
-        <>
-          <div className={styles.oauthOptions}>
-            {providers.map((provider) => {
-              const icon = PROVIDER_ICONS[provider.name];
-              const starting = startingProvider === provider.name;
-              return (
-                <button
-                  className={styles.oauthButton}
-                  disabled={startingProvider !== null}
-                  key={provider.name}
-                  onClick={() => startOAuth(provider.name)}
-                  type="button"
-                >
-                  {icon ? <Icon name={icon} /> : null}
-                  <span>
-                    {starting
-                      ? `正在前往 ${provider.label}…`
-                      : `使用 ${provider.label} 登录`}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className={styles.oauthSeparator}>
-            <span aria-hidden="true" className={styles.oauthRule} />
-            <span>or</span>
-            <span aria-hidden="true" className={styles.oauthRule} />
-          </div>
-        </>
-      ) : null}
       <form
         className={styles.loginForm}
         onSubmit={(event) => void submit(event)}
       >
+        <label htmlFor="login-username">用户名</label>
+        <div className={styles.tokenField}>
+          <input
+            autoCapitalize="none"
+            autoComplete="username"
+            id="login-username"
+            onChange={(event) => setUsername(event.target.value)}
+            placeholder="你的用户名"
+            spellCheck={false}
+            type="text"
+            value={username}
+          />
+        </div>
         <label htmlFor="owner-credential">
           {method === "password" ? "密码" : "所有者令牌"}
         </label>
@@ -327,21 +326,58 @@ export function OwnerLogin({
         >
           {pending ? "正在登录…" : "登录"}
         </button>
-        <button
-          className={styles.loginMethodSwitch}
-          disabled={pending}
-          onClick={() => {
-            setMethod((current) =>
-              current === "password" ? "token" : "password",
-            );
-            setCredential("");
-            setError(null);
-          }}
-          type="button"
-        >
-          {method === "password" ? "改用所有者令牌" : "改用密码"}
-        </button>
       </form>
+      {providers.length > 0 ? (
+        <>
+          <div className={styles.oauthSeparator}>
+            <span aria-hidden="true" className={styles.oauthRule} />
+            <span>或</span>
+            <span aria-hidden="true" className={styles.oauthRule} />
+          </div>
+          <div className={styles.oauthOptions}>
+            {providers.map((provider) => {
+              const icon = PROVIDER_ICONS[provider.name];
+              const starting = startingProvider === provider.name;
+              return (
+                <button
+                  className={styles.oauthButton}
+                  disabled={startingProvider !== null}
+                  key={provider.name}
+                  onClick={() => startOAuth(provider.name)}
+                  type="button"
+                >
+                  {icon ? <Icon name={icon} /> : null}
+                  <span>
+                    {starting
+                      ? `正在前往 ${provider.label}…`
+                      : `使用 ${provider.label} 登录`}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {/* A provider knows who you are already, so the handle above is not
+              part of this path -- saying so beats leaving people wondering
+              whether they were meant to fill it in first. */}
+          <small className={styles.oauthHint}>
+            使用第三方账号登录不需要填写上方的用户名和密码。
+          </small>
+        </>
+      ) : null}
+      <button
+        className={styles.loginMethodSwitch}
+        disabled={pending}
+        onClick={() => {
+          setMethod((current) =>
+            current === "password" ? "token" : "password",
+          );
+          setCredential("");
+          setError(null);
+        }}
+        type="button"
+      >
+        {method === "password" ? "选择其他登录方式" : "改用密码登录"}
+      </button>
     </section>
   );
 }

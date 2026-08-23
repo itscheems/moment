@@ -139,7 +139,7 @@ describe("owner login third-party entry points", () => {
     renderLogin();
 
     expect(await screen.findByLabelText("密码")).toBeInTheDocument();
-    expect(screen.queryByText("or")).toBeNull();
+    expect(screen.queryByText("或")).toBeNull();
     expect(screen.queryByRole("button", { name: /使用 .* 登录/ })).toBeNull();
     expect(document.querySelector('svg[data-icon="github"]')).toBeNull();
     expect(document.querySelector('svg[data-icon="google"]')).toBeNull();
@@ -150,7 +150,7 @@ describe("owner login third-party entry points", () => {
     renderLogin();
 
     expect(await screen.findByLabelText("密码")).toBeInTheDocument();
-    expect(screen.queryByText("or")).toBeNull();
+    expect(screen.queryByText("或")).toBeNull();
     expect(screen.queryByRole("button", { name: /使用 .* 登录/ })).toBeNull();
   });
 
@@ -170,7 +170,7 @@ describe("owner login third-party entry points", () => {
     ]);
     expect(buttons[0]?.querySelector('svg[data-icon="github"]')).not.toBeNull();
     expect(buttons[1]?.querySelector('svg[data-icon="google"]')).not.toBeNull();
-    expect(screen.getByText("or")).toBeInTheDocument();
+    expect(screen.getByText("或")).toBeInTheDocument();
   });
 
   it("redirects the whole page to the start endpoint and locks the buttons", async () => {
@@ -267,5 +267,168 @@ describe("owner login third-party entry points", () => {
       "第三方登录没有完成，请重试。",
     );
     expect(window.location.search).toBe("");
+  });
+});
+
+// The form collects a handle now, and a form that collects one and then ignores
+// it is worse than one that never asked: every correct password would sign in
+// as the owner no matter whose name was typed above it.
+describe("owner login names who is signing in", () => {
+  beforeEach(() => {
+    window.history.replaceState({}, "", "/owner/login");
+    window.sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function installLoginApi(sessionResponse: () => Response) {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void init;
+      const url = String(input);
+      if (url === "/api/v1/owner/status") return ownerStatus();
+      if (url === "/api/v1/account/session") return json(signedOutEnvelope(), 401);
+      if (url === "/api/v1/owner/login-options") {
+        return json({
+          data: { password_enabled: true },
+          meta: { request_id: "req_options" },
+        });
+      }
+      if (url === "/api/v1/login/oauth/providers") return providersEnvelope([]);
+      if (url === "/api/v1/owner/session") return sessionResponse();
+      return json({}, 404);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    return fetcher;
+  }
+
+  async function signIn(username: string, password: string) {
+    fireEvent.change(await screen.findByLabelText("用户名"), {
+      target: { value: username },
+    });
+    fireEvent.change(await screen.findByLabelText("密码"), {
+      target: { value: password },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+  }
+
+  it("sends the typed handle alongside the password", async () => {
+    const fetcher = installLoginApi(() =>
+      json({
+        data: {
+          expires_at: "2026-09-01T00:00:00Z",
+          csrf_token: "csrf-value",
+        },
+        meta: { request_id: "req_session" },
+      }),
+    );
+    renderLogin();
+    await signIn("  Owner  ", "hunter2");
+
+    const call = await vi.waitFor(() => {
+      const found = fetcher.mock.calls.find(
+        ([input]) => String(input) === "/api/v1/owner/session",
+      );
+      if (!found) throw new Error("no session exchange yet");
+      return found;
+    });
+    expect(JSON.parse(String(call[1]?.body))).toEqual({
+      password: "hunter2",
+      username: "Owner",
+    });
+  });
+
+  it("sends no handle when the field is left empty", async () => {
+    const fetcher = installLoginApi(() =>
+      json({
+        data: {
+          expires_at: "2026-09-01T00:00:00Z",
+          csrf_token: "csrf-value",
+        },
+        meta: { request_id: "req_session" },
+      }),
+    );
+    renderLogin();
+    fireEvent.change(await screen.findByLabelText("密码"), {
+      target: { value: "hunter2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    const call = await vi.waitFor(() => {
+      const found = fetcher.mock.calls.find(
+        ([input]) => String(input) === "/api/v1/owner/session",
+      );
+      if (!found) throw new Error("no session exchange yet");
+      return found;
+    });
+    expect(JSON.parse(String(call[1]?.body))).toEqual({
+      password: "hunter2",
+    });
+  });
+
+  it("sends an account with no password to its provider instead of blaming the password", async () => {
+    installLoginApi(() =>
+      json(
+        {
+          error: {
+            code: "PASSWORD_NOT_AVAILABLE",
+            message: "that account signs in through a third-party provider",
+            details: {},
+            request_id: "req_session",
+          },
+        },
+        401,
+      ),
+    );
+    renderLogin();
+    await signIn("someone", "hunter2");
+
+    expect(
+      await screen.findByText(/这个账户是用第三方登录的/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("密码不正确，请重试。")).toBeNull();
+  });
+
+  it("names the handle when it is the handle that is wrong", async () => {
+    installLoginApi(() =>
+      json(
+        {
+          error: {
+            code: "ACCOUNT_NOT_FOUND",
+            message: "no account here holds that username",
+            details: {},
+            request_id: "req_session",
+          },
+        },
+        401,
+      ),
+    );
+    renderLogin();
+    await signIn("nobodyhere", "hunter2");
+
+    expect(await screen.findByText("本站没有这个用户名。")).toBeInTheDocument();
+  });
+
+  it("still blames the password when the password is what was refused", async () => {
+    installLoginApi(() =>
+      json(
+        {
+          error: {
+            code: "UNAUTHORIZED",
+            message: "auth required",
+            details: {},
+            request_id: "req_session",
+          },
+        },
+        401,
+      ),
+    );
+    renderLogin();
+    await signIn("owner", "wrong");
+
+    expect(await screen.findByText("密码不正确，请重试。")).toBeInTheDocument();
   });
 });

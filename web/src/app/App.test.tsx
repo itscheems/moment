@@ -582,6 +582,37 @@ describe("App shell and public routes", () => {
     );
   });
 
+  // Signing in is the whole page. Everything the shell offers either needs the
+  // session this page exists to obtain or is somewhere the visitor was already
+  // turned away from, so framing the form with that navigation made it read as
+  // one panel among many rather than the one thing left to do.
+  it("gives sign-in its own page instead of a panel inside the shell", async () => {
+    window.history.replaceState({}, "", "/owner/login");
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/owner/login-options") {
+        return json({
+          data: { password_enabled: true },
+          meta: { request_id: "req_options" },
+        });
+      }
+      if (url === "/api/v1/login/oauth/providers") {
+        return json({
+          data: { providers: [] },
+          meta: { request_id: "req_providers" },
+        });
+      }
+      return json(timelineEnvelope());
+    });
+    render(<App />);
+
+    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(screen.getByLabelText("密码")).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "站点导航" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
+  });
+
   it("renders the public profile as a first-class route", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
     window.history.replaceState({}, "", "/profile");

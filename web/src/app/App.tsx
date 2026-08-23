@@ -8,6 +8,7 @@ import { DetailPage } from "../features/timeline/DetailPage";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { Composer, type ComposerHandle } from "../features/owner/Composer";
 import { EditPage } from "../features/owner/EditPage";
+import { LoginPage } from "../features/owner/LoginPage";
 import { OwnerLogin } from "../features/owner/OwnerLogin";
 import {
   OwnerProvider,
@@ -287,6 +288,12 @@ function PublicApp() {
     route.id === "search" || route.id === "archive"
       ? discoveryYears
       : memoryYears;
+
+  // Sign-in is the whole page, not a panel inside the shell. Every hook above
+  // has already run, so returning here changes what is rendered without
+  // changing what is evaluated.
+  if (route.id === "owner-login") return <LoginPage site={site} />;
+
   return (
     <>
       <AppShell
@@ -364,9 +371,6 @@ function PublicApp() {
         !ownProfile &&
         requestedProfileUsername ? (
           <MemberProfilePage api={api} username={requestedProfileUsername} />
-        ) : null}
-        {siteIdentityReady && route.id === "owner-login" ? (
-          <OwnerLogin site={site} />
         ) : null}
         {siteIdentityReady && route.id === "owner-compose" ? (
           ownerCapable ? (

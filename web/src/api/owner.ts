@@ -2354,10 +2354,16 @@ export class OwnerApi {
   async exchange(
     credential: string,
     method: "password" | "token" = "password",
+    username?: string,
   ): Promise<OwnerSession> {
+    // The handle is sent so the server can refuse a credential typed under
+    // somebody else's name. Omitting it is still allowed, which is what keeps
+    // the token usable as the break-glass credential it exists to be.
+    const payload: Record<string, string> = { [method]: credential };
+    if (username) payload.username = username;
     const response = await this.fetcher(
       "/api/v1/owner/session",
-      requestInit("POST", undefined, { [method]: credential }),
+      requestInit("POST", undefined, payload),
     );
     const { data } = await decodeResponse(response);
     const record = objectData(data);

@@ -78,7 +78,11 @@ interface OwnerContextValue {
    * render controls for has the numbers those controls need.
    */
   limits: AccountLimits | null;
-  login: (credential: string, method?: "password" | "token") => Promise<void>;
+  login: (
+    credential: string,
+    method?: "password" | "token",
+    username?: string,
+  ) => Promise<void>;
   logout: (instanceId: string | null) => Promise<void>;
   /**
    * Drop this browser's session without asking the server to end it, for when
@@ -538,8 +542,12 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
   }, [authOutcome]);
 
   const login = useCallback(
-    async (credential: string, method: "password" | "token" = "password") => {
-      const exchanged = await api.exchange(credential, method);
+    async (
+      credential: string,
+      method: "password" | "token" = "password",
+      username?: string,
+    ) => {
+      const exchanged = await api.exchange(credential, method, username);
       // Read whose session this is before announcing it. Announcing first
       // would put every tab through a frame of "signed in, role unknown", and
       // that frame decides whether owner controls are on screen.
