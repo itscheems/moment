@@ -131,8 +131,14 @@ func TestAccountPictureUploadRefusesWhatIsNotAPicture(t *testing.T) {
 		oversized := bytes.Repeat([]byte{0x00}, maxAccountPictureBytes+1)
 		response := performRequest(fixture.engine,
 			pictureUpload(t, "/api/v1/account/avatar", "huge.png", oversized, session, csrf))
-		if response.Code != http.StatusRequestEntityTooLarge {
-			t.Fatalf("oversized upload = %d, want 413: %s", response.Code, response.Body.String())
+		// The same status the ingest pipeline answers with for the same code.
+		// One code meaning two statuses is what makes a client mapping on
+		// status right half the time.
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("oversized upload = %d, want 400: %s", response.Code, response.Body.String())
+		}
+		if !strings.Contains(response.Body.String(), string(domain.CodeMediaTooLarge)) {
+			t.Fatalf("oversized upload body = %s", response.Body.String())
 		}
 	})
 

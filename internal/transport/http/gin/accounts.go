@@ -62,6 +62,20 @@ type accountSessionView struct {
 	ExpiresAt time.Time          `json:"expires_at"`
 	CSRFToken string             `json:"csrf_token"`
 	Account   privateAccountView `json:"account"`
+	Limits    accountLimitsView  `json:"limits"`
+}
+
+// accountLimitsView publishes the bounds a client would otherwise have to
+// hard-code a second copy of.
+//
+// The picture ceiling reached a browser only as details on a rejection, which
+// is after the upload has already been spent, so every client that wanted to
+// refuse a too-large file before sending it had to carry its own number and
+// keep it in step with this one.
+type accountLimitsView struct {
+	ProfilePictureBytes int64 `json:"profile_picture_bytes"`
+	DisplayNameLength   int   `json:"display_name_length"`
+	BioLength           int   `json:"bio_length"`
 }
 
 type sessionListItem struct {
@@ -173,7 +187,14 @@ func currentAccountSession(gate *Gate) gin.HandlerFunc {
 			unauthorized(ctx)
 			return
 		}
-		view := accountSessionView{Account: privateAccount(user)}
+		view := accountSessionView{
+			Account: privateAccount(user),
+			Limits: accountLimitsView{
+				ProfilePictureBytes: maxAccountPictureBytes,
+				DisplayNameLength:   domain.MaxDisplayNameLength,
+				BioLength:           domain.MaxBioLength,
+			},
+		}
 		if session, present := CurrentSession(ctx); present {
 			view.ExpiresAt = time.UnixMilli(session.ExpiresAtMS).UTC()
 		}
@@ -400,14 +421,19 @@ func setAccountPicture(gate *Gate, pictures *media.Store, kind string) gin.Handl
 		if ctx.Request.MultipartForm != nil {
 			defer func() { _ = ctx.Request.MultipartForm.RemoveAll() }()
 		}
+		// Both refusals below go through writeMediaError rather than choosing
+		// their own status, so one error code always means one status. Deciding
+		// here produced MEDIA_TOO_LARGE as 413 from this pre-check and 400 from
+		// the ingest pipeline for the same condition, which leaves a client
+		// mapping on status right half the time.
 		if fileHeader.Size > maxAccountPictureBytes {
-			Failure(ctx, http.StatusRequestEntityTooLarge, string(domain.CodeMediaTooLarge),
-				"a profile picture must be 8 MiB or smaller", map[string]any{"limit_bytes": maxAccountPictureBytes})
+			writeMediaError(ctx, domain.NewError(domain.CodeMediaTooLarge,
+				"a profile picture must be 8 MiB or smaller", map[string]any{"limit_bytes": maxAccountPictureBytes}))
 			return
 		}
 		file, err := fileHeader.Open()
 		if err != nil {
-			Failure(ctx, http.StatusBadRequest, string(domain.CodeMediaCorrupt), "the uploaded picture could not be opened", nil)
+			writeMediaError(ctx, domain.NewError(domain.CodeMediaCorrupt, "the uploaded picture could not be opened", nil))
 			return
 		}
 		defer func() { _ = file.Close() }()
@@ -422,8 +448,8 @@ func setAccountPicture(gate *Gate, pictures *media.Store, kind string) gin.Handl
 		// already what the collector looks for, and deleting media is not this
 		// handler's authority.
 		if !strings.HasPrefix(value.MIMEType, "image/") {
-			Failure(ctx, http.StatusUnsupportedMediaType, string(domain.CodeMediaTypeUnsupported),
-				"a profile picture must be an image", map[string]any{"mime_type": value.MIMEType})
+			writeMediaError(ctx, domain.NewError(domain.CodeMediaTypeUnsupported,
+				"a profile picture must be an image", map[string]any{"mime_type": value.MIMEType}))
 			return
 		}
 
