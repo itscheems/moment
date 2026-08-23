@@ -5,8 +5,13 @@ import (
 	"unicode/utf8"
 )
 
-// MaxDisplayNameLength is the byte ceiling a display name is stored with,
-// matching the users.display_name constraint.
+// MaxDisplayNameLength is the code-point ceiling a display name is stored with.
+//
+// Code points rather than bytes, because that is what the users.display_name
+// CHECK counts: SQLite's length() on TEXT returns characters. Measuring bytes
+// here made Go the stricter of the two for any non-Latin name -- a
+// twenty-seven character Chinese name is eighty-one bytes -- so the two agreed
+// only for ASCII.
 const MaxDisplayNameLength = 80
 
 // MaxBioLength bounds the free-text line an account may publish about itself.
@@ -240,7 +245,7 @@ func NormalizeDisplayName(value string) (string, error) {
 	if value == "" {
 		return "", NewError(CodeInvalidArgument, "display name must not be empty", map[string]any{"field": "display_name"})
 	}
-	if len(value) > MaxDisplayNameLength {
+	if utf8.RuneCountInString(value) > MaxDisplayNameLength {
 		return "", NewError(CodeInvalidArgument, "display name is too long", map[string]any{"field": "display_name"})
 	}
 	if strings.ContainsFunc(value, isRejectedControl) {

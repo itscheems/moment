@@ -7,9 +7,16 @@ import (
 	"unicode/utf8"
 )
 
-// MaxCommentAuthorNameCodePoints is the v0 Unicode code-point limit for a
-// public display name.
-const MaxCommentAuthorNameCodePoints = 40
+// MaxCommentAuthorNameCodePoints bounds the name stored beside a comment.
+//
+// It is defined as the display name bound rather than as a number of its own,
+// because writing a comment stamps the author's display name into this field.
+// Two independent numbers meant a name an account was allowed to hold could be
+// one a comment was not allowed to carry: while every comment was the owner's
+// and the stored name was the literal "Owner", nothing reached the smaller
+// limit, and the day the real name went in instead, a display name of 41 to 80
+// characters made every comment that account tried to write fail validation.
+const MaxCommentAuthorNameCodePoints = MaxDisplayNameLength
 
 // CommentAuthorKind separates the accounts that can write from the anonymous
 // visitors that once could.
