@@ -1201,6 +1201,18 @@
   position: relative;
   max-block-size: calc(10 * 1.25rem);
   overflow: hidden;
+}
+
+/*
+ * The fade is what the clip looks like when it has something to hide, so it is
+ * applied where that is known to be true rather than wherever the clip is.
+ * Bound together, a body that fits inside the maximum still had its last line
+ * faded out -- reading as cut off, with no control offered to open it, because
+ * nothing was in fact hidden. The clip itself stays unconditional: it costs
+ * nothing on a body that never reaches the maximum, and turning it on after
+ * measuring would make short comments visibly settle.
+ */
+.commentBodyFaded {
   mask-image: linear-gradient(to bottom, #000 82%, transparent);
 }
 
@@ -1598,7 +1610,7 @@
     background: var(--accent-soft);
   }
 
-  .commentBodyClipped {
+  .commentBodyFaded {
     mask-image: none;
   }
 

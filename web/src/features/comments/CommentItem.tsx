@@ -762,7 +762,16 @@ export function CommentItem({
         ) : null}
         {comment.contentHtml ? (
           <div
-            className={`${styles.commentBody} ${expanded ? "" : styles.commentBodyClipped}`}
+            className={[
+              styles.commentBody,
+              expanded ? "" : styles.commentBodyClipped,
+              // Only where the control exists to answer it: a fade with no
+              // "展开全文" beside it tells the reader something is missing and
+              // then offers them no way to reach it.
+              overflowing && !expanded ? styles.commentBodyFaded : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             id={bodyId}
             // A clipped link is still in the tab order — `overflow: hidden` only
             // hides it. Opening the body on focus keeps the reader from tabbing

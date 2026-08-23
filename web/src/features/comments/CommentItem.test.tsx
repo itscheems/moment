@@ -312,6 +312,29 @@ describe("long comment folding", () => {
     expect(screen.getAllByRole("button", { name: "展开全文" })).toHaveLength(1);
   });
 
+  // The fade is what the clip looks like when it has something to hide. Bound
+  // to the clip instead, a body that fits inside the maximum had its last line
+  // faded out anyway -- reading as cut off, with nothing offered to open it.
+  it("fades only the body that has something hidden behind the fade", () => {
+    const long = comment(rootId, "很长的一段");
+    const short = comment(replyId, "短", { parentId: rootId });
+    measure(`comment-${rootId}-body`, 983);
+    measure(`comment-${replyId}-body`, 23, 23);
+    renderItem(long, [short]);
+
+    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyFaded);
+    expect(bodyOf(replyId)).not.toHaveClass(styles.commentBodyFaded);
+  });
+
+  it("takes the fade away with the clip when the body is opened", () => {
+    measure(`comment-${rootId}-body`, 983);
+    renderItem(comment(rootId, "很长的一段"));
+
+    expect(bodyOf(rootId)).toHaveClass(styles.commentBodyFaded);
+    fireEvent.click(screen.getByRole("button", { name: "展开全文" }));
+    expect(bodyOf(rootId)).not.toHaveClass(styles.commentBodyFaded);
+  });
+
   it("wires the control to the body it controls and reverses cleanly", () => {
     measure(`comment-${rootId}-body`, 983);
     renderItem(comment(rootId, "很长的一段"));
