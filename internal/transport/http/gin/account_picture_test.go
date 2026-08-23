@@ -157,11 +157,14 @@ func TestAccountPictureUploadRefusesWhatIsNotAPicture(t *testing.T) {
 		}
 	})
 
-	t.Run("the general media route stays owner-only", func(t *testing.T) {
+	// The pool was owner-only until comments began carrying media for everyone.
+	// What still gates it is approval, not rank: an account nobody has looked at
+	// yet cannot write bytes to this instance's disk.
+	t.Run("an approved account may write to the media pool", func(t *testing.T) {
 		request := pictureUpload(t, "/api/v1/owner/media", "portrait.png", testPictureBytes(t), session, csrf)
 		response := performRequest(fixture.engine, request)
-		if response.Code != http.StatusUnauthorized && response.Code != http.StatusForbidden {
-			t.Fatalf("member reached the media pool = %d: %s", response.Code, response.Body.String())
+		if response.Code != http.StatusOK && response.Code != http.StatusCreated {
+			t.Fatalf("approved member could not upload = %d: %s", response.Code, response.Body.String())
 		}
 	})
 }
@@ -216,5 +219,53 @@ func TestExpiredSessionsAreSweptAndLiveOnesAreNot(t *testing.T) {
 	}
 	if kept[stale.ID] {
 		t.Fatal("a long-expired session survived the sweep")
+	}
+}
+
+// The comment composer offers a media picker and a place picker to any account
+// holding a session, and the comment group admits approved ones. Leaving the
+// two endpoints behind those pickers at owner-only made every use answer 401 --
+// which the browser reads as an expired session, so a correctly signed-in
+// member was told to sign in again, and would be told so again forever.
+func TestCommentAttachmentsFollowTheCommentGroupsAdmission(t *testing.T) {
+	fixture := newCommentHTTPFixture(t, nil)
+	session, csrf, member := signInMember(t, fixture)
+
+	routes := []struct {
+		name    string
+		request func() *http.Request
+	}{
+		{"media upload", func() *http.Request {
+			return pictureUpload(t, "/api/v1/owner/media", "attach.png", testPictureBytes(t), session, csrf)
+		}},
+	}
+	// The place lookup is the same change in the same direction, but this
+	// fixture builds no LocationService so its routes are never mounted --
+	// asserting against a 404 would only be testing the fixture.
+
+	for _, route := range routes {
+		t.Run(route.name+" is refused while the account waits for approval", func(t *testing.T) {
+			response := performRequest(fixture.engine, route.request())
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("%s = %d, want 403: %s", route.name, response.Code, response.Body.String())
+			}
+			if !strings.Contains(response.Body.String(), string(domain.CodeAccountNotApproved)) {
+				t.Fatalf("%s body = %s", route.name, response.Body.String())
+			}
+		})
+	}
+
+	if _, err := fixture.accountService.SetStatus(context.Background(), member.ID, domain.AccountActive); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, route := range routes {
+		t.Run(route.name+" is reachable once the account is approved", func(t *testing.T) {
+			response := performRequest(fixture.engine, route.request())
+			if response.Code == http.StatusUnauthorized || response.Code == http.StatusForbidden {
+				t.Fatalf("%s refused an approved account = %d: %s",
+					route.name, response.Code, response.Body.String())
+			}
+		})
 	}
 }
