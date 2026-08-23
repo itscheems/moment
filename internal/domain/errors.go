@@ -43,6 +43,8 @@ const (
 	CodeOAuthStateInvalid           Code = "OAUTH_STATE_INVALID"
 	CodeOAuthExchangeFailed         Code = "OAUTH_EXCHANGE_FAILED"
 	CodeOAuthIdentityUnusable       Code = "OAUTH_IDENTITY_UNUSABLE"
+	CodeOAuthDeviceExpired          Code = "OAUTH_DEVICE_EXPIRED"
+	CodeOAuthDeviceDenied           Code = "OAUTH_DEVICE_DENIED"
 	CodeIdempotencyKeyReused        Code = "IDEMPOTENCY_KEY_REUSED"
 	CodeImportInProgress            Code = "IMPORT_IN_PROGRESS"
 	CodeInstanceInUse               Code = "INSTANCE_IN_USE"
