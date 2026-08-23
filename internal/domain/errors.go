@@ -39,6 +39,11 @@ const (
 	CodeRegistrationClosed          Code = "REGISTRATION_CLOSED"
 	CodeIdentityAlreadyLinked       Code = "IDENTITY_ALREADY_LINKED"
 	CodeLastCredential              Code = "LAST_CREDENTIAL"
+	// CodeCredentialUnavailable means the account exists and does not sign in
+	// the way the caller offered. Its details carry the kinds that would work,
+	// so a client can say what to do instead rather than guessing that a
+	// third-party provider is the answer.
+	CodeCredentialUnavailable       Code = "CREDENTIAL_UNAVAILABLE"
 	CodeOAuthProviderUnavailable    Code = "OAUTH_PROVIDER_UNAVAILABLE"
 	CodeOAuthStateInvalid           Code = "OAUTH_STATE_INVALID"
 	CodeOAuthExchangeFailed         Code = "OAUTH_EXCHANGE_FAILED"

@@ -211,6 +211,11 @@ func writeAccountError(ctx *gin.Context, err error) {
 	switch domainErr.Code {
 	case domain.CodeUnauthorized, domain.CodeAccountNotFound:
 		unauthorized(ctx)
+	// A refusal about which credential the account carries, not about whether
+	// the secret was right. It stays 401 because nobody was signed in either
+	// way, and keeps its own code so the form can point at what would work.
+	case domain.CodeCredentialUnavailable:
+		Failure(ctx, http.StatusUnauthorized, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeAccountSuspended:
 		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeAccountNotApproved:
