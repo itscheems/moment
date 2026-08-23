@@ -2109,7 +2109,7 @@ describe("owner composing flow", () => {
 
   it("clears the instance draft and CSRF cache after confirmed logout", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/login");
+    window.history.replaceState({}, "", "/login");
     window.localStorage.setItem(
       composeDraftKey(instance),
       JSON.stringify({

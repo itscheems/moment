@@ -4,7 +4,7 @@ export type RouteId =
   | "search"
   | "archive"
   | "profile"
-  | "owner-login"
+  | "login"
   | "owner-compose"
   | "owner-edit"
   | "owner-settings"
@@ -50,19 +50,14 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   // Signing in is not an owner action. Which account the credential belongs to
   // decides what that account may do, and that decision is the server's; a page
   // that called itself the owner's told everybody else they were in the wrong
-  // place before it knew who they were. `/owner/login` still answers so that a
-  // link somebody kept does not dead-end. "login" is a reserved handle
+  // place before it knew who they were. "login" is a reserved handle
   // (internal/domain/user.go), so this cannot shadow a profile.
   {
-    id: "owner-login",
+    id: "login",
     title: "登录",
     eyebrow: "",
     href: "/login",
-    match: (pathname) =>
-      pathname === "/login" ||
-      pathname === "/login/" ||
-      pathname === "/owner/login" ||
-      pathname === "/owner/login/",
+    match: (pathname) => pathname === "/login" || pathname === "/login/",
   },
   {
     id: "owner-compose",

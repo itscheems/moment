@@ -40,7 +40,7 @@ const emptyCopy: Record<
     detail: "发布后的 Moment 会显示在个人资料页。",
     action: { label: "发布 Moment", href: "/owner/compose" },
   },
-  "owner-login": {
+  "login": {
     marker: "所有者",
     title: "输入所有者令牌",
     detail: "登录后可以发布和管理内容。",

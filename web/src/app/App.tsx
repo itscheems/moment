@@ -173,6 +173,20 @@ function PublicApp() {
     }
   }, [displayLocation.search, homeVisited, route.id]);
 
+  // `/profile` means "mine", and only a session says whose. A visitor without
+  // one is asking for a page that does not exist for them, so they are sent to
+  // sign in; anyone signed in is sent to their own handle, which is the page
+  // they were actually asking for. It used to render the site owner's profile
+  // to whoever opened it, so a signed-in member met somebody else's page.
+  useEffect(() => {
+    const pathname = displayLocation.pathname;
+    if (pathname !== "/profile" && pathname !== "/profile/") return;
+    // Still resolving, or unable to say. Neither is an answer to act on.
+    if (owner.state === "checking" || owner.state === "unavailable") return;
+    const own = owner.account?.profileUrl;
+    location.navigate(own ?? "/login?return=%2Fprofile");
+  }, [displayLocation.pathname, location, owner.account, owner.state]);
+
   useEffect(() => {
     const siteTitle = site.title.trim() || "Moment";
     const titleRoute = overlayCompose ? requestedRoute : route;
@@ -269,7 +283,7 @@ function PublicApp() {
   const placeholderRoute =
     route.id !== "home" &&
     route.id !== "detail" &&
-    route.id !== "owner-login" &&
+    route.id !== "login" &&
     route.id !== "owner-compose" &&
     route.id !== "owner-edit" &&
     route.id !== "owner-settings" &&
@@ -292,7 +306,7 @@ function PublicApp() {
   // Sign-in is the whole page, not a panel inside the shell. Every hook above
   // has already run, so returning here changes what is rendered without
   // changing what is evaluated.
-  if (route.id === "owner-login") return <LoginPage site={site} />;
+  if (route.id === "login") return <LoginPage site={site} />;
 
   return (
     <>

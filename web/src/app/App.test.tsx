@@ -627,14 +627,8 @@ describe("App shell and public routes", () => {
   // session this page exists to obtain or is somewhere the visitor was already
   // turned away from, so framing the form with that navigation made it read as
   // one panel among many rather than the one thing left to do.
-  it.each([
-    ["the plain address", "/login"],
-    // Kept answering so a link somebody bookmarked does not dead-end.
-    ["the address it used to have", "/owner/login"],
-  ])(
-    "gives sign-in its own page instead of a panel inside the shell, at %s",
-    async (_name, path) => {
-    window.history.replaceState({}, "", path);
+  it("gives sign-in its own page instead of a panel inside the shell", async () => {
+    window.history.replaceState({}, "", "/login");
     installApi(async (url) => {
       if (url === "/api/v1/site") return json(siteEnvelope);
       if (url === "/api/v1/login/methods") {
@@ -658,12 +652,59 @@ describe("App shell and public routes", () => {
     expect(screen.queryByRole("complementary", { name: "站点导航" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
-    },
-  );
+  });
+
+  // `/profile` means "mine", and only a session says whose. It used to render
+  // the site owner's page to whoever opened it, so a signed-in member met
+  // somebody else's profile and a visitor met a page that was not theirs.
+  it("sends a visitor with no session from /profile to sign in", async () => {
+    window.history.replaceState({}, "", "/profile");
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/login/methods") {
+        return json({
+          data: { methods: ["password", "token"] },
+          meta: { request_id: "req_methods" },
+        });
+      }
+      if (url === "/api/v1/login/oauth/providers") {
+        return json({
+          data: { providers: [] },
+          meta: { request_id: "req_providers" },
+        });
+      }
+      return json(timelineEnvelope());
+    });
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+  });
+
+  it("sends a signed-in account from /profile to its own handle", async () => {
+    window.history.replaceState({}, "", "/profile");
+    preauthenticate();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/v1/account/session") {
+          return json(accountSessionEnvelope("cheemschen"));
+        }
+        if (url === "/api/v1/site") return json(siteEnvelope);
+        return json(timelineEnvelope());
+      }),
+    );
+    render(<App />);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/cheemschen"));
+  });
 
   it("renders the public profile as a first-class route", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
-    window.history.replaceState({}, "", "/profile");
+    // The handle, not `/profile`: a public page has a public address, and
+    // `/profile` now means "mine" and needs a session to mean anything.
+    window.history.replaceState({}, "", "/owner");
     installApi(async (url) => {
       if (url === "/api/v1/site") return json(siteEnvelope);
       if (url.startsWith("/api/v1/posts?")) {
@@ -694,7 +735,7 @@ describe("App shell and public routes", () => {
 
   it("returns to the timeline from the profile header", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
-    window.history.replaceState({}, "", "/profile");
+    window.history.replaceState({}, "", "/owner");
     installApi(async (url) => {
       if (url === "/api/v1/site") return json(siteEnvelope);
       if (url.startsWith("/api/v1/posts?")) {

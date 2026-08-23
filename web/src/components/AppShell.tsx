@@ -122,7 +122,7 @@ function ownerNav(settingsAvailable: boolean): NavItem {
     label: "所有者",
     href: settingsAvailable ? "/owner/settings" : "/login",
     icon: "owner",
-    active: ["owner-login", "owner-settings", "owner-edit"],
+    active: ["login", "owner-settings", "owner-edit"],
   };
 }
 
