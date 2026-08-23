@@ -54,26 +54,52 @@ type sessionResponse struct {
 // owner feature groups can reuse the gate rather than decode credentials.
 func RegisterOwnerRoutes(engine *gin.Engine, gate *Gate, cookies CookieOptions) {
 	manager := gate.manager
-	owner := engine.Group("/api/v1/owner")
-	owner.GET("/login-options", loginOptions(manager))
-	owner.POST("/session", exchangeSession(gate, cookies))
 
-	protected := owner.Group("")
-	protected.Use(gate.RequireOwner())
-	protected.DELETE("/session", logoutSession(gate, cookies))
-	protected.GET("/status", ownerStatus(manager))
-	protected.POST("/token/rotate", rotateToken(manager))
-	protected.PUT("/password", setPassword(manager))
+	// Signing in and signing out belong to whoever is doing them, not to the
+	// owner, so they sit beside the provider and device routes rather than
+	// under /owner. Ending a session was owner-scoped until now, which meant a
+	// member who signed in through a provider and landed unapproved could not
+	// sign out again: the refusal that protects owner powers was standing in
+	// front of the one action that takes a power away.
+	login := engine.Group("/api/v1/login")
+	login.GET("/methods", signInMethods(gate))
+	login.POST("/session", exchangeSession(gate, cookies))
+	ending := login.Group("")
+	ending.Use(gate.RequireAccount())
+	ending.DELETE("/session", logoutSession(gate, cookies))
+
+	// What remains under /owner is administration of the instance's own
+	// credentials, which is the owner's alone.
+	owner := engine.Group("/api/v1/owner")
+	owner.Use(gate.RequireOwner())
+	owner.GET("/status", ownerStatus(manager))
+	owner.POST("/token/rotate", rotateToken(manager))
+	owner.PUT("/password", setPassword(manager))
 }
 
-func loginOptions(manager *auth.Manager) gin.HandlerFunc {
+// signInMethods reports the credential kinds this instance accepts.
+//
+// It answers for the site rather than for a named account on purpose: a
+// per-handle answer would tell an anonymous caller which handles exist and what
+// each one carries, which is an enumeration oracle in exchange for nothing the
+// form needs before somebody has typed a secret.
+func signInMethods(gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		status, err := manager.Status()
+		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
+		if err != nil {
+			writeAccountError(ctx, err)
+			return
+		}
+		methods, err := gate.SignInMethods(ctx.Request.Context(), owner)
 		if err != nil {
 			Failure(ctx, http.StatusServiceUnavailable, "OWNER_NOT_INITIALIZED", "owner authentication is not initialized", nil)
 			return
 		}
-		Success(ctx, http.StatusOK, map[string]bool{"password_enabled": status.PasswordEnabled}, nil)
+		names := make([]string, 0, len(methods))
+		for _, method := range methods {
+			names = append(names, string(method))
+		}
+		Success(ctx, http.StatusOK, map[string]any{"methods": names}, nil)
 	}
 }
 
@@ -96,40 +122,45 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "exactly one owner password or token is required", nil)
 			return
 		}
-		// A password and a bearer are both the owner's credentials, so the
-		// subject is looked up rather than chosen. Resolving it before signing
-		// keeps the credential layer free of any knowledge of storage.
-		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
-		if err != nil {
-			writeAccountError(ctx, err)
-			return
+		kind := domain.CredentialPassword
+		secret := ""
+		if request.Token != nil {
+			kind, secret = domain.CredentialToken, *request.Token
+		} else {
+			secret = *request.Password
 		}
-		if request.Username != nil && !gate.usernameSignsInHere(ctx, *request.Username, owner) {
+
+		account, ok := gate.signingInAs(ctx, request.Username)
+		if !ok {
 			return
 		}
 		sessionID, err := app.NewSessionID()
 		if err != nil {
-			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "owner session could not be issued", nil)
+			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "the session could not be issued", nil)
 			return
 		}
-		subject := auth.Subject{UserID: owner.ID, SessionID: sessionID}
+		subject := auth.Subject{UserID: account.ID, SessionID: sessionID}
 
-		var cookieValue string
-		var session auth.Session
-		if request.Password != nil {
-			cookieValue, session, err = gate.manager.IssuePasswordSession(*request.Password, subject)
-		} else {
-			cookieValue, session, err = gate.manager.IssueSession(*request.Token, subject)
-		}
+		// Whether this account signs in this way is the credential layer's
+		// question, not this handler's. Answering it here would put the same
+		// judgement in two voices, and the second one always drifts.
+		cookieValue, session, err := gate.IssueSignIn(ctx.Request.Context(), account, kind, secret, subject)
 		if err != nil {
+			var refusal *domain.Error
+			if errors.As(err, &refusal) {
+				writeAccountError(ctx, err)
+				return
+			}
+			// Anything else is a secret that did not verify. It says nothing
+			// about the account, so neither does the answer.
 			unauthorized(ctx)
 			return
 		}
 		// The row is written before the cookie is handed out, so a cookie a
 		// caller holds always has something to be revoked by.
-		if _, err := gate.accounts.StartSession(ctx.Request.Context(), owner.ID, sessionID,
+		if _, err := gate.accounts.StartSession(ctx.Request.Context(), account.ID, sessionID,
 			string(requestSurface(ctx)), session.ExpiresAt.UnixMilli()); err != nil {
-			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "owner session could not be recorded", nil)
+			Failure(ctx, http.StatusInternalServerError, "INTERNAL", "the session could not be recorded", nil)
 			return
 		}
 		setSessionCookie(ctx, cookieValue, session.ExpiresAt, cookies)
@@ -137,29 +168,43 @@ func exchangeSession(gate *Gate, cookies CookieOptions) gin.HandlerFunc {
 	}
 }
 
-// usernameSignsInHere reports whether a typed handle may hold the credential
-// this request carries, writing its own refusal when it may not.
+// signingInAs resolves the account a sign-in is for, writing its own refusal
+// when no account answers to the handle.
 //
-// Only the owner has a password or a token; every other account reaches this
-// instance through a provider. Saying so is more use than a wrong-password
-// message, and it leaks nothing -- handles are already public, since each one
-// addresses a profile page at the site root.
-func (gate *Gate) usernameSignsInHere(ctx *gin.Context, typed string, owner domain.User) bool {
-	normalized, err := domain.NormalizeUsername(typed)
+// It does not judge what that account may present -- resolving who is signing
+// in and deciding what they can sign in with are two questions, and keeping
+// them apart is what lets the second one change without this one noticing.
+//
+// A missing handle resolves to the owner. That is the break-glass path: the
+// owner token has to work when the database is what needs repairing, including
+// when nobody remembers the handle.
+func (gate *Gate) signingInAs(ctx *gin.Context, typed *string) (domain.User, bool) {
+	if typed == nil || strings.TrimSpace(*typed) == "" {
+		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
+		if err != nil {
+			writeAccountError(ctx, err)
+			return domain.User{}, false
+		}
+		return owner, true
+	}
+	// A handle that could never exist and one nobody holds are the same fact,
+	// and splitting them would only describe the validator. Handles are public
+	// -- each addresses a profile page at the site root -- so saying which half
+	// of the form was wrong leaks nothing and saves a password reset that was
+	// never going to help.
+	normalized, err := domain.NormalizeUsername(*typed)
 	if err != nil {
-		Failure(ctx, http.StatusUnauthorized, "ACCOUNT_NOT_FOUND", "no account here holds that username", nil)
-		return false
+		Failure(ctx, http.StatusUnauthorized, string(domain.CodeAccountNotFound),
+			"no account here holds that username", nil)
+		return domain.User{}, false
 	}
-	if strings.EqualFold(normalized, owner.Username) {
-		return true
+	account, err := gate.accounts.AccountByUsername(ctx.Request.Context(), normalized)
+	if err != nil {
+		Failure(ctx, http.StatusUnauthorized, string(domain.CodeAccountNotFound),
+			"no account here holds that username", nil)
+		return domain.User{}, false
 	}
-	if _, err := gate.accounts.AccountByUsername(ctx.Request.Context(), normalized); err != nil {
-		Failure(ctx, http.StatusUnauthorized, "ACCOUNT_NOT_FOUND", "no account here holds that username", nil)
-		return false
-	}
-	Failure(ctx, http.StatusUnauthorized, "PASSWORD_NOT_AVAILABLE",
-		"that account signs in through a third-party provider", nil)
-	return false
+	return account, true
 }
 
 func setPassword(manager *auth.Manager) gin.HandlerFunc {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -93,7 +94,7 @@ func exchangeOwnerSession(t *testing.T, fixture ownerTestFixture, token string) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/owner/session", string(body)))
+	response := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/login/session", string(body)))
 	if response.Code != http.StatusOK {
 		t.Fatalf("exchange status = %d, body = %s", response.Code, response.Body.String())
 	}
@@ -167,7 +168,7 @@ func TestOwnerSessionCookieCSRFLogoutAndRotationContract(t *testing.T) {
 	}
 
 	newCookie, newSession := exchangeOwnerSession(t, fixture, newToken)
-	logoutRequest := ownerRequest(http.MethodDelete, "/api/v1/owner/session", "")
+	logoutRequest := ownerRequest(http.MethodDelete, "/api/v1/login/session", "")
 	logoutRequest.AddCookie(newCookie)
 	logoutRequest.Header.Set(CSRFHeaderName, newSession["csrf_token"].(string))
 	logout := performRequest(fixture.engine, logoutRequest)
@@ -212,7 +213,7 @@ func TestBearerPrecedenceMalformedInputAndSessionExpiryFailClosed(t *testing.T) 
 	}
 
 	for _, body := range []string{"", `{}`, `{"token":"x","extra":true}`, `{not-json}`} {
-		response := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/owner/session", body))
+		response := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/login/session", body))
 		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 			t.Fatalf("body %q status = %d, response = %s", body, response.Code, response.Body.String())
 		}
@@ -229,11 +230,35 @@ func TestBearerAuthenticatedWriteDoesNotRequireCSRF(t *testing.T) {
 	}
 }
 
+// signInMethodNames reads the credential kinds a methods response reports.
+func signInMethodNames(t *testing.T, response *httptest.ResponseRecorder) []string {
+	t.Helper()
+	raw, ok := decodeDataMap(t, response)["methods"].([]any)
+	if !ok {
+		t.Fatalf("methods missing from %s", response.Body.String())
+	}
+	names := make([]string, 0, len(raw))
+	for _, value := range raw {
+		name, ok := value.(string)
+		if !ok {
+			t.Fatalf("method is not a string in %s", response.Body.String())
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
 func TestPasswordLoginOptionsSetupAndExchange(t *testing.T) {
 	fixture := newOwnerTestFixture(t, false)
-	options := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/owner/login-options", ""))
-	if options.Code != http.StatusOK || decodeDataMap(t, options)["password_enabled"] != false {
-		t.Fatalf("initial login options = %d, body = %s", options.Code, options.Body.String())
+	options := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/login/methods", ""))
+	// A fresh instance has a token and no password, and the endpoint reports
+	// what exists rather than a flag per credential kind -- a shape that has to
+	// grow a field every time a way of signing in is added.
+	if options.Code != http.StatusOK {
+		t.Fatalf("initial login methods = %d, body = %s", options.Code, options.Body.String())
+	}
+	if got := signInMethodNames(t, options); !slices.Equal(got, []string{"token"}) {
+		t.Fatalf("initial methods = %v, want only the token", got)
 	}
 	set := ownerRequest(http.MethodPut, "/api/v1/owner/password", `{"password":"correct horse battery staple"}`)
 	set.Header.Set("Authorization", "Bearer "+fixture.token)
@@ -241,20 +266,20 @@ func TestPasswordLoginOptionsSetupAndExchange(t *testing.T) {
 	if setResponse.Code != http.StatusOK || decodeDataMap(t, setResponse)["password_enabled"] != true {
 		t.Fatalf("set password = %d, body = %s", setResponse.Code, setResponse.Body.String())
 	}
-	wrong := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/owner/session", `{"password":"incorrect password"}`))
+	wrong := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/login/session", `{"password":"incorrect password"}`))
 	if wrong.Code != http.StatusUnauthorized {
 		t.Fatalf("wrong password = %d, body = %s", wrong.Code, wrong.Body.String())
 	}
-	passwordSession := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/owner/session", `{"password":"correct horse battery staple"}`))
+	passwordSession := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/login/session", `{"password":"correct horse battery staple"}`))
 	if passwordSession.Code != http.StatusOK || decodeDataMap(t, passwordSession)["csrf_token"] == "" {
 		t.Fatalf("password session = %d, body = %s", passwordSession.Code, passwordSession.Body.String())
 	}
-	options = performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/owner/login-options", ""))
-	if decodeDataMap(t, options)["password_enabled"] != true {
-		t.Fatalf("updated login options = %s", options.Body.String())
+	options = performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/login/methods", ""))
+	if got := signInMethodNames(t, options); !slices.Equal(got, []string{"password", "token"}) {
+		t.Fatalf("updated methods = %v, want the password first", got)
 	}
 	for _, body := range []string{`{"token":"x","password":"y"}`, `{"password":"short","extra":true}`, `{"password":""}`} {
-		response := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/owner/session", body))
+		response := performRequest(fixture.engine, ownerRequest(http.MethodPost, "/api/v1/login/session", body))
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("invalid exchange %s = %d, body = %s", body, response.Code, response.Body.String())
 		}

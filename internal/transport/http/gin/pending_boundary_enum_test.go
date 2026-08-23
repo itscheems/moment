@@ -281,7 +281,11 @@ func TestPendingAccountIsRefusedByEveryOwnerScopedRoute(t *testing.T) {
 		{"owner_auth", http.MethodGet, "/api/v1/owner/status"},
 		{"owner_auth", http.MethodPost, "/api/v1/owner/token/rotate"},
 		{"owner_auth", http.MethodPut, "/api/v1/owner/password"},
-		{"owner_auth", http.MethodDelete, "/api/v1/owner/session"},
+		// Ending a session is deliberately absent. It used to sit here, and
+		// this list dutifully asserted that a pending account was refused it --
+		// proving the bug rather than catching it, because the one action that
+		// gives up a power was standing behind the refusal that guards powers.
+		// TestPendingAccountKeepsItsOwnAllowedPowers covers it now.
 		// accounts
 		{"accounts", http.MethodGet, "/api/v1/owner/accounts"},
 		{"accounts", http.MethodPatch, "/api/v1/owner/accounts/" + memberID},
@@ -419,5 +423,23 @@ func TestPendingAccountKeepsItsOwnAllowedPowers(t *testing.T) {
 	edit.Header.Set(CSRFHeaderName, csrf)
 	if response := performRequest(fixture.engine, edit); response.Code != http.StatusOK {
 		t.Fatalf("profile edit = %d, body = %s", response.Code, performRequest(fixture.engine, edit).Body.String())
+	}
+
+	// Signing out was owner-scoped, so somebody who signed in through a
+	// provider and landed unapproved could not sign out again: the refusal that
+	// guards owner powers was standing in front of the one action that gives a
+	// power up. Nothing an account does to its own session needs approval.
+	out := httptest.NewRequest(http.MethodDelete, "/api/v1/login/session", nil)
+	out.AddCookie(session)
+	out.Header.Set(CSRFHeaderName, csrf)
+	if response := performRequest(fixture.engine, out); response.Code != http.StatusOK {
+		t.Fatalf("pending sign-out = %d, body = %s", response.Code, response.Body.String())
+	}
+
+	// And the session really ended, rather than the route merely answering.
+	after := httptest.NewRequest(http.MethodGet, "/api/v1/account/session", nil)
+	after.AddCookie(session)
+	if response := performRequest(fixture.engine, after); response.Code != http.StatusUnauthorized {
+		t.Fatalf("session survived its own sign-out = %d", response.Code)
 	}
 }

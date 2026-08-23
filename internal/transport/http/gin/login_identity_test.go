@@ -18,7 +18,7 @@ func exchangeWith(t *testing.T, fixture ownerTestFixture, body map[string]string
 		t.Fatal(err)
 	}
 	response := performRequest(fixture.engine,
-		ownerRequest(http.MethodPost, "/api/v1/owner/session", string(encoded)))
+		ownerRequest(http.MethodPost, "/api/v1/login/session", string(encoded)))
 	return response.Code, response.Body.String()
 }
 
@@ -59,18 +59,22 @@ func TestSignInRefusesACredentialTypedUnderAnotherName(t *testing.T) {
 		}
 	})
 
-	// Only the owner has a password or a token; everyone else reaches this
-	// instance through a provider. Saying so is more use than a wrong-password
-	// message, which sends people to reset a credential that was never at fault.
-	t.Run("an account with no password is sent to its provider", func(t *testing.T) {
+	// An account that carries no credential of this kind is told so, which is
+	// more use than a wrong-password message that sends people to reset
+	// something that was never at fault. The refusal names what would work, so
+	// the answer stays right on the day members carry tokens of their own.
+	t.Run("an account carrying no such credential is told which would work", func(t *testing.T) {
 		status, body := exchangeWith(t, fixture, map[string]string{
 			"token": fixture.token, "username": "someone",
 		})
 		if status != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401: %s", status, body)
 		}
-		if !strings.Contains(body, "PASSWORD_NOT_AVAILABLE") {
+		if !strings.Contains(body, string(domain.CodeCredentialUnavailable)) {
 			t.Fatalf("body = %s", body)
+		}
+		if !strings.Contains(body, `"available":[]`) {
+			t.Fatalf("the refusal did not say what would work: %s", body)
 		}
 	})
 
