@@ -344,7 +344,10 @@ export function AccountAccess({
       <div className={styles.accountBlock}>
         <div className={styles.accountBlockHeader}>
           <strong>活跃会话</strong>
-          <p>每个登录过的浏览器都会留下一条记录，直到过期或被退出。</p>
+          <p>
+            每次登录都会留下一条记录，直到过期或被退出。用所有者令牌直接调用
+            API 不会开启会话，因此不会出现在这里。
+          </p>
         </div>
         {sessionsState === "failed" ? (
           <div className={styles.inlineError} role="alert">
