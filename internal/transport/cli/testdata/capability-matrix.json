@@ -755,6 +755,37 @@
       "parity_strategy": "canonical_provider_snapshot"
     },
     {
+      "command": "login",
+      "direct": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "device_login_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "direct_mode_unsupported"
+    },
+    {
       "command": "media add",
       "direct": {
         "availability": "supported",

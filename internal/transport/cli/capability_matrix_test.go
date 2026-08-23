@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/spf13/cobra"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/moment/moment/internal/buildinfo"
+	"github.com/spf13/cobra"
 )
 
 //go:embed testdata/capability-matrix.json
@@ -196,6 +196,7 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		"backup merge-discard": {"merge-selection.json"},
 		"dev scenario":         {"timeline-empty"},
 		"link unfurl":          {"https://example.com/a"},
+		"login":                {"github"},
 		"user approve":         {"applicant"},
 		"user suspend":         {"applicant"},
 		"user identities":      {"applicant"},

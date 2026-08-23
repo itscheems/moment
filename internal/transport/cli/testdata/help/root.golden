@@ -13,6 +13,7 @@ Available Commands:
   init        Initialize the Moment instance and owner
   link        Capture link preview cards
   location    Resolve post locations
+  login       Sign in to a Moment server from this terminal
   media       Inspect and maintain managed media
   owner       Manage the single site owner
   post        Create and manage Moments
