@@ -112,6 +112,7 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 	retentionContext, cancelRetention := context.WithCancel(ctx)
 	defer cancelRetention()
 	go committer.RunRetention(retentionContext)
+	go host.RunSessionRetention(retentionContext)
 	defer func() { _ = host.CloseActive() }()
 	if err := server.Run(ctx, server.Config{
 		Runtime: runtime, Handler: board,

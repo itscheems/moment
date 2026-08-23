@@ -365,12 +365,21 @@ func (store accountStore) UnlinkIdentity(ctx context.Context, userID, provider s
 	return nil
 }
 
-func (store accountStore) RecordIdentityLogin(ctx context.Context, provider, providerUserID string, atMS int64) error {
-	_, err := store.queries.ExecContext(ctx,
-		`UPDATE identities SET last_login_at_ms = ? WHERE provider = ? AND provider_user_id = ?`,
-		atMS, provider, providerUserID)
+// RefreshIdentity writes back what the provider said this time.
+//
+// user_id and created_at_ms are absent from the SET list on purpose: which
+// account an identity belongs to, and when it was attached, are facts about
+// this site rather than facts the provider gets to restate.
+func (store accountStore) RefreshIdentity(ctx context.Context, identity domain.Identity) error {
+	_, err := store.queries.ExecContext(ctx, `
+UPDATE identities
+SET email = ?, email_verified = ?, email_deliverable = ?, display_name = ?, avatar_url = ?, last_login_at_ms = ?
+WHERE provider = ? AND provider_user_id = ?`,
+		optionalString(identity.Email), boolInteger(identity.EmailVerified), boolInteger(identity.EmailDeliverable),
+		identity.DisplayName, optionalString(identity.AvatarURL), identity.LastLoginAtMS,
+		identity.Provider, identity.ProviderUserID)
 	if err != nil {
-		return fmt.Errorf("record identity login: %w", err)
+		return fmt.Errorf("refresh identity: %w", err)
 	}
 	return nil
 }

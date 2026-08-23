@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"github.com/moment/moment/internal/app"
@@ -53,21 +54,25 @@ func registerAccounts(application *Application) {
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"user", "approve"}, Short: "Approve an account waiting to be admitted",
+		ArgsUsage:  "<username>",
 		Long:       "Move one account to active so it may write. This is the everyday operation of the approval registration mode.",
 		Inputs:     "One username.",
 		Output:     "The updated account.",
 		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; the owner account cannot be changed.",
 		Example:    "moment user approve visitor --data-dir ./moment-data",
+		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityDirectOnly,
 		Run:        runAccountStatus(domain.AccountActive),
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"user", "suspend"}, Short: "Suspend an account",
+		ArgsUsage:  "<username>",
 		Long:       "Stop an account from signing in and end every session it currently holds.",
 		Inputs:     "One username.",
 		Output:     "The updated account.",
 		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; the owner account cannot be changed.",
 		Example:    "moment user suspend visitor --data-dir ./moment-data",
+		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityDirectOnly,
 		Safety:     "Destructive. Suspending ends every session the account currently holds, so it is signed out everywhere at once.",
 		Policy:     SafetyPolicy{Destructive: true, Confirmation: "suspend"},
@@ -75,11 +80,13 @@ func registerAccounts(application *Application) {
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"user", "identities"}, Short: "Show how an account signs in",
+		ArgsUsage:  "<username>",
 		Long:       "List the external identities linked to one account.",
 		Inputs:     "One username.",
 		Output:     "A JSON list of provider, display_name, and linked/last-login timestamps.",
 		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND.",
 		Example:    "moment user identities visitor --data-dir ./moment-data --json",
+		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityDirectOnly,
 		Run:        runAccountIdentities,
 	})

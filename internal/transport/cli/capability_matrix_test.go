@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/cobra"
 	"io"
 	"reflect"
 	"sort"
@@ -193,6 +194,29 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		"backup merge-discard": {"merge-selection.json"},
 		"dev scenario":         {"timeline-empty"},
 		"link unfurl":          {"https://example.com/a"},
+		"user approve":         {"applicant"},
+		"user suspend":         {"applicant"},
+		"user identities":      {"applicant"},
+	}
+	// A leaf that takes a positional argument and has no entry above would be
+	// executed here with none, and a leaf that takes one without declaring it
+	// would never be reached at all. Both shipped once: three account review
+	// commands answered "unknown command <username>" because they omitted
+	// Args, and nothing noticed because nothing ran them with an argument.
+	for _, leaf := range production.leaves {
+		command := strings.Join(leaf.Path, " ")
+		if leaf.ArgsUsage == "" {
+			continue
+		}
+		if leaf.Args == nil {
+			t.Fatalf("%s documents %q but declares no Args, so cobra reads it as a subcommand", command, leaf.ArgsUsage)
+		}
+		// Only a required argument needs an entry. Asking the validator itself
+		// rather than reading the brackets in ArgsUsage keeps the two from
+		// disagreeing about which arguments are optional.
+		if _, present := positional[command]; !present && leaf.Args(&cobra.Command{}, nil) != nil {
+			t.Fatalf("%s requires %q but this test would execute it with no argument", command, leaf.ArgsUsage)
+		}
 	}
 	for _, row := range matrix.Commands {
 		for _, modeCase := range []struct {
@@ -322,11 +346,11 @@ func TestEveryHelpSurfaceMatchesGoldenDigest(t *testing.T) {
 		"site get":               "75894a8a50d52a6ed1b3d9d57232b7a89cea0b09127210fa712999079b264aa4",
 		"site update":            "27c74502530077eb51c20a727a3ac4e7000928e03e7f1121683aae42a1018dd8",
 		"user":                   "c41c66e7dd581b2b884c7db4b0c7d8bff7d0379839f6312db8c62132893dc58e",
-		"user approve":           "827a75d91c6cb87218d40dc785fa539d88440858d09c5cedc0c02848ff4c1ba9",
-		"user identities":        "ebe0485d45296b3bf55dcf224aedcb4a6dd0ab01b53325d067ea96449f99b5cc",
+		"user approve":           "3d352c04582b4209115e54fae864ad6a58b39c2f6cf1354224840e5a358733f8",
+		"user identities":        "a29117dffc7f6ee2e562ddfe5df03fbd10f021b7557f2b301b9e5b16d072e81d",
 		"user list":              "0c2784e8dc42021acf0951a51833f30c79093cc2096b89236ad61a014454b004",
 		"user suggest":           "bdbd94abb523578a697bff57823b2435f3c1eb819b31006b04dffb7b1d97d854",
-		"user suspend":           "787b20ede89e452d917249a07a5def9832e0738b6ce06c53c3a8fed5e882b00c",
+		"user suspend":           "afa8ad3db46186bac71f4e10fe898faa357505d70b5dc21f0a2a7aa7d174a0d4",
 		"version":                "0b69aae12549989186adc1cc9dd8066fcdb54f7f349a2b023e2df150d7f1dce1",
 	}
 

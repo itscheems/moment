@@ -33,7 +33,7 @@ type AccountStore interface {
 	CreateAccountWithIdentity(ctx context.Context, user domain.User, identity domain.Identity) error
 	LinkIdentity(ctx context.Context, identity domain.Identity) error
 	UnlinkIdentity(ctx context.Context, userID, provider string) error
-	RecordIdentityLogin(ctx context.Context, provider, providerUserID string, atMS int64) error
+	RefreshIdentity(ctx context.Context, identity domain.Identity) error
 
 	UpdateProfile(ctx context.Context, user domain.User) error
 	SetStatus(ctx context.Context, userID string, status domain.AccountStatus, atMS int64) error
@@ -192,7 +192,7 @@ func (service *AccountService) SignIn(ctx context.Context, external ExternalIden
 			if user.Status == domain.AccountSuspended {
 				return domain.NewError(domain.CodeAccountSuspended, "this account has been suspended", nil)
 			}
-			if err := accounts.RecordIdentityLogin(ctx, external.Provider, external.ProviderUserID, nowMS); err != nil {
+			if err := accounts.RefreshIdentity(ctx, refreshedIdentity(existing, external, nowMS)); err != nil {
 				return err
 			}
 			outcome = SignInOutcome{User: user}
@@ -270,7 +270,7 @@ func (service *AccountService) LinkIdentity(ctx context.Context, userID string, 
 		}
 		if found {
 			if existing.UserID == userID {
-				return accounts.RecordIdentityLogin(ctx, external.Provider, external.ProviderUserID, nowMS)
+				return accounts.RefreshIdentity(ctx, refreshedIdentity(existing, external, nowMS))
 			}
 			return domain.NewError(domain.CodeIdentityAlreadyLinked, "that provider account is already linked to another account here", map[string]any{"provider": external.Provider})
 		}
@@ -374,6 +374,34 @@ func randomDigits(count int) (string, error) {
 		digits[index] = '0' + value%10
 	}
 	return string(digits), nil
+}
+
+// refreshedIdentity folds what a provider just said into what was stored.
+//
+// Every sign-in re-reads the provider, so a first sign-in that was rate limited
+// or ran without the address scope is repaired by the next one rather than
+// being a permanent fact about the account. The fold is deliberately one-way:
+// a fresh answer replaces a stored one only when it carries at least as much,
+// because the same transient failure that produced the gap would otherwise
+// erase an address that had already been read successfully.
+func refreshedIdentity(stored domain.Identity, external ExternalIdentity, nowMS int64) domain.Identity {
+	refreshed := stored
+	refreshed.LastLoginAtMS = nowMS
+
+	if external.Email != "" {
+		email := external.Email
+		refreshed.Email = &email
+		refreshed.EmailVerified = external.EmailVerified
+		refreshed.EmailDeliverable = external.EmailDeliverable
+	}
+	if external.DisplayName != "" {
+		refreshed.DisplayName = external.DisplayName
+	}
+	if external.AvatarURL != "" {
+		avatar := external.AvatarURL
+		refreshed.AvatarURL = &avatar
+	}
+	return refreshed
 }
 
 func identityFrom(external ExternalIdentity, userID string, nowMS int64) domain.Identity {
@@ -804,4 +832,26 @@ func (service *AccountService) CurrentRegistrationMode(ctx context.Context) (dom
 		return err
 	})
 	return mode, err
+}
+
+// expiredSessionGrace keeps a just-expired row around long enough that "when
+// did this device last sign in" is still answerable for a while after it
+// stopped working.
+const expiredSessionGrace = 7 * 24 * time.Hour
+
+// SweepExpiredSessions removes rows that stopped meaning anything.
+//
+// Nothing reads an expired session -- authorisation compares against the signed
+// cookie's own expiry first -- so this is housekeeping, not enforcement. It
+// exists because the table otherwise only grows: every sign-in adds a row and
+// nothing ever removed one.
+func (service *AccountService) SweepExpiredSessions(ctx context.Context) (int, error) {
+	cutoff := domain.TimeToMillis(domain.NormalizeTime(service.clock().Add(-expiredSessionGrace)))
+	var removed int
+	err := service.transactions.WriteAccounts(ctx, func(_ AccountStore, sessions SessionStore) error {
+		count, err := sessions.PurgeExpiredSessions(ctx, cutoff)
+		removed = count
+		return err
+	})
+	return removed, err
 }

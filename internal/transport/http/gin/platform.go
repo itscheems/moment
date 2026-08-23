@@ -157,7 +157,7 @@ func New(config Config) (*gin.Engine, error) {
 		}
 		gate = NewGate(config.OwnerAuth, config.Accounts)
 		RegisterOwnerRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
-		RegisterAccountRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
+		RegisterAccountRoutes(engine, gate, config.Media, CookieOptions{Secure: config.SecureCookies})
 		// A deployment with no provider credentials still registers the routes;
 		// the provider list comes back empty and the sign-in page draws no
 		// buttons. Registering conditionally would make a misconfiguration look

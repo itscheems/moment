@@ -459,3 +459,81 @@ func startOAuthFlowOn(t *testing.T, engine http.Handler) (*http.Cookie, string) 
 	}
 	return flow, location.Query().Get("state")
 }
+
+// A sign-in re-reads the provider, and what it learns has to be able to repair
+// a previous answer without being able to destroy one.
+//
+// The first sign-in is the only one that used to write these fields, so a
+// transient failure at that moment -- GitHub rate limiting the address call, or
+// an app registration that had lost the address scope -- became a permanent
+// fact about the account. Refreshing fixes that, but the fold has to be one
+// way: the same failure recurring must not erase an address that was already
+// read successfully.
+func TestSignInRepairsAnIdentityWithoutErasingWhatItAlreadyKnew(t *testing.T) {
+	fixture := newOAuthFixture(t)
+
+	// A first sign-in that could not read an address at all.
+	fixture.provider.identity.Email = ""
+	fixture.provider.identity.EmailVerified = false
+	fixture.provider.identity.EmailDeliverable = false
+	flow, state := fixture.startFlow(t, "")
+	if sessionCookieFrom(fixture.do(t, callbackRequest(state, "code", flow))) == nil {
+		t.Fatal("a sign-in with no address should still sign in")
+	}
+	member := memberAccount(t, fixture)
+	if stored := onlyIdentity(t, fixture, member.ID); stored.Email != nil {
+		t.Fatalf("an address appeared from nowhere: %v", *stored.Email)
+	}
+
+	// The next one reads it. The gap is repaired rather than carried forever.
+	fixture.provider.identity.Email = "visitor@example.test"
+	fixture.provider.identity.EmailVerified = true
+	fixture.provider.identity.EmailDeliverable = true
+	flow, state = fixture.startFlow(t, "")
+	fixture.do(t, callbackRequest(state, "code", flow))
+	repaired := onlyIdentity(t, fixture, member.ID)
+	if repaired.Email == nil || *repaired.Email != "visitor@example.test" || !repaired.EmailVerified {
+		t.Fatalf("a later sign-in did not repair the address: %+v", repaired)
+	}
+
+	// And the failure recurring does not take it back out again.
+	fixture.provider.identity.Email = ""
+	fixture.provider.identity.EmailVerified = false
+	fixture.provider.identity.EmailDeliverable = false
+	flow, state = fixture.startFlow(t, "")
+	fixture.do(t, callbackRequest(state, "code", flow))
+	kept := onlyIdentity(t, fixture, member.ID)
+	if kept.Email == nil || *kept.Email != "visitor@example.test" {
+		t.Fatalf("a transient failure erased a known address: %+v", kept)
+	}
+	if kept.LastLoginAtMS < repaired.LastLoginAtMS {
+		t.Fatal("the sign-in was not recorded")
+	}
+}
+
+func memberAccount(t *testing.T, fixture oauthFixture) domain.User {
+	t.Helper()
+	accounts, err := fixture.accounts.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, account := range accounts {
+		if account.Role == domain.UserRoleMember {
+			return account
+		}
+	}
+	t.Fatal("no member account exists")
+	return domain.User{}
+}
+
+func onlyIdentity(t *testing.T, fixture oauthFixture, userID string) domain.Identity {
+	t.Helper()
+	identities, err := fixture.accounts.Identities(context.Background(), userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(identities) != 1 {
+		t.Fatalf("identities = %d, want exactly one", len(identities))
+	}
+	return identities[0]
+}

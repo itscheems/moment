@@ -132,10 +132,9 @@ func (store *memoryAccounts) UnlinkIdentity(_ context.Context, userID, provider 
 	return domain.NewError(domain.CodeAccountNotFound, "not linked", nil)
 }
 
-func (store *memoryAccounts) RecordIdentityLogin(_ context.Context, provider, providerUserID string, atMS int64) error {
-	key := identityKey(provider, providerUserID)
-	if identity, found := store.identities[key]; found {
-		identity.LastLoginAtMS = atMS
+func (store *memoryAccounts) RefreshIdentity(_ context.Context, identity domain.Identity) error {
+	key := identityKey(identity.Provider, identity.ProviderUserID)
+	if _, found := store.identities[key]; found {
 		store.identities[key] = identity
 	}
 	return nil

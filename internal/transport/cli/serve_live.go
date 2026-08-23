@@ -37,6 +37,10 @@ type liveServerHost struct {
 	exporter       *archive.Exporter
 	committer      *hostedImportCommitter
 	database       *sqlitestore.Database
+	// accounts follows the live generation the same way database does, so the
+	// session janitor sweeps whichever generation is current rather than one
+	// captured when the process started.
+	accounts *app.AccountService
 }
 
 type hostedImportCommitter struct {
@@ -224,6 +228,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	host.mu.Lock()
 	previous := host.database
 	host.database = database
+	host.accounts = accountService
 	host.mu.Unlock()
 	if previous != nil && previous != database {
 		return errors.Join(errors.New("live activation replaced an unclosed database"), previous.Close())
@@ -315,4 +320,36 @@ func isLoopbackHost(address string) bool {
 	}
 	parsed := net.ParseIP(address)
 	return parsed != nil && parsed.IsLoopback()
+}
+
+// RunSessionRetention removes sessions that stopped meaning anything.
+//
+// It lives here rather than beside the account service because the service is
+// rebuilt on every generation swap: reading the current one per sweep is what
+// keeps an import commit from leaving the janitor pointed at a closed database.
+//
+// Nothing reads an expired session -- the signed cookie's own expiry is checked
+// before the row is -- so this is housekeeping. It exists because the table
+// otherwise only grew: every sign-in added a row and nothing ever removed one.
+func (host *liveServerHost) RunSessionRetention(ctx context.Context) {
+	sweep := func() {
+		host.mu.RLock()
+		accounts := host.accounts
+		host.mu.RUnlock()
+		if accounts == nil {
+			return
+		}
+		_, _ = accounts.SweepExpiredSessions(ctx)
+	}
+	sweep()
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			sweep()
+		}
+	}
 }

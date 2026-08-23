@@ -10,6 +10,7 @@ import (
 	gin "github.com/gin-gonic/gin"
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
 )
 
 // accountView is the public projection of one account.
@@ -92,9 +93,17 @@ type statusPatch struct {
 	Status string `json:"status"`
 }
 
+// maxAccountPictureBytes bounds what an account may upload for itself.
+//
+// The general media ceiling is sized for a five minute video, which is not a
+// portrait. Bounding this separately means a picture that is obviously not one
+// is refused before any of it is read, rather than after the pipeline has
+// spent the work discovering the same thing.
+const maxAccountPictureBytes = 8 << 20
+
 // RegisterAccountRoutes installs the routes an account uses on itself, the
 // public account lookup, and the owner's review screens.
-func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, cookies CookieOptions) {
+func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store, cookies CookieOptions) {
 	engine.GET("/api/v1/users/:username", publicAccountLookup(gate))
 
 	// Pending accounts reach everything in this group. None of it is visible
@@ -107,6 +116,18 @@ func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, cookies CookieOptions
 	account.DELETE("/identities/:provider", unlinkOwnIdentity(gate))
 	account.GET("/sessions", listOwnSessions(gate))
 	account.DELETE("/sessions", revokeOwnSessions(gate, cookies))
+
+	// Uploading is the one thing on an account's own profile that a pending
+	// account may not do. Everything else here is text an input validator
+	// bounds; this writes bytes to the disk, and an account nobody has admitted
+	// yet should not be able to do that. Clearing a picture stays available,
+	// because that consumes nothing.
+	if pictures != nil {
+		uploads := engine.Group("/api/v1/account")
+		uploads.Use(gate.RequireActiveAccount())
+		uploads.POST("/avatar", setAccountPicture(gate, pictures, "avatar"))
+		uploads.POST("/cover", setAccountPicture(gate, pictures, "cover"))
+	}
 
 	owner := engine.Group("/api/v1/owner/accounts")
 	owner.Use(gate.RequireOwner())
@@ -230,7 +251,11 @@ func listOwnIdentities(gate *Gate) gin.HandlerFunc {
 				LinkedAt:    time.UnixMilli(identity.CreatedAtMS).UTC(),
 				LastLoginAt: time.UnixMilli(identity.LastLoginAtMS).UTC(),
 			}
-			if identity.Email != nil && identity.EmailDeliverable {
+			// Both, not either. GitHub can report an address that is real but
+			// unproven -- a public profile address it never checked belongs to
+			// the account -- and showing that next to one a provider actually
+			// verified would make them look like the same kind of fact.
+			if identity.Email != nil && identity.EmailVerified && identity.EmailDeliverable {
 				item.Email = *identity.Email
 			}
 			items = append(items, item)
@@ -344,6 +369,72 @@ func setAccountStatus(gate *Gate) gin.HandlerFunc {
 			return
 		}
 		updated, err := gate.accounts.SetStatus(ctx.Request.Context(), ctx.Param("id"), domain.AccountStatus(patch.Status))
+		if err != nil {
+			writeAccountError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, privateAccount(updated), nil)
+	}
+}
+
+// setAccountPicture ingests one image and assigns it in the same request.
+//
+// It exists instead of opening the general media route to members. That route
+// adds to a pool nothing points at yet, so admitting members to it would mean
+// an approved account could fill the disk with files no account had claimed.
+// Ingesting and assigning together keeps every byte a member writes reachable
+// from exactly one profile, which is also what makes the picture it replaces
+// collectable.
+func setAccountPicture(gate *Gate, pictures *media.Store, kind string) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		account, ok := CurrentAccount(ctx)
+		if !ok {
+			unauthorized(ctx)
+			return
+		}
+		fileHeader, err := ctx.FormFile("file")
+		if err != nil {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "multipart field 'file' is required", map[string]any{"field": "file"})
+			return
+		}
+		if ctx.Request.MultipartForm != nil {
+			defer func() { _ = ctx.Request.MultipartForm.RemoveAll() }()
+		}
+		if fileHeader.Size > maxAccountPictureBytes {
+			Failure(ctx, http.StatusRequestEntityTooLarge, string(domain.CodeMediaTooLarge),
+				"a profile picture must be 8 MiB or smaller", map[string]any{"limit_bytes": maxAccountPictureBytes})
+			return
+		}
+		file, err := fileHeader.Open()
+		if err != nil {
+			Failure(ctx, http.StatusBadRequest, string(domain.CodeMediaCorrupt), "the uploaded picture could not be opened", nil)
+			return
+		}
+		defer func() { _ = file.Close() }()
+
+		value, _, err := pictures.Ingest(ctx.Request.Context(), fileHeader.Filename, file)
+		if err != nil {
+			writeMediaError(ctx, err)
+			return
+		}
+		// The pipeline accepts video, and a profile is not a place for one.
+		// The ingested row is left unreferenced rather than deleted here: it is
+		// already what the collector looks for, and deleting media is not this
+		// handler's authority.
+		if !strings.HasPrefix(value.MIMEType, "image/") {
+			Failure(ctx, http.StatusUnsupportedMediaType, string(domain.CodeMediaTypeUnsupported),
+				"a profile picture must be an image", map[string]any{"mime_type": value.MIMEType})
+			return
+		}
+
+		assigned := value.ID.String()
+		update := app.ProfileUpdate{}
+		if kind == "cover" {
+			update.CoverMediaID = &app.NullableString{Value: &assigned}
+		} else {
+			update.AvatarMediaID = &app.NullableString{Value: &assigned}
+		}
+		updated, err := gate.accounts.UpdateProfile(ctx.Request.Context(), account.ID, update)
 		if err != nil {
 			writeAccountError(ctx, err)
 			return

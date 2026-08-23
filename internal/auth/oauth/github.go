@@ -21,7 +21,11 @@ const (
 	githubAuthorizeURL = "https://github.com/login/oauth/authorize"
 	githubTokenURL     = "https://github.com/login/oauth/access_token"
 	githubUserURL      = "https://api.github.com/user"
-	githubEmailsURL    = "https://api.github.com/user/emails"
+	// per_page is pinned at GitHub's maximum because the adapter reads one page
+	// and never follows Link. The default is 30, so without this an account
+	// whose primary address happens to sort onto page two would silently
+	// degrade to its profile address, or to none at all.
+	githubEmailsURL = "https://api.github.com/user/emails?per_page=100"
 	// githubNoReplyDomain marks addresses GitHub issues in place of a real one.
 	// They are syntactically valid and permanently undeliverable.
 	githubNoReplyDomain = "@users.noreply.github.com"
@@ -39,23 +43,49 @@ const (
 // who only wants to sign in.
 type GitHub struct {
 	config *oauth2.Config
+	// userURL and emailsURL are held rather than read from the constants above
+	// so the adapter can be pointed somewhere else; see newGitHubAt.
+	userURL   string
+	emailsURL string
 }
 
 // NewGitHub builds the GitHub provider.
 func NewGitHub(credentials Credentials, redirectURL string) *GitHub {
+	return newGitHubAt(credentials, redirectURL, githubEndpoints{
+		authorize: githubAuthorizeURL,
+		token:     githubTokenURL,
+		user:      githubUserURL,
+		emails:    githubEmailsURL,
+	})
+}
+
+// githubEndpoints is the set of addresses one GitHub adapter talks to.
+type githubEndpoints struct{ authorize, token, user, emails string }
+
+// newGitHubAt is NewGitHub with the endpoints left open, so the adapter can be
+// exercised against a stand-in that speaks the same protocol. What that buys is
+// the email resolution below: a private profile address, a noreply primary, a
+// token without user:email are all ordinary for real people and none of them
+// can be staged against github.com. Production has exactly one set of endpoints
+// and NewGitHub is the only way to reach them.
+func newGitHubAt(credentials Credentials, redirectURL string, endpoints githubEndpoints) *GitHub {
 	if !credentials.Configured() || redirectURL == "" {
 		return nil
 	}
-	return &GitHub{config: &oauth2.Config{
-		ClientID:     credentials.ClientID,
-		ClientSecret: credentials.ClientSecret,
-		Endpoint:     oauth2.Endpoint{AuthURL: githubAuthorizeURL, TokenURL: githubTokenURL},
-		RedirectURL:  redirectURL,
-		// read:user reads the profile and user:email reads addresses. Both are
-		// needed: read:user alone never yields an address, and most accounts
-		// keep theirs private, which makes /user report a null email.
-		Scopes: []string{"read:user", "user:email"},
-	}}
+	return &GitHub{
+		config: &oauth2.Config{
+			ClientID:     credentials.ClientID,
+			ClientSecret: credentials.ClientSecret,
+			Endpoint:     oauth2.Endpoint{AuthURL: endpoints.authorize, TokenURL: endpoints.token},
+			RedirectURL:  redirectURL,
+			// read:user reads the profile and user:email reads addresses. Both are
+			// needed: read:user alone never yields an address, and most accounts
+			// keep theirs private, which makes /user report a null email.
+			Scopes: []string{"read:user", "user:email"},
+		},
+		userURL:   endpoints.user,
+		emailsURL: endpoints.emails,
+	}
 }
 
 // Name reports the provider key.
@@ -96,7 +126,7 @@ func (github *GitHub) Exchange(ctx context.Context, code, verifier, _ string) (a
 	}
 
 	var profile githubUser
-	if err := github.get(ctx, token, githubUserURL, &profile); err != nil {
+	if err := github.get(ctx, token, github.userURL, &profile); err != nil {
 		return app.ExternalIdentity{}, err
 	}
 	if profile.ID == 0 {
@@ -131,18 +161,19 @@ func (github *GitHub) Exchange(ctx context.Context, code, verifier, _ string) (a
 // one proves nothing about who controls it.
 func (github *GitHub) resolveEmail(ctx context.Context, token *oauth2.Token, profile githubUser) (string, bool, bool) {
 	var addresses []githubEmail
-	if err := github.get(ctx, token, githubEmailsURL, &addresses); err == nil {
+	if err := github.get(ctx, token, github.emailsURL, &addresses); err == nil {
 		for _, candidate := range addresses {
-			if candidate.Primary && candidate.Verified && candidate.Email != "" {
-				return candidate.Email, true, !strings.HasSuffix(strings.ToLower(candidate.Email), githubNoReplyDomain)
+			address := strings.TrimSpace(candidate.Email)
+			if candidate.Primary && candidate.Verified && address != "" {
+				return address, true, !strings.HasSuffix(strings.ToLower(address), githubNoReplyDomain)
 			}
 		}
 	}
 	// The profile address, when present at all, is one GitHub already shows
 	// publicly. It is worth keeping for recognition, but nothing here has
 	// verified it.
-	if profile.Email != "" {
-		return profile.Email, false, !strings.HasSuffix(strings.ToLower(profile.Email), githubNoReplyDomain)
+	if address := strings.TrimSpace(profile.Email); address != "" {
+		return address, false, !strings.HasSuffix(strings.ToLower(address), githubNoReplyDomain)
 	}
 	// No address is a supported outcome, not a failure.
 	return "", false, false

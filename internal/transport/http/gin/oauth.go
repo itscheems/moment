@@ -1,6 +1,7 @@
 package ginhttp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -23,6 +24,14 @@ const (
 	oauthCookiePath = "/api/v1/login/oauth"
 	// oauthFlowTTL bounds how long a started sign-in may be completed.
 	oauthFlowTTL = 10 * time.Minute
+	// oauthExchangeBudget bounds one completed callback.
+	//
+	// A provider exchange is several sequential calls -- the token endpoint,
+	// then a profile, then addresses -- each with its own client timeout, so
+	// without a budget over the whole thing a slow provider can hold somebody's
+	// sign-in open for the sum of them. The person waiting is better served by
+	// being told to try again.
+	oauthExchangeBudget = 20 * time.Second
 	// signInPath is where a failed sign-in returns the person to.
 	signInPath = "/owner/login"
 )
@@ -188,7 +197,9 @@ func completeOAuth(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 			return
 		}
 
-		external, err := provider.Exchange(ctx.Request.Context(), code, flow.Verifier, flow.Nonce)
+		exchangeCtx, cancelExchange := context.WithTimeout(ctx.Request.Context(), oauthExchangeBudget)
+		defer cancelExchange()
+		external, err := provider.Exchange(exchangeCtx, code, flow.Verifier, flow.Nonce)
 		if err != nil {
 			config.record(ctx, "warn", "auth_login_failed", map[string]any{"provider": flow.Provider, "reason": "exchange"})
 			redirectToSignIn(ctx, domain.CodeOAuthExchangeFailed)
