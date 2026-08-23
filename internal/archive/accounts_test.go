@@ -626,3 +626,149 @@ func mustReadFile(t *testing.T, name string) []byte {
 	}
 	return data
 }
+
+// The refusal a merge cannot avoid arrives before the review, not after it.
+//
+// Two accounts sharing a handle is fatal whatever the reviewer chooses, and the
+// comparison never looked at handles -- it matches accounts by id. So a
+// reviewer worked through every conflict in the plan, pressed commit, and was
+// told then that this backup can never be merged at all.
+func TestMergePlanRefusesAContestedHandleBeforeTheReviewStarts(t *testing.T) {
+	ctx := context.Background()
+	fixture := newExportFixture(t, false)
+	insertAccountsFixture(t, fixture)
+	archivePath := exportFixtureFile(t, fixture)
+
+	// The backup's "newcomer" is gone from this site, and a different person
+	// took the handle. Neither account can keep it and neither can be renamed.
+	replacement := "2f2e2d2c2b2a29282726252423222120"
+	if err := fixture.database.WriteTx(ctx, func(queries sqlitestore.Queries) error {
+		if _, err := queries.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, pendingAccountID); err != nil {
+			return err
+		}
+		_, err := queries.ExecContext(ctx, `
+INSERT INTO users (id, username, display_name, bio, avatar_media_id, cover_media_id, role, status, username_set_at_ms, created_at_ms, updated_at_ms)
+VALUES (?, 'newcomer', 'Someone Else', '', NULL, NULL, 'member', 'active', 1700000005000, 1700000005000, 1700000005000)`, replacement)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := auth.InitializeOffline(ctx, fixture.runtime, auth.Options{}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 8, 23, 6, 0, 0, 0, time.UTC)
+	committer, err := NewCommitter(CommitOptions{
+		DataDir: fixture.runtime.Root, AppVersion: "0.1.0", Clock: func() time.Time { return now },
+		AvailableBytes: func(string) (uint64, error) { return math.MaxUint64, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := committer.InspectMergeFileOffline(ctx, archivePath, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.MergeAllowed {
+		t.Fatal("a merge that cannot be applied was offered as available")
+	}
+	if inspection.MergeBlockedReason == nil || *inspection.MergeBlockedReason != string(domain.CodeUsernameTaken) {
+		t.Fatalf("merge blocked reason = %v", inspection.MergeBlockedReason)
+	}
+	// The review is still built, so the reader can see what the backup holds
+	// and decide whether a full replacement is what they want instead.
+	if inspection.Review.IncomingOnly.Total+inspection.Review.LocalOnly.Total == 0 {
+		t.Fatalf("blocked inspection carried no review: %#v", inspection.Review)
+	}
+	// And the apply-time refusal is still there behind it.
+	if _, err := committer.CommitMerge(ctx, inspection.StagingToken, 1, inspection.Plan.DefaultSelection, nil); !domain.HasCode(err, domain.CodeUsernameTaken) {
+		t.Fatalf("commit of a blocked merge = %v", err)
+	}
+}
+
+// A backup naming a suspended owner used to restore an instance nobody could
+// sign into.
+//
+// SetStatus refuses to suspend an owner precisely so the last administrator
+// cannot be locked out, and the import path wrote the archived status straight
+// into the column, going around it. There is no in-product way back from that:
+// a suspended account cannot sign in, and only a signed-in owner can change a
+// status.
+func TestRestoringASuspendedOwnerAdmitsThemAnyway(t *testing.T) {
+	ctx := context.Background()
+	fixture := newExportFixture(t, false)
+	insertAccountsFixture(t, fixture)
+	if err := fixture.database.WriteTx(ctx, func(queries sqlitestore.Queries) error {
+		_, err := queries.ExecContext(ctx, `UPDATE users SET status = 'suspended' WHERE role = 'owner'`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Date(2026, 8, 23, 3, 4, 5, 0, time.UTC)
+	result, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(
+		ctx, exportFixtureFile(t, fixture), 7,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stagedUsers, _, stagedSite := stagedAccounts(t, fixture, result)
+	var owner sqlitestore.ArchiveUser
+	for _, value := range stagedUsers {
+		if value.ID == stagedSite.OwnerID {
+			owner = value
+		}
+	}
+	if owner.Role != string(domain.UserRoleOwner) || owner.Status != string(domain.AccountActive) {
+		t.Fatalf("staged owner = %#v", owner)
+	}
+	// Only the owner is admitted. A member the backup suspended stays that way.
+	for _, value := range stagedUsers {
+		if value.Username == "newcomer" && value.Status != string(domain.AccountPending) {
+			t.Fatalf("a member's status was rewritten: %#v", value)
+		}
+	}
+}
+
+// The same admission on the merge path, where the owner row is rebuilt rather
+// than adopted.
+func TestMergedOwnerIsAdmittedWhateverTheAuthoritiesSay(t *testing.T) {
+	ownerID := "00112233445566778899aabbccddeeff"
+	memberID := "aa112233445566778899aabbccddeeff"
+	suspendedOwner := sqlitestore.ArchiveUser{
+		ID: ownerID, Username: "owner", DisplayName: "Owner", Role: "owner", Status: "suspended",
+		CreatedAtMS: 1, UpdatedAtMS: 1,
+	}
+	site := sqlitestore.ArchiveSite{OwnerID: ownerID, Username: "owner", DisplayName: "Owner", Title: "T", Timezone: "UTC"}
+	local := PortableAuthority{
+		Site:  site,
+		Users: []sqlitestore.ArchiveUser{suspendedOwner, {ID: memberID, Username: "meihua", DisplayName: "Local", Role: "member", Status: "suspended", CreatedAtMS: 1, UpdatedAtMS: 1}},
+	}
+	incoming := PortableAuthority{Site: site, Users: []sqlitestore.ArchiveUser{suspendedOwner}}
+	plan, err := ComparePortableAuthorities(MergePlanInput{
+		ArchiveSHA256: repeatHex("c"), BaseGeneration: "generation",
+		ExpiresAt: time.Unix(20, 0).UTC(), Local: local, Incoming: incoming,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := ResolvePortableMerge(plan, plan.DefaultSelection, local, incoming, MergeResolveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range resolved.Authority.Users {
+		switch value.ID {
+		case ownerID:
+			if value.Role != string(domain.UserRoleOwner) || value.Status != string(domain.AccountActive) {
+				t.Fatalf("merged owner = %#v", value)
+			}
+		case memberID:
+			// A member's suspension is a decision this site made and keeps.
+			if value.Status != string(domain.AccountSuspended) {
+				t.Fatalf("merged member = %#v", value)
+			}
+		}
+	}
+}

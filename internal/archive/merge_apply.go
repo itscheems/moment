@@ -287,6 +287,78 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 	return result, nil
 }
 
+// handleClaimer enforces one account per handle across both sides of a merge.
+//
+// It is a type rather than a closure because the same rule has to answer twice
+// at different moments: once while the plan is being built, so a collision
+// reaches the reviewer before they work through it, and once while the merged
+// generation is being resolved, which is the last gate before anything is
+// written. Two transcriptions of the rule would be two answers.
+type handleClaimer map[string]string
+
+func (claimed handleClaimer) claim(userID, username string) error {
+	handle := strings.ToLower(username)
+	if holder, taken := claimed[handle]; taken && holder != userID {
+		return domain.NewError(domain.CodeUsernameTaken, "the backup and this site both have an account using one username", map[string]any{
+			"username": username, "local_user_id": holder, "incoming_user_id": userID,
+		})
+	}
+	claimed[handle] = userID
+	return nil
+}
+
+// release gives a handle up so its holder can claim a different one. The owner
+// is the only account a merge renames, and it renames it to whatever the
+// resolved site says.
+func (claimed handleClaimer) release(username string) {
+	delete(claimed, strings.ToLower(username))
+}
+
+// mergeUsernameCollision reports a handle a local account and a different
+// incoming account both claim.
+//
+// It walks the two sides in the order resolveMergeAccounts does, so it sees
+// the same collisions that would abort the apply -- minus the one the owner's
+// rename can introduce, which depends on a site-field choice nobody has made
+// yet. Everything it finds is fatal whatever the reviewer chooses, which is
+// what makes it safe to report before the choosing starts.
+func mergeUsernameCollision(local, incoming PortableAuthority) error {
+	handles := handleClaimer{}
+	known := make(map[string]struct{}, len(local.Users))
+	for _, value := range sortedUsers(local.Users) {
+		if err := handles.claim(value.ID, value.Username); err != nil {
+			return err
+		}
+		known[value.ID] = struct{}{}
+	}
+	for _, value := range sortedUsers(incoming.Users) {
+		// A backup copy of an account this instance already has is discarded
+		// whole, handle included, so it can never collide with anything.
+		if _, exists := known[value.ID]; exists {
+			continue
+		}
+		if err := handles.claim(value.ID, value.Username); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// admittedOwner is the account row the site owner is written with, whatever
+// the archive said about it.
+//
+// The role is forced because a site has exactly one owner and this is it. The
+// status is forced for the same reason one step further on: SetStatus refuses
+// to suspend an owner precisely so nobody can lock the last administrator out
+// of their own instance, and an archive naming a suspended owner would do it
+// anyway -- restoring a site whose only way back in is editing the database by
+// hand.
+func admittedOwner(value sqlitestore.ArchiveUser) sqlitestore.ArchiveUser {
+	value.Role = string(domain.UserRoleOwner)
+	value.Status = string(domain.AccountActive)
+	return value
+}
+
 // resolveMergeAccounts decides which accounts and credentials the merged
 // generation holds. There is no selection to consult, on purpose.
 //
@@ -313,15 +385,11 @@ func resolveMergeAccounts(local, incoming PortableAuthority, site sqlitestore.Ar
 		return nil, nil, nil
 	}
 	accounts := map[string]sqlitestore.ArchiveUser{}
-	handles := map[string]string{}
+	handles := handleClaimer{}
 	claim := func(value sqlitestore.ArchiveUser) error {
-		handle := strings.ToLower(value.Username)
-		if holder, taken := handles[handle]; taken && holder != value.ID {
-			return domain.NewError(domain.CodeUsernameTaken, "the backup and this site both have an account using one username", map[string]any{
-				"username": value.Username, "local_user_id": holder, "incoming_user_id": value.ID,
-			})
+		if err := handles.claim(value.ID, value.Username); err != nil {
+			return err
 		}
-		handles[handle] = value.ID
 		accounts[value.ID] = value
 		return nil
 	}
@@ -350,8 +418,8 @@ func resolveMergeAccounts(local, incoming PortableAuthority, site sqlitestore.Ar
 	if !exists {
 		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "merged accounts do not contain the site owner", map[string]any{"owner_id": site.OwnerID})
 	}
-	delete(handles, strings.ToLower(owner.Username))
-	owner.Role = string(domain.UserRoleOwner)
+	handles.release(owner.Username)
+	owner = admittedOwner(owner)
 	owner.Username, owner.DisplayName, owner.Bio = site.Username, site.DisplayName, site.Bio
 	owner.AvatarMediaID, owner.CoverMediaID = cloneString(site.AvatarMediaID), cloneString(site.CoverMediaID)
 	if err := claim(owner); err != nil {

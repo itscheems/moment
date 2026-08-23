@@ -1416,6 +1416,9 @@ func importPortableAccounts(ctx context.Context, importer *sqlitestore.PortableI
 			if err != nil {
 				return err
 			}
+			if ownerPass {
+				account = admittedOwner(account)
+			}
 			return importer.InsertUser(ctx, account)
 		}); err != nil {
 			return err
@@ -1931,6 +1934,13 @@ func validateStagedAccounts(ctx context.Context, snapshot *sqlitestore.ArchiveSn
 	switch {
 	case archiveCarriesAccounts(files):
 		if _, err := validateJSONLines[userRecord](ctx, files["data/users.jsonl"], portableUserFields, func(value userRecord, _ map[string]json.RawMessage) error {
+			// The one field the rebuild does not take the archive's word for.
+			// Expecting it back verbatim would fail every import of a backup
+			// naming a suspended owner -- the exact backups this admission
+			// exists to make restorable.
+			if domain.UserRole(value.Role) == domain.UserRoleOwner {
+				value.Status = string(domain.AccountActive)
+			}
 			expectedUsers = append(expectedUsers, value)
 			return nil
 		}); err != nil {
