@@ -299,6 +299,7 @@ function PublicApp() {
       <AppShell
         memoryYears={shellYears}
         ownerSettingsAvailable={siteIdentityReady && signedIn}
+        profileHref={owner.account?.profileUrl ?? undefined}
         route={route}
         site={site}
         state={state}

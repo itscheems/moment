@@ -582,6 +582,47 @@ describe("App shell and public routes", () => {
     );
   });
 
+  // `/profile` resolves to whoever is asking, which is right for the server and
+  // wrong for a link somebody reads before clicking: it hides the handle, and a
+  // signed-in member following it lands on a page addressed as though it were
+  // nobody's.
+  it("points the profile link at the signed-in account's own address", async () => {
+    preauthenticate();
+    // Stubbed directly rather than through installApi: that helper answers the
+    // account session itself, so a handler passed to it never sees the route
+    // whose handle this test is about. The handle differs from the site's on
+    // purpose -- a member's own page is not the site's page.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/v1/account/session") {
+          return json(accountSessionEnvelope("cheemschen"));
+        }
+        if (url === "/api/v1/site") return json(siteEnvelope);
+        return json(timelineEnvelope());
+      }),
+    );
+    render(<App />);
+
+    // The rail renders before the account session answers, so the handle-free
+    // fallback is on screen first and the assertion has to be about where the
+    // link settles rather than where it starts.
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "个人资料" })).toHaveAttribute(
+        "href",
+        "/cheemschen",
+      );
+    });
+  });
+
+  it("falls back to the handle-free entry point for a visitor with no session", async () => {
+    render(<App />);
+
+    const profileLink = await screen.findByRole("link", { name: "个人资料" });
+    expect(profileLink).toHaveAttribute("href", "/profile");
+  });
+
   // Signing in is the whole page. Everything the shell offers either needs the
   // session this page exists to obtain or is somewhere the visitor was already
   // turned away from, so framing the form with that navigation made it read as

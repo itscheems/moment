@@ -25,17 +25,26 @@ interface NavItem {
   active: RouteId[];
 }
 
-const primaryNav: NavItem[] = [
-  { label: "首页", href: "/", icon: "home", active: ["home", "detail"] },
-  { label: "搜索", href: "/search", icon: "search", active: ["search"] },
-  { label: "归档", href: "/archive", icon: "archive", active: ["archive"] },
-  {
-    label: "个人资料",
-    href: "/profile",
-    icon: "owner",
-    active: ["profile"],
-  },
-];
+// `/profile` resolves to whoever is signed in, which is right for the server
+// and wrong for a link somebody reads before clicking: it hides the handle, and
+// it sends a signed-in member to a page addressed as though it were nobody's.
+// The account's own address is used whenever the session can name one, and
+// `/profile` remains the fallback for a visitor who has not signed in.
+const DEFAULT_PROFILE_HREF = "/profile";
+
+function primaryNavFor(profileHref: string): NavItem[] {
+  return [
+    { label: "首页", href: "/", icon: "home", active: ["home", "detail"] },
+    { label: "搜索", href: "/search", icon: "search", active: ["search"] },
+    { label: "归档", href: "/archive", icon: "archive", active: ["archive"] },
+    {
+      label: "个人资料",
+      href: profileHref,
+      icon: "owner",
+      active: ["profile"],
+    },
+  ];
+}
 
 const publishNav: NavItem = {
   label: "发布",
@@ -213,17 +222,19 @@ function LeftRail({
   route,
   site,
   ownerSettingsAvailable,
+  profileHref,
 }: {
   route: AppRoute;
   site: SiteIdentity;
   ownerSettingsAvailable: boolean;
+  profileHref: string;
 }) {
   const { navigateOverlay } = useNavigation();
   return (
     <aside aria-label="站点导航" className={styles.leftRail}>
       <Brand site={site} />
       <nav aria-label="主要导航" className={styles.desktopNav}>
-        {primaryNav.map((item) => (
+        {primaryNavFor(profileHref).map((item) => (
           <NavLink item={item} key={item.href} route={route} />
         ))}
         <ThemeMenu navigation site={site} />
@@ -300,9 +311,11 @@ function MemoryRail({
 function MobileAccountMenu({
   ownerSettingsAvailable,
   site,
+  profileHref,
 }: {
   ownerSettingsAvailable: boolean;
   site: SiteIdentity;
+  profileHref: string;
 }) {
   const { navigate } = useNavigation();
   const ownerItem = ownerNav(ownerSettingsAvailable);
@@ -324,7 +337,7 @@ function MobileAccountMenu({
           <Menu.Popup aria-label="账户" className={styles.mobileAccountPopup}>
             <Menu.Item
               className={styles.mobileAccountItem}
-              onClick={() => navigate("/profile")}
+              onClick={() => navigate(profileHref)}
             >
               <Icon name="owner" />
               <span>个人资料</span>
@@ -355,7 +368,7 @@ function MobileNavigation({
   const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const obscured = useMobileNavigationObscured(mobileViewport);
   const items: NavItem[] = [
-    ...primaryNav.slice(0, 3),
+    ...primaryNavFor(DEFAULT_PROFILE_HREF).slice(0, 3),
     publishNav,
     ownerNav(ownerSettingsAvailable),
   ];
@@ -379,6 +392,7 @@ export function AppShell({
   children,
   memoryYears = [],
   ownerSettingsAvailable = false,
+  profileHref = DEFAULT_PROFILE_HREF,
 }: {
   route: AppRoute;
   state: string | null;
@@ -386,6 +400,7 @@ export function AppShell({
   children?: ReactNode;
   memoryYears?: readonly number[];
   ownerSettingsAvailable?: boolean;
+  profileHref?: string;
 }) {
   const { goBack } = useNavigation();
   const scrollHomeToTop = useHomeScrollToTop();
@@ -399,6 +414,7 @@ export function AppShell({
       >
         <LeftRail
           ownerSettingsAvailable={ownerSettingsAvailable}
+          profileHref={profileHref}
           route={route}
           site={site}
         />
@@ -426,6 +442,7 @@ export function AppShell({
             ) : (
               <MobileAccountMenu
                 ownerSettingsAvailable={ownerSettingsAvailable}
+                profileHref={profileHref}
                 site={site}
               />
             )}
