@@ -1455,13 +1455,6 @@
   padding: var(--space-8) var(--space-5);
 }
 
-.actionMark {
-  align-self: center;
-  inline-size: 2.25rem;
-  block-size: 2.25rem;
-  color: var(--accent);
-}
-
 .headlineBlock {
   display: flex;
   inline-size: 100%;
@@ -1482,6 +1475,10 @@
   line-height: 1.05;
   letter-spacing: normal;
   word-break: break-word;
+  /* Suppress large selection highlights while keeping the headline available
+     to assistive technology, find-in-page, and browser translation. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .subHeadline {
@@ -1546,26 +1543,10 @@
     background-size: cover;
   }
 
-  /* White rather than --accent-contrast: the artwork behind it is a fixed
-     image, so the glyph has to read against that rather than against whichever
-     accent the reader has chosen. The accent only shows while the image loads. */
-  .brandPanel svg {
-    inline-size: min(22rem, 52%);
-    block-size: auto;
-    color: #ffffff;
-    filter: drop-shadow(0 0.25rem 1.5rem rgb(0 0 0 / 22%));
-  }
-
   .actionPanel {
     align-items: start;
     gap: var(--space-8);
     padding: var(--space-10) clamp(var(--space-8), 6vw, 4.5rem);
-  }
-
-  .actionMark {
-    align-self: start;
-    inline-size: 3rem;
-    block-size: 3rem;
   }
 
   .headlineBlock {

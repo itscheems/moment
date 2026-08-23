@@ -1,6 +1,5 @@
 import type { SiteIdentity } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
-import { MomentMark } from "../../components/MomentMark";
 import { OwnerLogin } from "./OwnerLogin";
 import styles from "./Owner.module.css";
 
@@ -18,19 +17,16 @@ import styles from "./Owner.module.css";
  * the server's question and is answered there.
  */
 export function LoginPage({ site }: { site: SiteIdentity }) {
-  const title = site.title.trim() || site.displayName.trim() || "Moment";
   return (
     <div className={styles.loginScreen}>
       <div className={styles.loginSplit}>
-        {/* Decorative: the mark is repeated at a readable size in the column
-            beside it, so a screen reader gains nothing from meeting it twice. */}
-        <div aria-hidden="true" className={styles.brandPanel}>
-          <MomentMark />
-        </div>
+        <div aria-hidden="true" className={styles.brandPanel} />
         <main className={styles.actionPanel}>
-          <MomentMark className={styles.actionMark} />
           <div className={styles.headlineBlock}>
-            <h1 className={styles.displayHeadline}>{title}</h1>
+            {/* The site's own name is not the headline. A visitor arrives here
+                before knowing whose instance they are on, and the name they
+                want is on the timeline behind them, not above the form. */}
+            <h1 className={styles.displayHeadline}>Happening now</h1>
             <p className={styles.subHeadline}>登录后继续记录此刻。</p>
           </div>
           <OwnerLogin heading={false} site={site} />

@@ -396,6 +396,18 @@ describe("visual foundation contract", () => {
     );
   });
 
+  // Dragging across a headline this size fills half the panel with selection
+  // highlight and copies nothing anybody wanted. Losing this rule looks wrong
+  // and tests green, so it is asserted rather than remembered.
+  it("refuses selection on the sign-in display line", () => {
+    // The lookbehind matters: without it `-webkit-user-select: none` satisfies
+    // the match on its own, and the unprefixed property -- the one that
+    // actually governs -- could be lost with the assertion still green.
+    expect(ownerCss).toMatch(
+      /\._displayHeadline_[\w-]+\s*\{[^}]*(?<!-)user-select: none/s,
+    );
+  });
+
   // The alternative sign-in methods sit under the provider buttons and read as
   // one of them, so they share their axis. `.loginMethodSwitch` centres itself
   // with justify-self, which does nothing without a grid parent -- the kind of
