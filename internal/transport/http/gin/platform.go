@@ -162,11 +162,16 @@ func New(config Config) (*gin.Engine, error) {
 		// the provider list comes back empty and the sign-in page draws no
 		// buttons. Registering conditionally would make a misconfiguration look
 		// like a missing feature.
-		RegisterOAuthRoutes(engine, gate, OAuthConfig{
+		oauthConfig := OAuthConfig{
 			Registry: config.OAuthProviders,
 			Cookies:  CookieOptions{Secure: config.SecureCookies},
 			Log:      surfaceLog,
-		})
+		}
+		RegisterOAuthRoutes(engine, gate, oauthConfig)
+		// Device sign-in registers unconditionally beside the browser flow, for
+		// the same reason: a provider that cannot do it answers 404 on its own
+		// name, which is a configuration answer rather than a missing route.
+		RegisterDeviceRoutes(engine, gate, oauthConfig)
 	}
 	if config.SiteSettings != nil {
 		if config.OwnerAuth == nil {
