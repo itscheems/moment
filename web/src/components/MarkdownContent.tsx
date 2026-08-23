@@ -1,4 +1,11 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  type MouseEvent,
+} from "react";
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
@@ -12,6 +19,7 @@ import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 
+import { useMentionResolver } from "../app/mentions";
 import { useNavigation } from "../app/navigation";
 
 import styles from "./MarkdownContent.module.css";
@@ -155,7 +163,15 @@ const RESERVED_HANDLES = new Set([
  * than `@cheems` is not something this instance can express. What was typed
  * stays on screen; only the address it points at is lowered.
  *
- * The exception is a handle the site has reserved for itself. `@login`,
+ * A mention only becomes a link once the handle is known to name somebody. It
+ * is text an author typed, not a reference anything checked: this instance
+ * shipped with the handle `owner` and its owner renamed, so every `@owner`
+ * written before that named nobody while still reading as a link to a profile
+ * page that answers "no such user". An unresolved handle stays the text it was
+ * typed as, which is also the right answer for a typo and for an account that
+ * has since been removed.
+ *
+ * The other exception is a handle the site has reserved for itself. `@login`,
  * `@search` and `@assets` name pages and asset directories, and the server
  * refuses to create an account under any of them -- so unlike an unknown handle,
  * which may belong to somebody by tomorrow, a link to one is wrong for good.
@@ -164,7 +180,21 @@ const RESERVED_HANDLES = new Set([
  * a directory of bundled assets. Those stay as the text they were typed as, the
  * same answer `@ab` and `@some-slug` already get.
  */
-function linkHandleMentions(html: string): string {
+/** collectHandles reports the handles a body mentions, reserved ones excluded. */
+function collectHandles(html: string): string[] {
+  if (!html.includes("@")) return [];
+  const found = new Set<string>();
+  for (const match of html.matchAll(HANDLE_MENTION)) {
+    const handle = match[2].toLocaleLowerCase();
+    if (!RESERVED_HANDLES.has(handle)) found.add(handle);
+  }
+  return [...found];
+}
+
+function linkHandleMentions(
+  html: string,
+  resolves: (handle: string) => boolean,
+): string {
   if (!html.includes("@")) return html;
   const parsed = new DOMParser().parseFromString(html, "text/html");
   const walker = parsed.createTreeWalker(parsed.body, NodeFilter.SHOW_TEXT);
@@ -177,9 +207,10 @@ function linkHandleMentions(html: string): string {
   }
   for (const node of nodes) {
     const value = node.nodeValue ?? "";
-    const matches = [...value.matchAll(HANDLE_MENTION)].filter(
-      (match) => !RESERVED_HANDLES.has(match[2].toLocaleLowerCase()),
-    );
+    const matches = [...value.matchAll(HANDLE_MENTION)].filter((match) => {
+      const handle = match[2].toLocaleLowerCase();
+      return !RESERVED_HANDLES.has(handle) && resolves(handle);
+    });
     if (matches.length === 0) continue;
     const fragment = parsed.createDocumentFragment();
     let cursor = 0;
@@ -211,7 +242,13 @@ export function MarkdownContent({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const { navigate } = useNavigation();
-  const renderedHtml = useMemo(() => linkHandleMentions(html), [html]);
+  const { resolves, consider } = useMentionResolver();
+  const mentioned = useMemo(() => collectHandles(html), [html]);
+  useEffect(() => consider(mentioned), [consider, mentioned]);
+  const renderedHtml = useMemo(
+    () => linkHandleMentions(html, resolves),
+    [html, resolves],
+  );
 
   /**
    * Keep a link written into this HTML inside the app.

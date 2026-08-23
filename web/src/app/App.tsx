@@ -9,6 +9,7 @@ import { TimelinePage } from "../features/timeline/TimelinePage";
 import { Composer, type ComposerHandle } from "../features/owner/Composer";
 import { EditPage } from "../features/owner/EditPage";
 import { LoginPage } from "../features/owner/LoginPage";
+import { MentionProvider } from "./mentions";
 import { OwnerLogin } from "../features/owner/OwnerLogin";
 import {
   OwnerProvider,
@@ -313,7 +314,11 @@ function PublicApp() {
   if (route.id === "login") return <LoginPage site={site} />;
 
   return (
-    <>
+    // The owner's handle is the one this app knows without asking. Anything
+    // else a body mentions is resolved against the server before it becomes a
+    // link, because a mention is text somebody typed and not a reference
+    // anything checked.
+    <MentionProvider known={siteIdentityReady ? [site.username] : []}>
       <AppShell
         memoryYears={shellYears}
         ownerSettingsAvailable={siteIdentityReady && signedIn}
@@ -501,7 +506,7 @@ function PublicApp() {
           </Dialog.Viewport>
         </Dialog.Portal>
       </Dialog.Root>
-    </>
+    </MentionProvider>
   );
 }
 

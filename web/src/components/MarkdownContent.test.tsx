@@ -9,14 +9,22 @@ import {
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { MentionProvider } from "../app/mentions";
 import { NavigationProvider, useNavigation } from "../app/navigation";
 import { MarkdownContent } from "./MarkdownContent";
 
 // Rendered markdown carries real anchors, and keeping the internal ones inside
-// the app needs the router. This component never renders outside it, so the
-// tests do not either.
-function render(ui: ReactElement) {
-  return renderBare(<NavigationProvider>{ui}</NavigationProvider>);
+// the app needs the router. A mention is a link only once its handle is known
+// to name somebody, so the accounts these bodies mention are declared here the
+// way the app declares the ones it knows.
+const MENTIONABLE = ["owner", "linlin", "cheems", "cheemschen"];
+
+function render(ui: ReactElement, known: readonly string[] = MENTIONABLE) {
+  return renderBare(
+    <NavigationProvider>
+      <MentionProvider known={known}>{ui}</MentionProvider>
+    </NavigationProvider>,
+  );
 }
 
 afterEach(cleanup);
@@ -225,5 +233,58 @@ describe("links written into rendered markdown", () => {
     });
 
     expect(seen.at(-1)).toBe("/");
+  });
+});
+
+// A mention is text an author typed, not a reference anything checked. This
+// instance shipped with the handle `owner` and its owner renamed, so every
+// `@owner` written before that names nobody -- and reading as a link sent
+// people to a profile page that answers "no such user".
+describe("a mention that names nobody", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("stays the text it was typed as", () => {
+    render(<MarkdownContent html="<p>@owner hi</p>" />, []);
+
+    expect(screen.queryByRole("link", { name: "@owner" })).toBeNull();
+    expect(screen.getByText(/@owner hi/)).toBeInTheDocument();
+  });
+
+  it("becomes a link once the server says the handle resolves", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/api/v1/users/linlin"
+        ? new Response("{}", { status: 200 })
+        : new Response("{}", { status: 404 }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    render(<MarkdownContent html="<p>@linlin 和 @owner</p>" />, []);
+
+    expect(
+      await screen.findByRole("link", { name: "@linlin" }),
+    ).toHaveAttribute("href", "/linlin");
+    // The one the server refused stays text, and is asked about exactly once.
+    expect(screen.queryByRole("link", { name: "@owner" })).toBeNull();
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).endsWith("/owner")),
+    ).toHaveLength(1);
+  });
+
+  // Content is author-supplied, so one body can name a great many handles that
+  // resolve to nothing. Refusing to link is the safe answer, so the excess is
+  // left as text rather than turned into a request each.
+  it("asks about a bounded number of unknown handles", () => {
+    const fetcher = vi.fn(
+      async () => new Response("{}", { status: 404 }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const many = Array.from({ length: 40 }, (_, index) => `@user${index}0`).join(
+      " ",
+    );
+    render(<MarkdownContent html={`<p>${many}</p>`} />, []);
+
+    expect(fetcher.mock.calls.length).toBeLessThanOrEqual(16);
   });
 });
