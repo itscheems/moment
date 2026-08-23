@@ -317,9 +317,14 @@ func listOwnSessions(gate *Gate) gin.HandlerFunc {
 		if session, present := CurrentSession(ctx); present {
 			currentID = session.ID
 		}
+		// Revoked rows are gone as credentials; expired ones are too, and they
+		// outlive their expiry by the retention grace that keeps "when did this
+		// device last sign in" answerable. That grace is for the janitor, not
+		// for a list whose whole claim is that these sessions are live.
+		nowMS := time.Now().UTC().UnixMilli()
 		items := make([]sessionListItem, 0, len(records))
 		for _, record := range records {
-			if record.RevokedAtMS != nil {
+			if record.RevokedAtMS != nil || record.ExpiresAtMS <= nowMS {
 				continue
 			}
 			items = append(items, sessionListItem{
