@@ -513,11 +513,21 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
           setLimits(restored.limits);
         }
       })
-      .catch(() => {
-        if (!controller.signal.aborted) setState("unavailable");
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        // 401 is an answer: the session a sibling offered has already been
+        // ended, so this tab is signed out and its copy of the token is worth
+        // dropping. Calling that `unavailable` left a retry button that could
+        // never succeed and kept the dead token in storage. The sibling effect
+        // above already makes this distinction; this one did not.
+        if (isInvalidSessionError(error)) {
+          clearSession("guest");
+          return;
+        }
+        setState("unavailable");
       });
     return () => controller.abort();
-  }, [account, api, session, state]);
+  }, [account, api, clearSession, session, state]);
 
   // Announce a completed binding and take the outcome off the URL. The sign-in
   // outcome needs no announcement: the page behind it changes on its own.

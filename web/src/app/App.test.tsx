@@ -652,6 +652,14 @@ describe("App shell and public routes", () => {
     expect(screen.queryByRole("complementary", { name: "站点导航" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
+    // The product's line, not the instance's name. A visitor arrives here
+    // before knowing whose instance they are on, and the site title above a
+    // sign-in form read as a greeting to somebody who had not said who they
+    // were yet.
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Happening now" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("乔乔的 Moment")).toBeNull();
   });
 
   // `/profile` means "mine", and only a session says whose. It used to render
@@ -679,6 +687,69 @@ describe("App shell and public routes", () => {
 
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
     expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+  });
+
+  // A sibling tab hands over a working session before the account behind it is
+  // known, so "signed in but nobody yet" is a third state. Reading it as a
+  // guest sent a fully signed-in reader to the sign-in page.
+  it("waits on /profile while a handed-over session is still nameless", async () => {
+    window.history.replaceState({}, "", "/profile");
+
+    const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+    class OfferingChannel {
+      addEventListener(
+        type: string,
+        listener: (event: MessageEvent<unknown>) => void,
+      ) {
+        if (type !== "message") return;
+        listeners.add(listener);
+        // The offer lands as soon as this tab starts listening, which is what
+        // puts a session in hand before any account lookup can answer.
+        queueMicrotask(() => {
+          listener(
+            new MessageEvent("message", {
+              data: {
+                type: "offer-session",
+                request_id: null,
+                session: {
+                  csrf_token: "csrf-from-sibling",
+                  expires_at: "2999-08-11T01:00:00.000Z",
+                  issued_at: 1,
+                  version: "sibling-tab-0001",
+                },
+              },
+            }),
+          );
+        });
+      }
+      removeEventListener(
+        _type: string,
+        listener: (event: MessageEvent<unknown>) => void,
+      ) {
+        listeners.delete(listener);
+      }
+      postMessage() {}
+      close() {
+        listeners.clear();
+      }
+    }
+    vi.stubGlobal("BroadcastChannel", OfferingChannel);
+
+    // The account lookup never answers, so the only thing this tab knows is
+    // that it holds a session.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === "/api/v1/account/session") return new Promise<Response>(() => {});
+        if (url === "/api/v1/site") return json(siteEnvelope);
+        return json(timelineEnvelope());
+      }),
+    );
+    render(<App />);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(window.location.pathname).toBe("/profile");
   });
 
   it("sends a signed-in account from /profile to its own handle", async () => {

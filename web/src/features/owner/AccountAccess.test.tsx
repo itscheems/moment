@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NavigationProvider } from "../../app/navigation";
+import { makeAccountLimits } from "../../test/accountFixtures";
 import { AccountAccess } from "./AccountAccess";
 import { OwnerProvider } from "./OwnerProvider";
 
@@ -33,11 +34,7 @@ function accountSessionEnvelope() {
         status: "active",
         username_chosen: true,
       },
-      limits: {
-        profile_picture_bytes: 5_242_880,
-        display_name_length: 80,
-        bio_length: 500,
-      },
+      limits: makeAccountLimits(),
     },
     meta: { request_id: "req_account_session" },
   };

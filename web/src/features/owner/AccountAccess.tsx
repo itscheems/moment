@@ -123,12 +123,17 @@ export function AccountAccess({
   const [signingOut, setSigningOut] = useState(false);
   const mountedRef = useRef(true);
 
-  useEffect(
-    () => () => {
+  // Set on the way in as well as cleared on the way out. Without the first
+  // line, StrictMode's development mount-unmount-remount leaves the ref false
+  // for the life of the component, so every guarded update is skipped and the
+  // buttons that clear their own pending state latch disabled. Composer.tsx
+  // already carries the correct shape.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
       mountedRef.current = false;
-    },
-    [],
-  );
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

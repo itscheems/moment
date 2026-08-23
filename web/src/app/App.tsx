@@ -184,6 +184,10 @@ function PublicApp() {
     // Still resolving, or unable to say. Neither is an answer to act on.
     if (owner.state === "checking" || owner.state === "unavailable") return;
     const own = owner.account?.profileUrl;
+    // A session handed over by a sibling tab arrives before the account behind
+    // it does, so "signed in but nobody yet" is a third state and not a guest.
+    // Treating it as one sent a fully signed-in reader to the sign-in page.
+    if (own === undefined && owner.state !== "guest") return;
     location.navigate(own ?? "/login?return=%2Fprofile");
   }, [displayLocation.pathname, location, owner.account, owner.state]);
 
