@@ -446,6 +446,52 @@ func (store accountStore) DeleteAccount(ctx context.Context, userID string) erro
 	return nil
 }
 
+// SearchAccounts finds admitted accounts a composer may offer as a mention.
+//
+// Only active ones. A pending account is an application, and listing
+// applications to every visitor with a composer would turn an autocomplete into
+// a way to read the review queue.
+//
+// The owner sorts first because on a site with one author they are almost
+// always the intended mention, and after that by handle so the order is stable
+// rather than whatever the table happens to return.
+func (store accountStore) SearchAccounts(ctx context.Context, query string, limit int) ([]domain.User, error) {
+	pattern := "%" + escapeAccountSearch(query) + "%"
+	prefix := escapeAccountSearch(query) + "%"
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT `+userColumns+`
+FROM users
+WHERE status = 'active'
+  AND (? = ''
+       OR username LIKE ? ESCAPE '\'
+       OR lower(display_name) LIKE ? ESCAPE '\')
+ORDER BY CASE WHEN role = 'owner' THEN 0 ELSE 1 END, username
+LIMIT ?`, query, prefix, pattern, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search accounts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	found := make([]domain.User, 0, limit)
+	for rows.Next() {
+		user, err := scanUser(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan account: %w", err)
+		}
+		found = append(found, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate accounts: %w", err)
+	}
+	return found, nil
+}
+
+// escapeAccountSearch neutralises the wildcards LIKE would otherwise read out
+// of a query somebody typed.
+func escapeAccountSearch(query string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
+	return replacer.Replace(query)
+}
+
 func (store accountStore) ListAccounts(ctx context.Context) ([]domain.User, error) {
 	rows, err := store.queries.QueryContext(ctx,
 		`SELECT `+userColumns+` FROM users ORDER BY created_at_ms, id`)

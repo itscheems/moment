@@ -202,6 +202,31 @@ func (store *memoryAccounts) ReconcileMediaReferences(_ context.Context, _ []dom
 	return nil
 }
 
+func (store *memoryAccounts) SearchAccounts(_ context.Context, query string, limit int) ([]domain.User, error) {
+	found := make([]domain.User, 0, limit)
+	for _, user := range store.users {
+		if user.Status != domain.AccountActive {
+			continue
+		}
+		if query != "" &&
+			!strings.HasPrefix(strings.ToLower(user.Username), query) &&
+			!strings.Contains(strings.ToLower(user.DisplayName), query) {
+			continue
+		}
+		found = append(found, user)
+	}
+	sort.Slice(found, func(left, right int) bool {
+		if found[left].IsOwner() != found[right].IsOwner() {
+			return found[left].IsOwner()
+		}
+		return found[left].Username < found[right].Username
+	})
+	if len(found) > limit {
+		found = found[:limit]
+	}
+	return found, nil
+}
+
 func (store *memoryAccounts) OwnerUserID(_ context.Context) (string, error) {
 	return store.ownerID, nil
 }

@@ -199,33 +199,6 @@ func (service *SiteService) Get(ctx context.Context) (SiteSettings, error) {
 	return cloneSiteSettings(settings), nil
 }
 
-// SuggestMentions searches the instance's public owner identity. Moment is a
-// single-owner product today, so querying the indexed singleton is both the
-// lightest and most accurate implementation; the response remains a list for
-// future expansion without changing browser or CLI contracts.
-func (service *SiteService) SuggestMentions(ctx context.Context, query string, limit int) ([]MentionSuggestion, error) {
-	if limit < 1 || limit > 20 {
-		return nil, domain.NewError(domain.CodeInvalidArgument, "limit must be between 1 and 20", map[string]any{"field": "limit"})
-	}
-	query = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(query, "@")))
-	if len([]rune(query)) > 30 {
-		return nil, domain.NewError(domain.CodeInvalidArgument, "mention query must not exceed 30 characters", map[string]any{"field": "query"})
-	}
-	settings, err := service.Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-	username := strings.ToLower(settings.Username)
-	displayName := strings.ToLower(settings.DisplayName)
-	if query != "" && !strings.HasPrefix(username, query) && !strings.Contains(displayName, query) {
-		return []MentionSuggestion{}, nil
-	}
-	return []MentionSuggestion{{
-		OwnerID: settings.OwnerID, Username: settings.Username, DisplayName: settings.DisplayName,
-		AvatarMediaID: cloneString(settings.AvatarMediaID), ProfileURL: domain.ProfileURL(settings.Username),
-	}}, nil
-}
-
 // Ready verifies that the singleton and its managed avatar reference remain
 // valid. It is composed with database readiness by the server.
 func (service *SiteService) Ready(ctx context.Context) error {

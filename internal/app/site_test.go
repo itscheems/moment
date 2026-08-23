@@ -145,32 +145,6 @@ func TestSiteDefaultsAndPartialNullableUpdates(t *testing.T) {
 	}
 }
 
-func TestMentionSuggestionsUseStableOwnerIdentity(t *testing.T) {
-	avatar := testAvatarID
-	initial := SiteSettings{
-		OwnerID: "0123456789abcdef0123456789abcdef", Username: "cheems",
-		DisplayName: "Cheems 日记", Title: "我的 Moment", Timezone: "UTC",
-		AvatarMediaID: &avatar, CommentsEnabled: true,
-	}
-	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{testAvatarID: true}}
-	service := newTestSiteService(t, transactions, false)
-	for _, query := range []string{"", "@che", "日记"} {
-		items, err := service.SuggestMentions(context.Background(), query, 8)
-		if err != nil || len(items) != 1 || items[0].OwnerID != initial.OwnerID ||
-			items[0].Username != "cheems" || items[0].DisplayName != "Cheems 日记" ||
-			items[0].ProfileURL != "/cheems" || items[0].AvatarMediaID == nil {
-			t.Fatalf("query %q suggestions = %#v, err = %v", query, items, err)
-		}
-	}
-	items, err := service.SuggestMentions(context.Background(), "nobody", 8)
-	if err != nil || len(items) != 0 {
-		t.Fatalf("non-match suggestions = %#v, err = %v", items, err)
-	}
-	if _, err := service.SuggestMentions(context.Background(), "", 0); !domain.HasCode(err, domain.CodeInvalidArgument) {
-		t.Fatalf("invalid limit error = %v", err)
-	}
-}
-
 func TestSiteUpdateValidationAndAtomicRollback(t *testing.T) {
 	initial := SiteSettings{Title: "Before", Bio: "kept", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}

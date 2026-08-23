@@ -44,7 +44,7 @@ func runUserSuggest(ctx context.Context, invocation Invocation, input CommandInp
 	var meta map[string]any
 	switch invocation.Mode() {
 	case ModeDirect:
-		service, database, openErr := openDirectSite(ctx, invocation)
+		service, database, openErr := openDirectAccounts(ctx, invocation)
 		if openErr != nil {
 			return Result{}, openErr
 		}

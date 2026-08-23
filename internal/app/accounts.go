@@ -39,6 +39,7 @@ type AccountStore interface {
 	SetStatus(ctx context.Context, userID string, status domain.AccountStatus, atMS int64) error
 	DeleteAccount(ctx context.Context, userID string) error
 	ListAccounts(ctx context.Context) ([]domain.User, error)
+	SearchAccounts(ctx context.Context, query string, limit int) ([]domain.User, error)
 
 	OwnerUserID(ctx context.Context) (string, error)
 	RegistrationMode(ctx context.Context) (domain.RegistrationMode, error)
@@ -896,4 +897,40 @@ func (service *AccountService) Delete(ctx context.Context, userID string) (domai
 		return nil
 	})
 	return removed, err
+}
+
+// SuggestMentions answers a composer's autocomplete.
+//
+// It lives here rather than on the site service because "who can be mentioned"
+// is a question about accounts. While there was one account the site singleton
+// was both the lightest and the only possible answer; with more than one it
+// became the wrong table, and a member nobody could mention.
+func (service *AccountService) SuggestMentions(ctx context.Context, query string, limit int) ([]MentionSuggestion, error) {
+	if limit < 1 || limit > 20 {
+		return nil, domain.NewError(domain.CodeInvalidArgument, "limit must be between 1 and 20", map[string]any{"field": "limit"})
+	}
+	query = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(query, "@")))
+	if len([]rune(query)) > domain.UsernameMaxLength {
+		return nil, domain.NewError(domain.CodeInvalidArgument, "mention query must not exceed 30 characters", map[string]any{"field": "query"})
+	}
+	var found []domain.User
+	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
+		value, err := accounts.SearchAccounts(ctx, query, limit)
+		found = value
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	suggestions := make([]MentionSuggestion, 0, len(found))
+	for _, user := range found {
+		suggestions = append(suggestions, MentionSuggestion{
+			OwnerID:       user.ID,
+			Username:      user.Username,
+			DisplayName:   user.DisplayName,
+			AvatarMediaID: cloneString(user.AvatarMediaID),
+			ProfileURL:    domain.ProfileURL(user.Username),
+		})
+	}
+	return suggestions, nil
 }

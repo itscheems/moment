@@ -9,7 +9,7 @@ import (
 )
 
 // RegisterMentionRoutes mounts the bounded public mention suggestion endpoint.
-func RegisterMentionRoutes(engine *gin.Engine, service *app.SiteService) {
+func RegisterMentionRoutes(engine *gin.Engine, service *app.AccountService) {
 	engine.GET("/api/v1/users/mention-suggestions", func(ctx *gin.Context) {
 		limit := 8
 		if raw := ctx.Query("limit"); raw != "" {
