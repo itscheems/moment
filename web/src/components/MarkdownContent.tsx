@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, type MouseEvent } from "react";
 import hljs from "highlight.js/lib/core";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
@@ -11,6 +11,8 @@ import python from "highlight.js/lib/languages/python";
 import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
+
+import { useNavigation } from "../app/navigation";
 
 import styles from "./MarkdownContent.module.css";
 
@@ -72,6 +74,67 @@ const HANDLE_MENTION =
   /(^|[^A-Za-z0-9_])@([A-Za-z][A-Za-z0-9_]{2,29})(?![A-Za-z0-9_-])/g;
 
 /**
+ * The handles no account can ever hold, mirroring `reservedUsernames` in
+ * internal/domain/user.go.
+ *
+ * The list is copied rather than fetched because deciding whether a word is a
+ * link must not cost a request; it changes about as often as the route table
+ * does, and the Go side is the authority if the two ever disagree. Names too
+ * short to be a handle at all are kept in it anyway, so the two lists can be
+ * read side by side.
+ */
+const RESERVED_HANDLES = new Set([
+  // Server routes: /healthz, /readyz, and everything under /api.
+  "api",
+  "healthz",
+  "readyz",
+  // Browser routes declared in web/src/app/routes.ts.
+  "search",
+  "archive",
+  "profile",
+  // Bundled asset directories under internal/webassets/dist.
+  "assets",
+  "fonts",
+  "icons",
+  // Held back so the paths stay available without renaming anyone later.
+  "about",
+  "account",
+  "admin",
+  "auth",
+  "comment",
+  "comments",
+  "delete",
+  "edit",
+  "favicon",
+  "feed",
+  "help",
+  "login",
+  "logout",
+  "manifest",
+  "me",
+  "media",
+  "moment",
+  "moments",
+  "new",
+  "oauth",
+  "post",
+  "posts",
+  "public",
+  "register",
+  "robots",
+  "root",
+  "rss",
+  "settings",
+  "signup",
+  "sitemap",
+  "static",
+  "support",
+  "user",
+  "users",
+  "www",
+]);
+
+/**
  * Link every mention in the prose to the profile it names.
  *
  * This used to be handed a username, because a single-owner instance had
@@ -91,6 +154,15 @@ const HANDLE_MENTION =
  * typing one is thinking about that, and `@Cheems` naming a different person
  * than `@cheems` is not something this instance can express. What was typed
  * stays on screen; only the address it points at is lowered.
+ *
+ * The exception is a handle the site has reserved for itself. `@login`,
+ * `@search` and `@assets` name pages and asset directories, and the server
+ * refuses to create an account under any of them -- so unlike an unknown handle,
+ * which may belong to somebody by tomorrow, a link to one is wrong for good.
+ * Following it does not even reach a profile: these are plain anchors, so the
+ * reader leaves the page they were reading and lands on the sign-in form or on
+ * a directory of bundled assets. Those stay as the text they were typed as, the
+ * same answer `@ab` and `@some-slug` already get.
  */
 function linkHandleMentions(html: string): string {
   if (!html.includes("@")) return html;
@@ -105,7 +177,9 @@ function linkHandleMentions(html: string): string {
   }
   for (const node of nodes) {
     const value = node.nodeValue ?? "";
-    const matches = [...value.matchAll(HANDLE_MENTION)];
+    const matches = [...value.matchAll(HANDLE_MENTION)].filter(
+      (match) => !RESERVED_HANDLES.has(match[2].toLocaleLowerCase()),
+    );
     if (matches.length === 0) continue;
     const fragment = parsed.createDocumentFragment();
     let cursor = 0;
@@ -136,7 +210,43 @@ export function MarkdownContent({
   html: string;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const { navigate } = useNavigation();
   const renderedHtml = useMemo(() => linkHandleMentions(html), [html]);
+
+  /**
+   * Keep a link written into this HTML inside the app.
+   *
+   * The markup goes in through dangerouslySetInnerHTML, so these are real
+   * anchors that no React handler sits on -- every one of them reloaded the
+   * whole page, mentions included, which throws away the timeline the reader
+   * was in the middle of. Delegating from the container is what reaches them,
+   * because they are not this component's elements to give props to.
+   */
+  const followInternalLink = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      // The modifiers all mean "not here": a new tab, a new window, a save.
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const anchor = (event.target as Element | null)?.closest?.("a");
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      // An author's own link to somewhere else is theirs to keep, and so is
+      // one asking for a new tab or a download.
+      if (anchor.target && anchor.target !== "_self") return;
+      if (anchor.hasAttribute("download")) return;
+      if (anchor.origin !== window.location.origin) return;
+      event.preventDefault();
+      navigate(`${anchor.pathname}${anchor.search}${anchor.hash}`);
+    },
+    [navigate],
+  );
   useLayoutEffect(() => {
     for (const code of rootRef.current?.querySelectorAll<HTMLElement>(
       "pre code",
@@ -157,6 +267,7 @@ export function MarkdownContent({
     <div
       className={`${styles.root} ${className ?? ""}`}
       dangerouslySetInnerHTML={{ __html: renderedHtml }}
+      onClick={followInternalLink}
       ref={rootRef}
     />
   );

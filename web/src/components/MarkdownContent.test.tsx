@@ -1,8 +1,23 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  render as renderBare,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import type { ReactElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { NavigationProvider, useNavigation } from "../app/navigation";
 import { MarkdownContent } from "./MarkdownContent";
+
+// Rendered markdown carries real anchors, and keeping the internal ones inside
+// the app needs the router. This component never renders outside it, so the
+// tests do not either.
+function render(ui: ReactElement) {
+  return renderBare(<NavigationProvider>{ui}</NavigationProvider>);
+}
 
 afterEach(cleanup);
 
@@ -107,6 +122,37 @@ describe("MarkdownContent", () => {
     expect(container.textContent).toContain(handle);
   });
 
+  it.each([
+    ["@login", "登录页"],
+    ["@search", "搜索页"],
+    ["@assets", "静态资源目录"],
+    ["@Settings", "保留名的大小写变体"],
+  ])("leaves the reserved handle %s as text (%s)", (handle) => {
+    // No account can ever hold one of these, so the link would be wrong for
+    // good rather than merely early. These are plain anchors, so following one
+    // reloads the browser onto the sign-in form or an asset directory and takes
+    // the reader out of the conversation they were reading.
+    const { container } = render(
+      <MarkdownContent html={`<p>看 ${handle} 这个。</p>`} />,
+    );
+
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).toContain(handle);
+  });
+
+  it("still links a real handle standing beside a reserved one", () => {
+    const { container } = render(
+      <MarkdownContent html="<p>@login 之后找 @linlin。</p>" />,
+    );
+
+    expect(container.querySelectorAll("a")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "@linlin" })).toHaveAttribute(
+      "href",
+      "/linlin",
+    );
+    expect(container.textContent).toContain("@login 之后找 @linlin。");
+  });
+
   it("does not mistake an email address for a mention", () => {
     // The leading guard carries this: an address has a word character before
     // the at sign and a mention never does.
@@ -116,5 +162,68 @@ describe("MarkdownContent", () => {
 
     expect(container.querySelector("a")).toBeNull();
     expect(container.textContent).toContain("alice@example.com");
+  });
+});
+
+// The markup goes in through dangerouslySetInnerHTML, so these are real
+// anchors with no React handler on them. Every one of them reloaded the whole
+// page -- mentions included -- throwing away the timeline the reader was in
+// the middle of.
+describe("links written into rendered markdown", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  function renderWithNavigation(html: string) {
+    const seen: string[] = [];
+    function Probe() {
+      const { pathname } = useNavigation();
+      seen.push(pathname);
+      return <MarkdownContent html={html} />;
+    }
+    render(<Probe />);
+    return seen;
+  }
+
+  it("follows a handle mention without leaving the app", () => {
+    window.history.replaceState({}, "", "/");
+    const seen = renderWithNavigation("<p>问 @cheemschen 一下</p>");
+
+    const link = screen.getByRole("link", { name: "@cheemschen" });
+    fireEvent.click(link, { button: 0 });
+
+    expect(seen.at(-1)).toBe("/cheemschen");
+    expect(window.location.pathname).toBe("/cheemschen");
+  });
+
+  it("leaves an author's link to somewhere else alone", () => {
+    window.history.replaceState({}, "", "/");
+    renderWithNavigation('<p><a href="https://example.test/a">去别处</a></p>');
+
+    const link = screen.getByRole("link", { name: "去别处" });
+    const event = new window.MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      button: 0,
+    });
+    link.dispatchEvent(event);
+
+    // Not intercepted: the browser is left to do what it does with an
+    // off-origin address, which in jsdom is nothing at all.
+    expect(event.defaultPrevented).toBe(false);
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it("leaves a modified click to the browser", () => {
+    window.history.replaceState({}, "", "/");
+    const seen = renderWithNavigation("<p>问 @cheemschen 一下</p>");
+
+    fireEvent.click(screen.getByRole("link", { name: "@cheemschen" }), {
+      button: 0,
+      metaKey: true,
+    });
+
+    expect(seen.at(-1)).toBe("/");
   });
 });
