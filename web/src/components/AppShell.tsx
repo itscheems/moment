@@ -120,7 +120,7 @@ function useHomeScrollToTop() {
 function ownerNav(settingsAvailable: boolean): NavItem {
   return {
     label: "所有者",
-    href: settingsAvailable ? "/owner/settings" : "/owner/login",
+    href: settingsAvailable ? "/owner/settings" : "/login",
     icon: "owner",
     active: ["owner-login", "owner-settings", "owner-edit"],
   };

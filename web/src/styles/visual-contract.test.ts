@@ -392,6 +392,19 @@ describe("visual foundation contract", () => {
     );
   });
 
+  // The alternative sign-in methods sit under the provider buttons and read as
+  // one of them, so they share their axis. `.loginMethodSwitch` centres itself
+  // with justify-self, which does nothing without a grid parent -- the kind of
+  // regression that leaves the page looking wrong and every test green.
+  it("centres the alternative sign-in methods on the provider buttons' axis", () => {
+    expect(ownerCss).toMatch(
+      /\._otherMethods_[\w-]+\s*\{[^}]*display: grid;[^}]*justify-items: center;/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._loginMethodSwitch_[\w-]+\s*\{[^}]*justify-self: center/s,
+    );
+  });
+
   it("keeps nested pickers below lightbox and confirmation layers", () => {
     expect(globalCss).toContain("--layer-picker: 100");
     expect(globalCss).toContain("--layer-lightbox: 110");

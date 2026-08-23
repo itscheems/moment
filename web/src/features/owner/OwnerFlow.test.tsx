@@ -398,7 +398,7 @@ describe("owner composing flow", () => {
           ? ownerStatus()
           : unauthorized();
       }
-      if (url === "/api/v1/owner/session") {
+      if (url === "/api/v1/login/session") {
         return json({
           data: {
             csrf_token: "csrf-exchanged",
@@ -421,7 +421,7 @@ describe("owner composing flow", () => {
     expect(window.sessionStorage.getItem(sessionKey)).not.toContain(bearer);
     expect(JSON.stringify(window.localStorage)).not.toContain(bearer);
     const exchange = fetcher.mock.calls.find(
-      ([url]) => String(url) === "/api/v1/owner/session",
+      ([url]) => String(url) === "/api/v1/login/session",
     );
     expect(exchange?.[1]?.body).toBe(JSON.stringify({ token: bearer }));
   });
@@ -1007,7 +1007,7 @@ describe("owner composing flow", () => {
         current = post("不会丢的编辑", item.id);
         return json({ data: current, meta: {} });
       }
-      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
         return json({
           data: {
             csrf_token: "csrf-after-reauth",
@@ -1061,7 +1061,7 @@ describe("owner composing flow", () => {
               meta: {},
             });
       }
-      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
         return json({
           data: {
             csrf_token: "csrf-after-conflict",
@@ -2118,7 +2118,7 @@ describe("owner composing flow", () => {
       }),
     );
     installApi((url, init) => {
-      if (url === "/api/v1/owner/session" && init?.method === "DELETE") {
+      if (url === "/api/v1/login/session" && init?.method === "DELETE") {
         return json({ data: { logged_out: true }, meta: {} });
       }
     });

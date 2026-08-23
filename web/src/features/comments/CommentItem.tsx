@@ -497,7 +497,7 @@ function SignInToReplyPopover({
             {pending ? null : (
               <InternalLink
                 className={styles.signInPopupAction}
-                href="/owner/login"
+                href="/login"
               >
                 登录
               </InternalLink>

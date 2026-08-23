@@ -111,7 +111,7 @@ describe("owner session cross-tab repair", () => {
             meta: {},
           });
         }
-        if (url === "/api/v1/owner/session" && init?.method === "POST") {
+        if (url === "/api/v1/login/session" && init?.method === "POST") {
           return json({
             data: {
               csrf_token: "csrf-newest",

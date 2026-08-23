@@ -401,7 +401,7 @@ describe("App shell and public routes", () => {
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "所有者登录" }),
     );
-    await waitFor(() => expect(window.location.pathname).toBe("/owner/login"));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
   });
 
   it("uses five distinct mobile destinations and omits the inline owner composer", async () => {
@@ -627,13 +627,19 @@ describe("App shell and public routes", () => {
   // session this page exists to obtain or is somewhere the visitor was already
   // turned away from, so framing the form with that navigation made it read as
   // one panel among many rather than the one thing left to do.
-  it("gives sign-in its own page instead of a panel inside the shell", async () => {
-    window.history.replaceState({}, "", "/owner/login");
+  it.each([
+    ["the plain address", "/login"],
+    // Kept answering so a link somebody bookmarked does not dead-end.
+    ["the address it used to have", "/owner/login"],
+  ])(
+    "gives sign-in its own page instead of a panel inside the shell, at %s",
+    async (_name, path) => {
+    window.history.replaceState({}, "", path);
     installApi(async (url) => {
       if (url === "/api/v1/site") return json(siteEnvelope);
-      if (url === "/api/v1/owner/login-options") {
+      if (url === "/api/v1/login/methods") {
         return json({
-          data: { password_enabled: true },
+          data: { methods: ["password", "token"] },
           meta: { request_id: "req_options" },
         });
       }
@@ -652,7 +658,8 @@ describe("App shell and public routes", () => {
     expect(screen.queryByRole("complementary", { name: "站点导航" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
-  });
+    },
+  );
 
   it("renders the public profile as a first-class route", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");

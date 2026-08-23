@@ -71,9 +71,9 @@ function installApi(
     if (url === "/api/v1/account/session") {
       return json(signedOutEnvelope(), 401);
     }
-    if (url === "/api/v1/owner/login-options") {
+    if (url === "/api/v1/login/methods") {
       return json({
-        data: { password_enabled: true },
+        data: { methods: ["password", "token"] },
         meta: { request_id: "req_options" },
       });
     }
@@ -291,14 +291,14 @@ describe("owner login names who is signing in", () => {
       const url = String(input);
       if (url === "/api/v1/owner/status") return ownerStatus();
       if (url === "/api/v1/account/session") return json(signedOutEnvelope(), 401);
-      if (url === "/api/v1/owner/login-options") {
+      if (url === "/api/v1/login/methods") {
         return json({
-          data: { password_enabled: true },
+          data: { methods: ["password", "token"] },
           meta: { request_id: "req_options" },
         });
       }
       if (url === "/api/v1/login/oauth/providers") return providersEnvelope([]);
-      if (url === "/api/v1/owner/session") return sessionResponse();
+      if (url === "/api/v1/login/session") return sessionResponse();
       return json({}, 404);
     });
     vi.stubGlobal("fetch", fetcher);
@@ -330,7 +330,7 @@ describe("owner login names who is signing in", () => {
 
     const call = await vi.waitFor(() => {
       const found = fetcher.mock.calls.find(
-        ([input]) => String(input) === "/api/v1/owner/session",
+        ([input]) => String(input) === "/api/v1/login/session",
       );
       if (!found) throw new Error("no session exchange yet");
       return found;
@@ -359,7 +359,7 @@ describe("owner login names who is signing in", () => {
 
     const call = await vi.waitFor(() => {
       const found = fetcher.mock.calls.find(
-        ([input]) => String(input) === "/api/v1/owner/session",
+        ([input]) => String(input) === "/api/v1/login/session",
       );
       if (!found) throw new Error("no session exchange yet");
       return found;
@@ -369,27 +369,43 @@ describe("owner login names who is signing in", () => {
     });
   });
 
-  it("sends an account with no password to its provider instead of blaming the password", async () => {
-    installLoginApi(() =>
+  // The server names the credential kinds that would have worked. Reading them
+  // rather than assuming "a provider" is what keeps the message honest on the
+  // day an account carries a token of its own.
+  function credentialUnavailable(available: string[]) {
+    return () =>
       json(
         {
           error: {
-            code: "PASSWORD_NOT_AVAILABLE",
-            message: "that account signs in through a third-party provider",
-            details: {},
+            code: "CREDENTIAL_UNAVAILABLE",
+            message: "that account does not sign in that way here",
+            details: { available },
             request_id: "req_session",
           },
         },
         401,
-      ),
-    );
+      );
+  }
+
+  it("sends an account carrying nothing to its provider instead of blaming the password", async () => {
+    installLoginApi(credentialUnavailable([]));
     renderLogin();
     await signIn("someone", "hunter2");
 
     expect(
-      await screen.findByText(/这个账户是用第三方登录的/),
+      await screen.findByText("这个账户只能用第三方账号登录，请在下方选择。"),
     ).toBeInTheDocument();
     expect(screen.queryByText("密码不正确，请重试。")).toBeNull();
+  });
+
+  it("names the credential that would have worked when the server reports one", async () => {
+    installLoginApi(credentialUnavailable(["token"]));
+    renderLogin();
+    await signIn("someone", "hunter2");
+
+    expect(
+      await screen.findByText("这个账户不能这样登录，可以改用所有者令牌。"),
+    ).toBeInTheDocument();
   });
 
   it("names the handle when it is the handle that is wrong", async () => {
@@ -430,5 +446,80 @@ describe("owner login names who is signing in", () => {
     await signIn("owner", "wrong");
 
     expect(await screen.findByText("密码不正确，请重试。")).toBeInTheDocument();
+  });
+});
+
+// The token is a recovery credential, not a way somebody signs in on an
+// ordinary day, and there may be more ways later. So the form offers what the
+// server says exists rather than a hard-coded pair, and keeps everything that
+// is not the default one step back.
+describe("owner login offers the methods the server reports", () => {
+  beforeEach(() => {
+    window.history.replaceState({}, "", "/login");
+    window.sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  function installMethods(methods: string[] | "unreachable") {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/owner/status") return ownerStatus();
+      if (url === "/api/v1/account/session") return json(signedOutEnvelope(), 401);
+      if (url === "/api/v1/login/methods") {
+        return methods === "unreachable"
+          ? json({}, 503)
+          : json({
+              data: { methods },
+              meta: { request_id: "req_methods" },
+            });
+      }
+      if (url === "/api/v1/login/providers") return providersEnvelope([]);
+      if (url === "/api/v1/login/oauth/providers") return providersEnvelope([]);
+      return json({}, 404);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    return fetcher;
+  }
+
+  it("asks for a password by default and keeps the token one step back", async () => {
+    installMethods(["password", "token"]);
+    renderLogin();
+
+    expect(await screen.findByLabelText("密码")).toBeInTheDocument();
+    expect(screen.queryByLabelText("所有者令牌")).toBeNull();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "选择其他登录方式" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "使用所有者令牌登录" }),
+    );
+
+    expect(await screen.findByLabelText("所有者令牌")).toBeInTheDocument();
+    expect(screen.queryByLabelText("密码")).toBeNull();
+  });
+
+  // An instance with no password set has nothing to fall back to, so the token
+  // is the only way in and hiding it behind a disclosure would hide the door.
+  it("makes the token the default when no password exists, and offers nothing else", async () => {
+    installMethods(["token"]);
+    renderLogin();
+
+    expect(await screen.findByLabelText("所有者令牌")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "选择其他登录方式" }),
+    ).toBeNull();
+  });
+
+  it("keeps the token path usable against an instance that will not say", async () => {
+    installMethods("unreachable");
+    renderLogin();
+
+    expect(await screen.findByLabelText("所有者令牌")).toBeInTheDocument();
   });
 });

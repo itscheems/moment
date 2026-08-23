@@ -1405,91 +1405,174 @@
   border-color: var(--accent);
 }
 
-.oauthHint {
-  display: block;
-  margin-top: 10px;
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  line-height: 1.5;
+/* The switch sits under the provider buttons and reads as one of them, so it
+   is centred on the same axis rather than left-aligned against nothing.
+   `.loginMethodSwitch` centres itself with justify-self, which needs a grid
+   parent -- as a child of the plain block above it, it silently did nothing. */
+.otherMethods {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-4);
+}
+
+.otherMethods .secondaryButton {
+  inline-size: 100%;
 }
 
 /* The sign-in page stands on its own rather than inside the reading shell.
    A visitor here is not browsing, and the sidebars offer navigation that every
-   destination behind them would bounce straight back to this page. */
+   destination behind them would bounce straight back to this page.
+
+   `.loginGate` itself is deliberately untouched by all of this: it still
+   renders as a self-contained panel at the four places that embed it inside
+   another page. What the layout below does is host it, not restyle it. */
 .loginScreen {
+  display: grid;
+  min-block-size: 100dvh;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: var(--canvas);
+}
+
+.loginSplit {
+  display: grid;
+  min-block-size: 0;
+}
+
+/* The brand panel carries no information, so it is the first thing to go when
+   there is not room for both columns -- not stacked above the form, where it
+   would push the only actionable part of the page below the fold. */
+.brandPanel {
+  display: none;
+}
+
+.actionPanel {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100dvh;
-  padding: 32px 20px 48px;
-  background: var(--canvas);
+  gap: var(--space-6);
+  padding: var(--space-8) var(--space-5);
 }
 
-.loginScreenInner {
+.actionMark {
+  align-self: center;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  border-radius: var(--space-2);
+}
+
+.headlineBlock {
   display: flex;
-  width: 100%;
-  max-width: 420px;
+  inline-size: 100%;
+  max-inline-size: 22rem;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--space-3);
 }
 
-.loginBrand {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  text-align: center;
+/* Chirp Heavy is the heaviest face this project ships, and `font-synthesis:
+   none` in global.css means a weight with no face is not faux-bolded, so 800 is
+   the ceiling rather than a preference. The tracking is reset because
+   `:where(h1)` applies --tracking-display globally and negative tracking on
+   Chinese glyphs reads as cramped -- the same reason AppShell resets it. */
+.displayHeadline {
+  margin: 0;
+  font-family: var(--font-timeline);
+  font-size: clamp(1.875rem, 5.5vw, 3.25rem);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: normal;
+  word-break: break-word;
 }
 
-.loginBrand a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.loginBrandName {
+.subHeadline {
+  margin: 0;
+  color: var(--text-secondary);
   font-family: var(--font-display);
-  font-size: 1.25rem;
+  font-size: var(--text-lg);
   font-weight: 700;
-  letter-spacing: var(--tracking-display);
-  color: var(--text-primary);
+  line-height: 1.4;
+  letter-spacing: normal;
 }
 
 .loginScreen .loginGate {
-  width: 100%;
+  inline-size: 100%;
+  max-inline-size: 22rem;
   margin: 0;
-  padding: 24px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  background: var(--surface);
+  padding: 0;
+}
+
+.loginFoot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
 }
 
 .loginBack {
-  align-self: center;
   border: 0;
   background: none;
-  padding: 8px;
+  padding: var(--space-2);
   color: var(--text-secondary);
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--text-sm);
   cursor: pointer;
   border-radius: 999px;
 }
 
-.loginBack:hover {
+.loginBack:hover,
+.loginBack:focus-visible {
   color: var(--text-primary);
   text-decoration: underline;
 }
 
-@media (max-width: 480px) {
-  .loginScreen {
-    justify-content: flex-start;
-    padding-top: 24px;
+/* 1280 is one of this project's two shell breakpoints, so the tablet range gets
+   the single column rather than a 45vw panel with no room to breathe. */
+@media (min-width: 1280px) {
+  .loginSplit {
+    grid-template-columns: minmax(0, 1fr) 45vw;
   }
 
-  .loginScreen .loginGate {
-    border: 0;
-    padding: 16px 4px;
-    background: none;
+  .brandPanel {
+    position: relative;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: var(--accent);
+  }
+
+  .brandPanel img {
+    inline-size: min(20rem, 42%);
+    block-size: auto;
+    border-radius: var(--radius-panel);
+  }
+
+  .actionPanel {
+    align-items: start;
+    gap: var(--space-8);
+    padding: var(--space-10) clamp(var(--space-8), 6vw, 4.5rem);
+  }
+
+  .actionMark {
+    align-self: start;
+    inline-size: 3rem;
+    block-size: 3rem;
+  }
+
+  .headlineBlock {
+    max-inline-size: 26rem;
+  }
+
+  .loginFoot {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 719px) {
+  .actionPanel {
+    padding: var(--space-6) var(--space-4) var(--space-8);
   }
 }

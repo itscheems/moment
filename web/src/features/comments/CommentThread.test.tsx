@@ -884,7 +884,7 @@ describe("public comment thread", () => {
     expect(await screen.findByText("登录后回复")).toBeVisible();
     expect(screen.getByRole("link", { name: "登录" })).toHaveAttribute(
       "href",
-      "/owner/login",
+      "/login",
     );
     expect(
       screen.queryByRole("form", { name: "发表回复" }),
@@ -908,7 +908,7 @@ describe("public comment thread", () => {
     expect(within(prompt).getByText("登录后回复")).toBeInTheDocument();
     expect(within(prompt).getByRole("link", { name: "登录" })).toHaveAttribute(
       "href",
-      "/owner/login",
+      "/login",
     );
     // Pressing it must not open a composer it cannot submit.
     expect(screen.queryByLabelText("回复内容")).not.toBeInTheDocument();
@@ -983,7 +983,7 @@ describe("public comment thread", () => {
     expect(within(dialog).getByText("登录后回复")).toBeVisible();
     expect(within(dialog).getByRole("link", { name: "登录" })).toHaveAttribute(
       "href",
-      "/owner/login",
+      "/login",
     );
     expect(within(dialog).queryByLabelText("回复内容")).not.toBeInTheDocument();
     // The Moment being replied to stays on screen: the reader keeps the
@@ -1686,7 +1686,7 @@ describe("public comment thread", () => {
         if (url.endsWith("/comments") && init?.method !== "POST") {
           return success({ items: [root] });
         }
-        if (url === "/api/v1/owner/session" && init?.method === "POST") {
+        if (url === "/api/v1/login/session" && init?.method === "POST") {
           return success({
             csrf_token: "csrf-new",
             expires_at: "2999-08-11T01:00:00Z",
@@ -1868,7 +1868,7 @@ describe("public comment thread", () => {
       if (url.endsWith("/comments") && init?.method !== "DELETE") {
         return success({ items: [root] });
       }
-      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
         return success({
           csrf_token: "csrf-new",
           expires_at: "2999-08-11T01:00:00Z",
@@ -1924,7 +1924,7 @@ describe("public comment thread", () => {
       if (url.endsWith("/comments") && init?.method !== "DELETE") {
         return success({ items: [root] });
       }
-      if (url === "/api/v1/owner/session" && init?.method === "POST") {
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
         return success({
           csrf_token: "csrf-new",
           expires_at: "2999-08-11T01:00:00Z",

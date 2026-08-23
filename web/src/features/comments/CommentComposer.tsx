@@ -211,7 +211,7 @@ export function SignInToReply() {
     <div className={styles.signInNotice} role="status">
       <strong>登录后回复</strong>
       <span>发表回复需要登录。过往回复继续公开可读。</span>
-      <InternalLink href="/owner/login">登录</InternalLink>
+      <InternalLink href="/login">登录</InternalLink>
     </div>
   );
 }

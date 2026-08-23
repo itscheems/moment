@@ -581,14 +581,14 @@ export function SettingsPage({
 
   const leaveToLogin = () => {
     allowLeaveRef.current = true;
-    navigation.navigate("/owner/login");
+    navigation.navigate("/login");
   };
 
   const goToLogin = () => {
     allowLeaveRef.current = true;
     setRotated(null);
     setRotationOutcomeUnknown(false);
-    navigation.navigate("/owner/login?return=/owner/settings");
+    navigation.navigate("/login?return=/owner/settings");
   };
 
   const navigateToSection = (

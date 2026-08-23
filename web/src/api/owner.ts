@@ -38,8 +38,17 @@ export interface RotatedCredential {
   rotatedAt: string;
 }
 
-export interface OwnerLoginOptions {
-  passwordEnabled: boolean;
+/**
+ * The credential kinds this instance accepts.
+ *
+ * A list rather than a flag per kind: a shape like `{password_enabled}` has to
+ * grow a field every time a way of signing in is added, and every reader has to
+ * learn the new one. Mirrors ginhttp.signInMethods.
+ */
+export type SignInMethod = "password" | "token";
+
+export interface SignInMethods {
+  methods: SignInMethod[];
 }
 
 export interface OAuthLoginProvider {
@@ -2362,7 +2371,7 @@ export class OwnerApi {
     const payload: Record<string, string> = { [method]: credential };
     if (username) payload.username = username;
     const response = await this.fetcher(
-      "/api/v1/owner/session",
+      "/api/v1/login/session",
       requestInit("POST", undefined, payload),
     );
     const { data } = await decodeResponse(response);
@@ -2376,17 +2385,28 @@ export class OwnerApi {
     return { csrfToken, expiresAt };
   }
 
-  async loginOptions(signal?: AbortSignal): Promise<OwnerLoginOptions> {
-    const response = await this.fetcher("/api/v1/owner/login-options", {
+  async signInMethods(signal?: AbortSignal): Promise<SignInMethods> {
+    const response = await this.fetcher("/api/v1/login/methods", {
       ...requestInit("GET"),
       signal,
     });
     const record = objectData((await decodeResponse(response)).data);
-    // mirrors the map built by ginhttp.loginOptions (internal/transport/http/gin/owner_auth.go)
-    if (!hasExactKeys(record, ["password_enabled"])) {
-      throw invalidResponse("login options response has unexpected fields");
+    // mirrors the map built by ginhttp.signInMethods (internal/transport/http/gin/owner_auth.go)
+    if (!hasExactKeys(record, ["methods"])) {
+      throw invalidResponse("sign-in methods response has unexpected fields");
     }
-    return { passwordEnabled: booleanField(record, "password_enabled") };
+    const raw = record.methods;
+    if (!Array.isArray(raw)) {
+      throw invalidResponse("sign-in methods must be a list");
+    }
+    const methods: SignInMethod[] = [];
+    for (const value of raw) {
+      // An instance newer than this client can name a way of signing in that
+      // this build has no screen for. Dropping it keeps the ones it does know
+      // usable, where refusing the whole response would leave no way in at all.
+      if (value === "password" || value === "token") methods.push(value);
+    }
+    return { methods };
   }
 
   // Third-party sign-in is advertised through its own endpoint so that the
@@ -2877,7 +2897,7 @@ export class OwnerApi {
 
   async logout(csrfToken: string): Promise<void> {
     const response = await this.fetcher(
-      "/api/v1/owner/session",
+      "/api/v1/login/session",
       requestInit("DELETE", csrfToken),
     );
     const { data } = await decodeResponse(response);

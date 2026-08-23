@@ -611,7 +611,7 @@ describe("comment action bar", () => {
     expect(within(prompt).getByText("登录后回复")).toBeInTheDocument();
     expect(within(prompt).getByRole("link", { name: "登录" })).toHaveAttribute(
       "href",
-      "/owner/login",
+      "/login",
     );
   });
 

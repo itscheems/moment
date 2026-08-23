@@ -1,6 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
-import type { OAuthLoginProvider } from "../../api/owner";
+import type { OAuthLoginProvider, SignInMethod } from "../../api/owner";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
@@ -26,13 +26,25 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   IDENTITY_ALREADY_LINKED: "这个账号已经绑定到本站的另一个账户了。",
 };
 
-// Refusals the sign-in form itself can get back, as opposed to the ones a
-// provider round trip comes home with.
-const CREDENTIAL_ERROR_MESSAGES: Record<string, string> = {
-  ACCOUNT_NOT_FOUND: "本站没有这个用户名。",
-  PASSWORD_NOT_AVAILABLE:
-    "这个账户是用第三方登录的，没有密码。请在下方选择 GitHub 或 Google。",
+const METHOD_LABELS: Record<SignInMethod, string> = {
+  password: "密码",
+  token: "所有者令牌",
 };
+
+// The server names the credential kinds that would have worked, so this reads
+// them rather than assuming a third-party provider is always the answer. On the
+// day an account carries a token of its own, the message says so without this
+// file learning anything.
+function unavailableCredentialMessage(details: Record<string, unknown>): string {
+  const available = Array.isArray(details.available) ? details.available : [];
+  const named = available
+    .filter((value): value is SignInMethod => value === "password" || value === "token")
+    .map((value) => METHOD_LABELS[value]);
+  if (named.length === 0) {
+    return "这个账户只能用第三方账号登录，请在下方选择。";
+  }
+  return `这个账户不能这样登录，可以改用${named.join("或")}。`;
+}
 
 function safeReturnPath(value: string | null): string {
   return value && value.startsWith("/") && !value.startsWith("//")
@@ -62,8 +74,10 @@ function credentialErrorMessage(
   if (!(error instanceof PublicApiError)) {
     return "登录没有完成。输入内容仍只留在当前输入框中，可以安全重试。";
   }
-  const named = CREDENTIAL_ERROR_MESSAGES[error.code];
-  if (named) return named;
+  if (error.code === "ACCOUNT_NOT_FOUND") return "本站没有这个用户名。";
+  if (error.code === "CREDENTIAL_UNAVAILABLE") {
+    return unavailableCredentialMessage(error.details);
+  }
   if (error.status === 401) {
     return method === "password"
       ? "密码不正确，请重试。"
@@ -93,9 +107,16 @@ function stripAuthError() {
 export function OwnerLogin({
   site,
   embedded = false,
+  heading = true,
 }: {
   site: SiteIdentity;
   embedded?: boolean;
+  /**
+   * Whether this renders its own title. The standalone sign-in page carries a
+   * display headline of its own, and two headings stacked would say the same
+   * thing twice in two sizes.
+   */
+  heading?: boolean;
 }) {
   const { navigate } = useNavigation();
   const { account, api, state, login, logout, retryStatus } = useOwner();
@@ -103,7 +124,9 @@ export function OwnerLogin({
   // reaching it is signed in and simply in the wrong place. Telling them they
   // hold an owner session would be a plain lie.
   const siteOwner = ownsSite(account);
-  const [method, setMethod] = useState<"password" | "token">("password");
+  const [method, setMethod] = useState<SignInMethod>("password");
+  const [methods, setMethods] = useState<SignInMethod[]>([]);
+  const [showOtherMethods, setShowOtherMethods] = useState(false);
   const [username, setUsername] = useState("");
   const [credential, setCredential] = useState("");
   const [showCredential, setShowCredential] = useState(false);
@@ -150,16 +173,26 @@ export function OwnerLogin({
   useEffect(() => {
     const controller = new AbortController();
     void api
-      .loginOptions(controller.signal)
-      .then((options) => {
-        if (!controller.signal.aborted)
-          setMethod(options.passwordEnabled ? "password" : "token");
+      .signInMethods(controller.signal)
+      .then((available) => {
+        if (controller.signal.aborted) return;
+        setMethods(available.methods);
+        // A password is what somebody signing in today is looking for. The
+        // token is a recovery credential, so it is only the default when this
+        // instance has no password set at all.
+        setMethod(
+          available.methods.includes("password")
+            ? "password"
+            : (available.methods[0] ?? "token"),
+        );
       })
       .catch(() => {
-        // Older instances do not expose login options yet. Keep their token
-        // login path usable instead of presenting a password form that cannot
-        // succeed against that server.
-        if (!controller.signal.aborted) setMethod("token");
+        // An instance that will not say keeps its token path usable, rather
+        // than presenting a password form that cannot succeed against it.
+        if (!controller.signal.aborted) {
+          setMethods(["token"]);
+          setMethod("token");
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setOptionsPending(false);
@@ -246,17 +279,22 @@ export function OwnerLogin({
       </section>
     );
 
+  const otherMethods = methods.filter((candidate) => candidate !== method);
+
   return (
     <section className={styles.loginGate}>
-      <p className={styles.eyebrow}>
-        {state === "expired" ? "会话已过期" : "登录"}
-      </p>
-      <h2>{state === "expired" ? "重新登录" : `登录 ${site.title || "Moment"}`}</h2>
-      <p>
-        {method === "password"
-          ? "输入你的用户名和密码，或用下方的第三方账号登录。"
-          : "所有者令牌用于初始化、CLI 和紧急访问，在密码不可用时使用。"}
-      </p>
+      {heading ? (
+        <>
+          <p className={styles.eyebrow}>
+            {state === "expired" ? "会话已过期" : "登录"}
+          </p>
+          <h2>
+            {state === "expired"
+              ? "重新登录"
+              : `登录 ${site.title || "Moment"}`}
+          </h2>
+        </>
+      ) : null}
       {authError ? (
         <p className={styles.authError} role="alert">
           {authError}
@@ -287,9 +325,7 @@ export function OwnerLogin({
             value={username}
           />
         </div>
-        <label htmlFor="owner-credential">
-          {method === "password" ? "密码" : "所有者令牌"}
-        </label>
+        <label htmlFor="owner-credential">{METHOD_LABELS[method]}</label>
         <div className={styles.tokenField}>
           <input
             autoCapitalize="none"
@@ -356,28 +392,39 @@ export function OwnerLogin({
               );
             })}
           </div>
-          {/* A provider knows who you are already, so the handle above is not
-              part of this path -- saying so beats leaving people wondering
-              whether they were meant to fill it in first. */}
-          <small className={styles.oauthHint}>
-            使用第三方账号登录不需要填写上方的用户名和密码。
-          </small>
         </>
       ) : null}
-      <button
-        className={styles.loginMethodSwitch}
-        disabled={pending}
-        onClick={() => {
-          setMethod((current) =>
-            current === "password" ? "token" : "password",
-          );
-          setCredential("");
-          setError(null);
-        }}
-        type="button"
-      >
-        {method === "password" ? "选择其他登录方式" : "改用密码登录"}
-      </button>
+      {otherMethods.length > 0 ? (
+        <div className={styles.otherMethods}>
+          {showOtherMethods ? (
+            otherMethods.map((candidate) => (
+              <button
+                className={styles.secondaryButton}
+                disabled={pending}
+                key={candidate}
+                onClick={() => {
+                  setMethod(candidate);
+                  setShowOtherMethods(false);
+                  setCredential("");
+                  setError(null);
+                }}
+                type="button"
+              >
+                使用{METHOD_LABELS[candidate]}登录
+              </button>
+            ))
+          ) : (
+            <button
+              className={styles.loginMethodSwitch}
+              disabled={pending}
+              onClick={() => setShowOtherMethods(true)}
+              type="button"
+            >
+              选择其他登录方式
+            </button>
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }
