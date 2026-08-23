@@ -3,42 +3,35 @@ package ginhttp
 import (
 	"context"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/domain"
 )
 
+// signInPolicy answers which credential kinds an account may present.
+//
+// The decision itself belongs to app.SignInPolicy: transport packages map
+// syntax and DTOs and do not own business decisions (docs/architecture.md).
+// What lives here is the wiring, because the answer is kept in secrets.json,
+// which the credential manager owns and the app package deliberately does not
+// import.
+func (gate *Gate) signInPolicy() (*app.SignInPolicy, error) {
+	return app.NewSignInPolicy(func() (bool, error) {
+		status, err := gate.manager.Status()
+		if err != nil {
+			return false, err
+		}
+		return status.PasswordEnabled, nil
+	})
+}
+
 // SignInMethods reports the credential kinds an account can present.
-//
-// This is the only place that decides it. A handler that compared a handle or a
-// role to work out whether a password was worth checking would be answering the
-// same question in a second voice, and the two would drift the first time an
-// account other than the owner carried a credential of its own.
-//
-// Today exactly one account does. The owner's password and token live in
-// secrets.json rather than in the database, so that signing in still works when
-// the database is what needs repairing, and nothing else has anywhere to keep a
-// secret. That is a fact about where credentials are stored, not a rule about
-// who deserves one: when accounts carry their own, this function is what learns
-// it, and every refusal above it keeps its current shape.
 func (gate *Gate) SignInMethods(_ context.Context, user domain.User) ([]domain.CredentialKind, error) {
-	// Empty rather than nil, all the way through: this set is reported to a
-	// client inside a refusal, and a nil slice serialises as null, which would
-	// make "carries nothing" a second shape every reader has to handle.
-	if !user.IsOwner() {
-		return []domain.CredentialKind{}, nil
-	}
-	status, err := gate.manager.Status()
+	policy, err := gate.signInPolicy()
 	if err != nil {
 		return []domain.CredentialKind{}, err
 	}
-	// The token always exists; it is issued at initialization and can only be
-	// rotated, never removed. A password is optional and may not be set yet.
-	methods := make([]domain.CredentialKind, 0, 2)
-	if status.PasswordEnabled {
-		methods = append(methods, domain.CredentialPassword)
-	}
-	methods = append(methods, domain.CredentialToken)
-	return methods, nil
+	return policy.MethodsFor(user)
 }
 
 // IssueSignIn verifies a secret against the account it is offered for and
@@ -47,9 +40,9 @@ func (gate *Gate) SignInMethods(_ context.Context, user domain.User) ([]domain.C
 // The account is passed rather than looked up because the caller has already
 // resolved who is signing in, and because the verification below is only
 // correct for one account today: the manager checks secrets.json, which belongs
-// to the owner and names nobody. SignInMethods is what keeps any other account
+// to the owner and names nobody. The policy is what keeps any other account
 // from reaching that check, and the guard here is what keeps a future change to
-// SignInMethods from quietly turning every account's password into the owner's.
+// the policy from quietly turning every account's password into the owner's.
 func (gate *Gate) IssueSignIn(
 	ctx context.Context,
 	user domain.User,
@@ -67,7 +60,7 @@ func (gate *Gate) IssueSignIn(
 			map[string]any{"available": methods})
 	}
 	if !user.IsOwner() {
-		// Unreachable while SignInMethods answers nothing for a member, and
+		// Unreachable while the policy answers nothing for a member, and
 		// deliberately loud rather than defaulting to the owner's secret if it
 		// ever stops answering nothing.
 		return "", auth.Session{}, domain.NewError(domain.CodeCredentialUnavailable,
