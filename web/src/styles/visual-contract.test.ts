@@ -404,8 +404,12 @@ describe("visual foundation contract", () => {
       /\._accountRail_[\w-]+\s*\{[^}]*transition:[^;]*background var\(--motion-fast\)/s,
     );
     expect(shellCss).toMatch(
-      /\._accountRail_[\w-]+:hover[^{]*\{[^}]*background: var\(--surface-hover\)/s,
+      /\._accountRail_[\w-]+:hover[^{]*\{[^}]*background: var\(--surface-hover-strong\)/s,
     );
+    // A pill this size needs more than the nav rows' wash to read as pressed
+    // rather than merely tinted, and the value has to exist in every theme --
+    // a literal here would be a light grey on a dark canvas.
+    expect(globalCss.match(/--surface-hover-strong:/g)).toHaveLength(4);
   });
 
   // Dragging across a headline this size fills half the panel with selection

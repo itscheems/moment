@@ -690,7 +690,7 @@
 
 .accountRail:hover,
 .accountRail[data-popup-open] {
-  background: var(--surface-hover);
+  background: var(--surface-hover-strong);
 }
 
 .accountRail:focus-visible {
@@ -745,12 +745,18 @@
   color: var(--text-primary);
 }
 
-/* The rail narrows before it disappears, and at that width only the face
-   fits -- the same trade the nav rows above make with their labels. */
+/* The rail narrows before it disappears, and at that width only the face fits
+   -- the same trade the nav rows above make with their labels. It has to take
+   their box as well as their trade: the rail centres its children there, and a
+   content-width pill sat against the start edge while every nav row above it
+   was a centred square, so the one row that was not a nav row was the one row
+   out of line. */
 @media (max-width: 1279px) {
   .accountRail {
-    inline-size: fit-content;
-    padding: var(--space-2);
+    inline-size: 3.25rem;
+    justify-content: center;
+    margin-inline: auto;
+    padding: 0;
   }
 
   .accountRailIdentity,
