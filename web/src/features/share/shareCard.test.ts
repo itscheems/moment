@@ -1,10 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  recordCanvas,
+  resolveImages,
+  type Recording,
+} from "../../test/recordingCanvas";
+
+import {
+  renderShareCard,
   shareCardBlocks,
+  shareCardLink,
   shareCardMediaUrl,
   type CodeSpan,
   type ShareCardBlock,
+  type ShareCardInput,
 } from "./shareCard";
 
 /** The runs of a fenced block, flattened out of their lines. */
@@ -137,5 +146,177 @@ describe("choosing the still for a piece of media", () => {
         /[?&]v=/,
       );
     }
+  });
+});
+
+// A canvas draws; it does not describe. These read the calls the renderer made
+// rather than the pixels they would have produced -- enough to say a badge was
+// put on the video and not on the photo beside it, which is what the card is
+// being asked to get right.
+describe("drawing the card", () => {
+  let recording: Recording;
+  let restoreCanvas: () => void;
+  let restoreImages: () => void;
+
+  beforeEach(() => {
+    const canvas = recordCanvas();
+    recording = canvas.recording;
+    restoreCanvas = canvas.restore;
+    restoreImages = resolveImages();
+  });
+
+  afterEach(() => {
+    restoreCanvas();
+    restoreImages();
+  });
+
+  const input = (over: Partial<ShareCardInput> = {}): ShareCardInput => ({
+    displayName: "Cheems",
+    username: "itscheems",
+    avatarUrl: null,
+    publishedLabel: "2026年8月24日 19:02",
+    blocks: [{ kind: "text", text: "在场" }],
+    media: [],
+    location: null,
+    link: null,
+    ...over,
+  });
+
+  /** The badge's disc is the only thing filled in that particular dark. */
+  const badges = () =>
+    recording.of("fill").filter((call) => call.fill === "rgb(15 20 25 / 78%)")
+      .length;
+
+  it("badges the video and leaves the photo beside it alone", async () => {
+    await renderShareCard(
+      input({
+        media: [
+          { mediaId: "01A", mimeType: "video/quicktime" },
+          { mediaId: "01B", mimeType: "image/jpeg" },
+        ],
+      }),
+    );
+
+    expect(badges()).toBe(1);
+  });
+
+  it("badges nothing when every attachment is a still", async () => {
+    await renderShareCard(
+      input({
+        media: [
+          { mediaId: "01A", mimeType: "image/jpeg" },
+          { mediaId: "01B", mimeType: "image/png" },
+        ],
+      }),
+    );
+
+    expect(badges()).toBe(0);
+  });
+
+  // The still a card carries for a video is the poster route, never the video
+  // itself -- the same rule the URL helper keeps, checked here on the whole
+  // render so a future rewrite of the loading cannot quietly drop it.
+  it("asks the poster route for a video's still", async () => {
+    await renderShareCard(
+      input({ media: [{ mediaId: "01A", mimeType: "video/mp4" }] }),
+    );
+
+    const sources = recording
+      .of("drawImage")
+      .map(
+        (call) => (call.args[0] as HTMLImageElement).dataset.recordedSrc ?? "",
+      );
+    expect(sources.some((source) => source.includes("/poster"))).toBe(true);
+    expect(sources.some((source) => source.includes("/preview"))).toBe(false);
+  });
+
+  it("draws what a link preview is and what it says", async () => {
+    await renderShareCard(
+      input({
+        link: {
+          title: "永不放弃",
+          siteName: "YouTube",
+          thumbnailUrl: "/api/v1/media/01C/preview",
+          video: true,
+        },
+      }),
+    );
+
+    expect(recording.text()).toContain("YouTube");
+    expect(recording.text()).toContain("永不放弃");
+    // A video preview wears the same badge its thumbnail would on the page.
+    expect(badges()).toBe(1);
+  });
+
+  it("keeps a link preview that has no picture", async () => {
+    await renderShareCard(
+      input({
+        link: {
+          title: "只有标题",
+          siteName: "example.com",
+          thumbnailUrl: null,
+          video: false,
+        },
+      }),
+    );
+
+    expect(recording.text()).toContain("只有标题");
+    expect(recording.text()).toContain("example.com");
+    expect(badges()).toBe(0);
+  });
+});
+
+// The link preview comes off the wire with six fields the card has no room for
+// and one -- the site's name -- that is often empty.
+describe("reading a link preview", () => {
+  const wire = (over = {}) =>
+    ({
+      position: 0,
+      canonicalUrl: "https://www.bilibili.com/video/BV1",
+      cardKind: "video" as const,
+      title: "标题",
+      description: "描述",
+      siteName: "哔哩哔哩",
+      authorName: "作者",
+      durationSeconds: 61,
+      viewCount: 10,
+      commentCount: 2,
+      likeCount: 3,
+      faviconMediaId: null,
+      thumbnailMediaId: "01THUMB",
+      thumbnailMimeType: "image/jpeg",
+      thumbnailWidth: 1120,
+      thumbnailHeight: 630,
+      embedUrl: null,
+      ...over,
+    }) as Parameters<typeof shareCardLink>[0];
+
+  it("takes the thumbnail from this instance, not from the far end", () => {
+    const link = shareCardLink(wire());
+    expect(link.thumbnailUrl).toContain("/api/v1/media/01THUMB/preview");
+    expect(link.thumbnailUrl).toMatch(/[?&]v=/);
+  });
+
+  it("falls back to the host when the site has no name", () => {
+    expect(shareCardLink(wire({ siteName: "  " })).siteName).toBe(
+      "bilibili.com",
+    );
+  });
+
+  it("says nothing rather than guessing at an unreadable address", () => {
+    expect(
+      shareCardLink(wire({ siteName: "", canonicalUrl: "not a url" })).siteName,
+    ).toBe("");
+  });
+
+  it("marks a video preview so it can be badged", () => {
+    expect(shareCardLink(wire()).video).toBe(true);
+    expect(shareCardLink(wire({ cardKind: "link" })).video).toBe(false);
+  });
+
+  it("has no thumbnail when the preview had none", () => {
+    expect(
+      shareCardLink(wire({ thumbnailMediaId: null })).thumbnailUrl,
+    ).toBeNull();
   });
 });

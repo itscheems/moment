@@ -16,6 +16,7 @@
  * one.
  */
 
+import type { PublicLinkCard } from "../../api/public";
 import { mediaPosterUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import { highlightCodeBlocks } from "../../components/codeHighlight";
 
@@ -84,6 +85,42 @@ export function shareCardMediaUrl(media: ShareCardMedia): string {
 }
 
 /** Everything the card draws, already resolved by the caller. */
+/** A link preview, flattened to what the card draws. */
+export interface ShareCardLink {
+  title: string;
+  siteName: string;
+  thumbnailUrl: string | null;
+  video: boolean;
+}
+
+/**
+ * The link preview as the card wants it.
+ *
+ * The page's card carries a description and a row of counts as well. They are
+ * left off here: a share image is looked at once, at whatever size a chat app
+ * decides, and the two lines that say what the link is survive that where six
+ * do not.
+ */
+export function shareCardLink(card: PublicLinkCard): ShareCardLink {
+  return {
+    title: card.title.trim(),
+    siteName: card.siteName.trim() || hostOf(card.canonicalUrl),
+    thumbnailUrl: card.thumbnailMediaId
+      ? mediaPreviewUrl(card.thumbnailMediaId)
+      : null,
+    video: card.cardKind === "video",
+  };
+}
+
+/** The host a link points at, as the page shows it when a site has no name. */
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
 export interface ShareCardInput {
   displayName: string;
   username: string;
@@ -103,6 +140,8 @@ export interface ShareCardInput {
    * page keeps it behind the name rather than instead of it.
    */
   location: string | null;
+  /** The link preview the post carries, if it carries one. */
+  link: ShareCardLink | null;
 }
 
 const INK = "#0f1419";
@@ -158,6 +197,15 @@ const DOT_GAP = 9;
 // traffic lights sit in the corner; lined up with the text below them they
 // stop reading as a frame and start reading as a bullet list.
 const DOT_INSET = 21;
+
+const LINK_RADIUS = 14;
+const LINK_BORDER = "#cfd9de";
+const LINK_PAD = 14;
+const LINK_SITE_SIZE = 13;
+const LINK_SITE_LINE = 17;
+const LINK_TITLE_SIZE = 16;
+const LINK_TITLE_LINE = 22;
+const LINK_TITLE_LINES = 2;
 
 const font = (weight: number, size: number) => `${weight} ${size}px ${FACE}`;
 const monoFont = (size: number) => `400 ${size}px ${MONO}`;
@@ -404,6 +452,155 @@ function drawCover(
 }
 
 /**
+ * The link preview's box: a picture, if there is one, over what it is.
+ *
+ * The picture keeps its own proportions rather than being forced to a shape,
+ * within limits -- a very tall thumbnail would otherwise push everything the
+ * post actually said off the bottom of the card.
+ */
+function linkLayout(
+  ruler: CanvasRenderingContext2D,
+  link: ShareCardLink,
+  thumbnail: HTMLImageElement | null,
+  width: number,
+): { thumbHeight: number; title: string[]; height: number } | null {
+  if (!thumbnail && link.title === "" && link.siteName === "") return null;
+  const thumbHeight = thumbnail
+    ? Math.round(
+        Math.min(
+          Math.max(
+            (width * thumbnail.naturalHeight) / thumbnail.naturalWidth,
+            width * 0.42,
+          ),
+          width * 0.62,
+        ),
+      )
+    : 0;
+  ruler.font = font(650, LINK_TITLE_SIZE);
+  const wrapped =
+    link.title === "" ? [] : wrap(ruler, link.title, width - LINK_PAD * 2);
+  const title = wrapped.slice(0, LINK_TITLE_LINES);
+  if (wrapped.length > title.length && title.length > 0) {
+    title[title.length - 1] = truncate(
+      ruler,
+      title[title.length - 1] ?? "",
+      width - LINK_PAD * 2,
+    );
+  }
+  return {
+    thumbHeight,
+    title,
+    height:
+      thumbHeight +
+      LINK_PAD +
+      LINK_SITE_LINE +
+      (title.length > 0 ? 3 + title.length * LINK_TITLE_LINE : 0) +
+      LINK_PAD,
+  };
+}
+
+/** Draw the link preview the post carries. */
+function drawLinkCard(
+  ctx: CanvasRenderingContext2D,
+  link: ShareCardLink,
+  thumbnail: HTMLImageElement | null,
+  laid: { thumbHeight: number; title: string[]; height: number },
+  x: number,
+  y: number,
+  width: number,
+): void {
+  if (thumbnail) {
+    // Square-cornered inside the clip: the box's own rounding is what shapes
+    // the top two corners, and rounding the picture as well leaves a sliver of
+    // background showing through each one.
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, laid.height, LINK_RADIUS);
+    ctx.clip();
+    drawCover(ctx, thumbnail, x, y, width, laid.thumbHeight, 0);
+    ctx.restore();
+    if (link.video) drawPlayBadge(ctx, x, y, width, laid.thumbHeight);
+  }
+
+  // Stroked on the half pixel, so a one-pixel border lands on one pixel.
+  ctx.beginPath();
+  ctx.roundRect(x + 0.5, y + 0.5, width - 1, laid.height - 1, LINK_RADIUS);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = LINK_BORDER;
+  ctx.stroke();
+
+  let cursor = y + laid.thumbHeight + LINK_PAD;
+  if (link.siteName !== "") {
+    ctx.fillStyle = MUTED;
+    ctx.font = font(400, LINK_SITE_SIZE);
+    ctx.fillText(
+      truncate(ctx, link.siteName, width - LINK_PAD * 2),
+      x + LINK_PAD,
+      cursor + LINK_SITE_SIZE,
+    );
+  }
+  cursor += LINK_SITE_LINE + (laid.title.length > 0 ? 3 : 0);
+  ctx.fillStyle = INK;
+  ctx.font = font(650, LINK_TITLE_SIZE);
+  laid.title.forEach((line, row) => {
+    ctx.fillText(
+      line,
+      x + LINK_PAD,
+      cursor + row * LINK_TITLE_LINE + LINK_TITLE_SIZE,
+    );
+  });
+}
+
+/**
+ * The badge a video wears on its still.
+ *
+ * A poster frame is a picture like any other, and a card full of pictures says
+ * nothing about which of them moves. This is the same badge the page draws over
+ * a paused video -- a dark disc and a white triangle -- so a reader who has seen
+ * one recognises the other.
+ */
+function drawPlayBadge(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  const size = Math.max(30, Math.min(52, Math.min(width, height) * 0.3));
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, size / 2, 0, Math.PI * 2);
+  ctx.fillStyle = "rgb(15 20 25 / 78%)";
+  ctx.fill();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgb(255 255 255 / 24%)";
+  ctx.stroke();
+
+  // Nudged right of centre, the way the page nudges its own glyph: a triangle
+  // centred on its bounding box carries its weight to the left and reads as
+  // leaning backwards.
+  const arm = size * 0.3;
+  const left = cx - arm * 0.6 + size * 0.04;
+  ctx.beginPath();
+  ctx.moveTo(left, cy - arm);
+  ctx.lineTo(cx + arm * 0.85 + size * 0.04, cy);
+  ctx.lineTo(left, cy + arm);
+  ctx.closePath();
+  // Stroked as well as filled, with a round join, which is how the glyph on the
+  // page gets its softened points.
+  ctx.lineJoin = "round";
+  ctx.lineWidth = size * 0.09;
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#ffffff";
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
  * The media block's shape, which follows the count.
  *
  * Nothing is letterboxed: a band of grey either side of a photo is the surest
@@ -549,13 +746,24 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   const contentWidth = WIDTH - PAD * 2;
   const media = input.media.slice(0, 4);
-  const images = await Promise.all(
-    media.map((item) => loadImage(shareCardMediaUrl(item))),
+  const stills = await Promise.all(
+    media.map(async (item) => ({
+      image: await loadImage(shareCardMediaUrl(item)),
+      video: item.mimeType.startsWith("video/"),
+    })),
   );
-  const drawable = images.filter(
-    (image): image is HTMLImageElement => image !== null,
+  // A still that would not load drops out entirely rather than leaving a hole,
+  // which is why what survives is carried together with what it came from.
+  const drawable = stills.filter(
+    (still): still is { image: HTMLImageElement; video: boolean } =>
+      still.image !== null,
   );
-  const avatar = input.avatarUrl ? await loadImage(input.avatarUrl) : null;
+  // One batch: the avatar used to wait for the stills to finish before it even
+  // started, and a link thumbnail would have waited behind both.
+  const [avatar, thumbnail] = await Promise.all([
+    input.avatarUrl ? loadImage(input.avatarUrl) : null,
+    input.link?.thumbnailUrl ? loadImage(input.link.thumbnailUrl) : null,
+  ]);
 
   const ruler = document.createElement("canvas").getContext("2d");
   if (!ruler) throw new Error("this browser has no 2d canvas");
@@ -578,6 +786,9 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     0,
   );
 
+  const linkShape = input.link
+    ? linkLayout(ruler, input.link, thumbnail, contentWidth)
+    : null;
   const headerHeight = DOT_INSET + DOT + 24;
   const shape =
     drawable.length > 0 ? mediaLayout(drawable.length, contentWidth) : null;
@@ -585,6 +796,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     headerHeight +
     AVATAR +
     (bodyHeight > 0 ? 24 + bodyHeight : 0) +
+    (linkShape ? 18 + linkShape.height : 0) +
     (shape ? 22 + shape.height : 0) +
     (input.location ? 14 + 26 : 0) +
     30 +
@@ -704,20 +916,29 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     });
   }
 
+  if (linkShape && input.link) {
+    y += 18;
+    drawLinkCard(ctx, input.link, thumbnail, linkShape, PAD, y, contentWidth);
+    y += linkShape.height;
+  }
+
   if (shape) {
     y += 22;
     shape.boxes.forEach((box, index) => {
-      const image = drawable[index];
-      if (!image) return;
+      const still = drawable[index];
+      if (!still) return;
       drawCover(
         ctx,
-        image,
+        still.image,
         PAD + box[0],
         y + box[1],
         box[2],
         box[3],
         MEDIA_RADIUS,
       );
+      if (still.video) {
+        drawPlayBadge(ctx, PAD + box[0], y + box[1], box[2], box[3]);
+      }
     });
     y += shape.height;
   }

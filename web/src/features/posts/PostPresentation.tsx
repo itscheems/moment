@@ -21,7 +21,7 @@ import { formatMomentDate } from "./dates";
 import { OwnerPostActions } from "../owner/OwnerPostActions";
 import { OwnerRepostAction } from "../owner/OwnerRepostAction";
 import { LinkCard } from "../links/LinkCard";
-import { shareCardBlocks } from "../share/shareCard";
+import { shareCardBlocks, shareCardLink } from "../share/shareCard";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
 
@@ -241,11 +241,18 @@ export function PostPresentation({
       card={{
         displayName: site.displayName,
         username: site.username,
-        avatarUrl: site.avatarMediaId ? mediaPreviewUrl(site.avatarMediaId) : null,
+        avatarUrl: site.avatarMediaId
+          ? mediaPreviewUrl(site.avatarMediaId)
+          : null,
         publishedLabel: published.absolute,
         blocks: shareCardBlocks(post.contentHtml),
         media: post.media,
-        location: post.location?.name?.trim() || post.location?.displayName?.trim() || null,
+        location:
+          post.location?.name?.trim() ||
+          post.location?.displayName?.trim() ||
+          null,
+        link:
+          post.linkCards.length > 0 ? shareCardLink(post.linkCards[0]) : null,
       }}
       href={detailHref}
       title={`${title} 的 Moment`}
