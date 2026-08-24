@@ -1,69 +1,10 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  type MouseEvent,
-} from "react";
-import hljs from "highlight.js/lib/core";
-import bash from "highlight.js/lib/languages/bash";
-import css from "highlight.js/lib/languages/css";
-import go from "highlight.js/lib/languages/go";
-import java from "highlight.js/lib/languages/java";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import markdown from "highlight.js/lib/languages/markdown";
-import python from "highlight.js/lib/languages/python";
-import sql from "highlight.js/lib/languages/sql";
-import typescript from "highlight.js/lib/languages/typescript";
-import xml from "highlight.js/lib/languages/xml";
+import { useCallback, useEffect, useMemo, type MouseEvent } from "react";
 
 import { useMentionResolver } from "../app/mentions";
 import { useNavigation } from "../app/navigation";
 
+import { highlightCodeBlocks } from "./codeHighlight";
 import styles from "./MarkdownContent.module.css";
-
-const languages = {
-  bash,
-  css,
-  go,
-  java,
-  javascript,
-  json,
-  markdown,
-  python,
-  sql,
-  typescript,
-  xml,
-};
-
-for (const [name, language] of Object.entries(languages)) {
-  hljs.registerLanguage(name, language);
-}
-
-const aliases: Record<string, keyof typeof languages> = {
-  html: "xml",
-  js: "javascript",
-  jsx: "javascript",
-  md: "markdown",
-  py: "python",
-  sh: "bash",
-  shell: "bash",
-  ts: "typescript",
-  tsx: "typescript",
-  xml: "xml",
-};
-
-function registeredLanguage(code: HTMLElement): string | null {
-  for (const className of code.classList) {
-    if (!className.startsWith("language-")) continue;
-    const requested = className.slice("language-".length).toLocaleLowerCase();
-    const canonical = aliases[requested] ?? requested;
-    if (canonical in languages) return canonical;
-  }
-  return null;
-}
 
 /**
  * Anything shaped like a handle, immediately after an `@` that begins a word.
@@ -191,12 +132,22 @@ function collectHandles(html: string): string[] {
   return [...found];
 }
 
-function linkHandleMentions(
+/**
+ * The markup as it will be committed: mentions linked, fenced blocks coloured.
+ *
+ * Both passes work on one parse of the body, and both belong here rather than
+ * in an effect over the rendered tree -- see codeHighlight.ts for what reaching
+ * into the committed DOM cost.
+ */
+function prepareHtml(
   html: string,
   resolves: (handle: string) => boolean,
 ): string {
-  if (!html.includes("@")) return html;
+  const mentionable = html.includes("@");
+  if (!mentionable && !html.includes("<pre")) return html;
   const parsed = new DOMParser().parseFromString(html, "text/html");
+  highlightCodeBlocks(parsed.body);
+  if (!mentionable) return parsed.body.innerHTML;
   const walker = parsed.createTreeWalker(parsed.body, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
   while (walker.nextNode()) {
@@ -240,13 +191,12 @@ export function MarkdownContent({
   className?: string;
   html: string;
 }) {
-  const rootRef = useRef<HTMLDivElement>(null);
   const { navigate } = useNavigation();
   const { resolves, consider } = useMentionResolver();
   const mentioned = useMemo(() => collectHandles(html), [html]);
   useEffect(() => consider(mentioned), [consider, mentioned]);
   const renderedHtml = useMemo(
-    () => linkHandleMentions(html, resolves),
+    () => prepareHtml(html, resolves),
     [html, resolves],
   );
 
@@ -284,28 +234,12 @@ export function MarkdownContent({
     },
     [navigate],
   );
-  useLayoutEffect(() => {
-    for (const code of rootRef.current?.querySelectorAll<HTMLElement>(
-      "pre code",
-    ) ?? []) {
-      const language = registeredLanguage(code);
-      if (!language) continue;
-      const source = code.textContent ?? "";
-      code.innerHTML = hljs.highlight(source, {
-        language,
-        ignoreIllegals: true,
-      }).value;
-      code.classList.add("hljs");
-      code.dataset.highlighted = "yes";
-    }
-  }, [renderedHtml]);
 
   return (
     <div
       className={`${styles.root} ${className ?? ""}`}
       dangerouslySetInnerHTML={{ __html: renderedHtml }}
       onClick={followInternalLink}
-      ref={rootRef}
     />
   );
 }

@@ -730,15 +730,26 @@
   }
 }
 
+/*
+ * Separate pictures, not one picture cut into pieces.
+ *
+ * The grid used to be a single rounded panel with hairline seams: a shared
+ * background showed through a 3px gap, and only the four outer corners were
+ * round. That reads as one image sliced up. Each tile now carries its own
+ * rounding and the gap is wide enough to be air rather than a rule, which is
+ * how the share card has always drawn the same set of pictures -- see
+ * MEDIA_RADIUS and the gap in mediaLayout, in features/share/shareCard.ts, and
+ * keep the two in step.
+ *
+ * The gap being transparent is the point: it shows whatever the grid sits on,
+ * so a quoted card's hover reaches between the pictures instead of stopping at
+ * a panel edge.
+ */
 .imageGrid {
-  --media-gap: 3px;
+  --media-gap: 6px;
   display: grid;
   gap: var(--media-gap);
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-panel);
   margin-block-start: var(--space-3);
-  background: var(--border-subtle);
 }
 
 .imageTile {
@@ -746,7 +757,7 @@
   min-block-size: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-panel);
   padding: 0;
   background: var(--surface-muted);
   cursor: default;

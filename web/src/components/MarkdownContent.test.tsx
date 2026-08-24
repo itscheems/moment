@@ -4,7 +4,6 @@ import {
   fireEvent,
   render as renderBare,
   screen,
-  waitFor,
 } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -42,12 +41,37 @@ describe("MarkdownContent", () => {
         html={`<pre><code class="language-${language}">${source}</code></pre>`}
       />,
     );
-    await waitFor(() =>
-      expect(container.querySelector("code")).toHaveAttribute(
-        "data-highlighted",
-        "yes",
-      ),
+    expect(container.querySelector("code")).toHaveClass("hljs");
+    expect(container.querySelector("code .hljs-keyword")).toBeInTheDocument();
+  });
+
+  // React compares dangerouslySetInnerHTML by the identity of the prop object,
+  // and a render builds a fresh one every time -- so every re-render re-commits
+  // the markup it was given. Colouring the committed DOM from an effect
+  // survived exactly one commit: a post read on its own page kept its colours
+  // because nothing re-rendered it, and the same post in a timeline lost them
+  // on the next hover, with the effect never running again because the html it
+  // depended on had not changed.
+  it("keeps a fence coloured when what is around it re-renders", () => {
+    const body =
+      '<pre><code class="language-python">def hi():\n    return 1</code></pre>';
+    // A fresh tree each time: handing rerender the element it already holds
+    // lets React bail out before it commits anything, which is not what a
+    // timeline does when a sibling's state moves.
+    const tree = (tick: number) => (
+      <NavigationProvider>
+        <MentionProvider known={MENTIONABLE}>
+          <span>{tick}</span>
+          <MarkdownContent html={body} />
+        </MentionProvider>
+      </NavigationProvider>
     );
+    const { container, rerender } = renderBare(tree(1));
+    expect(container.querySelector("code.hljs")).toBeInTheDocument();
+
+    rerender(tree(2));
+
+    expect(container.querySelector("code.hljs")).toBeInTheDocument();
     expect(container.querySelector("code .hljs-keyword")).toBeInTheDocument();
   });
 
@@ -61,7 +85,7 @@ describe("MarkdownContent", () => {
     );
     const code = container.querySelector("code");
     expect(code).toHaveTextContent("plain & safe");
-    expect(code).not.toHaveAttribute("data-highlighted");
+    expect(code).not.toHaveClass("hljs");
     expect(code?.querySelector("span")).toBeNull();
   });
 
@@ -276,13 +300,12 @@ describe("a mention that names nobody", () => {
   // resolve to nothing. Refusing to link is the safe answer, so the excess is
   // left as text rather than turned into a request each.
   it("asks about a bounded number of unknown handles", () => {
-    const fetcher = vi.fn(
-      async () => new Response("{}", { status: 404 }),
-    );
+    const fetcher = vi.fn(async () => new Response("{}", { status: 404 }));
     vi.stubGlobal("fetch", fetcher);
-    const many = Array.from({ length: 40 }, (_, index) => `@user${index}0`).join(
-      " ",
-    );
+    const many = Array.from(
+      { length: 40 },
+      (_, index) => `@user${index}0`,
+    ).join(" ");
     render(<MarkdownContent html={`<p>${many}</p>`} />, []);
 
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(16);

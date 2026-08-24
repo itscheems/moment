@@ -2,6 +2,7 @@ import { Popover } from "@base-ui/react/popover";
 import { type MouseEvent, type MouseEventHandler } from "react";
 
 import type { PublicPost, SiteIdentity } from "../../api/public";
+import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import {
@@ -20,6 +21,7 @@ import { formatMomentDate } from "./dates";
 import { OwnerPostActions } from "../owner/OwnerPostActions";
 import { OwnerRepostAction } from "../owner/OwnerRepostAction";
 import { LinkCard } from "../links/LinkCard";
+import { shareCardBlocks, shareCardLink } from "../share/shareCard";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
 
@@ -147,13 +149,16 @@ export function PostPresentation({
   const useTimelineDensity = timelineDensity && !detail;
 
   const openFromSurface = (event: MouseEvent<HTMLElement>) => {
-    if (
-      detail ||
-      (event.target instanceof Element &&
-        event.target.closest(interactiveSurfaceSelector))
-    ) {
-      return;
-    }
+    if (detail) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    // A portal puts its markup under the body and still leaves it a descendant
+    // in the React tree, so what it is clicked on arrives here -- a dialog's
+    // backdrop, a lightbox, the share preview. None of those are the card's own
+    // surface, and dismissing one used to open the post underneath it. Whole-card
+    // navigation answers only for what is actually inside the card.
+    if (!event.currentTarget.contains(target)) return;
+    if (target.closest(interactiveSurfaceSelector)) return;
     navigate(detailHref);
   };
 
@@ -236,6 +241,22 @@ export function PostPresentation({
     <ShareMenu
       align={align}
       baseUrl={site.publicBaseUrl}
+      card={{
+        displayName: site.displayName,
+        username: site.username,
+        avatarUrl: site.avatarMediaId
+          ? mediaPreviewUrl(site.avatarMediaId)
+          : null,
+        publishedLabel: published.absolute,
+        blocks: shareCardBlocks(post.contentHtml),
+        media: post.media,
+        location:
+          post.location?.name?.trim() ||
+          post.location?.displayName?.trim() ||
+          null,
+        link:
+          post.linkCards.length > 0 ? shareCardLink(post.linkCards[0]) : null,
+      }}
       href={detailHref}
       title={`${title} 的 Moment`}
       trigger={

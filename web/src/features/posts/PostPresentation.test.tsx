@@ -610,6 +610,39 @@ describe("shared post presentation", () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
+  // A dialog is portalled under the body but stays a descendant of this card in
+  // the React tree, so what it is clicked on arrives at the card's own click
+  // handler. Dismissing the share preview used to open the Moment underneath it,
+  // which is the one thing somebody closing a preview is not asking for.
+  it("dismisses the share preview without opening the Moment", async () => {
+    render(
+      <FeedbackProvider>
+        <NavigationProvider>
+          <PostPresentation
+            post={makePost("可分享", "<p>可分享</p>")}
+            site={site}
+          />
+        </NavigationProvider>
+      </FeedbackProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "分享这条 Moment" }));
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "生成分享图片" }),
+    );
+    const popup = await screen.findByRole("dialog", { name: "分享图片" });
+
+    // The viewport covers the window and sits above the backdrop, so a click
+    // "outside the popup" is a click on it.
+    const viewport = popup.parentElement;
+    expect(viewport).not.toBeNull();
+    fireEvent.click(viewport as HTMLElement);
+
+    expect(window.location.pathname).toBe("/");
+    await waitFor(() => expect(popup).not.toBeInTheDocument());
+    expect(window.location.pathname).toBe("/");
+  });
+
   it("keeps a detail share menu on the content side of its trigger", async () => {
     render(
       <NavigationProvider>
