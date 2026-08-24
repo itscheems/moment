@@ -2,6 +2,7 @@ import { Popover } from "@base-ui/react/popover";
 import { type MouseEvent, type MouseEventHandler } from "react";
 
 import type { PublicPost, SiteIdentity } from "../../api/public";
+import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
 import {
@@ -20,6 +21,7 @@ import { formatMomentDate } from "./dates";
 import { OwnerPostActions } from "../owner/OwnerPostActions";
 import { OwnerRepostAction } from "../owner/OwnerRepostAction";
 import { LinkCard } from "../links/LinkCard";
+import { shareCardBlocks } from "../share/shareCard";
 import { ImageGrid } from "../media/ImageGrid";
 import styles from "./PostPresentation.module.css";
 
@@ -236,6 +238,15 @@ export function PostPresentation({
     <ShareMenu
       align={align}
       baseUrl={site.publicBaseUrl}
+      card={{
+        displayName: site.displayName,
+        username: site.username,
+        avatarUrl: site.avatarMediaId ? mediaPreviewUrl(site.avatarMediaId) : null,
+        publishedLabel: published.absolute,
+        blocks: shareCardBlocks(post.contentHtml),
+        media: post.media,
+        location: post.location?.name?.trim() || post.location?.displayName?.trim() || null,
+      }}
       href={detailHref}
       title={`${title} 的 Moment`}
       trigger={

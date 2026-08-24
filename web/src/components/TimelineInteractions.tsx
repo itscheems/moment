@@ -1,9 +1,11 @@
 import { Menu } from "@base-ui/react/menu";
 import { PreviewCard } from "@base-ui/react/preview-card";
 import { Tooltip } from "@base-ui/react/tooltip";
-import { useRef, type ReactElement, type SyntheticEvent } from "react";
+import { useRef, useState, type ReactElement, type SyntheticEvent } from "react";
 
 import type { SiteIdentity } from "../api/public";
+import { ShareCardDialog } from "../features/share/ShareCardDialog";
+import type { ShareCardInput } from "../features/share/shareCard";
 import { InternalLink } from "../app/navigation";
 import { SiteAvatar, SiteCover, siteProfileHref } from "./SiteIdentity";
 import { notify } from "./Feedback";
@@ -112,17 +114,25 @@ export function SiteIdentityPreview({
 export function ShareMenu({
   align = "end",
   baseUrl,
+  card,
   href,
   title,
   trigger,
 }: {
   align?: "start" | "center" | "end";
   baseUrl: string | null;
+  /**
+   * What a picture of this would contain. Absent where there is nothing to
+   * draw, which is what keeps the entry out of the menu rather than offering
+   * something that opens onto an error.
+   */
+  card?: ShareCardInput;
   href: string;
   title: string;
   trigger: ReactElement;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const [cardOpen, setCardOpen] = useState(false);
   const stopCardNavigation = (event: SyntheticEvent) => {
     event.stopPropagation();
   };
@@ -206,9 +216,25 @@ export function ShareMenu({
               <Icon name="open" />
               在新标签页打开
             </Menu.Item>
+            {card ? (
+              <Menu.Item
+                className={styles.shareItem}
+                onClick={() => setCardOpen(true)}
+              >
+                <Icon name="media" />
+                生成分享图片
+              </Menu.Item>
+            ) : null}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>
+      {card ? (
+        <ShareCardDialog
+          input={card}
+          onOpenChange={setCardOpen}
+          open={cardOpen}
+        />
+      ) : null}
     </Menu.Root>
   );
 }
