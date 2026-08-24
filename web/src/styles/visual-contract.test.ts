@@ -396,6 +396,18 @@ describe("visual foundation contract", () => {
     );
   });
 
+  // The account pill at the foot of the rail is asked for by its hover: a
+  // target that big with no response to the pointer reads as a label rather
+  // than a control. Losing either rule looks wrong and tests green.
+  it("gives the account rail a hover that fades rather than snaps", () => {
+    expect(shellCss).toMatch(
+      /\._accountRail_[\w-]+\s*\{[^}]*transition:[^;]*background var\(--motion-fast\)/s,
+    );
+    expect(shellCss).toMatch(
+      /\._accountRail_[\w-]+:hover[^{]*\{[^}]*background: var\(--surface-hover\)/s,
+    );
+  });
+
   // Dragging across a headline this size fills half the panel with selection
   // highlight and copies nothing anybody wanted. Losing this rule looks wrong
   // and tests green, so it is asserted rather than remembered.

@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 
-import type { SiteIdentity } from "../api/public";
+import type { Account, SiteIdentity } from "../api/public";
 import { InternalLink, useNavigation } from "../app/navigation";
 import type { AppRoute, RouteId } from "../app/routes";
 import { SiteAvatar, siteDisplayName } from "./SiteIdentity";
@@ -126,6 +126,90 @@ function ownerNav(settingsAvailable: boolean): NavItem {
   };
 }
 
+/**
+ * The account this browser is signed in as, at the foot of the rail.
+ *
+ * It replaced a nav row reading "所有者", which named a rank rather than a
+ * person and said the same thing whoever was reading it. What belongs in the
+ * corner of a signed-in app is who you are, and a way to act on that -- so the
+ * row shows the face and the handle, and opens the menu that everything else
+ * about the account can be hung from.
+ */
+function AccountRail({
+  account,
+  onSignOut,
+  route,
+  settingsAvailable,
+}: {
+  account: Account | null;
+  onSignOut: () => void;
+  route: AppRoute;
+  settingsAvailable: boolean;
+}) {
+  const { navigate } = useNavigation();
+  // Nobody is signed in, so there is no face to show and one thing to offer.
+  if (!account) {
+    return <NavLink item={ownerNav(settingsAvailable)} route={route} />;
+  }
+  // SiteAvatar reads an identity face, and an account is one: the cover is
+  // never drawn at this size, so it travels only to satisfy the shape.
+  const face = {
+    username: account.username,
+    displayName: account.displayName,
+    title: account.displayName,
+    avatarMediaId: account.avatarMediaId,
+    coverMediaId: account.coverMediaId,
+  };
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        aria-label={`${account.displayName} 的账户菜单`}
+        className={styles.accountRail}
+      >
+        <span className={styles.accountRailAvatar}>
+          <SiteAvatar site={face} />
+        </span>
+        <span className={styles.accountRailIdentity}>
+          <span className={styles.accountRailName}>{account.displayName}</span>
+          <span className={styles.accountRailHandle}>@{account.username}</span>
+        </span>
+        <Icon name="more" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner
+          align="start"
+          className={styles.mobileAccountPositioner}
+          collisionAvoidance={{ side: "flip", align: "shift" }}
+          collisionPadding={8}
+          side="top"
+          sideOffset={6}
+        >
+          <Menu.Popup aria-label="账户" className={styles.mobileAccountPopup}>
+            <Menu.Item
+              className={styles.mobileAccountItem}
+              onClick={() => navigate(account.profileUrl)}
+            >
+              <Icon name="owner" />
+              <span>个人资料</span>
+            </Menu.Item>
+            <Menu.Item
+              className={styles.mobileAccountItem}
+              onClick={() => navigate("/owner/settings")}
+            >
+              <Icon name="settings" />
+              <span>设置</span>
+            </Menu.Item>
+            <Menu.Item className={styles.mobileAccountItem} onClick={onSignOut}>
+              <Icon name="close" />
+              <span>退出 @{account.username}</span>
+            </Menu.Item>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
+
 function focusedComposerControl(): boolean {
   const active = document.activeElement;
   if (!(active instanceof HTMLElement)) return false;
@@ -223,11 +307,15 @@ function LeftRail({
   site,
   ownerSettingsAvailable,
   profileHref,
+  account,
+  onSignOut,
 }: {
   route: AppRoute;
   site: SiteIdentity;
   ownerSettingsAvailable: boolean;
   profileHref: string;
+  account: Account | null;
+  onSignOut: () => void;
 }) {
   const { navigateOverlay } = useNavigation();
   return (
@@ -255,7 +343,12 @@ function LeftRail({
         <span>发布</span>
       </InternalLink>
       <div className={styles.railBottom}>
-        <NavLink item={ownerNav(ownerSettingsAvailable)} route={route} />
+        <AccountRail
+          account={account}
+          onSignOut={onSignOut}
+          route={route}
+          settingsAvailable={ownerSettingsAvailable}
+        />
       </div>
     </aside>
   );
@@ -393,6 +486,8 @@ export function AppShell({
   memoryYears = [],
   ownerSettingsAvailable = false,
   profileHref = DEFAULT_PROFILE_HREF,
+  account = null,
+  onSignOut = () => {},
 }: {
   route: AppRoute;
   state: string | null;
@@ -401,6 +496,8 @@ export function AppShell({
   memoryYears?: readonly number[];
   ownerSettingsAvailable?: boolean;
   profileHref?: string;
+  account?: Account | null;
+  onSignOut?: () => void;
 }) {
   const { goBack } = useNavigation();
   const scrollHomeToTop = useHomeScrollToTop();
@@ -413,6 +510,8 @@ export function AppShell({
         className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""}`}
       >
         <LeftRail
+          account={account}
+          onSignOut={onSignOut}
           ownerSettingsAvailable={ownerSettingsAvailable}
           profileHref={profileHref}
           route={route}
