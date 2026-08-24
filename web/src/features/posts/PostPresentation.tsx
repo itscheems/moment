@@ -149,13 +149,16 @@ export function PostPresentation({
   const useTimelineDensity = timelineDensity && !detail;
 
   const openFromSurface = (event: MouseEvent<HTMLElement>) => {
-    if (
-      detail ||
-      (event.target instanceof Element &&
-        event.target.closest(interactiveSurfaceSelector))
-    ) {
-      return;
-    }
+    if (detail) return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    // A portal puts its markup under the body and still leaves it a descendant
+    // in the React tree, so what it is clicked on arrives here -- a dialog's
+    // backdrop, a lightbox, the share preview. None of those are the card's own
+    // surface, and dismissing one used to open the post underneath it. Whole-card
+    // navigation answers only for what is actually inside the card.
+    if (!event.currentTarget.contains(target)) return;
+    if (target.closest(interactiveSurfaceSelector)) return;
     navigate(detailHref);
   };
 
