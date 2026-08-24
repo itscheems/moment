@@ -582,6 +582,81 @@ describe("App shell and public routes", () => {
     );
   });
 
+  // The foot of the rail used to read "所有者", which names a rank rather than a
+  // person and said the same thing to whoever was looking at it. What belongs
+  // in the corner of a signed-in app is who you are.
+  describe("the account at the foot of the rail", () => {
+    function signedInAs(username: string) {
+      preauthenticate();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url === "/api/v1/account/session") {
+            return json(accountSessionEnvelope(username));
+          }
+          if (url === "/api/v1/site") return json(siteEnvelope);
+          if (url === "/api/v1/login/session") {
+            return json({ data: { logged_out: true }, meta: {} });
+          }
+          return json(timelineEnvelope());
+        }),
+      );
+    }
+
+    it("shows the signed-in face and handle instead of a rank", async () => {
+      signedInAs("cheemschen");
+      render(<App />);
+
+      const trigger = await screen.findByRole("button", {
+        name: "乔乔 的账户菜单",
+      });
+      expect(trigger).toHaveTextContent("乔乔");
+      expect(trigger).toHaveTextContent("@cheemschen");
+      expect(screen.queryByRole("link", { name: "所有者" })).toBeNull();
+    });
+
+    // The menu is the container everything else about the account hangs from.
+    it("opens the account menu from the rail", async () => {
+      signedInAs("cheemschen");
+      render(<App />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "乔乔 的账户菜单" }),
+      );
+      await screen.findByRole("menu", { hidden: true });
+      for (const name of ["个人资料", "设置", "退出 @cheemschen"]) {
+        expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
+      }
+    });
+
+    it("signs out and returns to the timeline", async () => {
+      signedInAs("cheemschen");
+      render(<App />);
+
+      fireEvent.click(
+        await screen.findByRole("button", { name: "乔乔 的账户菜单" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: "退出 @cheemschen" }),
+      );
+
+      await waitFor(() =>
+        expect(window.sessionStorage.getItem("moment.owner.session.v1")).toBeNull(),
+      );
+      expect(window.location.pathname).toBe("/");
+    });
+
+    // Nobody is signed in, so there is no face to show and one thing to offer.
+    it("offers sign-in when there is no account to show", async () => {
+      render(<App />);
+
+      expect(
+        await screen.findByRole("link", { name: "所有者" }),
+      ).toHaveAttribute("href", "/login");
+    });
+  });
+
   // `/profile` resolves to whoever is asking, which is right for the server and
   // wrong for a link somebody reads before clicking: it hides the handle, and a
   // signed-in member following it lands on a page addressed as though it were

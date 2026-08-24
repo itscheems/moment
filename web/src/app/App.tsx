@@ -1,5 +1,11 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { PublicApi, type SiteIdentity } from "../api/public";
 import { AppShell } from "../components/AppShell";
@@ -174,6 +180,19 @@ function PublicApp() {
     }
   }, [displayLocation.search, homeVisited, route.id]);
 
+  // Signing out from the rail. The provider clears its own stored session
+  // either way: a session the server has already forgotten is signed out, and
+  // reporting a failure there would describe the transport rather than the
+  // outcome somebody asked for.
+  const signOutFromRail = useCallback(async () => {
+    try {
+      await owner.logout(site.instanceId);
+    } catch {
+      owner.forgetSession(site.instanceId);
+    }
+    location.navigate("/");
+  }, [location, owner, site.instanceId]);
+
   // `/profile` means "mine", and only a session says whose. A visitor without
   // one is asking for a page that does not exist for them, so they are sent to
   // sign in; anyone signed in is sent to their own handle, which is the page
@@ -320,7 +339,9 @@ function PublicApp() {
     // anything checked.
     <MentionProvider known={siteIdentityReady ? [site.username] : []}>
       <AppShell
+        account={owner.account}
         memoryYears={shellYears}
+        onSignOut={() => void signOutFromRail()}
         ownerSettingsAvailable={siteIdentityReady && signedIn}
         profileHref={owner.account?.profileUrl ?? undefined}
         route={route}
