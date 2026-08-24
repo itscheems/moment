@@ -230,6 +230,25 @@ describe("drawing the card", () => {
     expect(sources.some((source) => source.includes("/preview"))).toBe(false);
   });
 
+  // The name and the handle are one identity read as a pair. Pinning the ratio
+  // rather than the numbers leaves both free to move, and still catches the
+  // handle drifting back to the footnote it used to look like beside the name.
+  it("keeps the byline's two lines close in size", async () => {
+    await renderShareCard(input());
+
+    const sizeOf = (text: string) => {
+      const call = recording
+        .of("fillText")
+        .find((drawn) => String(drawn.args[0]) === text);
+      return Number(/(\d+(?:\.\d+)?)px/.exec(call?.font ?? "")?.[1] ?? 0);
+    };
+    const name = sizeOf("Cheems");
+    const handle = sizeOf("@itscheems");
+
+    expect(name).toBeGreaterThan(handle);
+    expect(handle / name).toBeGreaterThan(0.75);
+  });
+
   it("draws what a link preview is and what it says", async () => {
     await renderShareCard(
       input({

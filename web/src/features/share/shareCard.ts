@@ -157,8 +157,14 @@ const ACCENT = "#1d9bf0";
  * reads as one undifferentiated grey block however carefully it is spaced. A
  * hierarchy is only legible where the steps are.
  */
-const NAME_SIZE = 23;
-const HANDLE_SIZE = 15;
+// The two lines of the byline sit closer in size than a heading and a caption
+// would. They are one identity read as a pair, and a handle set half the height
+// of the name beside it reads as a footnote about the name rather than the
+// other half of it.
+const NAME_SIZE = 21;
+const HANDLE_SIZE = 17;
+/** The place line, which stays a caption whatever the byline does. */
+const PLACE_SIZE = 15;
 const BODY_SIZE = 18;
 const BODY_LINE = 29;
 const FOOT_SIZE = 13;
@@ -862,13 +868,13 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   const nameWidth = WIDTH - PAD - textLeft;
   ctx.fillStyle = INK;
   ctx.font = font(700, NAME_SIZE);
-  ctx.fillText(truncate(ctx, input.displayName, nameWidth), textLeft, y + 23);
+  ctx.fillText(truncate(ctx, input.displayName, nameWidth), textLeft, y + 22);
   ctx.fillStyle = MUTED;
   ctx.font = font(400, HANDLE_SIZE);
   ctx.fillText(
     truncate(ctx, `@${input.username}`, nameWidth),
     textLeft,
-    y + 45,
+    y + 44,
   );
   y += AVATAR;
 
@@ -960,7 +966,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     ctx.arc(pinX, pinY - 3, 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = MUTED;
-    ctx.font = font(400, HANDLE_SIZE);
+    ctx.font = font(400, PLACE_SIZE);
     ctx.fillText(
       truncate(ctx, input.location, contentWidth - 22),
       PAD + 22,
