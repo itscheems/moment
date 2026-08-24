@@ -17,6 +17,7 @@
  */
 
 import { mediaPosterUrl, mediaPreviewUrl } from "../../api/mediaUrls";
+import { highlightCodeBlocks } from "../../components/codeHighlight";
 
 /** The face the timeline sets posts in. */
 const FACE =
@@ -51,7 +52,13 @@ export type ShareCardBlock =
   | { kind: "text"; text: string; heading?: 1 | 2 | 3 }
   | { kind: "item"; marker: string; text: string }
   | { kind: "quote"; text: string }
-  | { kind: "code"; lines: string[] };
+  | { kind: "code"; lines: CodeSpan[][] };
+
+/** One run of one colour inside a fenced line. */
+export interface CodeSpan {
+  text: string;
+  colour: string;
+}
 
 /** One attachment, as the API describes it. */
 export interface ShareCardMedia {
@@ -164,7 +171,8 @@ const monoFont = (size: number) => `400 ${size}px ${MONO}`;
  * with a full stop or a closing bracket is the one thing every Chinese
  * typesetter refuses.
  */
-const CJK = /[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]/;
+const CJK =
+  /[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 const CLOSING =
   /[\u3002\uff0c\u3001\uff0e,.!?\uff01\uff1f;\uff1b:\uff1a\uff09)\]\u3011\u300b\u300d\u300f\u3009\u201d\u2019%\u2026]/;
 
@@ -194,7 +202,11 @@ function breakPieces(text: string): string[] {
   return pieces;
 }
 
-function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+function wrap(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string[] {
   const lines: string[] = [];
   let line = "";
   for (const piece of breakPieces(text)) {
@@ -211,7 +223,115 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): st
 }
 
 /** One line, cut to fit and closed with an ellipsis. */
-function truncate(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+/**
+ * The card's palette for highlighted code, mirroring the light theme in
+ * MarkdownContent.module.css.
+ *
+ * The stylesheet reaches its colours through theme tokens; a canvas has no
+ * cascade to read them from, and the card is white whatever theme the reader
+ * is in, so the light values are the ones written out here. Keep the two in
+ * step -- a card that colours a keyword differently from the post it came from
+ * reads as a different renderer, which is what it is.
+ */
+const CODE_INK: Record<string, string> = {
+  comment: MUTED,
+  quote: MUTED,
+  keyword: "#1b8bd6",
+  "selector-tag": "#1b8bd6",
+  literal: "#1b8bd6",
+  section: "#1b8bd6",
+  link: "#1b8bd6",
+  string: "#008060",
+  title: "#008060",
+  name: "#008060",
+  type: "#008060",
+  attribute: "#008060",
+  symbol: "#008060",
+  bullet: "#008060",
+  addition: "#008060",
+  variable: "#008060",
+  "template-tag": "#008060",
+  "template-variable": "#008060",
+  number: "#9c36b5",
+  regexp: "#9c36b5",
+  meta: "#9c36b5",
+  built_in: "#9c36b5",
+  "builtin-name": "#9c36b5",
+  params: "#9c36b5",
+  deletion: "#f4212e",
+  doctag: "#f4212e",
+};
+
+/** The colour this element asks for, or the one it sits inside. */
+function codeColour(element: Element, inherited: string): string {
+  for (const name of element.classList) {
+    if (!name.startsWith("hljs-")) continue;
+    const colour = CODE_INK[name.slice("hljs-".length)];
+    if (colour) return colour;
+  }
+  return inherited;
+}
+
+/**
+ * A fenced block read as lines of same-coloured runs.
+ *
+ * highlight.js nests its spans, so the colour of a piece of text is the
+ * nearest ancestor that names one -- an unnamed wrapper passes through what it
+ * was given rather than resetting to the body colour.
+ */
+function codeSpans(pre: Element): CodeSpan[][] {
+  const lines: CodeSpan[][] = [[]];
+  const visit = (node: Node, colour: string) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      (node.nodeValue ?? "").split("\n").forEach((part, index) => {
+        if (index > 0) lines.push([]);
+        if (part !== "") lines[lines.length - 1]?.push({ text: part, colour });
+      });
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const own = codeColour(node as Element, colour);
+    for (const child of node.childNodes) visit(child, own);
+  };
+  for (const child of pre.childNodes) visit(child, INK);
+  // The fence's closing newline is not a line somebody wrote.
+  while (lines.length > 0 && (lines[lines.length - 1]?.length ?? 0) === 0)
+    lines.pop();
+  return lines;
+}
+
+/** As truncate, for a line that changes colour partway along. */
+function truncateSpans(
+  ctx: CanvasRenderingContext2D,
+  spans: CodeSpan[],
+  maxWidth: number,
+): CodeSpan[] {
+  const width = (text: string) => ctx.measureText(text).width;
+  if (spans.reduce((sum, span) => sum + width(span.text), 0) <= maxWidth)
+    return spans;
+  const room = maxWidth - width("…");
+  const kept: CodeSpan[] = [];
+  let used = 0;
+  for (const span of spans) {
+    if (used + width(span.text) <= room) {
+      kept.push(span);
+      used += width(span.text);
+      continue;
+    }
+    let cut = span.text;
+    while (cut.length > 0 && used + width(cut) > room) cut = cut.slice(0, -1);
+    if (cut !== "") kept.push({ colour: span.colour, text: cut });
+    break;
+  }
+  kept.push({ colour: MUTED, text: "…" });
+  return kept;
+}
+
+function truncate(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let cut = text;
   while (cut.length > 1 && ctx.measureText(`${cut}…`).width > maxWidth) {
@@ -259,7 +379,10 @@ function drawCover(
   height: number,
   radius: number,
 ) {
-  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const scale = Math.max(
+    width / image.naturalWidth,
+    height / image.naturalHeight,
+  );
   const drawWidth = image.naturalWidth * scale;
   const drawHeight = image.naturalHeight * scale;
   ctx.save();
@@ -338,7 +461,7 @@ type LaidBlock =
       marker?: string;
       quote?: boolean;
     }
-  | { kind: "code"; lines: string[] };
+  | { kind: "code"; lines: CodeSpan[][] };
 
 const blockHeight = (piece: LaidBlock) =>
   piece.kind === "code"
@@ -372,7 +495,9 @@ function layOutBody(
         kind: "code",
         // A fenced block is written with its line breaks meant; wrapping them
         // would reflow somebody's code. Anything too wide is cut instead.
-        lines: shown.map((line) => truncate(ruler, line, contentWidth - CODE_PAD * 2)),
+        lines: shown.map((line) =>
+          truncateSpans(ruler, line, contentWidth - CODE_PAD * 2),
+        ),
       });
       used += shown.length;
       continue;
@@ -381,7 +506,11 @@ function layOutBody(
     const size = heading ? HEADING_SIZES[heading] : BODY_SIZE;
     const weight = heading ? 700 : 400;
     const indent =
-      block.kind === "item" ? ITEM_INDENT : block.kind === "quote" ? QUOTE_INDENT : 0;
+      block.kind === "item"
+        ? ITEM_INDENT
+        : block.kind === "quote"
+          ? QUOTE_INDENT
+          : 0;
     ruler.font = font(weight, size);
     const wrapped = wrap(ruler, block.text, contentWidth - indent);
     const shown = wrapped.slice(0, Math.max(MAX_BODY_LINES - used, 0));
@@ -416,8 +545,12 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   const contentWidth = WIDTH - PAD * 2;
   const media = input.media.slice(0, 4);
-  const images = await Promise.all(media.map((item) => loadImage(shareCardMediaUrl(item))));
-  const drawable = images.filter((image): image is HTMLImageElement => image !== null);
+  const images = await Promise.all(
+    media.map((item) => loadImage(shareCardMediaUrl(item))),
+  );
+  const drawable = images.filter(
+    (image): image is HTMLImageElement => image !== null,
+  );
   const avatar = input.avatarUrl ? await loadImage(input.avatarUrl) : null;
 
   const ruler = document.createElement("canvas").getContext("2d");
@@ -430,7 +563,10 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     const previous = laid[index - 1];
     const current = laid[index];
     const bothItems =
-      previous?.kind === "lines" && previous.item && current?.kind === "lines" && current.item;
+      previous?.kind === "lines" &&
+      previous.item &&
+      current?.kind === "lines" &&
+      current.item;
     return bothItems ? ITEM_GAP : BLOCK_GAP;
   };
   const bodyHeight = laid.reduce(
@@ -439,7 +575,8 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   );
 
   const dotsHeight = DOT + 22;
-  const shape = drawable.length > 0 ? mediaLayout(drawable.length, contentWidth) : null;
+  const shape =
+    drawable.length > 0 ? mediaLayout(drawable.length, contentWidth) : null;
   const height =
     PAD +
     dotsHeight +
@@ -508,7 +645,11 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   ctx.fillText(truncate(ctx, input.displayName, nameWidth), textLeft, y + 23);
   ctx.fillStyle = MUTED;
   ctx.font = font(400, HANDLE_SIZE);
-  ctx.fillText(truncate(ctx, `@${input.username}`, nameWidth), textLeft, y + 45);
+  ctx.fillText(
+    truncate(ctx, `@${input.username}`, nameWidth),
+    textLeft,
+    y + 45,
+  );
   y += AVATAR;
 
   if (bodyHeight > 0) {
@@ -520,10 +661,15 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
         ctx.beginPath();
         ctx.roundRect(PAD, y, contentWidth, blockHeight(piece), 10);
         ctx.fill();
-        ctx.fillStyle = INK;
         ctx.font = monoFont(CODE_SIZE);
         piece.lines.forEach((line, row) => {
-          ctx.fillText(line, PAD + CODE_PAD, y + CODE_PAD + row * CODE_LINE + CODE_SIZE);
+          const baseline = y + CODE_PAD + row * CODE_LINE + CODE_SIZE;
+          let x = PAD + CODE_PAD;
+          for (const span of line) {
+            ctx.fillStyle = span.colour;
+            ctx.fillText(span.text, x, baseline);
+            x += ctx.measureText(span.text).width;
+          }
         });
         y += blockHeight(piece);
         return;
@@ -540,7 +686,11 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
       ctx.fillStyle = piece.quote ? MUTED : INK;
       ctx.font = font(piece.weight, piece.size);
       piece.lines.forEach((line, row) => {
-        ctx.fillText(line, PAD + piece.indent, y + row * piece.leading + piece.size);
+        ctx.fillText(
+          line,
+          PAD + piece.indent,
+          y + row * piece.leading + piece.size,
+        );
       });
       y += blockHeight(piece);
     });
@@ -551,7 +701,15 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     shape.boxes.forEach((box, index) => {
       const image = drawable[index];
       if (!image) return;
-      drawCover(ctx, image, PAD + box[0], y + box[1], box[2], box[3], MEDIA_RADIUS);
+      drawCover(
+        ctx,
+        image,
+        PAD + box[0],
+        y + box[1],
+        box[2],
+        box[3],
+        MEDIA_RADIUS,
+      );
     });
     y += shape.height;
   }
@@ -574,7 +732,11 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     ctx.fill();
     ctx.fillStyle = MUTED;
     ctx.font = font(400, HANDLE_SIZE);
-    ctx.fillText(truncate(ctx, input.location, contentWidth - 22), PAD + 22, y + 17);
+    ctx.fillText(
+      truncate(ctx, input.location, contentWidth - 22),
+      PAD + 22,
+      y + 17,
+    );
     y += 26;
   }
 
@@ -589,7 +751,10 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   return new Promise((settle, reject) => {
     canvas.toBlob(
-      (blob) => (blob ? settle(blob) : reject(new Error("the card could not be encoded"))),
+      (blob) =>
+        blob
+          ? settle(blob)
+          : reject(new Error("the card could not be encoded")),
       "image/png",
     );
   });
@@ -605,8 +770,10 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
  */
 export function shareCardBlocks(html: string): ShareCardBlock[] {
   const parsed = new DOMParser().parseFromString(html, "text/html");
+  highlightCodeBlocks(parsed.body);
   const blocks: ShareCardBlock[] = [];
-  const flat = (node: Element) => (node.textContent ?? "").replace(/\s+/g, " ").trim();
+  const flat = (node: Element) =>
+    (node.textContent ?? "").replace(/\s+/g, " ").trim();
 
   const walk = (parent: Element) => {
     for (const node of parent.children) {
@@ -617,7 +784,11 @@ export function shareCardBlocks(html: string): ShareCardBlock[] {
           if (item.tagName.toLowerCase() !== "li") continue;
           const text = flat(item);
           if (text === "") continue;
-          blocks.push({ kind: "item", marker: tag === "ol" ? `${ordinal}.` : "•", text });
+          blocks.push({
+            kind: "item",
+            marker: tag === "ol" ? `${ordinal}.` : "•",
+            text,
+          });
           ordinal += 1;
         }
         continue;
@@ -625,8 +796,12 @@ export function shareCardBlocks(html: string): ShareCardBlock[] {
       if (tag === "pre") {
         // Split on the newlines the author wrote, not on whitespace: this is
         // the one block whose shape is part of its meaning.
-        const lines = (node.textContent ?? "").replace(/\n+$/, "").split("\n");
-        if (lines.some((line) => line.trim() !== "")) blocks.push({ kind: "code", lines });
+        const lines = codeSpans(node);
+        if (
+          lines.some((line) => line.some((span) => span.text.trim() !== ""))
+        ) {
+          blocks.push({ kind: "code", lines });
+        }
         continue;
       }
       if (tag === "blockquote") {
@@ -638,7 +813,11 @@ export function shareCardBlocks(html: string): ShareCardBlock[] {
         const text = flat(node);
         const level = Number(tag.slice(1));
         if (text !== "") {
-          blocks.push({ kind: "text", text, heading: level <= 3 ? (level as 1 | 2 | 3) : 3 });
+          blocks.push({
+            kind: "text",
+            text,
+            heading: level <= 3 ? (level as 1 | 2 | 3) : 3,
+          });
         }
         continue;
       }
