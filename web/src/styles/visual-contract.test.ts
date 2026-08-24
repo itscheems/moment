@@ -284,6 +284,24 @@ describe("visual foundation contract", () => {
     expect(ownerCss).toContain("min-block-size: var(--target-size)");
   });
 
+  // The grid used to be one rounded panel whose shared background showed
+  // through a 3px seam, which made a set of pictures read as one picture cut
+  // up. Each tile carries its own rounding now and the gap is air, matching the
+  // share card, and the container must stay bare or its edge draws a second
+  // outline around the rounded tiles inside it.
+  it("gives every picture in a grid its own rounded edge", () => {
+    expect(mediaCss).toMatch(
+      /\._imageGrid_[\w-]+\s*\{[^}]*--media-gap: 6px;[^}]*gap: var\(--media-gap\);/,
+    );
+    expect(mediaCss).toMatch(
+      /\._imageTile_[\w-]+\s*\{[^}]*overflow: hidden;[^}]*border-radius: var\(--radius-panel\);/,
+    );
+    const grid = /\._imageGrid_[\w-]+\s*\{([^}]*)\}/.exec(mediaCss)?.[1] ?? "";
+    expect(grid).not.toMatch(/\bborder:/);
+    expect(grid).not.toMatch(/\bbackground:/);
+    expect(grid).not.toMatch(/\bborder-radius:/);
+  });
+
   it("crops only extra-tall single videos on mobile without letterboxing", () => {
     expect(mediaCss).toMatch(
       /@media \(max-width: 719px\)[\s\S]*?\._imageGrid_[\w-]+\[data-media-count="1"\]\[data-compact-tall-video\][\s\S]*?\._videoTile_[\w-]+\[data-media-shape="tall"\]\s*\{[^}]*aspect-ratio: 2 \/ 3;[^}]*max-block-size: none;/,
