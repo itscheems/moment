@@ -152,8 +152,12 @@ const MAX_BODY_LINES = 60;
 
 /** Three coloured dots decorate the share card frame. */
 const WINDOW_DOTS = ["#ff5f57", "#febc2e", "#28c840"];
-const DOT = 12;
-const DOT_GAP = 8;
+const DOT = 13;
+const DOT_GAP = 9;
+// The dots keep their own inset rather than the content margin. A window's
+// traffic lights sit in the corner; lined up with the text below them they
+// stop reading as a frame and start reading as a bullet list.
+const DOT_INSET = 21;
 
 const font = (weight: number, size: number) => `${weight} ${size}px ${FACE}`;
 const monoFont = (size: number) => `400 ${size}px ${MONO}`;
@@ -574,12 +578,11 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     0,
   );
 
-  const dotsHeight = DOT + 22;
+  const headerHeight = DOT_INSET + DOT + 24;
   const shape =
     drawable.length > 0 ? mediaLayout(drawable.length, contentWidth) : null;
   const height =
-    PAD +
-    dotsHeight +
+    headerHeight +
     AVATAR +
     (bodyHeight > 0 ? 24 + bodyHeight : 0) +
     (shape ? 22 + shape.height : 0) +
@@ -603,17 +606,22 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   ctx.roundRect(0, 0, WIDTH, height, CARD_RADIUS);
   ctx.fill();
 
-  let y = PAD;
-
   // The three dots a window wears. They say nothing, which is the point: the
   // card is a small window onto a page, and the frame is the whole ornament.
   WINDOW_DOTS.forEach((colour, index) => {
     ctx.fillStyle = colour;
     ctx.beginPath();
-    ctx.arc(PAD + DOT / 2 + index * (DOT + DOT_GAP), y + DOT / 2, DOT / 2, 0, Math.PI * 2);
+    ctx.arc(
+      DOT_INSET + DOT / 2 + index * (DOT + DOT_GAP),
+      DOT_INSET + DOT / 2,
+      DOT / 2,
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
   });
-  y += dotsHeight;
+
+  let y = headerHeight;
 
   if (avatar) {
     ctx.save();
