@@ -185,13 +185,8 @@ function AccountRail({
           sideOffset={6}
         >
           <Menu.Popup aria-label="账户" className={styles.mobileAccountPopup}>
-            <Menu.Item
-              className={styles.mobileAccountItem}
-              onClick={() => navigate(account.profileUrl)}
-            >
-              <Icon name="owner" />
-              <span>个人资料</span>
-            </Menu.Item>
+            {/* No profile entry: the rail already carries one, and a menu that
+                repeats the row above it is a longer way to the same page. */}
             <Menu.Item
               className={styles.mobileAccountItem}
               onClick={() => navigate("/owner/settings")}

@@ -399,6 +399,20 @@ describe("visual foundation contract", () => {
   // The account pill at the foot of the rail is asked for by its hover: a
   // target that big with no response to the pointer reads as a label rather
   // than a control. Losing either rule looks wrong and tests green.
+  // One wash for every pill in the rail. Two values made the account row read
+  // as a different kind of control sitting under the navigation rather than
+  // the last item of it.
+  it("hovers every rail pill with the same wash", () => {
+    for (const pill of ["brand", "navLink", "accountRail"]) {
+      expect(shellCss).toMatch(
+        new RegExp(
+          `\\._${pill}_[\\w-]+:hover[^{]*\\{[^}]*background: var\\(--surface-hover-strong\\)`,
+          "s",
+        ),
+      );
+    }
+  });
+
   it("gives the account rail a hover that fades rather than snaps", () => {
     expect(shellCss).toMatch(
       /\._accountRail_[\w-]+\s*\{[^}]*transition:[^;]*background var\(--motion-fast\)/s,

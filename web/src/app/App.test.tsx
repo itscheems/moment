@@ -625,9 +625,16 @@ describe("App shell and public routes", () => {
         await screen.findByRole("button", { name: "乔乔 的账户菜单" }),
       );
       await screen.findByRole("menu", { hidden: true });
-      for (const name of ["个人资料", "设置", "退出 @cheemschen"]) {
+      for (const name of ["设置", "退出 @cheemschen"]) {
         expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
       }
+      // Not the profile: the rail carries that row already, and a menu that
+      // repeats the row above it is a longer way to the same page.
+      expect(screen.queryByRole("menuitem", { name: "个人资料" })).toBeNull();
+      expect(screen.getByRole("link", { name: "个人资料" })).toHaveAttribute(
+        "href",
+        "/cheemschen",
+      );
     });
 
     it("signs out and returns to the timeline", async () => {

@@ -61,7 +61,7 @@
 }
 
 .brand:hover {
-  background: var(--surface-hover);
+  background: var(--surface-hover-strong);
 }
 
 .brandLabel {
@@ -114,9 +114,12 @@
     background var(--motion-fast) var(--ease-out);
 }
 
+/* One wash for every pill in this rail, the account row included. Two values
+   made the account row look like a different kind of control sitting under the
+   navigation rather than the last item of it. */
 .navLink:hover,
 .navLink:focus-visible {
-  background: var(--surface-hover);
+  background: var(--surface-hover-strong);
 }
 
 .navLink[aria-current="page"] {
