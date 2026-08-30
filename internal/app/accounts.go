@@ -338,7 +338,14 @@ func (service *AccountService) UnlinkIdentity(ctx context.Context, user domain.U
 			remaining++
 		}
 		if !found {
-			return domain.NewError(domain.CodeAccountNotFound, "that provider is not linked to this account", map[string]any{"provider": provider})
+			// Its own code rather than ACCOUNT_NOT_FOUND, which is what this
+			// said and which the transport maps to a 401. The account doing the
+			// asking exists -- it was authenticated to get here -- and the
+			// thing that is missing is one of its identities. Reporting that as
+			// "you are not signed in" told the caller to do the one thing that
+			// cannot help, and on a client that treats a 401 as a dead session
+			// it would end the session over a row that was already gone.
+			return domain.NewError(domain.CodeIdentityNotLinked, "that provider is not linked to this account", map[string]any{"provider": provider})
 		}
 		// The owner keeps a password and a bearer token in secrets.json, so
 		// unlinking every provider still leaves a way in. Nobody else has one.

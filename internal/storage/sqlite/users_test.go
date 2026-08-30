@@ -150,8 +150,11 @@ func TestUnlinkingAProviderThatIsNotLinkedRemovesNothing(t *testing.T) {
 	}
 	err = accounts.UnlinkIdentity(ctx, outcome.User, "github")
 	var refusal *domain.Error
-	if !errors.As(err, &refusal) || refusal.Code != domain.CodeAccountNotFound {
-		t.Fatalf("unlinking an absent provider = %v, want %q", err, domain.CodeAccountNotFound)
+	// Not ACCOUNT_NOT_FOUND, which is what this asserted: the account exists
+	// and is right here. Only the identity is absent, and the transport turns
+	// the old code into a 401 telling the caller to sign in again.
+	if !errors.As(err, &refusal) || refusal.Code != domain.CodeIdentityNotLinked {
+		t.Fatalf("unlinking an absent provider = %v, want %q", err, domain.CodeIdentityNotLinked)
 	}
 	if got := providerNames(t, accounts, outcome.User.ID); len(got) != 1 {
 		t.Fatalf("identities = %v, want the google identity untouched", got)

@@ -267,6 +267,10 @@ func writeAccountError(ctx *gin.Context, err error) {
 	// way, and keeps its own code so the form can point at what would work.
 	case domain.CodeCredentialUnavailable:
 		Failure(ctx, http.StatusUnauthorized, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	// A sub-resource of an account that is itself present. The caller is signed
+	// in and allowed; the provider they named simply is not attached.
+	case domain.CodeIdentityNotLinked:
+		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeAccountSuspended:
 		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeAccountNotApproved:

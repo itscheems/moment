@@ -38,6 +38,7 @@ const (
 	CodeUsernameReserved            Code = "USERNAME_RESERVED"
 	CodeRegistrationClosed          Code = "REGISTRATION_CLOSED"
 	CodeIdentityAlreadyLinked       Code = "IDENTITY_ALREADY_LINKED"
+	CodeIdentityNotLinked           Code = "IDENTITY_NOT_LINKED"
 	CodeLastCredential              Code = "LAST_CREDENTIAL"
 	// CodeCredentialUnavailable means the account exists and does not sign in
 	// the way the caller offered. Its details carry the kinds that would work,
