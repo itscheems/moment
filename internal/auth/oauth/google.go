@@ -37,8 +37,11 @@ type Google struct {
 	// running the flow as that client.
 	//
 	// Nil when no native client id is registered, which is what
-	// acceptsAssertions reports.
+	// AcceptsAssertions reports.
 	native *oidc.IDTokenVerifier
+	// nativeClientID is the same id the verifier above demands as an audience,
+	// kept so it can be published to the clients that have to name it.
+	nativeClientID string
 }
 
 // NewGoogle builds the Google provider against a discovery document.
@@ -73,8 +76,17 @@ func newGoogleForIssuer(ctx context.Context, issuer string, credentials Credenti
 	}
 	if native := strings.TrimSpace(nativeClientID); native != "" {
 		google.native = provider.Verifier(&oidc.Config{ClientID: native})
+		google.nativeClientID = native
 	}
 	return google, nil
+}
+
+// NativeClientID reports the client a Google app on a device signs in as.
+func (google *Google) NativeClientID() string {
+	if google == nil {
+		return ""
+	}
+	return google.nativeClientID
 }
 
 // AcceptsAssertions reports whether a native client id was registered.

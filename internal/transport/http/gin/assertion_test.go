@@ -31,6 +31,13 @@ func newStubAssertionProvider() *stubAssertionProvider {
 
 func (provider *stubAssertionProvider) AcceptsAssertions() bool { return provider.native }
 
+func (provider *stubAssertionProvider) NativeClientID() string {
+	if !provider.native {
+		return ""
+	}
+	return "native.apps.googleusercontent.com"
+}
+
 func (provider *stubAssertionProvider) VerifyAssertion(_ context.Context, assertion string) (app.ExternalIdentity, error) {
 	if !provider.native {
 		return app.ExternalIdentity{}, errors.New("no native client registered")
@@ -177,6 +184,23 @@ func TestProviderListPublishesFlows(t *testing.T) {
 	}
 	if slices.Contains(flows["github"], oauth.FlowAssertion) {
 		t.Fatalf("github advertised an assertion flow it cannot serve: %v", flows)
+	}
+	// The native client id travels with the flow, because a self-hosted app
+	// cannot carry one deployment's id and still reach another.
+	for _, entry := range listed {
+		described, _ := entry.(map[string]any)
+		name, _ := described["name"].(string)
+		published, present := described["native_client_id"]
+		switch name {
+		case "google":
+			if published != "native.apps.googleusercontent.com" {
+				t.Fatalf("google published %#v as its native client", published)
+			}
+		default:
+			if present {
+				t.Fatalf("%s published a native client id it has none of: %#v", name, published)
+			}
+		}
 	}
 	for name, advertised := range flows {
 		if !slices.Contains(advertised, oauth.FlowBrowser) {

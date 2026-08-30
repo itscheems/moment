@@ -85,6 +85,16 @@ type AssertionProvider interface {
 	// refused, which reads as a broken button rather than as a provider that
 	// was never set up.
 	AcceptsAssertions() bool
+	// NativeClientID is the client a native app runs the authorization as.
+	//
+	// It is published rather than compiled into the app because Moment is
+	// self-hosted: every instance registers its own client with the provider,
+	// so an app carrying one deployment's id could sign in to exactly one
+	// deployment. A client id is not a secret -- it travels in the query string
+	// of every authorization URL, and a public client has nothing else -- which
+	// is why the log redacts client_secret and deliberately leaves this
+	// readable.
+	NativeClientID() string
 	// VerifyAssertion turns a credential a client obtained by itself into an
 	// identity, or refuses it. An implementation checks the signature, the
 	// issuer, the expiry, and that the audience is the client this deployment
@@ -236,11 +246,15 @@ func (registry *Registry) Describe() []Descriptor {
 	described := make([]Descriptor, 0, len(names))
 	for _, name := range names {
 		provider := registry.providers[name]
-		described = append(described, Descriptor{
+		descriptor := Descriptor{
 			Name:  name,
 			Label: provider.Label(),
 			Flows: flowsOf(provider),
-		})
+		}
+		if assertion, supported := assertionsFrom(provider); supported {
+			descriptor.NativeClientID = assertion.NativeClientID()
+		}
+		described = append(described, descriptor)
 	}
 	return described
 }
@@ -289,6 +303,11 @@ type Descriptor struct {
 	// Before this existed the one non-browser client hard-coded the answer, so
 	// registering a native client id anywhere meant editing an app as well.
 	Flows []string `json:"flows"`
+	// NativeClientID is present only where the assertion flow is, and is what a
+	// native client runs its own authorization as. Absent otherwise, so a
+	// client cannot mistake "no native client registered" for an empty string
+	// worth trying.
+	NativeClientID string `json:"native_client_id,omitempty"`
 }
 
 // httpClient is the outbound client every provider shares.
