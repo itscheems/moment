@@ -117,7 +117,7 @@ const maxAccountPictureBytes = 8 << 20
 
 // RegisterAccountRoutes installs the routes an account uses on itself, the
 // public account lookup, and the owner's review screens.
-func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store, cookies CookieOptions) {
+func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store, cookies CookieOptions, oauth OAuthConfig) {
 	engine.GET("/api/v1/users/:username", publicAccountLookup(gate))
 
 	// Pending accounts reach everything in this group. None of it is visible
@@ -127,6 +127,7 @@ func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store
 	account.GET("/session", currentAccountSession(gate))
 	account.PATCH("/profile", updateOwnProfile(gate))
 	account.GET("/identities", listOwnIdentities(gate))
+	account.POST("/identities/:provider", linkOwnIdentity(gate, oauth))
 	account.DELETE("/identities/:provider", unlinkOwnIdentity(gate))
 	account.GET("/sessions", listOwnSessions(gate))
 	account.DELETE("/sessions", revokeOwnSessions(gate, cookies))

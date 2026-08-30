@@ -59,6 +59,40 @@ type DeviceProvider interface {
 	PollDevice(ctx context.Context, deviceCode string) (app.ExternalIdentity, error)
 }
 
+// AssertionProvider is implemented by providers whose client can obtain a
+// verifiable credential on its own and hand it here.
+//
+// This is the shape a native app needs and the browser flow cannot give it. A
+// mobile client is a public client: it holds no secret, so it cannot be the
+// confidential client the browser flow exchanges a code as, and it registers a
+// separate client id with the provider for exactly that reason. What it can do
+// is run the authorization itself and finish holding a signed assertion about
+// who signed in -- which this side verifies rather than trusts.
+//
+// A third interface rather than more methods on Provider, for the same reason
+// DeviceProvider is one: GitHub issues no assertion anybody here could verify,
+// having no ID token and no key set, so a method on that adapter would exist
+// only to return an error.
+type AssertionProvider interface {
+	Provider
+	// AcceptsAssertions reports whether this deployment registered the native
+	// client id an assertion would have to name.
+	//
+	// Implementing this interface is a fact about the type; being able to
+	// verify anything is a fact about the configuration, and the two differ
+	// wherever no native client has been registered. Without the question a
+	// client would be told it may sign in this way and then have every attempt
+	// refused, which reads as a broken button rather than as a provider that
+	// was never set up.
+	AcceptsAssertions() bool
+	// VerifyAssertion turns a credential a client obtained by itself into an
+	// identity, or refuses it. An implementation checks the signature, the
+	// issuer, the expiry, and that the audience is the client this deployment
+	// registered for that platform -- an assertion minted for somebody else's
+	// application is not evidence about anybody here.
+	VerifyAssertion(ctx context.Context, assertion string) (app.ExternalIdentity, error)
+}
+
 // DeviceAuthorization is one started device sign-in: what a person has to be
 // shown, and what whoever polls has to send back.
 //
@@ -167,6 +201,18 @@ func (registry *Registry) DeviceLookup(name string) (DeviceProvider, bool) {
 	return device, supported
 }
 
+// AssertionLookup finds a configured provider that can verify a credential its
+// client obtained without this server brokering the exchange. A provider that
+// is configured but cannot is reported as absent, because to a caller holding
+// an assertion they are the same thing.
+func (registry *Registry) AssertionLookup(name string) (AssertionProvider, bool) {
+	provider, found := registry.Lookup(name)
+	if !found {
+		return nil, false
+	}
+	return assertionsFrom(provider)
+}
+
 // Names lists the configured providers in a stable order.
 func (registry *Registry) Names() []string {
 	if registry == nil {
@@ -183,20 +229,66 @@ func (registry *Registry) Names() []string {
 // Empty reports whether nothing is configured.
 func (registry *Registry) Empty() bool { return registry == nil || len(registry.providers) == 0 }
 
-// Describe reports each configured provider's name and label.
+// Describe reports each configured provider's name, label, and the ways it can
+// actually be signed in with here.
 func (registry *Registry) Describe() []Descriptor {
 	names := registry.Names()
 	described := make([]Descriptor, 0, len(names))
 	for _, name := range names {
-		described = append(described, Descriptor{Name: name, Label: registry.providers[name].Label()})
+		provider := registry.providers[name]
+		described = append(described, Descriptor{
+			Name:  name,
+			Label: provider.Label(),
+			Flows: flowsOf(provider),
+		})
 	}
 	return described
+}
+
+// The three ways a person can arrive at an identity here. They are capabilities
+// of one provider on this deployment rather than of the protocol: the same
+// adapter offers a browser redirect everywhere, a device code only where the
+// provider grants one, and an assertion only where a native client id has been
+// registered for it.
+const (
+	// FlowBrowser is the redirect a browser follows. Every provider has it.
+	FlowBrowser = "browser"
+	// FlowDevice is a code a person types on another machine.
+	FlowDevice = "device"
+	// FlowAssertion is a credential the client obtained by itself.
+	FlowAssertion = "assertion"
+)
+
+// flowsOf reports what one provider can do, in a stable order.
+func flowsOf(provider Provider) []string {
+	flows := []string{FlowBrowser}
+	if _, supported := provider.(DeviceProvider); supported {
+		flows = append(flows, FlowDevice)
+	}
+	if _, supported := assertionsFrom(provider); supported {
+		flows = append(flows, FlowAssertion)
+	}
+	return flows
+}
+
+// assertionsFrom reports whether a provider both speaks the assertion flow and
+// is configured to accept one.
+func assertionsFrom(provider Provider) (AssertionProvider, bool) {
+	assertion, supported := provider.(AssertionProvider)
+	if !supported || !assertion.AcceptsAssertions() {
+		return nil, false
+	}
+	return assertion, true
 }
 
 // Descriptor is what a sign-in page needs to draw a button.
 type Descriptor struct {
 	Name  string `json:"name"`
 	Label string `json:"label"`
+	// Flows lets a client stop guessing which providers it can finish with.
+	// Before this existed the one non-browser client hard-coded the answer, so
+	// registering a native client id anywhere meant editing an app as well.
+	Flows []string `json:"flows"`
 }
 
 // httpClient is the outbound client every provider shares.

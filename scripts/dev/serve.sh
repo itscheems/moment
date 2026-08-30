@@ -33,7 +33,8 @@ load_provider_keys() {
     [[ -f "$config_file" ]] || continue
     for key in AMAP_API_KEY GEOAPIFY_API_KEY \
       MOMENT_GOOGLE_CLIENT_ID MOMENT_GOOGLE_CLIENT_SECRET \
-      MOMENT_GITHUB_CLIENT_ID MOMENT_GITHUB_CLIENT_SECRET; do
+      MOMENT_GITHUB_CLIENT_ID MOMENT_GITHUB_CLIENT_SECRET \
+      MOMENT_GOOGLE_IOS_CLIENT_ID; do
       [[ -z "${!key:-}" ]] || continue
       value="$(read_local_setting "$config_file" "$key")"
       [[ -z "$value" ]] || export "$key=$value"

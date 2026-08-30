@@ -156,8 +156,6 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("owner authentication requires the account service")
 		}
 		gate = NewGate(config.OwnerAuth, config.Accounts)
-		RegisterOwnerRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
-		RegisterAccountRoutes(engine, gate, config.Media, CookieOptions{Secure: config.SecureCookies})
 		// A deployment with no provider credentials still registers the routes;
 		// the provider list comes back empty and the sign-in page draws no
 		// buttons. Registering conditionally would make a misconfiguration look
@@ -167,6 +165,12 @@ func New(config Config) (*gin.Engine, error) {
 			Cookies:  CookieOptions{Secure: config.SecureCookies},
 			Log:      surfaceLog,
 		}
+		RegisterOwnerRoutes(engine, gate, CookieOptions{Secure: config.SecureCookies})
+		// The account group carries the provider configuration because adding a
+		// way to sign in to your own account is something you do to your own
+		// account, and belongs beside listing and removing them rather than
+		// beside signing in.
+		RegisterAccountRoutes(engine, gate, config.Media, CookieOptions{Secure: config.SecureCookies}, oauthConfig)
 		RegisterOAuthRoutes(engine, gate, oauthConfig)
 		// Device sign-in registers unconditionally beside the browser flow, for
 		// the same reason: a provider that cannot do it answers 404 on its own

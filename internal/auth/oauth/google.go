@@ -28,6 +28,17 @@ const googleIssuer = "https://accounts.google.com"
 type Google struct {
 	config   *oauth2.Config
 	verifier *oidc.IDTokenVerifier
+	// native verifies an assertion a mobile client obtained for itself. It is
+	// a second verifier rather than a second audience on the first because the
+	// two must not be interchangeable: a token minted for the web client is
+	// one this server asked for and received over its own TLS connection,
+	// while a token arriving from a device is whatever the device sent. Only
+	// the latter has to name the platform client id it could only have got by
+	// running the flow as that client.
+	//
+	// Nil when no native client id is registered, which is what
+	// acceptsAssertions reports.
+	native *oidc.IDTokenVerifier
 }
 
 // NewGoogle builds the Google provider against a discovery document.
@@ -35,14 +46,14 @@ type Google struct {
 // Discovery happens once at startup rather than per sign-in, so a provider that
 // cannot be reached fails while the operator is watching instead of on someone
 // else's first login attempt.
-func NewGoogle(ctx context.Context, credentials Credentials, redirectURL string) (*Google, error) {
-	return newGoogleForIssuer(ctx, googleIssuer, credentials, redirectURL)
+func NewGoogle(ctx context.Context, credentials Credentials, redirectURL, nativeClientID string) (*Google, error) {
+	return newGoogleForIssuer(ctx, googleIssuer, credentials, redirectURL, nativeClientID)
 }
 
 // newGoogleForIssuer is NewGoogle with the issuer left open, so the adapter can
 // be exercised against a stand-in that speaks the same protocol. Production has
 // exactly one issuer and NewGoogle is the only way to reach it.
-func newGoogleForIssuer(ctx context.Context, issuer string, credentials Credentials, redirectURL string) (*Google, error) {
+func newGoogleForIssuer(ctx context.Context, issuer string, credentials Credentials, redirectURL, nativeClientID string) (*Google, error) {
 	if !credentials.Configured() || redirectURL == "" {
 		return nil, nil
 	}
@@ -50,7 +61,7 @@ func newGoogleForIssuer(ctx context.Context, issuer string, credentials Credenti
 	if err != nil {
 		return nil, unavailable("discover google endpoints", err)
 	}
-	return &Google{
+	google := &Google{
 		config: &oauth2.Config{
 			ClientID:     credentials.ClientID,
 			ClientSecret: credentials.ClientSecret,
@@ -59,7 +70,43 @@ func newGoogleForIssuer(ctx context.Context, issuer string, credentials Credenti
 			Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
 		},
 		verifier: provider.Verifier(&oidc.Config{ClientID: credentials.ClientID}),
-	}, nil
+	}
+	if native := strings.TrimSpace(nativeClientID); native != "" {
+		google.native = provider.Verifier(&oidc.Config{ClientID: native})
+	}
+	return google, nil
+}
+
+// AcceptsAssertions reports whether a native client id was registered.
+//
+// Without one there is no audience a device's token could name, so every
+// assertion would be refused. Saying so here keeps the provider list honest:
+// a client is told it may sign in this way only where it can.
+func (google *Google) AcceptsAssertions() bool { return google != nil && google.native != nil }
+
+// VerifyAssertion accepts an ID token a Google client on a device obtained for
+// itself.
+//
+// No nonce is checked, and there is nothing here that could check one: the
+// value would have to be compared against something this server minted, and
+// this server did not start this flow -- the app did, holding a client id of
+// its own. What stands in its place is the audience. A token naming the native
+// client id was issued to an application proving possession of that client id
+// through PKCE, and it expires within the hour. That is the same evidence every
+// mainstream identity backend accepts from a native client, and it is strictly
+// more than the browser callback verifies about the connection it arrived on.
+func (google *Google) VerifyAssertion(ctx context.Context, assertion string) (app.ExternalIdentity, error) {
+	if google.native == nil {
+		return app.ExternalIdentity{}, unavailable("google has no native client registered here", nil)
+	}
+	if strings.TrimSpace(assertion) == "" {
+		return app.ExternalIdentity{}, unavailable("google assertion is empty", nil)
+	}
+	idToken, err := google.native.Verify(withClient(ctx), assertion)
+	if err != nil {
+		return app.ExternalIdentity{}, unavailable("verify google assertion", err)
+	}
+	return google.identityFrom(idToken)
 }
 
 // Name reports the provider key.
@@ -112,6 +159,16 @@ func (google *Google) Exchange(ctx context.Context, code, verifier, nonce string
 	if idToken.Nonce != nonce {
 		return app.ExternalIdentity{}, unavailable("google id token nonce mismatch", nil)
 	}
+	return google.identityFrom(idToken)
+}
+
+// identityFrom reads the person out of a token that has already been verified.
+//
+// Shared by the two ways one arrives, so a claim is read the same way whichever
+// client obtained it. Everything that differs between the flows -- who
+// exchanged the code, which audience the token names, whether a nonce can be
+// checked at all -- has been settled before this is called.
+func (google *Google) identityFrom(idToken *oidc.IDToken) (app.ExternalIdentity, error) {
 	var claims googleClaims
 	if err := idToken.Claims(&claims); err != nil {
 		return app.ExternalIdentity{}, unavailable("read google claims", err)

@@ -90,6 +90,7 @@ func RegisterOAuthRoutes(engine *gin.Engine, gate *Gate, config OAuthConfig) {
 	group.GET("/providers", listProviders(config.Registry))
 	group.GET("/:provider/start", startOAuth(gate, config))
 	group.GET("/:provider/callback", completeOAuth(gate, config))
+	registerAssertionRoute(group, gate, config)
 }
 
 func listProviders(registry *oauth.Registry) gin.HandlerFunc {

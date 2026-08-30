@@ -159,7 +159,7 @@ func pollDeviceLogin(gate *Gate, config OAuthConfig) gin.HandlerFunc {
 			writeDeviceSignInFailure(ctx, err)
 			return
 		}
-		value, session, err := issueDeviceSession(ctx, gate, outcome.User)
+		value, session, err := issueDeviceSession(ctx, gate, outcome.User, observability.SurfaceCLI)
 		if err != nil {
 			recordDevice(config, ctx, "error", "auth_login_failed",
 				map[string]any{"provider": provider.Name(), "reason": "session"})
@@ -258,11 +258,12 @@ func writeDeviceSignInFailure(ctx *gin.Context, err error) {
 //
 // A fresh session id is always minted, exactly as the browser path does, so a
 // sign-in can never adopt a session identifier that was in play before it. The
-// surface is recorded as cli rather than derived from the request: the only two
-// things requestSurface can read are a session cookie and a bearer token, and
-// this request holds neither by construction, so it would fall through to web
-// and make the session list on the account page name the wrong entry point.
-func issueDeviceSession(ctx *gin.Context, gate *Gate, user domain.User) (string, auth.Session, error) {
+// surface is passed in rather than derived from the request: the only two
+// things requestSurface can read are a session cookie and a bearer token, and a
+// caller signing in without a browser holds neither by construction, so it
+// would fall through to web and make the session list on the account page name
+// the wrong entry point.
+func issueDeviceSession(ctx *gin.Context, gate *Gate, user domain.User, surface observability.Surface) (string, auth.Session, error) {
 	sessionID, err := app.NewSessionID()
 	if err != nil {
 		return "", auth.Session{}, err
@@ -274,7 +275,7 @@ func issueDeviceSession(ctx *gin.Context, gate *Gate, user domain.User) (string,
 	// The row is written before the value is handed out, so a credential a
 	// caller holds always has something to be revoked by.
 	if _, err := gate.accounts.StartSession(ctx.Request.Context(), user.ID, sessionID,
-		string(observability.SurfaceCLI), session.ExpiresAt.UnixMilli()); err != nil {
+		string(surface), session.ExpiresAt.UnixMilli()); err != nil {
 		return "", auth.Session{}, err
 	}
 	return value, session, nil

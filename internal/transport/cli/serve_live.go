@@ -49,6 +49,7 @@ type liveServerHost struct {
 	googleMu       sync.Mutex
 	google         *oauth.Google
 	googleCallback string
+	googleNative   string
 }
 
 type hostedImportCommitter struct {
@@ -274,7 +275,8 @@ func (host *liveServerHost) identityProviders(ctx context.Context, site *app.Sit
 	}
 	registered := make([]oauth.Provider, 0, 2)
 	if googleCredentials.Configured() {
-		google, err := host.googleProvider(ctx, googleCredentials, callback(oauth.GoogleName))
+		google, err := host.googleProvider(ctx, googleCredentials, callback(oauth.GoogleName),
+			os.Getenv("MOMENT_GOOGLE_IOS_CLIENT_ID"))
 		if err != nil {
 			return nil, err
 		}
@@ -305,17 +307,21 @@ var newGoogleProvider = oauth.NewGoogle
 // is the key rather than nothing at all because an imported generation can
 // carry a different public_base_url, and a provider matches a redirect URI
 // exactly.
-func (host *liveServerHost) googleProvider(ctx context.Context, credentials oauth.Credentials, callback string) (*oauth.Google, error) {
+func (host *liveServerHost) googleProvider(ctx context.Context, credentials oauth.Credentials, callback, nativeClientID string) (*oauth.Google, error) {
 	host.googleMu.Lock()
 	defer host.googleMu.Unlock()
-	if host.google != nil && host.googleCallback == callback {
+	// The native client id joins the callback in the key for the same reason
+	// the callback is there at all: it is baked into the adapter, so a cached
+	// one built without it would keep refusing assertions after the operator
+	// registered one.
+	if host.google != nil && host.googleCallback == callback && host.googleNative == nativeClientID {
 		return host.google, nil
 	}
-	google, err := newGoogleProvider(ctx, credentials, callback)
+	google, err := newGoogleProvider(ctx, credentials, callback, nativeClientID)
 	if err != nil {
 		return nil, err
 	}
-	host.google, host.googleCallback = google, callback
+	host.google, host.googleCallback, host.googleNative = google, callback, nativeClientID
 	return google, nil
 }
 

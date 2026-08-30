@@ -191,7 +191,7 @@ func TestRestoringThePreviousGenerationDoesNotDependOnReachingGoogle(t *testing.
 
 	discoveries := 0
 	previous := newGoogleProvider
-	newGoogleProvider = func(context.Context, oauth.Credentials, string) (*oauth.Google, error) {
+	newGoogleProvider = func(context.Context, oauth.Credentials, string, string) (*oauth.Google, error) {
 		discoveries++
 		if discoveries > 1 {
 			return nil, errors.New("accounts.google.com is unreachable")
@@ -224,7 +224,7 @@ func TestRestoringThePreviousGenerationDoesNotDependOnReachingGoogle(t *testing.
 func TestAChangedCallbackAddressBuildsTheGoogleAdapterAgain(t *testing.T) {
 	built := make([]string, 0, 3)
 	previous := newGoogleProvider
-	newGoogleProvider = func(_ context.Context, _ oauth.Credentials, callback string) (*oauth.Google, error) {
+	newGoogleProvider = func(_ context.Context, _ oauth.Credentials, callback, _ string) (*oauth.Google, error) {
 		built = append(built, callback)
 		return &oauth.Google{}, nil
 	}
@@ -235,7 +235,7 @@ func TestAChangedCallbackAddressBuildsTheGoogleAdapterAgain(t *testing.T) {
 	first := "https://moments.example/api/v1/login/oauth/google/callback"
 	second := "https://elsewhere.example/api/v1/login/oauth/google/callback"
 	for _, callback := range []string{first, first, second, second, first} {
-		if _, err := host.googleProvider(context.Background(), credentials, callback); err != nil {
+		if _, err := host.googleProvider(context.Background(), credentials, callback, ""); err != nil {
 			t.Fatal(err)
 		}
 	}

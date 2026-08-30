@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -138,9 +139,16 @@ func (issuer *fakeIssuer) signIDToken(t *testing.T) string {
 
 func (issuer *fakeIssuer) provider(t *testing.T) *Google {
 	t.Helper()
+	return issuer.nativeProvider(t, "")
+}
+
+// nativeProvider is provider with a platform client id registered, which is
+// what turns the assertion flow on.
+func (issuer *fakeIssuer) nativeProvider(t *testing.T, nativeClientID string) *Google {
+	t.Helper()
 	google, err := newGoogleForIssuer(context.Background(), issuer.base(),
 		Credentials{ClientID: issuer.clientID, ClientSecret: "secret"},
-		"http://127.0.0.1:8080/api/v1/login/oauth/google/callback")
+		"http://127.0.0.1:8080/api/v1/login/oauth/google/callback", nativeClientID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,5 +297,76 @@ func TestProviderCredentialsMustBeCompleteToRegister(t *testing.T) {
 				t.Fatal("a half-configured provider was built anyway")
 			}
 		})
+	}
+}
+
+// A native client's assertion is accepted only when it names the client id
+// registered for that platform.
+func TestGoogleVerifyAssertionRequiresNativeAudience(t *testing.T) {
+	const nativeClientID = "304779555215-native.apps.googleusercontent.com"
+	issuer := newFakeIssuer(t, "web.apps.googleusercontent.com")
+	google := issuer.nativeProvider(t, nativeClientID)
+
+	issuer.audience = nativeClientID
+	identity, err := google.VerifyAssertion(context.Background(), issuer.signIDToken(t))
+	if err != nil {
+		t.Fatalf("a token minted for the native client was refused: %v", err)
+	}
+	if identity.ProviderUserID != issuer.subject {
+		t.Fatalf("subject was %q, want %q", identity.ProviderUserID, issuer.subject)
+	}
+	if identity.Provider != GoogleName {
+		t.Fatalf("provider was %q", identity.Provider)
+	}
+
+	// The web client's own audience is refused here even though this same
+	// deployment accepts it on the browser callback. That token is one this
+	// server asked for over its own connection; this route takes whatever a
+	// device sends, so the audience is the only thing standing in for that.
+	issuer.audience = issuer.clientID
+	if _, err := google.VerifyAssertion(context.Background(), issuer.signIDToken(t)); err == nil {
+		t.Fatal("a token minted for the web client was accepted as a native assertion")
+	}
+}
+
+// Without a registered native client id there is no audience an assertion could
+// name, and the adapter says so rather than refusing every token in turn.
+func TestGoogleWithoutNativeClientRefusesAssertions(t *testing.T) {
+	issuer := newFakeIssuer(t, "web.apps.googleusercontent.com")
+	google := issuer.provider(t)
+
+	if google.AcceptsAssertions() {
+		t.Fatal("a provider with no native client id claimed to accept assertions")
+	}
+	if flows := flowsOf(google); slices.Contains(flows, FlowAssertion) {
+		t.Fatalf("assertion was advertised without a native client id: %v", flows)
+	}
+	if _, err := google.VerifyAssertion(context.Background(), issuer.signIDToken(t)); err == nil {
+		t.Fatal("an assertion was accepted with no native client id registered")
+	}
+}
+
+// A garbled or expired assertion is a refusal rather than a panic.
+func TestGoogleVerifyAssertionRejectsUnusableTokens(t *testing.T) {
+	const nativeClientID = "native.apps.googleusercontent.com"
+	issuer := newFakeIssuer(t, "web.apps.googleusercontent.com")
+	google := issuer.nativeProvider(t, nativeClientID)
+
+	for name, assertion := range map[string]string{
+		"empty":     "",
+		"blank":     "   ",
+		"not a jwt": "this is not a token",
+	} {
+		if _, err := google.VerifyAssertion(context.Background(), assertion); err == nil {
+			t.Fatalf("%s was accepted", name)
+		}
+	}
+
+	// A token from the right client but the wrong issuer is the case a bare
+	// audience check would miss.
+	issuer.audience = nativeClientID
+	issuer.issuerClaim = "https://accounts.example.invalid"
+	if _, err := google.VerifyAssertion(context.Background(), issuer.signIDToken(t)); err == nil {
+		t.Fatal("a token from another issuer was accepted")
 	}
 }
