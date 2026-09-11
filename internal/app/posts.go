@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/moment/moment/internal/domain"
@@ -832,8 +833,15 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if !now.After(entry.UpdatedAt) {
 			now = entry.UpdatedAt.Add(time.Millisecond)
 		}
+		mediaChanged := (len(currentMedia) != 0 || len(updatedMedia) != 0) && !reflect.DeepEqual(currentMedia, updatedMedia)
+		cardsChanged := (len(currentLinkCards) != 0 || len(nextLinkCards) != 0) && !reflect.DeepEqual(LinkCardsOf(currentLinkCards), nextLinkCards)
+		contentChanged := content != entry.ContentMD || mediaChanged || cardsChanged || !reflect.DeepEqual(currentLocation, updatedLocation)
 		if updateErr := entry.UpdateContent(content, now); updateErr != nil {
 			return updateErr
+		}
+		if contentChanged {
+			edited := now
+			entry.EditedAt = &edited
 		}
 		changed, updateErr := store.UpdateEntry(ctx, entry, contentText)
 		if updateErr != nil {

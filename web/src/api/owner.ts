@@ -413,6 +413,7 @@ export interface MergeReviewEntity {
   updated_at?: string;
   published_at?: string;
   reposted_at?: string;
+  edited_at?: string;
   quoted_entry_id?: string;
   quote_unavailable?: boolean;
   link_cards?: MergeReviewLinkCard[];
@@ -1233,6 +1234,7 @@ const REVIEW_ENTITY_BOOLEANS = [
   "email_deliverable",
 ];
 const REVIEW_ENTITY_INSTANTS = [
+  "edited_at",
   "reposted_at",
   "updated_at",
   "published_at",

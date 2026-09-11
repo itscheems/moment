@@ -1256,6 +1256,15 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		if err != nil {
 			return err
 		}
+		var editedAtMS *int64
+		if value.EditedAt != nil {
+			edited, err := parsePortableTimestamp(*value.EditedAt)
+			if err != nil {
+				return err
+			}
+			milliseconds := edited.UnixMilli()
+			editedAtMS = &milliseconds
+		}
 		var repostedAtMS *int64
 		if value.RepostedAt != nil {
 			repostedAt, err := parsePortableTimestamp(*value.RepostedAt)
@@ -1279,7 +1288,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		}
 		return importer.InsertEntry(ctx, sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
 		})
 	})
 	if err != nil {

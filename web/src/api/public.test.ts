@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { PublicApi, PublicApiError } from "./public";
+import { PublicApi, PublicApiError, parsePost } from "./public";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -377,6 +377,7 @@ describe("public API client", () => {
           contentHtml: post.content_html,
           createdAt: post.created_at,
           updatedAt: post.updated_at,
+          editedAt: null,
           publishedAt: post.published_at,
           repostedAt: post.reposted_at,
           timelineItemKind: "original",
@@ -1103,4 +1104,13 @@ describe("public API client", () => {
       });
     },
   );
+});
+
+it("reads authoritative edit time and accepts legacy posts without it", () => {
+  expect(parsePost(post).editedAt).toBeNull();
+  const edited = "2026-08-10T01:02:04.000Z";
+  expect(
+    parsePost({ ...post, updated_at: edited, edited_at: edited }).editedAt,
+  ).toBe(edited);
+  expect(() => parsePost({ ...post, edited_at: "nonsense" })).toThrow();
 });

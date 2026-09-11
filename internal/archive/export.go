@@ -585,6 +585,7 @@ type entryRecord struct {
 	UpdatedAt        string          `json:"updated_at"`
 	PublishedAt      string          `json:"published_at"`
 	RepostedAt       *string         `json:"reposted_at,omitempty"`
+	EditedAt         *string         `json:"edited_at,omitempty"`
 	QuotedEntryID    *string         `json:"quoted_entry_id,omitempty"`
 	QuoteUnavailable bool            `json:"quote_unavailable,omitempty"`
 	Media            []usageRecord   `json:"media"`
@@ -783,7 +784,7 @@ func portableEntryRecord(value sqlitestore.ArchiveEntry) entryRecord {
 	return entryRecord{
 		ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
 		CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
-		PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS),
+		PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), EditedAt: portableOptionalTime(value.EditedAtMS),
 		QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable,
 		Media: portableUsageRecords(value.Media), Location: portableLocation(value.Location),
 		LinkCards: portableLinkCards(value.LinkCards),
@@ -978,6 +979,10 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 		CreatedAt:   time.UnixMilli(value.CreatedAtMS).UTC(),
 		UpdatedAt:   time.UnixMilli(value.UpdatedAtMS).UTC(),
 		PublishedAt: time.UnixMilli(value.PublishedAtMS).UTC(),
+	}
+	if value.EditedAtMS != nil {
+		edited := time.UnixMilli(*value.EditedAtMS).UTC()
+		entry.EditedAt = &edited
 	}
 	if value.RepostedAtMS != nil {
 		repostedAt := time.UnixMilli(*value.RepostedAtMS).UTC()
@@ -1817,6 +1822,15 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if err != nil {
 			return err
 		}
+		var editedAtMS *int64
+		if value.EditedAt != nil {
+			edited, err := parsePortableTimestamp(*value.EditedAt)
+			if err != nil {
+				return err
+			}
+			milliseconds := edited.UnixMilli()
+			editedAtMS = &milliseconds
+		}
 		var repostedAtMS *int64
 		if value.RepostedAt != nil {
 			repostedAt, err := parsePortableTimestamp(*value.RepostedAt)
@@ -1865,7 +1879,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
-			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
+			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
 		}); err != nil {
 			return err
 		}

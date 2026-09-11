@@ -107,7 +107,7 @@ func (store searchStore) Timezone(ctx context.Context) (string, error) {
 }
 
 func (store searchStore) SearchEntries(ctx context.Context, query app.SearchRepositoryQuery, limit int) ([]app.SearchRecord, error) {
-	statement, arguments, err := searchSelect(query, `e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.content_text`)
+	statement, arguments, err := searchSelect(query, `e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, e.content_text`)
 	if err != nil {
 		return nil, err
 	}
@@ -338,9 +338,10 @@ func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 		contentMD, contentText            string
 		createdAt, updatedAt, publishedAt int64
 		repostedAt                        sql.NullInt64
+		editedAt                          sql.NullInt64
 		rank                              float64
 	)
-	if err := scanner.Scan(&idString, &kind, &contentMD, &createdAt, &updatedAt, &publishedAt, &repostedAt, &contentText, &rank); err != nil {
+	if err := scanner.Scan(&idString, &kind, &contentMD, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt, &contentText, &rank); err != nil {
 		return app.SearchRecord{}, err
 	}
 	id, err := domain.ParseID(idString)
@@ -350,6 +351,10 @@ func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 	entry := domain.Entry{
 		ID: id, Kind: domain.EntryKind(kind), ContentMD: contentMD,
 		CreatedAt: domain.TimeFromMillis(createdAt), UpdatedAt: domain.TimeFromMillis(updatedAt), PublishedAt: domain.TimeFromMillis(publishedAt),
+	}
+	if editedAt.Valid {
+		value := domain.TimeFromMillis(editedAt.Int64)
+		entry.EditedAt = &value
 	}
 	if repostedAt.Valid {
 		value := domain.TimeFromMillis(repostedAt.Int64)

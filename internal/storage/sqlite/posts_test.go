@@ -60,12 +60,12 @@ func TestPostServiceCRUDPreservesTimelineAndRendersSafely(t *testing.T) {
 		t.Fatalf("unsafe edit error = %v", err)
 	}
 	afterRejected, err := service.Get(ctx, got.Entry.ID)
-	if err != nil || afterRejected.Entry != updated.Entry {
+	if err != nil || !reflect.DeepEqual(afterRejected.Entry, updated.Entry) {
 		t.Fatalf("rejected edit changed the Entry: %+v, %v", afterRejected, err)
 	}
 
 	deleted, err := service.Delete(ctx, got.Entry.ID)
-	if err != nil || deleted.Entry != updated.Entry {
+	if err != nil || !reflect.DeepEqual(deleted.Entry, updated.Entry) {
 		t.Fatalf("delete = %+v, %v", deleted, err)
 	}
 	if _, err := service.Get(ctx, got.Entry.ID); !domain.HasCode(err, domain.CodePostNotFound) {

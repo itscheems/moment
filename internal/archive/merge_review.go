@@ -91,6 +91,7 @@ type MergeReviewEntity struct {
 	ReplyToCommentID *string    `json:"reply_to_comment_id,omitempty"`
 	Pinned           *bool      `json:"pinned,omitempty"`
 	RepostedAt       *time.Time `json:"reposted_at,omitempty"`
+	EditedAt         *time.Time `json:"edited_at,omitempty"`
 	QuotedEntryID    *string    `json:"quoted_entry_id,omitempty"`
 	QuoteUnavailable *bool      `json:"quote_unavailable,omitempty"`
 	// Username through UsernameSetAt describe an account rather than content.
@@ -175,7 +176,7 @@ type MergeReview struct {
 var mergeReviewFieldKeys = map[MergeEntityKind]map[string]string{
 	MergeEntry: {
 		"kind": "kind", "content_md": "content_md", "created_at": "created_at",
-		"updated_at": "updated_at", "published_at": "published_at", "reposted_at": "reposted_at",
+		"updated_at": "updated_at", "published_at": "published_at", "reposted_at": "reposted_at", "edited_at": "edited_at",
 		"quoted_entry_id": "quoted_entry_id", "quote_unavailable": "quote_unavailable",
 		"media": "media", "location": "location", "link_cards": "link_cards",
 	},
@@ -337,6 +338,10 @@ func reviewEntry(value sqlitestore.ArchiveEntry, source MergeReviewSource, media
 		UpdatedAt: &updated, PublishedAt: &published, Location: reviewLocation(value.Location),
 		QuotedEntryID: cloneString(value.QuotedEntryID), QuoteUnavailable: &quoteUnavailable,
 		Media: reviewUsages(value.Media, source, mediaByID), LinkCards: reviewLinkCards(value.LinkCards),
+	}
+	if value.EditedAtMS != nil {
+		edited := archiveTime(*value.EditedAtMS)
+		entity.EditedAt = &edited
 	}
 	if value.RepostedAtMS != nil {
 		reposted := archiveTime(*value.RepostedAtMS)

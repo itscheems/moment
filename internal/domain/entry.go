@@ -18,6 +18,7 @@ type Entry struct {
 	UpdatedAt   time.Time
 	PublishedAt time.Time
 	RepostedAt  *time.Time
+	EditedAt    *time.Time
 }
 
 // NewEntry validates and creates one v0 Moment at millisecond precision.
@@ -56,6 +57,9 @@ func (entry Entry) Validate() error {
 	if entry.UpdatedAt.Before(entry.CreatedAt) {
 		return NewError(CodeInvalidArgument, "updated time cannot precede creation", map[string]any{"field": "updated_at"})
 	}
+	if entry.EditedAt != nil && (entry.EditedAt.IsZero() || entry.EditedAt.Before(entry.CreatedAt) || entry.EditedAt.After(entry.UpdatedAt)) {
+		return NewError(CodeInvalidArgument, "edited time must be between creation and last update", map[string]any{"field": "edited_at"})
+	}
 	if entry.RepostedAt != nil {
 		if entry.RepostedAt.IsZero() || entry.RepostedAt.Before(entry.PublishedAt) {
 			return NewError(CodeInvalidArgument, "repost time cannot precede publication", map[string]any{"field": "reposted_at"})
@@ -92,6 +96,10 @@ func (entry *Entry) UpdateContent(content string, now time.Time) error {
 	updated := NormalizeTime(now)
 	if updated.Before(entry.CreatedAt) {
 		return NewError(CodeInvalidArgument, "updated time cannot precede creation", map[string]any{"field": "updated_at"})
+	}
+	if entry.ContentMD != content {
+		edited := updated
+		entry.EditedAt = &edited
 	}
 	entry.ContentMD = content
 	entry.UpdatedAt = updated

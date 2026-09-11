@@ -30,6 +30,7 @@ export interface PublicPost {
   contentHtml: string;
   createdAt: string;
   updatedAt: string;
+  editedAt?: string | null;
   publishedAt: string;
   repostedAt: string | null;
   timelineItemKind: "original" | "repost";
@@ -903,6 +904,8 @@ export function parsePost(value: unknown): PublicPost {
     "media",
     "link_cards",
   ];
+  if ("edited_at" in value && !postKeys.includes("edited_at"))
+    postKeys.push("edited_at");
   // mirrors postdto.Post (internal/transport/postdto/dto.go)
   // mirrors postdto.Post (internal/transport/postdto/dto.go)
   if (
@@ -996,12 +999,24 @@ export function parsePost(value: unknown): PublicPost {
       };
     }
   }
+  const editedAt =
+    value.edited_at === undefined || value.edited_at === null
+      ? null
+      : instantField(value, "edited_at");
+  if (
+    editedAt !== null &&
+    (Date.parse(editedAt) < Date.parse(instantField(value, "created_at")) ||
+      Date.parse(editedAt) > Date.parse(instantField(value, "updated_at")))
+  ) {
+    throw invalidResponse("post edited_at is outside its lifetime");
+  }
   return {
     id: stringField(value, "id"),
     contentMd: stringField(value, "content_md"),
     contentHtml: stringField(value, "content_html"),
     createdAt: instantField(value, "created_at"),
     updatedAt: instantField(value, "updated_at"),
+    editedAt,
     publishedAt: instantField(value, "published_at"),
     repostedAt:
       nullableStringField(value, "reposted_at") === null
@@ -1169,6 +1184,7 @@ function parseSearchHit(value: unknown): SearchHit {
     "link_cards",
     "snippet",
   ];
+  if (isRecord(value) && "edited_at" in value) searchKeys.push("edited_at");
   // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post
   // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post
   // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post

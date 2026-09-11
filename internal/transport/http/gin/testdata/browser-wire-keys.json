@@ -60,6 +60,7 @@
     "cover_media_id",
     "created_at",
     "display_name",
+    "edited_at",
     "email",
     "email_deliverable",
     "email_verified",

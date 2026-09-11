@@ -615,6 +615,9 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	if local.PublishedAtMS != incoming.PublishedAtMS {
 		fields = append(fields, "published_at")
 	}
+	if !reflect.DeepEqual(local.EditedAtMS, incoming.EditedAtMS) {
+		fields = append(fields, "edited_at")
+	}
 	if !reflect.DeepEqual(local.RepostedAtMS, incoming.RepostedAtMS) {
 		fields = append(fields, "reposted_at")
 	}
@@ -926,6 +929,10 @@ func sortedMedia(values []sqlitestore.ArchiveMedia) []sqlitestore.ArchiveMedia {
 }
 
 func cloneArchiveEntry(value sqlitestore.ArchiveEntry) sqlitestore.ArchiveEntry {
+	if value.EditedAtMS != nil {
+		edited := *value.EditedAtMS
+		value.EditedAtMS = &edited
+	}
 	value.QuotedEntryID = cloneString(value.QuotedEntryID)
 	value.Media = cloneUsages(value.Media)
 	if value.Location != nil {
