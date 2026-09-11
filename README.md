@@ -96,6 +96,9 @@ location nearby`, `moment post create --location-name`, and `moment post create
 --location-json`. Use `moment post update --clear-location` to remove a stored
 place.
 
+Client capability discovery, native request attribution, selected media cleanup,
+edit timestamps, and account exports are documented in [docs/client-api.md](docs/client-api.md).
+
 ## Comment moderation
 
 Comment threads stay one level deep. The owner can delete any comment from its
