@@ -61,6 +61,8 @@ const (
 	// separate from web — both arrive over HTTP, and collapsing them would
 	// make web mean "HTTP", which is the distinction this type exists to draw.
 	SurfaceAPI Surface = "api"
+	// SurfaceIOS marks a native iOS client declaration.
+	SurfaceIOS Surface = "ios"
 	// SurfaceSystem marks an event that belongs to no client at all — process
 	// startup, background reclamation, scheduled work. Filing those under a
 	// client would be a convenient lie, and an audit trail that lies about
@@ -77,14 +79,12 @@ const SurfaceHeader = "X-Moment-Surface"
 // ClientSurface reports whether a client-declared value names a surface a
 // client is allowed to claim.
 //
-// Only cli and api are claimable. A client cannot declare itself web: that is
-// inferred from holding a browser session, and letting a header assert it
-// would let any caller forge the one attribution the server can actually
-// verify. Nothing can declare itself system, which by definition has no client.
+// cli, api, and ios are client declarations, not authentication evidence.
+// web remains the undeclared browser fallback; system cannot be claimed.
 func ClientSurface(declared string) (Surface, bool) {
 	switch Surface(declared) {
-	case SurfaceCLI:
-		return SurfaceCLI, true
+	case SurfaceCLI, SurfaceIOS:
+		return Surface(declared), true
 	case SurfaceAPI:
 		return SurfaceAPI, true
 	default:

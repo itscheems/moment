@@ -35,7 +35,7 @@ func TestHTTPRequestsAreAttributedToTheirEntryPoint(t *testing.T) {
 		headers map[string]string
 		want    observability.Surface
 	}{
-		"a browser session is the one attribution the server can verify": {
+		"an undeclared cookie request defaults to browser": {
 			headers: map[string]string{"Cookie": SessionCookieName + "=whatever"},
 			want:    observability.SurfaceWeb,
 		},
@@ -46,6 +46,12 @@ func TestHTTPRequestsAreAttributedToTheirEntryPoint(t *testing.T) {
 		"a client that names itself is taken at its word": {
 			headers: map[string]string{"Authorization": "Bearer t", observability.SurfaceHeader: "cli"},
 			want:    observability.SurfaceCLI,
+		},
+		"native login declares its surface before credentials exist": {
+			headers: map[string]string{observability.SurfaceHeader: "ios"}, want: observability.SurfaceIOS,
+		},
+		"native sessions keep their client attribution": {
+			headers: map[string]string{observability.SurfaceHeader: "ios", "Cookie": SessionCookieName + "=session"}, want: observability.SurfaceIOS,
 		},
 		"an unauthenticated read is the public site being read": {
 			headers: nil,

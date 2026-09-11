@@ -138,13 +138,9 @@ func readAssertion(ctx *gin.Context) (string, bool) {
 // recordAssertion writes one authentication event attributed to the app that
 // sent it.
 //
-// requestSurface cannot answer this one: it reads a session cookie or a bearer
-// token to decide, an assertion sign-in holds neither by construction, and its
-// fallback for a request with no Authorization header is web -- which is the
-// one answer that is certainly wrong here, because a browser signs in by being
-// redirected rather than by carrying a token it obtained itself. The client's
-// own declaration is used instead, and api is the floor: ClientSurface already
-// refuses a caller that tries to claim web.
+// Unlike the generic request fallback, assertion sign-in defaults to api even
+// without a cookie, bearer token or declaration. Recognized declarations still
+// identify native clients; ClientSurface refuses a caller that tries to claim web.
 func recordAssertion(config OAuthConfig, ctx *gin.Context, level, event string, fields map[string]any) {
 	if config.Log == nil {
 		return

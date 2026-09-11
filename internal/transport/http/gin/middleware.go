@@ -71,10 +71,13 @@ func securityHeadersMiddleware() gin.HandlerFunc {
 // neither a person nor a browser; recording all three as web would make the
 // field mean "HTTP" and answer nothing worth asking.
 //
-// A browser session is the reliable signal, because the cookie is issued by
-// this server and only its own page ever carries one. Everything else is a
-// programmatic client, which may name itself more precisely.
+// Native clients can also hold session cookies. A recognized declaration
+// therefore takes precedence over the cookie/default heuristic. This field
+// records a client claim, never a verified software identity.
 func requestSurface(ctx *gin.Context) observability.Surface {
+	if declared, ok := observability.ClientSurface(ctx.GetHeader(observability.SurfaceHeader)); ok {
+		return declared
+	}
 	if cookie, err := ctx.Request.Cookie(SessionCookieName); err == nil && cookie.Value != "" {
 		return observability.SurfaceWeb
 	}
@@ -82,9 +85,6 @@ func requestSurface(ctx *gin.Context) observability.Surface {
 		// An unauthenticated read of a public page. Nothing was operated on,
 		// and the site being read is the web one.
 		return observability.SurfaceWeb
-	}
-	if declared, ok := observability.ClientSurface(ctx.GetHeader(observability.SurfaceHeader)); ok {
-		return declared
 	}
 	return observability.SurfaceAPI
 }
