@@ -1721,6 +1721,41 @@
       "parity_strategy": "api_mode_unsupported"
     },
     {
+      "command": "user export",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "account_export_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "canonical_application_result"
+    },
+    {
       "command": "user identities",
       "direct": {
         "availability": "supported",

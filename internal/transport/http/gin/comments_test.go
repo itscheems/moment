@@ -26,6 +26,7 @@ import (
 const legacyGuestCommentID = "01ARZ3NDEKTSV4RRFFQ69G5FB9"
 
 type commentHTTPFixture struct {
+	runtime *runtimefs.Runtime
 	ownerTestFixture
 	accountService *app.AccountService
 	comments       *app.CommentService
@@ -99,6 +100,7 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 		t.Fatal(err)
 	}
 	return commentHTTPFixture{
+		runtime:          runtimeState,
 		ownerTestFixture: ownerTestFixture{manager: manager, accounts: commentAccounts, gate: NewGate(manager, commentAccounts), token: credential.Token, engine: engine, now: &now},
 		accountService:   commentAccounts,
 		comments:         comments, site: site, postID: postID, clock: &now, database: database,

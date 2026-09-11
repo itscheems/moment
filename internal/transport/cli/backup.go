@@ -1368,6 +1368,10 @@ func backupProducer(_ context.Context, invocation Invocation, appVersion string)
 }
 
 func downloadExport(ctx context.Context, invocation Invocation, destination io.Writer) (archive.Summary, error) {
+	return downloadNamedExport(ctx, invocation, destination, "/api/v1/owner/export", archive.FormatHeaderValue)
+}
+
+func downloadNamedExport(ctx context.Context, invocation Invocation, destination io.Writer, route, format string) (archive.Summary, error) {
 	target, err := invocation.APITransport()
 	if err != nil {
 		return archive.Summary{}, err
@@ -1376,7 +1380,7 @@ func downloadExport(ctx context.Context, invocation Invocation, destination io.W
 	if err != nil {
 		return archive.Summary{}, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/export")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), route)
 	if err != nil {
 		return archive.Summary{}, invalidArgument("the export endpoint URL is invalid", "check --url and retry")
 	}
@@ -1411,8 +1415,8 @@ func downloadExport(ctx context.Context, invocation Invocation, destination io.W
 	if parseErr != nil || mediaType != "application/zip" {
 		return archive.Summary{}, invalidAPIResponse()
 	}
-	if response.Header.Get("X-Archive-Format") != archive.FormatHeaderValue {
-		return archive.Summary{}, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the server did not confirm Moment export format v1", "upgrade the server or inspect the reverse proxy before retrying", ExitUnavailable)
+	if response.Header.Get("X-Archive-Format") != format {
+		return archive.Summary{}, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the server did not confirm the requested archive format", "upgrade the server or inspect the reverse proxy before retrying", ExitUnavailable)
 	}
 	digest := sha256.New()
 	counted := &backupDigestWriter{writer: io.MultiWriter(&backupDestinationWriter{writer: destination}, digest)}

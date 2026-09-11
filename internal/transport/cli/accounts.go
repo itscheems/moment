@@ -39,7 +39,8 @@ func accountViewOf(user domain.User) accountView {
 	}
 }
 
-func registerAccounts(application *Application) {
+func registerAccounts(application *Application, appVersion string) {
+	registerAccountExport(application, appVersion)
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"user", "list"}, Short: "List the accounts on this site",
 		Long:       "Report every account with its role and status, so applications waiting on approval can be seen without a browser.",

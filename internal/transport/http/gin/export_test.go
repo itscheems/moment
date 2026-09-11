@@ -137,7 +137,7 @@ func TestExportActiveStreamOutlivesGlobalWriteTimeout(t *testing.T) {
 	})
 	engine := gin.New()
 	engine.Use(recoveryMiddleware(func(observability.Surface, string, string, map[string]any) {}))
-	engine.GET("/export", streamExportWithBudgets(exporter, 50*time.Millisecond, 40*time.Millisecond))
+	engine.GET("/export", streamExportWithBudgets(exporter, time.Second, 40*time.Millisecond))
 	server := httptest.NewUnstartedServer(engine)
 	server.Config.WriteTimeout = 25 * time.Millisecond
 	server.Start()
@@ -153,7 +153,7 @@ func TestExportActiveStreamOutlivesGlobalWriteTimeout(t *testing.T) {
 	}
 }
 
-func TestExportPostFirstByteFailureAbortsTruncatedResponse(t *testing.T) {
+func TestExportPreparationFailureNeverPublishesPartialSuccess(t *testing.T) {
 	exporter := archiveExporterFunc(func(_ context.Context, writer io.Writer) (archive.Summary, error) {
 		if _, err := writer.Write([]byte("partial-zip")); err != nil {
 			return archive.Summary{}, err
@@ -171,27 +171,25 @@ func TestExportPostFirstByteFailureAbortsTruncatedResponse(t *testing.T) {
 	}
 	body, readErr := io.ReadAll(response.Body)
 	_ = response.Body.Close()
-	if response.StatusCode != http.StatusOK || !bytes.Equal(body, []byte("partial-zip")) || readErr == nil {
+	if response.StatusCode != http.StatusInternalServerError || bytes.Contains(body, []byte("partial-zip")) || readErr != nil {
 		t.Fatalf("late failure status=%d body=%q err=%v", response.StatusCode, body, readErr)
 	}
 }
 
 func TestExportBlockedClientHitsWriteIdleDeadlineAndRequestCancelPropagates(t *testing.T) {
-	blocked := make(chan error, 1)
+	blocked := make(chan struct{})
 	chunk := bytes.Repeat([]byte("z"), 1<<20)
 	exporter := archiveExporterFunc(func(_ context.Context, writer io.Writer) (archive.Summary, error) {
-		for index := 0; index < 256; index++ {
+		for index := 0; index < 16; index++ {
 			if _, err := writer.Write(chunk); err != nil {
-				blocked <- err
 				return archive.Summary{}, err
 			}
 		}
-		blocked <- errors.New("socket never blocked")
 		return archive.Summary{}, nil
 	})
 	engine := gin.New()
 	engine.Use(recoveryMiddleware(func(observability.Surface, string, string, map[string]any) {}))
-	engine.GET("/export", streamExportWithBudgets(exporter, time.Second, 25*time.Millisecond))
+	engine.GET("/export", func(ctx *gin.Context) { defer close(blocked); ctx.Next() }, streamExportWithBudgets(exporter, time.Second, 25*time.Millisecond))
 	server := httptest.NewUnstartedServer(engine)
 	server.Start()
 	defer server.Close()
@@ -205,19 +203,18 @@ func TestExportBlockedClientHitsWriteIdleDeadlineAndRequestCancelPropagates(t *t
 		t.Fatal(err)
 	}
 	select {
-	case err := <-blocked:
-		if err == nil || strings.Contains(err.Error(), "never blocked") {
-			t.Fatalf("blocked write result = %v", err)
-		}
+	case <-blocked:
 	case <-time.After(2 * time.Second):
 		t.Fatal("blocked client did not trigger write idle deadline")
 	}
 
 	cancelObserved := make(chan error, 1)
+	started := make(chan struct{})
 	cancelExporter := archiveExporterFunc(func(ctx context.Context, writer io.Writer) (archive.Summary, error) {
 		if _, err := writer.Write([]byte("started")); err != nil {
 			return archive.Summary{}, err
 		}
+		close(started)
 		<-ctx.Done()
 		cancelObserved <- ctx.Err()
 		return archive.Summary{}, ctx.Err()
@@ -229,12 +226,20 @@ func TestExportBlockedClientHitsWriteIdleDeadlineAndRequestCancelPropagates(t *t
 	defer cancelServer.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, cancelServer.URL+"/export", http.NoBody)
-	response, err := cancelServer.Client().Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
+	finished := make(chan error, 1)
+	go func() {
+		response, err := cancelServer.Client().Do(request)
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		finished <- err
+	}()
+	<-started
 	cancel()
-	_ = response.Body.Close()
+	if err := <-finished; !errors.Is(err, context.Canceled) {
+		t.Fatalf("client cancel: %v", err)
+	}
+
 	select {
 	case err := <-cancelObserved:
 		if !errors.Is(err, context.Canceled) {

@@ -3,10 +3,17 @@ package ginhttp
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"testing"
+	"time"
 
+	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
 )
@@ -48,6 +55,46 @@ func TestCapabilitiesAndSelectedMediaDeletionHTTP(t *testing.T) {
 	}
 }
 
+func TestPreparedExportLengthFailureAndCleanup(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		var temporary string
+		producer := func(_ context.Context, w io.Writer) (archive.Summary, error) {
+			temporary = w.(*exportContextWriter).writer.(*os.File).Name()
+			_, err := io.WriteString(w, "complete bytes")
+			if fail {
+				return archive.Summary{}, errors.New("source failed after producing bytes")
+			}
+			return archive.Summary{ArchiveBytes: 14}, err
+		}
+		engine := gin.New()
+		engine.GET("/export", preparedExport(producer, archive.FormatHeaderValue, "moment-export.zip", time.Second))
+		server := httptest.NewUnstartedServer(engine)
+		server.Config.WriteTimeout = 10 * time.Millisecond
+		server.Start()
+		response, err := server.Client().Get(server.URL + "/export")
+		if err != nil {
+			server.Close()
+			t.Fatal(err)
+		}
+		body, err := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		server.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fail {
+			if response.StatusCode != 500 || bytes.Contains(body, []byte("complete bytes")) {
+				t.Fatalf("partial export advertised: %d %s", response.StatusCode, body)
+			}
+		} else if response.StatusCode != 200 || response.Header.Get("Content-Length") != strconv.Itoa(len(body)) || len(response.TransferEncoding) != 0 {
+			t.Fatalf("length: %+v %q", response, body)
+		}
+		if _, err := os.Stat(temporary); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("temporary survived: %v", err)
+		}
+	}
+}
+
 func TestSelectedMediaDeletionRejectsActiveMember(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	id := uploadOwnerMedia(t, fixture)
@@ -72,5 +119,43 @@ func TestSelectedMediaDeletionRejectsActiveMember(t *testing.T) {
 	}
 	if response := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/"+id, nil)); response.Code != http.StatusOK {
 		t.Fatalf("member removed media: %d", response.Code)
+	}
+}
+
+func TestAccountExportHTTPUsesAuthenticatedIdentityAndKeepsOwnerBoundary(t *testing.T) {
+	fixture := newCommentHTTPFixture(t, nil)
+	session, _, member := signInMember(t, fixture)
+	exporter, err := archive.NewExporter(archive.Options{DataDir: fixture.runtime.Root, AppVersion: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accountService, Archive: exporter})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/account/export", nil)
+	request.AddCookie(session)
+	response := performRequest(engine, request)
+	if response.Code != 200 || response.Header().Get("X-Archive-Format") != archive.AccountFormatHeaderValue {
+		t.Fatalf("own export: %d %s", response.Code, response.Body.String())
+	}
+	// Members, including pending accounts, may export themselves but cannot
+	// select another account or access the full site backup.
+	for _, path := range []string{"/api/v1/account/export?account_id=someone", "/api/v1/owner/export"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request.AddCookie(session)
+		got := performRequest(engine, request)
+		if got.Code == 200 {
+			t.Fatalf("scope escaped: %s", path)
+		}
+	}
+	if got := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/account/export", nil)); got.Code != 401 {
+		t.Fatalf("unauth: %d", got.Code)
+	}
+	if _, err := fixture.accountService.SetStatus(context.Background(), member.ID, domain.AccountSuspended); err != nil {
+		t.Fatal(err)
+	}
+	if got := performRequest(engine, request); got.Code == 200 {
+		t.Fatal("suspended session exported")
 	}
 }

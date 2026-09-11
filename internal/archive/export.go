@@ -422,7 +422,11 @@ func (exporter *Exporter) ExportFile(ctx context.Context, destination string, ov
 
 // WriteFile applies the archive file-publication contract to a streaming
 // producer. It is shared by direct exports and API downloads.
-func WriteFile(ctx context.Context, destination string, overwrite bool, producer func(context.Context, io.Writer) (Summary, error)) (summary Summary, resultErr error) {
+func WriteFile(ctx context.Context, destination string, overwrite bool, producer func(context.Context, io.Writer) (Summary, error)) (Summary, error) {
+	return writeFile(ctx, destination, overwrite, producer, ValidateFileContext)
+}
+
+func writeFile(ctx context.Context, destination string, overwrite bool, producer func(context.Context, io.Writer) (Summary, error), validate func(context.Context, string) error) (summary Summary, resultErr error) {
 	if producer == nil {
 		return Summary{}, errors.New("archive producer is required")
 	}
@@ -455,7 +459,7 @@ func WriteFile(ctx context.Context, destination string, overwrite bool, producer
 	if err := partial.Close(); err != nil {
 		return Summary{}, fmt.Errorf("%w: close prepared archive: %w", ErrDestinationUnavailable, err)
 	}
-	if err := ValidateFileContext(ctx, partialPath); err != nil {
+	if err := validate(ctx, partialPath); err != nil {
 		return Summary{}, err
 	}
 	if overwrite {

@@ -53,7 +53,7 @@ func NewMoment(info buildinfo.Info) *Application {
 	registerOwner(application)
 	registerSite(application)
 	registerUsers(application)
-	registerAccounts(application)
+	registerAccounts(application, info.Version)
 	registerLogin(application)
 	registerMedia(application)
 	registerPosts(application)

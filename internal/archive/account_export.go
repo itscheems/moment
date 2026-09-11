@@ -1,0 +1,318 @@
+package archive
+
+import (
+	"archive/zip"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/media"
+	"github.com/moment/moment/internal/runtimefs"
+	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
+)
+
+// AccountFormatHeaderValue distinguishes personal portability from site recovery.
+const AccountFormatHeaderValue = "moment-account-export-v1"
+const accountFormatName = "moment-account-export"
+
+type accountManifest struct {
+	Format        string        `json:"format"`
+	FormatVersion int           `json:"format_version"`
+	CreatedAt     string        `json:"created_at"`
+	AccountID     string        `json:"account_id"`
+	Counts        countManifest `json:"counts"`
+}
+
+// ExportAccount writes one account's profile, identities, authored comments and
+// reachable originals from one WAL snapshot. Only the site owner has entries;
+// member exports never include a surrounding post or somebody else's reply.
+// Reference IDs can name content outside this export and do not pull it in.
+func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writer, accountID string) (summary Summary, resultErr error) {
+	if exporter == nil || destination == nil || accountID == "" {
+		return Summary{}, errors.New("exporter, destination and account are required")
+	}
+	runtimeState, maintenance, err := runtimefs.OpenForSnapshotContext(ctx, exporter.dataDir)
+	if err != nil {
+		return Summary{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, maintenance.Release()) }()
+	lease, err := runtimeState.Locks.Acquire(ctx, runtimefs.MediaLock, runtimefs.Shared)
+	if err != nil {
+		return Summary{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, lease.Release()) }()
+	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
+	if err != nil {
+		return Summary{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, database.Close()) }()
+	snapshot, err := database.BeginArchiveSnapshot(ctx)
+	if err != nil {
+		return Summary{}, err
+	}
+	defer func() { resultErr = errors.Join(resultErr, snapshot.Close()) }()
+	var account *sqlitestore.ArchiveUser
+	if err := snapshot.Users(ctx, func(value sqlitestore.ArchiveUser) error {
+		if value.ID == accountID {
+			account = &value
+		}
+		return nil
+	}); err != nil {
+		return Summary{}, err
+	}
+	if account == nil {
+		return Summary{}, domain.NewError(domain.CodeAccountNotFound, "account does not exist", nil)
+	}
+	if err := validateArchiveUser(*account); err != nil {
+		return Summary{}, err
+	}
+	digest := sha256.New()
+	counted := &digestWriter{writer: contextWriter{ctx: ctx, writer: io.MultiWriter(destination, digest)}}
+	writer := zip.NewWriter(counted)
+	closed := false
+	defer func() {
+		if !closed {
+			resultErr = errors.Join(resultErr, writer.Close())
+		}
+	}()
+	now := domain.NormalizeTime(exporter.clock())
+	protocol := &protocolWriter{zip: writer, createdAt: now}
+	if err := protocol.bytesMember("README.txt", zip.Deflate, []byte("Moment personal data export v1\nThis is not a site backup and cannot be imported.\nOnly this account's content is included; referenced posts/replies may be absent.\nChecksums cover every member except checksums.sha256 itself.\n")); err != nil {
+		return Summary{}, err
+	}
+	if err := protocol.jsonMember("data/account.json", portableUserRecord(*account)); err != nil {
+		return Summary{}, err
+	}
+	selected := map[string]bool{}
+	for _, id := range []*string{account.AvatarMediaID, account.CoverMediaID} {
+		if id != nil {
+			selected[*id] = true
+		}
+	}
+	identities, err := protocol.jsonLines("data/identities.jsonl", func(write func(any) error) error {
+		return snapshot.Identities(ctx, func(value sqlitestore.ArchiveIdentity) error {
+			if value.UserID != accountID {
+				return nil
+			}
+			if err := validateArchiveIdentity(value); err != nil {
+				return err
+			}
+			return write(portableIdentityRecord(value))
+		})
+	})
+	if err != nil {
+		return Summary{}, err
+	}
+	entries, err := protocol.jsonLines("data/entries.jsonl", func(write func(any) error) error {
+		if account.Role != string(domain.UserRoleOwner) {
+			return nil
+		}
+		return snapshot.Entries(ctx, func(value sqlitestore.ArchiveEntry) error {
+			if err := validateArchiveEntry(value); err != nil {
+				return err
+			}
+			for _, usage := range value.Media {
+				selected[usage.MediaID] = true
+			}
+			for _, card := range value.LinkCards {
+				if card.Card.ThumbnailMediaID != "" {
+					selected[card.Card.ThumbnailMediaID] = true
+				}
+				if card.Card.FaviconMediaID != "" {
+					selected[card.Card.FaviconMediaID] = true
+				}
+			}
+			return write(portableEntryRecord(value))
+		})
+	})
+	if err != nil {
+		return Summary{}, err
+	}
+	comments, err := protocol.jsonLines("data/comments.jsonl", func(write func(any) error) error {
+		return snapshot.Comments(ctx, func(value sqlitestore.ArchiveComment) error {
+			if value.AuthorUserID == nil || *value.AuthorUserID != accountID {
+				return nil
+			}
+			if err := validateArchiveComment(value); err != nil {
+				return err
+			}
+			for _, usage := range value.Media {
+				selected[usage.MediaID] = true
+			}
+			return write(portableCommentRecord(value))
+		})
+	})
+	if err != nil {
+		return Summary{}, err
+	}
+	mediaCount, err := protocol.jsonLines("data/media.jsonl", func(write func(any) error) error {
+		return snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
+			if !selected[value.ID] {
+				return nil
+			}
+			record, err := portableMediaRecord(value)
+			if err != nil {
+				return err
+			}
+			return write(record)
+		})
+	})
+	if err != nil {
+		return Summary{}, err
+	}
+	if mediaCount != int64(len(selected)) {
+		return Summary{}, archiveInvalid("account references missing media", nil)
+	}
+	buffer := make([]byte, copyBufferSize)
+	err = snapshot.Media(ctx, func(value sqlitestore.ArchiveMedia) error {
+		if !selected[value.ID] {
+			return nil
+		}
+		source, err := openOriginal(runtimeState.Current.Root, value.StoragePath)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = source.Close() }()
+		id, err := domain.ParseID(value.ID)
+		if err != nil {
+			return err
+		}
+		if err := media.VerifyPortableOriginal(ctx, source, media.Media{ID: id, SHA256: value.SHA256, StoragePath: value.StoragePath, OriginalName: value.OriginalName, MIMEType: value.MIMEType, ByteSize: value.ByteSize, Width: value.Width, Height: value.Height, CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC()}); err != nil {
+			return err
+		}
+		if _, err := source.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		name, err := mediaArchivePath(value)
+		if err != nil {
+			return err
+		}
+		member, err := protocol.startMember(name, zip.Store)
+		if err != nil {
+			return err
+		}
+		count, err := io.CopyBuffer(member, contextReader{ctx: ctx, reader: source}, buffer)
+		if err != nil {
+			return err
+		}
+		if count != value.ByteSize || hex.EncodeToString(member.digest.Sum(nil)) != value.SHA256 {
+			return archiveInvalid("account media checksum mismatch", nil)
+		}
+		return protocol.finishMember(member)
+	})
+	if err != nil {
+		return Summary{}, err
+	}
+	manifest := accountManifest{Format: accountFormatName, FormatVersion: 1, CreatedAt: now.Format(time.RFC3339Nano), AccountID: accountID, Counts: countManifest{Users: 1, Identities: identities, Entries: entries, Comments: comments, Media: mediaCount}}
+	if err := protocol.jsonMember("manifest.json", manifest); err != nil {
+		return Summary{}, err
+	}
+	if err := protocol.writeChecksums(); err != nil {
+		return Summary{}, err
+	}
+	if err := writer.Close(); err != nil {
+		return Summary{}, err
+	}
+	closed = true
+	return Summary{FormatVersion: 1, ArchiveBytes: counted.size, ArchiveSHA256: hex.EncodeToString(digest.Sum(nil))}, nil
+}
+
+// WriteAccountFile shares atomic publication with backups but validates the
+// distinct personal format; it never sends a personal archive through import.
+func WriteAccountFile(ctx context.Context, destination string, overwrite bool, producer func(context.Context, io.Writer) (Summary, error)) (Summary, error) {
+	return writeFile(ctx, destination, overwrite, producer, ValidateAccountFileContext)
+}
+
+// ValidateAccountFileContext verifies format and every ZIP member's checksum.
+func ValidateAccountFileContext(ctx context.Context, name string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	reader, err := zip.OpenReader(name)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = reader.Close() }()
+	if int64(len(reader.File)) > defaultMaxMedia+8 {
+		return archiveInvalid("account archive member count exceeds the budget", nil)
+	}
+	files := map[string]*zip.File{}
+	var expanded uint64
+	for _, file := range reader.File {
+		if err := validateMemberName(file.Name); err != nil {
+			return err
+		}
+		if _, exists := files[file.Name]; exists {
+			return archiveInvalid("duplicate account archive member", nil)
+		}
+		if !file.Mode().IsRegular() || file.Mode()&os.ModeSymlink != 0 {
+			return archiveInvalid("account archive contains a non-regular member", nil)
+		}
+		if file.UncompressedSize64 > uint64(defaultMaxExpandedBytes)-expanded {
+			return archiveInvalid("account archive expanded bytes exceed the budget", nil)
+		}
+		expanded += file.UncompressedSize64
+		switch file.Name {
+		case "README.txt", "manifest.json", "checksums.sha256", "data/account.json", "data/entries.jsonl", "data/comments.jsonl", "data/identities.jsonl", "data/media.jsonl":
+		default:
+			if !strings.HasPrefix(file.Name, "media/") {
+				return archiveInvalid("unknown account archive member", nil)
+			}
+		}
+		files[file.Name] = file
+	}
+	for _, name := range []string{"README.txt", "manifest.json", "checksums.sha256", "data/account.json", "data/entries.jsonl", "data/comments.jsonl", "data/identities.jsonl", "data/media.jsonl"} {
+		if files[name] == nil {
+			return archiveInvalid("account archive member missing", nil)
+		}
+	}
+	raw, err := readSmallZIPMember(ctx, files["manifest.json"], 1<<20)
+	if err != nil {
+		return err
+	}
+	var document accountManifest
+	if err := json.Unmarshal(raw, &document); err != nil {
+		return err
+	}
+	if document.Format != accountFormatName || document.FormatVersion != 1 || document.AccountID == "" {
+		return archiveInvalid("not a personal account export", nil)
+	}
+	sums, err := readChecksums(ctx, files["checksums.sha256"], len(files))
+	if err != nil {
+		return err
+	}
+	if len(sums) != len(files)-1 {
+		return archiveInvalid("account checksums are incomplete", nil)
+	}
+	for name, file := range files {
+		if name == "checksums.sha256" {
+			continue
+		}
+		expected, ok := sums[name]
+		if !ok {
+			return archiveInvalid("account member checksum missing", nil)
+		}
+		source, err := file.Open()
+		if err != nil {
+			return err
+		}
+		digest := sha256.New()
+		count, err := io.Copy(digest, contextReader{ctx: ctx, reader: source})
+		closeErr := source.Close()
+		if err != nil || closeErr != nil {
+			return errors.Join(err, closeErr)
+		}
+		if count != expected.size || hex.EncodeToString(digest.Sum(nil)) != expected.sha256 {
+			return fmt.Errorf("account member checksum mismatch: %s", name)
+		}
+	}
+	return nil
+}
