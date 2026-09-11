@@ -16,7 +16,9 @@ const (
 	// MaxPostPageSize bounds repository work for one timeline request.
 	MaxPostPageSize  = 100
 	timelineCursorV4 = 4
-	maxCursorBytes   = 512
+	// MaxCursorBytes bounds opaque cursors in client storage.
+	MaxCursorBytes = 512
+	maxCursorBytes = MaxCursorBytes
 )
 
 // TimelinePosition is the private keyset boundary passed to repositories.

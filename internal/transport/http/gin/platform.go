@@ -19,6 +19,7 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/auth/oauth"
+	"github.com/moment/moment/internal/capabilities"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/mediatype"
 	"github.com/moment/moment/internal/observability"
@@ -131,6 +132,8 @@ func New(config Config) (*gin.Engine, error) {
 		recoveryMiddleware(surfaceLog),
 		bodyLimitMiddleware(config.Limits),
 	)
+
+	engine.GET("/api/v1/capabilities", func(ctx *gin.Context) { Success(ctx, http.StatusOK, capabilities.Describe(config.Media), nil) })
 
 	engine.GET("/healthz", func(ctx *gin.Context) {
 		Success(ctx, http.StatusOK, map[string]string{"status": "alive"}, nil)

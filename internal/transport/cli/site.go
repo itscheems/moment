@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/app"
+	"github.com/moment/moment/internal/capabilities"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -20,6 +21,15 @@ import (
 )
 
 func registerSite(application *Application) {
+	application.MustRegisterLeaf(LeafSpec{
+		Path: []string{"site", "capabilities"}, Short: "Read effective content and media limits",
+		Long:       "Read the same authoritative limits used by the server; text lengths are Unicode code points.",
+		Inputs:     "Direct mode selects --data-dir. API mode uses the public capabilities endpoint.",
+		Output:     "Version, text_length_unit, and limits for content, media, and pagination.",
+		Errors:     "Unavailable instances or APIs return a stable dependency or integrity error.",
+		Example:    "moment site capabilities --data-dir ./moment-data --json",
+		Capability: CapabilityBoth, Run: runCapabilities,
+	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path:       []string{"site", "get"},
 		Short:      "Read portable public site settings",
@@ -273,7 +283,7 @@ func openDirectSite(ctx context.Context, invocation Invocation) (*app.SiteServic
 	return service, database, nil
 }
 
-func siteAPIRequest(
+func requestAPIJSON(
 	ctx context.Context,
 	invocation Invocation,
 	method string,
@@ -282,26 +292,33 @@ func siteAPIRequest(
 	payload any,
 	authenticate bool,
 	destination any,
-) (map[string]any, error) {
+) (json.RawMessage, map[string]any, error) {
 	target, err := invocation.APITransport()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	endpointURL, err := url.JoinPath(target.BaseURL().String(), endpoint)
+	route, err := url.Parse(endpoint)
 	if err != nil {
-		return nil, invalidArgument("the API endpoint URL is invalid", "check --url and retry")
+		return nil, nil, err
+	}
+	endpointURL, err := url.JoinPath(target.BaseURL().String(), route.Path)
+	if err != nil {
+		return nil, nil, invalidArgument("the API endpoint URL is invalid", "check --url and retry")
+	}
+	if route.RawQuery != "" {
+		endpointURL += "?" + route.RawQuery
 	}
 	var body io.Reader = http.NoBody
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		body = bytes.NewReader(encoded)
 	}
 	request, err := http.NewRequestWithContext(ctx, method, endpointURL, body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	request.Header.Set("Accept", "application/json")
 	if payload != nil {
@@ -310,40 +327,36 @@ func siteAPIRequest(
 	if authenticate {
 		token, err := readAPIToken(target)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer func() { _ = response.Body.Close() }()
 	responseBody, err := io.ReadAll(io.LimitReader(response.Body, maxAPIResponse+1))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(responseBody) > maxAPIResponse {
-		return nil, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the Moment API response exceeded the allowed size", "check the server and reverse proxy configuration", ExitUnavailable)
+		return nil, nil, NewCommandError("DEPENDENCY_INVALID_RESPONSE", "the Moment API response exceeded the allowed size", "check the server and reverse proxy configuration", ExitUnavailable)
 	}
 	if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(responseBody) != nil {
-		return nil, invalidAPIResponse()
+		return nil, nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return nil, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
 	}
 	if response.StatusCode != expectedStatus {
-		return nil, invalidAPIResponse()
+		return nil, nil, invalidAPIResponse()
 	}
 	data, meta, err := decodeStrictAPISuccess(responseBody, destination)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	settings, ok := destination.(*app.SiteSettings)
-	if !ok || !validSiteAPIData(data, *settings) {
-		return nil, invalidAPIResponse()
-	}
-	return meta, nil
+	return data, meta, nil
 }
 
 func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
@@ -419,4 +432,39 @@ func siteCLIError(err error) error {
 		message = "the site settings operation failed"
 	}
 	return canonicalPublicError(string(domainErr.Code), message, domainErr.Details, 0).WithCause(err)
+}
+
+func runCapabilities(ctx context.Context, invocation Invocation, _ CommandInput) (Result, error) {
+	var value capabilities.Description
+	var meta map[string]any
+	if invocation.Mode() == ModeDirect {
+		direct, err := openDirectMedia(ctx, invocation)
+		if err != nil {
+			return Result{}, mediaCLIError(err)
+		}
+		defer func() { _ = direct.Close() }()
+		value = capabilities.Describe(direct.store)
+	} else {
+		var err error
+		_, meta, err = requestAPIJSON(ctx, invocation, http.MethodGet, "/api/v1/capabilities", http.StatusOK, nil, false, &value)
+		if err != nil {
+			return Result{}, siteCLIError(err)
+		}
+		if !value.Valid() {
+			return Result{}, invalidAPIResponse()
+		}
+	}
+	return Result{Data: value, Meta: meta, Text: fmt.Sprintf("Content limits: %d code points per post, %d per comment", value.Limits.MaxPostCodePoints, value.Limits.MaxCommentCodePoints)}, nil
+}
+
+func siteAPIRequest(ctx context.Context, invocation Invocation, method, endpoint string, expectedStatus int, payload any, authenticate bool, destination any) (map[string]any, error) {
+	data, meta, err := requestAPIJSON(ctx, invocation, method, endpoint, expectedStatus, payload, authenticate, destination)
+	if err != nil {
+		return nil, err
+	}
+	settings, ok := destination.(*app.SiteSettings)
+	if !ok || !validSiteAPIData(data, *settings) {
+		return nil, invalidAPIResponse()
+	}
+	return meta, nil
 }

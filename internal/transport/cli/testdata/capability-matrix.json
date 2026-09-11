@@ -1523,6 +1523,39 @@
       "parity_strategy": "api_mode_unsupported"
     },
     {
+      "command": "site capabilities",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "none",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "capabilities_v1",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "canonical_application_result"
+    },
+    {
       "command": "site get",
       "direct": {
         "availability": "supported",

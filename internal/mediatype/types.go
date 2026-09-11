@@ -89,3 +89,6 @@ func MaxBytes(mimeType string) (int64, bool) {
 	capability, ok := Lookup(mimeType)
 	return capability.MaxBytes, ok
 }
+
+// All returns a copy of the authoritative accepted media capabilities.
+func All() []Capability { return append([]Capability(nil), capabilities[:]...) }

@@ -434,3 +434,13 @@ func normalizeOptions(options Options) (Options, error) {
 	}
 	return options, nil
 }
+
+// EffectiveLimits returns the normalized ceilings enforced by this store.
+// A nil store describes the product defaults.
+func (store *Store) EffectiveLimits() Limits {
+	if store != nil {
+		return store.options.Limits
+	}
+	defaults, _ := (Limits{}).normalized()
+	return defaults
+}
