@@ -14,6 +14,7 @@ import (
 	"github.com/yuin/goldmark/parser"
 	goldmarkhtml "github.com/yuin/goldmark/renderer/html"
 	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 // MaxContentCodePoints is the v0 Unicode code-point limit for an Entry body.
@@ -28,7 +29,13 @@ const MaxCommentContentCodePoints = 2_000
 // bare "www." string or an email address would otherwise turn ordinary prose
 // into links. Every generated href still passes the protocol allowlist below.
 var markdownEngine = goldmark.New(
-	goldmark.WithParserOptions(parser.WithAutoHeadingID()),
+	goldmark.WithParserOptions(parser.WithAutoHeadingID(), parser.WithASTTransformers(
+		util.Prioritized(cjkLinkify{extension.NewLinkifyParser(
+			extension.WithLinkifyAllowedProtocols([][]byte{[]byte("http:"), []byte("https:")}),
+			extension.WithLinkifyEmailRegexp(regexp.MustCompile(`a^`)),
+			extension.WithLinkifyWWWRegexp(regexp.MustCompile(`a^`)),
+		)}, 999),
+	)),
 	goldmark.WithExtensions(extension.NewLinkify(
 		extension.WithLinkifyAllowedProtocols([][]byte{[]byte("http:"), []byte("https:")}),
 		extension.WithLinkifyEmailRegexp(regexp.MustCompile(`a^`)),
