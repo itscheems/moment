@@ -252,3 +252,14 @@ WHERE media.id = ?
 	}
 	return changed == 1, nil
 }
+
+// DeleteMediaIfUnreferenced is an explicit selected delete, without the GC grace
+// period. All reference sources still participate in the transaction predicate.
+func (store mediaReferenceStore) DeleteMediaIfUnreferenced(ctx context.Context, id domain.ID) (bool, error) {
+	result, err := store.queries.ExecContext(ctx, `DELETE FROM media WHERE id = ? AND NOT `+mediaReferencedSQL, id.String())
+	if err != nil {
+		return false, err
+	}
+	count, err := result.RowsAffected()
+	return count == 1, err
+}

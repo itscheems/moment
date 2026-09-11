@@ -27,6 +27,7 @@ const (
 	CodeMediaCorrupt                Code = "MEDIA_CORRUPT"
 	CodeMediaPreviewFailed          Code = "MEDIA_PREVIEW_FAILED"
 	CodeMediaProcessorUnavailable   Code = "MEDIA_PROCESSOR_UNAVAILABLE"
+	CodeMediaInUse                  Code = "MEDIA_IN_USE"
 	CodeMediaNotFound               Code = "MEDIA_NOT_FOUND"
 	CodeLocationProviderUnavailable Code = "LOCATION_PROVIDER_UNAVAILABLE"
 	CodeLinkPreviewUnavailable      Code = "LINK_PREVIEW_UNAVAILABLE"

@@ -191,6 +191,7 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		"comment delete": {"01ARZ3NDEKTSV4RRFFQ69G5FAW"}, "comment pin": {"01ARZ3NDEKTSV4RRFFQ69G5FAV", "01ARZ3NDEKTSV4RRFFQ69G5FAW"},
 		"comment unpin": {"01ARZ3NDEKTSV4RRFFQ69G5FAV", "01ARZ3NDEKTSV4RRFFQ69G5FAW"}, "media add": {"image.png"},
 		"comment replies": {"01ARZ3NDEKTSV4RRFFQ69G5FAV", "01ARZ3NDEKTSV4RRFFQ69G5FAW"},
+		"media delete":    {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
 		"media get":       {"01ARZ3NDEKTSV4RRFFQ69G5FAV"}, "backup inspect": {"archive.zip"},
 		"backup merge-plan": {"archive.zip"}, "backup merge": {"merge-selection.json"},
 		"backup merge-discard": {"merge-selection.json"},

@@ -146,6 +146,21 @@ func TestMediaDirectAPIParityAndUnsupportedMaintenanceModes(t *testing.T) {
 		t.Fatalf("direct = %#v\napi = %#v", direct, api)
 	}
 	id := direct["media"].(map[string]any)["id"].(string)
+	directCaps := commandData(t, execute(application, "", "site", "capabilities", "--data-dir", dataDir, "--json"))
+	apiCaps := commandData(t, execute(application, "", "--url", server.URL, "site", "capabilities", "--json"))
+	if !reflect.DeepEqual(directCaps, apiCaps) {
+		t.Fatal("capabilities parity drift")
+	}
+	directDry := commandData(t, execute(application, "", "media", "delete", id, "--data-dir", dataDir, "--dry-run", "--json"))
+	apiDry := commandData(t, execute(application, "", "--url", server.URL, "media", "delete", id, "--dry-run", "--json"))
+	if !reflect.DeepEqual(directDry, apiDry) {
+		t.Fatal("delete dry-run parity drift")
+	}
+	denied := execute(application, "", "media", "delete", id, "--data-dir", dataDir, "--no-input", "--json")
+	if denied.exit != ExitInvalidInput {
+		t.Fatalf("unconfirmed delete: %#v", denied)
+	}
+
 	outputPath := filepath.Join(t.TempDir(), "parity.png")
 	directGet := commandData(t, execute(application, "", "media", "get", id, "--output", outputPath, "--data-dir", dataDir, "--json"))
 	directBytes := mustRead(t, outputPath)
@@ -155,6 +170,15 @@ func TestMediaDirectAPIParityAndUnsupportedMaintenanceModes(t *testing.T) {
 	apiGet := commandData(t, execute(application, "", "--url", server.URL, "media", "get", id, "--output", outputPath, "--json"))
 	if !reflect.DeepEqual(directGet, apiGet) || !bytes.Equal(directBytes, mustRead(t, outputPath)) {
 		t.Fatalf("direct get = %#v api get = %#v", directGet, apiGet)
+	}
+
+	removed := commandData(t, execute(application, "", "--url", server.URL, "media", "delete", id, "--yes", "--json"))
+	if removed["deleted"] != true {
+		t.Fatal("API deletion failed")
+	}
+	missing := execute(application, "", "media", "delete", id, "--data-dir", dataDir, "--yes", "--json")
+	if missing.exit != ExitNotFound {
+		t.Fatalf("missing media: %#v", missing)
 	}
 
 	for _, command := range []string{"verify", "list", "rebuild-previews", "prune"} {

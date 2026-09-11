@@ -29,6 +29,17 @@ import (
 
 func registerMedia(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
+		Path: []string{"media", "delete"}, ArgsUsage: "<media-id>", Short: "Delete one unreferenced media object",
+		Long:    "Delete one selected object only when no post, comment, account or link card references it. API mode requires the owner.",
+		Inputs:  "Canonical media ID; --dry-run previews eligibility, --yes confirms deletion.",
+		Output:  "media_id, dry_run, deleted and cleanup_failures.",
+		Errors:  "MEDIA_NOT_FOUND for absent media; MEDIA_IN_USE for referenced media; authentication errors in API mode.",
+		Safety:  "Deletes database authority before best-effort original and preview cleanup. Does not bypass reference checks.",
+		Example: "moment media delete 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --dry-run --json",
+		Args:    exactArgs(1), Capability: CapabilityBoth,
+		Policy: SafetyPolicy{Destructive: true, SupportsDryRun: true, Confirmation: "Permanently delete this unreferenced media?"}, Run: runMediaDelete,
+	})
+	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"media", "add"}, ArgsUsage: "<path>", Short: "Add one managed media file",
 		Long:    "Validate one local JPEG, PNG, WebP, GIF, HEIC, MP4, or QuickTime MOV, store its immutable original, and build the current display recipe through the selected transport.",
 		Inputs:  "One readable local image up to 30 MiB or video up to 300 MiB; video duration is limited to five minutes. API mode authenticates through MOMENT_TOKEN or --token-file.",
@@ -549,4 +560,35 @@ func mediaCLIError(err error) error {
 		return NewCommandError("MEDIA_IO_FAILED", "the media operation could not access its input or storage", "check the selected paths and instance, then retry", ExitIO).WithCause(err)
 	}
 	return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
+}
+
+func runMediaDelete(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	id, err := domain.ParseID(input.Args()[0])
+	if err != nil {
+		return Result{}, mediaCLIError(err)
+	}
+	var result media.DeleteResult
+	var meta map[string]any
+	if invocation.Mode() == ModeDirect {
+		direct, openErr := openDirectMedia(ctx, invocation)
+		if openErr != nil {
+			return Result{}, mediaCLIError(openErr)
+		}
+		defer func() { _ = direct.Close() }()
+		result, err = direct.store.Delete(ctx, id, invocation.Safety().DryRun)
+	} else {
+		route := "/api/v1/owner/media/" + id.String()
+		if invocation.Safety().DryRun {
+			route += "?dry_run=true"
+		}
+		data, responseMeta, requestErr := requestAPIJSON(ctx, invocation, http.MethodDelete, route, http.StatusOK, nil, true, &result)
+		meta, err = responseMeta, requestErr
+		if err == nil && (!hasRequiredNonNullAPIDataFields(data, "media_id", "dry_run", "deleted", "cleanup_failures") || result.MediaID != id.String() || result.DryRun != invocation.Safety().DryRun || result.Deleted == result.DryRun || result.CleanupFailures < 0) {
+			err = invalidAPIResponse()
+		}
+	}
+	if err != nil {
+		return Result{}, mediaCLIError(err)
+	}
+	return Result{Data: result, Meta: meta, Text: fmt.Sprintf("Media %s: deleted=%t, dry_run=%t", id, result.Deleted, result.DryRun)}, nil
 }

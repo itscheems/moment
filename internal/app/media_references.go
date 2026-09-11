@@ -40,6 +40,7 @@ type MediaReferenceStore interface {
 	MediaReferenceStates(context.Context) ([]MediaReferenceState, error)
 	PrunableMediaIDs(context.Context, time.Time) ([]domain.ID, error)
 	DeleteMediaIfPrunable(context.Context, domain.ID, time.Time) (bool, error)
+	DeleteMediaIfUnreferenced(context.Context, domain.ID) (bool, error)
 }
 
 func uniqueMediaIDs(ids ...*string) ([]domain.ID, error) {
