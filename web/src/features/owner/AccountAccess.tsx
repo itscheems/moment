@@ -314,10 +314,7 @@ export function AccountAccess({
                   <RowDetails
                     label={`${label} 的关联详情`}
                     lines={[
-                      [
-                        "账号",
-                        identity.displayName || "该账号没有公开名称",
-                      ],
+                      ["账号", identity.displayName || "该账号没有公开名称"],
                       ["邮箱", identity.email || "该账号没有公开邮箱"],
                       ["关联于", formatInstant(identity.linkedAt, timezone)],
                       [
@@ -385,8 +382,8 @@ export function AccountAccess({
         <div className={styles.accountBlockHeader}>
           <strong>活跃会话</strong>
           <p>
-            每次登录都会留下一条记录，直到过期或被退出。用所有者令牌直接调用
-            API 不会开启会话，因此不会出现在这里。
+            每次登录都会留下一条记录，直到过期或被退出。用所有者令牌直接调用 API
+            不会开启会话，因此不会出现在这里。
           </p>
         </div>
         {sessionsState === "failed" ? (

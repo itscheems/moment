@@ -932,7 +932,7 @@ func (service *AccountService) SweepExpiredSessions(ctx context.Context) (int, e
 // site row references it, but a message beats a constraint error.
 func (service *AccountService) Delete(ctx context.Context, userID string) (domain.User, error) {
 	var removed domain.User
-	err := service.transactions.WriteAccounts(ctx, func(accounts AccountStore, sessions SessionStore) error {
+	err := service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
 		user, err := accounts.UserByID(ctx, userID)
 		if err != nil {
 			return err

@@ -1,7 +1,12 @@
 import { Menu } from "@base-ui/react/menu";
 import { PreviewCard } from "@base-ui/react/preview-card";
 import { Tooltip } from "@base-ui/react/tooltip";
-import { useRef, useState, type ReactElement, type SyntheticEvent } from "react";
+import {
+  useRef,
+  useState,
+  type ReactElement,
+  type SyntheticEvent,
+} from "react";
 
 import type { SiteIdentity } from "../api/public";
 import { ShareCardDialog } from "../features/share/ShareCardDialog";

@@ -35,10 +35,15 @@ const METHOD_LABELS: Record<SignInMethod, string> = {
 // them rather than assuming a third-party provider is always the answer. On the
 // day an account carries a token of its own, the message says so without this
 // file learning anything.
-function unavailableCredentialMessage(details: Record<string, unknown>): string {
+function unavailableCredentialMessage(
+  details: Record<string, unknown>,
+): string {
   const available = Array.isArray(details.available) ? details.available : [];
   const named = available
-    .filter((value): value is SignInMethod => value === "password" || value === "token")
+    .filter(
+      (value): value is SignInMethod =>
+        value === "password" || value === "token",
+    )
     .map((value) => METHOD_LABELS[value]);
   if (named.length === 0) {
     return "这个账户只能用第三方账号登录，请在下方选择。";

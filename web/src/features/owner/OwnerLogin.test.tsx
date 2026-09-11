@@ -286,21 +286,25 @@ describe("owner login names who is signing in", () => {
   });
 
   function installLoginApi(sessionResponse: () => Response) {
-    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      void init;
-      const url = String(input);
-      if (url === "/api/v1/owner/status") return ownerStatus();
-      if (url === "/api/v1/account/session") return json(signedOutEnvelope(), 401);
-      if (url === "/api/v1/login/methods") {
-        return json({
-          data: { methods: ["password", "token"] },
-          meta: { request_id: "req_options" },
-        });
-      }
-      if (url === "/api/v1/login/oauth/providers") return providersEnvelope([]);
-      if (url === "/api/v1/login/session") return sessionResponse();
-      return json({}, 404);
-    });
+    const fetcher = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        void init;
+        const url = String(input);
+        if (url === "/api/v1/owner/status") return ownerStatus();
+        if (url === "/api/v1/account/session")
+          return json(signedOutEnvelope(), 401);
+        if (url === "/api/v1/login/methods") {
+          return json({
+            data: { methods: ["password", "token"] },
+            meta: { request_id: "req_options" },
+          });
+        }
+        if (url === "/api/v1/login/oauth/providers")
+          return providersEnvelope([]);
+        if (url === "/api/v1/login/session") return sessionResponse();
+        return json({}, 404);
+      },
+    );
     vi.stubGlobal("fetch", fetcher);
     return fetcher;
   }
@@ -469,7 +473,8 @@ describe("owner login offers the methods the server reports", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/api/v1/owner/status") return ownerStatus();
-      if (url === "/api/v1/account/session") return json(signedOutEnvelope(), 401);
+      if (url === "/api/v1/account/session")
+        return json(signedOutEnvelope(), 401);
       if (url === "/api/v1/login/methods") {
         return methods === "unreachable"
           ? json({}, 503)

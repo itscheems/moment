@@ -649,7 +649,9 @@ describe("App shell and public routes", () => {
       );
 
       await waitFor(() =>
-        expect(window.sessionStorage.getItem("moment.owner.session.v1")).toBeNull(),
+        expect(
+          window.sessionStorage.getItem("moment.owner.session.v1"),
+        ).toBeNull(),
       );
       expect(window.location.pathname).toBe("/");
     });
@@ -731,7 +733,9 @@ describe("App shell and public routes", () => {
 
     expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
     expect(screen.getByLabelText("密码")).toBeInTheDocument();
-    expect(screen.queryByRole("complementary", { name: "站点导航" })).toBeNull();
+    expect(
+      screen.queryByRole("complementary", { name: "站点导航" }),
+    ).toBeNull();
     expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
     // The product's line, not the instance's name. A visitor arrives here
@@ -823,7 +827,8 @@ describe("App shell and public routes", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input);
-        if (url === "/api/v1/account/session") return new Promise<Response>(() => {});
+        if (url === "/api/v1/account/session")
+          return new Promise<Response>(() => {});
         if (url === "/api/v1/site") return json(siteEnvelope);
         return json(timelineEnvelope());
       }),

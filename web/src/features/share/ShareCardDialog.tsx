@@ -14,7 +14,9 @@ type Stage =
 /** What the file is called once it leaves the browser. */
 function fileName(input: ShareCardInput): string {
   const handle = input.username.trim() || "moment";
-  const stamp = input.publishedLabel.replace(/[^\d]+/g, "-").replace(/^-|-$/g, "");
+  const stamp = input.publishedLabel
+    .replace(/[^\d]+/g, "-")
+    .replace(/^-|-$/g, "");
   return `${handle}-${stamp || "moment"}.png`;
 }
 
@@ -107,7 +109,11 @@ export function ShareCardDialog({
             <Dialog.Title className={styles.title}>分享图片</Dialog.Title>
             <div className={styles.stage}>
               {stage.kind === "ready" ? (
-                <img alt="分享图片预览" className={styles.preview} src={stage.url} />
+                <img
+                  alt="分享图片预览"
+                  className={styles.preview}
+                  src={stage.url}
+                />
               ) : stage.kind === "failed" ? (
                 <p className={styles.state} role="alert">
                   没能生成图片。可以关掉重试。

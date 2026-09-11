@@ -423,7 +423,8 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 		_, _ = io.WriteString(digest, member.Name)
 		_, _ = io.WriteString(digest, "\x00")
 		var copyErr error
-		if member.Name == "data/site.json" {
+		switch member.Name {
+		case "data/site.json":
 			contents, readErr := io.ReadAll(opened)
 			if readErr != nil {
 				copyErr = readErr
@@ -442,7 +443,7 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 					}
 				}
 			}
-		} else if member.Name == "data/users.jsonl" || member.Name == "data/identities.jsonl" {
+		case "data/users.jsonl", "data/identities.jsonl":
 			// The same random deployment identity reaches these members, as an
 			// account id rather than as owner_id. Excluding it in one place and
 			// not the other is what made this digest drift the moment accounts
@@ -453,7 +454,7 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 			} else {
 				copyErr = writeAccountLinesWithoutInstanceIdentity(digest, contents)
 			}
-		} else {
+		default:
 			_, copyErr = io.Copy(digest, opened)
 		}
 		closeErr := opened.Close()

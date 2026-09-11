@@ -41,13 +41,13 @@ func newMemoryAccounts(owner domain.User) *memoryAccounts {
 	}
 }
 
-func (store *memoryAccounts) ReadAccounts(ctx context.Context, operation func(app.AccountStore, app.SessionStore) error) error {
+func (store *memoryAccounts) ReadAccounts(_ context.Context, operation func(app.AccountStore, app.SessionStore) error) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return operation(store, store)
 }
 
-func (store *memoryAccounts) WriteAccounts(ctx context.Context, operation func(app.AccountStore, app.SessionStore) error) error {
+func (store *memoryAccounts) WriteAccounts(_ context.Context, operation func(app.AccountStore, app.SessionStore) error) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return operation(store, store)
