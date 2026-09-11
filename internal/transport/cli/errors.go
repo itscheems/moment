@@ -102,6 +102,9 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "COMMENT_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "run 'moment comment list <post-id> --json' to inspect available comments"
+	case "MEDIA_UPLOAD_TIMEOUT":
+		exit = ExitTimeout
+		suggestion = "retry the upload on a connection that can sustain progress"
 	case "MEDIA_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "run 'moment media list --data-dir <path> --json' on the instance host to inspect managed media"

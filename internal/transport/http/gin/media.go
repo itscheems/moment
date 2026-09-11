@@ -26,8 +26,8 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 		if strings.HasSuffix(path, "/poster") {
 			kind = "poster"
 		}
-		engine.GET(path, getMediaAsset(store, kind))
-		engine.HEAD(path, getMediaAsset(store, kind))
+		engine.GET(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind))
+		engine.HEAD(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind))
 	}
 	// Approved accounts, not just the owner. Comments carry media and the
 	// comment group already admits them, so leaving the upload behind made the
@@ -43,7 +43,7 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 	uploads := engine.Group("/api/v1/owner")
 	uploads.Use(gate.RequireActiveAccount())
 	posters := newUploadPosterCache()
-	uploads.POST("/media", uploadMedia(store, posters))
+	uploads.POST("/media", mediaDeadlines(true, mediaTransferIdle, mediaTransferMax), uploadMedia(store, posters))
 	uploads.GET("/media-uploads/:uploadID/poster", getUploadPoster(posters))
 }
 
@@ -125,6 +125,16 @@ func uploadMedia(store *media.Store, posterCaches ...*uploadPosterCache) gin.Han
 		}
 		fileHeader, err := ctx.FormFile("file")
 		if err != nil {
+			var timeout interface{ Timeout() bool }
+			if errors.As(err, &timeout) && timeout.Timeout() {
+				Failure(ctx, http.StatusRequestTimeout, "MEDIA_UPLOAD_TIMEOUT", "media upload stopped making progress", nil)
+				return
+			}
+			var oversized *http.MaxBytesError
+			if errors.As(err, &oversized) {
+				bodyTooLarge(ctx, oversized.Limit)
+				return
+			}
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "multipart field 'file' is required", map[string]any{"field": "file"})
 			return
 		}
@@ -137,11 +147,14 @@ func uploadMedia(store *media.Store, posterCaches ...*uploadPosterCache) gin.Han
 			return
 		}
 		defer func() { _ = file.Close() }()
+		operationContext, cancel := context.WithTimeout(ctx.Request.Context(), mediaPreparationMax)
+		defer cancel()
+		_ = http.NewResponseController(ctx.Writer).SetWriteDeadline(time.Now().Add(mediaPreparationMax))
 		observer := media.IngestObserver{}
 		if uploadID != "" {
 			observer.VideoPosterReady = func(contents []byte) { posters.put(uploadID, contents) }
 		}
-		value, preview, err := store.IngestObserved(ctx.Request.Context(), fileHeader.Filename, file, observer)
+		value, preview, err := store.IngestObserved(operationContext, fileHeader.Filename, file, observer)
 		if err != nil {
 			if uploadID != "" {
 				posters.remove(uploadID)
