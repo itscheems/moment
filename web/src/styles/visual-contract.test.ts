@@ -321,8 +321,10 @@ describe("visual foundation contract", () => {
     expect(ownerCss).toMatch(
       /\._inlineComposer_[\w-]+\s*\{[^}]*grid-template-columns: 3rem minmax\(0, 1fr\)/s,
     );
+    // 8px of section padding plus 8px here puts the avatar 16px below the
+    // composer's top edge in both the closed and the open composer.
     expect(ownerCss).toMatch(
-      /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*\{[^}]*align-self: stretch;[^}]*place-items: start center;[^}]*padding-block-start: var\(--space-3\)/s,
+      /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*\{[^}]*align-self: stretch;[^}]*place-items: start center;[^}]*padding-block-start: var\(--space-2\)/s,
     );
     expect(ownerCss).not.toMatch(
       /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*>[^{]*\{/,

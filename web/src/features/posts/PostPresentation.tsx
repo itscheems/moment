@@ -203,6 +203,20 @@ export function PostPresentation({
             </InternalLink>
           }
         />
+        {post.visibility === "only_me" ? (
+          // Only the owner ever receives a hidden post, so this is the owner
+          // being told which of their posts nobody else can see. The lock is
+          // the same glyph the composer's audience card uses for the choice.
+          <ActionTooltip label="仅自己可见">
+            <span
+              aria-label="仅自己可见"
+              className={styles.hiddenMark}
+              role="img"
+            >
+              <Icon name="audience-only-me" />
+            </span>
+          </ActionTooltip>
+        ) : null}
         <InternalLink
           className={styles.usernameLink}
           href={siteProfileHref(site)}

@@ -76,6 +76,7 @@ function post(id: string, content: string, html = `<p>${content}</p>`) {
     updated_at: "2026-08-10T01:00:00.000Z",
     published_at: "2026-08-10T01:00:00.000Z",
     reposted_at: null,
+    visibility: "everyone",
     timeline_item_kind: "original",
     quoted_post: null,
     comment_count: 0,

@@ -99,6 +99,10 @@
   --button-primary-contrast: var(--accent-contrast);
   --danger: #f4212e;
   --focus-ring: #1d9bf0;
+  /* The composer's audience pill uses 10% / 20% accent tints for its hover
+     and pressed states. Other themes derive them from their own surface. */
+  --audience-hover: #ebf5fe;
+  --audience-pressed: #d7ecfd;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -332,6 +336,22 @@ a {
     --button-primary-contrast: var(--accent-contrast);
     --danger: #f4212e;
     --shadow-popover: 0 0 15px rgb(255 255 255 / 20%);
+  }
+}
+
+/* Last on purpose: a dark theme wins over an accent choice for the pill
+   tints, so blue-on-dark derives rather than reusing the light hexes. */
+:root[data-theme="dim"],
+:root[data-theme="lights-out"],
+:root[data-accent="yellow"] {
+  --audience-hover: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  --audience-pressed: color-mix(in srgb, var(--accent) 20%, var(--surface));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --audience-hover: color-mix(in srgb, var(--accent) 10%, var(--surface));
+    --audience-pressed: color-mix(in srgb, var(--accent) 20%, var(--surface));
   }
 }
 

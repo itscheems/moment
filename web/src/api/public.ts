@@ -24,6 +24,22 @@ export interface MentionSuggestion {
   profileUrl: string;
 }
 
+/**
+ * Who may read a post. The server only ever sends posts the reader may see,
+ * so anyone but the owner only ever meets "everyone"; the owner meets both and
+ * chooses between them in the composer.
+ */
+export type PostVisibility = "everyone" | "only_me";
+
+export const POST_VISIBILITIES: readonly PostVisibility[] = [
+  "everyone",
+  "only_me",
+];
+
+export function isPostVisibility(value: unknown): value is PostVisibility {
+  return (POST_VISIBILITIES as readonly unknown[]).includes(value);
+}
+
 export interface PublicPost {
   id: string;
   contentMd: string;
@@ -33,6 +49,7 @@ export interface PublicPost {
   editedAt?: string | null;
   publishedAt: string;
   repostedAt: string | null;
+  visibility: PostVisibility;
   timelineItemKind: "original" | "repost";
   commentCount: number;
   media: PublicMediaUsage[];
@@ -899,6 +916,7 @@ export function parsePost(value: unknown): PublicPost {
     "updated_at",
     "published_at",
     "reposted_at",
+    "visibility",
     "timeline_item_kind",
     "comment_count",
     "media",
@@ -906,7 +924,6 @@ export function parsePost(value: unknown): PublicPost {
   ];
   if ("edited_at" in value && !postKeys.includes("edited_at"))
     postKeys.push("edited_at");
-  // mirrors postdto.Post (internal/transport/postdto/dto.go)
   // mirrors postdto.Post (internal/transport/postdto/dto.go)
   if (
     (!hasExactKeys(value, postKeys) &&
@@ -1010,6 +1027,10 @@ export function parsePost(value: unknown): PublicPost {
   ) {
     throw invalidResponse("post edited_at is outside its lifetime");
   }
+  const visibility = stringField(value, "visibility");
+  if (!isPostVisibility(visibility)) {
+    throw invalidResponse("post visibility is invalid");
+  }
   return {
     id: stringField(value, "id"),
     contentMd: stringField(value, "content_md"),
@@ -1022,6 +1043,7 @@ export function parsePost(value: unknown): PublicPost {
       nullableStringField(value, "reposted_at") === null
         ? null
         : instantField(value, "reposted_at"),
+    visibility,
     timelineItemKind: (() => {
       const kind = stringField(value, "timeline_item_kind");
       if (kind !== "original" && kind !== "repost") {
@@ -1178,6 +1200,7 @@ function parseSearchHit(value: unknown): SearchHit {
     "updated_at",
     "published_at",
     "reposted_at",
+    "visibility",
     "timeline_item_kind",
     "comment_count",
     "media",
@@ -1185,8 +1208,6 @@ function parseSearchHit(value: unknown): SearchHit {
     "snippet",
   ];
   if (isRecord(value) && "edited_at" in value) searchKeys.push("edited_at");
-  // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post
-  // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post
   // mirrors searchdto.Hit (internal/transport/searchdto/dto.go), which embeds postdto.Post
   if (
     !isRecord(value) ||

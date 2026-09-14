@@ -12,6 +12,7 @@ import {
   type Account,
   type AccountStatus,
   type CreatedComment,
+  type PostVisibility,
   type PublicComment,
   type PublicPost,
   type SiteIdentity,
@@ -414,6 +415,7 @@ export interface MergeReviewEntity {
   published_at?: string;
   reposted_at?: string;
   edited_at?: string;
+  visibility?: string;
   quoted_entry_id?: string;
   quote_unavailable?: boolean;
   link_cards?: MergeReviewLinkCard[];
@@ -1209,6 +1211,7 @@ const REVIEW_ENTITY_STRINGS = [
   "entry_id",
   "parent_id",
   "kind",
+  "visibility",
   "author_kind",
   "author_name",
   "author_user_id",
@@ -3009,6 +3012,7 @@ export class OwnerApi {
     location?: OwnerLocation | null,
     quotedPostId?: string,
     linkCards?: OwnerLinkCard[] | null,
+    visibility?: PostVisibility,
   ): Promise<PublicPost> {
     const body: Record<string, unknown> = {
       content_md: contentMd,
@@ -3019,6 +3023,7 @@ export class OwnerApi {
     }
     if (linkCards !== undefined) body.link_cards = linkCards ?? [];
     if (quotedPostId !== undefined) body.quoted_post_id = quotedPostId;
+    if (visibility !== undefined) body.visibility = visibility;
     const init = requestInit("POST", csrfToken, body);
     const headers = new Headers(init.headers);
     headers.set("Idempotency-Key", idempotencyKey);
@@ -3037,6 +3042,7 @@ export class OwnerApi {
     media?: PostMediaInput[],
     location?: OwnerLocation | null,
     linkCards?: OwnerLinkCard[] | null,
+    visibility?: PostVisibility,
   ): Promise<PublicPost> {
     const body: Record<string, unknown> = { content_md: contentMd };
     if (media) body.media = mediaPayload(media);
@@ -3044,6 +3050,7 @@ export class OwnerApi {
       body.location = location === null ? null : locationPayload(location);
     }
     if (linkCards !== undefined) body.link_cards = linkCards ?? [];
+    if (visibility !== undefined) body.visibility = visibility;
     const response = await this.fetcher(
       `/api/v1/owner/posts/${encodeURIComponent(id)}`,
       requestInit("PATCH", csrfToken, body),

@@ -12,6 +12,7 @@ function original(): PublicPost {
     updatedAt: "2026-08-10T01:00:00.000Z",
     publishedAt: "2026-08-10T01:00:00.000Z",
     repostedAt: null,
+    visibility: "everyone",
     timelineItemKind: "original",
     commentCount: 0,
     media: [],
@@ -48,6 +49,7 @@ describe("timeline repost projections", () => {
       expect.objectContaining({
         id: post.id,
         repostedAt: null,
+        visibility: "everyone",
         timelineItemKind: "original",
       }),
     ]);

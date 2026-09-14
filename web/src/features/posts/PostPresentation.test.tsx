@@ -56,6 +56,7 @@ function makePost(
     updatedAt: "2026-08-10T01:00:00.000Z",
     publishedAt: "2026-08-10T01:00:00.000Z",
     repostedAt: null,
+    visibility: "everyone",
     timelineItemKind: "original",
     commentCount,
     media: [],
@@ -415,6 +416,37 @@ describe("shared post presentation", () => {
         name: "回复这条 Moment，3 条回复",
       }),
     ).toHaveTextContent("3");
+  });
+
+  it("marks a hidden post with a lock beside the author name", () => {
+    const { rerender } = render(
+      <NavigationProvider>
+        <PostPresentation post={makePost("公开", "<p>公开</p>")} site={site} />
+      </NavigationProvider>,
+    );
+    expect(
+      screen.queryByRole("img", { name: "仅自己可见" }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...makePost("藏起来", "<p>藏起来</p>"),
+            visibility: "only_me",
+          }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+    const mark = screen.getByRole("img", { name: "仅自己可见" });
+    expect(mark.querySelector("svg")).toHaveAttribute(
+      "data-icon",
+      "audience-only-me",
+    );
+    // The name, lock, and handle stay in that order.
+    const identity = mark.parentElement;
+    expect(identity?.textContent).toMatch(/^Moment@/);
   });
 
   it("keeps the owner repost state and count visible in detail", () => {
@@ -894,6 +926,7 @@ describe("shared post presentation", () => {
                 updated_at: "2026-08-10T02:00:00.000Z",
                 published_at: "2026-08-10T01:00:00.000Z",
                 reposted_at: "2026-08-10T02:00:00.000Z",
+                visibility: "everyone",
                 timeline_item_kind: "original",
                 quoted_post: null,
                 comment_count: 0,

@@ -17,6 +17,7 @@ const post = {
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
   reposted_at: null,
+  visibility: "everyone",
   timeline_item_kind: "original",
   quoted_post: null,
   comment_count: 0,
@@ -162,6 +163,32 @@ describe("public API client", () => {
     await expect(negativeApi.post(post.id)).rejects.toMatchObject({
       code: "API_RESPONSE_INVALID",
     });
+  });
+
+  it("requires a known post visibility and carries it through", async () => {
+    const hidden = new PublicApi(
+      vi.fn(async () =>
+        json({ data: { ...post, visibility: "only_me" }, meta: {} }),
+      ) as typeof fetch,
+    );
+    await expect(hidden.post(post.id)).resolves.toMatchObject({
+      visibility: "only_me",
+    });
+
+    const missing = { ...post } as Record<string, unknown>;
+    delete missing.visibility;
+    for (const data of [
+      missing,
+      { ...post, visibility: "friends" },
+      { ...post, visibility: null },
+    ]) {
+      const api = new PublicApi(
+        vi.fn(async () => json({ data, meta: {} })) as typeof fetch,
+      );
+      await expect(api.post(post.id)).rejects.toMatchObject({
+        code: "API_RESPONSE_INVALID",
+      });
+    }
   });
 
   it("preserves canonical ordered media and all nullable alt states", async () => {
@@ -380,6 +407,7 @@ describe("public API client", () => {
           editedAt: null,
           publishedAt: post.published_at,
           repostedAt: post.reposted_at,
+          visibility: "everyone",
           timelineItemKind: "original",
           commentCount: post.comment_count,
           media: [],
@@ -709,12 +737,14 @@ describe("public API client", () => {
                 ...post,
                 updated_at: repostedAt,
                 reposted_at: repostedAt,
+                visibility: "everyone",
                 timeline_item_kind: "repost",
               },
               {
                 ...post,
                 updated_at: repostedAt,
                 reposted_at: repostedAt,
+                visibility: "everyone",
                 timeline_item_kind: "original",
               },
             ],

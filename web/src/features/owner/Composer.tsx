@@ -16,6 +16,7 @@ import {
   PublicApi,
   PublicApiError,
   type MentionSuggestion,
+  type PostVisibility,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
@@ -42,6 +43,7 @@ import {
   uploadMessage,
   type ComposerMediaItem,
 } from "../media/mediaState";
+import { AudienceSelector, audienceLabel } from "./AudienceSelector";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ComposerLinkCard } from "./ComposerLinkCard";
 import { useLinkPreview } from "./useLinkPreview";
@@ -144,7 +146,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const { api, session, expireIfInvalidSession } = useOwner();
     const publicApi = useMemo(() => new PublicApi(), []);
     const initialContent = post?.contentMd ?? "";
+    const initialVisibility: PostVisibility = post?.visibility ?? "everyone";
     const [content, setContent] = useState(initialContent);
+    const [visibility, setVisibility] =
+      useState<PostVisibility>(initialVisibility);
+    // The inline composer opens on focus: the audience pill
+    // and the toolbar rule appear when the owner steps in and go away again
+    // when they step out with nothing written. Focus inside the audience
+    // card lives in a portal, so the open card counts as being inside.
+    const [focusWithin, setFocusWithin] = useState(false);
+    const [audienceOpen, setAudienceOpen] = useState(false);
     const [draft, setDraft] = useState<ComposeDraft | null>(() =>
       variant === "edit" ? null : loadComposeDraft(site.instanceId),
     );
@@ -225,10 +236,23 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       count <= MAX_CONTENT &&
       mediaError === null &&
       mediaItems.every((item) => item.state === "ready");
+    const visibilityChanged = visibility !== initialVisibility;
     const hasUnpublishedChange =
       dirty &&
-      (content !== initialContent || mediaChanged || locationChanged) &&
+      (content !== initialContent ||
+        mediaChanged ||
+        locationChanged ||
+        visibilityChanged) &&
       !allowLeaveRef.current;
+    const expanded =
+      variant !== "inline" ||
+      focusWithin ||
+      audienceOpen ||
+      content.trim().length > 0 ||
+      mediaItems.length > 0 ||
+      location !== null ||
+      quotedPost !== null ||
+      linkPreview.card !== null;
 
     useEffect(() => {
       if (!quotedPostId || variant === "edit") {
@@ -383,6 +407,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           clearMedia();
           setLocation(initialLocation);
           setLocationChanged(false);
+          setVisibility(initialVisibility);
         },
       }),
       [
@@ -390,6 +415,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         content,
         hasUnpublishedChange,
         initialLocation,
+        initialVisibility,
         site.instanceId,
         variant,
       ],
@@ -615,6 +641,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     }, [active, clearMedia, content, initialContent, location, variant]);
 
     useEffect(() => {
+      if (active || variant !== "inline") return;
+      setVisibility("everyone");
+    }, [active, variant]);
+
+    useEffect(() => {
       const instanceId = site.instanceId;
       if (variant === "edit" || !instanceId) return;
       const resetDraftSurface = () => {
@@ -629,6 +660,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         clearMedia();
         setLocation(null);
         setLocationChanged(false);
+        setVisibility("everyone");
       };
       const cancelDraftRemovalRepair = () => {
         if (draftRemovalRepairRef.current !== null) {
@@ -773,6 +805,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           clearMedia();
           setLocation(null);
           setLocationChanged(false);
+          setVisibility("everyone");
           dirtyRef.current = false;
           setDirty(false);
         } else if (currentDraft) {
@@ -859,6 +892,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                   ? [linkPreview.card]
                   : []
                 : undefined,
+              visibilityChanged ? visibility : undefined,
             )
           : repostOnly && quotedPost
             ? await api.setReposted(session.csrfToken, quotedPost.id, true)
@@ -870,6 +904,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 location ?? undefined,
                 quotedPost?.id,
                 linkPreview.card ? [linkPreview.card] : undefined,
+                visibility,
               );
         allowLeaveRef.current = true;
         dirtyRef.current = false;
@@ -903,6 +938,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           setContent("");
           setLocation(null);
           setLocationChanged(false);
+          setVisibility("everyone");
           idempotencyKey.current = createIdempotencyKey();
           window.setTimeout(() => {
             allowLeaveRef.current = false;
@@ -960,7 +996,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     return (
       <section
         aria-label={post ? "编辑 Moment" : "发布 Moment"}
-        className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${mediaItems.length > 0 ? styles.composerHasMedia : ""}`}
+        className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${mediaItems.length > 0 ? styles.composerHasMedia : ""} ${expanded ? styles.composerExpanded : ""}`}
+        data-expanded={expanded ? "true" : "false"}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            setFocusWithin(false);
+          }
+        }}
+        onFocus={() => setFocusWithin(true)}
       >
         <div aria-hidden="true" className={styles.newTick}>
           <SiteAvatar site={site} />
@@ -994,6 +1037,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             className={styles.composerForm}
             onSubmit={(event) => void submit(event)}
           >
+            {expanded ? (
+              <div className={styles.audienceRow}>
+                <AudienceSelector
+                  disabled={pending}
+                  onChange={(next) => {
+                    if (next === visibility) return;
+                    allowLeaveRef.current = false;
+                    setVisibility(next);
+                    setError(null);
+                    setAnnouncement(`受众已设为${audienceLabel(next)}`);
+                    idempotencyKey.current = createIdempotencyKey();
+                    if (variant === "edit") {
+                      dirtyRef.current = true;
+                      setDirty(true);
+                    }
+                  }}
+                  onOpenChange={setAudienceOpen}
+                  value={visibility}
+                />
+              </div>
+            ) : null}
             <label htmlFor={`${variant}-composer-content`}>
               {post ? "Moment 正文" : "此刻想到什么？"}
             </label>
@@ -1199,6 +1263,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             <MediaComposer
               compact={variant === "inline"}
               disabled={pending}
+              divider={variant === "inline" && expanded}
               footerAction={
                 <button
                   className={`${styles.primaryButton} ${styles.composerPublishButton}`}

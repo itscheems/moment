@@ -37,6 +37,10 @@ export type IconName =
   | "location"
   | "location-picker"
   | "check"
+  | "audience-everyone"
+  | "audience-only-me"
+  | "audience-check"
+  | "chevron-down"
   | "github"
   | "google";
 
@@ -243,6 +247,20 @@ const paths: Record<IconName, React.ReactNode> = {
     <path d="M12 7c-1.93 0-3.5 1.57-3.5 3.5S10.07 14 12 14s3.5-1.57 3.5-3.5S13.93 7 12 7zm0 5c-.827 0-1.5-.673-1.5-1.5S11.173 9 12 9s1.5.673 1.5 1.5S12.827 12 12 12zm0-10c-4.687 0-8.5 3.813-8.5 8.5 0 5.967 7.621 11.116 7.945 11.332l.555.37.555-.37c.324-.216 7.945-5.365 7.945-11.332C20.5 5.813 16.687 2 12 2zm0 17.77c-1.665-1.241-6.5-5.196-6.5-9.27C5.5 6.916 8.416 4 12 4s6.5 2.916 6.5 6.5c0 4.073-4.835 8.028-6.5 9.27z" />
   ),
   check: <path d="m5.5 12.5 4 4 9-9" />,
+  // Audience controls use a globe for public posts, a lock for private
+  // posts, and a check mark for the selected option.
+  "audience-everyone": (
+    <path d="M4.65 8.24c-.57 1.13-.9 2.41-.9 3.76 0 4.56 3.69 8.25 8.25 8.25 2.87 0 5.4-1.47 6.88-3.69l-2.99-1.5.56-3.32-3.01-4.21 4.16-1.59c-1.27-1.17-2.91-1.95-4.72-2.14l-.5 2.38-2.08 1.04-.53 1.41 4.82 1.93-2.16 2.87-1.23 5.54-3.7-1.85V13.1l-.53-2.68.26-.71-2.58-1.47zm1.13-1.66l2.16 1.23.77-2.03 1.91-.96.21-.99c-2.01.29-3.78 1.3-5.05 2.75zm3.26 4l.46 2.32v2.98l.3.15.77-3.46.85-1.13-2.35-.94-.03.08zm9.92-3.02l-2.39.91 1.99 2.79-.45 2.68 1.67.83c.3-.87.47-1.8.47-2.77 0-1.63-.47-3.16-1.29-4.44zM1.75 12C1.75 6.34 6.34 1.75 12 1.75S22.25 6.34 22.25 12 17.66 22.25 12 22.25 1.75 17.66 1.75 12z" />
+  ),
+  "audience-only-me": (
+    <path d="M17.5 7H17v-.25c0-2.76-2.24-5-5-5s-5 2.24-5 5V7h-.5C5.12 7 4 8.12 4 9.5v9C4 19.88 5.12 21 6.5 21h11c1.39 0 2.5-1.12 2.5-2.5v-9C20 8.12 18.89 7 17.5 7zM13 14.73V17h-2v-2.27c-.59-.34-1-.99-1-1.73 0-1.1.9-2 2-2 1.11 0 2 .9 2 2 0 .74-.4 1.39-1 1.73zM15 7H9v-.25c0-1.66 1.34-3 3-3s3 1.34 3 3V7z" />
+  ),
+  "audience-check": (
+    <path d="M9.64 18.952l-5.55-4.861 1.317-1.504 3.951 3.459 8.459-10.948L19.4 6.32 9.64 18.952z" />
+  ),
+  "chevron-down": (
+    <path d="M3.543 8.96l1.414-1.42L12 14.59l7.043-7.05 1.414 1.42L12 17.41 3.543 8.96z" />
+  ),
   // Brand marks are transcribed from the official assets. The GitHub mark is a
   // single silhouette, so it inherits `currentColor` and tracks the label next
   // to it. The Google "G" is trademarked as four fixed colors, so every path
@@ -288,6 +306,10 @@ const filledIcons = new Set<IconName>([
   "location-picker",
   "repost",
   "share",
+  "audience-everyone",
+  "audience-only-me",
+  "audience-check",
+  "chevron-down",
   "github",
   "google",
 ]);

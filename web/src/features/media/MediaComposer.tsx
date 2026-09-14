@@ -114,6 +114,7 @@ export function MediaComposer({
   footerAction,
   toolbarAction,
   compact = false,
+  divider = false,
   pickerTooltip,
   selectionError: controlledSelectionError,
   onSelectionError,
@@ -131,6 +132,8 @@ export function MediaComposer({
   footerAction?: ReactNode;
   toolbarAction?: ReactNode;
   compact?: boolean;
+  /** Draw the rule above the toolbar even in the compact layout. */
+  divider?: boolean;
   pickerTooltip?: string;
   selectionError?: string | null;
   onSelectionError?: (error: string | null) => void;
@@ -304,7 +307,7 @@ export function MediaComposer({
   return (
     <section
       aria-label={containsVideo ? "媒体" : "图片"}
-      className={`${styles.composerMedia} ${compact ? styles.compactComposer : ""} ${className ?? ""}`}
+      className={`${styles.composerMedia} ${compact ? styles.compactComposer : ""} ${divider ? styles.dividedComposer : ""} ${className ?? ""}`}
     >
       <input
         accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,video/mp4,video/quicktime,.heic,.heif,.mp4,.m4v,.mov,.qt"

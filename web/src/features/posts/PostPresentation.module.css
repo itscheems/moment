@@ -187,6 +187,18 @@
   flex: 1 1 auto;
 }
 
+.hiddenMark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--text-secondary);
+}
+
+.hiddenMark svg {
+  inline-size: 1.1em;
+  block-size: 1.1em;
+}
+
 .bylineIdentity .usernameLink:hover,
 .bylineIdentity .usernameLink:focus-visible {
   text-decoration: none;

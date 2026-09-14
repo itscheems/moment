@@ -45,6 +45,12 @@
   margin-inline-start: calc(0px - var(--space-2));
 }
 
+/* The expanded inline composer adds a divider above the compact toolbar. */
+.dividedComposer .mediaControls {
+  border-block-start: 1px solid var(--border-subtle);
+  padding-block-start: var(--space-2);
+}
+
 .mediaToolbar {
   min-inline-size: 0;
   gap: var(--space-2);

@@ -247,10 +247,12 @@
   padding-block: var(--space-2);
 }
 
+/* The avatar sits 16px below the composer's top edge, which puts it
+   6px below the top of the audience pill when the composer is open. */
 .inlineComposer .newTick {
   align-self: stretch;
   place-items: start center;
-  padding-block-start: var(--space-3);
+  padding-block-start: var(--space-2);
 }
 
 .pageComposer {
@@ -280,6 +282,22 @@
   position: relative;
   display: grid;
   margin-block-start: 0;
+}
+
+/* The audience pill's top edge is 10px below
+   the composer's top edge (6px above the avatar), and the first line of text
+   starts 26px below the pill's bottom edge. The textarea keeps its 8px top
+   padding, so the row's bottom margin carries the other 18px. */
+.audienceRow {
+  display: flex;
+  justify-content: flex-start;
+  margin-block: 2px 18px;
+}
+
+/* The page and edit composers have no header above the avatar, so the pill's
+   top edge lands 6px above the avatar's, inside the section's own padding. */
+.pageComposer .audienceRow {
+  margin-block-start: -6px;
 }
 
 .mentionSuggestions {

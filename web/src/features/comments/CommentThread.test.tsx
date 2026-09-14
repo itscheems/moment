@@ -54,6 +54,7 @@ const post: PublicPost = {
   updatedAt: "2026-08-10T01:00:00Z",
   publishedAt: "2026-08-10T01:00:00Z",
   repostedAt: null,
+  visibility: "everyone",
   timelineItemKind: "original",
   commentCount: 0,
   media: [],

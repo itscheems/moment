@@ -223,6 +223,7 @@ function post(
     updated_at: "2026-08-10T01:00:00.000Z",
     published_at: "2026-08-10T01:00:00.000Z",
     reposted_at: null,
+    visibility: "everyone",
     timeline_item_kind: "original",
     quoted_post: null,
     comment_count: 0,
@@ -589,6 +590,7 @@ describe("owner composing flow", () => {
           data: {
             ...post("原始 Moment", quotedId),
             reposted_at: "2026-08-10T02:00:00.000Z",
+            visibility: "everyone",
             timeline_item_kind: "original",
           },
           meta: { request_id: "req_repost" },
@@ -883,6 +885,7 @@ describe("owner composing flow", () => {
     );
     expect(JSON.parse(String(create?.[1]?.body))).toEqual({
       content_md: "",
+      visibility: "everyone",
       media: [
         {
           media_id: uploadEnvelope.data.media.id,
@@ -1122,6 +1125,121 @@ describe("owner composing flow", () => {
     expect(
       screen.getByRole("heading", { name: "发布 Moment" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens the inline composer on focus with the audience pill and publishes the chosen audience", async () => {
+    preauthenticate();
+    const fetcher = installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        return json(
+          {
+            data: { ...post("只给自己看"), visibility: "only_me" },
+            meta: { request_id: "req_only_me", replayed: false },
+          },
+          201,
+        );
+      }
+    });
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    const composer = inline.closest("section");
+    // The collapsed composer does not show the audience pill.
+    expect(composer).toHaveAttribute("data-expanded", "false");
+    expect(
+      screen.queryByRole("button", { name: "选择受众" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.focus(inline);
+    expect(composer).toHaveAttribute("data-expanded", "true");
+    const pill = screen.getByRole("button", { name: "选择受众" });
+    expect(pill).toHaveTextContent("所有人");
+    expect(pill).toHaveAttribute("aria-haspopup", "menu");
+
+    // Leaving with nothing written closes it again; anything written keeps
+    // it open.
+    fireEvent.blur(inline, { relatedTarget: document.body });
+    expect(composer).toHaveAttribute("data-expanded", "false");
+    fireEvent.focus(inline);
+    fireEvent.change(inline, { target: { value: "只给自己看" } });
+    fireEvent.blur(inline, { relatedTarget: document.body });
+    expect(composer).toHaveAttribute("data-expanded", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "选择受众" }));
+    const card = await screen.findByRole("menu", { name: "选择受众" });
+    const options = within(card).getAllByRole("menuitemradio");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "所有人",
+      "仅自己",
+    ]);
+    expect(options[0]).toHaveAttribute("aria-checked", "true");
+    fireEvent.click(options[1]);
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "选择受众" })).toHaveTextContent(
+      "仅自己",
+    );
+
+    fireEvent.keyDown(inline, { key: "Enter", metaKey: true });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("dialog", { name: "Moment 已发布" }),
+      ).toBeInTheDocument(),
+    );
+    const create = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url) === "/api/v1/owner/posts" && init?.method === "POST",
+    );
+    expect(JSON.parse(String(create?.[1]?.body))).toEqual({
+      content_md: "只给自己看",
+      media: [],
+      visibility: "only_me",
+    });
+    // The next post starts public again.
+    fireEvent.focus(inline);
+    expect(screen.getByRole("button", { name: "选择受众" })).toHaveTextContent(
+      "所有人",
+    );
+  });
+
+  it("edits a hidden post's audience through the same pill", async () => {
+    preauthenticate();
+    const item = { ...post("藏起来的"), visibility: "only_me" };
+    window.history.replaceState({}, "", `/owner/m/${item.id}/edit`);
+    const fetcher = installApi((url, init) => {
+      if (url === `/api/v1/posts/${item.id}`) {
+        return json({ data: item, meta: {} });
+      }
+      if (
+        url === `/api/v1/owner/posts/${item.id}` &&
+        init?.method === "PATCH"
+      ) {
+        return json({ data: post("藏起来的"), meta: {} });
+      }
+    });
+    render(<App />);
+    await screen.findByLabelText("Moment 正文");
+    const pill = screen.getByRole("button", { name: "选择受众" });
+    expect(pill).toHaveTextContent("仅自己");
+    fireEvent.click(pill);
+    const card = await screen.findByRole("menu", { name: "选择受众" });
+    fireEvent.click(
+      within(card).getByRole("menuitemradio", { name: "所有人" }),
+    );
+    await waitFor(() => expect(pill).toHaveTextContent("所有人"));
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe(`/m/${item.id}`));
+    const patchCall = fetcher.mock.calls.find(
+      ([url, init]) =>
+        String(url) === `/api/v1/owner/posts/${item.id}` &&
+        init?.method === "PATCH",
+    );
+    expect(JSON.parse(String(patchCall?.[1]?.body))).toEqual({
+      content_md: "藏起来的",
+      media: [],
+      visibility: "everyone",
+    });
   });
 
   it("keeps the inline composer geometry stable while writing", async () => {

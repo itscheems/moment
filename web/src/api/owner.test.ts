@@ -18,6 +18,7 @@ const post = {
   updated_at: "2026-08-10T01:02:03.000Z",
   published_at: "2026-08-10T01:02:03.000Z",
   reposted_at: null,
+  visibility: "everyone",
   timeline_item_kind: "original",
   quoted_post: null,
   comment_count: 0,
