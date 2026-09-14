@@ -182,17 +182,6 @@ export function ImageGrid({
               usage={usage}
             />
           );
-          const orderMark =
-            media.length >= 5 ? (
-              <span
-                aria-hidden="true"
-                className={styles.orderMark}
-                data-media-order={index + 1}
-              >
-                {String(index + 1).padStart(2, "0")}
-              </span>
-            ) : null;
-
           if (videoUsage) {
             return (
               <div
@@ -202,7 +191,6 @@ export function ImageGrid({
                 style={singleMediaStyle}
               >
                 {contents}
-                {orderMark}
               </div>
             );
           }
@@ -216,7 +204,6 @@ export function ImageGrid({
               type="button"
             >
               {contents}
-              {orderMark}
             </button>
           );
         })}

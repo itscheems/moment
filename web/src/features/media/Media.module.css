@@ -974,20 +974,6 @@
   aspect-ratio: 1;
 }
 
-.orderMark {
-  position: absolute;
-  inset-block-end: var(--space-2);
-  inset-inline-end: var(--space-2);
-  min-inline-size: 1.8rem;
-  border-radius: 999px;
-  padding: 0.12rem 0.35rem;
-  color: #fff;
-  background: rgb(10 20 14 / 72%);
-  font-family: var(--font-utility);
-  font-size: 0.65rem;
-  text-align: center;
-}
-
 .mediaFallback,
 .lightboxFallback {
   inline-size: 100%;

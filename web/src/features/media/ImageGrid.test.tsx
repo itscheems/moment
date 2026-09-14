@@ -144,7 +144,7 @@ describe("public image grid", () => {
   });
 
   it("reserves the stored single-image geometry before load", () => {
-    const { container } = render(<ImageGrid media={media(1)} />);
+    render(<ImageGrid media={media(1)} />);
     const tile = screen.getByRole("button", {
       name: "打开第 1 张图片，共 1 张：尚未提供图片描述",
     });
@@ -162,23 +162,18 @@ describe("public image grid", () => {
       "--single-media-ratio": "1200 / 800",
       "--single-media-max-width": "51rem",
     });
-    expect(container.querySelector('[data-media-order="1"]')).toBeNull();
   });
 
-  it.each([1, 2, 3, 4])("omits order badges for %i images", (count) => {
+  // The pictures carry nothing but themselves: no number badge in the corner
+  // at any count. Order is the reading order of the grid and the lightbox.
+  it.each([1, 4, 5, 9])("draws no order badge over %i images", (count) => {
     const { container } = render(<ImageGrid media={media(count)} />);
+    const group = screen.getByRole("group", { name: `${count} 张图片` });
+    for (const tile of group.children) {
+      expect(tile.querySelectorAll("img")).toHaveLength(1);
+      expect(tile.textContent).toBe("");
+    }
     expect(container.querySelectorAll("[data-media-order]")).toHaveLength(0);
-  });
-
-  it.each([5, 6, 7, 8, 9])("keeps order badges for %i images", (count) => {
-    const { container } = render(<ImageGrid media={media(count)} />);
-    const badges = container.querySelectorAll("[data-media-order]");
-    expect(badges).toHaveLength(count);
-    expect(Array.from(badges, (badge) => badge.textContent)).toEqual(
-      Array.from({ length: count }, (_, index) =>
-        String(index + 1).padStart(2, "0"),
-      ),
-    );
   });
 
   it("keeps a useful fallback when a preview is missing", () => {
