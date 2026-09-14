@@ -1019,9 +1019,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${mediaItems.length > 0 ? styles.composerHasMedia : ""} ${expanded ? styles.composerExpanded : ""}`}
         data-expanded={expanded ? "true" : "false"}
         onBlur={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget)) {
+          const section = event.currentTarget;
+          if (section.contains(event.relatedTarget)) return;
+          // A blur with no destination is not always focus leaving: a window
+          // or tab going to the background blurs the field too, and leaves
+          // document.activeElement on it, ready to be focused again when the
+          // window comes back. Reading where focus settled, a tick later,
+          // tells the two apart — so the composer only lets go for a press
+          // or a Tab that actually took focus elsewhere on the page, and a
+          // switch away and back is not answered with a shut and a reopen.
+          window.setTimeout(() => {
+            if (!mountedRef.current || section.contains(document.activeElement))
+              return;
             setFocusWithin(false);
-          }
+          }, 0);
         }}
         onFocus={() => setFocusWithin(true)}
         onMouseDown={(event) => {

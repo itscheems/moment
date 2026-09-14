@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   createEvent,
   fireEvent,
@@ -1158,7 +1159,9 @@ describe("owner composing flow", () => {
     // Leaving with nothing written closes it again; anything written keeps
     // it open.
     fireEvent.blur(inline, { relatedTarget: document.body });
-    expect(composer).toHaveAttribute("data-expanded", "false");
+    await waitFor(() =>
+      expect(composer).toHaveAttribute("data-expanded", "false"),
+    );
     fireEvent.focus(inline);
     fireEvent.change(inline, { target: { value: "只给自己看" } });
     fireEvent.blur(inline, { relatedTarget: document.body });
@@ -1244,7 +1247,7 @@ describe("owner composing flow", () => {
     expect(pill).toHaveTextContent("仅自己");
 
     // The collapsed row stays in the DOM, hidden, so it can animate shut.
-    fireEvent.blur(pill, { relatedTarget: document.body });
+    pill.blur();
     await waitFor(() =>
       expect(composer).toHaveAttribute("data-expanded", "false"),
     );
@@ -1253,6 +1256,38 @@ describe("owner composing flow", () => {
     ).not.toBeInTheDocument();
     expect(pill).toBeInTheDocument();
     expect(pill.closest("[aria-hidden='true']")).not.toBeNull();
+  });
+
+  it("keeps an empty inline composer open while the window is in the background", async () => {
+    // A window or tab going to the background blurs the field with no
+    // destination and leaves it document.activeElement; coming back focuses
+    // it again. Only focus actually moving elsewhere on the page — a press
+    // outside, a Tab out — closes the composer.
+    preauthenticate();
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    const composer = inline.closest("section")!;
+    act(() => inline.focus());
+    expect(composer).toHaveAttribute("data-expanded", "true");
+
+    fireEvent.blur(inline, { relatedTarget: null });
+    await act(() => new Promise((settle) => window.setTimeout(settle, 5)));
+    expect(composer).toHaveAttribute("data-expanded", "true");
+    fireEvent.focus(inline);
+    await act(() => new Promise((settle) => window.setTimeout(settle, 5)));
+    expect(composer).toHaveAttribute("data-expanded", "true");
+
+    act(() => screen.getByRole("link", { name: "首页" }).focus());
+    await waitFor(() =>
+      expect(composer).toHaveAttribute("data-expanded", "false"),
+    );
+    act(() => inline.focus());
+    expect(composer).toHaveAttribute("data-expanded", "true");
+    act(() => inline.blur());
+    await waitFor(() =>
+      expect(composer).toHaveAttribute("data-expanded", "false"),
+    );
   });
 
   it("edits a hidden post's audience through the same pill", async () => {
