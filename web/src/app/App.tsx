@@ -356,11 +356,13 @@ function PublicApp() {
         {hasTimeline ? (
           <div hidden={route.id !== "home"}>
             {siteIdentityReady && !mobileViewport && ownerCapable ? (
-              <Composer
-                active={route.id === "home"}
-                site={site}
-                variant="inline"
-              />
+              <div className={styles.homeComposer}>
+                <Composer
+                  active={route.id === "home"}
+                  site={site}
+                  variant="inline"
+                />
+              </div>
             ) : null}
             <TimelinePage
               api={api}

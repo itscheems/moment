@@ -31,6 +31,12 @@
   clip-path: inset(50%);
 }
 
+/* Keep the inline composer in its own stacking layer above the feed. */
+.homeComposer {
+  position: relative;
+  z-index: 1;
+}
+
 .composeBackdrop {
   position: fixed;
   z-index: 90;

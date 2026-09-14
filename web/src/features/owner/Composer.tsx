@@ -79,6 +79,17 @@ import styles from "./Owner.module.css";
 const MAX_CONTENT = 20_000;
 const DRAFT_REMOVAL_REPAIR_DELAY_MS = 50;
 
+// Where a press is allowed to move the caret or start a selection: fields,
+// links, and the notices whose text is worth copying. Everything else in the
+// composer — buttons, the pill, blank space — is a press that leaves focus
+// where it was.
+const TYPED_INTO =
+  'textarea, input, select, a, [contenteditable], [role="status"], [role="alert"]';
+
+function isTypedInto(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest(TYPED_INTO) !== null;
+}
+
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {
     return `web-${crypto.randomUUID()}`;
@@ -154,15 +165,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     // and the toolbar rule appear when the owner steps in and go away again
     // when they step out with nothing written.
     //
-    // Three things count as "inside", and focus alone is not enough. The
-    // audience card lives in a portal, so it holds the composer open while it
-    // is up. And a pointer pressed inside holds it open too: Safari does not
-    // focus a button on click, so pressing the pill blurs the textarea with
-    // no relatedTarget, and a composer that collapsed on that blur would pull
-    // the pill out from under the click.
+    // Focus is the signal, and the audience card is the one thing that can
+    // hold the composer open without it: the card lives in a portal, and it
+    // takes focus with it while it is up. Nothing else needs a hand, because
+    // a press inside the composer never moves focus in the first place (see
+    // the section's mousedown handler).
     const [focusWithin, setFocusWithin] = useState(false);
     const [audienceOpen, setAudienceOpen] = useState(false);
-    const [pointerInside, setPointerInside] = useState(false);
     const audienceCloseFrameRef = useRef<number | null>(null);
     const [draft, setDraft] = useState<ComposeDraft | null>(() =>
       variant === "edit" ? null : loadComposeDraft(site.instanceId),
@@ -256,7 +265,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       variant !== "inline" ||
       focusWithin ||
       audienceOpen ||
-      pointerInside ||
       content.trim().length > 0 ||
       mediaItems.length > 0 ||
       location !== null ||
@@ -1016,19 +1024,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           }
         }}
         onFocus={() => setFocusWithin(true)}
-        onPointerDown={() => {
-          setPointerInside(true);
-          const release = () => {
-            document.removeEventListener("pointerup", release);
-            document.removeEventListener("pointercancel", release);
-            // After the click this press produces has been handled, so
-            // whatever it opened or focused is already holding the composer.
-            window.setTimeout(() => {
-              if (mountedRef.current) setPointerInside(false);
-            }, 0);
-          };
-          document.addEventListener("pointerup", release);
-          document.addEventListener("pointercancel", release);
+        onMouseDown={(event) => {
+          // A press inside the composer that is not on something the owner
+          // types into keeps the caret exactly where it is. Pressing the
+          // pill, a toolbar button or blank space would otherwise move focus
+          // — Safari blurs the textarea for a button, every browser does for
+          // blank space — and an empty composer would shut on that blur under
+          // the very click meant for it. The click itself still fires, so
+          // buttons work as before; they just no longer take focus on click,
+          // which is what Safari has always done. Text the owner may want to
+          // select is left alone, and so are fields and links.
+          if (!isTypedInto(event.target)) event.preventDefault();
         }}
       >
         <div aria-hidden="true" className={styles.newTick}>

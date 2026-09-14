@@ -1202,25 +1202,32 @@ describe("owner composing flow", () => {
     );
   });
 
-  it("keeps an empty composer open while the pill is pressed and after the card closes", async () => {
-    // Safari does not focus a button on click: pressing the pill blurs the
-    // textarea with no relatedTarget. The press itself has to hold the
-    // composer open, and so has the card while it hands focus back.
+  it("keeps the caret where it is for any press inside the composer that is not on a field", async () => {
+    // Pressing the pill, a toolbar button or blank space must not move
+    // focus: Safari would blur the textarea for a button with no
+    // relatedTarget, every browser would for blank space, and an empty
+    // composer would shut on that blur under the very click meant for it.
+    // A press on the textarea itself, or on a notice worth selecting text
+    // in, is left to the browser.
     preauthenticate();
     installApi();
     render(<App />);
     const inline = await screen.findByLabelText("此刻想到什么？");
     const composer = inline.closest("section")!;
+    // Blank space in a closed composer is not an invitation: nothing opens.
+    expect(fireEvent.mouseDown(composer.querySelector("form")!)).toBe(false);
+    expect(composer).toHaveAttribute("data-expanded", "false");
+
     fireEvent.focus(inline);
     const pill = screen.getByRole("button", { name: "选择受众" });
-
-    fireEvent.pointerDown(pill);
-    fireEvent.blur(inline, { relatedTarget: null });
+    expect(fireEvent.mouseDown(pill)).toBe(false);
+    expect(
+      fireEvent.mouseDown(screen.getByRole("button", { name: "发布" })),
+    ).toBe(false);
+    expect(fireEvent.mouseDown(inline)).toBe(true);
     expect(composer).toHaveAttribute("data-expanded", "true");
     fireEvent.click(pill);
     const card = await screen.findByRole("menu", { name: "选择受众" });
-    fireEvent.pointerUp(document.body);
-    await new Promise((settle) => window.setTimeout(settle, 5));
     expect(composer).toHaveAttribute("data-expanded", "true");
 
     fireEvent.click(
