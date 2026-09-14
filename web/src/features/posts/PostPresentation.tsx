@@ -182,6 +182,7 @@ export function PostPresentation({
       <span>已置顶</span>
     </div>
   ) : null;
+  const hidden = post.visibility === "only_me";
   const repostLabel =
     post.timelineItemKind === "repost" ? (
       <div className={styles.repostedLabel}>
@@ -203,20 +204,6 @@ export function PostPresentation({
             </InternalLink>
           }
         />
-        {post.visibility === "only_me" ? (
-          // Only the owner ever receives a hidden post, so this is the owner
-          // being told which of their posts nobody else can see. The lock is
-          // the same glyph the composer's audience card uses for the choice.
-          <ActionTooltip label="仅自己可见">
-            <span
-              aria-label="仅自己可见"
-              className={styles.hiddenMark}
-              role="img"
-            >
-              <Icon name="audience-only-me" />
-            </span>
-          </ActionTooltip>
-        ) : null}
         <InternalLink
           className={styles.usernameLink}
           href={siteProfileHref(site)}
@@ -238,6 +225,21 @@ export function PostPresentation({
                 </InternalLink>
               }
             />
+            {hidden ? (
+              // Only the owner ever receives a hidden post, so this is the
+              // owner being told which of their posts nobody else can see.
+              // It sits with the time, in the metadata, never inside the
+              // identity block, which the detail layout stacks vertically.
+              <ActionTooltip label="仅自己可见">
+                <span
+                  aria-label="仅自己可见"
+                  className={styles.hiddenMark}
+                  role="img"
+                >
+                  <Icon name="audience-only-me" />
+                </span>
+              </ActionTooltip>
+            ) : null}
           </>
         ) : null}
       </div>
@@ -358,6 +360,12 @@ export function PostPresentation({
           <p className={styles.publishedLine}>
             <span>发布于</span>
             <time dateTime={post.publishedAt}>{published.absolute}</time>
+            {hidden ? (
+              <span className={styles.hiddenNote}>
+                <Icon name="audience-only-me" />
+                仅自己可见
+              </span>
+            ) : null}
           </p>
           {post.commentCount > 0 ? (
             <a className={styles.detailStats} href="#comments">

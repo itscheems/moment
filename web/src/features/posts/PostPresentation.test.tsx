@@ -418,7 +418,7 @@ describe("shared post presentation", () => {
     ).toHaveTextContent("3");
   });
 
-  it("marks a hidden post with a lock beside the author name", () => {
+  it("marks a hidden post after the time in lists and on the published line in detail", () => {
     const { rerender } = render(
       <NavigationProvider>
         <PostPresentation post={makePost("公开", "<p>公开</p>")} site={site} />
@@ -428,15 +428,13 @@ describe("shared post presentation", () => {
       screen.queryByRole("img", { name: "仅自己可见" }),
     ).not.toBeInTheDocument();
 
+    const hiddenPost = {
+      ...makePost("藏起来", "<p>藏起来</p>"),
+      visibility: "only_me" as const,
+    };
     rerender(
       <NavigationProvider>
-        <PostPresentation
-          post={{
-            ...makePost("藏起来", "<p>藏起来</p>"),
-            visibility: "only_me",
-          }}
-          site={site}
-        />
+        <PostPresentation post={hiddenPost} site={site} />
       </NavigationProvider>,
     );
     const mark = screen.getByRole("img", { name: "仅自己可见" });
@@ -444,9 +442,35 @@ describe("shared post presentation", () => {
       "data-icon",
       "audience-only-me",
     );
-    // The name, lock, and handle stay in that order.
-    const identity = mark.parentElement;
-    expect(identity?.textContent).toMatch(/^Moment@/);
+    // Name, handle, time, then the lock: it follows the metadata, not the
+    // name, so the identity block never has to make room for it.
+    expect(mark.previousElementSibling).toHaveAttribute(
+      "data-focus-key",
+      expect.stringMatching(/:relative-time$/),
+    );
+
+    rerender(
+      <NavigationProvider>
+        <PostPresentation detail post={hiddenPost} site={site} />
+      </NavigationProvider>,
+    );
+    // The detail byline stacks name over handle; the lock stays out of it and
+    // rides on the "published at" line with its label instead.
+    expect(
+      screen.queryByRole("img", { name: "仅自己可见" }),
+    ).not.toBeInTheDocument();
+    const published = screen.getByText("发布于").parentElement!;
+    expect(published).toHaveTextContent("仅自己可见");
+    expect(published.querySelector("svg")).toHaveAttribute(
+      "data-icon",
+      "audience-only-me",
+    );
+    expect(
+      screen
+        .getByText("Moment", { selector: "strong" })
+        .closest("header")!
+        .querySelector("svg[data-icon='audience-only-me']"),
+    ).toBeNull();
   });
 
   it("keeps the owner repost state and count visible in detail", () => {

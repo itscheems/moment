@@ -187,16 +187,35 @@
   flex: 1 1 auto;
 }
 
+/* The hidden-post lock in a list row: one glyph after the time, centred on
+   the row, never allowed to wrap or take a line of its own. */
 .hiddenMark {
   display: inline-flex;
   flex: 0 0 auto;
   align-self: center;
+  align-items: center;
+  margin-inline-start: 0.1rem;
   color: var(--text-secondary);
 }
 
 .hiddenMark svg {
-  inline-size: 1.1em;
-  block-size: 1.1em;
+  inline-size: 1.05em;
+  block-size: 1.05em;
+}
+
+/* In detail the same fact rides on the "published at" line with its label,
+   as one inline unit that wraps together if it wraps at all. */
+.hiddenNote {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.hiddenNote svg {
+  inline-size: 1em;
+  block-size: 1em;
 }
 
 .bylineIdentity .usernameLink:hover,
