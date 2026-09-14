@@ -153,7 +153,7 @@ interface ComposerProps {
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(
   function Composer({ site, variant, post, active = true, quotedPostId }, ref) {
-    const { navigate, setNavigationBlocker } = useNavigation();
+    const { navigate, goBack, setNavigationBlocker } = useNavigation();
     const { api, session, expireIfInvalidSession } = useOwner();
     const publicApi = useMemo(() => new PublicApi(), []);
     const initialContent = post?.contentMd ?? "";
@@ -965,7 +965,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             setAnnouncement("");
           }, 1_000);
         } else {
-          navigate(post ? `/m/${encodeURIComponent(saved.id)}` : "/");
+          // A page composer is a detour from wherever it was opened -- the
+          // post being edited, or the page under the compose overlay -- so
+          // saving returns there. Pushing a new page instead left the
+          // detour in history, and the next back went to the editor rather
+          // than to where the reader had been. Opened by URL, with no page
+          // behind it, the detour ends on the post it produced.
+          goBack(post ? `/m/${encodeURIComponent(saved.id)}` : "/");
         }
       } catch (nextError) {
         if (expireIfInvalidSession(nextError)) {

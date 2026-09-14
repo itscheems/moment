@@ -1330,6 +1330,44 @@ describe("owner composing flow", () => {
     });
   });
 
+  it("returns to the post after editing it from its page, leaving no editor in history", async () => {
+    // Editing is a detour from the post: saving goes back to where the
+    // reader was, so the next back leads out of the post rather than into
+    // the editor again.
+    preauthenticate();
+    const item = post("改前", "01K2ABCDEF0123456789ABCDE9");
+    let current = item;
+    window.history.replaceState({}, "", `/m/${item.id}`);
+    installApi((url, init) => {
+      if (url === `/api/v1/posts/${item.id}`)
+        return json({ data: current, meta: {} });
+      if (url.startsWith(`/api/v1/posts/${item.id}/comments`))
+        return json({ data: { items: [] }, meta: { next_cursor: null } });
+      if (
+        url === `/api/v1/owner/posts/${item.id}` &&
+        init?.method === "PATCH"
+      ) {
+        current = post("改后", item.id);
+        return json({ data: current, meta: {} });
+      }
+    });
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "编辑" }));
+    const editor = await screen.findByLabelText("Moment 正文");
+    expect(window.location.pathname).toBe(`/owner/m/${item.id}/edit`);
+    expect(window.history.state?.momentInternal).toBe(true);
+    fireEvent.change(editor, { target: { value: "改后" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存更改" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe(`/m/${item.id}`));
+    // The entry is the one the reader started on, not a new page pushed on
+    // top of the editor.
+    expect(window.history.state?.momentInternal).toBeFalsy();
+    expect(await screen.findByText("改后")).toBeInTheDocument();
+  });
+
   it("keeps the inline composer geometry stable while writing", async () => {
     preauthenticate();
     installApi();
