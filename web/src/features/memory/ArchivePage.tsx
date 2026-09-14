@@ -117,7 +117,6 @@ function Calendar({
             aria-label={`${date}${isToday ? "，今天" : ""}，${count} 条 Moment${isSelected ? "，已选择" : ""}`}
             data-focus-key={`archive-day-${date}`}
             data-selected={isSelected ? "true" : undefined}
-            data-today={isToday ? "true" : undefined}
             href={archiveHref({
               year,
               month: calendar.month,
@@ -129,10 +128,7 @@ function Calendar({
             <span>{count}</span>
           </InternalLink>
         ) : (
-          <span
-            aria-label={`${date}${isToday ? "，今天" : ""}，没有 Moment`}
-            data-today={isToday ? "true" : undefined}
-          >
+          <span aria-label={`${date}${isToday ? "，今天" : ""}，没有 Moment`}>
             {day}
           </span>
         )}

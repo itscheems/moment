@@ -624,13 +624,6 @@
   background: var(--accent);
 }
 
-.calendarDay a[data-today="true"]:not([data-selected="true"]),
-.calendarEmptyDay > span[data-today="true"] {
-  border-color: var(--accent);
-  color: var(--accent);
-  font-weight: 750;
-}
-
 .calendarDay strong,
 .calendarEmptyDay > span {
   font-family: var(--font-utility);
