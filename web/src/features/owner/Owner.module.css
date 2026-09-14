@@ -600,16 +600,27 @@
   font-weight: 700;
 }
 
+/* The publish button is a 36px pill (1px transparent border included) with 16px
+   sides, at least as wide as it is tall, and a 15/20 bold label centred in
+   it. Its fills fade over 0.2s. */
 .composerPublishButton {
-  min-block-size: var(--target-size);
-  border-radius: 999px;
-  padding-inline: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 36px;
+  min-block-size: 36px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  padding: 0 16px;
   color: var(--button-primary-contrast);
   background: var(--button-primary);
-  font-size: var(--text-sm);
+  font-size: 15px;
   font-weight: 700;
+  letter-spacing: normal;
+  line-height: 20px;
   transition:
-    background var(--motion-fast) var(--ease-out),
+    background-color 0.2s,
+    box-shadow 0.2s,
     opacity var(--motion-fast) var(--ease-out);
 }
 
