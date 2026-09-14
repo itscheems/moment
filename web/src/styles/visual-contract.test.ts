@@ -307,27 +307,68 @@ describe("visual foundation contract", () => {
 
   // A tile that carries its own aspect ratio stops stretching into its row:
   // grid `normal` alignment falls back to `start` for aspect-ratio boxes, so
-  // a square tile in the 2x2 grid takes the height its width implies, which
-  // is deeper than the row, and the bottom pair overflows the container onto
-  // the actions below. The container owns the shape; the tiles fill it.
+  // a square tile in the 2x2 grid took the height its width implies, deeper
+  // than the row, and the bottom pair overflowed the container onto the
+  // actions below. A grid therefore shapes itself one way or the other: the
+  // container owns the shape (aspect ratio plus template rows) and the tiles
+  // fill it, or the tiles own it (aspect ratio) and the rows are auto.
+  const gridRules = (list: string, count: string) =>
+    [
+      ...mediaCss.matchAll(
+        new RegExp(
+          `\\.${list}[\\w-]+\\[data-media-count="${count}"\\](?:,\\s*\\.${list}[\\w-]+\\[data-media-count="\\d"\\])*\\s*\\{([^}]*)\\}`,
+          "g",
+        ),
+      ),
+    ]
+      .map((match) => match[1])
+      .join("\n");
+  const tileRules = (count: string) =>
+    [
+      ...mediaCss.matchAll(
+        new RegExp(
+          `\\[data-media-count="${count}"\\][^{]*\\._(?:imageTile|mediaEditorItem)_[\\w-]+[^{]*\\{([^}]*)\\}`,
+          "g",
+        ),
+      ),
+    ]
+      .map((match) => match[1])
+      .join("\n");
+
   it("lets three- and four-picture tiles fill the shape their grid draws", () => {
     expect(mediaCss).toMatch(
       /\._imageGrid_[\w-]+\[data-media-count="3"\],\s*\._imageGrid_[\w-]+\[data-media-count="4"\]\s*\{[^}]*grid-template-rows: repeat\(2, minmax\(0, 1fr\)\);[^}]*aspect-ratio: 16 \/ 11;/,
     );
     for (const count of ["3", "4"]) {
-      const tileRules = [
-        ...mediaCss.matchAll(
-          new RegExp(
-            `\\[data-media-count="${count}"\\][^{]*\\._imageTile_[\\w-]+[^{]*\\{([^}]*)\\}`,
-            "g",
-          ),
-        ),
-      ].map((match) => match[1]);
-      for (const rule of tileRules) {
-        expect(rule).not.toMatch(/aspect-ratio/);
-        expect(rule).not.toMatch(/\bblock-size:/);
-      }
+      expect(tileRules(count)).not.toMatch(/aspect-ratio/);
+      expect(tileRules(count)).not.toMatch(/\bblock-size:/);
     }
+  });
+
+  // Five to nine pictures are the ordinary nine-grid, as on Weibo and WeChat:
+  // three square tiles to a row and a short, left-aligned last row when the
+  // count does not divide by three. No lead tile spanning cells, no container
+  // shape forcing the count to tile the rectangle, in the post and in the
+  // composer preview alike.
+  it("lays five to nine pictures out as a plain nine-grid", () => {
+    for (const count of ["5", "6", "7", "8", "9"]) {
+      for (const list of ["_imageGrid_", "_mediaEditorList_"]) {
+        const grid = gridRules(list, count);
+        expect(grid).toMatch(
+          /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/,
+        );
+        expect(grid).not.toMatch(/aspect-ratio/);
+        expect(grid).not.toMatch(/grid-template-rows: repeat/);
+        expect(grid).not.toMatch(/grid-auto-rows/);
+      }
+      const tiles = tileRules(count);
+      expect(tiles).toMatch(/aspect-ratio: 1;/);
+      expect(tiles).not.toMatch(/grid-(?:row|column)/);
+      expect(tiles).not.toMatch(/\bblock-size:/);
+    }
+    // The preview grows a row at a time; the fixed height is for the smaller
+    // counts.
+    expect(gridRules("_mediaEditorList_", "5")).toMatch(/block-size: auto/);
   });
 
   it("crops only extra-tall single videos on mobile without letterboxing", () => {

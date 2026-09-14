@@ -206,22 +206,29 @@
   grid-row: auto;
 }
 
+/*
+ * The preview lays five to nine pictures out the way the post will: the
+ * nine-grid, three square tiles to a row with a short last row, so the owner
+ * sees the shape they are about to publish. The list grows a row at a time
+ * instead of keeping the fixed height the smaller counts use.
+ */
 .mediaEditorList[data-media-count="5"],
 .mediaEditorList[data-media-count="6"],
 .mediaEditorList[data-media-count="7"],
 .mediaEditorList[data-media-count="8"],
 .mediaEditorList[data-media-count="9"] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(3, minmax(0, 1fr));
-  block-size: clamp(18rem, 50vw, 25rem);
+  grid-template-rows: none;
+  block-size: auto;
   gap: var(--space-2);
 }
 
-.mediaEditorList[data-media-count="5"] .mediaEditorItem:first-child,
-.mediaEditorList[data-media-count="7"] .mediaEditorItem:first-child,
-.mediaEditorList[data-media-count="8"] .mediaEditorItem:first-child {
-  grid-column: span 2;
-  grid-row: span 2;
+.mediaEditorList[data-media-count="5"] .mediaEditorItem,
+.mediaEditorList[data-media-count="6"] .mediaEditorItem,
+.mediaEditorList[data-media-count="7"] .mediaEditorItem,
+.mediaEditorList[data-media-count="8"] .mediaEditorItem,
+.mediaEditorList[data-media-count="9"] .mediaEditorItem {
+  aspect-ratio: 1;
 }
 
 .editorPreview {
@@ -917,12 +924,14 @@
 }
 
 /*
- * Only the two-picture row shapes its tiles. A tile with an aspect ratio of
- * its own stops stretching into its grid row (`normal` alignment falls back
- * to `start` for aspect-ratio boxes) and takes the square its width implies,
- * which in a 2x2 grid is deeper than the row and overflows the container
- * onto the actions below. The three- and four-picture grids draw their shape
- * on the container instead and let each tile fill its cell.
+ * Two ways to shape a grid, never both at once. A tile with an aspect ratio
+ * of its own stops stretching into its grid row (`normal` alignment falls
+ * back to `start` for aspect-ratio boxes) and takes the square its width
+ * implies, so it only belongs in a grid whose rows are auto, like this pair
+ * and the nine-grid further down. The three- and four-picture grids draw
+ * their shape on the container instead and let each tile fill its cell; a
+ * square tile in that 2x2 was deeper than its row and overflowed onto the
+ * actions below.
  */
 .imageGrid[data-media-count="2"] .imageTile {
   aspect-ratio: 1;
@@ -939,21 +948,30 @@
   grid-row: span 2;
 }
 
+/*
+ * Five to nine pictures: the ordinary nine-grid.
+ *
+ * Three square tiles to a row, the last row left-aligned and left short when
+ * the count does not divide by three (3+2, 3+3, 3+3+1, 3+3+2, 3+3+3). A short
+ * last row is what every reader of a nine-grid expects; a count forced to
+ * tile the rectangle is not. The tiles own their shape here, so the rows are
+ * auto and the container draws none -- the opposite of the grids above, and
+ * the two must never be mixed (see the four-picture note).
+ */
 .imageGrid[data-media-count="5"],
 .imageGrid[data-media-count="6"],
 .imageGrid[data-media-count="7"],
 .imageGrid[data-media-count="8"],
 .imageGrid[data-media-count="9"] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-auto-rows: minmax(5.5rem, 1fr);
-  aspect-ratio: 1;
 }
 
-.imageGrid[data-media-count="5"] .imageTile:first-child,
-.imageGrid[data-media-count="7"] .imageTile:first-child,
-.imageGrid[data-media-count="8"] .imageTile:first-child {
-  grid-column: span 2;
-  grid-row: span 2;
+.imageGrid[data-media-count="5"] .imageTile,
+.imageGrid[data-media-count="6"] .imageTile,
+.imageGrid[data-media-count="7"] .imageTile,
+.imageGrid[data-media-count="8"] .imageTile,
+.imageGrid[data-media-count="9"] .imageTile {
+  aspect-ratio: 1;
 }
 
 .orderMark {
@@ -1204,14 +1222,6 @@
     .videoTile[data-media-shape="tall"]
     .videoPoster {
     object-fit: cover;
-  }
-
-  .imageGrid[data-media-count="5"],
-  .imageGrid[data-media-count="6"],
-  .imageGrid[data-media-count="7"],
-  .imageGrid[data-media-count="8"],
-  .imageGrid[data-media-count="9"] {
-    grid-auto-rows: minmax(4.25rem, 1fr);
   }
 
   .lightboxStage {
