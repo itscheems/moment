@@ -180,6 +180,82 @@ func TestSearchArchivePostSyncAndRebuild(t *testing.T) {
 	}
 }
 
+func TestSearchLinkCardTextAgreesBetweenWriteAndRebuild(t *testing.T) {
+	// A card contributes its title, site, author, and canonical host to the
+	// indexed text on the write path. The drift check and the rebuild must
+	// compose exactly that from the stored card, or every entry with a card
+	// reads as damaged and a rebuild rewrites it to something Create never
+	// wrote. Both of those happened when the rebuild side concatenated the
+	// card in SQL instead of calling the combiner.
+	t.Parallel()
+	ctx := context.Background()
+	database, runtimeState := openTestDatabase(t, Options{})
+	postRepository, err := newPostRepository(database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []domain.ID{mustID(t, entryOne), mustID(t, entryTwo)}
+	now := time.Date(2026, 8, 22, 1, 44, 0, 0, time.UTC)
+	posts, err := app.NewPostService(postRepository,
+		app.WithPostClock(func() time.Time { return now }),
+		app.WithPostIDGenerator(func(time.Time) (domain.ID, error) {
+			id := ids[0]
+			ids = ids[1:]
+			return id, nil
+		}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	card := domain.LinkCard{
+		SourceURL: "https://www.example.org/posts/on-restraint?ref=feed", CanonicalURL: "https://www.example.org/posts/on-restraint",
+		Provider: domain.LinkProviderGeneric, Kind: domain.LinkKindLink, Title: "On Restraint", SiteName: "Example Journal",
+		AuthorName: "A. Writer", CapturedAt: domain.TimeToMillis(now),
+	}
+	withCard, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "worth a read", LinkCards: []domain.LinkCard{card}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "https://www.example.org/posts/on-restraint", LinkCards: []domain.LinkCard{card}}); err != nil {
+		t.Fatal(err)
+	}
+	repository, err := NewSearchRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := app.NewSearchService(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	diagnostic, err := service.DiagnoseDerived(ctx, 10)
+	if err != nil || diagnostic.Total != 2 || diagnostic.Drifted != 0 || diagnostic.Ready != 2 {
+		t.Fatalf("freshly written cards read as drifted: %#v, %v", diagnostic, err)
+	}
+	var written string
+	if err := database.write.QueryRowContext(ctx, `SELECT content_text FROM entries WHERE id = ?`, withCard.Post.Entry.ID.String()).Scan(&written); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(written, "example.org") || strings.Contains(written, "https://") {
+		t.Fatalf("indexed text = %q, want the canonical host and not the URL", written)
+	}
+	rebuilt, err := service.Rebuild(ctx, false)
+	if err != nil || rebuilt.Drifted != 0 || rebuilt.Rebuilt != 0 {
+		t.Fatalf("rebuild of agreeing text = %#v, %v", rebuilt, err)
+	}
+	var after string
+	if err := database.write.QueryRowContext(ctx, `SELECT content_text FROM entries WHERE id = ?`, withCard.Post.Entry.ID.String()).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != written {
+		t.Fatalf("rebuild changed the indexed text: %q -> %q", written, after)
+	}
+	found, err := service.Search(ctx, app.SearchInput{Query: "example.org"})
+	if err != nil || len(found.Items) != 2 {
+		t.Fatalf("host search = %#v, %v", found, err)
+	}
+}
+
 func TestSearchCursorRejectsCreateUpdateAndDeleteBetweenPages(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

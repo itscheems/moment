@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -249,14 +250,37 @@ WHERE e.id IS NULL`).Scan(&count); err != nil {
 	return count, nil
 }
 
+// searchSourceCard is the slice of a stored link card that reaches search:
+// exactly the fields domain.LinkCardSearchText reads, carried as JSON so one
+// row can hold every card of an entry in position order.
+type searchSourceCard struct {
+	Title        string `json:"title"`
+	SiteName     string `json:"site_name"`
+	AuthorName   string `json:"author_name"`
+	CanonicalURL string `json:"canonical_url"`
+}
+
 func (store searchStore) SearchSources(ctx context.Context, after domain.ID, limit int) ([]app.SearchSource, error) {
+	// The cards come back as columns, not as text: the text an entry is
+	// indexed under is composed by domain.LinkCardSearchText on the write
+	// path, and composing it here from the same fields is what keeps a
+	// rebuild and the drift check agreeing with what Create wrote. A SQL
+	// concatenation once stood in for that call and disagreed with it -- it
+	// carried the whole canonical URL, which the normalizer drops, where the
+	// combiner keeps the host -- so every entry with a card read as drifted.
 	rows, err := store.queries.QueryContext(ctx, `
 SELECT e.id, e.content_md, e.content_text,
        coalesce((
-           SELECT group_concat(card.title || ' ' || card.site_name || ' ' || card.author_name || ' ' || card.canonical_url, ' ')
-           FROM entry_link_card AS card
-           WHERE card.entry_id = e.id
-       ), ''),
+           SELECT json_group_array(json_object(
+               'title', card.title, 'site_name', card.site_name,
+               'author_name', card.author_name, 'canonical_url', card.canonical_url))
+           FROM (
+               SELECT title, site_name, author_name, canonical_url
+               FROM entry_link_card
+               WHERE entry_id = e.id
+               ORDER BY position
+           ) AS card
+       ), '[]'),
        count(f.rowid),
        coalesce(sum(CASE WHEN f.content_text = e.content_text THEN 1 ELSE 0 END), 0)
 FROM entries AS e
@@ -271,11 +295,20 @@ LIMIT ?`, string(domain.KindMoment), after.String(), after.String(), limit)
 	defer func() { _ = rows.Close() }()
 	sources := make([]app.SearchSource, 0, limit)
 	for rows.Next() {
-		var idString string
+		var idString, cardsJSON string
 		var source app.SearchSource
-		if err := rows.Scan(&idString, &source.ContentMD, &source.ContentText, &source.LinkCardText, &source.FTSCopies, &source.FTSStoredTextCopies); err != nil {
+		if err := rows.Scan(&idString, &source.ContentMD, &source.ContentText, &cardsJSON, &source.FTSCopies, &source.FTSStoredTextCopies); err != nil {
 			return nil, fmt.Errorf("scan search source: %w", err)
 		}
+		var storedCards []searchSourceCard
+		if err := json.Unmarshal([]byte(cardsJSON), &storedCards); err != nil {
+			return nil, fmt.Errorf("decode search source cards: %w", err)
+		}
+		cards := make([]domain.LinkCard, len(storedCards))
+		for index, card := range storedCards {
+			cards[index] = domain.LinkCard{Title: card.Title, SiteName: card.SiteName, AuthorName: card.AuthorName, CanonicalURL: card.CanonicalURL}
+		}
+		source.LinkCardText = domain.LinkCardSearchText(cards)
 		id, err := domain.ParseID(idString)
 		if err != nil {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored search source has an invalid ID", nil)
