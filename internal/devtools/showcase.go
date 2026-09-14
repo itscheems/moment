@@ -249,6 +249,18 @@ func showcasePosts() []showcasePost {
 		{key: "year.image-nine", when: ago(34 * 24 * time.Hour), note: "九图上限，各种比例", content: "九宫格上限测试。", images: []showcaseImage{
 			landscape(0, 1), portrait(40, 2), square(80, 3), panorama(120, 4), tall(160, 5), landscape(200, 6), square(240, 7), portrait(280, 8), tiny(320, 9),
 		}},
+		{key: "year.image-eight", when: ago(36 * 24 * time.Hour), note: "八图：首图占 2×2，其余七张小格", content: "八张：首图是横幅，占左上四格。", images: []showcaseImage{
+			landscape(330, 1), square(10, 2), portrait(50, 3), landscape(90, 4), panorama(130, 5), tall(170, 6), square(210, 7), landscape(250, 8),
+		}},
+		{key: "year.image-seven", when: ago(37 * 24 * time.Hour), note: "七图：首图占 2×2，其余六张小格", content: "七张：首图是竖图，看它在正方形大格里怎么裁。", images: []showcaseImage{
+			portrait(300, 1), landscape(340, 2), square(20, 3), panorama(60, 4), landscape(100, 5), tall(140, 6), square(180, 7),
+		}},
+		{key: "year.image-six", when: ago(38 * 24 * time.Hour), note: "六图：3×2 等格，没有大图", content: "六张等格，第一张是全景。", images: []showcaseImage{
+			panorama(270, 1), portrait(310, 2), landscape(350, 3), square(30, 4), tall(70, 5), landscape(110, 6),
+		}},
+		{key: "year.image-five", when: ago(39 * 24 * time.Hour), note: "五图：首图占 2×2，其余四张小格", content: "五张：首图是正方形，正好填满大格。", images: []showcaseImage{
+			square(240, 1), landscape(280, 2), portrait(320, 3), panorama(0, 4), tiny(40, 5),
+		}},
 		{key: "year.long-cjk-line", when: ago(41 * 24 * time.Hour), note: "超长无空格中文（换行与溢出）", content: strings.Repeat("这是一行没有任何标点也没有空格的中文用来看看容器会不会被撑破以及断行是不是按字断的", 3)},
 		{key: "year.long-url", when: ago(55 * 24 * time.Hour), note: "超长 URL（自动链接与溢出）", content: "留个链接：https://example.com/very/long/path/that/keeps/going/and/going/until/it/really/has/to/wrap?utm_source=moment&utm_medium=timeline&utm_campaign=showcase-fixture-with-a-long-query-string&session=0123456789abcdef0123456789abcdef"},
 		{key: "year.quote-of-hidden", when: ago(60 * 24 * time.Hour), note: "引用一条仅自己可见的帖子（访客看到「不可用」）", content: "引用一下之前那条私密记录，看看别人看到的是什么。", quotes: "year.hidden-old"},
