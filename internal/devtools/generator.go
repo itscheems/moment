@@ -6,13 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"hash/crc32"
 	"image"
 	"image/color"
 	"image/png"
-	"io"
 	"math"
 	"strings"
 	"time"
@@ -37,9 +34,17 @@ type fixtureBuilder struct {
 	media    *media.Store
 	staged   *generationGuard
 	progress func(Progress)
+
+	// The showcase alone writes accounts, dates everything from a clock it
+	// sets by hand, and reports what it built under stable keys.
+	accounts *app.AccountService
+	clock    *settableClock
+	anchor   time.Time
+	zone     *time.Location
+	manifest *ShowcaseManifest
 }
 
-func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtime, database *sqlitestore.Database, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet, staged *generationGuard, recipe Scenario, seed int64, progress func(Progress)) (*fixtureBuilder, error) {
+func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtime, database *sqlitestore.Database, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet, staged *generationGuard, recipe Scenario, seed int64, anchor time.Time, progress func(Progress)) (*fixtureBuilder, error) {
 	postRepository, err := sqlitestore.NewDevelopmentPostRepository(database, runtimeState.Root, held)
 	if err != nil {
 		return nil, err
@@ -51,6 +56,9 @@ func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtim
 	siteRepository, err := sqlitestore.NewDevelopmentSiteRepository(database, runtimeState.Root, held)
 	if err != nil {
 		return nil, err
+	}
+	if recipe.Name == ShowcaseScenarioName {
+		return newShowcaseBuilderWithinLocks(target, runtimeState, database, authority, held, staged, recipe, seed, anchor, progress, postRepository, commentRepository, siteRepository)
 	}
 	base := deterministicBase(recipe.Name, seed)
 	postClock, postIDs := deterministicEntitySources(recipe.Name, seed, "post", postTime(recipe, base))
@@ -87,6 +95,9 @@ func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtim
 }
 
 func (builder *fixtureBuilder) build(ctx context.Context) (Counts, error) {
+	if builder.recipe.Name == ShowcaseScenarioName {
+		return builder.buildShowcase(ctx)
+	}
 	if err := builder.verify(ctx); err != nil {
 		return Counts{}, err
 	}
@@ -397,34 +408,5 @@ func deterministicPNG(recipe string, seed, index, size int64) ([]byte, error) {
 	if err := encoder.Encode(&encoded, canvas); err != nil {
 		return nil, err
 	}
-	base := encoded.Bytes()
-	const chunkOverhead = int64(12)
-	if size < int64(len(base))+chunkOverhead {
-		return nil, fmt.Errorf("fixture image size %d is below the deterministic PNG minimum", size)
-	}
-	payloadSize := size - int64(len(base)) - chunkOverhead
-	result := make([]byte, 0, size)
-	result = append(result, base[:len(base)-12]...)
-	payload := make([]byte, payloadSize)
-	stream := &hashStream{key: []byte(hex.EncodeToString(digest[:]))}
-	if _, err := io.ReadFull(stream, payload); err != nil {
-		return nil, err
-	}
-	var length [4]byte
-	binary.BigEndian.PutUint32(length[:], uint32(payloadSize))
-	result = append(result, length[:]...)
-	chunkType := []byte("moMe")
-	result = append(result, chunkType...)
-	result = append(result, payload...)
-	checksum := crc32.NewIEEE()
-	_, _ = checksum.Write(chunkType)
-	_, _ = checksum.Write(payload)
-	var sum [4]byte
-	binary.BigEndian.PutUint32(sum[:], checksum.Sum32())
-	result = append(result, sum[:]...)
-	result = append(result, base[len(base)-12:]...)
-	if int64(len(result)) != size {
-		return nil, errors.New("deterministic PNG length drifted")
-	}
-	return result, nil
+	return padPNG(encoded.Bytes(), size, []byte(hex.EncodeToString(digest[:])), "fixture image")
 }

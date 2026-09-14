@@ -73,6 +73,7 @@ var scenarios = []Scenario{
 	{Name: "comment-one-level", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "owner roots with replies flattened to one level", Counts: Counts{Entries: 1, Comments: 6}},
 	{Name: "search-cjk", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "Chinese, English, numeric, and phrase search fixtures", Counts: Counts{Entries: 6}},
 	{Name: "archive-years", Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "posts spanning deterministic year, month, and day aggregates", Counts: Counts{Entries: 12}},
+	{Name: ShowcaseScenarioName, Category: CategoryUX, RecipeVersion: RecipeVersion, Description: "a seven-year Shanghai site dated from the clock: every timeline, detail, comment, media, card, calendar, and account state at least once", Counts: showcaseCounts()},
 	{Name: "archive-roundtrip", Category: CategoryArchive, RecipeVersion: RecipeVersion, Description: "portable site, entries, comments, media, and alt states restored through format v1", Counts: Counts{Entries: 4, Comments: 8, Media: 6, MediaBytes: 6 * 4096}, ArchiveRoundTrip: true},
 	{Name: "corruption-search-drift", Category: CategoryCorruption, RecipeVersion: RecipeVersion, Description: "one derived FTS row removed for doctor handoff", Counts: Counts{Entries: 3}, ExpectedDoctorCheckID: "fts_consistency"},
 	{Name: "acceptance-scale", Category: CategoryPerformance, RecipeVersion: RecipeVersion, Description: "release-scale streaming dataset", Counts: Counts{Entries: 10_000, Comments: 50_000, Media: 20_000, MediaBytes: 20 * gib}},

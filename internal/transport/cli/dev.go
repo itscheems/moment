@@ -52,9 +52,9 @@ func registerDev(application *Application) {
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"dev", "scenario"}, ArgsUsage: "<name>", Short: "Build one named acceptance scenario",
-		Long:       "Atomically build one frozen scenario by name. Catalog names, recipe versions, exact counts, healthy doctor postconditions, and the corruption finding ID are shared by help and JSON output. Scale scenarios are long-running and stop on parent cancellation.",
+		Long:       "Atomically build one cataloged scenario by name. Catalog names, recipe versions, exact counts, healthy doctor postconditions, and the corruption finding ID are shared by help and JSON output. Every scenario is frozen by its seed except " + devtools.ShowcaseScenarioName + ", a whole site dated from the current minute so its newest posts read as minutes ago. Scale scenarios are long-running and stop on parent cancellation.",
 		Inputs:     "One scenario name and explicit --data-dir. Names: " + strings.Join(devtools.ScenarioNames(), ", ") + ".",
-		Output:     "The selected scenario plan, exact counts, doctor handoff, and archive roundtrip result when applicable.",
+		Output:     "The selected scenario plan, exact counts, doctor handoff, archive roundtrip result when applicable, and for " + devtools.ShowcaseScenarioName + " a manifest mapping stable case keys to the identifiers of this build.",
 		Errors:     "Unknown names exit 2 and list the canonical catalog. Active service exits 4; I/O 6; integrity 7; parent cancellation 9. Explicit --timeout is not accepted for this long-running command.",
 		Safety:     "A strictly empty directory may bootstrap development; any existing unmarked content or production marker is refused.",
 		Example:    "mkdir ./moment-dev && moment dev scenario archive-roundtrip --data-dir ./moment-dev --seed 42 --yes --no-input --json",
@@ -89,6 +89,9 @@ func runDev(ctx context.Context, invocation Invocation, operation devtools.Opera
 	text := fmt.Sprintf("Development %s: scenario=%s entries=%d comments=%d media=%d", result.Plan.Operation, result.Plan.Scenario, result.Plan.Counts.Entries, result.Plan.Counts.Comments, result.Plan.Counts.Media)
 	if result.Plan.DryRun {
 		text = "Dry run: " + text
+	}
+	if result.Showcase != nil {
+		text += fmt.Sprintf("\nShowcase anchored at %s: %d cases listed under data.showcase", result.Showcase.AnchoredAt, len(result.Showcase.Cases))
 	}
 	if result.OwnerToken != "" {
 		text += "\nOwner token (shown once): " + result.OwnerToken

@@ -37,6 +37,9 @@ type Request struct {
 	Seed      int64
 	DryRun    bool
 	Progress  func(Progress)
+	// Anchor dates the site-showcase scenario; zero means the current
+	// minute. Every other scenario is dated from its seed and ignores it.
+	Anchor time.Time
 
 	hooks *operationHooks
 }
@@ -61,6 +64,9 @@ type Result struct {
 	DoctorHealthy          bool   `json:"doctor_healthy"`
 	ArchiveRoundTripPassed bool   `json:"archive_round_trip_passed,omitempty"`
 	OwnerToken             string `json:"owner_token,omitempty"`
+	// Showcase lists what the site-showcase scenario built, under keys that
+	// do not change between builds; every other scenario leaves it absent.
+	Showcase *ShowcaseManifest `json:"showcase,omitempty"`
 }
 
 type operationHooks struct {
@@ -229,13 +235,14 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 	if err := staged.Verify(target); err != nil {
 		return Result{}, err
 	}
-	builder, err := newFixtureBuilderWithinLocks(target, stagedRuntime, database, developmentAuthority, held, staged, recipe, request.Seed, request.Progress)
+	builder, err := newFixtureBuilderWithinLocks(target, stagedRuntime, database, developmentAuthority, held, staged, recipe, request.Seed, request.Anchor, request.Progress)
 	if err != nil {
 		return Result{}, err
 	}
 	if _, err := builder.build(ctx); err != nil {
 		return Result{}, err
 	}
+	showcase := builder.manifest
 	if recipe.ExpectedDoctorCheckID == "fts_consistency" {
 		if err := sqlitestore.CorruptDevelopmentFTS(ctx, database, target.Root, held); err != nil {
 			return Result{}, err
@@ -316,6 +323,7 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 	return Result{
 		Plan: plan, Applied: true, ExpectedDoctorCheckID: recipe.ExpectedDoctorCheckID,
 		DoctorHealthy: healthy, ArchiveRoundTripPassed: recipe.ArchiveRoundTrip, OwnerToken: ownerToken,
+		Showcase: showcase,
 	}, nil
 }
 
