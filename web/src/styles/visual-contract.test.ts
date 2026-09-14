@@ -305,6 +305,31 @@ describe("visual foundation contract", () => {
     expect(grid).not.toMatch(/\bborder-radius:/);
   });
 
+  // A tile that carries its own aspect ratio stops stretching into its row:
+  // grid `normal` alignment falls back to `start` for aspect-ratio boxes, so
+  // a square tile in the 2x2 grid takes the height its width implies, which
+  // is deeper than the row, and the bottom pair overflows the container onto
+  // the actions below. The container owns the shape; the tiles fill it.
+  it("lets three- and four-picture tiles fill the shape their grid draws", () => {
+    expect(mediaCss).toMatch(
+      /\._imageGrid_[\w-]+\[data-media-count="3"\],\s*\._imageGrid_[\w-]+\[data-media-count="4"\]\s*\{[^}]*grid-template-rows: repeat\(2, minmax\(0, 1fr\)\);[^}]*aspect-ratio: 16 \/ 11;/,
+    );
+    for (const count of ["3", "4"]) {
+      const tileRules = [
+        ...mediaCss.matchAll(
+          new RegExp(
+            `\\[data-media-count="${count}"\\][^{]*\\._imageTile_[\\w-]+[^{]*\\{([^}]*)\\}`,
+            "g",
+          ),
+        ),
+      ].map((match) => match[1]);
+      for (const rule of tileRules) {
+        expect(rule).not.toMatch(/aspect-ratio/);
+        expect(rule).not.toMatch(/\bblock-size:/);
+      }
+    }
+  });
+
   it("crops only extra-tall single videos on mobile without letterboxing", () => {
     expect(mediaCss).toMatch(
       /@media \(max-width: 719px\)[\s\S]*?\._imageGrid_[\w-]+\[data-media-count="1"\]\[data-compact-tall-video\][\s\S]*?\._videoTile_[\w-]+\[data-media-shape="tall"\]\s*\{[^}]*aspect-ratio: 2 \/ 3;[^}]*max-block-size: none;/,

@@ -916,8 +916,15 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.imageGrid[data-media-count="2"] .imageTile,
-.imageGrid[data-media-count="4"] .imageTile {
+/*
+ * Only the two-picture row shapes its tiles. A tile with an aspect ratio of
+ * its own stops stretching into its grid row (`normal` alignment falls back
+ * to `start` for aspect-ratio boxes) and takes the square its width implies,
+ * which in a 2x2 grid is deeper than the row and overflows the container
+ * onto the actions below. The three- and four-picture grids draw their shape
+ * on the container instead and let each tile fill its cell.
+ */
+.imageGrid[data-media-count="2"] .imageTile {
   aspect-ratio: 1;
 }
 
