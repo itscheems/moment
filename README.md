@@ -64,6 +64,23 @@ mise exec -- task run
 Runtime data and secrets must stay outside source control. Copy `.env.example`
 for local conventions; do not commit `.env` files or real instance data.
 
+To look at a change against data without touching that site, run the
+playground: a second, disposable instance under the ignored
+`.moment-local/playground/` on `127.0.0.1:18080`, seeded with the
+`site-showcase` scenario -- seven years of posts with every reader-facing
+state on them, members in every account status, and a calendar with a year
+boundary and a leap day:
+
+```sh
+mise exec -- task playground              # build, seed once, serve
+mise exec -- task playground -- cases     # every case with its page
+mise exec -- task playground -- reset     # seed again from the current time
+```
+
+Its posts are dated from the clock at seed time, so the newest read as
+minutes ago; reseed when they have aged. `moment dev scenario --help` lists
+the other, frozen fixture scenarios the same command can build.
+
 ## Post locations
 
 Posts and owner comments can carry a saved place snapshot selected from search,

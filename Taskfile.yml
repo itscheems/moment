@@ -11,6 +11,11 @@ tasks:
     cmds:
       - bash scripts/dev/serve.sh {{.CLI_ARGS}}
 
+  playground:
+    desc: Serve a disposable seeded Moment beside the real one (see scripts/dev/playground.sh --help)
+    cmds:
+      - bash scripts/dev/playground.sh {{.CLI_ARGS}}
+
   layout:
     desc: Measure real layout in a headless browser (jsdom cannot; see scripts/dev/layout-probe.mjs --help)
     deps: [web:build]
