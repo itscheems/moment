@@ -31,8 +31,8 @@ import (
 // readable: author_kind still admits 'guest' wherever a comment is read, so an
 // archive taken before this change imports and renders unchanged.
 func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, gate *Gate) {
-	engine.GET("/api/v1/posts/:id/comments", listComments(service))
-	engine.GET("/api/v1/posts/:id/comments/:comment_id/replies", listCommentReplies(service))
+	engine.GET("/api/v1/posts/:id/comments", listComments(service, gate))
+	engine.GET("/api/v1/posts/:id/comments/:comment_id/replies", listCommentReplies(service, gate))
 	// Writing a comment and moderating the conversation are two authorities,
 	// and they were one group until a second account could exist. Pinning
 	// somebody else's comment or removing it is the site owner's; writing one,
@@ -78,7 +78,7 @@ func changeOwnerCommentPin(service *app.CommentService, active bool) gin.Handler
 	}
 }
 
-func listComments(service *app.CommentService) gin.HandlerFunc {
+func listComments(service *app.CommentService, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		postID, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
@@ -90,7 +90,7 @@ func listComments(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		thread, err := service.ListPage(ctx.Request.Context(), app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit})
+		thread, err := service.ListPage(ctx.Request.Context(), app.ListCommentsInput{EntryID: postID, Cursor: cursor, Limit: limit, Viewer: gate.Viewer(ctx)})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return
@@ -99,7 +99,7 @@ func listComments(service *app.CommentService) gin.HandlerFunc {
 	}
 }
 
-func listCommentReplies(service *app.CommentService) gin.HandlerFunc {
+func listCommentReplies(service *app.CommentService, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		postID, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
@@ -116,7 +116,7 @@ func listCommentReplies(service *app.CommentService) gin.HandlerFunc {
 			writeCommentError(ctx, err)
 			return
 		}
-		page, err := service.ListReplies(ctx.Request.Context(), app.ListRepliesInput{EntryID: postID, RootID: rootID, Cursor: cursor, Limit: limit})
+		page, err := service.ListReplies(ctx.Request.Context(), app.ListRepliesInput{EntryID: postID, RootID: rootID, Cursor: cursor, Limit: limit, Viewer: gate.Viewer(ctx)})
 		if err != nil {
 			writeCommentError(ctx, err)
 			return

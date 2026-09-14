@@ -35,6 +35,13 @@ func (store *Store) Get(ctx context.Context, id domain.ID) (Media, error) {
 	return store.getLocked(ctx, id)
 }
 
+// Visibility reports who may fetch a file, as decided by the posts that
+// reference it. It reads no bytes and takes no lease; delivery checks it
+// before opening anything.
+func (store *Store) Visibility(ctx context.Context, id domain.ID) (domain.Visibility, error) {
+	return store.references.Visibility(ctx, id)
+}
+
 func (store *Store) getLocked(ctx context.Context, id domain.ID) (Media, error) {
 	value, found, err := store.findByID(ctx, id)
 	if err != nil {

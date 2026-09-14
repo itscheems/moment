@@ -92,6 +92,7 @@ type MergeReviewEntity struct {
 	Pinned           *bool      `json:"pinned,omitempty"`
 	RepostedAt       *time.Time `json:"reposted_at,omitempty"`
 	EditedAt         *time.Time `json:"edited_at,omitempty"`
+	Visibility       *string    `json:"visibility,omitempty"`
 	QuotedEntryID    *string    `json:"quoted_entry_id,omitempty"`
 	QuoteUnavailable *bool      `json:"quote_unavailable,omitempty"`
 	// Username through UsernameSetAt describe an account rather than content.
@@ -176,7 +177,7 @@ type MergeReview struct {
 var mergeReviewFieldKeys = map[MergeEntityKind]map[string]string{
 	MergeEntry: {
 		"kind": "kind", "content_md": "content_md", "created_at": "created_at",
-		"updated_at": "updated_at", "published_at": "published_at", "reposted_at": "reposted_at", "edited_at": "edited_at",
+		"updated_at": "updated_at", "published_at": "published_at", "reposted_at": "reposted_at", "edited_at": "edited_at", "visibility": "visibility",
 		"quoted_entry_id": "quoted_entry_id", "quote_unavailable": "quote_unavailable",
 		"media": "media", "location": "location", "link_cards": "link_cards",
 	},
@@ -343,6 +344,8 @@ func reviewEntry(value sqlitestore.ArchiveEntry, source MergeReviewSource, media
 		edited := archiveTime(*value.EditedAtMS)
 		entity.EditedAt = &edited
 	}
+	visibility := string(value.Visibility)
+	entity.Visibility = &visibility
 	if value.RepostedAtMS != nil {
 		reposted := archiveTime(*value.RepostedAtMS)
 		entity.RepostedAt = &reposted

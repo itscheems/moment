@@ -17,6 +17,10 @@ import (
 )
 
 // Post is the stable plain-text post representation used by HTTP and CLI.
+//
+// Visibility is who may read the post, "everyone" or "only_me". A reader only
+// ever receives posts they may read, so for anyone but the owner it is always
+// "everyone".
 type Post struct {
 	ID           string            `json:"id"`
 	ContentMD    string            `json:"content_md"`
@@ -26,6 +30,7 @@ type Post struct {
 	PublishedAt  time.Time         `json:"published_at"`
 	RepostedAt   *time.Time        `json:"reposted_at"`
 	EditedAt     *time.Time        `json:"edited_at"`
+	Visibility   string            `json:"visibility"`
 	TimelineKind string            `json:"timeline_item_kind"`
 	CommentCount int               `json:"comment_count"`
 	Media        []MediaProjection `json:"media"`
@@ -302,6 +307,7 @@ func FromPost(post app.Post) Post {
 		PublishedAt:  post.Entry.PublishedAt.UTC(),
 		RepostedAt:   repostedAt,
 		EditedAt:     editedAt,
+		Visibility:   string(post.Entry.Visibility),
 		TimelineKind: string(timelineKind),
 		CommentCount: post.CommentCount,
 		Media:        media,
@@ -371,6 +377,9 @@ func ValidatePost(post Post) error {
 	}
 	if post.TimelineKind != string(app.TimelineItemOriginal) && post.TimelineKind != string(app.TimelineItemRepost) {
 		return errors.New("post timeline_item_kind is invalid")
+	}
+	if !domain.Visibility(post.Visibility).Valid() {
+		return errors.New("post visibility is invalid")
 	}
 	if post.TimelineKind == string(app.TimelineItemRepost) && post.RepostedAt == nil {
 		return errors.New("repost timeline item requires reposted_at")

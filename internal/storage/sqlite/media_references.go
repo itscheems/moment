@@ -263,3 +263,63 @@ func (store mediaReferenceStore) DeleteMediaIfUnreferenced(ctx context.Context, 
 	count, err := result.RowsAffected()
 	return count == 1, err
 }
+
+// Visibility reports the widest audience that may fetch a media file, derived
+// from what references it.
+//
+// A file inherits the audience of the posts it appears in: through an entry's
+// own media, through a comment under that entry, or through a link card the
+// entry carries. One public reference is enough to make it public. Avatars and
+// covers are always public. A file nothing references yet -- an upload the
+// composer is still holding -- is public too, because it always has been and
+// a member previewing their own upload has no other standing to fetch it by.
+//
+// Only a file every reference of which sits under a hidden post is narrowed
+// to the owner.
+func (repository *MediaReferenceRepository) Visibility(ctx context.Context, id domain.ID) (domain.Visibility, error) {
+	public, publicArguments := visibilityPredicate(app.PublicViewer(), "entry.visibility")
+	var referenced, exposed int
+	err := repository.transactions.ReadTx(ctx, func(queries Queries) error {
+		arguments := []any{id.String()}
+		for range 4 {
+			arguments = append(arguments, id.String())
+			arguments = append(arguments, publicArguments...)
+		}
+		arguments = append(arguments, id.String(), id.String())
+		return queries.QueryRowContext(ctx, `
+SELECT
+  EXISTS (SELECT 1 FROM media WHERE media.id = ? AND `+mediaReferencedSQL+`),
+  (
+    EXISTS (
+      SELECT 1 FROM entry_media AS usage
+      JOIN entries AS entry ON entry.id = usage.entry_id
+      WHERE usage.media_id = ? AND `+public+`
+    )
+    OR EXISTS (
+      SELECT 1 FROM comment_media AS usage
+      JOIN comments AS comment ON comment.id = usage.comment_id
+      JOIN entries AS entry ON entry.id = comment.entry_id
+      WHERE usage.media_id = ? AND `+public+`
+    )
+    OR EXISTS (
+      SELECT 1 FROM entry_link_card AS card
+      JOIN entries AS entry ON entry.id = card.entry_id
+      WHERE card.thumbnail_media_id = ? AND `+public+`
+    )
+    OR EXISTS (
+      SELECT 1 FROM entry_link_card AS card
+      JOIN entries AS entry ON entry.id = card.entry_id
+      WHERE card.favicon_media_id = ? AND `+public+`
+    )
+    OR EXISTS (SELECT 1 FROM users AS account WHERE account.avatar_media_id = ?)
+    OR EXISTS (SELECT 1 FROM users AS account WHERE account.cover_media_id = ?)
+  )`, arguments...).Scan(&referenced, &exposed)
+	})
+	if err != nil {
+		return "", fmt.Errorf("resolve media visibility: %w", err)
+	}
+	if referenced == 1 && exposed == 0 {
+		return domain.VisibilityOnlyMe, nil
+	}
+	return domain.VisibilityEveryone, nil
+}

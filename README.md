@@ -99,6 +99,18 @@ place.
 Client capability discovery, native request attribution, selected media cleanup,
 edit timestamps, and account exports are documented in [docs/client-api.md](docs/client-api.md).
 
+## Post visibility
+
+Each post is either visible to everyone (the default) or only to the site
+owner. The composer's audience pill chooses between the two, and the server
+applies the choice on every route that can return a post: timeline, detail,
+search, archive counts, comment threads, share metadata, and the post's own
+media. Visitors and signed-in members never receive a hidden post; the owner's
+session or token does. The same contract is available to agents through
+`moment post create --visibility only_me` and `moment post update <id>
+--visibility everyone`, and to other clients through the `visibility` field
+documented in [docs/client-api.md](docs/client-api.md).
+
 ## Comment moderation
 
 Comment threads stay one level deep. The owner can delete any comment from its

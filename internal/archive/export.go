@@ -582,14 +582,19 @@ type usageRecord struct {
 }
 
 type entryRecord struct {
-	ID               string          `json:"id"`
-	Kind             string          `json:"kind"`
-	ContentMD        string          `json:"content_md"`
-	CreatedAt        string          `json:"created_at"`
-	UpdatedAt        string          `json:"updated_at"`
-	PublishedAt      string          `json:"published_at"`
-	RepostedAt       *string         `json:"reposted_at,omitempty"`
-	EditedAt         *string         `json:"edited_at,omitempty"`
+	ID          string  `json:"id"`
+	Kind        string  `json:"kind"`
+	ContentMD   string  `json:"content_md"`
+	CreatedAt   string  `json:"created_at"`
+	UpdatedAt   string  `json:"updated_at"`
+	PublishedAt string  `json:"published_at"`
+	RepostedAt  *string `json:"reposted_at,omitempty"`
+	EditedAt    *string `json:"edited_at,omitempty"`
+	// Visibility is written only when it is not the default, so an archive
+	// of a site that never hid anything is byte-for-byte what earlier
+	// versions wrote -- and stays importable by them, which is the rollback
+	// path. An absent key reads as everyone.
+	Visibility       string          `json:"visibility,omitempty"`
 	QuotedEntryID    *string         `json:"quoted_entry_id,omitempty"`
 	QuoteUnavailable bool            `json:"quote_unavailable,omitempty"`
 	Media            []usageRecord   `json:"media"`
@@ -789,10 +794,34 @@ func portableEntryRecord(value sqlitestore.ArchiveEntry) entryRecord {
 		ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
 		CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
 		PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), EditedAt: portableOptionalTime(value.EditedAtMS),
+		Visibility:    portableVisibility(value.Visibility),
 		QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable,
 		Media: portableUsageRecords(value.Media), Location: portableLocation(value.Location),
 		LinkCards: portableLinkCards(value.LinkCards),
 	}
+}
+
+// portableVisibility spells the audience for the archive: nothing for the
+// default, the wire value otherwise.
+func portableVisibility(value domain.Visibility) string {
+	if value == domain.VisibilityEveryone {
+		return ""
+	}
+	return string(value)
+}
+
+// archiveVisibility reads the audience back. Absent means everyone; present
+// has to be a value this build knows, because a value it does not know is a
+// post it cannot promise to hide.
+func archiveVisibility(value string) (domain.Visibility, error) {
+	if value == "" {
+		return domain.VisibilityEveryone, nil
+	}
+	visibility, err := domain.ParseVisibility(value)
+	if err != nil {
+		return "", errors.New("entry visibility must be everyone or only_me")
+	}
+	return visibility, nil
 }
 
 func portableCommentRecord(value sqlitestore.ArchiveComment) commentRecord {
@@ -979,7 +1008,7 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 		return err
 	}
 	entry := domain.Entry{
-		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD,
+		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
 		CreatedAt:   time.UnixMilli(value.CreatedAtMS).UTC(),
 		UpdatedAt:   time.UnixMilli(value.UpdatedAtMS).UTC(),
 		PublishedAt: time.UnixMilli(value.PublishedAtMS).UTC(),
@@ -1844,6 +1873,10 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			millis := repostedAt.UnixMilli()
 			repostedAtMS = &millis
 		}
+		visibility, err := archiveVisibility(value.Visibility)
+		if err != nil {
+			return err
+		}
 		usages := make([]sqlitestore.ArchiveUsage, len(value.Media))
 		for index, usage := range value.Media {
 			if err := requireObjectFields(rawUsages[index], []string{"media_id", "position", "alt_text"}, []string{"media_id", "position"}); err != nil {
@@ -1882,7 +1915,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			}
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
-			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
+			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
 			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
 		}); err != nil {
 			return err

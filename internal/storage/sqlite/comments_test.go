@@ -34,7 +34,7 @@ func TestCommentServiceOneLevelOrderingIdentityAndCascade(t *testing.T) {
 	rootTwo := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "second root"})
 	replyTwo := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootTwo.Comment.Comment.ID, ContentMD: "earlier reply"})
 
-	thread, err := service.List(context.Background(), postID)
+	thread, err := service.List(context.Background(), postID, app.OwnerViewer())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestCommentServiceOneLevelOrderingIdentityAndCascade(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertCount(t, db.read, `SELECT count(*) FROM comments`, 0)
-	if _, err := service.List(context.Background(), postID); !domain.HasCode(err, domain.CodePostNotFound) {
+	if _, err := service.List(context.Background(), postID, app.OwnerViewer()); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("deleted post list = %v", err)
 	}
 }
@@ -105,7 +105,7 @@ func TestCommentPinIsSingletonRootScopedAndCascadesWithDeletion(t *testing.T) {
 		t.Fatalf("replace pinned root = %+v, %v", pinned, err)
 	}
 	assertCount(t, db.read, `SELECT count(*) FROM comment_pins WHERE entry_id = ? AND comment_id = ?`, 1, entryOne, commentThree)
-	thread, err := service.List(context.Background(), one)
+	thread, err := service.List(context.Background(), one, app.OwnerViewer())
 	if err != nil || thread.PinnedCommentID == nil || *thread.PinnedCommentID != rootTwo.Comment.Comment.ID {
 		t.Fatalf("listed pin = %+v, %v", thread, err)
 	}
@@ -133,7 +133,7 @@ func TestCommentPinIsSingletonRootScopedAndCascadesWithDeletion(t *testing.T) {
 	if err != nil || !deleted.Deleted || deleted.RepliesAffected != 1 {
 		t.Fatalf("delete pinned conversation = %+v, %v", deleted, err)
 	}
-	thread, err = service.List(context.Background(), one)
+	thread, err = service.List(context.Background(), one, app.OwnerViewer())
 	if err != nil || thread.PinnedCommentID != nil || len(thread.Items) != 1 || thread.Items[0].Comment.ID != rootTwo.Comment.Comment.ID {
 		t.Fatalf("thread after pinned cascade = %+v, %v", thread, err)
 	}
@@ -161,7 +161,7 @@ func TestCommentLocationOnlyRoundTripsAndParticipatesInIdempotency(t *testing.T)
 		t.Fatalf("created location comment = %+v, %v", created, err)
 	}
 	location.Name = "caller mutation"
-	thread, err := service.List(context.Background(), postID)
+	thread, err := service.List(context.Background(), postID, app.OwnerViewer())
 	if err != nil || len(thread.Items) != 1 || thread.Items[0].Comment.Location == nil || thread.Items[0].Comment.Location.Name != "BANANA+香蕉攀岩" {
 		t.Fatalf("stored location comment = %+v, %v", thread, err)
 	}
@@ -218,7 +218,7 @@ func TestCommentServiceRejectsDepthCrossPostUnsafeContentAndDisabledWrites(t *te
 	if _, err := service.Create(context.Background(), app.CreateCommentInput{Author: author, EntryID: one, ContentMD: "closed"}); !domain.HasCode(err, domain.CodeCommentsDisabled) {
 		t.Fatalf("disabled = %v", err)
 	}
-	thread, err := service.List(context.Background(), one)
+	thread, err := service.List(context.Background(), one, app.OwnerViewer())
 	if err != nil || len(thread.Items) != 2 {
 		t.Fatalf("closed read = %+v, %v", thread, err)
 	}
@@ -297,7 +297,7 @@ func TestCommentIdempotencyConcurrentReplayAndCancellation(t *testing.T) {
 	// The replay reports the deleted comment without resurrecting it, and the
 	// cancelled create wrote nothing, so the table stays empty.
 	assertCount(t, db.read, `SELECT count(*) FROM comments`, 0)
-	if _, err := service.List(cancelled, postID); !errors.Is(err, context.Canceled) {
+	if _, err := service.List(cancelled, postID, app.OwnerViewer()); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled = %v", err)
 	}
 }
@@ -322,7 +322,7 @@ VALUES (?, ?, NULL, 'guest', ?, 'left **before** accounts existed', ?)`, comment
 	legacyRootID, _ := domain.ParseID(commentOne)
 	reply := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &legacyRootID, ContentMD: "answered later"})
 
-	thread, err := service.List(context.Background(), postID)
+	thread, err := service.List(context.Background(), postID, app.OwnerViewer())
 	if err != nil || len(thread.Items) != 2 {
 		t.Fatalf("thread = %+v, %v", thread, err)
 	}
@@ -444,7 +444,7 @@ func TestCommentReplyTargetStaysWithinItsConversation(t *testing.T) {
 	if _, err := service.Delete(context.Background(), firstID, false); err != nil {
 		t.Fatal(err)
 	}
-	thread, err := service.List(context.Background(), postID)
+	thread, err := service.List(context.Background(), postID, app.OwnerViewer())
 	if err != nil {
 		t.Fatal(err)
 	}

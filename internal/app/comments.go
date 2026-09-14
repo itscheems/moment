@@ -43,7 +43,11 @@ func commentCreateIdempotencyScope(authorID string) string {
 // repository transaction.
 type CommentStore interface {
 	MediaReferenceReconciler
-	EntryExists(context.Context, domain.ID) (bool, error)
+	// EntryVisibility reports whether the post exists and who may read it.
+	// The caller decides what to do with that through a Viewer; the store
+	// never answers "exists" alone, so no thread can be reached through a
+	// post its reader may not see.
+	EntryVisibility(context.Context, domain.ID) (domain.Visibility, bool, error)
 	CommentsEnabled(context.Context) (bool, error)
 	CommentByID(context.Context, domain.ID) (domain.Comment, bool, error)
 	CommentsByID(context.Context, []domain.ID) (map[domain.ID]domain.Comment, error)
@@ -163,6 +167,9 @@ type ListCommentsInput struct {
 	EntryID domain.ID
 	Cursor  string
 	Limit   int
+	// Viewer is who is reading; a thread under a post they may not see is
+	// reported as a missing post.
+	Viewer Viewer
 }
 
 // ListRepliesInput selects one page of replies under a single root.
@@ -171,6 +178,7 @@ type ListRepliesInput struct {
 	RootID  domain.ID
 	Cursor  string
 	Limit   int
+	Viewer  Viewer
 }
 
 // CommentPin is the singleton top-level comment selected for one post.
@@ -380,12 +388,10 @@ func (service *CommentService) create(ctx context.Context, input CreateCommentIn
 				return nil
 			}
 		}
-		exists, storeErr := store.EntryExists(ctx, input.EntryID)
-		if storeErr != nil {
+		// Writing under a post is reading it first: a member cannot reply to
+		// something they could not open.
+		if storeErr := requireReadableEntry(ctx, store, ViewerFor(input.Author, true), input.EntryID); storeErr != nil {
 			return storeErr
-		}
-		if !exists {
-			return postNotFound(input.EntryID)
 		}
 		enabled, storeErr := store.CommentsEnabled(ctx)
 		if storeErr != nil {
@@ -550,12 +556,8 @@ func (service *CommentService) ListPage(ctx context.Context, input ListCommentsI
 
 	var thread CommentThread
 	err = service.transactions.Read(ctx, func(store CommentStore) error {
-		exists, storeErr := store.EntryExists(ctx, input.EntryID)
-		if storeErr != nil {
+		if storeErr := requireReadableEntry(ctx, store, input.Viewer, input.EntryID); storeErr != nil {
 			return storeErr
-		}
-		if !exists {
-			return postNotFound(input.EntryID)
 		}
 		// One extra root answers "is there another page" without a second
 		// query, the same trick the timeline uses.
@@ -685,6 +687,9 @@ func (service *CommentService) ListReplies(ctx context.Context, input ListReplie
 
 	var page CommentReplyPage
 	err = service.transactions.Read(ctx, func(store CommentStore) error {
+		if storeErr := requireReadableEntry(ctx, store, input.Viewer, input.EntryID); storeErr != nil {
+			return storeErr
+		}
 		root, found, storeErr := store.CommentByID(ctx, input.RootID)
 		if storeErr != nil {
 			return storeErr
@@ -760,7 +765,7 @@ func (service *CommentService) renderCommentPage(ctx context.Context, store Comm
 // want everything at once — the CLI reading a thread, and tests asserting the
 // canonical flattened order — and it keeps the invariant those callers rely
 // on: every reply is present, directly after its root.
-func (service *CommentService) List(ctx context.Context, entryID domain.ID) (CommentThread, error) {
+func (service *CommentService) List(ctx context.Context, entryID domain.ID, viewer Viewer) (CommentThread, error) {
 	if err := contextError(ctx); err != nil {
 		return CommentThread{}, err
 	}
@@ -772,13 +777,10 @@ func (service *CommentService) List(ctx context.Context, entryID domain.ID) (Com
 	var rendered []Comment
 	var replyCounts map[domain.ID]int
 	err := service.transactions.Read(ctx, func(store CommentStore) error {
-		exists, storeErr := store.EntryExists(ctx, entryID)
-		if storeErr != nil {
+		if storeErr := requireReadableEntry(ctx, store, viewer, entryID); storeErr != nil {
 			return storeErr
 		}
-		if !exists {
-			return postNotFound(entryID)
-		}
+		var storeErr error
 		records, storeErr = store.ListComments(ctx, entryID)
 		if storeErr != nil {
 			return storeErr
@@ -847,13 +849,11 @@ func (service *CommentService) changePin(ctx context.Context, entryID, commentID
 		return CommentPin{}, err
 	}
 	result := CommentPin{EntryID: entryID}
+	// Pinning is moderation, and moderation is the owner's; the transport
+	// admits nobody else here.
 	err := service.transactions.Write(ctx, func(store CommentStore) error {
-		exists, err := store.EntryExists(ctx, entryID)
-		if err != nil {
+		if err := requireReadableEntry(ctx, store, OwnerViewer(), entryID); err != nil {
 			return err
-		}
-		if !exists {
-			return postNotFound(entryID)
 		}
 		current, err := store.PinnedCommentID(ctx, entryID)
 		if err != nil {
@@ -1272,6 +1272,20 @@ func commentNotFound(id domain.ID) error {
 func corruptComment(id domain.ID) error {
 	return domain.NewError(domain.CodeDataIntegrityFailed, "stored comment violates the comment contract", map[string]any{"comment_id": id.String()})
 }
+
+// requireReadableEntry is the one gate between a comment operation and the
+// post it names. Missing and unreadable are the same answer on purpose.
+func requireReadableEntry(ctx context.Context, store CommentStore, viewer Viewer, entryID domain.ID) error {
+	visibility, found, err := store.EntryVisibility(ctx, entryID)
+	if err != nil {
+		return err
+	}
+	if !found || !viewer.CanRead(visibility) {
+		return postHiddenFrom(entryID)
+	}
+	return nil
+}
+
 func corruptCommentThread(entryID domain.ID) error {
 	return domain.NewError(domain.CodeDataIntegrityFailed, "stored comment thread violates the one-level contract", map[string]any{"post_id": entryID.String()})
 }

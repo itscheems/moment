@@ -618,6 +618,9 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	if !reflect.DeepEqual(local.EditedAtMS, incoming.EditedAtMS) {
 		fields = append(fields, "edited_at")
 	}
+	if local.Visibility != incoming.Visibility {
+		fields = append(fields, "visibility")
+	}
 	if !reflect.DeepEqual(local.RepostedAtMS, incoming.RepostedAtMS) {
 		fields = append(fields, "reposted_at")
 	}

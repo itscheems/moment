@@ -107,7 +107,7 @@ func (store searchStore) Timezone(ctx context.Context) (string, error) {
 }
 
 func (store searchStore) SearchEntries(ctx context.Context, query app.SearchRepositoryQuery, limit int) ([]app.SearchRecord, error) {
-	statement, arguments, err := searchSelect(query, `e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, e.content_text`)
+	statement, arguments, err := searchSelect(query, `e.id, e.kind, e.content_md, e.visibility, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, e.content_text`)
 	if err != nil {
 		return nil, err
 	}
@@ -156,9 +156,10 @@ func (store searchStore) SearchPublishedMillis(ctx context.Context, query app.Se
 	return queryMillis(ctx, store.queries, statement, arguments...)
 }
 
-func (store searchStore) ArchivePublishedMillis(ctx context.Context, fromMS, toMS *int64) ([]int64, error) {
-	statement := `SELECT published_at_ms FROM entries WHERE kind = ?`
-	arguments := []any{string(domain.KindMoment)}
+func (store searchStore) ArchivePublishedMillis(ctx context.Context, viewer app.Viewer, fromMS, toMS *int64) ([]int64, error) {
+	visible, visibleArguments := visibilityPredicate(viewer, "visibility")
+	statement := `SELECT published_at_ms FROM entries WHERE kind = ? AND ` + visible
+	arguments := append([]any{string(domain.KindMoment)}, visibleArguments...)
 	statement, arguments = appendDateRange(statement, arguments, "published_at_ms", fromMS, toMS)
 	return queryMillis(ctx, store.queries, statement, arguments...)
 }
@@ -181,6 +182,9 @@ WHERE e.content_text LIKE ? ESCAPE '\' AND e.kind = ?`
 	default:
 		return "", nil, errors.New("unsupported prepared search mode")
 	}
+	visible, visibleArguments := visibilityPredicate(query.Viewer, "e.visibility")
+	statement += "\n  AND " + visible
+	arguments = append(arguments, visibleArguments...)
 	statement, arguments = appendDateRange(statement, arguments, "e.published_at_ms", query.FromMS, query.ToMS)
 	return statement, arguments, nil
 }
@@ -336,12 +340,13 @@ func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 		idString                          string
 		kind                              string
 		contentMD, contentText            string
+		visibility                        string
 		createdAt, updatedAt, publishedAt int64
 		repostedAt                        sql.NullInt64
 		editedAt                          sql.NullInt64
 		rank                              float64
 	)
-	if err := scanner.Scan(&idString, &kind, &contentMD, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt, &contentText, &rank); err != nil {
+	if err := scanner.Scan(&idString, &kind, &contentMD, &visibility, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt, &contentText, &rank); err != nil {
 		return app.SearchRecord{}, err
 	}
 	id, err := domain.ParseID(idString)
@@ -349,7 +354,7 @@ func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 		return app.SearchRecord{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored search entry has an invalid ID", nil)
 	}
 	entry := domain.Entry{
-		ID: id, Kind: domain.EntryKind(kind), ContentMD: contentMD,
+		ID: id, Kind: domain.EntryKind(kind), ContentMD: contentMD, Visibility: domain.Visibility(visibility),
 		CreatedAt: domain.TimeFromMillis(createdAt), UpdatedAt: domain.TimeFromMillis(updatedAt), PublishedAt: domain.TimeFromMillis(publishedAt),
 	}
 	if editedAt.Valid {

@@ -24,8 +24,10 @@ import (
 // over one PostService. SiteService supplies the authoritative IANA timezone
 // used by application-owned date range interpretation.
 func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.SiteService, gate *Gate) {
-	engine.GET("/api/v1/posts", listPosts(posts, site))
-	engine.GET("/api/v1/posts/:id", getPost(posts))
+	// The two reads stay public but are not anonymous: a session or token,
+	// when one is presented, widens what they return.
+	engine.GET("/api/v1/posts", listPosts(posts, site, gate))
+	engine.GET("/api/v1/posts/:id", getPost(posts, gate))
 	owner := engine.Group("/api/v1/owner")
 	owner.Use(gate.RequireOwner())
 	owner.POST("/posts", createPost(posts))
@@ -85,7 +87,7 @@ func unpinPost(site *app.SiteService) gin.HandlerFunc {
 	}
 }
 
-func listPosts(posts *app.PostService, site *app.SiteService) gin.HandlerFunc {
+func listPosts(posts *app.PostService, site *app.SiteService, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		input, err := postListInput(ctx)
 		if err != nil {
@@ -98,6 +100,7 @@ func listPosts(posts *app.PostService, site *app.SiteService) gin.HandlerFunc {
 			return
 		}
 		input.Timezone = settings.Timezone
+		input.Viewer = gate.Viewer(ctx)
 		page, err := posts.List(ctx.Request.Context(), input)
 		if err != nil {
 			writePostError(ctx, err)
@@ -107,14 +110,14 @@ func listPosts(posts *app.PostService, site *app.SiteService) gin.HandlerFunc {
 	}
 }
 
-func getPost(posts *app.PostService) gin.HandlerFunc {
+func getPost(posts *app.PostService, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		id, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
 			writePostError(ctx, err)
 			return
 		}
-		post, err := posts.Get(ctx.Request.Context(), id)
+		post, err := posts.Get(ctx.Request.Context(), id, gate.Viewer(ctx))
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -135,7 +138,7 @@ func createPost(posts *app.PostService) gin.HandlerFunc {
 			writePostError(ctx, err)
 			return
 		}
-		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Media: input.Media, Location: input.Location, LinkCards: input.LinkCards, QuotedPostID: input.QuotedPostID, IdempotencyKey: idempotencyKey})
+		result, err := posts.Create(ctx.Request.Context(), app.CreatePostInput{ContentMD: input.ContentMD, Visibility: input.Visibility, Media: input.Media, Location: input.Location, LinkCards: input.LinkCards, QuotedPostID: input.QuotedPostID, IdempotencyKey: idempotencyKey})
 		if err != nil {
 			writePostError(ctx, err)
 			return
@@ -175,6 +178,10 @@ func updatePost(posts *app.PostService) gin.HandlerFunc {
 				cards = []domain.LinkCard{}
 			}
 			update.LinkCards = &cards
+		}
+		if decoded.VisibilityPresent {
+			visibility := decoded.Visibility
+			update.Visibility = &visibility
 		}
 		post, err := posts.Update(ctx.Request.Context(), update)
 		if err != nil {
@@ -243,16 +250,18 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 }
 
 type decodedPostWrite struct {
-	ContentMD       string
-	ContentPresent  bool
-	Media           []domain.EntryMediaUsage
-	MediaPresent    bool
-	Location        *domain.Location
-	LocationPresent bool
-	LinkCards       []domain.LinkCard
-	LinkCardPresent bool
-	QuotedPostID    *domain.ID
-	QuotePresent    bool
+	ContentMD         string
+	ContentPresent    bool
+	Media             []domain.EntryMediaUsage
+	MediaPresent      bool
+	Location          *domain.Location
+	LocationPresent   bool
+	LinkCards         []domain.LinkCard
+	LinkCardPresent   bool
+	QuotedPostID      *domain.ID
+	QuotePresent      bool
+	Visibility        domain.Visibility
+	VisibilityPresent bool
 }
 
 func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
@@ -313,6 +322,17 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 			}
 			result.LinkCards = cards
 			result.LinkCardPresent = true
+		case "visibility":
+			var value string
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &value) != nil {
+				return decodedPostWrite{}, invalidPostArgument("visibility must be everyone or only_me", "visibility")
+			}
+			visibility, parseErr := domain.ParseVisibility(value)
+			if parseErr != nil {
+				return decodedPostWrite{}, parseErr
+			}
+			result.Visibility = visibility
+			result.VisibilityPresent = true
 		case "quoted_post_id":
 			if patch || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 				return decodedPostWrite{}, invalidPostArgument("quoted_post_id is only accepted for create and must be a canonical ULID", "quoted_post_id")
@@ -338,8 +358,8 @@ func decodePostWrite(ctx *gin.Context, patch bool) (decodedPostWrite, error) {
 		return decodedPostWrite{}, invalidPostArgument("request must contain exactly one JSON document", "body")
 	}
 	if (!patch && !result.ContentPresent && !result.MediaPresent && !result.QuotePresent && !result.LinkCardPresent) ||
-		(patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent && !result.LinkCardPresent) {
-		return decodedPostWrite{}, invalidPostArgument("request must contain content_md, media, location, or link_cards", "body")
+		(patch && !result.ContentPresent && !result.MediaPresent && !result.LocationPresent && !result.LinkCardPresent && !result.VisibilityPresent) {
+		return decodedPostWrite{}, invalidPostArgument("request must contain content_md, media, location, link_cards, or visibility", "body")
 	}
 	return result, nil
 }

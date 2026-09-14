@@ -46,7 +46,7 @@ func TestPostMediaLifecycleOrderingClockAndImmutableReplay(t *testing.T) {
 	assertMediaClock(t, database, mediaOne, nil)
 	assertMediaClock(t, database, mediaTwo, nil)
 
-	got, err := service.Get(ctx, created.Post.Entry.ID)
+	got, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
 	if err != nil || !reflect.DeepEqual(got.Media, expectedMediaProjections(initial)) {
 		t.Fatalf("get media = %#v, %v", got.Media, err)
 	}
@@ -161,7 +161,7 @@ END`); err != nil {
 	if _, err := service.Update(ctx, app.UpdatePostInput{ID: created.Post.Entry.ID, ContentMD: "after", Media: &replacement}); !domain.HasCode(err, domain.CodeInternal) {
 		t.Fatalf("update rollback error = %v", err)
 	}
-	unchanged, err := service.Get(ctx, created.Post.Entry.ID)
+	unchanged, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
 	if err != nil || unchanged.Entry.ContentMD != "before" || !reflect.DeepEqual(unchanged.Media, created.Post.Media) {
 		t.Fatalf("failed replacement changed authority: %#v, %v", unchanged, err)
 	}

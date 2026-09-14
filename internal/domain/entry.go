@@ -9,11 +9,44 @@ type EntryKind string
 // KindMoment is the only Entry kind accepted by v0 writes and imports.
 const KindMoment EntryKind = "moment"
 
+// Visibility names who may read an Entry. The author always reads their own
+// entries; the value only ever narrows everybody else.
+type Visibility string
+
+const (
+	// VisibilityEveryone is the default: any visitor may read the entry.
+	VisibilityEveryone Visibility = "everyone"
+	// VisibilityOnlyMe hides the entry from everyone but its author.
+	VisibilityOnlyMe Visibility = "only_me"
+)
+
+// Visibilities lists every accepted value in wire order.
+var Visibilities = []Visibility{VisibilityEveryone, VisibilityOnlyMe}
+
+// ParseVisibility accepts exactly the wire spellings. An empty value is not a
+// default here; callers that mean "unchanged" or "default" decide that
+// themselves so the two never get confused.
+func ParseVisibility(value string) (Visibility, error) {
+	for _, candidate := range Visibilities {
+		if string(candidate) == value {
+			return candidate, nil
+		}
+	}
+	return "", NewError(CodeInvalidArgument, "visibility must be everyone or only_me", map[string]any{"field": "visibility"})
+}
+
+// Valid reports whether the value is one of the accepted visibilities.
+func (visibility Visibility) Valid() bool {
+	_, err := ParseVisibility(string(visibility))
+	return err == nil
+}
+
 // Entry is the authoritative transport-independent timeline item.
 type Entry struct {
 	ID          ID
 	Kind        EntryKind
 	ContentMD   string
+	Visibility  Visibility
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	PublishedAt time.Time
@@ -34,6 +67,7 @@ func NewEntry(id ID, content string, now time.Time) (Entry, error) {
 		ID:          id,
 		Kind:        KindMoment,
 		ContentMD:   content,
+		Visibility:  VisibilityEveryone,
 		CreatedAt:   instant,
 		UpdatedAt:   instant,
 		PublishedAt: instant,
@@ -50,6 +84,9 @@ func (entry Entry) Validate() error {
 	}
 	if err := ValidateMarkdown(entry.ContentMD); err != nil {
 		return err
+	}
+	if !entry.Visibility.Valid() {
+		return NewError(CodeInvalidArgument, "entry visibility is not supported", map[string]any{"field": "visibility"})
 	}
 	if entry.CreatedAt.IsZero() || entry.UpdatedAt.IsZero() || entry.PublishedAt.IsZero() {
 		return NewError(CodeInvalidArgument, "entry timestamps are required", map[string]any{"field": "timestamps"})
@@ -85,6 +122,25 @@ func (entry *Entry) SetReposted(active bool, now time.Time) {
 	} else {
 		entry.RepostedAt = nil
 	}
+}
+
+// SetVisibility changes who may read the entry. It is not a content edit, so
+// EditedAt stays where it was: the "edited" mark tells readers the words
+// changed, and nothing a reader can see changed here.
+func (entry *Entry) SetVisibility(visibility Visibility, now time.Time) error {
+	if !visibility.Valid() {
+		return NewError(CodeInvalidArgument, "visibility must be everyone or only_me", map[string]any{"field": "visibility"})
+	}
+	if entry.Visibility == visibility {
+		return nil
+	}
+	updated := NormalizeTime(now)
+	if !updated.After(entry.UpdatedAt) {
+		updated = entry.UpdatedAt.Add(time.Millisecond)
+	}
+	entry.Visibility = visibility
+	entry.UpdatedAt = updated
+	return nil
 }
 
 // UpdateContent changes only editable state. Original creation and publication

@@ -49,7 +49,7 @@ type ShareSiteReader interface {
 
 // SharePostReader exposes the same published post query used by public APIs.
 type SharePostReader interface {
-	Get(context.Context, domain.ID) (Post, error)
+	Get(context.Context, domain.ID, Viewer) (Post, error)
 }
 
 // ShareMetadataService prepares route metadata without depending on HTTP
@@ -109,7 +109,10 @@ func (service *ShareMetadataService) Post(ctx context.Context, id domain.ID) (Sh
 	if err != nil {
 		return ShareMetadata{}, err
 	}
-	post, err := service.posts.Get(ctx, id)
+	// Share metadata is written for whoever follows a link -- a crawler, a
+	// chat preview -- so it reads as a visitor even when the owner's own
+	// browser asked for the page. A hidden post shares nothing.
+	post, err := service.posts.Get(ctx, id, PublicViewer())
 	if err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return ShareMetadata{}, err

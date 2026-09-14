@@ -218,7 +218,7 @@ func New(config Config) (*gin.Engine, error) {
 		RegisterCommentRoutes(engine, config.Comments, gate)
 	}
 	if config.Search != nil {
-		RegisterSearchRoutes(engine, config.Search)
+		RegisterSearchRoutes(engine, config.Search, gate)
 	}
 	if config.Archive != nil {
 		if config.OwnerAuth == nil {

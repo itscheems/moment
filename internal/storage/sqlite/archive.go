@@ -99,6 +99,7 @@ type ArchiveEntry struct {
 	ID               string
 	Kind             string
 	ContentMD        string
+	Visibility       domain.Visibility
 	CreatedAtMS      int64
 	UpdatedAtMS      int64
 	PublishedAtMS    int64
@@ -452,7 +453,7 @@ func (snapshot *ArchiveSnapshot) Entries(ctx context.Context, yield func(Archive
 		return errors.New("archive entry callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT e.id, e.kind, e.content_md, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, quote.entry_id, quote.quoted_entry_id,
+SELECT e.id, e.kind, e.content_md, e.visibility, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, quote.entry_id, quote.quoted_entry_id,
        usage.media_id, usage.position, usage.alt_text,
        location.name, location.display_name, location.country_code, location.country,
        location.region, location.city, location.district, location.category,
@@ -476,13 +477,15 @@ ORDER BY e.id, usage.position`)
 		var quoteEntryID, quotedEntryID sql.NullString
 		var name, displayName, countryCode, country, region, city, district, category, provider, providerID, coordinateSystem sql.NullString
 		var latitude, longitude sql.NullInt64
+		var visibility string
 		if err := rows.Scan(
-			&entry.ID, &entry.Kind, &entry.ContentMD, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt, &editedAt, &quoteEntryID, &quotedEntryID,
+			&entry.ID, &entry.Kind, &entry.ContentMD, &visibility, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt, &editedAt, &quoteEntryID, &quotedEntryID,
 			&mediaID, &position, &alt, &name, &displayName, &countryCode, &country, &region, &city,
 			&district, &category, &provider, &providerID, &latitude, &longitude, &coordinateSystem,
 		); err != nil {
 			return fmt.Errorf("scan archive entry: %w", err)
 		}
+		entry.Visibility = domain.Visibility(visibility)
 		if editedAt.Valid {
 			value := editedAt.Int64
 			entry.EditedAtMS = &value

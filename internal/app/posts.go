@@ -155,7 +155,9 @@ type EntryQuoteReference struct {
 // CreatePostInput contains only application semantics. Authentication,
 // headers, flags, and transport DTOs belong to adapters.
 type CreatePostInput struct {
-	ContentMD      string
+	ContentMD string
+	// Visibility empty means the default, everyone.
+	Visibility     domain.Visibility
 	Media          []domain.EntryMediaUsage
 	Location       *domain.Location
 	LinkCards      []domain.LinkCard
@@ -186,6 +188,9 @@ type UpdatePostInput struct {
 	// follows the media-usage list convention rather than the single-value
 	// double-pointer convention Location uses.
 	LinkCards *[]domain.LinkCard
+	// Visibility nil preserves the current audience. Changing it alone is a
+	// complete update: nothing else about the post has to move.
+	Visibility *domain.Visibility
 }
 
 // ListPostsInput requests one reverse-chronological timeline page. A zero
@@ -196,6 +201,9 @@ type ListPostsInput struct {
 	FromDate string
 	ToDate   string
 	Timezone string
+	// Viewer decides which visibilities the page may contain. The zero value
+	// is a visitor.
+	Viewer Viewer
 }
 
 // TimelineQuery is the repository-facing keyset and UTC half-open date range.
@@ -205,6 +213,7 @@ type TimelineQuery struct {
 	Position *TimelinePosition
 	FromMS   *int64
 	ToMS     *int64
+	Viewer   Viewer
 }
 
 // PostPage is one stable keyset page.
@@ -284,7 +293,11 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err := contextError(ctx); err != nil {
 		return CreatePostResult{}, err
 	}
-	requestHash := hashCreatePost(input.ContentMD, input.Media, input.Location, input.LinkCards, input.QuotedPostID)
+	visibility, err := createVisibility(input.Visibility)
+	if err != nil {
+		return CreatePostResult{}, err
+	}
+	requestHash := hashCreatePost(input.ContentMD, input.Media, input.Location, input.LinkCards, input.QuotedPostID, visibility)
 	if input.IdempotencyKey != "" {
 		replayed, found, err := service.loadCreateReplay(ctx, input, requestHash)
 		if err != nil {
@@ -320,6 +333,9 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 
 	err = service.transactions.Write(ctx, func(store PostStore) error {
 		if input.QuotedPostID != nil {
+			// The owner is the only writer, so the quoted target is theirs to
+			// see whatever its visibility; readers meet the quote through
+			// loadQuotedPost, which asks on their behalf.
 			if _, found, quoteErr := store.EntryByID(ctx, *input.QuotedPostID); quoteErr != nil {
 				return quoteErr
 			} else if !found {
@@ -360,6 +376,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		if createErr != nil {
 			return createErr
 		}
+		entry.Visibility = visibility
 		if insertErr := store.InsertEntry(ctx, entry, contentText); insertErr != nil {
 			return insertErr
 		}
@@ -402,7 +419,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 			return err
 		}
 		if input.QuotedPostID != nil {
-			quoted, quoteErr := loadQuotedPost(ctx, store, *input.QuotedPostID)
+			quoted, quoteErr := loadQuotedPost(ctx, store, OwnerViewer(), *input.QuotedPostID)
 			if quoteErr != nil {
 				return quoteErr
 			}
@@ -446,7 +463,7 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 			return storeErr
 		}
 		if input.QuotedPostID != nil {
-			post.Quoted, storeErr = loadQuotedPost(ctx, store, *input.QuotedPostID)
+			post.Quoted, storeErr = loadQuotedPost(ctx, store, OwnerViewer(), *input.QuotedPostID)
 		}
 		return storeErr
 	})
@@ -491,14 +508,21 @@ func reconstructCreateReplay(input CreatePostInput, requestHash string, record I
 	if err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
+	visibility, err := createVisibility(input.Visibility)
+	if err != nil {
+		return Post{}, idempotencySnapshotError()
+	}
+	entry.Visibility = visibility
 	if err := entry.Validate(); err != nil {
 		return Post{}, idempotencySnapshotError()
 	}
 	return Post{Entry: entry, Location: domain.CloneLocation(input.Location)}, nil
 }
 
-// Get returns one post or a stable not-found error.
-func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error) {
+// Get returns one post the viewer may read, or a stable not-found error. A
+// post the viewer may not read is reported exactly like one that does not
+// exist.
+func (service *PostService) Get(ctx context.Context, id domain.ID, viewer Viewer) (Post, error) {
 	if err := contextError(ctx); err != nil {
 		return Post{}, err
 	}
@@ -518,6 +542,10 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 		if storeErr != nil || !found {
 			return storeErr
 		}
+		if !viewer.CanRead(entry.Visibility) {
+			found = false
+			return nil
+		}
 		media, storeErr = store.EntryMediaUsages(ctx, id)
 		if storeErr != nil {
 			return storeErr
@@ -535,14 +563,14 @@ func (service *PostService) Get(ctx context.Context, id domain.ID) (Post, error)
 		if storeErr != nil {
 			return storeErr
 		}
-		quoted, storeErr = loadEntryQuote(ctx, store, id)
+		quoted, storeErr = loadEntryQuote(ctx, store, viewer, id)
 		return storeErr
 	})
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
 	if !found {
-		return Post{}, postNotFound(id)
+		return Post{}, postHiddenFrom(id)
 	}
 	post, err := renderPost(entry, media, location, linkCards, commentCount)
 	post.Quoted = quoted
@@ -594,7 +622,7 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if storeErr != nil {
 			return storeErr
 		}
-		quoted, quoteErr := loadEntryQuote(ctx, store, id)
+		quoted, quoteErr := loadEntryQuote(ctx, store, OwnerViewer(), id)
 		if quoteErr != nil {
 			return quoteErr
 		}
@@ -636,7 +664,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	quotedByEntry := make(map[domain.ID]*QuotedPost)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
-		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, FromMS: fromMS, ToMS: toMS}, limit+1)
+		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, FromMS: fromMS, ToMS: toMS, Viewer: input.Viewer}, limit+1)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -661,7 +689,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 			if storeErr != nil {
 				return storeErr
 			}
-			quotedByEntry[entry.ID], storeErr = loadEntryQuote(ctx, store, entry.ID)
+			quotedByEntry[entry.ID], storeErr = loadEntryQuote(ctx, store, input.Viewer, entry.ID)
 			if storeErr != nil {
 				return storeErr
 			}
@@ -745,8 +773,11 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if err := validatePostID(input.ID); err != nil {
 		return Post{}, err
 	}
-	if input.PreserveContent && input.Media == nil && input.Location == nil && input.LinkCards == nil {
-		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md, media, location, or link cards", map[string]any{"field": "body"})
+	if input.PreserveContent && input.Media == nil && input.Location == nil && input.LinkCards == nil && input.Visibility == nil {
+		return Post{}, domain.NewError(domain.CodeInvalidArgument, "post update must change content_md, media, location, link cards, or visibility", map[string]any{"field": "body"})
+	}
+	if input.Visibility != nil && !input.Visibility.Valid() {
+		return Post{}, domain.NewError(domain.CodeInvalidArgument, "visibility must be everyone or only_me", map[string]any{"field": "visibility"})
 	}
 	if input.Media != nil {
 		if err := domain.ValidateEntryMediaUsages(*input.Media); err != nil {
@@ -843,6 +874,11 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			edited := now
 			entry.EditedAt = &edited
 		}
+		if input.Visibility != nil {
+			if updateErr := entry.SetVisibility(*input.Visibility, now); updateErr != nil {
+				return updateErr
+			}
+		}
 		changed, updateErr := store.UpdateEntry(ctx, entry, contentText)
 		if updateErr != nil {
 			return updateErr
@@ -881,7 +917,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		}
 		updated = entry
 		if quoteReference.Present {
-			updatedQuoted, mediaErr = loadEntryQuote(ctx, store, input.ID)
+			updatedQuoted, mediaErr = loadEntryQuote(ctx, store, OwnerViewer(), input.ID)
 			if mediaErr != nil {
 				return mediaErr
 			}
@@ -926,7 +962,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if mediaErr != nil {
 			return mediaErr
 		}
-		quoted, mediaErr := loadEntryQuote(ctx, store, id)
+		quoted, mediaErr := loadEntryQuote(ctx, store, OwnerViewer(), id)
 		if mediaErr != nil {
 			return mediaErr
 		}
@@ -963,7 +999,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 	return deleted, err
 }
 
-func hashCreatePost(content string, media []domain.EntryMediaUsage, location *domain.Location, cards []domain.LinkCard, quotedPostID *domain.ID) string {
+func hashCreatePost(content string, media []domain.EntryMediaUsage, location *domain.Location, cards []domain.LinkCard, quotedPostID *domain.ID, visibility domain.Visibility) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte("moment-post-create-v1\x00"))
 	writeHashLength(digest, len(content))
@@ -1042,7 +1078,21 @@ func hashCreatePost(content string, media []domain.EntryMediaUsage, location *do
 	if quotedPostID != nil {
 		_, _ = digest.Write([]byte("\x00quote-v1\x00" + quotedPostID.String()))
 	}
+	// Only a non-default audience joins the hash, so every retry key minted
+	// before visibility existed still replays.
+	if visibility != domain.VisibilityEveryone {
+		_, _ = digest.Write([]byte("\x00visibility-v1\x00" + string(visibility)))
+	}
 	return hex.EncodeToString(digest.Sum(nil))
+}
+
+// createVisibility resolves the create input's audience: absent means the
+// default, anything else has to be a known value.
+func createVisibility(requested domain.Visibility) (domain.Visibility, error) {
+	if requested == "" {
+		return domain.VisibilityEveryone, nil
+	}
+	return domain.ParseVisibility(string(requested))
 }
 
 func validatePostAggregate(content string, mediaCount int) error {
@@ -1069,7 +1119,7 @@ func validRequestHash(value string) bool {
 	return err == nil && hex.EncodeToString(decoded) == value
 }
 
-func loadEntryQuote(ctx context.Context, store PostStore, entryID domain.ID) (*QuotedPost, error) {
+func loadEntryQuote(ctx context.Context, store PostStore, viewer Viewer, entryID domain.ID) (*QuotedPost, error) {
 	reference, err := store.EntryQuote(ctx, entryID)
 	if err != nil || !reference.Present {
 		return nil, err
@@ -1077,7 +1127,7 @@ func loadEntryQuote(ctx context.Context, store PostStore, entryID domain.ID) (*Q
 	if reference.TargetID == nil {
 		return &QuotedPost{Unavailable: true}, nil
 	}
-	quoted, err := loadQuotedPost(ctx, store, *reference.TargetID)
+	quoted, err := loadQuotedPost(ctx, store, viewer, *reference.TargetID)
 	if err != nil {
 		return nil, err
 	}
@@ -1087,12 +1137,15 @@ func loadEntryQuote(ctx context.Context, store PostStore, entryID domain.ID) (*Q
 	return quoted, nil
 }
 
-func loadQuotedPost(ctx context.Context, store PostStore, id domain.ID) (*QuotedPost, error) {
+// loadQuotedPost embeds the quoted target when the viewer may read it. A
+// target the viewer may not see comes back nil and renders as the same
+// tombstone a deleted target does: the quote stays, its words do not travel.
+func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id domain.ID) (*QuotedPost, error) {
 	entry, found, err := store.EntryByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	if !found {
+	if !found || !viewer.CanRead(entry.Visibility) {
 		return nil, nil
 	}
 	media, err := store.EntryMediaUsages(ctx, id)

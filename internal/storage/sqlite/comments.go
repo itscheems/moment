@@ -120,13 +120,16 @@ func newCommentStore(queries Queries) commentStore {
 
 var _ app.CommentStore = commentStore{}
 
-func (store commentStore) EntryExists(ctx context.Context, id domain.ID) (bool, error) {
-	var exists int
-	err := store.queries.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM entries WHERE id = ? AND kind = ?)`, id.String(), string(domain.KindMoment)).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("check comment post: %w", err)
+func (store commentStore) EntryVisibility(ctx context.Context, id domain.ID) (domain.Visibility, bool, error) {
+	var visibility string
+	err := store.queries.QueryRowContext(ctx, `SELECT visibility FROM entries WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment)).Scan(&visibility)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
 	}
-	return exists == 1, nil
+	if err != nil {
+		return "", false, fmt.Errorf("check comment post: %w", err)
+	}
+	return domain.Visibility(visibility), true, nil
 }
 
 func (store commentStore) CommentsEnabled(ctx context.Context) (bool, error) {

@@ -21,7 +21,7 @@ func TestPostMediaReadProjectionCarriesStrictPositiveDimensions(t *testing.T) {
 	instant := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
 	wire := FromPost(app.Post{
 		Entry: domain.Entry{
-			ID: id, Kind: domain.KindMoment, ContentMD: "with image",
+			ID: id, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: "with image",
 			CreatedAt: instant, UpdatedAt: instant, PublishedAt: instant,
 		},
 		ContentHTML: "<p>with image</p>\n",
@@ -71,7 +71,7 @@ func TestRepostTimelineProjectionRequiresActiveRepost(t *testing.T) {
 	}
 	wire := FromPost(app.Post{
 		Entry: domain.Entry{
-			ID: id, Kind: domain.KindMoment, ContentMD: "reposted",
+			ID: id, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: "reposted",
 			CreatedAt: instant, UpdatedAt: instant, PublishedAt: instant,
 		},
 		TimelineKind: app.TimelineItemRepost,
@@ -97,7 +97,7 @@ func TestUnavailableQuoteUsesAnExplicitNullOnlyTombstone(t *testing.T) {
 	}
 	wire := FromPost(app.Post{
 		Entry: domain.Entry{
-			ID: id, Kind: domain.KindMoment, ContentMD: "保留引用外层",
+			ID: id, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: "保留引用外层",
 			CreatedAt: instant, UpdatedAt: instant, PublishedAt: instant,
 		},
 		ContentHTML: "<p>保留引用外层</p>\n",

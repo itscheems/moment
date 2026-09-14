@@ -85,7 +85,8 @@
     "updated_at",
     "user_id",
     "username",
-    "username_set_at"
+    "username_set_at",
+    "visibility"
   ],
   "commentdto.Author": [
     "avatar_media_id",
@@ -117,6 +118,23 @@
     "last_login_at",
     "linked_at",
     "provider"
+  ],
+  "postdto.Post": [
+    "comment_count",
+    "content_html",
+    "content_md",
+    "created_at",
+    "edited_at",
+    "id",
+    "link_cards",
+    "location",
+    "media",
+    "published_at",
+    "quoted_post",
+    "reposted_at",
+    "timeline_item_kind",
+    "updated_at",
+    "visibility"
   ],
   "privateAccountView": [
     "avatar_media_id",

@@ -57,7 +57,7 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 	assertMediaClock(t, database, mediaOne, nil)
 	assertMediaClock(t, database, mediaTwo, nil)
 
-	thread, err := service.List(ctx, postID)
+	thread, err := service.List(ctx, postID, app.OwnerViewer())
 	if err != nil || len(thread.Items) != 2 ||
 		!reflect.DeepEqual(thread.Items[0].Media, expectedMediaProjections(rootMedia)) ||
 		!reflect.DeepEqual(thread.Items[1].Media, expectedMediaProjections(replyMedia)) {

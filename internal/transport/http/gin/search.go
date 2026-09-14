@@ -14,20 +14,21 @@ import (
 )
 
 // RegisterSearchRoutes exposes public read-only search and archive aggregates.
-func RegisterSearchRoutes(engine *gin.Engine, service *app.SearchService) {
-	engine.GET("/api/v1/search", searchEntries(service))
-	engine.GET("/api/v1/archive/months", archiveMonths(service))
-	engine.GET("/api/v1/archive/month", archiveMonth(service))
+// Like the post reads, they answer according to whoever is signed in.
+func RegisterSearchRoutes(engine *gin.Engine, service *app.SearchService, gate *Gate) {
+	engine.GET("/api/v1/search", searchEntries(service, gate))
+	engine.GET("/api/v1/archive/months", archiveMonths(service, gate))
+	engine.GET("/api/v1/archive/month", archiveMonth(service, gate))
 }
 
-func searchEntries(service *app.SearchService) gin.HandlerFunc {
+func searchEntries(service *app.SearchService, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		query, err := exactQuery(ctx, map[string]bool{"q": true, "from": false, "to": false, "cursor": false, "limit": false})
 		if err != nil {
 			writeSearchError(ctx, err)
 			return
 		}
-		input := app.SearchInput{Query: query.Get("q"), FromDate: query.Get("from"), ToDate: query.Get("to"), Cursor: query.Get("cursor")}
+		input := app.SearchInput{Query: query.Get("q"), FromDate: query.Get("from"), ToDate: query.Get("to"), Cursor: query.Get("cursor"), Viewer: gate.Viewer(ctx)}
 		if query.Has("limit") {
 			input.Limit, err = strconv.Atoi(query.Get("limit"))
 			if err != nil || input.Limit == 0 {
@@ -44,14 +45,14 @@ func searchEntries(service *app.SearchService) gin.HandlerFunc {
 	}
 }
 
-func archiveMonths(service *app.SearchService) gin.HandlerFunc {
+func archiveMonths(service *app.SearchService, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		query, err := exactQuery(ctx, map[string]bool{"from": false, "to": false})
 		if err != nil {
 			writeSearchError(ctx, err)
 			return
 		}
-		result, err := service.ArchiveMonths(ctx.Request.Context(), app.ArchiveMonthsInput{FromDate: query.Get("from"), ToDate: query.Get("to")})
+		result, err := service.ArchiveMonths(ctx.Request.Context(), app.ArchiveMonthsInput{FromDate: query.Get("from"), ToDate: query.Get("to"), Viewer: gate.Viewer(ctx)})
 		if err != nil {
 			writeSearchError(ctx, err)
 			return
@@ -60,14 +61,14 @@ func archiveMonths(service *app.SearchService) gin.HandlerFunc {
 	}
 }
 
-func archiveMonth(service *app.SearchService) gin.HandlerFunc {
+func archiveMonth(service *app.SearchService, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		query, err := exactQuery(ctx, map[string]bool{"month": true})
 		if err != nil {
 			writeSearchError(ctx, err)
 			return
 		}
-		result, err := service.ArchiveMonth(ctx.Request.Context(), query.Get("month"))
+		result, err := service.ArchiveMonth(ctx.Request.Context(), query.Get("month"), gate.Viewer(ctx))
 		if err != nil {
 			writeSearchError(ctx, err)
 			return

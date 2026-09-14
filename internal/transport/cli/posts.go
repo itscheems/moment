@@ -260,6 +260,7 @@ func runPostList(ctx context.Context, invocation Invocation, input CommandInput)
 			return Result{}, postCLIError(err)
 		}
 		listInput.Timezone = settings.Timezone
+		listInput.Viewer = app.OwnerViewer()
 		result, err := service.List(ctx, listInput)
 		if err != nil {
 			return Result{}, postCLIError(err)
@@ -1208,7 +1209,9 @@ func getPostByTransport(ctx context.Context, invocation Invocation, id domain.ID
 			return post, nil, err
 		}
 		defer func() { _ = database.Close() }()
-		result, err := service.Get(ctx, id)
+		// Direct mode opens the data directory itself; whoever can do that
+		// is the owner, and reads the way the owner does.
+		result, err := service.Get(ctx, id, app.OwnerViewer())
 		if err != nil {
 			return post, nil, err
 		}

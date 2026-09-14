@@ -12,6 +12,7 @@ import (
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/commentdto"
+	"github.com/moment/moment/internal/transport/postdto"
 )
 
 // browserMirroredTypes are the wire shapes a browser parser validates by exact
@@ -39,6 +40,7 @@ var browserMirroredTypes = map[string]struct {
 	"sessionListItem":           {sessionListItem{}, "web/src/api/owner.ts parseSessionListItem"},
 	"archive.ImportCounts":      {archive.ImportCounts{}, "web/src/api/owner.ts parseImportCounts"},
 	"archive.MergeReviewEntity": {archive.MergeReviewEntity{}, "web/src/api/owner.ts parseMergeReviewEntity"},
+	"postdto.Post":              {postdto.Post{}, "web/src/api/public.ts parsePost and parseSearchHit"},
 	"commentdto.Comment":        {commentdto.Comment{}, "web/src/api/public.ts parseComment"},
 	"commentdto.Author":         {commentdto.Author{}, "web/src/api/public.ts parseCommentAuthor"},
 	"app.MentionSuggestion":     {app.MentionSuggestion{}, "web/src/api/public.ts mentionSuggestions"},

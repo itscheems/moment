@@ -138,9 +138,9 @@ var _ app.PostStore = postStore{}
 
 func (store postStore) InsertEntry(ctx context.Context, entry domain.Entry, contentText string) error {
 	_, err := store.queries.ExecContext(ctx, `
-INSERT INTO entries (id, kind, content_md, content_text, created_at_ms, updated_at_ms, published_at_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		entry.ID.String(), string(entry.Kind), entry.ContentMD, contentText,
+INSERT INTO entries (id, kind, content_md, visibility, content_text, created_at_ms, updated_at_ms, published_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		entry.ID.String(), string(entry.Kind), entry.ContentMD, string(entry.Visibility), contentText,
 		domain.TimeToMillis(entry.CreatedAt), domain.TimeToMillis(entry.UpdatedAt), domain.TimeToMillis(entry.PublishedAt),
 	)
 	if err != nil {
@@ -151,7 +151,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`,
 
 func (store postStore) EntryByID(ctx context.Context, id domain.ID) (domain.Entry, bool, error) {
 	entry, err := scanEntry(store.queries.QueryRowContext(ctx, `
-SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms
+SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms
 FROM entries
 WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment)))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -164,23 +164,29 @@ WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment)))
 }
 
 func (store postStore) ListEntries(ctx context.Context, query app.TimelineQuery, limit int) ([]app.TimelineEntry, error) {
+	// Both projections of an entry answer to the same visibility: a repost of
+	// a hidden post is just as hidden.
+	visible, visibleArguments := visibilityPredicate(query.Viewer, "visibility")
 	statement := `
 WITH timeline_entries AS (
-  SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
+  SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
          published_at_ms AS timeline_at_ms, 0 AS timeline_kind
   FROM entries
-  WHERE kind = ?
+  WHERE kind = ? AND ` + visible + `
   UNION ALL
-  SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
+  SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
          reposted_at_ms AS timeline_at_ms, 1 AS timeline_kind
   FROM entries
-  WHERE kind = ? AND reposted_at_ms IS NOT NULL
+  WHERE kind = ? AND reposted_at_ms IS NOT NULL AND ` + visible + `
 )
-SELECT id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
+SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
        timeline_at_ms, timeline_kind
 FROM timeline_entries
 WHERE 1 = 1`
-	arguments := []any{string(domain.KindMoment), string(domain.KindMoment)}
+	arguments := []any{string(domain.KindMoment)}
+	arguments = append(arguments, visibleArguments...)
+	arguments = append(arguments, string(domain.KindMoment))
+	arguments = append(arguments, visibleArguments...)
 	if query.FromMS != nil {
 		statement += "\n  AND published_at_ms >= ?"
 		arguments = append(arguments, *query.FromMS)
@@ -617,8 +623,8 @@ func (store postStore) ReplaceEntryQuote(ctx context.Context, entryID domain.ID,
 func (store postStore) UpdateEntry(ctx context.Context, entry domain.Entry, contentText string) (bool, error) {
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE entries
-SET content_md = ?, content_text = ?, updated_at_ms = ?, edited_at_ms = ?
-WHERE id = ? AND kind = ?`, entry.ContentMD, contentText, domain.TimeToMillis(entry.UpdatedAt), optionalTimeMillis(entry.EditedAt), entry.ID.String(), string(domain.KindMoment))
+SET content_md = ?, content_text = ?, visibility = ?, updated_at_ms = ?, edited_at_ms = ?
+WHERE id = ? AND kind = ?`, entry.ContentMD, contentText, string(entry.Visibility), domain.TimeToMillis(entry.UpdatedAt), optionalTimeMillis(entry.EditedAt), entry.ID.String(), string(domain.KindMoment))
 	if err != nil {
 		return false, fmt.Errorf("update entry: %w", err)
 	}
@@ -694,11 +700,12 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 		idString                          string
 		kind                              string
 		content                           string
+		visibility                        string
 		createdAt, updatedAt, publishedAt int64
 		repostedAt                        sql.NullInt64
 		editedAt                          sql.NullInt64
 	)
-	if err := scanner.Scan(&idString, &kind, &content, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt); err != nil {
+	if err := scanner.Scan(&idString, &kind, &content, &visibility, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt); err != nil {
 		return domain.Entry{}, err
 	}
 	id, err := domain.ParseID(idString)
@@ -709,6 +716,7 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 		ID:          id,
 		Kind:        domain.EntryKind(kind),
 		ContentMD:   content,
+		Visibility:  domain.Visibility(visibility),
 		CreatedAt:   domain.TimeFromMillis(createdAt),
 		UpdatedAt:   domain.TimeFromMillis(updatedAt),
 		PublishedAt: domain.TimeFromMillis(publishedAt),
@@ -732,13 +740,14 @@ func scanTimelineEntry(scanner entryScanner) (app.TimelineEntry, error) {
 		idString                          string
 		kind                              string
 		content                           string
+		visibility                        string
 		createdAt, updatedAt, publishedAt int64
 		repostedAt                        sql.NullInt64
 		editedAt                          sql.NullInt64
 		timelineAt                        int64
 		timelineKind                      int
 	)
-	if err := scanner.Scan(&idString, &kind, &content, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt, &timelineAt, &timelineKind); err != nil {
+	if err := scanner.Scan(&idString, &kind, &content, &visibility, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt, &timelineAt, &timelineKind); err != nil {
 		return app.TimelineEntry{}, err
 	}
 	id, err := domain.ParseID(idString)
@@ -749,6 +758,7 @@ func scanTimelineEntry(scanner entryScanner) (app.TimelineEntry, error) {
 		ID:          id,
 		Kind:        domain.EntryKind(kind),
 		ContentMD:   content,
+		Visibility:  domain.Visibility(visibility),
 		CreatedAt:   domain.TimeFromMillis(createdAt),
 		UpdatedAt:   domain.TimeFromMillis(updatedAt),
 		PublishedAt: domain.TimeFromMillis(publishedAt),

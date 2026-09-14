@@ -316,7 +316,7 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 		return err
 	}
 	entry := domain.Entry{
-		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD,
+		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
 		CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(), UpdatedAt: time.UnixMilli(value.UpdatedAtMS).UTC(),
 		PublishedAt: time.UnixMilli(value.PublishedAtMS).UTC(),
 	}
@@ -371,9 +371,9 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	}
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO entries (
-    id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms, content_text
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		value.ID, value.Kind, value.ContentMD, value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, value.RepostedAtMS, value.EditedAtMS, contentText); err != nil {
+    id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms, content_text
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		value.ID, value.Kind, value.ContentMD, string(entry.Visibility), value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, value.RepostedAtMS, value.EditedAtMS, contentText); err != nil {
 		return fmt.Errorf("insert portable entry %s: %w", value.ID, err)
 	}
 	var aggregateBytes int64

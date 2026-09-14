@@ -120,6 +120,20 @@ func (gate *Gate) VerifiedAccount(ctx *gin.Context) (domain.User, bool) {
 	return user, true
 }
 
+// Viewer reports how much of the site this request may read.
+//
+// It is VerifiedAccount handed to the visibility policy, and it exists so a
+// public read route never has to touch the account itself: the route asks who
+// is reading, the policy answers what they see, and the rule that an owner
+// reads everything while everyone else reads what was published to everyone
+// lives in exactly one place, app.ViewerFor.
+func (gate *Gate) Viewer(ctx *gin.Context) app.Viewer {
+	if gate == nil {
+		return app.PublicViewer()
+	}
+	return app.ViewerFor(gate.VerifiedAccount(ctx))
+}
+
 // errNoCredential is "nothing here names a caller".
 //
 // It stays a sentinel rather than a domain error because it describes no

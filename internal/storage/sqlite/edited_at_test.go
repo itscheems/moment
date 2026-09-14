@@ -43,7 +43,7 @@ func TestEditedAtTracksContentAndPreservesRepostSemantics(t *testing.T) {
 			t.Fatal("repost moved edit time")
 		}
 	}
-	post, err = service.Get(ctx, id)
+	post, err = service.Get(ctx, id, app.OwnerViewer())
 	if err != nil || !post.Entry.EditedAt.Equal(edited) {
 		t.Fatal("read lost edit time")
 	}

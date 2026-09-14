@@ -75,6 +75,11 @@ runtime state, credentials, sessions, local drafts, and GC state are excluded.
 An entry quote whose source was deleted is preserved as
 `quote_unavailable=true` without a `quoted_entry_id`; this tombstone keeps the
 quote wrapper portable without exposing or inventing deleted target content.
+An entry that is not public carries `visibility="only_me"`; the key is omitted
+for public entries, so an archive of a site with no hidden posts is
+byte-identical to one written before the field existed and remains importable
+by those versions. A reader treats an absent key as public and rejects any
+value it does not know rather than importing it as public.
 HEIC, MP4, and QuickTime MOV members are immutable originals. Their JPEG/H.264
 display derivatives and video poster images remain replaceable cache artifacts and are
 therefore not exported.

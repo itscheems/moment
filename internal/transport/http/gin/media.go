@@ -26,8 +26,8 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 		if strings.HasSuffix(path, "/poster") {
 			kind = "poster"
 		}
-		engine.GET(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind))
-		engine.HEAD(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind))
+		engine.GET(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind, gate))
+		engine.HEAD(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind, gate))
 	}
 	// Approved accounts, not just the owner. Comments carry media and the
 	// comment group already admits them, so leaving the upload behind made the
@@ -187,11 +187,25 @@ func getUploadPoster(posters *uploadPosterCache) gin.HandlerFunc {
 	}
 }
 
-func getMediaAsset(store *media.Store, kind string) gin.HandlerFunc {
+func getMediaAsset(store *media.Store, kind string, gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		id, err := domain.ParseID(ctx.Param("id"))
 		if err != nil {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "media id must be a canonical ULID", map[string]any{"field": "id"})
+			return
+		}
+		// A file is as visible as the posts it appears in. The identifier is
+		// unguessable, but an address that was once public may have been
+		// copied anywhere, and hiding the post has to take its pictures with
+		// it. Whether the file exists at all is not revealed to a reader who
+		// may not see it.
+		visibility, err := store.Visibility(ctx.Request.Context(), id)
+		if err != nil {
+			writeMediaError(ctx, err)
+			return
+		}
+		if !gate.Viewer(ctx).CanRead(visibility) {
+			writeMediaError(ctx, domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", id), map[string]any{"media_id": id.String()}))
 			return
 		}
 		var asset *media.StreamAsset
@@ -209,7 +223,11 @@ func getMediaAsset(store *media.Store, kind string) gin.HandlerFunc {
 		}
 		defer func() { _ = asset.Close() }()
 		ctx.Header("Content-Type", asset.MIMEType)
-		if kind == "original" {
+		if visibility != domain.VisibilityEveryone {
+			// Only its reader's own browser may keep a copy; a shared cache
+			// in front of the site would hand it to the next visitor.
+			ctx.Header("Cache-Control", "private, max-age=0, must-revalidate")
+		} else if kind == "original" {
 			ctx.Header("Cache-Control", "public, max-age=31536000, immutable")
 		} else {
 			// Derived assets keep a stable public URL while their recipe version

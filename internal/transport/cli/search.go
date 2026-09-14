@@ -94,6 +94,7 @@ func runSearchQuery(ctx context.Context, invocation Invocation, input CommandInp
 			return Result{}, searchCLIError(err)
 		}
 		defer func() { _ = database.Close() }()
+		searchInput.Viewer = app.OwnerViewer()
 		page, err := service.Search(ctx, searchInput)
 		if err != nil {
 			return Result{}, searchCLIError(err)

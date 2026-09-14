@@ -1274,6 +1274,10 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 			millis := repostedAt.UnixMilli()
 			repostedAtMS = &millis
 		}
+		visibility, err := archiveVisibility(value.Visibility)
+		if err != nil {
+			return err
+		}
 		usages := make([]sqlitestore.ArchiveUsage, len(value.Media))
 		for index, usage := range value.Media {
 			usages[index] = sqlitestore.ArchiveUsage{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
@@ -1287,7 +1291,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 			return err
 		}
 		return importer.InsertEntry(ctx, sqlitestore.ArchiveEntry{
-			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
+			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
 			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
 		})
 	})

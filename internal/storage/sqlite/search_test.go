@@ -121,7 +121,7 @@ func TestSearchArchivePostSyncAndRebuild(t *testing.T) {
 	if err != nil || len(months.Items) != 1 || months.Items[0].Count != 3 {
 		t.Fatalf("archive months = %#v, %v", months, err)
 	}
-	march, err := service.ArchiveMonth(ctx, "2024-03")
+	march, err := service.ArchiveMonth(ctx, "2024-03", app.OwnerViewer())
 	if err != nil || len(march.Days) != 2 || march.Days[0].Day != 9 || march.Days[0].Count != 1 || march.Days[1].Day != 10 || march.Days[1].Count != 2 {
 		t.Fatalf("DST archive days = %#v, %v", march, err)
 	}

@@ -36,6 +36,7 @@ type SearchRepositoryQuery struct {
 	FromMS     *int64
 	ToMS       *int64
 	Position   *SearchPosition
+	Viewer     Viewer
 }
 
 // SearchRecord is one matched authoritative Entry plus derived sort/search
@@ -92,7 +93,7 @@ type SearchStore interface {
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
 	EntryLinkCards(context.Context, domain.ID) ([]LinkCardProjection, error)
 	SearchPublishedMillis(context.Context, SearchRepositoryQuery) ([]int64, error)
-	ArchivePublishedMillis(context.Context, *int64, *int64) ([]int64, error)
+	ArchivePublishedMillis(context.Context, Viewer, *int64, *int64) ([]int64, error)
 	SearchNormalizerVersion(context.Context) (int, error)
 	SearchRevision(context.Context) (int64, error)
 	SearchOrphanCount(context.Context) (int, error)
@@ -116,6 +117,9 @@ type SearchInput struct {
 	Limit    int
 	FromDate string
 	ToDate   string
+	// Viewer bounds both the page and the year counts; the zero value is a
+	// visitor.
+	Viewer Viewer
 }
 
 // SearchHit combines a canonical post with a safe plain-text snippet.
@@ -141,6 +145,7 @@ type SearchPage struct {
 type ArchiveMonthsInput struct {
 	FromDate string
 	ToDate   string
+	Viewer   Viewer
 }
 
 // ArchiveMonthCount is one non-empty site-timezone month.
@@ -257,7 +262,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		if cursorErr != nil {
 			return cursorErr
 		}
-		prepared.FromMS, prepared.ToMS, prepared.Position = fromMS, toMS, position
+		prepared.FromMS, prepared.ToMS, prepared.Position, prepared.Viewer = fromMS, toMS, position, input.Viewer
 		records, storeErr = store.SearchEntries(ctx, prepared, limit+1)
 		if storeErr != nil {
 			return storeErr
@@ -334,7 +339,7 @@ func (service *SearchService) ArchiveMonths(ctx context.Context, input ArchiveMo
 		if err != nil {
 			return err
 		}
-		instants, err = store.ArchivePublishedMillis(ctx, fromMS, toMS)
+		instants, err = store.ArchivePublishedMillis(ctx, input.Viewer, fromMS, toMS)
 		return err
 	})
 	if err != nil {
@@ -343,8 +348,9 @@ func (service *SearchService) ArchiveMonths(ctx context.Context, input ArchiveMo
 	return ArchiveMonths{Items: aggregateMonths(instants, location)}, nil
 }
 
-// ArchiveMonth returns non-empty day counts for one site-timezone month.
-func (service *SearchService) ArchiveMonth(ctx context.Context, month string) (ArchiveMonth, error) {
+// ArchiveMonth returns non-empty day counts for one site-timezone month, as
+// the viewer sees them.
+func (service *SearchService) ArchiveMonth(ctx context.Context, month string, viewer Viewer) (ArchiveMonth, error) {
 	if err := contextError(ctx); err != nil {
 		return ArchiveMonth{}, err
 	}
@@ -371,7 +377,7 @@ func (service *SearchService) ArchiveMonth(ctx context.Context, month string) (A
 		}
 		fromMS := domain.TimeToMillis(start)
 		toMS := domain.TimeToMillis(start.AddDate(0, 1, 0))
-		instants, err = store.ArchivePublishedMillis(ctx, &fromMS, &toMS)
+		instants, err = store.ArchivePublishedMillis(ctx, viewer, &fromMS, &toMS)
 		return err
 	})
 	if err != nil {

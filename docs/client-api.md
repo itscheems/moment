@@ -106,6 +106,31 @@ mutation timestamp. Null means no recorded edit: historical rows are not backfil
 from ambiguous update times. Archives, import and merge preserve `edited_at` as an
 optional v1 field. The database adds a forward-only nullable column.
 
+## Post visibility
+
+Every post carries `visibility`, either `"everyone"` (the default) or
+`"only_me"`. `POST /owner/posts` accepts an optional `visibility`, and
+`PATCH /owner/posts/:id` accepts it alone or alongside other fields; changing
+it advances `updated_at` but never `edited_at`. Unknown values are rejected with
+`INVALID_ARGUMENT`.
+
+The server decides who sees what, and every route that can return a post
+applies the same rule: the site owner reads everything, everybody else --
+visitors, crawlers, and signed-in members alike -- reads only `everyone`
+posts. A hidden post answers `POST_NOT_FOUND` from `GET /posts/:id` and from
+its comment routes, is absent from `GET /posts`, `GET /search` and the archive
+counts, embeds as an unavailable tombstone when quoted, contributes no share
+metadata, and its media answers `MEDIA_NOT_FOUND` unless every file is also
+referenced from a public post, an avatar, or a cover. Clients therefore need
+no visibility logic of their own: send the owner credential on reads to see
+hidden posts, or omit it to render the site as a visitor does. Because the
+answer depends on the credential, JSON responses stay `Cache-Control:
+no-store` and owner-only media is served `private`.
+
+CLI: `moment post create --visibility only_me`, `moment post update <id>
+--visibility everyone`. Direct mode reads as the owner; `--url` mode presents
+`MOMENT_TOKEN` on reads when it is configured and otherwise reads as a visitor.
+
 ## Exports
 
 `GET /owner/export` remains an owner-only, complete `moment-export-v1` backup.

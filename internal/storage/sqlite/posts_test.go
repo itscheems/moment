@@ -39,7 +39,7 @@ func TestPostServiceCRUDPreservesTimelineAndRendersSafely(t *testing.T) {
 		t.Fatalf("unexpected creation instants: %+v", created.Post.Entry)
 	}
 
-	got, err := service.Get(ctx, created.Post.Entry.ID)
+	got, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
 	if err != nil || got.Entry != created.Post.Entry {
 		t.Fatalf("get = %+v, %v", got, err)
 	}
@@ -59,7 +59,7 @@ func TestPostServiceCRUDPreservesTimelineAndRendersSafely(t *testing.T) {
 	if _, err := service.Update(ctx, app.UpdatePostInput{ID: got.Entry.ID, ContentMD: "![external](https://example.test/a.png)"}); !domain.HasCode(err, domain.CodeExternalImageNotAllowed) {
 		t.Fatalf("unsafe edit error = %v", err)
 	}
-	afterRejected, err := service.Get(ctx, got.Entry.ID)
+	afterRejected, err := service.Get(ctx, got.Entry.ID, app.OwnerViewer())
 	if err != nil || !reflect.DeepEqual(afterRejected.Entry, updated.Entry) {
 		t.Fatalf("rejected edit changed the Entry: %+v, %v", afterRejected, err)
 	}
@@ -68,7 +68,7 @@ func TestPostServiceCRUDPreservesTimelineAndRendersSafely(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(deleted.Entry, updated.Entry) {
 		t.Fatalf("delete = %+v, %v", deleted, err)
 	}
-	if _, err := service.Get(ctx, got.Entry.ID); !domain.HasCode(err, domain.CodePostNotFound) {
+	if _, err := service.Get(ctx, got.Entry.ID, app.OwnerViewer()); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("get deleted post error = %v", err)
 	}
 	if _, err := service.Delete(ctx, got.Entry.ID); !domain.HasCode(err, domain.CodePostNotFound) {
@@ -123,7 +123,7 @@ func TestPostLocationLifecycleAndIdempotency(t *testing.T) {
 		t.Fatalf("created = %#v, %v", created, err)
 	}
 	location.Name = "调用方后来修改了名称"
-	stored, err := service.Get(ctx, created.Post.Entry.ID)
+	stored, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
 	if err != nil || stored.Location == nil || stored.Location.Name != "静安寺" {
 		t.Fatalf("stored = %#v, %v", stored, err)
 	}
@@ -321,7 +321,7 @@ END`); err != nil {
 	if _, err := service.Update(ctx, app.UpdatePostInput{ID: created.Post.Entry.ID, ContentMD: "after"}); !domain.HasCode(err, domain.CodeInternal) {
 		t.Fatalf("injected update error = %v", err)
 	}
-	unchanged, err := service.Get(ctx, created.Post.Entry.ID)
+	unchanged, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
 	if err != nil {
 		t.Fatal(err)
 	}
