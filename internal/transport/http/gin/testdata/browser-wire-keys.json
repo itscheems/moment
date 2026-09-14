@@ -119,6 +119,12 @@
     "linked_at",
     "provider"
   ],
+  "oauth.Descriptor": [
+    "flows",
+    "label",
+    "name",
+    "native_client_id"
+  ],
   "postdto.Post": [
     "comment_count",
     "content_html",

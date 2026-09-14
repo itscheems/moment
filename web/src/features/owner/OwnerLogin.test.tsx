@@ -42,7 +42,16 @@ function ownerStatus() {
   });
 }
 
-function providersEnvelope(providers: Array<{ name: string; label: string }>) {
+// The descriptor as the server sends it: flows for every client, and the
+// native client id only where the assertion flow is.
+interface ProviderDescriptor {
+  name: string;
+  label: string;
+  flows?: string[] | null;
+  native_client_id?: string;
+}
+
+function providersEnvelope(providers: ProviderDescriptor[]) {
   return json({
     data: { providers },
     meta: { request_id: "req_providers" },
@@ -60,9 +69,7 @@ function signedOutEnvelope() {
   };
 }
 
-function installApi(
-  providers: Array<{ name: string; label: string }> | "unconfigured",
-) {
+function installApi(providers: ProviderDescriptor[] | "unconfigured") {
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url === "/api/v1/owner/status") return ownerStatus();
@@ -155,9 +162,17 @@ describe("owner login third-party entry points", () => {
   });
 
   it("puts GitHub above Google whatever order the server sends", async () => {
+    // What the server actually publishes: the flows each client can finish
+    // and, for Google, the id a native app runs its own authorization as.
+    // The page has to read past both to reach the buttons.
     installApi([
-      { name: "google", label: "Google" },
-      { name: "github", label: "GitHub" },
+      {
+        name: "google",
+        label: "Google",
+        flows: ["browser", "assertion"],
+        native_client_id: "1234567890-native.apps.googleusercontent.com",
+      },
+      { name: "github", label: "GitHub", flows: ["browser", "device"] },
     ]);
     renderLogin();
 
@@ -171,6 +186,26 @@ describe("owner login third-party entry points", () => {
     expect(buttons[0]?.querySelector('svg[data-icon="github"]')).not.toBeNull();
     expect(buttons[1]?.querySelector('svg[data-icon="google"]')).not.toBeNull();
     expect(screen.getByText("或")).toBeInTheDocument();
+  });
+
+  it("offers only the providers a browser can finish with", async () => {
+    // A provider that names flows and leaves out the browser one is a way in
+    // for a native client, not for this page; one from an older instance
+    // names no flows and was only ever the browser flow.
+    installApi([
+      { name: "github", label: "GitHub", flows: ["device"] },
+      { name: "google", label: "Google" },
+      { name: "gitea", label: "Gitea", flows: null },
+    ]);
+    renderLogin();
+
+    const buttons = await screen.findAllByRole("button", {
+      name: /使用 .* 登录/,
+    });
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      "使用 Google 登录",
+      "使用 Gitea 登录",
+    ]);
   });
 
   it("redirects the whole page to the start endpoint and locks the buttons", async () => {

@@ -576,6 +576,21 @@ function hasExactKeys(record: Record<string, unknown>, expected: string[]) {
   );
 }
 
+// Every required key and nothing beyond the optional ones, for a record that
+// legitimately varies: an exact key list would have to enumerate every
+// combination, and a combination left out reads as a corrupt response.
+function hasKeys(
+  record: Record<string, unknown>,
+  required: string[],
+  optional: string[] = [],
+): boolean {
+  const allowed = new Set([...required, ...optional]);
+  return (
+    required.every((key) => key in record) &&
+    Object.keys(record).every((key) => allowed.has(key))
+  );
+}
+
 function positiveIntegerField(
   record: Record<string, unknown>,
   field: string,
@@ -2449,9 +2464,12 @@ export class OwnerApi {
     if (!Array.isArray(providers)) {
       throw invalidResponse("login providers must be an array");
     }
-    return providers.map((entry) => {
+    return providers.flatMap((entry): OAuthLoginProvider[] => {
       // mirrors oauth.Descriptor (internal/auth/oauth/provider.go)
-      if (!isRecord(entry) || !hasExactKeys(entry, ["name", "label"])) {
+      if (
+        !isRecord(entry) ||
+        !hasKeys(entry, ["name", "label"], ["flows", "native_client_id"])
+      ) {
         throw invalidResponse("login provider contains unsupported fields");
       }
       const name = stringField(entry, "name");
@@ -2459,7 +2477,25 @@ export class OwnerApi {
       if (!/^[a-z][a-z0-9_]{0,31}$/.test(name) || !label.trim()) {
         throw invalidResponse("login provider identity is invalid");
       }
-      return { name, label };
+      // The client id a native app runs its own authorization as; the
+      // browser has no use for it beyond checking it is well-formed.
+      if ("native_client_id" in entry) stringField(entry, "native_client_id");
+      // A browser can finish only the browser flow. The same descriptor also
+      // tells native clients about device and assertion flows, so a provider
+      // that names flows but not this one is not a way in from here. An
+      // instance from before flows were published served only the browser
+      // flow, so no list means it is available.
+      if ("flows" in entry && entry.flows !== null) {
+        const flows = entry.flows;
+        if (
+          !Array.isArray(flows) ||
+          !flows.every((flow) => typeof flow === "string")
+        ) {
+          throw invalidResponse("login provider flows must be strings");
+        }
+        if (!flows.includes("browser")) return [];
+      }
+      return [{ name, label }];
     });
   }
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/archive"
+	"github.com/moment/moment/internal/auth/oauth"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/commentdto"
 	"github.com/moment/moment/internal/transport/postdto"
@@ -45,6 +46,7 @@ var browserMirroredTypes = map[string]struct {
 	"commentdto.Author":         {commentdto.Author{}, "web/src/api/public.ts parseCommentAuthor"},
 	"app.MentionSuggestion":     {app.MentionSuggestion{}, "web/src/api/public.ts mentionSuggestions"},
 	"app.SiteSettings":          {app.SiteSettings{}, "web/src/api/public.ts parseSiteIdentity"},
+	"oauth.Descriptor":          {oauth.Descriptor{}, "web/src/api/owner.ts loginProviders"},
 }
 
 // browserMirroredBounds are the numeric limits a browser parser enforces by
