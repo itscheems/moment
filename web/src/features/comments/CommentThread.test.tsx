@@ -642,17 +642,25 @@ describe("public comment thread", () => {
     expect(frame).toHaveAttribute("data-comment-layout-state", "collapsed");
     expect(initialReply).toBeVisible();
     expect(initialReply).toBeDisabled();
-    expect(
-      within(form).getByRole("button", { name: "选择媒体", hidden: true }),
-    ).not.toBeVisible();
+    // The toolbar is folded away, not unmounted: out of sight, out of the
+    // accessibility tree, and out of reach of the keyboard and pointer.
+    const foldedPicker = form.querySelector('button[aria-label="选择媒体"]');
+    expect(foldedPicker).not.toBeVisible();
+    expect(foldedPicker?.closest("[inert]")).not.toBeNull();
+    expect(foldedPicker?.closest("[aria-hidden='true']")).not.toBeNull();
+    // The 「正在回复」 line is folded away rather than absent, so it can grow
+    // in with the composer; folded, it is out of the accessibility tree.
+    const replyTarget = within(form).getByText(/正在回复/);
+    expect(replyTarget.closest("[aria-hidden='true']")).not.toBeNull();
+    expect(replyTarget).not.toBeVisible();
 
     fireEvent.focus(content);
 
     expect(frame).toHaveAttribute("data-comment-layout-state", "expanded");
     expect(initialReply).not.toBeInTheDocument();
-    expect(within(form).getByText(/正在回复/)).toHaveTextContent(
-      "正在回复 @owner",
-    );
+    expect(replyTarget).toHaveTextContent("正在回复 @owner");
+    expect(replyTarget.closest("[aria-hidden='true']")).toBeNull();
+    expect(replyTarget).toBeVisible();
     const mediaPicker = within(form).getByRole("button", {
       name: "选择媒体",
     });
@@ -694,20 +702,46 @@ describe("public comment thread", () => {
     expect(commentsCss).toMatch(
       /\._inlineTopLevelForm_[\w-]+ \._commentComposerLayout_[\w-]+\s*\{[^}]*grid-template-columns:\s*2\.5rem minmax\(0, 1fr\);[^}]*gap:\s*0\.5rem;/s,
     );
+    // The folded geometry — the placeholder on the centre line of a 3.5rem
+    // row under 0.25rem of form padding, the avatar 0.875rem down — comes
+    // from one field box shared by both states plus the paddings, margins
+    // and grid rows that transition to the open geometry, not from fixed
+    // heights that would snap.
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentInputRow_[\w-]+\s*\{[^}]*block-size:\s*3\.5rem;/s,
+      /\._inlineTopLevelForm_[\w-]+ \._commentForm_[\w-]+ textarea\s*\{[^}]*min-block-size:\s*3\.5rem;[^}]*border:\s*0\.125rem solid transparent;[^}]*padding-block:\s*0\.75rem;/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentComposerLayout_[\w-]+\s*\{[^}]*align-items:\s*center;/s,
+      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentForm_[\w-]+\s*\{[^}]*padding-block-start:\s*0\.25rem;/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentForm_[\w-]+\s*\{[^}]*block-size:\s*4\.25rem;[^}]*padding-block:\s*0\.25rem 0\.5rem;/s,
+      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentForm_[\w-]+ textarea\s*\{[^}]*max-block-size:\s*3\.5rem;/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+\._commentCollapsed_[\w-]+ \._commentForm_[\w-]+ textarea\s*\{[^}]*block-size:\s*1\.75rem;[^}]*min-block-size:\s*1\.75rem;[^}]*max-block-size:\s*1\.75rem;[^}]*field-sizing:\s*fixed;/s,
+      /\._inlineTopLevelForm_[\w-]+ \._commentForm_[\w-]+\s*\{[^}]*transition:\s*padding-block-start var\(--motion-content\)/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+ \._commentForm_[\w-]+ textarea\s*\{[^}]*min-block-size:\s*3\.5rem;[^}]*border:\s*0\.125rem solid transparent;[^}]*padding-block:\s*0\.75rem;/s,
+      /\._inlineTopLevelForm_[\w-]+ \._composerAvatar_[\w-]+\s*\{[^}]*margin-block-start:\s*0\.875rem;[^}]*transition:\s*margin-block-start var\(--motion-content\)/s,
+    );
+    expect(commentsCss).toMatch(
+      /\._inlineTopLevelForm_[\w-]+\._commentExpanded_[\w-]+ \._composerAvatar_[\w-]+\s*\{[^}]*margin-block-start:\s*2rem;/s,
+    );
+    for (const row of ["replyTargetRow", "toolbarRow"]) {
+      expect(commentsCss).toMatch(
+        new RegExp(
+          `\\._${row}_[\\w-]+\\s*\\{[^}]*grid-template-rows:\\s*1fr;[^}]*transition:\\s*grid-template-rows var\\(--motion-content\\)`,
+          "s",
+        ),
+      );
+      expect(commentsCss).toMatch(
+        new RegExp(
+          `\\._${row}Collapsed_[\\w-]+\\s*\\{[^}]*grid-template-rows:\\s*0fr;[^}]*visibility:\\s*hidden;`,
+          "s",
+        ),
+      );
+    }
+    // The frame follows the content exactly while a fold runs inside it.
+    expect(commentsCss).toMatch(
+      /\._commentLayoutFrame_[\w-]+\[data-comment-layout-motion="fold"\]\s*\{\s*transition:\s*none;/s,
     );
     expect(commentsCss).toMatch(
       /\._inlineTopLevelForm_[\w-]+ \._collapsedReplyAction_[\w-]+\s*\{[^}]*inline-size:\s*4\.671875rem;[^}]*block-size:\s*2\.25rem;[^}]*color:\s*var\(--surface\);[^}]*background:\s*var\(--text-primary\);[^}]*opacity:\s*0\.25;/s,

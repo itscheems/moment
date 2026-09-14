@@ -77,6 +77,14 @@
   transition: block-size var(--motion-content) var(--ease-out);
 }
 
+/* While the composer folds or unfolds, everything inside is already a
+   transition, so the frame follows the content exactly rather than easing
+   after it; its own easing is for the jumps — a picture arriving, an error
+   appearing — that nothing inside animates. */
+.commentLayoutFrame[data-comment-layout-motion="fold"] {
+  transition: none;
+}
+
 .formSurface.inlineTopLevelForm {
   border-block-end: 0;
   padding: 0.25rem var(--space-4) 0.75rem;
@@ -101,6 +109,7 @@
 .inlineTopLevelForm .commentForm {
   box-sizing: border-box;
   padding-block-end: 0.5rem;
+  transition: padding-block-start var(--motion-content) var(--ease-out);
 }
 
 .composerAvatar {
@@ -121,6 +130,10 @@
   block-size: 2.5rem;
   box-sizing: border-box;
   border: 0;
+  /* Centred against the single-line field while folded, level with the
+     first line of the open one; the move between them is a slide. */
+  margin-block-start: 0.875rem;
+  transition: margin-block-start var(--motion-content) var(--ease-out);
 }
 
 .inlineTopLevelForm.commentExpanded .composerAvatar {
@@ -135,41 +148,60 @@
 
 .commentCollapsed .commentComposerHeader,
 .commentCollapsed .formMeta,
-.commentCollapsed .commentForm > footer,
-.commentCollapsed .commentForm > section {
+.commentCollapsed .commentForm > footer {
   display: none;
+}
+
+/* The toolbar row is folded, not removed, so the composer's height is one
+   smooth curve as it opens and the frame can follow it exactly. Folded, the
+   row is hidden from assistive tech and unreachable by keyboard or pointer. */
+.toolbarRow {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--motion-content) var(--ease-out),
+    opacity var(--motion-content) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+.toolbarRow > section {
+  min-block-size: 0;
+}
+
+.toolbarRowCollapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-content) var(--ease-out),
+    opacity var(--motion-content) var(--ease-out),
+    visibility 0s linear var(--motion-content);
+}
+
+.toolbarRowCollapsed > section {
+  overflow: clip;
 }
 
 .commentExpanded .commentForm textarea {
   min-block-size: 4.75rem;
 }
 
-.inlineTopLevelForm.commentCollapsed .commentInputRow {
-  block-size: 3.5rem;
-}
-
-.inlineTopLevelForm.commentCollapsed .commentComposerLayout {
-  align-items: center;
-}
-
+/* Opening the inline composer is one motion, not a jump behind a growing
+   clip. Every height that differs between folded and open — the form's top
+   padding, the 「正在回复」 row, the toolbar row, the avatar's offset — is a
+   transition on the same clock, and the field keeps one box in both states:
+   3.5rem with its padding, which folded puts the placeholder on the row's
+   centre line exactly where a bare 1.75rem line would sit. The folded cap
+   holds that box where field-sizing is not understood. */
 .inlineTopLevelForm.commentCollapsed .commentForm {
-  block-size: 4.25rem;
-  padding-block: 0.25rem 0.5rem;
+  padding-block-start: 0.25rem;
 }
 
 .inlineTopLevelForm.commentCollapsed .commentForm textarea {
-  block-size: 1.75rem;
-  min-block-size: 1.75rem;
-  max-block-size: 1.75rem;
+  max-block-size: 3.5rem;
   overflow: hidden;
-  padding-block: 0;
-  field-sizing: fixed;
-}
-
-.inlineTopLevelForm.commentExpanded .commentForm textarea {
-  min-block-size: 3.5rem;
-  border: 0.125rem solid transparent;
-  padding-block: 0.75rem;
 }
 
 .commentInputRow {
@@ -275,11 +307,41 @@
 }
 
 .inlineTopLevelForm .replyTarget {
-  min-block-size: 1.25rem;
-  margin: 0 0 0.25rem;
+  min-block-size: 0;
+  margin: 0;
+  overflow: clip;
   font-size: 0.9375rem;
   line-height: 1.25rem;
   animation: none;
+}
+
+/* The line above the inline composer is folded away rather than removed, a
+   grid row from 0fr to 1fr behind a fade, so the field below it slides down
+   as the composer opens. Folded, it is out of the accessibility tree and
+   out of reach of find-in-page. */
+.replyTargetRow {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-block-end: 0.25rem;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--motion-content) var(--ease-out),
+    margin-block-end var(--motion-content) var(--ease-out),
+    opacity var(--motion-content) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+.replyTargetRowCollapsed {
+  grid-template-rows: 0fr;
+  margin-block-end: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-content) var(--ease-out),
+    margin-block-end var(--motion-content) var(--ease-out),
+    opacity var(--motion-content) var(--ease-out),
+    visibility 0s linear var(--motion-content);
 }
 
 .replyTarget span {
@@ -325,6 +387,9 @@
 }
 
 .inlineTopLevelForm .commentForm textarea {
+  min-block-size: 3.5rem;
+  border: 0.125rem solid transparent;
+  padding-block: 0.75rem;
   overflow-wrap: break-word;
   font-size: 1.25rem;
   line-height: 1.5rem;
@@ -1592,6 +1657,8 @@
   .signInPopup,
   .commentLayoutFrame,
   .replyTarget,
+  .replyTargetRow,
+  .toolbarRow,
   .commentMediaComposer {
     animation: none;
     transition: none;

@@ -105,6 +105,41 @@ function useMeasuredBlockSize(layoutRevision: string) {
   return { contentRef, frameRef };
 }
 
+/**
+ * Marks the frame for as long as a fold or unfold is running inside it, so
+ * the frame follows the content instead of easing after it (see the
+ * `data-comment-layout-motion` rule). The mark goes on before the first
+ * frame of the motion is painted, and the window is the content motion's
+ * own duration, read from the stylesheet so the two cannot drift apart.
+ */
+function useFoldMotion(
+  frameRef: RefObject<HTMLDivElement | null>,
+  expanded: boolean,
+) {
+  const previousRef = useRef(expanded);
+  useLayoutEffect(() => {
+    if (previousRef.current === expanded) return;
+    previousRef.current = expanded;
+    const frame = frameRef.current;
+    if (!frame) return;
+    frame.dataset.commentLayoutMotion = "fold";
+    const timer = window.setTimeout(
+      () => {
+        delete frame.dataset.commentLayoutMotion;
+      },
+      motionDuration(frame, "--motion-content"),
+    );
+    return () => window.clearTimeout(timer);
+  }, [expanded, frameRef]);
+}
+
+function motionDuration(element: Element, token: string): number {
+  const raw = getComputedStyle(element).getPropertyValue(token).trim();
+  const value = Number.parseFloat(raw);
+  if (!Number.isFinite(value)) return 0;
+  return raw.endsWith("ms") ? value : value * 1000;
+}
+
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {
     return `web-comment-${crypto.randomUUID()}`;
@@ -378,6 +413,7 @@ export function CommentForm({
   ].join(":");
   const { contentRef: layoutContentRef, frameRef: layoutFrameRef } =
     useMeasuredBlockSize(layoutRevision);
+  useFoldMotion(layoutFrameRef, expanded);
 
   const replaceMedia = (next: ComposerMediaItem[]) => {
     releaseDiscardedLocalPreviews(mediaItemsRef.current, next);
@@ -635,8 +671,7 @@ export function CommentForm({
             </div>
             <span className={styles.srOnly}>所有者</span>
           </header>
-          {(parentId && replyTargetAuthor) ||
-          (!parentId && expanded && topLevelTargetUsername) ? (
+          {parentId && replyTargetAuthor ? (
             <p className={styles.replyTarget}>
               正在回复{" "}
               {/*
@@ -645,10 +680,21 @@ export function CommentForm({
                * prefixing that with @ would present a name — spaces and all —
                * as though it were a handle.
                */}
-              <span>
-                {parentId ? replyTargetAuthor : `@${topLevelTargetUsername}`}
-              </span>
+              <span>{replyTargetAuthor}</span>
             </p>
+          ) : null}
+          {!parentId && topLevelTargetUsername ? (
+            /* Always mounted so the line can grow in as the composer opens.
+               Folded, it is hidden from assistive tech, exactly as it was
+               when it was not rendered at all. */
+            <div
+              aria-hidden={expanded ? undefined : true}
+              className={`${styles.replyTargetRow} ${expanded ? "" : styles.replyTargetRowCollapsed}`}
+            >
+              <p className={styles.replyTarget}>
+                正在回复 <span>@{topLevelTargetUsername}</span>
+              </p>
+            </div>
           ) : null}
           <label className={styles.srOnly} htmlFor={`${formId}-content`}>
             回复内容
@@ -759,101 +805,110 @@ export function CommentForm({
               }}
             />
           ) : null}
-          <MediaComposer
-            className={styles.commentMediaComposer}
-            disabled={pending || !commentsEnabled}
-            footerAction={
-              <div className={styles.commentSubmitCluster}>
-                <CommentProgress count={contentCount} />
-                <div className={styles.commentSubmitActions}>
-                  {onCancel ? (
+          {/* Folded away rather than unmounted, so the toolbar row can grow in
+              with the composer. Folded, it is hidden from assistive tech and
+              unreachable by keyboard or pointer. */}
+          <div
+            aria-hidden={expanded ? undefined : true}
+            className={`${styles.toolbarRow} ${expanded ? "" : styles.toolbarRowCollapsed}`}
+            inert={!expanded}
+          >
+            <MediaComposer
+              className={styles.commentMediaComposer}
+              disabled={pending || !commentsEnabled}
+              footerAction={
+                <div className={styles.commentSubmitCluster}>
+                  <CommentProgress count={contentCount} />
+                  <div className={styles.commentSubmitActions}>
+                    {onCancel ? (
+                      <button
+                        className={styles.secondaryAction}
+                        onClick={onCancel}
+                        type="button"
+                      >
+                        取消
+                      </button>
+                    ) : null}
                     <button
-                      className={styles.secondaryAction}
-                      onClick={onCancel}
-                      type="button"
+                      aria-busy={pending || undefined}
+                      aria-label="发表回复"
+                      className={styles.primaryAction}
+                      data-pending={pending ? "true" : undefined}
+                      disabled={
+                        pending ||
+                        !validContent ||
+                        !commentsEnabled ||
+                        !owner.session ||
+                        mediaError !== null
+                      }
+                      type="submit"
                     >
-                      取消
+                      <span aria-hidden="true">
+                        {pending ? "正在发表…" : "回复"}
+                      </span>
                     </button>
-                  ) : null}
-                  <button
-                    aria-busy={pending || undefined}
-                    aria-label="发表回复"
-                    className={styles.primaryAction}
-                    data-pending={pending ? "true" : undefined}
-                    disabled={
-                      pending ||
-                      !validContent ||
-                      !commentsEnabled ||
-                      !owner.session ||
-                      mediaError !== null
-                    }
-                    type="submit"
-                  >
-                    <span aria-hidden="true">
-                      {pending ? "正在发表…" : "回复"}
-                    </span>
-                  </button>
+                  </div>
                 </div>
-              </div>
-            }
-            items={mediaItems}
-            maximum={4}
-            maximumTotalBytes={MAX_TOTAL_BYTES}
-            pickerTooltip={inlineTopLevel ? "媒体" : undefined}
-            subject="回复"
-            toolbarAction={
-              <LocationPicker
-                api={owner.api}
-                disabled={pending || !commentsEnabled || !owner.session}
-                onChange={(nextLocation) => {
-                  setCommentLocation(nextLocation);
-                  setActivated(true);
-                  setError(null);
-                }}
-                pickerTooltip="位置"
-                value={commentLocation}
-              />
-            }
-            onAdd={(files) => {
-              const next = [...mediaItemsRef.current];
-              for (const file of files) {
-                if (fileValidation(file, next, MAX_TOTAL_BYTES)) continue;
-                const item = newMediaItem(file);
-                next.push(item);
-                void readLocalPreview(file)
-                  .then((localPreviewUrl) => {
-                    if (
-                      !mountedRef.current ||
-                      !mediaItemsRef.current.some(
-                        (candidate) => candidate.key === item.key,
-                      )
-                    ) {
-                      releaseLocalPreview(localPreviewUrl);
-                      return;
-                    }
-                    replaceMedia(
-                      mediaItemsRef.current.map((candidate) =>
-                        candidate.key === item.key
-                          ? { ...candidate, localPreviewUrl }
-                          : candidate,
-                      ),
-                    );
-                  })
-                  .catch(() => undefined);
               }
-              replaceMedia(next);
-              setActivated(true);
-            }}
-            onChange={(next) => replaceMedia(next)}
-            onRemove={(key) => {
-              mediaUploadsRef.current.get(key)?.abort();
-              mediaUploadsRef.current.delete(key);
-              replaceMedia(
-                mediaItemsRef.current.filter((item) => item.key !== key),
-              );
-            }}
-            onRetry={(key) => void uploadOne(key).catch(() => undefined)}
-          />
+              items={mediaItems}
+              maximum={4}
+              maximumTotalBytes={MAX_TOTAL_BYTES}
+              pickerTooltip={inlineTopLevel ? "媒体" : undefined}
+              subject="回复"
+              toolbarAction={
+                <LocationPicker
+                  api={owner.api}
+                  disabled={pending || !commentsEnabled || !owner.session}
+                  onChange={(nextLocation) => {
+                    setCommentLocation(nextLocation);
+                    setActivated(true);
+                    setError(null);
+                  }}
+                  pickerTooltip="位置"
+                  value={commentLocation}
+                />
+              }
+              onAdd={(files) => {
+                const next = [...mediaItemsRef.current];
+                for (const file of files) {
+                  if (fileValidation(file, next, MAX_TOTAL_BYTES)) continue;
+                  const item = newMediaItem(file);
+                  next.push(item);
+                  void readLocalPreview(file)
+                    .then((localPreviewUrl) => {
+                      if (
+                        !mountedRef.current ||
+                        !mediaItemsRef.current.some(
+                          (candidate) => candidate.key === item.key,
+                        )
+                      ) {
+                        releaseLocalPreview(localPreviewUrl);
+                        return;
+                      }
+                      replaceMedia(
+                        mediaItemsRef.current.map((candidate) =>
+                          candidate.key === item.key
+                            ? { ...candidate, localPreviewUrl }
+                            : candidate,
+                        ),
+                      );
+                    })
+                    .catch(() => undefined);
+                }
+                replaceMedia(next);
+                setActivated(true);
+              }}
+              onChange={(next) => replaceMedia(next)}
+              onRemove={(key) => {
+                mediaUploadsRef.current.get(key)?.abort();
+                mediaUploadsRef.current.delete(key);
+                replaceMedia(
+                  mediaItemsRef.current.filter((item) => item.key !== key),
+                );
+              }}
+              onRetry={(key) => void uploadOne(key).catch(() => undefined)}
+            />
+          </div>
           {mediaError ? (
             <p className={styles.formError} role="alert">
               {mediaError}
