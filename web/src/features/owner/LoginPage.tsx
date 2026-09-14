@@ -1,5 +1,6 @@
 import type { SiteIdentity } from "../../api/public";
-import { InternalLink } from "../../app/navigation";
+import { InternalLink, useNavigation } from "../../app/navigation";
+import { Icon } from "../../components/icons";
 import { OwnerLogin } from "./OwnerLogin";
 import styles from "./Owner.module.css";
 
@@ -17,8 +18,23 @@ import styles from "./Owner.module.css";
  * the server's question and is answered there.
  */
 export function LoginPage({ site }: { site: SiteIdentity }) {
+  const { goBack } = useNavigation();
   return (
     <div className={styles.loginScreen}>
+      {/* The way out is where the reader came from, in the corner every
+          other page keeps its arrow -- not a strip under the form, which
+          read as a third panel and sat below the fold on a short screen. */}
+      <InternalLink
+        aria-label="返回时间流"
+        className={styles.loginBack}
+        href="/"
+        onClick={(event) => {
+          event.preventDefault();
+          goBack("/");
+        }}
+      >
+        <Icon name="back" />
+      </InternalLink>
       <div className={styles.loginSplit}>
         <div aria-hidden="true" className={styles.brandPanel} />
         <main className={styles.actionPanel}>
@@ -32,11 +48,6 @@ export function LoginPage({ site }: { site: SiteIdentity }) {
           <OwnerLogin heading={false} site={site} />
         </main>
       </div>
-      <footer className={styles.loginFoot}>
-        <InternalLink className={styles.loginBack} href="/">
-          返回时间流
-        </InternalLink>
-      </footer>
     </div>
   );
 }

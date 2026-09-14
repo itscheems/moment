@@ -1493,9 +1493,10 @@
    renders as a self-contained panel at the four places that embed it inside
    another page. What the layout below does is host it, not restyle it. */
 .loginScreen {
+  position: relative;
   display: grid;
   min-block-size: 100dvh;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr);
   background: var(--canvas);
 }
 
@@ -1563,31 +1564,32 @@
   padding: 0;
 }
 
-.loginFoot {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-4);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
+/* The same 2.75rem arrow the shell's headers carry, pinned to the corner of
+   the page. Over the canvas it takes the shell's hover wash; over the brand
+   panel it sits on the dark, blurred disc X gives a control on top of a
+   picture, so it reads on any part of the artwork. */
+.loginBack {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: var(--space-3);
+  inset-inline-start: var(--space-3);
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text-primary);
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
-.loginBack {
-  border: 0;
-  background: none;
-  padding: var(--space-2);
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  border-radius: 999px;
+.loginBack svg {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
 }
 
 .loginBack:hover,
 .loginBack:focus-visible {
-  color: var(--text-primary);
-  text-decoration: underline;
+  background: var(--surface-hover);
 }
 
 /* 1280 is one of this project's two shell breakpoints, so the tablet range gets
@@ -1618,8 +1620,15 @@
     max-inline-size: 26rem;
   }
 
-  .loginFoot {
-    justify-content: center;
+  .loginBack {
+    color: #fff;
+    background: rgb(15 20 25 / 75%);
+    backdrop-filter: blur(4px);
+  }
+
+  .loginBack:hover,
+  .loginBack:focus-visible {
+    background: rgb(39 44 48 / 75%);
   }
 }
 

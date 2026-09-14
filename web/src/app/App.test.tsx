@@ -747,6 +747,13 @@ describe("App shell and public routes", () => {
       screen.getByRole("heading", { level: 1, name: "Happening now" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("乔乔的 Moment")).toBeNull();
+    // The way out is an arrow in the corner, as on every other page, not a
+    // strip of text under the form.
+    expect(screen.queryByText("返回时间流")).toBeNull();
+    const back = screen.getByRole("link", { name: "返回时间流" });
+    expect(back.querySelector("svg")).not.toBeNull();
+    fireEvent.click(back);
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
   });
 
   // `/profile` means "mine", and only a session says whose. It used to render
