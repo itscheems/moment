@@ -287,11 +287,45 @@
 /* The audience pill's top edge is 10px below
    the composer's top edge (6px above the avatar), and the first line of text
    starts 26px below the pill's bottom edge. The textarea keeps its 8px top
-   padding, so the row's bottom margin carries the other 18px. */
+   padding, so the row's bottom margin carries the other 18px.
+
+   The row opens and shuts by animating its grid track between 0fr and 1fr,
+   with its margins and opacity in step, so the text below glides rather than
+   jumps. The inner box is the grid item that lets 0fr reach zero; it clips
+   with a margin so the pill's focus ring is not cut off while open. */
 .audienceRow {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-block: 2px 18px;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--motion-dialog) var(--ease-out),
+    margin-block-start var(--motion-dialog) var(--ease-out),
+    margin-block-end var(--motion-dialog) var(--ease-out),
+    opacity var(--motion-dialog) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+.audienceRow > div {
   display: flex;
   justify-content: flex-start;
-  margin-block: 2px 18px;
+  min-block-size: 0;
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+
+.audienceRowCollapsed {
+  grid-template-rows: 0fr;
+  margin-block: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-dialog) var(--ease-out),
+    margin-block-start var(--motion-dialog) var(--ease-out),
+    margin-block-end var(--motion-dialog) var(--ease-out),
+    opacity var(--motion-dialog) var(--ease-out),
+    visibility 0s linear var(--motion-dialog);
 }
 
 /* The page and edit composers have no header above the avatar, so the pill's
@@ -1276,7 +1310,9 @@
   .dialogBackdrop,
   .locationBackdrop,
   .dialogPopup,
-  .mentionSuggestionsCaret {
+  .mentionSuggestionsCaret,
+  .audienceRow,
+  .audienceRowCollapsed {
     transition: none;
     animation: none;
   }

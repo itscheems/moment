@@ -152,10 +152,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       useState<PostVisibility>(initialVisibility);
     // The inline composer opens on focus: the audience pill
     // and the toolbar rule appear when the owner steps in and go away again
-    // when they step out with nothing written. Focus inside the audience
-    // card lives in a portal, so the open card counts as being inside.
+    // when they step out with nothing written.
+    //
+    // Three things count as "inside", and focus alone is not enough. The
+    // audience card lives in a portal, so it holds the composer open while it
+    // is up. And a pointer pressed inside holds it open too: Safari does not
+    // focus a button on click, so pressing the pill blurs the textarea with
+    // no relatedTarget, and a composer that collapsed on that blur would pull
+    // the pill out from under the click.
     const [focusWithin, setFocusWithin] = useState(false);
     const [audienceOpen, setAudienceOpen] = useState(false);
+    const [pointerInside, setPointerInside] = useState(false);
+    const audienceCloseFrameRef = useRef<number | null>(null);
     const [draft, setDraft] = useState<ComposeDraft | null>(() =>
       variant === "edit" ? null : loadComposeDraft(site.instanceId),
     );
@@ -248,6 +256,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       variant !== "inline" ||
       focusWithin ||
       audienceOpen ||
+      pointerInside ||
       content.trim().length > 0 ||
       mediaItems.length > 0 ||
       location !== null ||
@@ -615,6 +624,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       mountedRef.current = true;
       return () => {
         mountedRef.current = false;
+        if (audienceCloseFrameRef.current !== null) {
+          window.cancelAnimationFrame(audienceCloseFrameRef.current);
+        }
         for (const controller of mediaUploadsRef.current.values())
           controller.abort();
         mediaUploadsRef.current.clear();
@@ -1004,6 +1016,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           }
         }}
         onFocus={() => setFocusWithin(true)}
+        onPointerDown={() => {
+          setPointerInside(true);
+          const release = () => {
+            document.removeEventListener("pointerup", release);
+            document.removeEventListener("pointercancel", release);
+            // After the click this press produces has been handled, so
+            // whatever it opened or focused is already holding the composer.
+            window.setTimeout(() => {
+              if (mountedRef.current) setPointerInside(false);
+            }, 0);
+          };
+          document.addEventListener("pointerup", release);
+          document.addEventListener("pointercancel", release);
+        }}
       >
         <div aria-hidden="true" className={styles.newTick}>
           <SiteAvatar site={site} />
@@ -1037,8 +1063,15 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             className={styles.composerForm}
             onSubmit={(event) => void submit(event)}
           >
-            {expanded ? (
-              <div className={styles.audienceRow}>
+            {/* Always mounted so the row can animate shut and so a press on
+                the pill is never answered by removing the pill. Collapsed, it
+                is hidden from assistive tech and unreachable by keyboard. */}
+            <div
+              aria-hidden={expanded ? undefined : true}
+              className={`${styles.audienceRow} ${expanded ? "" : styles.audienceRowCollapsed}`}
+              inert={!expanded}
+            >
+              <div>
                 <AudienceSelector
                   disabled={pending}
                   onChange={(next) => {
@@ -1053,11 +1086,31 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       setDirty(true);
                     }
                   }}
-                  onOpenChange={setAudienceOpen}
+                  onOpenChange={(open) => {
+                    if (audienceCloseFrameRef.current !== null) {
+                      window.cancelAnimationFrame(
+                        audienceCloseFrameRef.current,
+                      );
+                      audienceCloseFrameRef.current = null;
+                    }
+                    if (open) {
+                      setAudienceOpen(true);
+                      return;
+                    }
+                    // The card hands focus back to the pill as it closes.
+                    // Letting go of the composer only on the next frame means
+                    // that hand-back has happened first, so choosing an
+                    // audience never shuts an empty composer.
+                    audienceCloseFrameRef.current =
+                      window.requestAnimationFrame(() => {
+                        audienceCloseFrameRef.current = null;
+                        if (mountedRef.current) setAudienceOpen(false);
+                      });
+                  }}
                   value={visibility}
                 />
               </div>
-            ) : null}
+            </div>
             <label htmlFor={`${variant}-composer-content`}>
               {post ? "Moment 正文" : "此刻想到什么？"}
             </label>

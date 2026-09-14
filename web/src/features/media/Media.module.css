@@ -35,19 +35,28 @@
   padding-block-start: var(--space-2);
 }
 
+/* Closed, the rule above the toolbar is there but invisible and pulled up by
+   its own height, so the toolbar sits exactly where it always did; opening
+   fades the rule in and eases the toolbar down by the same padding the page
+   composer keeps permanently. */
 .compactComposer .mediaControls {
   min-block-size: var(--target-size);
-  border-block-start: 0;
+  border-block-start: 1px solid transparent;
+  margin-block-start: -1px;
   padding-block-start: 0;
+  transition:
+    border-color var(--motion-dialog) var(--ease-out),
+    margin-block-start var(--motion-dialog) var(--ease-out),
+    padding-block-start var(--motion-dialog) var(--ease-out);
 }
 
 .compactComposer .mediaToolbar {
   margin-inline-start: calc(0px - var(--space-2));
 }
 
-/* The expanded inline composer adds a divider above the compact toolbar. */
-.dividedComposer .mediaControls {
-  border-block-start: 1px solid var(--border-subtle);
+.compactComposer.dividedComposer .mediaControls {
+  border-block-start-color: var(--border-subtle);
+  margin-block-start: 0;
   padding-block-start: var(--space-2);
 }
 

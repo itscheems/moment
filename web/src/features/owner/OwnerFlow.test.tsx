@@ -1202,6 +1202,52 @@ describe("owner composing flow", () => {
     );
   });
 
+  it("keeps an empty composer open while the pill is pressed and after the card closes", async () => {
+    // Safari does not focus a button on click: pressing the pill blurs the
+    // textarea with no relatedTarget. The press itself has to hold the
+    // composer open, and so has the card while it hands focus back.
+    preauthenticate();
+    installApi();
+    render(<App />);
+    const inline = await screen.findByLabelText("此刻想到什么？");
+    const composer = inline.closest("section")!;
+    fireEvent.focus(inline);
+    const pill = screen.getByRole("button", { name: "选择受众" });
+
+    fireEvent.pointerDown(pill);
+    fireEvent.blur(inline, { relatedTarget: null });
+    expect(composer).toHaveAttribute("data-expanded", "true");
+    fireEvent.click(pill);
+    const card = await screen.findByRole("menu", { name: "选择受众" });
+    fireEvent.pointerUp(document.body);
+    await new Promise((settle) => window.setTimeout(settle, 5));
+    expect(composer).toHaveAttribute("data-expanded", "true");
+
+    fireEvent.click(
+      within(card).getByRole("menuitemradio", { name: "仅自己" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(pill).toHaveFocus());
+    await new Promise((settle) =>
+      window.requestAnimationFrame(() => settle(undefined)),
+    );
+    expect(composer).toHaveAttribute("data-expanded", "true");
+    expect(pill).toHaveTextContent("仅自己");
+
+    // The collapsed row stays in the DOM, hidden, so it can animate shut.
+    fireEvent.blur(pill, { relatedTarget: document.body });
+    await waitFor(() =>
+      expect(composer).toHaveAttribute("data-expanded", "false"),
+    );
+    expect(
+      screen.queryByRole("button", { name: "选择受众" }),
+    ).not.toBeInTheDocument();
+    expect(pill).toBeInTheDocument();
+    expect(pill.closest("[aria-hidden='true']")).not.toBeNull();
+  });
+
   it("edits a hidden post's audience through the same pill", async () => {
     preauthenticate();
     const item = { ...post("藏起来的"), visibility: "only_me" };

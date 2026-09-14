@@ -1,4 +1,25 @@
-/* Audience controls use fixed pixel values to keep their compact geometry. */
+/* Audience selector dimensions use px to keep the pill and menu aligned.
+   CJK faces are named so the label does not
+   depend on the browser's per-script fallback, and synthesis is allowed so a
+   face without a bold weight still gets one. */
+.trigger,
+.card {
+  font-family:
+    "TwitterChirp",
+    -apple-system,
+    "system-ui",
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    "PingFang SC",
+    "PingFang TC",
+    "Noto Sans CJK SC",
+    "Noto Sans SC",
+    "Microsoft YaHei",
+    sans-serif;
+  font-synthesis: weight;
+}
 
 /* Trigger: a 24px pill, 1px border, 13/16 bold label, 16px chevron 4px after
    it, 12px side padding. Background colour and shadow fade over 0.2s. */
@@ -13,7 +34,6 @@
   padding: 0 12px;
   color: var(--accent);
   background-color: transparent;
-  font-family: var(--font-timeline);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: normal;
@@ -38,11 +58,15 @@
   cursor: default;
 }
 
+/* PingFang stops at Semibold, and at 13px that reads as regular next to the
+   Chirp Bold the reference label is set in; a quarter-pixel stroke brings
+   the CJK label up to the same weight. */
 .triggerLabel {
   max-inline-size: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  -webkit-text-stroke: 0.25px currentColor;
 }
 
 .triggerChevron {
@@ -69,7 +93,6 @@
   color: var(--text-primary);
   background-color: var(--surface);
   box-shadow: var(--shadow-popover);
-  font-family: var(--font-timeline);
   letter-spacing: normal;
   opacity: 1;
   transition: opacity 0.2s ease-out;
