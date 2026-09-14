@@ -643,6 +643,17 @@ func consumeUniqueJSONValue(decoder *json.Decoder) error {
 	}
 }
 
+// apiToken resolves the configured owner token. When required is false an
+// unconfigured token is simply absent, while a configured one that cannot be
+// read is still an error: silently reading as a stranger because a file was
+// unreadable would hide exactly the misconfiguration the caller needs to see.
+func apiToken(target APITransport, required bool) (string, error) {
+	if required || target.TokenFile() != "" || strings.TrimSpace(os.Getenv("MOMENT_TOKEN")) != "" {
+		return readAPIToken(target)
+	}
+	return "", nil
+}
+
 func readAPIToken(target APITransport) (string, error) {
 	if target.TokenFile() != "" {
 		file, err := os.Open(target.TokenFile())

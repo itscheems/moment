@@ -215,11 +215,15 @@ func TestPostDirectAPIParityAndPublicReadsDoNotRequireToken(t *testing.T) {
 		t.Fatalf("API idempotency conflict = %#v", apiConflict)
 	}
 
-	t.Setenv("MOMENT_TOKEN", "wrong-token-that-must-not-be-read")
-	publicGet := execute(application, "", "--url", fixture.server.URL, "post", "get", id, "--json")
-	publicList := execute(application, "", "--url", fixture.server.URL, "post", "list", "--json")
-	if publicGet.exit != ExitSuccess || publicList.exit != ExitSuccess || publicGet.stderr != "" || publicList.stderr != "" {
-		t.Fatalf("public reads used token: get=%#v list=%#v", publicGet, publicList)
+	// Reads never need a token: none at all, or one the server does not
+	// honour, both read the public site.
+	for _, token := range []string{"", "wrong-token-that-must-not-be-accepted"} {
+		t.Setenv("MOMENT_TOKEN", token)
+		publicGet := execute(application, "", "--url", fixture.server.URL, "post", "get", id, "--json")
+		publicList := execute(application, "", "--url", fixture.server.URL, "post", "list", "--json")
+		if publicGet.exit != ExitSuccess || publicList.exit != ExitSuccess || publicGet.stderr != "" || publicList.stderr != "" {
+			t.Fatalf("public reads with token %q: get=%#v list=%#v", token, publicGet, publicList)
+		}
 	}
 	unauthorized := execute(application, "", "--url", fixture.server.URL, "post", "update", id, "--content", "blocked", "--json")
 	if unauthorized.exit != ExitUnauthorized || decodeOneDocument(t, unauthorized.stdout)["error"].(map[string]any)["code"] != "UNAUTHORIZED" {

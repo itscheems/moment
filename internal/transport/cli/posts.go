@@ -71,7 +71,7 @@ func registerPosts(application *Application) {
 		Path:   []string{"post", "create"},
 		Short:  "Publish a Moment post",
 		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated owner HTTP API.",
-		Inputs: "Provide --content, managed media, --quote, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin.",
+		Inputs: "Provide --content, managed media, --quote, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin. --visibility everyone|only_me chooses who may read the post (default everyone).",
 		Output: "The canonical created post and replay metadata.",
 		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
 		Example: "moment post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
@@ -82,6 +82,7 @@ func registerPosts(application *Application) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
 			flags.String("quote", "", "canonical post ULID to quote")
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
+			registerPostVisibilityFlag(flags)
 			registerPostMediaFlags(flags)
 			registerPostLocationFlags(flags, false)
 			registerPostLinkCardFlags(flags, false)
@@ -93,7 +94,7 @@ func registerPosts(application *Application) {
 		ArgsUsage: "<post-id>",
 		Short:     "Update a Moment post",
 		Long:      "Replace one post's authoritative Markdown while preserving its creation and publication position.",
-		Inputs:    "Provide one post ULID and at least one content, media, or location change. Omitted location preserves it; --clear-location removes it.",
+		Inputs:    "Provide one post ULID and at least one content, media, location, link, or visibility change. Omitted location preserves it; --clear-location removes it.",
 		Output:    "The complete updated canonical post DTO.",
 		Errors:    "Invalid content, missing posts, and authentication failures use stable codes and exit statuses.",
 		Example: "moment post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'updated' --json\n" +
@@ -102,6 +103,7 @@ func registerPosts(application *Application) {
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "replacement UTF-8 Markdown content")
+			registerPostVisibilityFlag(flags)
 			registerPostMediaFlags(flags)
 			registerPostLocationFlags(flags, true)
 			registerPostLinkCardFlags(flags, true)
@@ -348,6 +350,10 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 	if err != nil {
 		return Result{}, err
 	}
+	visibility, err := postVisibilityFromFlags(input)
+	if err != nil {
+		return Result{}, err
+	}
 	var (
 		post postdto.Post
 		meta map[string]any
@@ -365,7 +371,11 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		if err != nil {
 			return Result{}, err
 		}
-		created, err := direct.service.Create(ctx, app.CreatePostInput{ContentMD: content, Media: usages, Location: locationInput.Location, LinkCards: linkInput.Cards, QuotedPostID: quotedPostID, IdempotencyKey: idempotencyKey})
+		create := app.CreatePostInput{ContentMD: content, Media: usages, Location: locationInput.Location, LinkCards: linkInput.Cards, QuotedPostID: quotedPostID, IdempotencyKey: idempotencyKey}
+		if visibility != nil {
+			create.Visibility = *visibility
+		}
+		created, err := direct.service.Create(ctx, create)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -382,6 +392,10 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 		if quotedPostID != nil {
 			value := quotedPostID.String()
 			payload.QuotedPostID = &value
+		}
+		if visibility != nil {
+			value := string(*visibility)
+			payload.Visibility = &value
 		}
 		if mediaInput.Present {
 			wire := postMediaDTOs(usages)
@@ -433,8 +447,12 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 	if err != nil {
 		return Result{}, err
 	}
-	if !contentPresent && !mediaInput.Present && !locationInput.Present && !linkInput.Present {
-		return Result{}, invalidArgument("post update requires a content, media, location, or link change", "provide --content, media input, --location-name, --location-json, --clear-location, --link, --link-json, or --clear-link")
+	visibility, err := postVisibilityFromFlags(input)
+	if err != nil {
+		return Result{}, err
+	}
+	if !contentPresent && !mediaInput.Present && !locationInput.Present && !linkInput.Present && visibility == nil {
+		return Result{}, invalidArgument("post update requires a content, media, location, link, or visibility change", "provide --content, media input, --location-name, --location-json, --clear-location, --link, --link-json, --clear-link, or --visibility")
 	}
 	var (
 		post postdto.Post
@@ -468,6 +486,7 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 			}
 			update.LinkCards = &cards
 		}
+		update.Visibility = visibility
 		updated, err := direct.service.Update(ctx, update)
 		if err != nil {
 			return Result{}, postCLIError(err)
@@ -500,6 +519,10 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 		}
 		if linkInput.Present {
 			payload.LinkCards = linkCardPayload(linkInput.Cards)
+		}
+		if visibility != nil {
+			value := string(*visibility)
+			payload.Visibility = &value
 		}
 		var status int
 		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/posts/"+id.String(), nil, payload, "", true, &post)
@@ -616,6 +639,28 @@ type postWritePayload struct {
 	Location     **locationdto.Location `json:"location,omitempty"`
 	LinkCards    *[]linkdto.Card        `json:"link_cards,omitempty"`
 	QuotedPostID *string                `json:"quoted_post_id,omitempty"`
+	Visibility   *string                `json:"visibility,omitempty"`
+}
+
+func registerPostVisibilityFlag(flags *pflag.FlagSet) {
+	flags.String("visibility", "", "who may read the post: everyone or only_me")
+}
+
+// postVisibilityFromFlags returns nil when the flag was not given, so create
+// falls back to the default and update leaves the audience alone.
+func postVisibilityFromFlags(input CommandInput) (*domain.Visibility, error) {
+	if !input.Changed("visibility") {
+		return nil, nil
+	}
+	value, err := input.String("visibility")
+	if err != nil {
+		return nil, err
+	}
+	visibility, err := domain.ParseVisibility(value)
+	if err != nil {
+		return nil, invalidArgument("--visibility must be everyone or only_me", "choose everyone for a public post or only_me to keep it to yourself")
+	}
+	return &visibility, nil
 }
 
 // linkCardPayload always emits an array so a clear is an explicit empty list
@@ -1362,11 +1407,16 @@ func postAPIRequest(
 	if idempotencyKey != "" {
 		request.Header.Set("Idempotency-Key", idempotencyKey)
 	}
-	if authenticate {
-		token, err := readAPIToken(target)
-		if err != nil {
-			return nil, 0, err
-		}
+	// A write needs the owner's token. A read does not, but presents it when
+	// one is configured: the public routes answer according to the credential,
+	// and the owner listing their own site expects to see all of it. Without
+	// a token the read is a visitor's, which is also what the server makes of
+	// a token it does not honour.
+	token, err := apiToken(target, authenticate)
+	if err != nil {
+		return nil, 0, err
+	}
+	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)
 	}
 	response, err := http.DefaultClient.Do(request)
