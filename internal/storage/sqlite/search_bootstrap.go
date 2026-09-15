@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 )
 
 type searchBootstrapSource struct {
 	id        string
 	contentMD string
+	cards     []domain.LinkCard
 }
 
 // bootstrapSearchDerived upgrades existing authoritative rows exactly once
@@ -34,20 +36,29 @@ func bootstrapSearchDerived(ctx context.Context, database *sql.DB) error {
 		return tx.Commit()
 	}
 
+	// The cards ride along: the indexed text is the Markdown and the cards
+	// combined, exactly as the write path composes it, and a bootstrap that
+	// re-indexed from the Markdown alone dropped every card and left the
+	// doctor reading each carded entry as drifted right after an upgrade.
 	rows, err := tx.QueryContext(ctx, `
-SELECT id, content_md
-FROM entries
-WHERE kind = ?
-ORDER BY id`, string(domain.KindMoment))
+SELECT e.id, e.content_md, `+searchSourceCardsSQL+`
+FROM entries AS e
+WHERE e.kind = ?
+ORDER BY e.id`, string(domain.KindMoment))
 	if err != nil {
 		return fmt.Errorf("read entries for search bootstrap: %w", err)
 	}
 	var sources []searchBootstrapSource
 	for rows.Next() {
 		var source searchBootstrapSource
-		if err := rows.Scan(&source.id, &source.contentMD); err != nil {
+		var cardsJSON string
+		if err := rows.Scan(&source.id, &source.contentMD, &cardsJSON); err != nil {
 			_ = rows.Close()
 			return fmt.Errorf("scan entry for search bootstrap: %w", err)
+		}
+		if source.cards, err = decodeSearchSourceCards(cardsJSON); err != nil {
+			_ = rows.Close()
+			return err
 		}
 		sources = append(sources, source)
 	}
@@ -66,7 +77,7 @@ ORDER BY id`, string(domain.KindMoment))
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		contentText, err := domain.NormalizeContentV2(source.contentMD)
+		contentText, err := app.DerivedSearchText(source.contentMD, source.cards)
 		if err != nil {
 			return fmt.Errorf("normalize entry %s for search bootstrap: %w", source.id, err)
 		}

@@ -1373,6 +1373,19 @@ INSERT INTO entry_link_card (
 	if thumbnailID == "" {
 		t.Fatal("thumbnail reference was not restored")
 	}
+	// The restored entry is indexed under its Markdown and its card together,
+	// as the write path indexes it. An import that normalized the Markdown
+	// alone left every carded entry reading as drifted after a restore.
+	var contentText string
+	if err := stagedDatabase.ReadTx(context.Background(), func(queries sqlitestore.Queries) error {
+		return queries.QueryRowContext(context.Background(),
+			`SELECT content_text FROM entries WHERE id = ?`, cardEntryID).Scan(&contentText)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(contentText, "a captured title") || !strings.Contains(contentText, "youtube.com") {
+		t.Fatalf("restored search text = %q, want the card's title and host in it", contentText)
+	}
 }
 
 func TestValidateFileRejectsReplyTargetOutsideTheConversation(t *testing.T) {

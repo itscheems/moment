@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 )
 
@@ -365,7 +366,14 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 			return err
 		}
 	}
-	contentText, err := domain.NormalizeContentV2(value.ContentMD)
+	// Indexed text is the Markdown and the cards combined, as the write path
+	// composes it; the cards are inserted below, but their text belongs to
+	// the entry row from the start.
+	cards := make([]domain.LinkCard, 0, len(value.LinkCards))
+	for _, card := range value.LinkCards {
+		cards = append(cards, card.Card)
+	}
+	contentText, err := app.DerivedSearchText(value.ContentMD, cards)
 	if err != nil {
 		return err
 	}
@@ -783,17 +791,22 @@ SELECT
 	if users != expected.Users || identities != expected.Identities || ownerAccounts != 1 || sessions != 0 {
 		return errors.New("staged portable accounts are inconsistent")
 	}
-	rows, err = pool.QueryContext(ctx, `SELECT id, content_md, content_text FROM entries ORDER BY id`)
+	rows, err = pool.QueryContext(ctx, `SELECT e.id, e.content_md, e.content_text, `+searchSourceCardsSQL+` FROM entries AS e ORDER BY e.id`)
 	if err != nil {
 		return fmt.Errorf("query staged normalized content: %w", err)
 	}
 	for rows.Next() {
-		var id, contentMD, contentText string
-		if err := rows.Scan(&id, &contentMD, &contentText); err != nil {
+		var id, contentMD, contentText, cardsJSON string
+		if err := rows.Scan(&id, &contentMD, &contentText, &cardsJSON); err != nil {
 			_ = rows.Close()
 			return fmt.Errorf("scan staged normalized content: %w", err)
 		}
-		expectedText, err := domain.NormalizeContentV2(contentMD)
+		cards, err := decodeSearchSourceCards(cardsJSON)
+		if err != nil {
+			_ = rows.Close()
+			return err
+		}
+		expectedText, err := app.DerivedSearchText(contentMD, cards)
 		if err != nil || contentText != expectedText {
 			_ = rows.Close()
 			return errors.Join(fmt.Errorf("staged normalized content for %s is inconsistent", id), err)

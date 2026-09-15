@@ -260,6 +260,34 @@ type searchSourceCard struct {
 	CanonicalURL string `json:"canonical_url"`
 }
 
+// searchSourceCardsSQL is the subquery that carries an entry's cards as one
+// JSON column, for the correlated entry aliased e. Every reader that
+// recomposes indexed text -- the drift check, the rebuild, the version
+// bootstrap -- selects it, so they all hand the combiner the same fields.
+const searchSourceCardsSQL = `coalesce((
+           SELECT json_group_array(json_object(
+               'title', card.title, 'site_name', card.site_name,
+               'author_name', card.author_name, 'canonical_url', card.canonical_url))
+           FROM (
+               SELECT title, site_name, author_name, canonical_url
+               FROM entry_link_card
+               WHERE entry_id = e.id
+               ORDER BY position
+           ) AS card
+       ), '[]')`
+
+func decodeSearchSourceCards(cardsJSON string) ([]domain.LinkCard, error) {
+	var storedCards []searchSourceCard
+	if err := json.Unmarshal([]byte(cardsJSON), &storedCards); err != nil {
+		return nil, fmt.Errorf("decode search source cards: %w", err)
+	}
+	cards := make([]domain.LinkCard, len(storedCards))
+	for index, card := range storedCards {
+		cards[index] = domain.LinkCard{Title: card.Title, SiteName: card.SiteName, AuthorName: card.AuthorName, CanonicalURL: card.CanonicalURL}
+	}
+	return cards, nil
+}
+
 func (store searchStore) SearchSources(ctx context.Context, after domain.ID, limit int) ([]app.SearchSource, error) {
 	// The cards come back as columns, not as text: the text an entry is
 	// indexed under is composed by domain.LinkCardSearchText on the write
@@ -270,17 +298,7 @@ func (store searchStore) SearchSources(ctx context.Context, after domain.ID, lim
 	// combiner keeps the host -- so every entry with a card read as drifted.
 	rows, err := store.queries.QueryContext(ctx, `
 SELECT e.id, e.content_md, e.content_text,
-       coalesce((
-           SELECT json_group_array(json_object(
-               'title', card.title, 'site_name', card.site_name,
-               'author_name', card.author_name, 'canonical_url', card.canonical_url))
-           FROM (
-               SELECT title, site_name, author_name, canonical_url
-               FROM entry_link_card
-               WHERE entry_id = e.id
-               ORDER BY position
-           ) AS card
-       ), '[]'),
+       `+searchSourceCardsSQL+`,
        count(f.rowid),
        coalesce(sum(CASE WHEN f.content_text = e.content_text THEN 1 ELSE 0 END), 0)
 FROM entries AS e
@@ -300,13 +318,9 @@ LIMIT ?`, string(domain.KindMoment), after.String(), after.String(), limit)
 		if err := rows.Scan(&idString, &source.ContentMD, &source.ContentText, &cardsJSON, &source.FTSCopies, &source.FTSStoredTextCopies); err != nil {
 			return nil, fmt.Errorf("scan search source: %w", err)
 		}
-		var storedCards []searchSourceCard
-		if err := json.Unmarshal([]byte(cardsJSON), &storedCards); err != nil {
-			return nil, fmt.Errorf("decode search source cards: %w", err)
-		}
-		cards := make([]domain.LinkCard, len(storedCards))
-		for index, card := range storedCards {
-			cards[index] = domain.LinkCard{Title: card.Title, SiteName: card.SiteName, AuthorName: card.AuthorName, CanonicalURL: card.CanonicalURL}
+		cards, err := decodeSearchSourceCards(cardsJSON)
+		if err != nil {
+			return nil, err
 		}
 		source.LinkCardText = domain.LinkCardSearchText(cards)
 		id, err := domain.ParseID(idString)

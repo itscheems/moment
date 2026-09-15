@@ -254,6 +254,28 @@ func TestSearchLinkCardTextAgreesBetweenWriteAndRebuild(t *testing.T) {
 	if err != nil || len(found.Items) != 2 {
 		t.Fatalf("host search = %#v, %v", found, err)
 	}
+
+	// The one-time bootstrap a new normalizer version triggers on open is a
+	// rebuild too, and it once re-indexed every entry from its Markdown alone:
+	// the cards fell out of the index and the doctor read every carded entry
+	// as drifted right after an upgrade.
+	if _, err := database.write.ExecContext(ctx, `UPDATE search_index_state SET normalizer_version = ? WHERE id = 1`, domain.ContentNormalizerVersion-1); err != nil {
+		t.Fatal(err)
+	}
+	if err := bootstrapSearchDerived(ctx, database.write); err != nil {
+		t.Fatal(err)
+	}
+	var bootstrapped string
+	if err := database.write.QueryRowContext(ctx, `SELECT content_text FROM entries WHERE id = ?`, withCard.Post.Entry.ID.String()).Scan(&bootstrapped); err != nil {
+		t.Fatal(err)
+	}
+	if bootstrapped != written {
+		t.Fatalf("version bootstrap changed the indexed text: %q -> %q", written, bootstrapped)
+	}
+	diagnostic, err = service.DiagnoseDerived(ctx, 10)
+	if err != nil || diagnostic.Drifted != 0 || diagnostic.Ready != 2 {
+		t.Fatalf("cards read as drifted after a version bootstrap: %#v, %v", diagnostic, err)
+	}
 }
 
 func TestSearchCursorRejectsCreateUpdateAndDeleteBetweenPages(t *testing.T) {
