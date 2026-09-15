@@ -15,7 +15,10 @@ import (
 // ContentNormalizerVersion identifies the derived search text contract. The
 // version is persisted with the index so future normalizer changes require an
 // explicit rebuild rather than silently mixing representations.
-const ContentNormalizerVersion = 3
+//
+// Version 4: a bare URL after a CJK mark is one link to its end, so a query
+// string with "_" in it no longer leaves its tail behind as search text.
+const ContentNormalizerVersion = 4
 
 // NormalizeContentV2 converts Markdown-shaped input into deterministic search
 // text. It keeps visible link labels and code, drops destinations and invisible
