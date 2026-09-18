@@ -199,6 +199,13 @@ export function MarkdownContent({
     () => prepareHtml(html, resolves),
     [html, resolves],
   );
+  // One object per rendered string. React 19 compares this prop by identity
+  // and rewrites innerHTML whenever it sees a new one, so an inline literal
+  // here rebuilt every post's body on every render of the list -- measured:
+  // a paragraph found after the first paint was detached by the next commit.
+  // A rebuilt body loses the reader's text selection and, with a link card's
+  // player inside it, the player.
+  const markup = useMemo(() => ({ __html: renderedHtml }), [renderedHtml]);
 
   /**
    * Keep a link written into this HTML inside the app.
@@ -238,7 +245,7 @@ export function MarkdownContent({
   return (
     <div
       className={`${styles.root} ${className ?? ""}`}
-      dangerouslySetInnerHTML={{ __html: renderedHtml }}
+      dangerouslySetInnerHTML={markup}
       onClick={followInternalLink}
     />
   );
