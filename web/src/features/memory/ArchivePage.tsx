@@ -67,10 +67,11 @@ function ArchiveMessage({
  *
  * **A day is where the list starts, not what it is filtered to.** Picking the
  * 8th reads everything up to the end of the 8th and keeps paging into the 7th,
- * the 6th and back, with a heading wherever the date turns over. The window is
- * `/posts?to=` and nothing else; the iOS app made the same decision for the
- * same reason (`ArchiveScreen.swift`, recvtFYw8J4xey), and the two clients
- * now read a day the same way.
+ * the 6th and back. The window is `/posts?to=` and nothing else; the iOS app
+ * made the same decision for the same reason (`ArchiveScreen.swift`,
+ * recvtFYw8J4xey), and the two clients now read a day the same way. The rows
+ * are the timeline's own, dated in their bylines; there is no heading over
+ * each day, which the reader asked for -- the byline already says it.
  *
  * **Where the calendar stands depends on the shell.** At desktop widths the
  * shell draws a right rail and the calendar goes there, sticky beside the list
@@ -317,7 +318,6 @@ export function ArchivePage({
           <TimelinePage
             api={api}
             before={positionTo ?? undefined}
-            dayHeadings
             emptyContext="archive"
             initialSearch={listSearch}
             key={positionTo ?? "latest"}

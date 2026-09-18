@@ -2,26 +2,6 @@
   min-block-size: 28rem;
 }
 
-/* The day over a run of rows. Sticky just under the shell header -- whose
-   height this offset is -- so the date stays readable while its rows scroll
-   past, on the phone where the calendar has scrolled away as much as on the
-   desktop where it never does. */
-.dayHeading {
-  position: sticky;
-  z-index: 1;
-  inset-block-start: 3.3125rem;
-  margin: 0;
-  border-block-end: 1px solid var(--border-subtle);
-  padding: var(--space-2) var(--space-4);
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  backdrop-filter: blur(12px);
-  font-family: var(--font-utility);
-  font-size: var(--text-sm);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
 .moreRow,
 .moreError,
 .endMark {

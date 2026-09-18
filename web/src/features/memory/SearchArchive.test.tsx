@@ -730,8 +730,8 @@ describe("search and archive memory layer", () => {
     data: { month: "2025-12", days: [{ day: 31, count: 1 }] },
     meta: { request_id: "req_archive" },
   };
-  // 16:20 UTC on the 30th is 00:20 on the 31st in Shanghai: the heading has
-  // to say the site's day, and the year, since it is not this one.
+  // 16:20 UTC on the 30th is 00:20 on the 31st in Shanghai: the byline has to
+  // say the site's day.
   const lastYear = {
     ...post("01K2ABCDEF0123456789ABCDE2", "去年最后一天的雨"),
     created_at: "2025-12-30T16:20:00.000Z",
@@ -777,24 +777,21 @@ describe("search and archive memory layer", () => {
       .filter((url) => url.startsWith("/api/v1/posts?"));
   }
 
-  it("opens the archive on the list, headed by site days, with the calendar on the newest month that holds posts", async () => {
+  it("opens the archive on the list, dated by site days, with the calendar on the newest month that holds posts", async () => {
     pinToday();
     window.history.replaceState({}, "", "/archive");
     const fetcher = installArchive();
     render(<App />);
 
-    // The site's own day, which lands only once the site's zone is known.
+    // The rows carry their own dates, in the site's zone -- which lands only
+    // once the site's zone is known, so it is what the test waits for.
     expect(
-      await screen.findByRole("heading", { name: "2025年12月31日 周三" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "8月10日 周一" }),
+      await screen.findByRole("article", { name: /2025年12月31日 00:20/ }),
     ).toBeInTheDocument();
     expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument();
-    // A repost files under the day it was reposted.
-    expect(
-      screen.getByRole("heading", { name: "8月20日 周四" }),
-    ).toBeInTheDocument();
+    // No heading over each day: the byline already says it.
+    expect(screen.queryByRole("heading", { name: /周[一二三四五六日]/ })).toBeNull();
+    // With no position, a repost is on the list at its repost.
     expect(screen.getByText("旧帖，后来转发")).toBeInTheDocument();
     // No position: the list starts at the newest post, with no window.
     expect(postRequests(fetcher)).toEqual(["/api/v1/posts?limit=20"]);
@@ -832,16 +829,14 @@ describe("search and archive memory layer", () => {
         "/api/v1/posts?limit=20&to=2026-08-11",
       ),
     );
-    // Older rows keep coming under their own headings.
+    // Older rows keep coming.
     expect(
-      await screen.findByRole("heading", { name: "2025年12月31日 周三" }),
+      await screen.findByRole("article", { name: /2025年12月31日 00:20/ }),
     ).toBeInTheDocument();
     expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument();
-    // The row a repost carried past the 10th is not headed with the 20th.
+    // The row a repost carried past the 10th is not on a list that starts
+    // there.
     expect(screen.queryByText("旧帖，后来转发")).toBeNull();
-    expect(
-      screen.queryByRole("heading", { name: "8月20日 周四" }),
-    ).toBeNull();
     // The window is open below: nothing says `from`.
     expect(postRequests(fetcher).some((url) => url.includes("from="))).toBe(
       false,
@@ -863,9 +858,7 @@ describe("search and archive memory layer", () => {
         name: "8月10日，2 条 Moment，已选择",
       }),
     ).toBeInTheDocument();
-    expect(
-      await screen.findByRole("heading", { name: "8月10日 周一" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
   });
 
   it("jumps years and months from the picker, and draws empty months as places rather than controls", async () => {

@@ -1,10 +1,4 @@
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   PublicApi,
@@ -31,7 +25,7 @@ import {
   validateCursorPage,
   withoutLoadedProgress,
 } from "./cursorContinuity";
-import { dayHeading, siteDayOf, siteToday } from "./timelineDays";
+import { siteDayOf } from "./timelineDays";
 import { reconcileTimelineEvent, timelineItemKey } from "./timelineItems";
 import styles from "./TimelinePage.module.css";
 
@@ -76,7 +70,6 @@ export function TimelinePage({
   api,
   site,
   initialSearch,
-  dayHeadings = false,
   before,
   emptyContext = "timeline",
   onReady,
@@ -91,8 +84,6 @@ export function TimelinePage({
    * archive hands in a window it derived from its position.
    */
   initialSearch: string;
-  /** Write the site-calendar day over each run of rows that share one. */
-  dayHeadings?: boolean;
   /**
    * The site day the list must stay before. `/posts?to=` windows rows by
    * publication, so a Moment published inside the window and reposted after
@@ -339,54 +330,27 @@ export function TimelinePage({
     return <PublicEmpty context={emptyContext} owner={owner} />;
   }
 
-  // One heading per site day, keyed on when the row appeared rather than when
-  // its Moment was written, so a repost files under the day it was reposted --
-  // the same instant the server ordered the rows by.
-  const todayYear = dayHeadings
-    ? Number(siteToday(site.timezone).slice(0, 4))
-    : 0;
-  const rows: ReactNode[] = [];
-  let headedDay: string | null = null;
-  shown.forEach((post, index) => {
-    if (dayHeadings) {
-      const day = siteDayOf(post, site.timezone);
-      if (day !== headedDay) {
-        headedDay = day;
-        rows.push(
-          <h2
-            className={styles.dayHeading}
-            data-timeline-day={day}
-            key={`day-${day}`}
-          >
-            {dayHeading(day, todayYear)}
-          </h2>,
-        );
-      }
-    }
-    rows.push(
-      <PostPresentation
-        compactTallVideo
-        eagerVideo={index === 0}
-        fresh={post.id === freshId}
-        key={timelineItemKey(post)}
-        owner={owner}
-        onReply={(event) => openReply(post, event)}
-        onReposted={handleReposted}
-        onSiteChanged={onSiteChanged}
-        post={post}
-        site={site}
-        timelineDensity
-      />,
-    );
-  });
-
   return (
     <>
       <section aria-label="公开时间流" className={styles.timelineList}>
         <p aria-live="polite" className={styles.srOnly}>
           已加载 {shown.length} 条 Moment
         </p>
-        {rows}
+        {shown.map((post, index) => (
+          <PostPresentation
+            compactTallVideo
+            eagerVideo={index === 0}
+            fresh={post.id === freshId}
+            key={timelineItemKey(post)}
+            owner={owner}
+            onReply={(event) => openReply(post, event)}
+            onReposted={handleReposted}
+            onSiteChanged={onSiteChanged}
+            post={post}
+            site={site}
+            timelineDensity
+          />
+        ))}
         {moreError ? (
           <div className={styles.moreError} role="alert">
             <span>

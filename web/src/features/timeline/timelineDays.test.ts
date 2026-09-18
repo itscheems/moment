@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { PublicPost } from "../../api/public";
-import { dayHeading, siteDate, siteDayOf } from "./timelineDays";
+import { siteDate, siteDayOf } from "./timelineDays";
 
 function row(
   publishedAt: string,
@@ -35,11 +35,5 @@ describe("timeline days", () => {
     expect(
       siteDayOf(row("2019-03-03T02:00:00Z"), "Asia/Shanghai"),
     ).toBe("2019-03-03");
-  });
-
-  it("writes the weekday, and the year once it is not this one", () => {
-    expect(dayHeading("2026-09-08", 2026)).toBe("9月8日 周二");
-    expect(dayHeading("2025-12-31", 2026)).toBe("2025年12月31日 周三");
-    expect(dayHeading("2024-02-29", 2026)).toBe("2024年2月29日 周四");
   });
 });

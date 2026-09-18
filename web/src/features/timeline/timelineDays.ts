@@ -2,13 +2,11 @@ import type { PublicPost } from "../../api/public";
 import { timelineInstant } from "./timelineItems";
 
 /**
- * Which site-calendar day a row belongs to, and how that day is written over
- * it. The zone is the site's, never the reader's: the rows sit under a heading
- * that names a site day, and a row stamped by the reader's clock under a
- * heading written by the site's would contradict itself on one screen.
+ * Which site-calendar day a row belongs to. The zone is the site's, never the
+ * reader's: the archive's calendar and the windows it asks for are the site's
+ * days, and a row placed by the reader's clock would disagree with the window
+ * that fetched it.
  */
-
-const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
 const dateFormatters = new Map<string, Intl.DateTimeFormat>();
 
@@ -55,15 +53,4 @@ export function siteToday(timezone: string, now = new Date()): string {
 /** The day a timeline row appeared on, in the site's calendar. */
 export function siteDayOf(post: PublicPost, timezone: string): string {
   return siteDate(timelineInstant(post), timezone);
-}
-
-/**
- * The heading over one day of a list: `9月8日 周二`, with the year in front
- * once the day is not in the current one.
- */
-export function dayHeading(date: string, todayYear: number): string {
-  const [year, month, day] = date.split("-").map(Number);
-  const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
-  const dayLabel = `${month}月${day}日 ${weekday}`;
-  return year === todayYear ? dayLabel : `${year}年${dayLabel}`;
 }
