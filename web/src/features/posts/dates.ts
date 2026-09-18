@@ -35,7 +35,14 @@ export function formatMomentDate(
       "day",
     );
   } else {
+    // Include the year for earlier years so archived dates remain unambiguous.
+    const yearOf = (value: Date) =>
+      new Intl.DateTimeFormat("en-US", {
+        year: "numeric",
+        timeZone: timezone,
+      }).format(value);
     relative = new Intl.DateTimeFormat("zh-CN", {
+      ...(yearOf(instant) === yearOf(now) ? {} : { year: "numeric" }),
       month: "short",
       day: "numeric",
       timeZone: timezone,
