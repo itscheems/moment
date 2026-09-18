@@ -349,49 +349,22 @@ function LeftRail({
   );
 }
 
-function MemoryRail({
-  route,
-  years,
-}: {
-  route: AppRoute;
-  years: readonly number[];
-}) {
-  if (route.id === "search" && years.length === 0) return null;
+// The search box and nothing else. A card of years used to hang under it,
+// built from whichever posts the feed had loaded so far -- a repost of a 2019
+// Moment near the top put 2019 second in a list headed 2026 -- and it opened
+// a page the rail beside it already links to. The archive has one entry, in
+// the navigation; the rail is for what the page cannot otherwise reach.
+function MemoryRail({ route }: { route: AppRoute }) {
+  if (route.id === "search") return null;
   return (
     <aside aria-label="记忆导航" className={styles.rightRail}>
-      {route.id !== "search" ? (
-        <InternalLink className={styles.searchPrompt} href="/search">
-          <Icon name="search" />
-          <span>
-            <strong>搜索 Moment</strong>
-            <small>按文字或日期查找</small>
-          </span>
-        </InternalLink>
-      ) : null}
-      {years.length > 0 && route.id !== "archive" ? (
-        <section
-          aria-labelledby="memory-map-title"
-          className={styles.memoryMap}
-        >
-          <header>
-            <div>
-              <p className={styles.railEyebrow}>归档</p>
-              <h2 id="memory-map-title">按年份回看</h2>
-            </div>
-            <InternalLink href="/archive">查看全部</InternalLink>
-          </header>
-          <ol>
-            {years.map((value, index) => (
-              <li key={value}>
-                <InternalLink href={`/archive?year=${value}`}>
-                  <span>{value}</span>
-                  <small>{index === 0 ? "现在" : "过去"}</small>
-                </InternalLink>
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
+      <InternalLink className={styles.searchPrompt} href="/search">
+        <Icon name="search" />
+        <span>
+          <strong>搜索 Moment</strong>
+          <small>按文字或日期查找</small>
+        </span>
+      </InternalLink>
     </aside>
   );
 }
@@ -478,7 +451,6 @@ export function AppShell({
   state,
   site,
   children,
-  memoryYears = [],
   ownerSettingsAvailable = false,
   profileHref = DEFAULT_PROFILE_HREF,
   account = null,
@@ -488,7 +460,6 @@ export function AppShell({
   state: string | null;
   site: SiteIdentity;
   children?: ReactNode;
-  memoryYears?: readonly number[];
   ownerSettingsAvailable?: boolean;
   profileHref?: string;
   account?: Account | null;
@@ -568,7 +539,7 @@ export function AppShell({
           </header>
           {children ?? <ShellState route={route} state={state} />}
         </main>
-        <MemoryRail route={route} years={memoryYears} />
+        <MemoryRail route={route} />
       </div>
       <MobileNavigation
         ownerSettingsAvailable={ownerSettingsAvailable}

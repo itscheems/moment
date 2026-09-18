@@ -114,8 +114,6 @@ function PublicApp() {
   const [siteLoading, setSiteLoading] = useState(true);
   const [siteError, setSiteError] = useState(false);
   const [siteAttempt, setSiteAttempt] = useState(0);
-  const [memoryYears, setMemoryYears] = useState<number[]>([]);
-  const [discoveryYears, setDiscoveryYears] = useState<number[]>([]);
   const [homeVisited, setHomeVisited] = useState(route.id === "home");
   const initialHomeSearch = useRef(
     route.id === "home" ? displayLocation.search : "",
@@ -316,11 +314,6 @@ function PublicApp() {
     requestedProfileUsername === null ||
     requestedProfileUsername === site.username;
 
-  const shellYears =
-    route.id === "search" || route.id === "archive"
-      ? discoveryYears
-      : memoryYears;
-
   // Sign-in is the whole page, not a panel inside the shell. Every hook above
   // has already run, so returning here changes what is rendered without
   // changing what is evaluated.
@@ -334,7 +327,6 @@ function PublicApp() {
     <MentionProvider known={siteIdentityReady ? [site.username] : []}>
       <AppShell
         account={owner.account}
-        memoryYears={shellYears}
         onSignOut={() => void signOutFromRail()}
         ownerSettingsAvailable={siteIdentityReady && signedIn}
         profileHref={owner.account?.profileUrl ?? undefined}
@@ -367,7 +359,6 @@ function PublicApp() {
             <TimelinePage
               api={api}
               initialSearch={initialHomeSearch.current}
-              onYearsChange={siteIdentityReady ? setMemoryYears : undefined}
               onSiteChanged={setSite}
               site={site}
               owner={siteIdentityReady && ownerSession}
@@ -387,7 +378,6 @@ function PublicApp() {
           <SearchPage
             api={api}
             key={routeSearchKey(displayLocation.search)}
-            onYearsChange={siteIdentityReady ? setDiscoveryYears : undefined}
             onSiteChanged={setSite}
             owner={siteIdentityReady && ownerSession}
             search={displayLocation.search}
@@ -398,7 +388,6 @@ function PublicApp() {
           <ArchivePage
             api={api}
             key={routeSearchKey(displayLocation.search)}
-            onYearsChange={siteIdentityReady ? setDiscoveryYears : undefined}
             owner={siteIdentityReady && ownerSession}
             search={displayLocation.search}
             site={site}

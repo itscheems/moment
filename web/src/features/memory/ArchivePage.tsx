@@ -161,13 +161,11 @@ export function ArchivePage({
   owner,
   search,
   site,
-  onYearsChange,
 }: {
   api: PublicApi;
   owner: boolean;
   search: string;
   site: SiteIdentity;
-  onYearsChange?: (years: number[]) => void;
 }) {
   const location = useNavigation();
   const stateRef = useRef(parseArchiveLocation(search));
@@ -229,10 +227,6 @@ export function ArchivePage({
     () => Array.from(new Set(months.map((item) => item.year))),
     [months],
   );
-
-  useEffect(() => {
-    onYearsChange?.(years);
-  }, [onYearsChange, years]);
 
   useEffect(() => {
     const ready =

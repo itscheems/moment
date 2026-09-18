@@ -114,14 +114,12 @@ export function SearchPage({
   owner,
   search,
   site,
-  onYearsChange,
   onSiteChanged,
 }: {
   api: PublicApi;
   owner: boolean;
   search: string;
   site: SiteIdentity;
-  onYearsChange?: (years: number[]) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
 }) {
   const location = useNavigation();
@@ -244,10 +242,6 @@ export function SearchPage({
       activeMore.current?.abort();
     };
   }, [load]);
-
-  useEffect(() => {
-    onYearsChange?.(yearCounts.map((item) => item.year));
-  }, [onYearsChange, yearCounts]);
 
   useEffect(() => {
     if (!state.query || loading || error || entryRestored.current) {

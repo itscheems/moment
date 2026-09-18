@@ -65,30 +65,16 @@ function errorKind(error: unknown): "timeline" | "malformed" {
     : "timeline";
 }
 
-function yearsFor(posts: PublicPost[], timezone: string): number[] {
-  const formatter = new Intl.DateTimeFormat("en", {
-    timeZone: timezone,
-    year: "numeric",
-  });
-  return Array.from(
-    new Set(
-      posts.map((post) => Number(formatter.format(new Date(post.publishedAt)))),
-    ),
-  ).filter(Number.isFinite);
-}
-
 export function TimelinePage({
   api,
   site,
   initialSearch,
-  onYearsChange,
   onSiteChanged,
   owner = false,
 }: {
   api: PublicApi;
   site: SiteIdentity;
   initialSearch: string;
-  onYearsChange?: (years: number[]) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
   owner?: boolean;
 }) {
@@ -211,10 +197,6 @@ export function TimelinePage({
     () => listenForOwnerPosts(handleOwnerPostEvent),
     [handleOwnerPostEvent],
   );
-
-  useEffect(() => {
-    onYearsChange?.(yearsFor(posts, site.timezone));
-  }, [onYearsChange, posts, site.timezone]);
 
   const createdFromTimeline = useCallback((comment: PublicComment) => {
     const increment = (post: PublicPost) =>
