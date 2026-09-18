@@ -60,7 +60,7 @@ describe("memory-layer URL state", () => {
   });
 
   it("names an archive position by its most specific part", () => {
-    const settled = { loadedThrough: null, error: null };
+    const settled = { loadedThrough: null, loadedNewer: null, error: null };
     expect(archiveHref({ day: "2024-02-29" })).toBe("/archive?day=2024-02-29");
     expect(parseArchiveLocation("?day=2024-02-29")).toEqual({
       day: "2024-02-29",
@@ -81,6 +81,7 @@ describe("memory-layer URL state", () => {
       month: null,
       year: 2024,
       loadedThrough: "cursor",
+      loadedNewer: null,
       error: null,
     });
     expect(archiveHref({})).toBe("/archive");
@@ -105,6 +106,7 @@ describe("memory-layer URL state", () => {
       month: null,
       year: null,
       loadedThrough: null,
+      loadedNewer: null,
       error: null,
     });
     // A year and its month agree, so both survive as the month.

@@ -42,7 +42,7 @@ export interface ArchiveCalendarProps {
   variant: "rail" | "column";
   onVisibleMonthChange: (month: string) => void;
   /** A link on the calendar is about to move the list. */
-  onNavigate: () => void;
+  onNavigate?: () => void;
 }
 
 /**
@@ -97,7 +97,7 @@ function MonthPicker({
             aria-label={`${year}年${index}月，${count} 条 Moment`}
             href={archiveHref({ month: key })}
             onClick={() => {
-              onNavigate();
+              onNavigate?.();
               setOpen(false);
             }}
           >

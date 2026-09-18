@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   PublicApi,
@@ -6,6 +12,7 @@ import {
   type PublicComment,
   type PublicPost,
   type SiteIdentity,
+  type TimelinePage as TimelinePageData,
   type TimelineRequest,
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
@@ -22,10 +29,11 @@ import {
   appendUnique,
   invalidCursorProgress,
   loadedThroughFromSearch,
+  prependUnique,
   validateCursorPage,
+  validateNewerPage,
   withoutLoadedProgress,
 } from "./cursorContinuity";
-import { siteDayOf } from "./timelineDays";
 import { reconcileTimelineEvent, timelineItemKey } from "./timelineItems";
 import styles from "./TimelinePage.module.css";
 
@@ -33,6 +41,7 @@ const MAX_REPLAY_PAGES = 1_000;
 
 interface TimelineRestoreRequest {
   loadedThrough: string | null;
+  loadedNewer: string | null;
   request: TimelineRequest;
 }
 
@@ -40,16 +49,19 @@ function requestFromSearch(search: string): TimelineRestoreRequest {
   const query = new URLSearchParams(search);
   return {
     loadedThrough: loadedThroughFromSearch(search),
+    loadedNewer: loadedThroughFromSearch(search, "loaded_newer"),
     request: {
       cursor: query.get("cursor"),
       from: query.get("from"),
       to: query.get("to"),
+      anchor: query.get("anchor"),
     },
   };
 }
 
 function hasLoadedProgress(search: string): boolean {
-  return new URLSearchParams(search).has("loaded_through");
+  const query = new URLSearchParams(search);
+  return query.has("loaded_through") || query.has("loaded_newer");
 }
 
 function recoverableCursorError(error: unknown): boolean {
@@ -66,34 +78,76 @@ function errorKind(error: unknown): "timeline" | "malformed" {
     : "timeline";
 }
 
+function rowElements(): HTMLElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>("[data-timeline-item-key]"),
+  );
+}
+
+function rowElement(key: string): HTMLElement | undefined {
+  return rowElements().find(
+    (element) => element.dataset.timelineItemKey === key,
+  );
+}
+
+/**
+ * Rows off screen skip their layout (`content-visibility: auto`) and stand at
+ * a placeholder height until they come near, so a position computed across
+ * them is wrong by the difference -- measured: an anchored row placed under
+ * the header at 53px was 380px above it a frame later, once the twenty rows
+ * over it had taken their real height. Rendering every row once fixes its
+ * real height in the browser's memory (`contain-intrinsic-size: auto`), so
+ * whatever is measured against them afterwards holds; the override is lifted
+ * on the next frame and the rows go back to skipping.
+ */
+function withRowsRendered(measureAndScroll: () => void) {
+  const rows = rowElements();
+  for (const row of rows) {
+    row.style.setProperty("content-visibility", "visible");
+  }
+  measureAndScroll();
+  window.requestAnimationFrame(() => {
+    for (const row of rows) row.style.removeProperty("content-visibility");
+  });
+}
+
+/**
+ * The timeline, read from wherever it starts.
+ *
+ * Opened at the head it reads one way, older, the way it always has. Opened
+ * at an anchor -- the archive's chosen day -- it reads both ways: the rows on
+ * and before the day, then the first page after it, so the day sits with what
+ * followed it above and what preceded it below, and either end loads more as
+ * the reader nears it. The rules are the same in both directions: one
+ * frontier cursor each, the same duplicate and cycle checks, the same
+ * progress written to the URL (`loaded_through` older, `loaded_newer` newer)
+ * so a back navigation replays exactly the pages that were on screen.
+ *
+ * What is different about prepending is only the scroll: content inserted
+ * above the viewport would push what the reader is looking at down the page,
+ * so the row at the top is measured before a page lands and the window is
+ * moved by whatever it moved. Browsers with scroll anchoring do the same on
+ * their own -- except at the very top of the page, which is exactly where a
+ * reader is when they ask for more above -- and the measurement here reads
+ * their adjustment back as zero, so the two never add up.
+ */
 export function TimelinePage({
   api,
   site,
   initialSearch,
-  before,
   emptyContext = "timeline",
-  onReady,
   onSiteChanged,
   owner = false,
 }: {
   api: PublicApi;
   site: SiteIdentity;
   /**
-   * The window and cursor the list is read with (`from`, `to`, `cursor`,
-   * `loaded_through`), read once. Not necessarily the page's own URL: the
-   * archive hands in a window it derived from its position.
+   * The window, anchor, cursor and progress the list is read with, read once.
+   * Not necessarily the page's own URL: the archive hands in an anchor it
+   * derived from its position.
    */
   initialSearch: string;
-  /**
-   * The site day the list must stay before. `/posts?to=` windows rows by
-   * publication, so a Moment published inside the window and reposted after
-   * it comes back at the top of the page, dated by its repost; those rows are
-   * dropped here rather than headed with a day the reader did not ask for.
-   */
-  before?: string;
   emptyContext?: "timeline" | "archive";
-  /** The first page is on screen and the entry's scroll position restored. */
-  onReady?: () => void;
   onSiteChanged?: (site: SiteIdentity) => void;
   owner?: boolean;
 }) {
@@ -106,20 +160,31 @@ export function TimelinePage({
   } = useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [prevCursor, setPrevCursor] = useState<string | null>(null);
   const [initialError, setInitialError] = useState<unknown>(null);
   const [moreError, setMoreError] = useState<unknown>(null);
+  const [newerError, setNewerError] = useState<unknown>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [loadingNewer, setLoadingNewer] = useState(false);
+  // The first page is on screen and the window is where it should be: only
+  // then may the top frontier ask for more, or it would fire at the top of
+  // an unplaced page and read the archive forward to its end.
+  const [settled, setSettled] = useState(false);
   const [freshId, setFreshId] = useState<string | null>(null);
   const initialSearchRef = useRef(initialSearch);
   const activeInitial = useRef<AbortController | null>(null);
   const activeMore = useRef<AbortController | null>(null);
+  const activeNewer = useRef<AbortController | null>(null);
   const loadingMoreRef = useRef(false);
+  const loadingNewerRef = useRef(false);
   const initialEntryRestored = useRef(false);
-  const onReadyRef = useRef(onReady);
-  onReadyRef.current = onReady;
   const ownerEvents = useRef(new Map<string, OwnerPostEvent>());
   const visitedCursors = useRef(new Set<string>());
+  /** The row the list opened at: the newest on or before the anchor. */
+  const anchorKey = useRef<string | null>(null);
+  /** The top row and where it was, measured just before a page is prepended. */
+  const compensation = useRef<{ key: string; top: number } | null>(null);
 
   const reconcileOwnerEvents = useCallback((items: PublicPost[]) => {
     let reconciled = items;
@@ -152,8 +217,9 @@ export function TimelinePage({
     setLoadingInitial(true);
     setInitialError(null);
     setMoreError(null);
+    setNewerError(null);
     try {
-      const { loadedThrough, request } = requestFromSearch(
+      const { loadedThrough, loadedNewer, request } = requestFromSearch(
         initialSearchRef.current,
       );
       let page = await api.timeline({
@@ -161,6 +227,7 @@ export function TimelinePage({
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
+      const opening = page;
       let combined = page.items;
       const initialCursor = request.cursor || null;
       let requestedCursor = initialCursor;
@@ -200,10 +267,59 @@ export function TimelinePage({
         );
       }
 
+      // Anchored, the list also reads forward: the first page after the
+      // anchor always, and then whatever pages a back navigation had on
+      // screen. The head of the timeline has nothing after it worth asking
+      // for, so its prev_cursor is left alone.
+      let newerCursor: string | null = null;
+      if (request.anchor) {
+        newerCursor = opening.prevCursor;
+        let requestedNewer: string | null = null;
+        let newer: PublicPost[] = [];
+        for (
+          let replayed = 0;
+          newerCursor !== null &&
+          (requestedNewer === null ||
+            (loadedNewer !== null && requestedNewer !== loadedNewer));
+          replayed += 1
+        ) {
+          if (replayed >= MAX_REPLAY_PAGES) {
+            throw invalidCursorProgress("loaded timeline cursor is too deep");
+          }
+          if (visited.has(newerCursor)) {
+            throw invalidCursorProgress("timeline cursor cycle detected");
+          }
+          visited.add(newerCursor);
+          requestedNewer = newerCursor;
+          const newerPage: TimelinePageData = await api.timeline({
+            cursor: newerCursor,
+            signal: controller.signal,
+          });
+          if (controller.signal.aborted) return;
+          validateNewerPage(newerPage, visited, "timeline");
+          newer = prependUnique(
+            newer,
+            newerPage.items,
+            timelineItemKey,
+            "timeline",
+          );
+          newerCursor = newerPage.prevCursor;
+        }
+        if (loadedNewer !== null && requestedNewer !== loadedNewer) {
+          throw invalidCursorProgress("loaded timeline cursor is unreachable");
+        }
+        combined = prependUnique(combined, newer, timelineItemKey, "timeline");
+      }
+
       combined = reconcileOwnerEvents(combined);
       visitedCursors.current = visited;
+      anchorKey.current =
+        request.anchor && opening.items[0]
+          ? timelineItemKey(opening.items[0])
+          : null;
       setPosts(combined);
       setNextCursor(page.nextCursor);
+      setPrevCursor(newerCursor);
     } catch (error) {
       if (!controller.signal.aborted) setInitialError(error);
     } finally {
@@ -216,6 +332,7 @@ export function TimelinePage({
     return () => {
       activeInitial.current?.abort();
       activeMore.current?.abort();
+      activeNewer.current?.abort();
     };
   }, [loadInitial]);
 
@@ -237,14 +354,56 @@ export function TimelinePage({
     site,
   });
 
+  // The anchor row goes just under the shell header, with what followed it
+  // already above: where a jump to a day lands, and the only way "scroll up
+  // for what came after" can be true from the first frame.
+  const placeAnchor = useCallback(() => {
+    const key = anchorKey.current;
+    const row = key ? rowElement(key) : undefined;
+    if (row) {
+      withRowsRendered(() => {
+        const header = document.querySelector<HTMLElement>(
+          "#main-content > header",
+        );
+        window.scrollTo({
+          top:
+            row.getBoundingClientRect().top +
+            window.scrollY -
+            (header?.offsetHeight ?? 0),
+          behavior: "auto",
+        });
+      });
+    }
+    setSettled(true);
+  }, []);
+
   useEffect(() => {
     if (loadingInitial || initialError || initialEntryRestored.current) {
       return;
     }
     initialEntryRestored.current = true;
-    restoreCurrentEntry();
-    onReadyRef.current?.();
-  }, [initialError, loadingInitial, restoreCurrentEntry]);
+    const placed = restoreCurrentEntry(
+      anchorKey.current ? placeAnchor : undefined,
+    );
+    // Restoration scrolls on the next frame; the top frontier may look only
+    // after that, or it would see itself at the top of an unscrolled page.
+    if (!placed) window.requestAnimationFrame(() => setSettled(true));
+  }, [initialError, loadingInitial, placeAnchor, restoreCurrentEntry]);
+
+  // A prepended page moved everything below it: move the window by the same
+  // amount before the frame is painted, so the row the reader was looking at
+  // stays where it was.
+  useLayoutEffect(() => {
+    const pending = compensation.current;
+    if (!pending) return;
+    compensation.current = null;
+    const row = rowElement(pending.key);
+    if (!row) return;
+    withRowsRendered(() => {
+      const delta = row.getBoundingClientRect().top - pending.top;
+      if (delta !== 0) window.scrollBy({ top: delta, behavior: "auto" });
+    });
+  }, [posts]);
 
   const loadMore = async (source: LoadSource = "manual") => {
     if (!nextCursor || loadingMoreRef.current) return;
@@ -260,6 +419,7 @@ export function TimelinePage({
       }
       const page = await api.timeline({
         ...requestFromSearch(initialSearchRef.current).request,
+        anchor: null,
         cursor: requestedCursor,
         signal: controller.signal,
       });
@@ -282,11 +442,7 @@ export function TimelinePage({
       replaceTimelineProgress(requestedCursor);
       if (source === "manual" && firstNew) {
         window.requestAnimationFrame(() => {
-          Array.from(
-            document.querySelectorAll<HTMLElement>("[data-timeline-item-key]"),
-          )
-            .find((element) => element.dataset.timelineItemKey === firstNew)
-            ?.focus({ preventScroll: true });
+          rowElement(firstNew)?.focus({ preventScroll: true });
         });
       }
     } catch (error) {
@@ -297,10 +453,65 @@ export function TimelinePage({
     }
   };
 
+  const loadNewer = async (source: LoadSource = "manual") => {
+    if (!prevCursor || loadingNewerRef.current) return;
+    const controller = new AbortController();
+    activeNewer.current = controller;
+    loadingNewerRef.current = true;
+    setLoadingNewer(true);
+    setNewerError(null);
+    const requestedCursor = prevCursor;
+    try {
+      if (visitedCursors.current.has(requestedCursor)) {
+        throw invalidCursorProgress("timeline cursor cycle detected");
+      }
+      const page = await api.timeline({
+        cursor: requestedCursor,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      const visited = new Set(visitedCursors.current);
+      visited.add(requestedCursor);
+      validateNewerPage(page, visited, "timeline");
+      // The oldest of the new rows is the one nearest what was on screen.
+      const nearestNew = page.items[page.items.length - 1]
+        ? timelineItemKey(page.items[page.items.length - 1])
+        : undefined;
+      const combined = prependUnique(
+        posts,
+        page.items,
+        timelineItemKey,
+        "timeline",
+      );
+      const top = posts[0] ? rowElement(timelineItemKey(posts[0])) : undefined;
+      if (top && page.items.length > 0) {
+        compensation.current = {
+          key: timelineItemKey(posts[0]),
+          top: top.getBoundingClientRect().top,
+        };
+      }
+      visitedCursors.current = visited;
+      setPosts(combined);
+      setPrevCursor(page.prevCursor);
+      replaceTimelineProgress(requestedCursor, "loaded_newer");
+      if (source === "manual" && nearestNew) {
+        window.requestAnimationFrame(() => {
+          rowElement(nearestNew)?.focus({ preventScroll: true });
+        });
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setNewerError(error);
+    } finally {
+      if (!controller.signal.aborted) setLoadingNewer(false);
+      loadingNewerRef.current = false;
+    }
+  };
+
   const resetFromFirstPage = () => {
     initialSearchRef.current = withoutLoadedProgress(initialSearchRef.current);
     visitedCursors.current = new Set();
     setMoreError(null);
+    setNewerError(null);
     // The page's own address minus the progress, not the window the list was
     // read with: on the archive the two differ, and navigating to the window
     // would be a link to nowhere.
@@ -323,10 +534,7 @@ export function TimelinePage({
       />
     );
   }
-  const shown = before
-    ? posts.filter((post) => siteDayOf(post, site.timezone) < before)
-    : posts;
-  if (shown.length === 0 && !nextCursor) {
+  if (posts.length === 0 && !nextCursor && !prevCursor) {
     return <PublicEmpty context={emptyContext} owner={owner} />;
   }
 
@@ -334,9 +542,36 @@ export function TimelinePage({
     <>
       <section aria-label="公开时间流" className={styles.timelineList}>
         <p aria-live="polite" className={styles.srOnly}>
-          已加载 {shown.length} 条 Moment
+          已加载 {posts.length} 条 Moment
         </p>
-        {shown.map((post, index) => (
+        {newerError ? (
+          <div className={styles.moreError} role="alert">
+            <span>
+              {errorKind(newerError) === "malformed"
+                ? "更新的一页数据不完整，没有加入时间流。"
+                : "更新的一页没有加载完成。"}
+            </span>
+            {recoverableCursorError(newerError) ? (
+              <button onClick={resetFromFirstPage} type="button">
+                从这一天重新加载
+              </button>
+            ) : (
+              <button onClick={() => void loadNewer("manual")} type="button">
+                重试加载
+              </button>
+            )}
+          </div>
+        ) : null}
+        {prevCursor && settled && !newerError ? (
+          <LoadMoreSentinel
+            className={styles.moreRow}
+            cursor={prevCursor}
+            label="加载更新的 Moment"
+            loading={loadingNewer}
+            onLoad={(source) => void loadNewer(source)}
+          />
+        ) : null}
+        {posts.map((post, index) => (
           <PostPresentation
             compactTallVideo
             eagerVideo={index === 0}

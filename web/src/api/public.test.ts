@@ -417,6 +417,7 @@ describe("public API client", () => {
         },
       ],
       nextCursor: "opaque+/=cursor",
+      prevCursor: null,
     });
     expect(fetcher).toHaveBeenLastCalledWith(
       expect.stringContaining("cursor=opaque%2B%2F%3Dcursor"),

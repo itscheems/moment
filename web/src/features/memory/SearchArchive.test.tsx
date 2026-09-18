@@ -752,17 +752,58 @@ describe("search and archive memory layer", () => {
     timeline_item_kind: "repost",
   };
 
-  function installArchive(
-    posts: unknown[] = [first, lastYear, repostedLater],
+  // The timeline as the server answers it: newest first by appearance, an
+  // anchored page reading back from the end of its day, and prev_cursor
+  // walking forward from it until nothing is left.
+  function timelinePage(
+    items: unknown[],
+    cursors: { next?: string | null; prev?: string | null } = {},
   ) {
+    return json({
+      data: { items },
+      meta: {
+        next_cursor: cursors.next ?? null,
+        prev_cursor: cursors.prev ?? null,
+      },
+    });
+  }
+
+  function installArchive() {
     return install((url) => {
       if (url === "/api/v1/archive/months") return json(archiveMonths);
       if (url === "/api/v1/archive/month?month=2026-08") return json(august);
       if (url === "/api/v1/archive/month?month=2025-12") return json(december);
-      if (url.startsWith("/api/v1/posts?")) {
-        return json({ data: { items: posts }, meta: { next_cursor: null } });
+      if (!url.startsWith("/api/v1/posts?")) return json({}, 404);
+      const query = new URLSearchParams(url.slice(url.indexOf("?")));
+      switch (query.get("cursor")) {
+        case "newer-after-0810":
+          return timelinePage([repostedLater], {
+            next: "older-from-0820",
+            prev: "newer-more",
+          });
+        case "newer-after-1231":
+          return timelinePage([repostedLater, first], {
+            next: "older-from-0810",
+          });
+        case "newer-more":
+          return timelinePage([]);
+        case null:
+          break;
+        default:
+          return json({}, 404);
       }
-      return json({}, 404);
+      switch (query.get("anchor")) {
+        case "2026-08-10":
+          return timelinePage([first, lastYear], { prev: "newer-after-0810" });
+        case "2025-12-31":
+          return timelinePage([lastYear], { prev: "newer-after-1231" });
+        case null:
+          return timelinePage([repostedLater, first, lastYear], {
+            prev: "head-newer",
+          });
+        default:
+          return json({}, 404);
+      }
     });
   }
 
@@ -790,11 +831,17 @@ describe("search and archive memory layer", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument();
     // No heading over each day: the byline already says it.
-    expect(screen.queryByRole("heading", { name: /周[一二三四五六日]/ })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: /周[一二三四五六日]/ }),
+    ).toBeNull();
     // With no position, a repost is on the list at its repost.
     expect(screen.getByText("旧帖，后来转发")).toBeInTheDocument();
-    // No position: the list starts at the newest post, with no window.
+    // No position: the list starts at the newest post, with no window and
+    // nothing above it to load.
     expect(postRequests(fetcher)).toEqual(["/api/v1/posts?limit=20"]);
+    expect(
+      screen.queryByRole("button", { name: "加载更新的 Moment" }),
+    ).toBeNull();
 
     // August, not the empty current month.
     expect(
@@ -824,34 +871,64 @@ describe("search and archive memory layer", () => {
       await screen.findByRole("link", { name: "8月10日，2 条 Moment" }),
     );
     expect(window.location.search).toBe("?day=2026-08-10");
+    // The list opens at the end of the day and reads both ways from it: the
+    // rows on and before it, then the first page after it.
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
-        "/api/v1/posts?limit=20&to=2026-08-11",
+        "/api/v1/posts?limit=20&anchor=2026-08-10",
       ),
     );
-    // Older rows keep coming.
+    await waitFor(() =>
+      expect(postRequests(fetcher)).toContain(
+        "/api/v1/posts?limit=20&cursor=newer-after-0810",
+      ),
+    );
     expect(
       await screen.findByRole("article", { name: /2025年12月31日 00:20/ }),
     ).toBeInTheDocument();
     expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument();
-    // The row a repost carried past the 10th is not on a list that starts
-    // there.
-    expect(screen.queryByText("旧帖，后来转发")).toBeNull();
-    // The window is open below: nothing says `from`.
-    expect(postRequests(fetcher).some((url) => url.includes("from="))).toBe(
-      false,
-    );
+    // The repost from the 20th stands above the day, where it appeared.
+    const rows = screen
+      .getAllByRole("article")
+      .map((article) => article.textContent ?? "");
+    expect(
+      rows.findIndex((text) => text.includes("旧帖，后来转发")),
+    ).toBeLessThan(rows.findIndex((text) => text.includes("旧城雨落在街口")));
+    // Nothing is windowed by publication in either direction.
+    expect(
+      postRequests(fetcher).some(
+        (url) => url.includes("from=") || url.includes("to="),
+      ),
+    ).toBe(false);
     expect(
       screen.getByRole("link", { name: "8月10日，2 条 Moment，已选择" }),
     ).toHaveAttribute("aria-current", "date");
+
+    // More after the day loads from the top, the way more before it loads
+    // from the bottom, and records its progress the same way.
+    fireEvent.click(
+      await screen.findByRole("button", { name: "加载更新的 Moment" }),
+    );
+    await waitFor(() =>
+      expect(postRequests(fetcher)).toContain(
+        "/api/v1/posts?limit=20&cursor=newer-more",
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "加载更新的 Moment" }),
+      ).toBeNull(),
+    );
+    expect(window.location.search).toContain("loaded_newer=newer-more");
 
     fireEvent.click(screen.getByRole("link", { name: "回到最新" }));
     await waitFor(() => expect(window.location.search).toBe(""));
     expect(screen.queryByRole("link", { name: "回到最新" })).toBeNull();
 
+    // Back replays both directions to where they were.
     act(() => window.history.back());
     await waitFor(() =>
-      expect(window.location.search).toBe("?day=2026-08-10"),
+      expect(window.location.search).toContain("day=2026-08-10"),
     );
     expect(
       await screen.findByRole("link", {
@@ -875,9 +952,9 @@ describe("search and archive memory layer", () => {
       "aria-pressed",
       "true",
     );
-    expect(within(years).getByRole("button", { name: /2025/ })).toHaveTextContent(
-      "1 条",
-    );
+    expect(
+      within(years).getByRole("button", { name: /2025/ }),
+    ).toHaveTextContent("1 条");
     expect(
       screen.getByRole("link", { name: "2026年8月，2 条 Moment" }),
     ).toHaveAttribute("aria-current", "date");
@@ -902,7 +979,7 @@ describe("search and archive memory layer", () => {
     expect(window.location.search).toBe("?month=2025-12");
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
-        "/api/v1/posts?limit=20&to=2026-01-01",
+        "/api/v1/posts?limit=20&anchor=2025-12-31",
       ),
     );
     await waitFor(() =>
@@ -964,7 +1041,7 @@ describe("search and archive memory layer", () => {
     ).toBeInTheDocument();
     await waitFor(() =>
       expect(postRequests(fetcher)).toContain(
-        "/api/v1/posts?limit=20&to=2026-08-11",
+        "/api/v1/posts?limit=20&anchor=2026-08-10",
       ),
     );
 

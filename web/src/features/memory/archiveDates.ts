@@ -1,5 +1,5 @@
 import type { ArchiveMonthCount } from "../../api/public";
-import { nextDate, type ArchiveLocationState } from "./memoryState";
+import type { ArchiveLocationState } from "./memoryState";
 
 /**
  * Label arithmetic for the archive, in the site's calendar.
@@ -40,17 +40,19 @@ export function mondayOffset(month: string): number {
 }
 
 /**
- * The bound the list reads back from: the first instant *after* the position.
- *
- * A day, a month or a year is where the list starts, not what it is filtered
- * to, so the window is open below -- `/posts?to=` and nothing else. Null when
- * the archive is opened without a position, which starts at the newest post.
+ * The site day the list is anchored at: the day itself, the last day of the
+ * month, or December 31st of the year. A position is where the list starts,
+ * not what it is filtered to -- `/posts?anchor=` reads back from the end of
+ * this day and forward from it. Null when the archive is opened without a
+ * position, which starts at the newest post.
  */
-export function positionEnd(state: ArchiveLocationState): string | null {
-  if (state.day) return nextDate(state.day);
-  if (state.month) return `${shiftMonth(state.month, 1)}-01`;
+export function positionAnchor(state: ArchiveLocationState): string | null {
+  if (state.day) return state.day;
+  if (state.month) {
+    return `${state.month}-${String(daysInMonth(state.month)).padStart(2, "0")}`;
+  }
   if (state.year !== null) {
-    return `${String(state.year + 1).padStart(4, "0")}-01-01`;
+    return `${String(state.year).padStart(4, "0")}-12-31`;
   }
   return null;
 }
@@ -182,7 +184,10 @@ function offsetMinutes(timezone: string, now: Date): number | null {
  * the site's agree right now. Most readers of a one-person site are its owner,
  * and a line that always says the same thing is noise they learn not to see.
  */
-export function timezoneNote(timezone: string, now = new Date()): string | null {
+export function timezoneNote(
+  timezone: string,
+  now = new Date(),
+): string | null {
   const site = offsetMinutes(timezone, now);
   if (site === null || site === -now.getTimezoneOffset()) return null;
   return `日期按站点时区 ${timezone}`;

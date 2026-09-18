@@ -7,7 +7,7 @@ import {
   monthRange,
   newestMonthIn,
   pickerYear,
-  positionEnd,
+  positionAnchor,
   requestedMonth,
   shiftMonth,
   timezoneNote,
@@ -33,14 +33,25 @@ describe("archive dates", () => {
     expect(mondayOffset("2026-11")).toBe(6);
   });
 
-  it("opens the list just after the position and no earlier", () => {
-    const base = { month: null, year: null, loadedThrough: null, error: null };
-    expect(positionEnd({ ...base, day: "2026-02-28" })).toBe("2026-03-01");
-    expect(positionEnd({ ...base, day: null, month: "2025-12" })).toBe(
-      "2026-01-01",
+  it("anchors the list at the last day of the position", () => {
+    const base = {
+      month: null,
+      year: null,
+      loadedThrough: null,
+      loadedNewer: null,
+      error: null,
+    };
+    expect(positionAnchor({ ...base, day: "2026-02-28" })).toBe("2026-02-28");
+    expect(positionAnchor({ ...base, day: null, month: "2024-02" })).toBe(
+      "2024-02-29",
     );
-    expect(positionEnd({ ...base, day: null, year: 2024 })).toBe("2025-01-01");
-    expect(positionEnd({ ...base, day: null })).toBeNull();
+    expect(positionAnchor({ ...base, day: null, month: "2025-12" })).toBe(
+      "2025-12-31",
+    );
+    expect(positionAnchor({ ...base, day: null, year: 2024 })).toBe(
+      "2024-12-31",
+    );
+    expect(positionAnchor({ ...base, day: null })).toBeNull();
   });
 
   it("bounds the calendar by the archive and the site's current month", () => {
@@ -65,7 +76,13 @@ describe("archive dates", () => {
 
   it("seats the calendar on what the position names, else the newest month with posts", () => {
     const range = { oldest: "2021-10", newest: "2026-09" };
-    const base = { month: null, year: null, loadedThrough: null, error: null };
+    const base = {
+      month: null,
+      year: null,
+      loadedThrough: null,
+      loadedNewer: null,
+      error: null,
+    };
     expect(requestedMonth({ ...base, day: null }, months, range)).toBe(
       "2026-08",
     );

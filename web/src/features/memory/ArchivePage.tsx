@@ -26,7 +26,7 @@ import { ArchiveCalendar } from "./ArchiveCalendar";
 import {
   monthKeyOf,
   monthRange,
-  positionEnd,
+  positionAnchor,
   requestedMonth,
   shiftMonth,
   timezoneNote,
@@ -66,12 +66,12 @@ function ArchiveMessage({
  * screen from the start, and the calendar is the instrument that positions it.
  *
  * **A day is where the list starts, not what it is filtered to.** Picking the
- * 8th reads everything up to the end of the 8th and keeps paging into the 7th,
- * the 6th and back. The window is `/posts?to=` and nothing else; the iOS app
- * made the same decision for the same reason (`ArchiveScreen.swift`,
- * recvtFYw8J4xey), and the two clients now read a day the same way. The rows
- * are the timeline's own, dated in their bylines; there is no heading over
- * each day, which the reader asked for -- the byline already says it.
+ * 8th opens the timeline at the end of the 8th (`/posts?anchor=`) and it reads
+ * both ways from there: into the 7th, the 6th and back below, and into the
+ * 9th, the 10th and on above, each end loading as the reader nears it -- the
+ * same lazy list the home page is, started somewhere else. The rows are the
+ * timeline's own, dated in their bylines; there is no heading over each day,
+ * which the reader asked for -- the byline already says it.
  *
  * **Where the calendar stands depends on the shell.** At desktop widths the
  * shell draws a right rail and the calendar goes there, sticky beside the list
@@ -127,8 +127,7 @@ export function ArchivePage({
   }, [loadMonths, state.error]);
 
   const monthCounts = useMemo(
-    () =>
-      new Map((months ?? []).map((item) => [monthKeyOf(item), item.count])),
+    () => new Map((months ?? []).map((item) => [monthKeyOf(item), item.count])),
     [months],
   );
   const todayMonth = today.slice(0, 7);
@@ -138,7 +137,7 @@ export function ArchivePage({
   );
   const wantedMonth =
     months && range ? requestedMonth(state, months, range) : null;
-  const positionTo = positionEnd(state);
+  const anchor = positionAnchor(state);
   const positionKey =
     state.day ?? state.month ?? (state.year === null ? "" : String(state.year));
 
@@ -200,42 +199,18 @@ export function ArchivePage({
     }
   }, [api, dayCounts, monthCounts, visibleMonth]);
 
+  // The list is read with the anchor and whatever progress the URL carries in
+  // either direction; the timeline puts the anchored row under the header
+  // itself, on a phone where the calendar stands above it as on a desktop
+  // where it stands beside it.
   const listSearch = useMemo(() => {
     const params = new URLSearchParams();
-    if (positionTo) params.set("to", positionTo);
+    if (anchor) params.set("anchor", anchor);
     if (state.loadedThrough) params.set("loaded_through", state.loadedThrough);
+    if (state.loadedNewer) params.set("loaded_newer", state.loadedNewer);
     const query = params.toString();
     return query ? `?${query}` : "";
-  }, [positionTo, state.loadedThrough]);
-
-  // On a phone the calendar stands over the list, so a picked day would land
-  // its rows below the fold and the tap would look like it did nothing. The
-  // list is brought up under the header once its first page is there -- after
-  // the entry's own scroll restoration, which the navigation runs at zero.
-  const listRef = useRef<HTMLDivElement>(null);
-  const scrollPending = useRef(false);
-  const onNavigate = useCallback(() => {
-    scrollPending.current = true;
-  }, []);
-  const onListReady = useCallback(() => {
-    if (!scrollPending.current) return;
-    scrollPending.current = false;
-    if (railViewport) return;
-    window.requestAnimationFrame(() => {
-      const list = listRef.current;
-      if (!list) return;
-      const header = document.querySelector<HTMLElement>(
-        "#main-content > header",
-      );
-      window.scrollTo({
-        top:
-          list.getBoundingClientRect().top +
-          window.scrollY -
-          (header?.offsetHeight ?? 0),
-        behavior: "auto",
-      });
-    });
-  }, [railViewport]);
+  }, [anchor, state.loadedNewer, state.loadedThrough]);
 
   const monthsEmpty = months !== null && months.length === 0;
   let calendar: ReactNode = null;
@@ -277,9 +252,8 @@ export function ArchivePage({
           monthCounts={monthCounts}
           months={months}
           note={note}
-          onNavigate={onNavigate}
           onVisibleMonthChange={setVisibleMonth}
-          positioned={positionTo !== null}
+          positioned={anchor !== null}
           range={range}
           selectedDay={state.day}
           today={today}
@@ -314,14 +288,12 @@ export function ArchivePage({
         />
       ) : null}
       {!state.error && !monthsEmpty ? (
-        <div className={styles.archiveList} ref={listRef}>
+        <div className={styles.archiveList}>
           <TimelinePage
             api={api}
-            before={positionTo ?? undefined}
             emptyContext="archive"
             initialSearch={listSearch}
-            key={positionTo ?? "latest"}
-            onReady={onListReady}
+            key={anchor ?? "latest"}
             owner={owner}
             site={site}
           />

@@ -25,6 +25,7 @@ export interface ArchiveLocationState {
   month: string | null;
   year: number | null;
   loadedThrough: string | null;
+  loadedNewer: string | null;
   error: string | null;
 }
 
@@ -122,6 +123,7 @@ const INVALID_ARCHIVE_LOCATION: ArchiveLocationState = {
   month: null,
   year: null,
   loadedThrough: null,
+  loadedNewer: null,
   error: ARCHIVE_LOCATION_ERROR,
 };
 
@@ -141,6 +143,7 @@ export function parseArchiveLocation(search: string): ArchiveLocationState {
   const from = single(params, "from");
   const to = single(params, "to");
   const loaded = single(params, "loaded_through");
+  const loadedNewer = single(params, "loaded_newer");
   if (
     yearValue.error ||
     monthValue.error ||
@@ -148,11 +151,21 @@ export function parseArchiveLocation(search: string): ArchiveLocationState {
     from.error ||
     to.error ||
     loaded.error ||
+    loadedNewer.error ||
     unsupported(
       params,
-      new Set(["year", "month", "day", "from", "to", "loaded_through"]),
+      new Set([
+        "year",
+        "month",
+        "day",
+        "from",
+        "to",
+        "loaded_through",
+        "loaded_newer",
+      ]),
     ) ||
-    !validCursor(loaded.value)
+    !validCursor(loaded.value) ||
+    !validCursor(loadedNewer.value)
   ) {
     return INVALID_ARCHIVE_LOCATION;
   }
@@ -205,6 +218,7 @@ export function parseArchiveLocation(search: string): ArchiveLocationState {
     month: day === null ? month : null,
     year: day === null && month === null ? year : null,
     loadedThrough: loaded.value,
+    loadedNewer: loadedNewer.value,
     error: null,
   };
 }

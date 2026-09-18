@@ -10,6 +10,8 @@ import {
   useState,
 } from "react";
 
+import type { ProgressName } from "../features/timeline/cursorContinuity";
+
 interface LocationSnapshot {
   pathname: string;
   search: string;
@@ -23,8 +25,13 @@ interface NavigationContextValue extends NavigationLocation {
   navigate: (href: string) => void;
   navigateOverlay: (href: string) => void;
   goBack: (fallback: string) => void;
-  replaceTimelineProgress: (cursor: string) => void;
-  restoreCurrentEntry: () => void;
+  replaceTimelineProgress: (cursor: string, name?: ProgressName) => void;
+  /**
+   * Puts the entry back where the reader left it. A fresh entry -- one just
+   * navigated to, or a document opened cold -- has nowhere to go back to, and
+   * `placeFresh`, when given, decides where it opens instead of the top.
+   */
+  restoreCurrentEntry: (placeFresh?: () => void) => boolean;
   setNavigationBlocker: (
     owner: symbol,
     blocker: NavigationBlocker | null,
@@ -35,6 +42,8 @@ export type NavigationBlocker = (resume: () => void) => boolean;
 
 interface MomentHistoryState {
   momentFocusKey?: string;
+  /** Navigated to and not yet shown; cleared by the first restoration. */
+  momentFresh?: boolean;
   momentInternal?: boolean;
   momentOverlayFrom?: LocationSnapshot;
   momentScrollY?: number;
@@ -134,6 +143,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       );
       window.history.pushState(
         {
+          momentFresh: true,
           momentInternal: true,
           momentOverlayFrom: overlayFrom ?? undefined,
           momentScrollY: 0,
@@ -163,19 +173,39 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [canLeave, commitNavigation],
   );
 
-  const replaceTimelineProgress = useCallback((cursor: string) => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("loaded_through", cursor);
-    window.history.replaceState(
-      { ...historyState(), momentScrollY: window.scrollY },
-      "",
-      `${url.pathname}${url.search}${url.hash}`,
-    );
-    setLocation(locationSnapshot(window.history.state));
-  }, []);
+  const replaceTimelineProgress = useCallback(
+    (cursor: string, name: ProgressName = "loaded_through") => {
+      const url = new URL(window.location.href);
+      url.searchParams.set(name, cursor);
+      window.history.replaceState(
+        { ...historyState(), momentScrollY: window.scrollY },
+        "",
+        `${url.pathname}${url.search}${url.hash}`,
+      );
+      setLocation(locationSnapshot(window.history.state));
+    },
+    [],
+  );
 
-  const restoreCurrentEntry = useCallback(() => {
-    restoreEntry(window.history.state);
+  const restoreCurrentEntry = useCallback((placeFresh?: () => void) => {
+    const state = historyState();
+    // A cold document has no state at all; a navigation marks its entry.
+    // Either way there is no position to restore, only one to choose.
+    const fresh =
+      state.momentFresh === true || state.momentScrollY === undefined;
+    if (fresh) {
+      window.history.replaceState(
+        { ...state, momentFresh: false, momentScrollY: 0 },
+        "",
+        window.location.href,
+      );
+      if (placeFresh) {
+        window.requestAnimationFrame(placeFresh);
+        return true;
+      }
+    }
+    restoreEntry(state);
+    return false;
   }, []);
 
   const goBack = useCallback(

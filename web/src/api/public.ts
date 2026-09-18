@@ -126,13 +126,22 @@ export interface PublicMediaUsage {
 
 export interface TimelinePage {
   items: PublicPost[];
+  /** Continues older from the last item; null once older is exhausted. */
   nextCursor: string | null;
+  /** Continues newer from the first item; null once newer is exhausted. */
+  prevCursor: string | null;
 }
 
 export interface TimelineRequest {
   cursor?: string | null;
   from?: string | null;
   to?: string | null;
+  /**
+   * A site day to read back from: the page holds what appeared on or before
+   * it and `prevCursor` continues into what appeared after. Not with a
+   * window or a cursor.
+   */
+  anchor?: string | null;
   limit?: number;
   signal?: AbortSignal;
 }
@@ -1762,6 +1771,7 @@ export class PublicApi {
     if (request.cursor) query.set("cursor", request.cursor);
     if (request.from) query.set("from", request.from);
     if (request.to) query.set("to", request.to);
+    if (request.anchor) query.set("anchor", request.anchor);
     const response = await this.fetcher(`/api/v1/posts?${query}`, {
       headers: { Accept: "application/json" },
       signal: request.signal,
@@ -1774,6 +1784,12 @@ export class PublicApi {
     if (nextCursor !== null && typeof nextCursor !== "string") {
       throw invalidResponse("next_cursor must be a string or null");
     }
+    // Absent from responses recorded before pages could read newer; the web
+    // and the server ship together, so a live server always sends it.
+    const prevCursor = meta.prev_cursor ?? null;
+    if (prevCursor !== null && typeof prevCursor !== "string") {
+      throw invalidResponse("prev_cursor must be a string or null");
+    }
     const items = data.items.map(parsePost);
     const timelineKeys = new Set<string>();
     for (const item of items) {
@@ -1783,7 +1799,7 @@ export class PublicApi {
       }
       timelineKeys.add(key);
     }
-    return { items, nextCursor };
+    return { items, nextCursor, prevCursor };
   }
 
   async search(request: SearchRequest): Promise<SearchPage> {
