@@ -385,9 +385,10 @@ function PublicApp() {
           />
         ) : null}
         {route.id === "archive" ? (
+          // No key: the page follows its own search string, so a day picked on
+          // the calendar moves the list without throwing the calendar away.
           <ArchivePage
             api={api}
-            key={routeSearchKey(displayLocation.search)}
             owner={siteIdentityReady && ownerSession}
             search={displayLocation.search}
             site={site}

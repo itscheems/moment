@@ -5,20 +5,24 @@ export function timelineItemKey(post: PublicPost): string {
   return `${post.id}:${post.timelineItemKind}`;
 }
 
+/**
+ * When a row appeared in the timeline: the repost's moment for a repost, and
+ * publication otherwise. It is the instant `/posts` orders and windows by, so
+ * anything grouping rows by day has to key on it or disagree with the window
+ * that fetched them.
+ */
+export function timelineInstant(post: PublicPost): string {
+  return post.timelineItemKind === "repost" && post.repostedAt
+    ? post.repostedAt
+    : post.publishedAt;
+}
+
 export function compareTimelineItems(
   left: PublicPost,
   right: PublicPost,
 ): number {
-  const leftTime = Date.parse(
-    left.timelineItemKind === "repost" && left.repostedAt
-      ? left.repostedAt
-      : left.publishedAt,
-  );
-  const rightTime = Date.parse(
-    right.timelineItemKind === "repost" && right.repostedAt
-      ? right.repostedAt
-      : right.publishedAt,
-  );
+  const leftTime = Date.parse(timelineInstant(left));
+  const rightTime = Date.parse(timelineInstant(right));
   return (
     rightTime - leftTime ||
     Number(right.timelineItemKind === "repost") -

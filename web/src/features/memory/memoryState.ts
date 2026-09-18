@@ -14,11 +14,16 @@ export interface SearchLocationState {
   error: string | null;
 }
 
+/**
+ * Where the archive's list starts. At most one of the three is set: a day says
+ * everything a month would, and a month everything a year would. The list runs
+ * back from the end of it, so an archive opened without one starts at the
+ * newest post.
+ */
 export interface ArchiveLocationState {
-  year: number | null;
+  day: string | null;
   month: string | null;
-  from: string | null;
-  to: string | null;
+  year: number | null;
   loadedThrough: string | null;
   error: string | null;
 }
@@ -105,67 +110,102 @@ export function parseSearchLocation(search: string): SearchLocationState {
   };
 }
 
+export function isCanonicalMonth(value: string): boolean {
+  if (!MONTH_PATTERN.test(value)) return false;
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(5, 7));
+  return year > 0 && month >= 1 && month <= 12;
+}
+
+const INVALID_ARCHIVE_LOCATION: ArchiveLocationState = {
+  day: null,
+  month: null,
+  year: null,
+  loadedThrough: null,
+  error: ARCHIVE_LOCATION_ERROR,
+};
+
+/**
+ * Reads `/archive?day=` | `?month=` | `?year=`, plus the shape links carried
+ * before the archive became a list: `year=&month=&from=D&to=D+1`, which named
+ * one day as a window and still opens on that day. Anything the parameters
+ * disagree about -- a month outside its year, a day outside its month, a
+ * window that is not exactly one day -- is a broken link rather than a guess.
+ */
 export function parseArchiveLocation(search: string): ArchiveLocationState {
-  if (!hasValidRawQueryEncoding(search)) {
-    return {
-      year: null,
-      month: null,
-      from: null,
-      to: null,
-      loadedThrough: null,
-      error: ARCHIVE_LOCATION_ERROR,
-    };
-  }
+  if (!hasValidRawQueryEncoding(search)) return INVALID_ARCHIVE_LOCATION;
   const params = new URLSearchParams(search);
   const yearValue = single(params, "year");
-  const month = single(params, "month");
+  const monthValue = single(params, "month");
+  const dayValue = single(params, "day");
   const from = single(params, "from");
   const to = single(params, "to");
   const loaded = single(params, "loaded_through");
-  const monthMatch = month.value?.match(MONTH_PATTERN);
-  const derivedYear = monthMatch ? Number(month.value?.slice(0, 4)) : null;
-  const explicitYear = yearValue.value ? Number(yearValue.value) : null;
-  const year = explicitYear ?? derivedYear;
-  const parsedMonth = month.value ? Number(month.value.slice(5, 7)) : null;
-  const hasDateBoundary = from.value !== null || to.value !== null;
-  const canonicalDayRange =
-    from.value !== null &&
-    to.value !== null &&
-    month.value !== null &&
-    from.value.startsWith(`${month.value}-`) &&
-    nextDate(from.value) === to.value;
-  const invalid =
+  if (
     yearValue.error ||
-    month.error ||
+    monthValue.error ||
+    dayValue.error ||
     from.error ||
     to.error ||
     loaded.error ||
     unsupported(
       params,
-      new Set(["year", "month", "from", "to", "loaded_through"]),
+      new Set(["year", "month", "day", "from", "to", "loaded_through"]),
     ) ||
-    (yearValue.value !== null &&
-      (!YEAR_PATTERN.test(yearValue.value) || explicitYear === 0)) ||
-    (month.value !== null &&
-      (!monthMatch ||
-        derivedYear === 0 ||
-        parsedMonth === null ||
-        parsedMonth < 1 ||
-        parsedMonth > 12)) ||
-    (explicitYear !== null &&
-      derivedYear !== null &&
-      explicitYear !== derivedYear) ||
-    !validDateRange(from.value, to.value) ||
-    (hasDateBoundary && !canonicalDayRange) ||
-    !validCursor(loaded.value) ||
-    (loaded.value !== null && !canonicalDayRange);
+    !validCursor(loaded.value)
+  ) {
+    return INVALID_ARCHIVE_LOCATION;
+  }
+
+  let year: number | null = null;
+  if (yearValue.value !== null) {
+    if (!YEAR_PATTERN.test(yearValue.value) || Number(yearValue.value) === 0) {
+      return INVALID_ARCHIVE_LOCATION;
+    }
+    year = Number(yearValue.value);
+  }
+
+  let month: string | null = null;
+  if (monthValue.value !== null) {
+    if (!isCanonicalMonth(monthValue.value)) return INVALID_ARCHIVE_LOCATION;
+    if (year !== null && Number(monthValue.value.slice(0, 4)) !== year) {
+      return INVALID_ARCHIVE_LOCATION;
+    }
+    month = monthValue.value;
+  }
+
+  let day: string | null = null;
+  if (dayValue.value !== null) {
+    if (!isCanonicalDate(dayValue.value)) return INVALID_ARCHIVE_LOCATION;
+    day = dayValue.value;
+  }
+  if (from.value !== null || to.value !== null) {
+    if (
+      from.value === null ||
+      to.value === null ||
+      !isCanonicalDate(from.value) ||
+      nextDate(from.value) !== to.value ||
+      (day !== null && day !== from.value)
+    ) {
+      return INVALID_ARCHIVE_LOCATION;
+    }
+    day = from.value;
+  }
+  if (day !== null) {
+    if (month !== null && !day.startsWith(`${month}-`)) {
+      return INVALID_ARCHIVE_LOCATION;
+    }
+    if (year !== null && Number(day.slice(0, 4)) !== year) {
+      return INVALID_ARCHIVE_LOCATION;
+    }
+  }
+
   return {
-    year,
-    month: month.value,
-    from: from.value,
-    to: to.value,
+    day,
+    month: day === null ? month : null,
+    year: day === null && month === null ? year : null,
     loadedThrough: loaded.value,
-    error: invalid ? ARCHIVE_LOCATION_ERROR : null,
+    error: null,
   };
 }
 
@@ -215,17 +255,14 @@ export function searchHref(input: {
   return `/search?${params}`;
 }
 
+/** The archive at a position: the most specific of a day, a month, a year. */
 export function archiveHref(input: {
-  year?: number | null;
+  day?: string | null;
   month?: string | null;
-  from?: string | null;
-  to?: string | null;
+  year?: number | null;
 }): string {
-  const params = new URLSearchParams();
-  if (input.year) params.set("year", String(input.year));
-  if (input.month) params.set("month", input.month);
-  if (input.from) params.set("from", input.from);
-  if (input.to) params.set("to", input.to);
-  const query = params.toString();
-  return query ? `/archive?${query}` : "/archive";
+  if (input.day) return `/archive?day=${input.day}`;
+  if (input.month) return `/archive?month=${input.month}`;
+  if (input.year) return `/archive?year=${input.year}`;
+  return "/archive";
 }

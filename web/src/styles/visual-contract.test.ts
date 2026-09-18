@@ -9,6 +9,8 @@ import interCss from "inter-ui/inter-variable-latin.css?inline";
 import commentsCss from "../features/comments/Comments.module.css?inline";
 import mediaCss from "../features/media/Media.module.css?inline";
 import datePickerCss from "../features/memory/DatePicker.module.css?inline";
+import memoryCss from "../features/memory/Memory.module.css?inline";
+import timelineCss from "../features/timeline/TimelinePage.module.css?inline";
 import ownerCss from "../features/owner/Owner.module.css?inline";
 import settingsCss from "../features/owner/Settings.module.css?inline";
 import postCss from "../features/posts/PostPresentation.module.css?inline";
@@ -482,6 +484,41 @@ describe("visual foundation contract", () => {
     );
     expect(ownerCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\._composerPublishButton_[\w-]+\s*\{\s*transition: none/,
+    );
+  });
+
+  // The archive calendar's legend and grid are one seven-column shape: the
+  // letters used to run full width over an inset grid, so Monday stood a few
+  // pixels left of its column. And a day heading in the list is sticky by
+  // exactly the shell header's height, or it slides under it.
+  it("stands the archive's weekday letters over their columns and its day headings under the header", () => {
+    expect(memoryCss).toMatch(
+      /\._weekHeader_[\w-]+,\s*\._calendarGrid_[\w-]+\s*\{[^}]*grid-template-columns: repeat\(7, minmax\(0, 1fr\)\);[^}]*padding: 0;/s,
+    );
+    // Neither has a rule of its own that moves it off that shared inset.
+    expect(memoryCss).not.toMatch(
+      /(?<!,\n)\._weekHeader_[\w-]+\s*\{[^}]*padding/s,
+    );
+    expect(memoryCss).not.toMatch(
+      /(?<!,\n)\._calendarGrid_[\w-]+\s*\{[^}]*padding/s,
+    );
+    const headerHeight = shellCss.match(
+      /\._timelineHeader_[\w-]+\s*\{[^}]*block-size: ([\d.]+rem);/s,
+    )?.[1];
+    expect(headerHeight).toBeDefined();
+    expect(timelineCss).toMatch(
+      new RegExp(
+        `\\._dayHeading_[\\w-]+\\s*\\{[^}]*position: sticky;[^}]*inset-block-start: ${headerHeight!.replace(".", "\\.")};`,
+        "s",
+      ),
+    );
+    // A day that holds nothing is a number, not a control; the selected day
+    // inverts onto the accent, and its badge inverts with it.
+    expect(memoryCss).toMatch(
+      /\._calendarDay_[\w-]+ a\[data-selected="true"\]\s*\{[^}]*color: var\(--accent-contrast\);[^}]*background: var\(--accent\)/s,
+    );
+    expect(memoryCss).toMatch(
+      /\._calendarDay_[\w-]+ a\[data-selected="true"\] span\s*\{[^}]*color: var\(--accent\);[^}]*background: var\(--accent-contrast\)/s,
     );
   });
 

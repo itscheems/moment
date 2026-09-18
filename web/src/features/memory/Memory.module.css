@@ -305,9 +305,7 @@
 }
 
 .searchSummary > a,
-.breadcrumbs a,
-.calendarSection header a,
-.dayResults > header a {
+.breadcrumbs a {
   min-block-size: var(--target-size);
   display: inline-flex;
   align-items: center;
@@ -427,141 +425,144 @@
   text-align: center;
 }
 
-.archiveYears {
-  padding: 0 var(--space-4) var(--space-6);
+/* ---- Archive: the calendar, and where it stands ---- */
+
+/* At the top of the column when the shell has no rail to hold it. */
+.calendarColumn {
+  min-inline-size: 0;
 }
 
-.archiveYears > section {
-  border-block-end: 1px solid var(--border-subtle);
-  padding-block: var(--space-5);
-}
-
-.archiveYears header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding-inline: var(--space-2);
-}
-
-.archiveYears h2,
-.archiveYears header span {
-  margin: 0;
-  font-family: var(--font-display);
-  font-variant-numeric: tabular-nums;
-}
-
-.archiveYears h2 {
-  font-size: var(--text-2xl);
-  font-weight: 750;
-}
-
-.archiveYears header span {
-  color: var(--text-tertiary);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
-}
-
-.archiveYears ol {
+.calendar {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-2);
-  margin: 0;
-  padding: var(--space-3) 0 0;
-  list-style: none;
+  gap: var(--space-1);
+  min-inline-size: 0;
 }
 
-.archiveYears li + li {
-  border-block-start: 0;
-}
-
-.archiveYears li:only-child {
-  grid-column: 1 / -1;
-}
-
-.archiveYears li a {
-  min-block-size: 4.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  border: 1px solid transparent;
-  border-radius: var(--radius-panel);
-  padding-inline: var(--space-4);
-  color: var(--text-primary);
-  background: var(--surface-muted);
-  text-decoration: none;
-  transition:
-    border-color var(--motion-fast) var(--ease-out),
-    background var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
-}
-
-.archiveYears li a:hover,
-.archiveYears li a:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+/* In the rail: one card, in the shell's card idiom -- a wash, no border. */
+.calendarRail {
+  border-radius: 1rem;
+  padding: var(--space-2) var(--space-3) var(--space-2);
   background: var(--surface-hover);
-  transform: translateY(-1px);
 }
 
-.archiveYears li strong {
-  font-size: var(--text-lg);
-  font-weight: 700;
+/* In the column: a section of the page, closed off from the list below. */
+.calendarWide {
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-4) var(--space-3);
 }
 
-.archiveYears li span {
-  color: var(--text-tertiary);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
+.calendarLoading {
+  min-block-size: 21rem;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
 }
 
-.calendarSection > header,
-.dayResults > header {
-  min-block-size: 4.5rem;
+.calendarWide.calendarLoading {
+  min-block-size: 25rem;
+}
+
+.calendarHeader {
+  min-block-size: var(--target-size);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-5);
+  gap: var(--space-2);
 }
 
-.calendarSection > header {
-  border-block-end: 0;
+.calendarTitle {
+  min-inline-size: 0;
+  flex: 1 1 auto;
+  margin: 0;
 }
 
-.calendarSection > header a {
-  min-block-size: 2.25rem;
+/* The month is a heading and a button: the words are the control. */
+.monthTitle {
+  min-block-size: var(--target-size);
+  max-inline-size: 100%;
   display: inline-flex;
   align-items: center;
-  border: 1px solid var(--border-subtle);
+  gap: var(--space-1);
+  border: 0;
   border-radius: 999px;
-  padding-inline: var(--space-3);
-  color: var(--text-secondary);
-  background: var(--surface-muted);
-  font-size: var(--text-sm);
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.calendarSection > header a:hover,
-.calendarSection > header a:focus-visible {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.calendarSection header h2,
-.dayResults > header h2 {
-  margin: 0;
-}
-
-.calendarSection header h2,
-.dayResults > header h2 {
+  margin-inline-start: calc(var(--space-2) * -1);
+  padding-inline: var(--space-2);
+  color: var(--text-primary);
+  background: transparent;
   font-family: var(--font-display);
-  font-size: var(--text-xl);
-  font-weight: 750;
-  letter-spacing: -0.025em;
+  font-size: var(--text-lg);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
+.monthTitle:hover,
+.monthTitle:focus-visible,
+.monthTitle[data-popup-open] {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+/* The words never wrap: a flex heading offers its child its narrowest
+   width, and a title reading 2026年9 over 月 is a title that broke. */
+.monthTitle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monthTitle svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.calendarPager {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+}
+
+.calendarPage {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.calendarPage:hover:not(:disabled),
+.calendarPage:focus-visible {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+/* Dimmed rather than removed, so the header keeps its shape at either end
+   of the archive. */
+.calendarPage:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.calendarPage svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+
+.calendarPageNext svg {
+  transform: rotate(180deg);
+}
+
+/* The legend and the grid share one inset, so a letter stands over its
+   column; the legend used to run full width while the grid was inset. */
 .weekHeader,
 .calendarGrid {
   display: grid;
@@ -579,17 +580,20 @@
 }
 
 .weekHeader li {
-  padding-block: var(--space-3) var(--space-2);
+  padding-block: var(--space-1);
 }
 
 .calendarGrid {
-  row-gap: var(--space-2);
-  border-block-end: 1px solid var(--border-subtle);
-  padding: 0 var(--space-4) var(--space-6);
+  row-gap: var(--space-1);
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.calendarGrid[aria-busy="true"] {
+  opacity: 0.55;
 }
 
 .calendarGrid li {
-  min-block-size: 3.75rem;
+  min-block-size: 2.5rem;
   display: grid;
   place-items: center;
 }
@@ -597,11 +601,10 @@
 .calendarDay a,
 .calendarEmptyDay > span {
   position: relative;
-  inline-size: 3rem;
-  block-size: 3rem;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
   display: grid;
   place-content: center;
-  border: 1px solid transparent;
   border-radius: 50%;
   padding: 0;
   color: var(--text-primary);
@@ -633,21 +636,23 @@
 
 .calendarDay span {
   position: absolute;
-  inset-block-end: -0.2rem;
-  inset-inline-end: -0.2rem;
-  min-inline-size: 1.05rem;
-  block-size: 1.05rem;
+  inset-block-end: -0.15rem;
+  inset-inline-end: -0.25rem;
+  min-inline-size: 1rem;
+  block-size: 1rem;
   display: grid;
   place-items: center;
-  justify-self: center;
   border-radius: 999px;
+  padding-inline: 0.2rem;
   color: var(--accent-contrast);
   background: var(--accent);
   font-family: var(--font-utility);
   font-size: 0.625rem;
   font-weight: 750;
+  line-height: 1;
 }
 
+/* A blue badge on a blue disc is invisible. */
 .calendarDay a[data-selected="true"] span {
   color: var(--accent);
   background: var(--accent-contrast);
@@ -662,8 +667,187 @@
   visibility: hidden;
 }
 
-.dayResults > header {
-  border-block-start: 1px solid var(--border-strong);
+.calendarFooter {
+  min-block-size: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0;
+  padding-inline: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.calendarFooter a {
+  min-block-size: var(--target-size);
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.calendarFooter a:hover,
+.calendarFooter a:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.calendarNote {
+  margin: 0;
+  padding-inline: var(--space-1);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+/* The column variant keeps the larger cells the page always drew. */
+.calendarWide .monthTitle {
+  font-size: var(--text-xl);
+}
+
+.calendarWide .calendarGrid li {
+  min-block-size: 3.25rem;
+}
+
+.calendarWide .calendarDay a,
+.calendarWide .calendarEmptyDay > span {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+}
+
+/* The year/month picker. */
+.pickerPositioner {
+  z-index: var(--layer-popover);
+}
+
+/* Narrow enough to hang under its title inside the rail without being pushed
+   over the list to stay on screen. */
+.pickerPopup {
+  inline-size: min(19.5rem, calc(100vw - 2rem));
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: var(--transform-origin);
+  transition:
+    transform var(--motion-popover) var(--ease-out),
+    opacity var(--motion-popover) var(--ease-out);
+}
+
+.pickerPopup[data-starting-style],
+.pickerPopup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(0.4rem) scale(0.98);
+}
+
+.pickerYears {
+  max-block-size: 18rem;
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  overflow-y: auto;
+  border-inline-end: 1px solid var(--border-subtle);
+  padding: var(--space-2);
+}
+
+.pickerYear {
+  min-block-size: var(--target-size);
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  border: 0;
+  border-radius: 0.75rem;
+  padding-inline: var(--space-3);
+  color: var(--text-primary);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+
+.pickerYear strong {
+  font-family: var(--font-display);
+  font-size: var(--text-md);
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
+.pickerYear small,
+.pickerMonths small {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.pickerYear:hover,
+.pickerYear:focus-visible {
+  background: var(--surface-hover);
+}
+
+.pickerYear[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.pickerYear[aria-pressed="true"] small {
+  color: inherit;
+}
+
+.pickerMonths {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-3);
+  list-style: none;
+}
+
+.pickerMonths a,
+.pickerEmptyMonth {
+  min-block-size: 3.25rem;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 0.1rem;
+  border-radius: 0.75rem;
+  text-decoration: none;
+}
+
+.pickerMonths a {
+  color: var(--text-primary);
+  background: var(--surface-muted);
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.pickerMonths a:hover,
+.pickerMonths a:focus-visible {
+  background: var(--accent-soft);
+}
+
+.pickerMonths a[aria-current="date"] {
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+
+.pickerMonths a[aria-current="date"] small {
+  color: inherit;
+}
+
+.pickerMonths strong {
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.pickerEmptyMonth {
+  color: var(--text-tertiary);
+  opacity: 0.55;
+}
+
+.archiveList {
+  min-inline-size: 0;
 }
 
 @media (max-width: 719px) {
@@ -687,9 +871,7 @@
     padding: 0;
   }
 
-  .searchSummary,
-  .calendarSection > header,
-  .dayResults > header {
+  .searchSummary {
     padding-inline: var(--space-4);
   }
 
@@ -702,26 +884,8 @@
     padding-inline: var(--space-4);
   }
 
-  .archiveYears {
+  .calendarWide {
     padding-inline: var(--space-3);
-  }
-
-  .archiveYears h2 {
-    font-size: var(--text-xl);
-  }
-
-  .archiveYears ol {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .calendarGrid li {
-    min-block-size: 3.25rem;
-  }
-
-  .calendarDay a,
-  .calendarEmptyDay > span {
-    inline-size: 2.75rem;
-    block-size: 2.75rem;
   }
 
   .moreError {

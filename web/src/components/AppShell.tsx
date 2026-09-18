@@ -13,6 +13,7 @@ import { InternalLink, useNavigation } from "../app/navigation";
 import type { AppRoute, RouteId } from "../app/routes";
 import { SiteAvatar, siteDisplayName } from "./SiteIdentity";
 import { Icon, type IconName } from "./icons";
+import { RailSlotContext } from "./railSlot";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
 import { MOBILE_VIEWPORT_QUERY, useMediaQuery } from "./useMediaQuery";
@@ -349,12 +350,19 @@ function LeftRail({
   );
 }
 
-// The search box and nothing else. A card of years used to hang under it,
-// built from whichever posts the feed had loaded so far -- a repost of a 2019
-// Moment near the top put 2019 second in a list headed 2026 -- and it opened
-// a page the rail beside it already links to. The archive has one entry, in
-// the navigation; the rail is for what the page cannot otherwise reach.
-function MemoryRail({ route }: { route: AppRoute }) {
+// The search box, and a slot the page may fill -- the archive puts its
+// calendar there. A card of years used to hang under the search box, built
+// from whichever posts the feed had loaded so far (a repost of a 2019 Moment
+// near the top put 2019 second in a list headed 2026), and it opened a page
+// the rail beside it already links to. The archive has one entry, in the
+// navigation; the rail is for what a page cannot otherwise reach.
+function MemoryRail({
+  route,
+  slotRef,
+}: {
+  route: AppRoute;
+  slotRef: (element: HTMLDivElement | null) => void;
+}) {
   if (route.id === "search") return null;
   return (
     <aside aria-label="记忆导航" className={styles.rightRail}>
@@ -365,6 +373,7 @@ function MemoryRail({ route }: { route: AppRoute }) {
           <small>按文字或日期查找</small>
         </span>
       </InternalLink>
+      <div className={styles.railSlot} ref={slotRef} />
     </aside>
   );
 }
@@ -467,7 +476,11 @@ export function AppShell({
 }) {
   const { goBack } = useNavigation();
   const scrollHomeToTop = useHomeScrollToTop();
+  // State rather than a ref, so a page rendering into the slot re-renders
+  // once the rail has mounted it.
+  const [railSlot, setRailSlot] = useState<HTMLDivElement | null>(null);
   return (
+    <RailSlotContext.Provider value={railSlot}>
     <div className={styles.viewport}>
       <a className={styles.skipLink} href="#main-content">
         跳到主要内容
@@ -539,12 +552,13 @@ export function AppShell({
           </header>
           {children ?? <ShellState route={route} state={state} />}
         </main>
-        <MemoryRail route={route} />
+        <MemoryRail route={route} slotRef={setRailSlot} />
       </div>
       <MobileNavigation
         ownerSettingsAvailable={ownerSettingsAvailable}
         route={route}
       />
     </div>
+    </RailSlotContext.Provider>
   );
 }

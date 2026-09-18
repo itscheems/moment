@@ -59,34 +59,74 @@ describe("memory-layer URL state", () => {
     expect(activeSearchYear("2026-01-02", "2027-01-01")).toBeNull();
   });
 
-  it("keeps archive hierarchy and day range reconstructible", () => {
-    const href = archiveHref({
-      year: 2024,
-      month: "2024-02",
-      from: "2024-02-29",
-      to: "2024-03-01",
+  it("names an archive position by its most specific part", () => {
+    const settled = { loadedThrough: null, error: null };
+    expect(archiveHref({ day: "2024-02-29" })).toBe("/archive?day=2024-02-29");
+    expect(parseArchiveLocation("?day=2024-02-29")).toEqual({
+      day: "2024-02-29",
+      month: null,
+      year: null,
+      ...settled,
     });
-    expect(parseArchiveLocation(href.slice(href.indexOf("?")))).toEqual({
-      year: 2024,
+    expect(archiveHref({ month: "2024-02" })).toBe("/archive?month=2024-02");
+    expect(parseArchiveLocation("?month=2024-02")).toEqual({
+      day: null,
       month: "2024-02",
-      from: "2024-02-29",
-      to: "2024-03-01",
-      loadedThrough: null,
+      year: null,
+      ...settled,
+    });
+    expect(archiveHref({ year: 2024 })).toBe("/archive?year=2024");
+    expect(parseArchiveLocation("?year=2024&loaded_through=cursor")).toEqual({
+      day: null,
+      month: null,
+      year: 2024,
+      loadedThrough: "cursor",
       error: null,
+    });
+    expect(archiveHref({})).toBe("/archive");
+    expect(parseArchiveLocation("")).toEqual({
+      day: null,
+      month: null,
+      year: null,
+      ...settled,
     });
     expect(nextDate("2026-12-31")).toBe("2027-01-01");
     expect(previousDate("2027-01-01")).toBe("2026-12-31");
   });
 
-  it("rejects mismatched months, non-day ranges, and invalid archive pages", () => {
+  it("still opens the links the archive used to write, on their day", () => {
+    // `year=&month=&from=D&to=D+1` named one day as a window; it is the day.
+    expect(
+      parseArchiveLocation(
+        "?year=2024&month=2024-02&from=2024-02-29&to=2024-03-01",
+      ),
+    ).toEqual({
+      day: "2024-02-29",
+      month: null,
+      year: null,
+      loadedThrough: null,
+      error: null,
+    });
+    // A year and its month agree, so both survive as the month.
+    expect(parseArchiveLocation("?year=2026&month=2026-08").month).toBe(
+      "2026-08",
+    );
+  });
+
+  it("rejects positions whose parts disagree, and windows that are not one day", () => {
     for (const search of [
       "?year=2026&month=2025-12",
       "?month=0000-01",
       "?year=2026&month=2026-13",
+      "?day=2026-02-30",
+      "?month=2026-01&day=2026-02-01",
+      "?year=2025&day=2026-02-01",
       "?year=2026&month=2026-02&from=2026-02-28&to=2026-03-02",
-      "?year=2026&from=2026-01-01&to=2026-01-02",
-      "?loaded_through=cursor",
+      "?from=2026-01-01",
+      "?day=2026-01-02&from=2026-01-01&to=2026-01-02",
+      "?loaded_through=",
       "?year=2026&year=2025",
+      "?state=error",
     ]) {
       expect(parseArchiveLocation(search).error, search).not.toBeNull();
     }

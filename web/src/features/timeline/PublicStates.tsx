@@ -27,9 +27,27 @@ export function PublicEmpty({
   context = "timeline",
   owner = false,
 }: {
-  context?: "timeline" | "profile";
+  context?: "timeline" | "profile" | "archive";
   owner?: boolean;
 }) {
+  // An archive list positioned before the first post is empty for a reason
+  // of its own: nothing is older than where it starts. That is not "write
+  // your first Moment", whoever is reading.
+  if (context === "archive") {
+    return (
+      <section className={styles.message}>
+        <div>
+          <h2>这个日期之前没有 Moment</h2>
+          <p>从这里往前没有更早的内容；换一天，或者回到最新。</p>
+          <div className={styles.actions}>
+            <InternalLink className={styles.action} href="/archive">
+              回到最新
+            </InternalLink>
+          </div>
+        </div>
+      </section>
+    );
+  }
   const description = owner
     ? "写下第一段 Moment，它会出现在这里，也会进入你的公开归档。"
     : context === "profile"

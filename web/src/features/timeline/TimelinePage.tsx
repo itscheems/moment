@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import {
   PublicApi,
@@ -25,6 +31,7 @@ import {
   validateCursorPage,
   withoutLoadedProgress,
 } from "./cursorContinuity";
+import { dayHeading, siteDayOf, siteToday } from "./timelineDays";
 import { reconcileTimelineEvent, timelineItemKey } from "./timelineItems";
 import styles from "./TimelinePage.module.css";
 
@@ -69,17 +76,43 @@ export function TimelinePage({
   api,
   site,
   initialSearch,
+  dayHeadings = false,
+  before,
+  emptyContext = "timeline",
+  onReady,
   onSiteChanged,
   owner = false,
 }: {
   api: PublicApi;
   site: SiteIdentity;
+  /**
+   * The window and cursor the list is read with (`from`, `to`, `cursor`,
+   * `loaded_through`), read once. Not necessarily the page's own URL: the
+   * archive hands in a window it derived from its position.
+   */
   initialSearch: string;
+  /** Write the site-calendar day over each run of rows that share one. */
+  dayHeadings?: boolean;
+  /**
+   * The site day the list must stay before. `/posts?to=` windows rows by
+   * publication, so a Moment published inside the window and reposted after
+   * it comes back at the top of the page, dated by its repost; those rows are
+   * dropped here rather than headed with a day the reader did not ask for.
+   */
+  before?: string;
+  emptyContext?: "timeline" | "archive";
+  /** The first page is on screen and the entry's scroll position restored. */
+  onReady?: () => void;
   onSiteChanged?: (site: SiteIdentity) => void;
   owner?: boolean;
 }) {
-  const { navigate, pathname, replaceTimelineProgress, restoreCurrentEntry } =
-    useNavigation();
+  const {
+    navigate,
+    pathname,
+    search: liveSearch,
+    replaceTimelineProgress,
+    restoreCurrentEntry,
+  } = useNavigation();
   const [posts, setPosts] = useState<PublicPost[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [initialError, setInitialError] = useState<unknown>(null);
@@ -92,6 +125,8 @@ export function TimelinePage({
   const activeMore = useRef<AbortController | null>(null);
   const loadingMoreRef = useRef(false);
   const initialEntryRestored = useRef(false);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const ownerEvents = useRef(new Map<string, OwnerPostEvent>());
   const visitedCursors = useRef(new Set<string>());
 
@@ -217,6 +252,7 @@ export function TimelinePage({
     }
     initialEntryRestored.current = true;
     restoreCurrentEntry();
+    onReadyRef.current?.();
   }, [initialError, loadingInitial, restoreCurrentEntry]);
 
   const loadMore = async (source: LoadSource = "manual") => {
@@ -271,11 +307,13 @@ export function TimelinePage({
   };
 
   const resetFromFirstPage = () => {
-    const search = withoutLoadedProgress(initialSearchRef.current);
-    initialSearchRef.current = search;
+    initialSearchRef.current = withoutLoadedProgress(initialSearchRef.current);
     visitedCursors.current = new Set();
     setMoreError(null);
-    navigate(`${pathname}${search}`);
+    // The page's own address minus the progress, not the window the list was
+    // read with: on the archive the two differ, and navigating to the window
+    // would be a link to nowhere.
+    navigate(`${pathname}${withoutLoadedProgress(liveSearch)}`);
     void loadInitial();
   };
 
@@ -294,29 +332,61 @@ export function TimelinePage({
       />
     );
   }
-  if (posts.length === 0) return <PublicEmpty owner={owner} />;
+  const shown = before
+    ? posts.filter((post) => siteDayOf(post, site.timezone) < before)
+    : posts;
+  if (shown.length === 0 && !nextCursor) {
+    return <PublicEmpty context={emptyContext} owner={owner} />;
+  }
+
+  // One heading per site day, keyed on when the row appeared rather than when
+  // its Moment was written, so a repost files under the day it was reposted --
+  // the same instant the server ordered the rows by.
+  const todayYear = dayHeadings
+    ? Number(siteToday(site.timezone).slice(0, 4))
+    : 0;
+  const rows: ReactNode[] = [];
+  let headedDay: string | null = null;
+  shown.forEach((post, index) => {
+    if (dayHeadings) {
+      const day = siteDayOf(post, site.timezone);
+      if (day !== headedDay) {
+        headedDay = day;
+        rows.push(
+          <h2
+            className={styles.dayHeading}
+            data-timeline-day={day}
+            key={`day-${day}`}
+          >
+            {dayHeading(day, todayYear)}
+          </h2>,
+        );
+      }
+    }
+    rows.push(
+      <PostPresentation
+        compactTallVideo
+        eagerVideo={index === 0}
+        fresh={post.id === freshId}
+        key={timelineItemKey(post)}
+        owner={owner}
+        onReply={(event) => openReply(post, event)}
+        onReposted={handleReposted}
+        onSiteChanged={onSiteChanged}
+        post={post}
+        site={site}
+        timelineDensity
+      />,
+    );
+  });
 
   return (
     <>
       <section aria-label="公开时间流" className={styles.timelineList}>
         <p aria-live="polite" className={styles.srOnly}>
-          已加载 {posts.length} 条 Moment
+          已加载 {shown.length} 条 Moment
         </p>
-        {posts.map((post, index) => (
-          <PostPresentation
-            compactTallVideo
-            eagerVideo={index === 0}
-            fresh={post.id === freshId}
-            key={timelineItemKey(post)}
-            owner={owner}
-            onReply={(event) => openReply(post, event)}
-            onReposted={handleReposted}
-            onSiteChanged={onSiteChanged}
-            post={post}
-            site={site}
-            timelineDensity
-          />
-        ))}
+        {rows}
         {moreError ? (
           <div className={styles.moreError} role="alert">
             <span>

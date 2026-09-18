@@ -357,6 +357,12 @@
   display: none;
 }
 
+/* Empty on every page but the archive; hidden then, or the rail's gap would
+   open under the search box for nothing. */
+.railSlot:empty {
+  display: none;
+}
+
 .mobileNav {
   display: none;
 }

@@ -21,6 +21,9 @@ function json(body: unknown, status = 200): Response {
 
 const site = {
   data: {
+    owner_id: "00000000000000000000000000000000",
+    username: "owner",
+    display_name: "乔乔",
     title: "乔乔的 Moment",
     bio: "沿着日常留下坐标",
     timezone: "Asia/Shanghai",
@@ -114,6 +117,7 @@ describe("search and archive memory layer", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -701,60 +705,309 @@ describe("search and archive memory layer", () => {
     expect(window.location.search).toBe("?month=%ED%A0%80");
   });
 
-  it("navigates year, month, and day counts and preserves the day URL across history", async () => {
-    window.history.replaceState({}, "", "/archive");
-    install((url) => {
-      if (url === "/api/v1/archive/months") {
-        return json({
-          data: {
-            items: [
-              { year: 2026, month: 8, count: 2 },
-              { year: 2025, month: 12, count: 1 },
-            ],
-          },
-          meta: { request_id: "req_archive" },
-        });
-      }
-      if (url === "/api/v1/archive/month?month=2026-08") {
-        return json({
-          data: { month: "2026-08", days: [{ day: 10, count: 2 }] },
-          meta: { request_id: "req_archive" },
-        });
-      }
+  // ---- Archive ----
+  //
+  // The archive is the timeline with a calendar beside it: the list is on
+  // screen from the start, a day is where the list starts rather than what it
+  // is filtered to, and the calendar pages on its own without moving the list.
+  // Today is pinned so the calendar's ceiling -- the site's current month --
+  // does not drift with the clock these tests run under.
+
+  const archiveMonths = {
+    data: {
+      items: [
+        { year: 2026, month: 8, count: 2 },
+        { year: 2025, month: 12, count: 1 },
+      ],
+    },
+    meta: { request_id: "req_archive" },
+  };
+  const august = {
+    data: { month: "2026-08", days: [{ day: 10, count: 2 }] },
+    meta: { request_id: "req_archive" },
+  };
+  const december = {
+    data: { month: "2025-12", days: [{ day: 31, count: 1 }] },
+    meta: { request_id: "req_archive" },
+  };
+  // 16:20 UTC on the 30th is 00:20 on the 31st in Shanghai: the heading has
+  // to say the site's day, and the year, since it is not this one.
+  const lastYear = {
+    ...post("01K2ABCDEF0123456789ABCDE2", "去年最后一天的雨"),
+    created_at: "2025-12-30T16:20:00.000Z",
+    updated_at: "2025-12-30T16:20:00.000Z",
+    published_at: "2025-12-30T16:20:00.000Z",
+  };
+
+  // Published inside August, reposted on the 20th: the server windows rows by
+  // publication, so this comes back for a day before the 20th, dated by its
+  // repost. Under no position it files under the 20th; under a position
+  // before the 20th it is dropped.
+  const repostedLater = {
+    ...post("01K2ABCDEF0123456789ABCDE3", "旧帖，后来转发"),
+    created_at: "2026-08-01T01:00:00.000Z",
+    updated_at: "2026-08-01T01:00:00.000Z",
+    published_at: "2026-08-01T01:00:00.000Z",
+    reposted_at: "2026-08-20T01:00:00.000Z",
+    timeline_item_kind: "repost",
+  };
+
+  function installArchive(
+    posts: unknown[] = [first, lastYear, repostedLater],
+  ) {
+    return install((url) => {
+      if (url === "/api/v1/archive/months") return json(archiveMonths);
+      if (url === "/api/v1/archive/month?month=2026-08") return json(august);
+      if (url === "/api/v1/archive/month?month=2025-12") return json(december);
       if (url.startsWith("/api/v1/posts?")) {
-        return json({
-          data: { items: [first] },
-          meta: { next_cursor: null },
-        });
+        return json({ data: { items: posts }, meta: { next_cursor: null } });
       }
       return json({}, 404);
     });
+  }
+
+  function pinToday() {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-18T04:00:00Z"));
+  }
+
+  function postRequests(fetcher: ReturnType<typeof install>): string[] {
+    return fetcher.mock.calls
+      .map(([input]) => String(input))
+      .filter((url) => url.startsWith("/api/v1/posts?"));
+  }
+
+  it("opens the archive on the list, headed by site days, with the calendar on the newest month that holds posts", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    const fetcher = installArchive();
     render(<App />);
 
+    // The site's own day, which lands only once the site's zone is known.
     expect(
-      await screen.findByRole("heading", { name: "2026" }),
+      await screen.findByRole("heading", { name: "2025年12月31日 周三" }),
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByText("8 月").closest("a")!);
     expect(
-      await screen.findByRole("heading", { name: "2026 年 8 月" }),
+      screen.getByRole("heading", { name: "8月10日 周一" }),
     ).toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole("link", { name: "2026-08-10，2 条 Moment" }),
-    );
-    expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
-    expect(window.location.search).toContain("year=2026");
-    expect(window.location.search).toContain("month=2026-08");
-    expect(window.location.search).toContain("from=2026-08-10");
-    expect(window.location.search).toContain("to=2026-08-11");
+    expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument();
+    // A repost files under the day it was reposted.
+    expect(
+      screen.getByRole("heading", { name: "8月20日 周四" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("旧帖，后来转发")).toBeInTheDocument();
+    // No position: the list starts at the newest post, with no window.
+    expect(postRequests(fetcher)).toEqual(["/api/v1/posts?limit=20"]);
 
-    fireEvent.click(screen.getByRole("link", { name: "清除日期" }));
+    // August, not the empty current month.
     expect(
-      await screen.findByRole("heading", { name: "2026 年 8 月" }),
+      screen.getByRole("button", { name: "2026年8月，选择年月" }),
     ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", { name: "8月10日，2 条 Moment" }),
+    ).toHaveAttribute("href", "/archive?day=2026-08-10");
+    expect(screen.getByLabelText("8月11日，没有 Moment").tagName).toBe("SPAN");
+    expect(screen.getByText("本月 2 条")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "回到最新" })).toBeNull();
+
+    // Neighbouring months with nothing in them cost no request.
+    const monthRequests = fetcher.mock.calls
+      .map(([input]) => String(input))
+      .filter((url) => url.startsWith("/api/v1/archive/month?"));
+    expect(monthRequests).toEqual(["/api/v1/archive/month?month=2026-08"]);
+  });
+
+  it("starts the list at a picked day, reads back past it, and keeps the day across history", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    const fetcher = installArchive();
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("link", { name: "8月10日，2 条 Moment" }),
+    );
+    expect(window.location.search).toBe("?day=2026-08-10");
+    await waitFor(() =>
+      expect(postRequests(fetcher)).toContain(
+        "/api/v1/posts?limit=20&to=2026-08-11",
+      ),
+    );
+    // Older rows keep coming under their own headings.
+    expect(
+      await screen.findByRole("heading", { name: "2025年12月31日 周三" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("旧城雨落在街口")).toBeInTheDocument();
+    // The row a repost carried past the 10th is not headed with the 20th.
+    expect(screen.queryByText("旧帖，后来转发")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "8月20日 周四" }),
+    ).toBeNull();
+    // The window is open below: nothing says `from`.
+    expect(postRequests(fetcher).some((url) => url.includes("from="))).toBe(
+      false,
+    );
+    expect(
+      screen.getByRole("link", { name: "8月10日，2 条 Moment，已选择" }),
+    ).toHaveAttribute("aria-current", "date");
+
+    fireEvent.click(screen.getByRole("link", { name: "回到最新" }));
+    await waitFor(() => expect(window.location.search).toBe(""));
+    expect(screen.queryByRole("link", { name: "回到最新" })).toBeNull();
+
     act(() => window.history.back());
     await waitFor(() =>
-      expect(window.location.search).toContain("from=2026-08-10"),
+      expect(window.location.search).toBe("?day=2026-08-10"),
     );
-    expect(await screen.findByText("旧城雨落在街口")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("link", {
+        name: "8月10日，2 条 Moment，已选择",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "8月10日 周一" }),
+    ).toBeInTheDocument();
+  });
+
+  it("jumps years and months from the picker, and draws empty months as places rather than controls", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    const fetcher = installArchive();
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "2026年8月，选择年月" }),
+    );
+    const years = await screen.findByRole("group", { name: "年份" });
+    expect(within(years).getByRole("button", { name: /2026/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(within(years).getByRole("button", { name: /2025/ })).toHaveTextContent(
+      "1 条",
+    );
+    expect(
+      screen.getByRole("link", { name: "2026年8月，2 条 Moment" }),
+    ).toHaveAttribute("aria-current", "date");
+    expect(screen.getByLabelText("2026年7月，没有 Moment").tagName).toBe(
+      "SPAN",
+    );
+
+    // A year moves the calendar to its newest month and leaves the picker up.
+    fireEvent.click(within(years).getByRole("button", { name: /2025/ }));
+    expect(
+      await screen.findByRole("button", { name: "2025年12月，选择年月" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("list", { name: "2025 年的月份" }),
+    ).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+
+    // A month moves the list and closes the picker.
+    fireEvent.click(
+      screen.getByRole("link", { name: "2025年12月，1 条 Moment" }),
+    );
+    expect(window.location.search).toBe("?month=2025-12");
+    await waitFor(() =>
+      expect(postRequests(fetcher)).toContain(
+        "/api/v1/posts?limit=20&to=2026-01-01",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("group", { name: "年份" })).toBeNull(),
+    );
+    expect(
+      await screen.findByRole("link", { name: "12月31日，1 条 Moment" }),
+    ).toBeInTheDocument();
+  });
+
+  it("pages the calendar within the archive's span without moving the list", async () => {
+    pinToday();
+    window.history.replaceState({}, "", "/archive");
+    const fetcher = installArchive();
+    render(<App />);
+    await screen.findByRole("link", { name: "8月10日，2 条 Moment" });
+    const requestsBefore = fetcher.mock.calls.length;
+
+    // Forward to the site's current month, September, and no further.
+    fireEvent.click(screen.getByRole("button", { name: "下个月" }));
+    expect(
+      screen.getByRole("button", { name: "2026年9月，选择年月" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("这个月没有 Moment")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "下个月" })).toBeDisabled();
+
+    // Back through the empty months to the oldest one, and no further.
+    const previous = screen.getByRole("button", { name: "上个月" });
+    for (let step = 0; step < 9; step += 1) fireEvent.click(previous);
+    expect(
+      screen.getByRole("button", { name: "2025年12月，选择年月" }),
+    ).toBeInTheDocument();
+    expect(previous).toBeDisabled();
+    expect(
+      await screen.findByRole("link", { name: "12月31日，1 条 Moment" }),
+    ).toBeInTheDocument();
+
+    // The list never moved, and empty months cost nothing.
+    expect(window.location.search).toBe("");
+    const requests = fetcher.mock.calls
+      .slice(requestsBefore)
+      .map(([input]) => String(input));
+    expect(requests).toEqual(["/api/v1/archive/month?month=2025-12"]);
+  });
+
+  it("opens the links the archive used to write on their day, and refuses broken ones", async () => {
+    pinToday();
+    window.history.replaceState(
+      {},
+      "",
+      "/archive?year=2026&month=2026-08&from=2026-08-10&to=2026-08-11",
+    );
+    const fetcher = installArchive();
+    const { unmount } = render(<App />);
+    expect(
+      await screen.findByRole("link", {
+        name: "8月10日，2 条 Moment，已选择",
+      }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(postRequests(fetcher)).toContain(
+        "/api/v1/posts?limit=20&to=2026-08-11",
+      ),
+    );
+
+    unmount();
+    window.history.replaceState({}, "", "/archive?day=2026-02-30");
+    render(<App />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("归档链接无效");
+    expect(screen.getByRole("link", { name: "回到归档" })).toHaveAttribute(
+      "href",
+      "/archive",
+    );
+    expect(screen.queryByRole("button", { name: /选择年月/ })).toBeNull();
+  });
+
+  it("stands the calendar in the right rail where the shell draws one", async () => {
+    pinToday();
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query === "(min-width: 1280px)",
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    window.history.replaceState({}, "", "/archive");
+    installArchive();
+    render(<App />);
+
+    const rail = screen.getByRole("complementary", { name: "记忆导航" });
+    expect(
+      await within(rail).findByRole("button", { name: "2026年8月，选择年月" }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("main")).queryByRole("button", {
+        name: "2026年8月，选择年月",
+      }),
+    ).toBeNull();
   });
 });
