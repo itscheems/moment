@@ -195,17 +195,39 @@ WHERE 1 = 1`
 		statement += "\n  AND published_at_ms < ?"
 		arguments = append(arguments, *query.ToMS)
 	}
+	newer := query.Direction == app.TimelineNewer
 	if query.Position != nil {
-		kind := timelineKindRank(query.Position.Kind)
-		statement += `
-  AND (timeline_at_ms < ? OR (
+		switch {
+		case query.Position.Boundary && newer:
+			statement += "\n  AND timeline_at_ms >= ?"
+			arguments = append(arguments, query.Position.TimelineAtMS)
+		case query.Position.Boundary:
+			statement += "\n  AND timeline_at_ms < ?"
+			arguments = append(arguments, query.Position.TimelineAtMS)
+		default:
+			// The triple the ORDER BY sorts on, compared the way the page reads:
+			// strictly past the row the cursor names, in either direction.
+			compare := "<"
+			if newer {
+				compare = ">"
+			}
+			kind := timelineKindRank(query.Position.Kind)
+			statement += fmt.Sprintf(`
+  AND (timeline_at_ms %[1]s ? OR (
     timeline_at_ms = ? AND (
-      timeline_kind < ? OR (timeline_kind = ? AND id < ?)
+      timeline_kind %[1]s ? OR (timeline_kind = ? AND id %[1]s ?)
     )
-  ))`
-		arguments = append(arguments, query.Position.TimelineAtMS, query.Position.TimelineAtMS, kind, kind, query.Position.ID.String())
+  ))`, compare)
+			arguments = append(arguments, query.Position.TimelineAtMS, query.Position.TimelineAtMS, kind, kind, query.Position.ID.String())
+		}
 	}
-	statement += "\nORDER BY timeline_at_ms DESC, timeline_kind DESC, id DESC\nLIMIT ?"
+	// Ascending for a newer read, so LIMIT keeps the rows nearest the position
+	// rather than the newest on the site; the service turns the page around.
+	order := "DESC"
+	if newer {
+		order = "ASC"
+	}
+	statement += fmt.Sprintf("\nORDER BY timeline_at_ms %[1]s, timeline_kind %[1]s, id %[1]s\nLIMIT ?", order)
 	arguments = append(arguments, limit)
 	rows, err := store.queries.QueryContext(ctx, statement, arguments...)
 	if err != nil {

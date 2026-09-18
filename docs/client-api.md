@@ -131,6 +131,26 @@ CLI: `moment post create --visibility only_me`, `moment post update <id>
 --visibility everyone`. Direct mode reads as the owner; `--url` mode presents
 `MOMENT_TOKEN` on reads when it is configured and otherwise reads as a visitor.
 
+## Timeline paging
+
+`GET /api/v1/posts` reads one page at a time, newest first. The page's `meta`
+carries two opaque cursors: `next_cursor` continues *older* from the page's
+last item and `prev_cursor` continues *newer* from its first. Either goes back
+as `cursor=`; a cursor knows its own direction. Each is `null` once the read
+that produced the page proved that direction exhausted, and a page proves only
+the direction it read — a newer page's `next_cursor` is set whenever the page
+has items. Cursors issued before this contract carry no direction and continue
+older.
+
+`anchor=YYYY-MM-DD` names a site-calendar day to read back from: the items are
+what appeared on or before it and `prev_cursor` continues into what appeared
+after it. The anchor is a position on the timeline's own axis — the instant a
+row appeared, which for a repost is the repost — not a publication window, so
+`anchor` cannot be combined with `from`, `to` or `cursor` (`INVALID_ARGUMENT`).
+
+`from` and `to` are unchanged: a half-open window on publication in the site
+timezone, and a cursor minted under a window is valid only with that window.
+
 ## Exports
 
 `GET /owner/export` remains an owner-only, complete `moment-export-v1` backup.

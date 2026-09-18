@@ -577,3 +577,107 @@ func (clock *sequenceClock) Now() time.Time {
 	clock.index++
 	return value
 }
+
+// An anchored day is a position on the timeline's own axis, read both ways:
+// the page holds what appeared on or before it and the newer continuation
+// walks forward from it, contiguously, without ever handing a row over twice.
+// A repost is where it was reposted, not where its Moment was published, on
+// both sides of the anchor.
+func TestPostTimelineReadsBothWaysFromAnAnchoredDay(t *testing.T) {
+	t.Parallel()
+	db, _ := openTestDatabase(t, Options{})
+	ids := []string{entryOne, entryTwo, entryThree, "01ARZ3NDEKTSV4RRFFQ69G5FAY", "01ARZ3NDEKTSV4RRFFQ69G5FAZ"}
+	instants := []time.Time{
+		time.Date(2026, time.August, 10, 23, 0, 0, 0, time.UTC),
+		time.Date(2026, time.August, 11, 1, 0, 0, 0, time.UTC),
+		time.Date(2026, time.August, 11, 13, 0, 0, 0, time.UTC),
+		time.Date(2026, time.August, 12, 2, 0, 0, 0, time.UTC),
+		time.Date(2026, time.August, 13, 9, 0, 0, 0, time.UTC),
+	}
+	now := instants[0]
+	service := newTestPostService(t, db, func() time.Time { return now }, sequenceIDs(ids...))
+	ctx := context.Background()
+	for index := range ids {
+		now = instants[index]
+		if _, err := service.Create(ctx, app.CreatePostInput{ContentMD: "post " + ids[index]}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The first Moment, published on the 10th, reposted on the 13th.
+	now = time.Date(2026, time.August, 13, 10, 0, 0, 0, time.UTC)
+	if _, err := service.SetReposted(ctx, domain.ID(ids[0]), true); err != nil {
+		t.Fatal(err)
+	}
+
+	type row struct {
+		id   string
+		kind app.TimelineItemKind
+	}
+	rowsOf := func(page app.PostPage) []row {
+		rows := make([]row, 0, len(page.Items))
+		for _, post := range page.Items {
+			rows = append(rows, row{id: post.Entry.ID.String(), kind: post.TimelineKind})
+		}
+		return rows
+	}
+	original := func(index int) row { return row{id: ids[index], kind: app.TimelineItemOriginal} }
+	list := func(input app.ListPostsInput) app.PostPage {
+		t.Helper()
+		input.Timezone = "UTC"
+		page, err := service.List(ctx, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+
+	// On or before the 11th, newest first; the repost row appeared on the
+	// 13th and is not here even though its Moment was published inside.
+	anchored := list(app.ListPostsInput{Anchor: "2026-08-11", Limit: 2})
+	if !reflect.DeepEqual(rowsOf(anchored), []row{original(2), original(1)}) || anchored.NextCursor == "" || anchored.PrevCursor == "" {
+		t.Fatalf("anchored page = %+v", anchored)
+	}
+	older := list(app.ListPostsInput{Cursor: anchored.NextCursor, Limit: 2})
+	if !reflect.DeepEqual(rowsOf(older), []row{original(0)}) || older.NextCursor != "" {
+		t.Fatalf("older continuation = %+v", older)
+	}
+
+	// Newer from the anchored page: the rows nearest the position first, each
+	// page served newest first, until the repost row on the 13th ends it.
+	newer := list(app.ListPostsInput{Cursor: anchored.PrevCursor, Limit: 2})
+	if !reflect.DeepEqual(rowsOf(newer), []row{original(4), original(3)}) || newer.PrevCursor == "" || newer.NextCursor == "" {
+		t.Fatalf("newer page = %+v", newer)
+	}
+	newest := list(app.ListPostsInput{Cursor: newer.PrevCursor, Limit: 2})
+	if !reflect.DeepEqual(rowsOf(newest), []row{{id: ids[0], kind: app.TimelineItemRepost}}) || newest.PrevCursor != "" {
+		t.Fatalf("newest page = %+v", newest)
+	}
+	// A newer page's older continuation reads back from its last row.
+	back := list(app.ListPostsInput{Cursor: newer.NextCursor, Limit: 1})
+	if !reflect.DeepEqual(rowsOf(back), []row{original(2)}) {
+		t.Fatalf("back from a newer page = %+v", back)
+	}
+
+	// A day before anything: nothing on or before it, and everything after.
+	before := list(app.ListPostsInput{Anchor: "2026-08-09", Limit: 2})
+	if len(before.Items) != 0 || before.NextCursor != "" || before.PrevCursor == "" {
+		t.Fatalf("page before the first post = %+v", before)
+	}
+	first := list(app.ListPostsInput{Cursor: before.PrevCursor, Limit: 2})
+	if !reflect.DeepEqual(rowsOf(first), []row{original(1), original(0)}) {
+		t.Fatalf("newer from an empty anchored page = %+v", first)
+	}
+
+	for _, input := range []app.ListPostsInput{
+		{Anchor: "2026-08-11", FromDate: "2026-08-01", Timezone: "UTC"},
+		{Anchor: "2026-08-11", ToDate: "2026-09-01", Timezone: "UTC"},
+		{Anchor: "2026-08-11", Cursor: anchored.PrevCursor, Timezone: "UTC"},
+		{Anchor: "08-11-2026", Timezone: "UTC"},
+		{Anchor: "2026-08-11"},
+		{Cursor: anchored.PrevCursor, FromDate: "2026-08-01", ToDate: "2026-09-01", Timezone: "UTC"},
+	} {
+		if _, err := service.List(ctx, input); !domain.HasCode(err, domain.CodeInvalidArgument) && !domain.HasCode(err, domain.CodeDataIntegrityFailed) {
+			t.Fatalf("input %+v returned %v", input, err)
+		}
+	}
+}

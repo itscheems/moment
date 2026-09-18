@@ -40,9 +40,9 @@ func registerPosts(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path:       []string{"post", "list"},
 		Short:      "List the public Moment timeline",
-		Long:       "Read one stable reverse-chronological page through the selected local instance or HTTP API.",
-		Inputs:     "Use --cursor for continuation, --limit from 1 to 100, and optional YYYY-MM-DD boundaries: inclusive --from and exclusive --to in the configured site timezone.",
-		Output:     "A canonical post array in data.items and nullable meta.next_cursor; internal Entry kind is never exposed.",
+		Long:       "Read one stable page, newest first, through the selected local instance or HTTP API: the head of the timeline, a cursor's continuation in the direction it names, or the end of an anchored day read back from.",
+		Inputs:     "Use --cursor for continuation, --limit from 1 to 100, and optional YYYY-MM-DD boundaries: inclusive --from and exclusive --to in the configured site timezone. --anchor names a site day to read back from instead; it cannot be combined with --cursor, --from, or --to.",
+		Output:     "A canonical post array in data.items with nullable meta.next_cursor (continues older) and meta.prev_cursor (continues newer); internal Entry kind is never exposed.",
 		Errors:     "Invalid cursors, limits, dates, or site authority return stable machine codes.",
 		Example:    "moment post list --data-dir ./moment-data --limit 20 --json",
 		Capability: CapabilityBoth,
@@ -51,6 +51,7 @@ func registerPosts(application *Application) {
 			flags.Int("limit", 0, "page size from 1 to 100 (default 20)")
 			flags.String("from", "", "inclusive local date in YYYY-MM-DD format")
 			flags.String("to", "", "exclusive local date in YYYY-MM-DD format")
+			flags.String("anchor", "", "local date in YYYY-MM-DD format to read back from")
 		},
 		Run: runPostList,
 	})
@@ -269,7 +270,7 @@ func runPostList(ctx context.Context, invocation Invocation, input CommandInput)
 		}
 		page = postdto.FromPage(result)
 		nextCursor = postdto.NextCursor(result)
-		meta = map[string]any{"next_cursor": nextCursor}
+		meta = map[string]any{"next_cursor": nextCursor, "prev_cursor": postdto.PrevCursor(result)}
 	case ModeAPI:
 		query := url.Values{}
 		if listInput.Cursor != "" {
@@ -283,6 +284,9 @@ func runPostList(ctx context.Context, invocation Invocation, input CommandInput)
 		}
 		if listInput.ToDate != "" {
 			query.Set("to", listInput.ToDate)
+		}
+		if listInput.Anchor != "" {
+			query.Set("anchor", listInput.Anchor)
 		}
 		var status int
 		meta, status, err = postAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/posts", query, nil, "", false, &page)
@@ -1237,7 +1241,14 @@ func postListFlags(input CommandInput) (app.ListPostsInput, error) {
 	if input.Changed("to") && toDate == "" {
 		return app.ListPostsInput{}, invalidArgument("--to cannot be empty", "provide an exclusive date in YYYY-MM-DD format or remove --to")
 	}
-	return app.ListPostsInput{Cursor: cursor, Limit: limit, FromDate: fromDate, ToDate: toDate}, nil
+	anchor, err := input.String("anchor")
+	if err != nil {
+		return app.ListPostsInput{}, err
+	}
+	if input.Changed("anchor") && anchor == "" {
+		return app.ListPostsInput{}, invalidArgument("--anchor cannot be empty", "provide a local date in YYYY-MM-DD format or remove --anchor")
+	}
+	return app.ListPostsInput{Cursor: cursor, Limit: limit, FromDate: fromDate, ToDate: toDate, Anchor: anchor}, nil
 }
 
 func postID(value string) (domain.ID, error) { return domain.ParseID(value) }

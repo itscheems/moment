@@ -525,11 +525,29 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 		t.Fatalf("continued = %#v", continued)
 	}
 
+	// An anchored day reads back from its end and prev_cursor walks forward.
+	anchoredOutput := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--anchor", "2026-08-09", "--limit", "5", "--json")
+	anchored := commandData(t, anchoredOutput)
+	anchoredMeta := decodeOneDocument(t, anchoredOutput.stdout)["meta"].(map[string]any)
+	if anchoredItems := anchored["items"].([]any); len(anchoredItems) != 1 || anchoredItems[0].(map[string]any)["content_md"] != "before" || anchoredMeta["next_cursor"] != nil || anchoredMeta["prev_cursor"] == nil {
+		t.Fatalf("anchored = %#v, meta = %#v", anchored, anchoredMeta)
+	}
+	newerOutput := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--limit", "1", "--cursor", anchoredMeta["prev_cursor"].(string), "--json")
+	newer := commandData(t, newerOutput)
+	newerMeta := decodeOneDocument(t, newerOutput.stdout)["meta"].(map[string]any)
+	if newer["items"].([]any)[0].(map[string]any)["content_md"] != "inside one" || newerMeta["prev_cursor"] == nil {
+		t.Fatalf("newer = %#v, meta = %#v", newer, newerMeta)
+	}
+
 	for _, args := range [][]string{
 		{"post", "list", "--data-dir", fixture.dataDir, "--cursor", cursor, "--json"},
 		{"post", "list", "--data-dir", fixture.dataDir, "--cursor", "invalid", "--json"},
 		{"post", "list", "--data-dir", fixture.dataDir, "--limit", "101", "--json"},
 		{"post", "list", "--data-dir", fixture.dataDir, "--from", "2026-08-11", "--to", "2026-08-10", "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--anchor", "2026-08-09", "--from", "2026-08-01", "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--anchor", "2026-08-09", "--cursor", cursor, "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--anchor", "08-09-2026", "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--anchor", "", "--json"},
 	} {
 		output := execute(application, "", args...)
 		if output.exit != ExitInvalidInput || decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {

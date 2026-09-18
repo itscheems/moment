@@ -106,7 +106,7 @@ func listPosts(posts *app.PostService, site *app.SiteService, gate *Gate) gin.Ha
 			writePostError(ctx, err)
 			return
 		}
-		Success(ctx, http.StatusOK, postdto.FromPage(page), map[string]any{"next_cursor": postdto.NextCursor(page)})
+		Success(ctx, http.StatusOK, postdto.FromPage(page), map[string]any{"next_cursor": postdto.NextCursor(page), "prev_cursor": postdto.PrevCursor(page)})
 	}
 }
 
@@ -215,7 +215,7 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 	}
 	for key, values := range query {
 		switch key {
-		case "cursor", "limit", "from", "to":
+		case "cursor", "limit", "from", "to", "anchor":
 		default:
 			return app.ListPostsInput{}, invalidPostArgument("unsupported query parameter", key)
 		}
@@ -227,11 +227,12 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 		Cursor:   query.Get("cursor"),
 		FromDate: query.Get("from"),
 		ToDate:   query.Get("to"),
+		Anchor:   query.Get("anchor"),
 	}
 	if values, present := query["cursor"]; present && values[0] == "" {
 		return app.ListPostsInput{}, invalidPostArgument("cursor cannot be empty", "cursor")
 	}
-	for _, field := range []string{"from", "to"} {
+	for _, field := range []string{"from", "to", "anchor"} {
 		if values, present := query[field]; present && values[0] == "" {
 			return app.ListPostsInput{}, invalidPostArgument(field+" cannot be empty", field)
 		}

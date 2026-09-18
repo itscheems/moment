@@ -469,6 +469,55 @@ func TestPostHTTPDateCursorStrictBindingAndQueryValidation(t *testing.T) {
 		t.Fatalf("filter-mismatched cursor = %d %s", reused.Code, reused.Body.String())
 	}
 
+	// An anchored day reads back from its end, and its prev_cursor walks
+	// forward from it one page at a time, nearest rows first, until the
+	// direction is proved empty.
+	type cursors struct {
+		NextCursor *string `json:"next_cursor"`
+		PrevCursor *string `json:"prev_cursor"`
+	}
+	readPage := func(path string) ([]map[string]any, cursors) {
+		t.Helper()
+		response := performRequest(fixture.engine, ownerRequest(http.MethodGet, path, ""))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s = %d %s", path, response.Code, response.Body.String())
+		}
+		var body struct {
+			Data struct {
+				Items []map[string]any `json:"items"`
+			} `json:"data"`
+			Meta cursors `json:"meta"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		return body.Data.Items, body.Meta
+	}
+	anchoredItems, anchoredMeta := readPage("/api/v1/posts?anchor=2026-08-09&limit=5")
+	if len(anchoredItems) != 1 || anchoredItems[0]["content_md"] != "before" || anchoredMeta.NextCursor != nil || anchoredMeta.PrevCursor == nil {
+		t.Fatalf("anchored page = %#v, meta = %#v", anchoredItems, anchoredMeta)
+	}
+	newerItems, newerMeta := readPage("/api/v1/posts?limit=1&cursor=" + *anchoredMeta.PrevCursor)
+	if len(newerItems) != 1 || newerItems[0]["content_md"] != "inside one" || newerMeta.PrevCursor == nil || newerMeta.NextCursor == nil {
+		t.Fatalf("newer page = %#v, meta = %#v", newerItems, newerMeta)
+	}
+	newestItems, newestMeta := readPage("/api/v1/posts?limit=1&cursor=" + *newerMeta.PrevCursor)
+	if len(newestItems) != 1 || newestItems[0]["content_md"] != "inside two" || newestMeta.PrevCursor != nil {
+		t.Fatalf("newest page = %#v, meta = %#v", newestItems, newestMeta)
+	}
+	for _, endpoint := range []string{
+		"/api/v1/posts?anchor=2026-08-09&from=2026-08-01",
+		"/api/v1/posts?anchor=2026-08-09&to=2026-09-01",
+		"/api/v1/posts?anchor=2026-08-09&cursor=" + *anchoredMeta.PrevCursor,
+		"/api/v1/posts?anchor=",
+		"/api/v1/posts?anchor=08-09-2026",
+	} {
+		response := performRequest(fixture.engine, ownerRequest(http.MethodGet, endpoint, ""))
+		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
+			t.Fatalf("%s = %d %s", endpoint, response.Code, response.Body.String())
+		}
+	}
+
 	for _, endpoint := range []string{
 		"/api/v1/posts?cursor=invalid",
 		"/api/v1/posts?limit=101",

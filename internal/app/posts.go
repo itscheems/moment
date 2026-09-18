@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/moment/moment/internal/domain"
@@ -200,6 +201,12 @@ type ListPostsInput struct {
 	Limit    int
 	FromDate string
 	ToDate   string
+	// Anchor is a site-calendar day the page reads back from: what appeared
+	// on or before it, newest first, with PrevCursor continuing into what
+	// appeared after it. It is a position on the timeline's own axis -- the
+	// instant a row appeared, a repost's included -- not a publication window,
+	// and cannot be combined with one or with a Cursor.
+	Anchor   string
 	Timezone string
 	// Viewer decides which visibilities the page may contain. The zero value
 	// is a visitor.
@@ -211,15 +218,22 @@ type ListPostsInput struct {
 // boundaries themselves.
 type TimelineQuery struct {
 	Position *TimelinePosition
-	FromMS   *int64
-	ToMS     *int64
-	Viewer   Viewer
+	// Direction is which way to read from Position; the zero value reads
+	// older. A newer read returns rows ascending, oldest first.
+	Direction TimelineDirection
+	FromMS    *int64
+	ToMS      *int64
+	Viewer    Viewer
 }
 
-// PostPage is one stable keyset page.
+// PostPage is one stable keyset page, newest first whichever way it was read.
+// NextCursor continues older from its last item and PrevCursor newer from its
+// first; each is empty once the read that produced the page proved that
+// direction exhausted, and a page proves only the direction it read.
 type PostPage struct {
 	Items      []Post
 	NextCursor string
+	PrevCursor string
 }
 
 // PostClock is injected to keep time deterministic in tests and development
@@ -638,7 +652,9 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 	return result, err
 }
 
-// List returns one deterministic reverse-chronological keyset page.
+// List returns one deterministic keyset page, newest first: the head of the
+// timeline, the continuation a cursor names in the direction it names, or the
+// end of an anchored day read back from.
 func (service *PostService) List(ctx context.Context, input ListPostsInput) (PostPage, error) {
 	if err := contextError(ctx); err != nil {
 		return PostPage{}, err
@@ -651,9 +667,20 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	if err != nil {
 		return PostPage{}, err
 	}
-	position, err := decodeTimelineCursor(input.Cursor, fromMS, toMS)
+	position, direction, err := decodeTimelineCursor(input.Cursor, fromMS, toMS)
 	if err != nil {
 		return PostPage{}, err
+	}
+	if input.Anchor != "" {
+		if input.Cursor != "" || fromMS != nil || toMS != nil {
+			return PostPage{}, domain.NewError(domain.CodeInvalidArgument, "anchor cannot be combined with cursor, from, or to", map[string]any{"field": "anchor"})
+		}
+		anchorEndMS, anchorErr := postAnchorEnd(input.Anchor, input.Timezone)
+		if anchorErr != nil {
+			return PostPage{}, anchorErr
+		}
+		position = &TimelinePosition{TimelineAtMS: anchorEndMS, Boundary: true}
+		direction = TimelineOlder
 	}
 
 	var entries []TimelineEntry
@@ -664,7 +691,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	quotedByEntry := make(map[domain.ID]*QuotedPost)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
-		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, FromMS: fromMS, ToMS: toMS, Viewer: input.Viewer}, limit+1)
+		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, Direction: direction, FromMS: fromMS, ToMS: toMS, Viewer: input.Viewer}, limit+1)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -701,9 +728,14 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		return PostPage{}, normalizePostRepositoryError(err)
 	}
 
-	hasNext := len(entries) > limit
-	if hasNext {
+	hasMore := len(entries) > limit
+	if hasMore {
 		entries = entries[:limit]
+	}
+	if direction == TimelineNewer {
+		// Read ascending so the limit takes the rows nearest the position;
+		// served newest first like every other page.
+		slices.Reverse(entries)
 	}
 	page := PostPage{Items: make([]Post, 0, len(entries))}
 	for _, item := range entries {
@@ -716,27 +748,64 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		post.TimelineKind = item.Kind
 		page.Items = append(page.Items, post)
 	}
-	if hasNext {
-		last := entries[len(entries)-1]
-		page.NextCursor = encodeTimelineCursor(TimelinePosition{
-			TimelineAtMS: domain.TimeToMillis(last.TimelineAt()),
-			Kind:         last.Kind,
-			ID:           last.Entry.ID,
-		}, fromMS, toMS)
+	cursorFor := func(item TimelineEntry, toward TimelineDirection) string {
+		return encodeTimelineCursor(TimelinePosition{
+			TimelineAtMS: domain.TimeToMillis(item.TimelineAt()),
+			Kind:         item.Kind,
+			ID:           item.Entry.ID,
+		}, toward, fromMS, toMS)
+	}
+	switch {
+	case len(entries) > 0 && direction == TimelineOlder:
+		if hasMore {
+			page.NextCursor = cursorFor(entries[len(entries)-1], TimelineOlder)
+		}
+		page.PrevCursor = cursorFor(entries[0], TimelineNewer)
+	case len(entries) > 0:
+		page.NextCursor = cursorFor(entries[len(entries)-1], TimelineOlder)
+		if hasMore {
+			page.PrevCursor = cursorFor(entries[0], TimelineNewer)
+		}
+	case position != nil && position.Boundary && direction == TimelineOlder:
+		// Nothing on or before the anchored day. What appeared after it is
+		// still there, and the boundary is the only row-free way to name it.
+		page.PrevCursor = encodeTimelineCursor(*position, TimelineNewer, fromMS, toMS)
 	}
 	return page, nil
+}
+
+// postAnchorEnd is the first instant after a site-calendar day, in
+// milliseconds: the boundary an anchored page reads back from.
+func postAnchorEnd(anchor, timezone string) (int64, error) {
+	location, err := postLocation(timezone)
+	if err != nil {
+		return 0, err
+	}
+	day, err := time.ParseInLocation("2006-01-02", anchor, location)
+	if err != nil || day.Format("2006-01-02") != anchor {
+		return 0, domain.NewError(domain.CodeInvalidArgument, "anchor must use YYYY-MM-DD", map[string]any{"field": "anchor"})
+	}
+	return domain.TimeToMillis(day.AddDate(0, 0, 1)), nil
+}
+
+func postLocation(timezone string) (*time.Location, error) {
+	if err := validateTimezone(timezone); err != nil {
+		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored site timezone is invalid", map[string]any{"field": "timezone"})
+	}
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored site timezone is unavailable", map[string]any{"field": "timezone"})
+	}
+	return location, nil
 }
 
 func postDateRange(fromDate, toDate, timezone string) (*int64, *int64, error) {
 	if fromDate == "" && toDate == "" {
 		return nil, nil, nil
 	}
-	if err := validateTimezone(timezone); err != nil {
-		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored site timezone is invalid", map[string]any{"field": "timezone"})
-	}
-	location, err := time.LoadLocation(timezone)
+	location, err := postLocation(timezone)
 	if err != nil {
-		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored site timezone is unavailable", map[string]any{"field": "timezone"})
+		return nil, nil, err
 	}
 	parse := func(field, value string) (*int64, error) {
 		if value == "" {

@@ -360,6 +360,15 @@ func NextCursor(page app.PostPage) *string {
 	return &value
 }
 
+// PrevCursor maps the newer-direction continuation the same way.
+func PrevCursor(page app.PostPage) *string {
+	if page.PrevCursor == "" {
+		return nil
+	}
+	value := page.PrevCursor
+	return &value
+}
+
 // ValidatePost rejects a superficially successful but non-canonical API DTO.
 func ValidatePost(post Post) error {
 	if _, err := domain.ParseID(post.ID); err != nil {
