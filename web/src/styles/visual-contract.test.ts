@@ -486,6 +486,22 @@ describe("visual foundation contract", () => {
     );
   });
 
+  // The sign-in page draws its form once and anchors the column to the top,
+  // so nothing already on screen moves when a late answer lands; and its
+  // corner arrow is the bare glyph every page has, not a badge over the art.
+  it("keeps the sign-in page still while it loads and its arrow bare", () => {
+    expect(ownerCss).toMatch(
+      /\._actionPanel_[\w-]+\s*\{[^}]*position: relative;[^}]*justify-content: flex-start;/s,
+    );
+    expect(ownerCss).not.toMatch(
+      /\._actionPanel_[\w-]+\s*\{[^}]*justify-content: center/s,
+    );
+    expect(ownerCss).not.toMatch(
+      /\._loginBack_[\w-]+[^{]*\{[^}]*backdrop-filter/s,
+    );
+    expect(ownerCss).not.toMatch(/\._loginBack_[\w-]+\s*\{[^}]*background:/s);
+  });
+
   // The archive calendar's legend and grid are one seven-column shape: the
   // letters used to run full width over an inset grid, so Monday stood a few
   // pixels left of its column.

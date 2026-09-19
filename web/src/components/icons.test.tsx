@@ -30,6 +30,43 @@ describe("Icon", () => {
     },
   );
 
+  // The arrow's ink is symmetric about the centre of its box. It was not:
+  // drawn from 8.5 to 19 of 24, it centred at 13.75, and inside the round
+  // button on the sign-in page it sat a pixel and a half right of the middle.
+  it("centres the back arrow in its box", () => {
+    const { container } = render(<Icon name="back" />);
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (const path of container.querySelectorAll("path")) {
+      const tokens =
+        path.getAttribute("d")?.match(/[A-Za-z]|-?\d*\.?\d+/g) ?? [];
+      let command = "";
+      let pending: number[] = [];
+      for (const token of tokens) {
+        if (/[A-Za-z]/.test(token)) {
+          command = token;
+          pending = [];
+          continue;
+        }
+        pending.push(Number(token));
+        if (command === "H") {
+          xs.push(pending.shift()!);
+        } else if (command === "V") {
+          ys.push(pending.shift()!);
+        } else if (pending.length === 2) {
+          // M and L, absolute; the glyph is written without relative moves
+          // so its extent can be read straight off the numbers.
+          expect(["M", "L"]).toContain(command);
+          xs.push(pending[0]!);
+          ys.push(pending[1]!);
+          pending = [];
+        }
+      }
+    }
+    expect(Math.min(...xs) + Math.max(...xs)).toBe(24);
+    expect(Math.min(...ys) + Math.max(...ys)).toBe(24);
+  });
+
   it("renders the profile camera artwork as a current-color filled icon", () => {
     const { container } = render(<Icon name="camera" />);
     const icon = container.querySelector('svg[data-icon="camera"]');

@@ -159,6 +159,11 @@ export function OwnerLogin({
   const [optionsPending, setOptionsPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<OAuthLoginProvider[]>([]);
+  const [providersPending, setProvidersPending] = useState(true);
+  // How long the form may be held back for its answers. Past this it is
+  // drawn with what is known -- a server that never answers must not leave
+  // a blank where a sign-in form should be.
+  const [holdExpired, setHoldExpired] = useState(false);
   const [startingProvider, setStartingProvider] = useState<string | null>(null);
   const [authError] = useState(() =>
     authErrorMessage(
@@ -168,6 +173,11 @@ export function OwnerLogin({
   const pendingRef = useRef(false);
 
   useEffect(() => stripAuthError(), []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setHoldExpired(true), 2000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -183,6 +193,9 @@ export function OwnerLogin({
         // Falling back to an empty list degrades the page to the password form
         // instead of showing a failure the visitor cannot act on.
         if (!controller.signal.aborted) setProviders([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setProvidersPending(false);
       });
     return () => controller.abort();
   }, [api]);
@@ -278,11 +291,37 @@ export function OwnerLogin({
     }
   };
 
-  if (state === "checking")
+  // The panel's own title needs no answer from the server, so it is drawn
+  // from the first frame; only the form under it waits.
+  const title = heading ? (
+    <>
+      <p className={styles.eyebrow}>
+        {state === "expired" ? "会话已过期" : "登录"}
+      </p>
+      <h2>
+        {state === "expired" ? "重新登录" : `登录 ${site.title || "Moment"}`}
+      </h2>
+    </>
+  ) : null;
+
+  // The form is not drawn until everything it depends on has answered: the
+  // session check, which credentials this instance takes, which providers it
+  // offers. Drawn piecemeal -- a line saying the session was being checked,
+  // then the fields, then GitHub and Google a request later -- the page moved
+  // under the reader with each arrival; drawn once, it lands whole. The wait
+  // is tens of milliseconds and gets no spinner, which would be one more
+  // thing to appear and vanish.
+  if (
+    !holdExpired &&
+    (state === "checking" || optionsPending || providersPending)
+  )
     return (
-      <section aria-busy="true" className={styles.loginGate}>
-        <p className={styles.eyebrow}>正在确认身份</p>
-        <h2>检查当前会话…</h2>
+      <section
+        aria-busy="true"
+        aria-label="正在准备登录"
+        className={styles.loginGate}
+      >
+        {title}
       </section>
     );
   if (state === "owner")
@@ -311,18 +350,7 @@ export function OwnerLogin({
 
   return (
     <section className={styles.loginGate}>
-      {heading ? (
-        <>
-          <p className={styles.eyebrow}>
-            {state === "expired" ? "会话已过期" : "登录"}
-          </p>
-          <h2>
-            {state === "expired"
-              ? "重新登录"
-              : `登录 ${site.title || "Moment"}`}
-          </h2>
-        </>
-      ) : null}
+      {title}
       {authError ? (
         <p className={styles.authError} role="alert">
           {authError}

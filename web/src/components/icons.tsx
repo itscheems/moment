@@ -103,10 +103,14 @@ const paths: Record<IconName, React.ReactNode> = {
       <circle cx="12" cy="12" r="4" />
     </>
   ),
+  // Symmetric about the box's centre, which the previous drawing (a chevron
+  // from 8.5 to 14.5 and a shaft to 19) was not: its ink centred at 13.75,
+  // and inside the round button on the sign-in page the arrow sat visibly
+  // right of the middle. The arrow spans 4 to 20 of the 24-unit viewBox.
   back: (
     <>
-      <path d="m14.5 6-6 6 6 6" />
-      <path d="M9 12h10" />
+      <path d="M12 4 4 12 12 20" />
+      <path d="M4 12H20" />
     </>
   ),
   reply: (

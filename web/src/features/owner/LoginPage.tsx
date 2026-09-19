@@ -21,23 +21,27 @@ export function LoginPage({ site }: { site: SiteIdentity }) {
   const { goBack } = useNavigation();
   return (
     <div className={styles.loginScreen}>
-      {/* The way out is where the reader came from, in the corner every
-          other page keeps its arrow -- not a strip under the form, which
-          read as a third panel and sat below the fold on a short screen. */}
-      <InternalLink
-        aria-label="返回时间流"
-        className={styles.loginBack}
-        href="/"
-        onClick={(event) => {
-          event.preventDefault();
-          goBack("/");
-        }}
-      >
-        <Icon name="back" />
-      </InternalLink>
       <div className={styles.loginSplit}>
         <div aria-hidden="true" className={styles.brandPanel} />
         <main className={styles.actionPanel}>
+          {/* The way out is where the reader came from, in the corner every
+              other page keeps its arrow -- not a strip under the form, which
+              read as a third panel and sat below the fold on a short screen.
+              It stands in the corner of this panel, the white one, so it is
+              the same bare glyph as every other page's and needs no disc: it
+              used to sit over the artwork on a dark blurred circle, which read
+              as a rough, off-centre badge rather than a control. */}
+          <InternalLink
+            aria-label="返回时间流"
+            className={styles.loginBack}
+            href="/"
+            onClick={(event) => {
+              event.preventDefault();
+              goBack("/");
+            }}
+          >
+            <Icon name="back" />
+          </InternalLink>
           <div className={styles.headlineBlock}>
             {/* The site's own name is not the headline. A visitor arrives here
                 before knowing whose instance they are on, and the name they

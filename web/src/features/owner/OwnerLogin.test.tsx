@@ -147,6 +147,59 @@ describe("owner login third-party entry points", () => {
     vi.unstubAllGlobals();
   });
 
+  // The form used to arrive in pieces -- the credential fields as soon as
+  // the methods answered, the provider buttons a request later -- and the
+  // page moved under the reader as each piece landed. It waits for both.
+  it("draws the form once, whole, rather than fields first and providers later", async () => {
+    let releaseProviders: (() => void) | undefined;
+    const providersGate = new Promise<void>((resolve) => {
+      releaseProviders = resolve;
+    });
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/v1/owner/status") return ownerStatus();
+      if (url === "/api/v1/account/session")
+        return json(signedOutEnvelope(), 401);
+      if (url === "/api/v1/login/methods") {
+        return json({
+          data: { methods: ["password", "token"] },
+          meta: { request_id: "req_options" },
+        });
+      }
+      if (url === "/api/v1/login/oauth/providers") {
+        await providersGate;
+        return providersEnvelope([{ name: "github", label: "GitHub" }]);
+      }
+      return json({}, 404);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    renderLogin();
+
+    // Methods have answered; providers have not. No field yet, only a busy
+    // placeholder with nothing in it to move.
+    await vi.waitFor(() =>
+      expect(
+        fetcher.mock.calls.some(
+          ([input]) => String(input) === "/api/v1/login/oauth/providers",
+        ),
+      ).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByLabelText("用户名")).toBeNull();
+    expect(screen.queryByText("检查当前会话…")).toBeNull();
+    expect(screen.getByLabelText("正在准备登录")).toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+
+    releaseProviders!();
+    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "使用 GitHub 登录" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("正在准备登录")).toBeNull();
+  });
+
   it("degrades to the credential form when no provider is configured", async () => {
     installApi([]);
     renderLogin();

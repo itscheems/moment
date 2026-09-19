@@ -1512,13 +1512,20 @@
   display: none;
 }
 
+/* Anchored to the top, not centred. Centred, the column re-centred every
+   time the form under the headline grew -- the session answer, then the
+   methods, then the provider buttons a request later -- and the headline
+   jumped 90px on each arrival. From the top, what arrives late extends
+   downwards and nothing already drawn moves; the offset keeps the block in
+   the upper third the centred layout put it in on an ordinary window. */
 .actionPanel {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--space-6);
-  padding: var(--space-8) var(--space-5);
+  padding: clamp(4.5rem, 16vh, 10rem) var(--space-5) var(--space-8);
 }
 
 .headlineBlock {
@@ -1564,10 +1571,8 @@
   padding: 0;
 }
 
-/* The same 2.75rem arrow the shell's headers carry, pinned to the corner of
-   the page. Over the canvas it takes the shell's hover wash; over the brand
-   panel it sits on the dark, blurred disc X gives a control on top of a
-   picture, so it reads on any part of the artwork. */
+/* The same 2.75rem arrow the shell's headers carry, in the corner of the
+   form panel, where it sits on the canvas and takes the shell's hover wash. */
 .loginBack {
   position: absolute;
   z-index: 1;
@@ -1613,27 +1618,19 @@
   .actionPanel {
     align-items: start;
     gap: var(--space-8);
-    padding: var(--space-10) clamp(var(--space-8), 6vw, 4.5rem);
+    padding: clamp(4.5rem, 16vh, 10rem) clamp(var(--space-8), 6vw, 4.5rem)
+      var(--space-10);
   }
 
   .headlineBlock {
     max-inline-size: 26rem;
   }
-
-  .loginBack {
-    color: #fff;
-    background: rgb(15 20 25 / 75%);
-    backdrop-filter: blur(4px);
-  }
-
-  .loginBack:hover,
-  .loginBack:focus-visible {
-    background: rgb(39 44 48 / 75%);
-  }
 }
 
 @media (max-width: 719px) {
+  /* The top clears the corner arrow (12px down, 44px tall); the column is
+     anchored there as at every width. */
   .actionPanel {
-    padding: var(--space-6) var(--space-4) var(--space-8);
+    padding: 4.5rem var(--space-4) var(--space-8);
   }
 }
