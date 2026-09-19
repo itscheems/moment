@@ -488,8 +488,9 @@ describe("visual foundation contract", () => {
 
   // The sign-in page draws its form once and anchors the column to the top,
   // so nothing already on screen moves when a late answer lands; and its
-  // corner arrow is the bare glyph every page has, not a badge over the art.
-  it("keeps the sign-in page still while it loads and its arrow bare", () => {
+  // corner arrow stands on a plain white disc over the artwork, not the
+  // dark blurred one that read as a smudge.
+  it("keeps the sign-in page still while it loads and its arrow on a white disc", () => {
     expect(ownerCss).toMatch(
       /\._actionPanel_[\w-]+\s*\{[^}]*position: relative;[^}]*justify-content: flex-start;/s,
     );
@@ -499,7 +500,9 @@ describe("visual foundation contract", () => {
     expect(ownerCss).not.toMatch(
       /\._loginBack_[\w-]+[^{]*\{[^}]*backdrop-filter/s,
     );
-    expect(ownerCss).not.toMatch(/\._loginBack_[\w-]+\s*\{[^}]*background:/s);
+    expect(ownerCss).toMatch(
+      /\._loginBack_[\w-]+\s*\{[^}]*color: #0f1419;[^}]*background: #fff;[^}]*box-shadow:/s,
+    );
   });
 
   // The archive calendar's legend and grid are one seven-column shape: the

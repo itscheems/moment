@@ -1571,8 +1571,9 @@
   padding: 0;
 }
 
-/* The same 2.75rem arrow the shell's headers carry, in the corner of the
-   form panel, where it sits on the canvas and takes the shell's hover wash. */
+/* The same 2.75rem arrow the shell's headers carry, pinned to the corner of
+   the page. Over the canvas it is the bare glyph with the shell's hover wash;
+   over the brand panel (the wide layout, below) it stands on a white disc. */
 .loginBack {
   position: absolute;
   z-index: 1;
@@ -1620,6 +1621,24 @@
     gap: var(--space-8);
     padding: clamp(4.5rem, 16vh, 10rem) clamp(var(--space-8), 6vw, 4.5rem)
       var(--space-10);
+  }
+
+  /* A white disc, lifted off the artwork by its shadow, with the arrow in
+     fixed dark ink: the picture is the same in every theme, so the control on
+     it does not follow the theme's text colour. The dark, blurred disc this
+     replaces read as a smudge on the busy picture; a solid white one reads as
+     a control. Hover darkens it the way the shell's washes do. */
+  .loginBack {
+    color: #0f1419;
+    background: #fff;
+    box-shadow:
+      0 1px 2px rgb(15 20 25 / 20%),
+      0 4px 12px rgb(15 20 25 / 12%);
+  }
+
+  .loginBack:hover,
+  .loginBack:focus-visible {
+    background: #eff3f4;
   }
 
   .headlineBlock {
