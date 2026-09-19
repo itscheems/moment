@@ -777,8 +777,65 @@ describe("App shell and public routes", () => {
       }
       return json(timelineEnvelope());
     });
+    const entries = window.history.length;
     render(<App />);
 
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    // Sent in place, not pushed: the /profile entry that would only send the
+    // visitor here again is gone, and the arrow leads to the timeline.
+    expect(window.history.length).toBe(entries);
+    expect(screen.queryByRole("heading", { name: "乔乔" })).toBeNull();
+    fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(
+      await screen.findByRole("navigation", { name: "主要导航" }),
+    ).toBeInTheDocument();
+  });
+
+  // The route a visitor takes from the shell: 个人资料 in the rail, the sign-in
+  // page, the arrow in its corner. Measured before the fix, the arrow and the
+  // browser's own back both landed on /profile, which sent the visitor to
+  // sign in again -- the page could not be left, and the shell flashed on
+  // every bounce.
+  it("brings a visitor back from sign-in to where they were, not to /profile again", async () => {
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/login/methods") {
+        return json({
+          data: { methods: ["password", "token"] },
+          meta: { request_id: "req_methods" },
+        });
+      }
+      if (url === "/api/v1/login/oauth/providers") {
+        return json({
+          data: { providers: [] },
+          meta: { request_id: "req_providers" },
+        });
+      }
+      return json(timelineEnvelope());
+    });
+    render(<App />);
+    await screen.findByRole("navigation", { name: "主要导航" });
+    const entries = window.history.length;
+
+    fireEvent.click(screen.getAllByRole("link", { name: "个人资料" })[0]!);
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(window.location.search).toBe("?return=%2Fprofile");
+    expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
+    // One entry for the sign-in page, standing where /profile was.
+    expect(window.history.length).toBe(entries + 1);
+
+    fireEvent.click(screen.getByRole("link", { name: "返回时间流" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(
+      await screen.findByRole("navigation", { name: "主要导航" }),
+    ).toBeInTheDocument();
+    // And it stays there: nothing sends the visitor to sign in again.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+    expect(window.location.pathname).toBe("/");
+    // Forward is the sign-in page itself, standing where /profile was.
+    act(() => window.history.forward());
     await waitFor(() => expect(window.location.pathname).toBe("/login"));
     expect(await screen.findByLabelText("用户名")).toBeInTheDocument();
   });

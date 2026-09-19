@@ -23,6 +23,12 @@ interface NavigationLocation extends LocationSnapshot {
 
 interface NavigationContextValue extends NavigationLocation {
   navigate: (href: string) => void;
+  /**
+   * A redirect: the address corrected in place rather than a page the reader
+   * chose. The entry keeps its standing in the history, so one reached from
+   * inside the app still goes back inside the app.
+   */
+  replace: (href: string) => void;
   navigateOverlay: (href: string) => void;
   goBack: (fallback: string) => void;
   replaceTimelineProgress: (cursor: string, name?: ProgressName) => void;
@@ -165,6 +171,26 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [canLeave, commitNavigation],
   );
 
+  // Not guarded by the blockers: a redirect is the app correcting where it
+  // is, and nothing on the pages that redirect has work to lose. Pushing
+  // here was what made the sign-in page inescapable -- back re-entered
+  // /profile, which pushed sign-in again, with the shell flashing in
+  // between -- so the entry that asked for the redirect is overwritten and
+  // back goes to wherever the reader was before it.
+  const replace = useCallback((href: string) => {
+    window.history.replaceState(
+      {
+        momentFresh: true,
+        momentInternal: historyState().momentInternal,
+        momentScrollY: 0,
+      },
+      "",
+      href,
+    );
+    setLocation(locationSnapshot(window.history.state));
+    window.scrollTo({ top: 0, behavior: "auto" });
+  }, []);
+
   const navigateOverlay = useCallback(
     function navigateToOverlay(href: string) {
       if (!canLeave(() => navigateToOverlay(href))) return;
@@ -278,6 +304,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     () => ({
       ...location,
       navigate,
+      replace,
       navigateOverlay,
       goBack,
       replaceTimelineProgress,
@@ -287,6 +314,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [
       location,
       navigate,
+      replace,
       navigateOverlay,
       goBack,
       replaceTimelineProgress,

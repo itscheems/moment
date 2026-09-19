@@ -143,7 +143,7 @@ export function OwnerLogin({
    */
   heading?: boolean;
 }) {
-  const { navigate } = useNavigation();
+  const { navigate, replace } = useNavigation();
   const { account, api, state, login, logout, retryStatus } = useOwner();
   // This panel stands in for pages only the site owner may open, so a member
   // reaching it is signed in and simply in the wrong place. Telling them they
@@ -234,8 +234,11 @@ export function OwnerLogin({
     try {
       await login(credential, method, username.trim() || undefined);
       setCredential("");
+      // The sign-in page leaves the history with the signing in: back from
+      // the page it returns to should not be a sign-in form for a session
+      // that already exists.
       if (!embedded)
-        navigate(
+        replace(
           safeReturnPath(
             new URLSearchParams(window.location.search).get("return"),
           ),

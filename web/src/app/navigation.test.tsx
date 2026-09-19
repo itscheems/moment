@@ -47,6 +47,9 @@ function NavigationHarness({
       <button onClick={() => navigation.goBack("/fallback")} type="button">
         Go back
       </button>
+      <button onClick={() => navigation.replace("/replaced")} type="button">
+        Replace
+      </button>
       <button
         onClick={() => navigation.navigateOverlay("/overlay")}
         type="button"
@@ -189,6 +192,40 @@ describe("guarded navigation history", () => {
         behavior: "auto",
       }),
     );
+  });
+
+  // A redirect overwrites the entry that asked for it and keeps that entry's
+  // way back. Pushed instead, a page that redirects to sign-in sat one step
+  // behind the sign-in page forever: back re-entered it, it redirected again.
+  it("replaces the current entry in place and keeps its way back", async () => {
+    render(
+      <NavigationProvider>
+        <NavigationHarness blockers={[]} />
+      </NavigationProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
+    const entries = window.history.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+    expect(window.location.pathname).toBe("/replaced");
+    expect(window.history.length).toBe(entries);
+    expect(screen.getByTestId("location")).toHaveTextContent("/replaced");
+
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/previous"));
+  });
+
+  it("falls back from a replaced first entry instead of leaving the app", async () => {
+    render(
+      <NavigationProvider>
+        <NavigationHarness blockers={[]} />
+      </NavigationProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+    expect(window.location.pathname).toBe("/replaced");
+
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/fallback"));
   });
 
   it("does not guard an approved goBack transition twice", async () => {

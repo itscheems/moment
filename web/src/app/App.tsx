@@ -200,7 +200,11 @@ function PublicApp() {
     // it does, so "signed in but nobody yet" is a third state and not a guest.
     // Treating it as one sent a fully signed-in reader to the sign-in page.
     if (own === undefined && owner.state !== "guest") return;
-    location.navigate(own ?? "/login?return=%2Fprofile");
+    // In place, not pushed. Pushed, the history read home → /profile →
+    // sign-in, and every way back from sign-in re-entered /profile, which
+    // pushed sign-in again: the arrow on that page went nowhere, and the
+    // shell flashed on each bounce.
+    location.replace(own ?? "/login?return=%2Fprofile");
   }, [displayLocation.pathname, location, owner.account, owner.state]);
 
   useEffect(() => {
@@ -313,6 +317,13 @@ function PublicApp() {
   const ownProfile =
     requestedProfileUsername === null ||
     requestedProfileUsername === site.username;
+  // Bare `/profile` is only ever passed through -- to the account's own
+  // handle or to sign-in, once the session is known -- so nothing is drawn
+  // there in the meantime: the site owner's page appearing for a frame before
+  // the redirect was the flash a visitor saw. The one instance that cannot
+  // answer for accounts keeps the pre-accounts page.
+  const profileRedirecting =
+    requestedProfileUsername === null && owner.state !== "unavailable";
 
   // Sign-in is the whole page, not a panel inside the shell. Every hook above
   // has already run, so returning here changes what is rendered without
@@ -394,7 +405,10 @@ function PublicApp() {
             site={site}
           />
         ) : null}
-        {siteIdentityReady && route.id === "profile" && ownProfile ? (
+        {siteIdentityReady &&
+        route.id === "profile" &&
+        ownProfile &&
+        !profileRedirecting ? (
           <ProfilePage api={api} onSiteSaved={setSite} site={site} />
         ) : null}
         {siteIdentityReady &&

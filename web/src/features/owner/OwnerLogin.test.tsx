@@ -1,5 +1,11 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SiteIdentity } from "../../api/public";
@@ -355,6 +361,7 @@ describe("owner login names who is signing in", () => {
   }
 
   it("sends the typed handle alongside the password", async () => {
+    const entries = window.history.length;
     const fetcher = installLoginApi(() =>
       json({
         data: {
@@ -378,6 +385,10 @@ describe("owner login names who is signing in", () => {
       password: "hunter2",
       username: "Owner",
     });
+    // The sign-in page leaves the history with the signing in: the return
+    // path takes its entry rather than stacking on it.
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(window.history.length).toBe(entries);
   });
 
   it("sends no handle when the field is left empty", async () => {
