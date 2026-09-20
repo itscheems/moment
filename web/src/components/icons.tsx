@@ -42,6 +42,8 @@ export type IconName =
   | "audience-only-me"
   | "audience-check"
   | "chevron-down"
+  | "chevron-left"
+  | "chevron-right"
   | "github"
   | "google";
 
@@ -271,6 +273,16 @@ const paths: Record<IconName, React.ReactNode> = {
   "chevron-down": (
     <path d="M3.543 8.96l1.414-1.42L12 14.59l7.043-7.05 1.414 1.42L12 17.41 3.543 8.96z" />
   ),
+  // The same chevron turned a quarter: chevron-down's path transposed about
+  // y=x points it right, and mirroring that about x=12 points it left. Drawn
+  // rather than rotated in CSS so the ink lands on the same pixel grid as
+  // every other icon.
+  "chevron-left": (
+    <path d="M15.04 3.543l1.42 1.414L9.41 12l7.05 7.043-1.42 1.414L6.59 12 15.04 3.543z" />
+  ),
+  "chevron-right": (
+    <path d="M8.96 3.543l-1.42 1.414L14.59 12l-7.05 7.043 1.42 1.414L17.41 12 8.96 3.543z" />
+  ),
   // Brand marks are transcribed from the official assets. The GitHub mark is a
   // single silhouette, so it inherits `currentColor` and tracks the label next
   // to it. The Google "G" is trademarked as four fixed colors, so every path
@@ -321,6 +333,8 @@ const filledIcons = new Set<IconName>([
   "audience-only-me",
   "audience-check",
   "chevron-down",
+  "chevron-left",
+  "chevron-right",
   "github",
   "google",
 ]);

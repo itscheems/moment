@@ -698,8 +698,7 @@
 }
 
 .describeHeader {
-  display: grid;
-  grid-template-columns: var(--target-size) minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
   gap: var(--space-2);
   border-block-end: 1px solid var(--border-subtle);
@@ -708,6 +707,7 @@
 
 .describeHeader h2 {
   min-inline-size: 0;
+  flex: 1 1 auto;
   margin: 0;
   overflow: hidden;
   font-size: var(--text-lg);
@@ -716,9 +716,65 @@
   white-space: nowrap;
 }
 
+/* Paging sits where the eye already is when it finishes a description: at
+   the end of the header, next to the way out. */
+.describePager {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--space-1);
+}
+
+.describePager span {
+  min-inline-size: 2.75rem;
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.describePager button {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.describePager button:hover:not(:disabled),
+.describePager button:focus-visible {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.describePager button:active:not(:disabled) {
+  transform: scale(0.88);
+}
+
+.describePager button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.describePager svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+
 .describeBack {
   inline-size: var(--target-size);
   block-size: var(--target-size);
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
   border: 0;
@@ -741,14 +797,18 @@
 
 .describeDone {
   min-block-size: 2.25rem;
+  flex: 0 0 auto;
   border: 0;
   border-radius: 999px;
   padding-inline: var(--space-4);
   color: var(--button-primary-contrast);
   background: var(--button-primary);
   font-weight: 700;
+  white-space: nowrap;
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }
 
 .describeDone:hover,
@@ -756,66 +816,149 @@
   background: var(--button-primary-hover);
 }
 
-.describePopup .mediaOptionList {
+.describeDone:active {
+  transform: scale(0.96);
+}
+
+.describeBody {
   min-block-size: 0;
   overflow-y: auto;
-  padding-inline: var(--space-4);
+  overscroll-behavior: contain;
+  padding: var(--space-4) var(--space-4) var(--space-5);
 }
 
-/* The header already draws the rule this one would sit against. */
-.describePopup .mediaOptionItem:first-child {
-  border-block-start: 0;
-}
-
-.mediaOptionList {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.mediaOptionItem {
-  border-block-start: 1px solid var(--border-subtle);
-  padding: var(--space-3) var(--space-1) var(--space-4);
-}
-
-/* The picture being described. The sheet used to name it ("第 2 张图片") and
-   leave the writer to remember which one that was. */
-.mediaOptionThumb {
-  inline-size: 3rem;
-  block-size: 3rem;
-  flex: 0 0 auto;
+/* The picture being described, at a size worth describing. The sheet used
+   to name it ("第 2 张图片") and leave the writer to remember which one
+   that was. */
+.describeStage {
+  display: grid;
+  place-items: center;
   overflow: hidden;
-  border-radius: var(--radius-action);
+  border-radius: 1rem;
   background: var(--surface-muted);
-  object-fit: cover;
+  aspect-ratio: 4 / 3;
 }
 
-.mediaOptionItem > header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
+.describeStage img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: contain;
 }
 
-/* `:first-of-type`, not `:first-child`: the thumbnail is the first child
-   now, and a `:first-child` rule silently stopped matching -- which took
-   the gap between the item's name and its upload state with it. */
-.mediaOptionItem > header > div:first-of-type {
-  min-inline-size: 0;
+.describeStagePending {
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.describeCaption {
   display: flex;
   align-items: baseline;
-  flex: 1 1 auto;
   gap: var(--space-2);
+  margin: var(--space-3) 0 0;
 }
 
-.mediaOptionItem > header strong {
+.describeCaption strong {
   color: var(--text-primary);
   font-size: var(--text-sm);
 }
 
-.mediaOptionItem > header span {
+.describeCaption span {
   color: var(--text-tertiary);
   font-family: var(--font-utility);
   font-size: var(--text-xs);
+}
+
+.altHint {
+  margin: var(--space-2) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.describeFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-block-start: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-3);
+}
+
+/* Where the writer is in the set, and a one-press way to any other picture
+   rather than paging past the ones between. */
+.describeRail {
+  min-inline-size: 0;
+  list-style: none;
+  display: flex;
+  flex: 1 1 auto;
+  gap: var(--space-2);
+  overflow-x: auto;
+  margin: 0;
+  padding: var(--space-1) 0;
+  scrollbar-width: none;
+}
+
+.describeRail::-webkit-scrollbar {
+  display: none;
+}
+
+.describeRail button {
+  position: relative;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-action);
+  padding: 0;
+  color: var(--text-tertiary);
+  background: var(--surface-muted);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  opacity: 0.55;
+  outline-offset: 2px;
+  transition:
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.describeRail img {
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+.describeRail button:hover,
+.describeRail button:focus-visible {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+.describeRail button:active {
+  transform: scale(0.94);
+}
+
+.describeRail button[aria-current] {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--accent);
+  opacity: 1;
+}
+
+/* A description still missing, said without words: the same dot the tile
+   grid would use if it had room for one. */
+.describeRail button[data-undescribed]::after {
+  position: absolute;
+  inset-block-end: 0.1875rem;
+  inset-inline-end: 0.1875rem;
+  inline-size: 0.4375rem;
+  block-size: 0.4375rem;
+  border: 1px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  content: "";
 }
 
 .altFieldset {
@@ -844,13 +987,42 @@
   margin-block-start: var(--space-3);
 }
 
+/* Three choices that read as choices: a pill each, the chosen one filled.
+   Loose radio dots in a row gave no target to aim at and no feedback for
+   the pointer on its way there. */
 .altModes label {
-  min-block-size: var(--target-size);
+  min-block-size: 2.25rem;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding-inline: var(--space-3);
   color: var(--text-secondary);
+  background: transparent;
   font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+
+.altModes label:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.altModes label[data-checked] {
+  border-color: transparent;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 650;
+}
+
+.altModes label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .altModes input {
@@ -904,6 +1076,31 @@
   .mediaEditorList {
     gap: var(--space-2);
     block-size: clamp(12rem, 72vw, 18rem);
+  }
+
+  /* A phone header has room for the title, the paging and the way out --
+     but only just: at 390px the default paddings pushed 完成 onto two
+     lines and dropped 填写描述 onto a row of its own. */
+  .describeHeader {
+    gap: var(--space-1);
+    padding-inline: var(--space-2);
+  }
+
+  .describePager button {
+    inline-size: 2rem;
+    block-size: 2rem;
+  }
+
+  .describePager span {
+    min-inline-size: 2.25rem;
+  }
+
+  .describeBody {
+    padding-inline: var(--space-3);
+  }
+
+  .altModes label {
+    padding-inline: var(--space-2);
   }
 }
 

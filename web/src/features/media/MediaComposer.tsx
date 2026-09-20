@@ -170,7 +170,19 @@ export function MediaComposer({
   );
   const containsVideo = items.some((item) => isVideoMimeType(item.mimeType));
   const undescribed = items.filter((item) => item.altMode === "missing").length;
-  const [describing, setDescribing] = useState(false);
+  // The description sheet shows one picture at a time. It holds the item's key rather
+  // than its index so that reordering carries the page with the picture the
+  // writer is looking at, and so that a removal cannot silently swap in the
+  // neighbour underneath the open sheet.
+  const [describeKey, setDescribeKey] = useState<string | null>(null);
+  const describePopupRef = useRef<HTMLDivElement>(null);
+  const describeTextRef = useRef<HTMLTextAreaElement>(null);
+  const describeIndex =
+    describeKey === null
+      ? -1
+      : items.findIndex((item) => item.key === describeKey);
+  const describing = describeIndex >= 0;
+  const described = describing ? items[describeIndex] : null;
   useDocumentScrollLock(describing);
 
   const selectedItemIndex = items.findIndex((item) => item.key === selectedKey);
@@ -225,6 +237,10 @@ export function MediaComposer({
       setSelectedKey(null);
     }
   }, [items, selectedKey]);
+
+  useEffect(() => {
+    if (describeKey !== null && describeIndex < 0) setDescribeKey(null);
+  }, [describeIndex, describeKey]);
 
   useEffect(() => {
     if (focusAfterChange.current === undefined) return;
@@ -553,7 +569,21 @@ export function MediaComposer({
         </div>
       ) : null}
       {items.length > 0 ? (
-        <Dialog.Root onOpenChange={setDescribing} open={describing}>
+        <Dialog.Root
+          onOpenChange={(open) => {
+            if (!open) {
+              setDescribeKey(null);
+              return;
+            }
+            // Open on the first picture that still needs describing: the
+            // action says how many are missing, so pressing it should land
+            // on one of them rather than on page one every time.
+            const first =
+              items.find((item) => item.altMode === "missing") ?? items[0];
+            setDescribeKey(first?.key ?? null);
+          }}
+          open={describing}
+        >
           {/* One quiet description action under the picture: no rules,
               no box, no disclosure triangle.
               This used to be a <details> whose `border-block` drew a hairline
@@ -569,10 +599,23 @@ export function MediaComposer({
           <Dialog.Portal>
             <Dialog.Backdrop className={styles.describeBackdrop} />
             <Dialog.Viewport className={styles.describeViewport}>
-              {/* A sheet rather than an inline panel: nine items of radio
-                  groups and textareas unfolding inside the composer pushed
-                  the publish button off a laptop screen. */}
-              <Dialog.Popup className={styles.describePopup}>
+              {/* One picture per page, paged from the header. The sheet used
+                  to stack all nine items as a list of
+                  radio groups and textareas, which asked the writer to hold
+                  the running order in their head and buried the picture each
+                  description was about. */}
+              <Dialog.Popup
+                className={styles.describePopup}
+                // The sheet itself, not the first control in it: Base UI
+                // focuses the leading tabbable by default, which put a ring
+                // on the back arrow every time the sheet opened under the
+                // mouse. A description already being written keeps the
+                // caret instead.
+                initialFocus={() =>
+                  describeTextRef.current ?? describePopupRef.current
+                }
+                ref={describePopupRef}
+              >
                 <header className={styles.describeHeader}>
                   <Dialog.Close
                     aria-label="返回"
@@ -583,57 +626,230 @@ export function MediaComposer({
                   <Dialog.Title>
                     编辑{containsVideo ? "媒体" : "图片"}描述
                   </Dialog.Title>
+                  {items.length > 1 ? (
+                    <div className={styles.describePager}>
+                      <button
+                        aria-label={containsVideo ? "上一项媒体" : "上一张图片"}
+                        disabled={describeIndex <= 0}
+                        onClick={() =>
+                          setDescribeKey(items[describeIndex - 1]?.key ?? null)
+                        }
+                        type="button"
+                      >
+                        <Icon name="chevron-left" />
+                      </button>
+                      <span aria-live="polite">
+                        {describeIndex + 1} / {items.length}
+                      </span>
+                      <button
+                        aria-label={containsVideo ? "下一项媒体" : "下一张图片"}
+                        disabled={describeIndex >= items.length - 1}
+                        onClick={() =>
+                          setDescribeKey(items[describeIndex + 1]?.key ?? null)
+                        }
+                        type="button"
+                      >
+                        <Icon name="chevron-right" />
+                      </button>
+                    </div>
+                  ) : null}
                   <Dialog.Close className={styles.describeDone}>
                     完成
                   </Dialog.Close>
                 </header>
-                <ol className={styles.mediaOptionList}>
-                  {items.map((item, index) => {
-                    const isVideo = isVideoMimeType(item.mimeType);
-                    const itemLabel = isVideo
-                      ? `第 ${index + 1} 项视频`
-                      : `第 ${index + 1} 张图片`;
-                    const providedInvalid =
-                      item.altMode === "provided" &&
-                      (!item.altText.trim() ||
-                        Array.from(item.altText).length > MAX_ALT_CODE_POINTS);
-                    // The reference sheet shows the picture being described,
-                    // which is the point of the screen: a row of radio
-                    // buttons labelled "第 2 张图片" asks the writer to hold
-                    // the order in their head.
-                    const thumbnail =
-                      item.localPreviewUrl || item.previewUrl || null;
-                    return (
-                      <li className={styles.mediaOptionItem} key={item.key}>
-                        <header>
-                          {thumbnail ? (
-                            <img
-                              alt=""
-                              className={styles.mediaOptionThumb}
-                              decoding="async"
-                              loading="lazy"
-                              src={thumbnail}
-                            />
-                          ) : (
-                            <span
-                              aria-hidden="true"
-                              className={styles.mediaOptionThumb}
-                            />
-                          )}
-                          <div>
-                            <strong>{itemLabel}</strong>
-                            <span>
-                              {item.state === "queued" ? "等待上传" : null}
-                              {item.state === "uploading"
-                                ? `处理中 ${item.progress}%`
-                                : null}
-                              {item.state === "ready" ? "已就绪" : null}
-                              {item.state === "failed" ? "上传失败" : null}
-                            </span>
+                {described
+                  ? (() => {
+                      const item = described;
+                      const index = describeIndex;
+                      const isVideo = isVideoMimeType(item.mimeType);
+                      const itemLabel = isVideo
+                        ? `第 ${index + 1} 项视频`
+                        : `第 ${index + 1} 张图片`;
+                      const providedInvalid =
+                        item.altMode === "provided" &&
+                        (!item.altText.trim() ||
+                          Array.from(item.altText).length >
+                            MAX_ALT_CODE_POINTS);
+                      const stageUrl = isVideo
+                        ? (item.processingPosterUrl ??
+                          (item.mediaId ? mediaPosterUrl(item.mediaId) : null))
+                        : item.localPreviewUrl || item.previewUrl || null;
+                      return (
+                        <>
+                          <div className={styles.describeBody}>
+                            <div className={styles.describeStage}>
+                              {stageUrl ? (
+                                <img alt="" decoding="async" src={stageUrl} />
+                              ) : (
+                                <span className={styles.describeStagePending}>
+                                  {isVideo ? "视频封面处理中" : "预览处理中"}
+                                </span>
+                              )}
+                            </div>
+                            <p className={styles.describeCaption}>
+                              <strong>{itemLabel}</strong>
+                              <span>
+                                {item.state === "queued" ? "等待上传" : null}
+                                {item.state === "uploading"
+                                  ? `处理中 ${item.progress}%`
+                                  : null}
+                                {item.state === "ready" ? "已就绪" : null}
+                                {item.state === "failed" ? "上传失败" : null}
+                              </span>
+                            </p>
+                            <fieldset
+                              className={styles.altFieldset}
+                              disabled={disabled}
+                            >
+                              <legend>{itemLabel}描述（可选）</legend>
+                              <div className={styles.altModes}>
+                                {(
+                                  [
+                                    ["missing", "暂未描述"],
+                                    ["decorative", "纯装饰"],
+                                    ["provided", "填写描述"],
+                                  ] as const
+                                ).map(([mode, label]) => (
+                                  <label
+                                    data-checked={
+                                      item.altMode === mode ? "" : undefined
+                                    }
+                                    key={mode}
+                                  >
+                                    <input
+                                      checked={item.altMode === mode}
+                                      name={`${item.key}-alt-mode`}
+                                      onChange={() => {
+                                        const next = items.map((candidate) =>
+                                          candidate.key === item.key
+                                            ? {
+                                                ...candidate,
+                                                altMode: mode,
+                                                error: null,
+                                              }
+                                            : candidate,
+                                        );
+                                        onChange(
+                                          next,
+                                          `${itemLabel}已设为${label}。`,
+                                        );
+                                      }}
+                                      type="radio"
+                                    />
+                                    {label}
+                                  </label>
+                                ))}
+                              </div>
+                              {item.altMode === "provided" ? (
+                                <label className={styles.altInput}>
+                                  <span>
+                                    {isVideo ? "描述视频内容" : "描述图片内容"}
+                                  </span>
+                                  <textarea
+                                    aria-invalid={providedInvalid}
+                                    // Choosing 填写描述 is a request to write
+                                    // one, so the caret goes where the
+                                    // writing happens. Mounting is the only
+                                    // moment this fires, so paging between
+                                    // pictures never steals the focus.
+                                    autoFocus
+                                    onChange={(event) =>
+                                      onChange(
+                                        items.map((candidate) =>
+                                          candidate.key === item.key
+                                            ? {
+                                                ...candidate,
+                                                altText: event.target.value,
+                                                error: null,
+                                              }
+                                            : candidate,
+                                        ),
+                                        `已更新${itemLabel}描述。`,
+                                      )
+                                    }
+                                    placeholder={
+                                      isVideo
+                                        ? "简要描述视频内容"
+                                        : "简要描述图片内容"
+                                    }
+                                    ref={describeTextRef}
+                                    rows={3}
+                                    value={item.altText}
+                                  />
+                                  <small>
+                                    {Array.from(item.altText).length} /{" "}
+                                    {MAX_ALT_CODE_POINTS}
+                                  </small>
+                                </label>
+                              ) : (
+                                <p className={styles.altHint}>
+                                  {item.altMode === "decorative"
+                                    ? "读屏软件会跳过这一项。"
+                                    : "描述会读给使用读屏软件的人听，也会在加载失败时顶替这张图。"}
+                                </p>
+                              )}
+                            </fieldset>
                           </div>
-                          <div className={styles.editorActions}>
-                            {items.length > 1 ? (
-                              <>
+                          {items.length > 1 ? (
+                            <footer className={styles.describeFooter}>
+                              {/* The running order, and a way to jump straight
+                                to a picture instead of paging past the ones
+                                in between. A dot marks the ones still
+                                without a description. */}
+                              <ol className={styles.describeRail}>
+                                {items.map((candidate, candidateIndex) => {
+                                  const thumbnail = isVideoMimeType(
+                                    candidate.mimeType,
+                                  )
+                                    ? (candidate.processingPosterUrl ??
+                                      (candidate.mediaId
+                                        ? mediaPosterUrl(candidate.mediaId)
+                                        : null))
+                                    : candidate.localPreviewUrl ||
+                                      candidate.previewUrl ||
+                                      null;
+                                  const label = isVideoMimeType(
+                                    candidate.mimeType,
+                                  )
+                                    ? `第 ${candidateIndex + 1} 项视频`
+                                    : `第 ${candidateIndex + 1} 张图片`;
+                                  return (
+                                    <li key={candidate.key}>
+                                      <button
+                                        aria-current={
+                                          candidate.key === item.key
+                                            ? "true"
+                                            : undefined
+                                        }
+                                        aria-label={label}
+                                        data-undescribed={
+                                          candidate.altMode === "missing"
+                                            ? ""
+                                            : undefined
+                                        }
+                                        onClick={() =>
+                                          setDescribeKey(candidate.key)
+                                        }
+                                        type="button"
+                                      >
+                                        {thumbnail ? (
+                                          <img
+                                            alt=""
+                                            decoding="async"
+                                            loading="lazy"
+                                            src={thumbnail}
+                                          />
+                                        ) : (
+                                          <span aria-hidden="true">
+                                            {candidateIndex + 1}
+                                          </span>
+                                        )}
+                                      </button>
+                                    </li>
+                                  );
+                                })}
+                              </ol>
+                              <div className={styles.editorActions}>
                                 <button
                                   data-media-action="up"
                                   data-media-key={item.key}
@@ -672,88 +888,13 @@ export function MediaComposer({
                                     {itemLabel}
                                   </span>
                                 </button>
-                              </>
-                            ) : null}
-                          </div>
-                        </header>
-                        <fieldset
-                          className={styles.altFieldset}
-                          disabled={disabled}
-                        >
-                          <legend>{itemLabel}描述（可选）</legend>
-                          <div className={styles.altModes}>
-                            {(
-                              [
-                                ["missing", "暂未描述"],
-                                ["decorative", "纯装饰"],
-                                ["provided", "填写描述"],
-                              ] as const
-                            ).map(([mode, label]) => (
-                              <label key={mode}>
-                                <input
-                                  checked={item.altMode === mode}
-                                  name={`${item.key}-alt-mode`}
-                                  onChange={() => {
-                                    const next = items.map((candidate) =>
-                                      candidate.key === item.key
-                                        ? {
-                                            ...candidate,
-                                            altMode: mode,
-                                            error: null,
-                                          }
-                                        : candidate,
-                                    );
-                                    onChange(
-                                      next,
-                                      `${itemLabel}已设为${label}。`,
-                                    );
-                                  }}
-                                  type="radio"
-                                />
-                                {label}
-                              </label>
-                            ))}
-                          </div>
-                          {item.altMode === "provided" ? (
-                            <label className={styles.altInput}>
-                              <span>
-                                {isVideo ? "描述视频内容" : "描述图片内容"}
-                              </span>
-                              <textarea
-                                aria-invalid={providedInvalid}
-                                onChange={(event) =>
-                                  onChange(
-                                    items.map((candidate) =>
-                                      candidate.key === item.key
-                                        ? {
-                                            ...candidate,
-                                            altText: event.target.value,
-                                            error: null,
-                                          }
-                                        : candidate,
-                                    ),
-                                    `已更新${itemLabel}描述。`,
-                                  )
-                                }
-                                placeholder={
-                                  isVideo
-                                    ? "简要描述视频内容"
-                                    : "简要描述图片内容"
-                                }
-                                rows={2}
-                                value={item.altText}
-                              />
-                              <small>
-                                {Array.from(item.altText).length} /{" "}
-                                {MAX_ALT_CODE_POINTS}
-                              </small>
-                            </label>
+                              </div>
+                            </footer>
                           ) : null}
-                        </fieldset>
-                      </li>
-                    );
-                  })}
-                </ol>
+                        </>
+                      );
+                    })()
+                  : null}
               </Dialog.Popup>
             </Dialog.Viewport>
           </Dialog.Portal>

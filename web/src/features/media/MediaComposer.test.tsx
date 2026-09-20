@@ -197,7 +197,90 @@ describe("media editor", () => {
     expect(
       screen.getByRole("heading", { name: "编辑图片描述" }),
     ).toBeInTheDocument();
-    expect(screen.getAllByLabelText("填写描述")).toHaveLength(2);
+    // One picture per page, not a stack of every item's controls at once.
+    expect(screen.getAllByLabelText("填写描述")).toHaveLength(1);
+  });
+
+  // The media editor describes one picture at a time and pages between
+  // them. The sheet used to list all nine items, which asked the writer to
+  // hold the running order in their head and buried the picture each
+  // description was about.
+  it("pages the description sheet one picture at a time", () => {
+    render(<FocusHarness initial={[item("00"), item("01"), item("02")]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /添加描述/ }));
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
+    const railPage = (label: string) =>
+      screen.getByRole("button", { name: label }).getAttribute("aria-current");
+    expect(railPage("第 1 张图片")).toBe("true");
+    const previous = screen.getByRole("button", { name: "上一张图片" });
+    const next = screen.getByRole("button", { name: "下一张图片" });
+    expect(previous).toBeDisabled();
+
+    fireEvent.click(next);
+    expect(screen.getByText("2 / 3")).toBeInTheDocument();
+    expect(railPage("第 2 张图片")).toBe("true");
+    expect(railPage("第 1 张图片")).toBeNull();
+    expect(previous).toBeEnabled();
+
+    // The rail reaches any picture without paging past the ones between.
+    fireEvent.click(screen.getByRole("button", { name: "第 1 张图片" }));
+    expect(screen.getByText("1 / 3")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "第 3 张图片" }));
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    expect(next).toBeDisabled();
+  });
+
+  // The action counts what is missing, so pressing it should land on
+  // something missing rather than on page one every time.
+  it("opens the sheet on the first picture still without a description", () => {
+    render(
+      <FocusHarness
+        initial={[
+          { ...item("00"), altMode: "decorative" },
+          { ...item("01"), altMode: "provided", altText: "写过了" },
+          item("02"),
+        ]}
+      />,
+    );
+
+    const describe = screen.getByRole("button", { name: /添加描述/ });
+    expect(describe).toHaveTextContent("1 项未描述");
+    fireEvent.click(describe);
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    expect(screen.getByLabelText("暂未描述")).toBeChecked();
+  });
+
+  // Measured at 390px: the default header paddings wrapped 完成 onto two
+  // lines and pushed 填写描述 onto a row of its own.
+  it("keeps the sheet header and alt modes on one line on a phone", () => {
+    expect(mediaCss).toMatch(
+      /\._describeDone_[\w-]+\s*\{[^}]*white-space: nowrap;/s,
+    );
+    const narrow = mediaCss.slice(
+      mediaCss.indexOf("@media (max-width: 519px)"),
+    );
+    expect(narrow).toMatch(/\._describeHeader_[\w-]+\s*\{[^}]*padding-inline/s);
+    expect(narrow).toMatch(/\._altModes_[\w-]+ label\s*\{[^}]*padding-inline/s);
+  });
+
+  // A page pinned to an index would swap pictures underneath the writer the
+  // moment the order changed; it follows the item it was opened on.
+  it("keeps the open page on its own picture across a reorder", () => {
+    render(<FocusHarness initial={[item("00"), item("01")]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /添加描述/ }));
+    fireEvent.click(screen.getByLabelText("填写描述"));
+    fireEvent.change(screen.getByPlaceholderText("简要描述图片内容"), {
+      target: { value: "第一张" },
+    });
+    expect(screen.getByText("1 / 2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /下移/ }));
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("简要描述图片内容")).toHaveValue(
+      "第一张",
+    );
   });
 
   it("supports keyboard-usable ordering and explicit alt modes", () => {
