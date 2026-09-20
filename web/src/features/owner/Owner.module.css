@@ -1823,20 +1823,23 @@
   background: var(--surface-hover);
 }
 
-.draftsOpen {
+.draftsBody {
   min-inline-size: 0;
   display: grid;
   flex: 1 1 auto;
   gap: var(--space-1);
+  padding: var(--space-3) var(--space-2);
+  text-align: start;
+}
+
+.draftsOpen {
   border: 0;
   border-radius: var(--radius-action);
-  padding: var(--space-3) var(--space-2);
   background: transparent;
-  text-align: start;
   cursor: pointer;
 }
 
-.draftsOpen span {
+.draftsBody > span {
   display: -webkit-box;
   overflow: hidden;
   color: var(--text-primary);
@@ -1846,7 +1849,7 @@
   -webkit-line-clamp: 3;
 }
 
-.draftsOpen time {
+.draftsBody time {
   color: var(--text-tertiary);
   font-family: var(--font-utility);
   font-size: var(--text-xs);
@@ -1908,11 +1911,20 @@
   text-align: center;
 }
 
-/* The checkbox, from the reference: a 20px rounded box that keeps its own
-   colour, inside a round 36px halo that is the only thing answering the
-   pointer. Checked, the box fills with the accent and the tick appears. */
+/* The whole row picks the draft, so the whole row is the label. */
+.draftsPick {
+  min-inline-size: 0;
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  gap: var(--space-1);
+  cursor: pointer;
+}
+
+/* A 22px checkbox that keeps the page's own
+   colour inside it, in a round 36px halo that is the only part answering
+   the pointer. Checked, the box fills with the accent and the tick shows. */
 .draftsCheck {
-  position: relative;
   inline-size: 2.25rem;
   block-size: 2.25rem;
   display: grid;
@@ -1920,21 +1932,10 @@
   place-items: center;
   align-self: center;
   border-radius: 50%;
-  cursor: pointer;
   transition: background-color 0.2s;
 }
 
-.draftsCheck input {
-  position: absolute;
-  inset: 0;
-  inline-size: 100%;
-  block-size: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.draftsCheck > span[aria-hidden] {
+.draftsCheck > span {
   inline-size: 1.375rem;
   block-size: 1.375rem;
   display: grid;
@@ -1944,7 +1945,9 @@
      control waiting to be ticked. */
   border: 2px solid var(--text-secondary);
   border-radius: 0.3125rem;
-  background: transparent;
+  /* The page's colour, not `transparent`: transparent let the halo's grey
+     through and filled the middle of the box with it. */
+  background: var(--surface);
   transition:
     border-color 0.2s,
     background-color 0.2s;
@@ -1962,39 +1965,30 @@
   background: var(--checkbox-halo-hover);
 }
 
-.draftsCheck:active {
+.draftsPick:active .draftsCheck:hover {
   background: var(--checkbox-halo-pressed);
 }
 
-.draftsCheck:has(input:checked) > span[aria-hidden] {
+.draftsPick:has(input:checked) .draftsCheck > span {
   border-color: var(--accent);
   background: var(--accent);
 }
 
-.draftsCheck:has(input:checked) svg {
+.draftsPick:has(input:checked) .draftsCheck svg {
   opacity: 1;
 }
 
-.draftsCheck:has(input:checked):hover {
+.draftsPick:has(input:checked) .draftsCheck:hover {
   background: var(--checkbox-on-halo-hover);
 }
 
-.draftsCheck:has(input:checked):active {
+.draftsPick:has(input:checked):active .draftsCheck:hover {
   background: var(--checkbox-on-halo-pressed);
 }
 
-.draftsCheck:has(input:focus-visible) {
+.draftsPick:has(input:focus-visible) .draftsCheck {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-/* A row being picked is not a row being opened. */
-.draftsOpen:disabled {
-  cursor: default;
-}
-
-.draftsList li:has(.draftsOpen:disabled):hover {
-  background: transparent;
 }
 
 /* 全选 on one side, 删除 on the other, as the reference has it. */

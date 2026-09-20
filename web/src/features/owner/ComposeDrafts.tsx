@@ -87,11 +87,14 @@ export function ComposeDrafts({
         {drafts.map((draft) => (
           <li key={draft.id}>
             {editing ? (
-              // The halo is the only thing that answers the pointer; the box
-              // itself keeps its own colour, as the reference's does.
-              <label className={styles.draftsCheck}>
+              // The whole row picks it, not just the box: a 22px target in a
+              // 68px row is a worse way to say the same thing. The halo is
+              // still the only part that answers the pointer, and the box
+              // keeps the page's own colour inside it.
+              <label className={styles.draftsPick}>
                 <input
                   checked={picked.has(draft.id)}
+                  className={styles.srOnly}
                   onChange={(event) =>
                     setPicked((current) => {
                       const next = new Set(current);
@@ -102,50 +105,55 @@ export function ComposeDrafts({
                   }
                   type="checkbox"
                 />
-                <span aria-hidden="true">
-                  <Icon name="audience-check" />
+                <span aria-hidden="true" className={styles.draftsCheck}>
+                  <span>
+                    <Icon name="audience-check" />
+                  </span>
                 </span>
-                <span className={styles.srOnly}>
-                  选择草稿：{preview(draft.contentMd).slice(0, 24)}
+                <span className={styles.draftsBody}>
+                  <span>{preview(draft.contentMd)}</span>
+                  <time dateTime={draft.savedAt}>
+                    {new Date(draft.savedAt).toLocaleString("zh-CN")}
+                  </time>
                 </span>
               </label>
-            ) : null}
-            {/* Two controls side by side rather than one inside the other:
-                a delete button nested in a row button is not a thing a
-                browser can dispatch unambiguously. */}
-            <button
-              className={styles.draftsOpen}
-              disabled={editing}
-              onClick={() => onOpenDraft(draft)}
-              type="button"
-            >
-              <span>{preview(draft.contentMd)}</span>
-              <time dateTime={draft.savedAt}>
-                {new Date(draft.savedAt).toLocaleString("zh-CN")}
-              </time>
-            </button>
-            {editing ? null : (
-              // Deleting was one press with nothing between it and the only
-              // copy of that text.
-              <ConfirmDialog
-                confirmLabel="删除草稿"
-                danger
-                description="这段文字只存在这台浏览器里，删除后无法找回。"
-                onConfirm={() => {
-                  dropKeptDraft(instanceId, draft.id);
-                  refresh();
-                }}
-                title="删除这份草稿？"
-                trigger={
-                  <button
-                    aria-label={`删除草稿：${preview(draft.contentMd).slice(0, 24)}`}
-                    className={styles.draftsDelete}
-                    type="button"
-                  >
-                    <Icon name="delete" />
-                  </button>
-                }
-              />
+            ) : (
+              <>
+                {/* Two controls side by side rather than one inside the
+                    other: a delete button nested in a row button is not a
+                    thing a browser can dispatch unambiguously. */}
+                <button
+                  className={`${styles.draftsOpen} ${styles.draftsBody}`}
+                  onClick={() => onOpenDraft(draft)}
+                  type="button"
+                >
+                  <span>{preview(draft.contentMd)}</span>
+                  <time dateTime={draft.savedAt}>
+                    {new Date(draft.savedAt).toLocaleString("zh-CN")}
+                  </time>
+                </button>
+                {/* Deleting was one press with nothing between it and the
+                    only copy of that text. */}
+                <ConfirmDialog
+                  confirmLabel="删除草稿"
+                  danger
+                  description="这段文字只存在这台浏览器里，删除后无法找回。"
+                  onConfirm={() => {
+                    dropKeptDraft(instanceId, draft.id);
+                    refresh();
+                  }}
+                  title="删除这份草稿？"
+                  trigger={
+                    <button
+                      aria-label={`删除草稿：${preview(draft.contentMd).slice(0, 24)}`}
+                      className={styles.draftsDelete}
+                      type="button"
+                    >
+                      <Icon name="delete" />
+                    </button>
+                  }
+                />
+              </>
             )}
           </li>
         ))}

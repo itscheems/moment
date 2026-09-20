@@ -676,15 +676,20 @@ describe("visual foundation contract", () => {
     ]) {
       expect(globalCss).toContain(declaration);
     }
-    // The box keeps its own colour; only the ring around it fills.
+    // Only the ring around the box fills; the box keeps the page's colour,
+    // or the halo's grey shows through the middle of it.
     expect(ownerCss).toMatch(
       /\._draftsCheck_[\w-]+:hover\s*\{[^}]*background: var\(--checkbox-halo-hover\)/s,
     );
     expect(ownerCss).toMatch(
-      /\._draftsCheck_[\w-]+:has\(input:checked\):hover\s*\{[^}]*background: var\(--checkbox-on-halo-hover\)/s,
+      /\._draftsPick_[\w-]+:has\(input:checked\) \._draftsCheck_[\w-]+:hover\s*\{[^}]*background: var\(--checkbox-on-halo-hover\)/s,
     );
     expect(ownerCss).toMatch(
-      /\._draftsCheck_[\w-]+ > span\[aria-hidden\]\s*\{[^}]*border: 2px solid var\(--text-secondary\);[^}]*background: transparent/s,
+      /\._draftsCheck_[\w-]+ > span\s*\{[^}]*border: 2px solid var\(--text-secondary\);[^}]*background: var\(--surface\)/s,
+    );
+    // The dialog keeps its size when it turns over.
+    expect(appCss).toMatch(
+      /\._composeDialog_[\w-]+\s*\{[^}]*min-block-size: 18\.5rem/s,
     );
     expect(ownerCss).toMatch(
       /\._draftsDeletePicked_[\w-]+:disabled\s*\{[^}]*color: var\(--danger-disabled\);[^}]*background: transparent;[^}]*cursor: default/s,

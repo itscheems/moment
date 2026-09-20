@@ -57,6 +57,10 @@
 
 .composeDialog {
   inline-size: min(37.5rem, 100%);
+  /* Turning the dialog over must not resize it. Measured: the compose face
+     rests at 295px, the 草稿 list at 239px and the same list in edit mode at
+     292px, so the dialog jumped twice on the way there and back. */
+  min-block-size: 18.5rem;
   max-block-size: calc(100dvh - 10vh);
   overflow-y: auto;
   overscroll-behavior: contain;

@@ -1626,9 +1626,13 @@ describe("owner composing flow", () => {
       screen.queryByRole("dialog", { name: "删除选中的草稿？" }),
     ).toBeNull();
 
-    // A row is for picking now, not for opening. `^` because the row's own
-    // delete trigger is named 删除草稿：第一段 once editing is done.
-    expect(screen.getByRole("button", { name: /^第一段/ })).toBeDisabled();
+    // The whole row picks it now, rather than only a 22px box inside it:
+    // there is no row button left, and the row's own text names the box.
+    expect(screen.queryByRole("button", { name: /^第一段/ })).toBeNull();
+    const first = screen.getByRole("checkbox", { name: /第一段/ });
+    fireEvent.click(first.closest("label")!);
+    expect(first).toBeChecked();
+    expect(remove).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "全选" }));
     expect(
@@ -1639,9 +1643,9 @@ describe("owner composing flow", () => {
     expect(
       screen.getByRole("button", { name: "取消全选" }),
     ).toBeInTheDocument();
-    expect(remove).toBeEnabled();
 
-    fireEvent.click(screen.getByLabelText(/选择草稿：第一段/));
+    fireEvent.click(first.closest("label")!);
+    expect(first).not.toBeChecked();
     expect(screen.getByRole("button", { name: "全选" })).toBeInTheDocument();
 
     fireEvent.click(remove);
