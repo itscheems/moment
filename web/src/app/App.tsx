@@ -517,10 +517,18 @@ function PublicApp() {
               >
                 {ownerCapable ? (
                   <header className={styles.composeDialogHeader}>
+                    {/* Keyed, so turning the dialog over replaces these
+                        buttons rather than reusing one node and swapping its
+                        class. Reuse let `transition: background-color` run
+                        between the two: measured, the pill carried 编辑's
+                        white label on 草稿's transparent ground for 200ms on
+                        the way in, and 草稿's blue label on 编辑's black pill
+                        on the way back. */}
                     {draftsOpen ? (
                       <button
                         aria-label="返回发布"
                         className={styles.composeDialogIcon}
+                        key="drafts-back"
                         onClick={() => setDraftsOpen(false)}
                         ref={draftsBackRef}
                         type="button"
@@ -531,6 +539,7 @@ function PublicApp() {
                       <button
                         aria-label="关闭发布"
                         className={styles.composeDialogIcon}
+                        key="compose-close"
                         onClick={requestOverlayComposerClose}
                         type="button"
                       >
@@ -548,6 +557,7 @@ function PublicApp() {
                       keptDrafts > 0 ? (
                         <button
                           className={styles.composeDialogEdit}
+                          key="drafts-edit"
                           onClick={() => setDraftsEditing((on) => !on)}
                           type="button"
                         >
@@ -557,6 +567,7 @@ function PublicApp() {
                     ) : (
                       <button
                         className={styles.composeDialogDrafts}
+                        key="compose-drafts"
                         onClick={() => setDraftsOpen(true)}
                         ref={draftsTriggerRef}
                         type="button"

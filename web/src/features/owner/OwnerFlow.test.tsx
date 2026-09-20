@@ -1590,9 +1590,17 @@ describe("owner composing flow", () => {
       "true",
     );
 
-    fireEvent.click(within(list).getByRole("button", { name: "返回发布" }));
+    // Turning the dialog over must replace these buttons, not reuse one node
+    // and swap its class: a reused node runs `transition: background-color`
+    // between the two pills, which painted 草稿's blue label on 编辑's black
+    // ground for 200ms. Different nodes cannot bridge.
+    const listBack = within(list).getByRole("button", { name: "返回发布" });
+    const listPill = within(list).getByRole("button", { name: /编辑/ });
+    fireEvent.click(listBack);
     expect(await screen.findByRole("dialog", { name: "发布 Moment" }));
     expect(window.location.pathname).toBe("/owner/compose");
+    expect(screen.getByRole("button", { name: "关闭发布" })).not.toBe(listBack);
+    expect(screen.getByRole("button", { name: /草稿/ })).not.toBe(listPill);
 
     // Escape and a press on the scrim reach the dialog the same way.
     fireEvent.click(screen.getByRole("button", { name: /草稿/ }));
