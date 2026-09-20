@@ -485,7 +485,15 @@ function PublicApp() {
       {overlayCompose && siteIdentityReady ? (
         <Dialog.Root
           onOpenChange={(open) => {
-            if (!open) requestOverlayComposerClose();
+            if (open) return;
+            // Escape and a press on the scrim mean the same thing the back
+            // arrow does while the list is up: go back to what was being
+            // written, not out of the composer.
+            if (draftsOpen) {
+              setDraftsOpen(false);
+              return;
+            }
+            requestOverlayComposerClose();
           }}
           open
         >

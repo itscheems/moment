@@ -107,6 +107,10 @@
      Dark themes derive the same 10% / 20% tint from their own ink below. */
   --icon-button-hover: #e7e7e7;
   --icon-button-pressed: #cfd0d1;
+  /* The compose dialog's scrim. The reference reads #d9d9da over a white
+     page, which is this app's own ink at 16%; the dark themes lift the page
+     with the blue-grey instead, where a black scrim would be invisible. */
+  --compose-scrim: rgb(15 20 25 / 16%);
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -151,6 +155,7 @@
   --surface: #15202b;
   --surface-elevated: #1e2732;
   --surface-hover: #1c2732;
+  --compose-scrim: rgb(91 112 131 / 40%);
   --icon-button-hover: color-mix(
     in srgb,
     var(--text-primary) 10%,
@@ -181,6 +186,7 @@
   --surface: #000000;
   --surface-elevated: #16181c;
   --surface-hover: #181818;
+  --compose-scrim: rgb(91 112 131 / 40%);
   --icon-button-hover: color-mix(
     in srgb,
     var(--text-primary) 10%,
@@ -347,6 +353,7 @@ a {
     --surface: #000000;
     --surface-elevated: #16181c;
     --surface-hover: #181818;
+    --compose-scrim: rgb(91 112 131 / 40%);
     --icon-button-hover: color-mix(
       in srgb,
       var(--text-primary) 10%,

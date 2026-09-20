@@ -608,15 +608,27 @@ describe("visual foundation contract", () => {
     );
   });
 
-  // Measured against the reference: a 32px pill, 16px of side padding, and
-  // 16px in from the dialog's edge rather than hard against it. It answers
-  // the pointer with the audience pill's own two tints rather than a
-  // scale-down, and the neutral ✕ beside it with #e7e7e7 / #cfd0d1.
+  // The compose header has 16px padding, the icon button
+  // 34px and pulled 8px back into that padding, and a 32px pill with 16px
+  // of side padding whose right edge lands on the padding. It answers the
+  // pointer with the audience pill's own two tints rather than a
+  // scale-down, and the neutral ✕ beside it with #e7e7e7 / #cfd0d1. The
+  // scrim reads #d9d9da over a white page -- this app's ink at 16%.
   it("gives the compose header consistent pill and press tints", () => {
     expect(globalCss).toContain("--icon-button-hover: #e7e7e7");
     expect(globalCss).toContain("--icon-button-pressed: #cfd0d1");
+    expect(globalCss).toContain("--compose-scrim: rgb(15 20 25 / 16%)");
     expect(appCss).toMatch(
-      /\._composeDialogDrafts_[\w-]+\s*\{[^}]*min-block-size: 2rem;[^}]*margin-inline: auto var\(--space-2\);[^}]*padding-inline: var\(--space-4\)/s,
+      /\._composeBackdrop_[\w-]+\s*\{[^}]*background: var\(--compose-scrim\)/s,
+    );
+    expect(appCss).toMatch(
+      /\._composeDialogHeader_[\w-]+\s*\{[^}]*padding: var\(--space-1\) var\(--space-4\)/s,
+    );
+    expect(appCss).toMatch(
+      /\._composeDialogIcon_[\w-]+\s*\{[^}]*inline-size: 2\.125rem;[^}]*block-size: 2\.125rem;[^}]*margin-inline-start: calc\(0px - var\(--space-2\)\)/s,
+    );
+    expect(appCss).toMatch(
+      /\._composeDialogDrafts_[\w-]+\s*\{[^}]*min-block-size: 2rem;[^}]*margin-inline-start: auto;[^}]*padding-inline: var\(--space-4\)/s,
     );
     for (const [selector, token] of [
       ["_composeDialogDrafts", "--audience-hover"],

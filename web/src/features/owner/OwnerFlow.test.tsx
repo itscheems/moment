@@ -1561,6 +1561,49 @@ describe("owner composing flow", () => {
     expect(screen.queryByRole("dialog", { name: "草稿" })).toBeNull();
   });
 
+  // The list is a face of the compose dialog, not a thing stacked on it:
+  // both ways out of it go back to what was being written.
+  it("returns the drafts list to the editor, by arrow or by pressing outside", async () => {
+    preauthenticate();
+    keepDraft(instance, "先放着的一段", new Date("2026-09-20T07:00:00.000Z"));
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(min-width: 720px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    installApi();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("link", { name: "发布" }));
+    const dialog = await screen.findByRole("dialog", { name: "发布 Moment" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /草稿/ }));
+
+    const list = await screen.findByRole("dialog", { name: "草稿" });
+    // The reference's section row, with only the one kind that exists.
+    expect(within(list).getByRole("tab", { name: "未发布" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+
+    fireEvent.click(within(list).getByRole("button", { name: "返回发布" }));
+    expect(await screen.findByRole("dialog", { name: "发布 Moment" }));
+    expect(window.location.pathname).toBe("/owner/compose");
+
+    // Escape and a press on the scrim reach the dialog the same way.
+    fireEvent.click(screen.getByRole("button", { name: /草稿/ }));
+    await screen.findByRole("dialog", { name: "草稿" });
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "草稿" }), {
+      key: "Escape",
+    });
+    expect(await screen.findByRole("dialog", { name: "发布 Moment" }));
+    expect(window.location.pathname).toBe("/owner/compose");
+  });
+
   // Editing a draft used to leave the original behind: 草稿 matches on
   // content, so "aaa" edited to "aaa1" filed a second entry beside it.
   it("replaces the draft it opened rather than filing a second one", async () => {

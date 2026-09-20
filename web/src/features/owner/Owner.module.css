@@ -1679,6 +1679,70 @@
   margin-inline: calc(0px - var(--space-4));
 }
 
+/* The section row under the 草稿 header: one tab per
+   kind, the chosen one named in ink with an accent bar under it, a hairline
+   under the row, and the whole tab as the target. Only 未发布 exists yet, so
+   it takes the row; a second tab splits it with no other change. */
+.draftsTabs {
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.draftsTabs > div {
+  display: flex;
+}
+
+.draftsTabs button {
+  position: relative;
+  min-block-size: 3.25rem;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  flex: 1 1 0;
+  border: 0;
+  padding-inline: var(--space-4);
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.draftsTabs button:hover {
+  background: var(--icon-button-hover);
+}
+
+.draftsTabs button[aria-selected="true"] {
+  color: var(--text-primary);
+  font-weight: 750;
+}
+
+/* The whole tab is the target, but the bar is as wide as the label -- which
+   is what the reference draws -- so it rides on the label rather than the
+   button. `align-items: stretch` above is what lets the label reach the
+   tab's bottom edge for it. */
+.draftsTabs button > span {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.draftsTabs button > span::after {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 0.25rem;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.draftsTabs button[aria-selected="true"] > span::after {
+  opacity: 1;
+}
+
 /* The 草稿 view inside the compose dialog. Rows are the whole target, and
    they say so under the pointer -- the hairline between them is not an
    affordance, the ground lifting under the cursor is. */
