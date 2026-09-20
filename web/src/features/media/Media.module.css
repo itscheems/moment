@@ -1154,11 +1154,17 @@
   inset: 0;
 }
 
+/* One scrim, not two. The viewport below used to paint the same 94% black
+   on top of this, which composites to 99.6% -- a hard blackout that read as
+   the page being replaced rather than the picture being lifted off it. A
+   single lighter layer over a blurred page keeps the page faintly present,
+   which is what every photo viewer worth copying does. */
 .lightboxBackdrop {
   position: fixed;
   z-index: 0;
   inset: 0;
-  background: rgb(0 0 0 / 94%);
+  background: rgb(0 0 0 / 84%);
+  backdrop-filter: blur(24px);
   transition: opacity 180ms var(--ease-out);
 }
 
@@ -1171,7 +1177,6 @@
   position: fixed;
   z-index: 1;
   inset: 0;
-  background: rgb(0 0 0 / 94%);
   display: grid;
   place-items: center;
   padding: 0;

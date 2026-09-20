@@ -1,5 +1,5 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
@@ -37,13 +37,32 @@ export function MediaLightbox({
     setFailed(false);
   }, [selected]);
 
+  // What the dialog keeps showing while it animates out.
+  //
+  // Closing sets `selected` to null, so `item` is already gone on the first
+  // frame of the 180ms exit -- and the render's last branch is the "media
+  // unavailable" panel, which meant every close played that light grey error
+  // box over the black backdrop instead of the photo. Measured: at t=7ms the
+  // stage read 图片暂时无法显示。 on rgb(239 243 244) and stayed there for the
+  // whole fade. Holding the last opened item lets the picture be the thing
+  // that fades.
+  const lastOpened = useRef<{ item: MediaLightboxItem; index: number } | null>(
+    null,
+  );
+  useEffect(() => {
+    if (item && selected !== null)
+      lastOpened.current = { item, index: selected };
+  }, [item, selected]);
+  const shown = item ?? lastOpened.current?.item ?? null;
+  const shownIndex = selected ?? lastOpened.current?.index ?? 0;
+
   const select = (next: number) => {
     if (items.length === 0) return;
     onSelectedChange((next + items.length) % items.length);
   };
 
-  const source = item?.previewSrc;
-  const canViewOriginal = Boolean(item?.originalSrc);
+  const source = shown?.previewSrc;
+  const canViewOriginal = Boolean(shown?.originalSrc);
   const portalContainer =
     typeof document === "undefined" ? null : document.body;
 
@@ -62,6 +81,18 @@ export function MediaLightbox({
         <Dialog.Viewport className={styles.lightboxViewport}>
           <Dialog.Popup
             className={styles.lightboxPopup}
+            // A press on the dark surround closes, the way every photo
+            // viewer does it. The popup fills the screen so the backdrop
+            // underneath it can never be pressed -- measured, a point far
+            // from the picture hit `.lightboxStage`, inside the dialog, so
+            // there was no "outside" left to click.
+            onClick={(event) => {
+              if (
+                (event.target as HTMLElement).closest("img, video, button, a")
+              )
+                return;
+              onSelectedChange(null);
+            }}
             onKeyDown={(event) => {
               if (items.length < 2) return;
               if (event.key === "ArrowLeft") {
@@ -75,8 +106,8 @@ export function MediaLightbox({
             }}
           >
             <Dialog.Title className={styles.srOnly}>
-              {containsVideo ? "媒体" : "图片"}{" "}
-              {selected === null ? "" : selected + 1} / {items.length}
+              {containsVideo ? "媒体" : "图片"} {shownIndex + 1} /{" "}
+              {items.length}
             </Dialog.Title>
             <Dialog.Close
               aria-label={containsVideo ? "关闭媒体预览" : "关闭图片预览"}
@@ -86,37 +117,40 @@ export function MediaLightbox({
             </Dialog.Close>
             {items.length > 1 ? (
               <span aria-live="polite" className={styles.lightboxCounter}>
-                {(selected ?? 0) + 1} / {items.length}
+                {shownIndex + 1} / {items.length}
               </span>
             ) : null}
             <div className={styles.lightboxStage}>
-              {item && source && !failed && item.kind === "video" ? (
+              {shown && source && !failed && shown.kind === "video" ? (
                 <video
-                  aria-label={item.alt}
+                  aria-label={shown.alt}
                   autoPlay
                   controls
-                  key={item.key}
+                  key={shown.key}
                   onError={() => setFailed(true)}
                   playsInline
-                  poster={item.posterSrc ?? undefined}
+                  poster={shown.posterSrc ?? undefined}
                   preload="metadata"
                   src={source}
                 />
-              ) : item && source && !failed ? (
+              ) : shown && source && !failed ? (
                 <img
-                  alt={item.alt}
+                  alt={shown.alt}
                   decoding="async"
-                  key={item.key}
+                  key={shown.key}
                   onError={() => setFailed(true)}
                   src={source}
-                  width={item.width ?? undefined}
-                  height={item.height ?? undefined}
+                  width={shown.width ?? undefined}
+                  height={shown.height ?? undefined}
                 />
-              ) : (
+              ) : shown ? (
+                // Only ever a real failure. This branch used to double as
+                // "nothing is selected", which is what put an error panel
+                // on screen for the length of every close.
                 <div className={styles.lightboxFallback} role="alert">
                   {containsVideo ? "媒体暂时无法显示。" : "图片暂时无法显示。"}
                 </div>
-              )}
+              ) : null}
               {items.length > 1 ? (
                 <>
                   <button
@@ -140,16 +174,16 @@ export function MediaLightbox({
             </div>
             <div className={styles.lightboxFooter}>
               <Dialog.Description className={styles.lightboxDescription}>
-                {item?.description}
+                {shown?.description}
               </Dialog.Description>
-              {canViewOriginal && item?.originalSrc ? (
+              {canViewOriginal && shown?.originalSrc ? (
                 <a
                   className={styles.lightboxOriginal}
-                  href={item.originalSrc}
+                  href={shown.originalSrc}
                   rel="noreferrer"
                   target="_blank"
                 >
-                  {item.kind === "video" ? "打开原画质视频" : "打开原图"}
+                  {shown.kind === "video" ? "打开原画质视频" : "打开原图"}
                 </a>
               ) : null}
             </div>
