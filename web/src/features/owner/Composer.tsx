@@ -1100,7 +1100,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     return (
       <section
         aria-label={post ? "编辑 Moment" : "发布 Moment"}
-        className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${mediaItems.length > 0 ? styles.composerHasMedia : ""} ${expanded ? styles.composerExpanded : ""}`}
+        className={`${styles.composer} ${variant === "inline" ? styles.inlineComposer : styles.pageComposer} ${mediaItems.length > 0 ? styles.composerHasMedia : ""}`}
         data-expanded={expanded ? "true" : "false"}
         onBlur={(event) => {
           const section = event.currentTarget;
@@ -1161,34 +1161,33 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             />
           </div>
         ) : null}
+        {draft ? (
+          <div className={styles.draftRecovery} role="status">
+            <div>
+              <strong>发现一段未发布草稿</strong>
+              <span>
+                保存于 {new Date(draft.savedAt).toLocaleString("zh-CN")}
+              </span>
+            </div>
+            <div>
+              <button onClick={recoverDraft} type="button">
+                恢复
+              </button>
+              <ConfirmDialog
+                confirmLabel="丢弃草稿"
+                danger
+                description="这只会移除当前实例里这段未发布的本地文字，不能撤销。"
+                onConfirm={discardDraft}
+                title="丢弃本地草稿？"
+                trigger={<button type="button">丢弃</button>}
+              />
+            </div>
+          </div>
+        ) : null}
         <div aria-hidden="true" className={styles.newTick}>
           <SiteAvatar site={site} />
         </div>
         <div className={styles.composerMain}>
-          {draft ? (
-            <div className={styles.draftRecovery} role="status">
-              <div>
-                <strong>发现一段未发布草稿</strong>
-                <span>
-                  保存于 {new Date(draft.savedAt).toLocaleString("zh-CN")}
-                </span>
-              </div>
-              <div>
-                <button onClick={recoverDraft} type="button">
-                  恢复
-                </button>
-                <ConfirmDialog
-                  confirmLabel="丢弃草稿"
-                  danger
-                  description="这只会移除当前实例里这段未发布的本地文字，不能撤销。"
-                  onConfirm={discardDraft}
-                  title="丢弃本地草稿？"
-                  trigger={<button type="button">丢弃</button>}
-                />
-              </div>
-            </div>
-          ) : null}
-
           <form
             className={styles.composerForm}
             onSubmit={(event) => void submit(event)}

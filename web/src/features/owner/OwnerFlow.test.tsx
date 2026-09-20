@@ -25,6 +25,7 @@ import {
   loadComposeDraft,
 } from "./draft";
 import { keepDraft, listKeptDrafts } from "./drafts";
+import ownerCss from "./Owner.module.css?inline";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
 const instance = "0123456789abcdef0123456789abcdef";
@@ -496,6 +497,36 @@ describe("owner composing flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "丢弃" }));
     fireEvent.click(await screen.findByRole("button", { name: "丢弃草稿" }));
     await waitFor(() => expect(loadComposeDraft(instance)).toBeNull());
+  });
+
+  // The notice lived inside the text column, which left the avatar floating
+  // beside it and -- because `.pageComposer .audienceRow` carries a -6px top
+  // margin tuned for the pill being first in that column -- pulled the
+  // audience pill up through the notice's bottom rule (measured in the
+  // browser: pill top 191.5, rule 195). It spans the composer now.
+  it("puts the recovery notice across the composer, not inside its text column", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    window.localStorage.setItem(
+      composeDraftKey(instance),
+      JSON.stringify({
+        content_md: "刷新前留下的草稿",
+        saved_at: new Date().toISOString(),
+      }),
+    );
+    installApi();
+    render(<App />);
+
+    const notice = (await screen.findByText("发现一段未发布草稿")).closest(
+      '[role="status"]',
+    );
+    const section = screen.getByRole("region", { name: "发布 Moment" });
+    expect(notice?.parentElement).toBe(section);
+    expect(ownerCss).toMatch(
+      /\._draftRecovery_[\w-]+\s*\{[^}]*grid-column: 1 \/ -1/s,
+    );
+    // A dead class name put the literal string "undefined" in the attribute.
+    expect(section.className).not.toContain("undefined");
   });
 
   it("protects new text when typing directly over a recovery choice", async () => {

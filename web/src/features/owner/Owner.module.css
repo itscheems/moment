@@ -649,15 +649,23 @@
   white-space: nowrap;
 }
 
+/* A notice about the whole composer, so it spans the whole composer: it
+   used to sit inside the text column, which left the avatar floating
+   beside it and -- because `.pageComposer .audienceRow` carries a -6px top
+   margin tuned for the pill being the first thing in that column -- pulled
+   the audience pill up through the notice's bottom rule. Full bleed, its
+   own side padding, and the row below starts clear of it. */
 .draftRecovery {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   border-block: 1px solid var(--accent);
-  margin-block-start: var(--space-4);
-  padding-block: var(--space-3);
+  margin-block: 0 var(--space-3);
+  margin-inline: calc(0px - var(--space-4));
+  padding: var(--space-3) var(--space-4);
 }
 
 .draftRecovery strong,
