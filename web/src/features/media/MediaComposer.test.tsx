@@ -170,6 +170,36 @@ describe("media editor", () => {
     expect(onAdd).toHaveBeenCalledWith([duplicate, duplicate]);
   });
 
+  // One quiet "Add description" action sits under the pictures. This used to be a
+  // <details> whose `border-block` drew a hairline above *and* below itself,
+  // with the toolbar's own rule right under that -- three lines stacked in
+  // the gap between the picture and the toolbar.
+  it("offers one borderless description action under the pictures", () => {
+    render(
+      <MediaComposer
+        disabled={false}
+        items={[item("00"), item("01")]}
+        onAdd={vi.fn()}
+        onChange={vi.fn()}
+        onRemove={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    const describe = screen.getByRole("button", { name: /添加描述/ });
+    expect(describe).toHaveTextContent("2 项未描述");
+    expect(document.querySelector("details")).toBeNull();
+    expect(mediaCss).not.toMatch(
+      /\._mediaDescribe_[\w-]+\s*\{[^}]*border(-block)?:[^};]*solid/s,
+    );
+
+    fireEvent.click(describe);
+    expect(
+      screen.getByRole("heading", { name: "编辑图片描述" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByLabelText("填写描述")).toHaveLength(2);
+  });
+
   it("supports keyboard-usable ordering and explicit alt modes", () => {
     const onChange = vi.fn();
     const items = [item("00"), item("01")];
@@ -184,6 +214,7 @@ describe("media editor", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: /添加描述/ }));
     fireEvent.click(screen.getAllByRole("button", { name: /下移/ })[0]);
     expect(
       onChange.mock.calls[0][0].map((value: ComposerMediaItem) => value.key),
@@ -562,11 +593,17 @@ describe("media editor", () => {
     ).toHaveAttribute("data-media-count", "2");
   });
 
+  // Reordering lives in the description sheet, and the sheet traps focus:
+  // handing focus to the tile behind it would have it pulled straight back.
+  // The press keeps its own control -- here the moved item reaches the end,
+  // so its 下移 is disabled and focus lands on its 上移, still the moved item.
   it("keeps focus with the moved usage after keyboard reordering", async () => {
     render(<FocusHarness initial={[item("00"), item("01")]} />);
+    fireEvent.click(screen.getByRole("button", { name: /添加描述/ }));
     fireEvent.click(screen.getAllByRole("button", { name: /下移/ })[0]);
     await waitFor(() =>
       expect(document.activeElement).toHaveAttribute("data-media-key", "00"),
     );
+    expect(document.activeElement).toHaveAttribute("data-media-action", "up");
   });
 });

@@ -1399,11 +1399,12 @@ describe("public comment thread", () => {
     fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: { files: [file] },
     });
-    fireEvent.click(screen.getByText("图片选项"));
+    fireEvent.click(screen.getByRole("button", { name: /添加描述/ }));
     fireEvent.click(screen.getByLabelText("填写描述"));
     fireEvent.change(screen.getByPlaceholderText("简要描述图片内容"), {
       target: { value: "night sky" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
     fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
 
     await waitFor(() => expect(FakeCommentUploadRequest.last).not.toBeNull());
@@ -1536,8 +1537,10 @@ describe("public comment thread", () => {
       },
       meta: { request_id: "req_upload_retry" },
     });
+    // The retry offer is what the tile shows while an upload is broken, so
+    // its disappearance is the visible proof the retry landed.
     await waitFor(() =>
-      expect(screen.getByText("已就绪", { exact: false })).toBeInTheDocument(),
+      expect(screen.queryByText("重试上传", { exact: false })).toBeNull(),
     );
     fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
     expect(await screen.findByText("失败后重试")).toBeInTheDocument();
