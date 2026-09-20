@@ -1025,6 +1025,13 @@
   font-weight: 650;
 }
 
+/* The chosen pill answers the pointer too. Its filled ground already wins
+   over the hover ground, so it says yes with a ring instead -- measured,
+   it was the one control on the sheet that went dead under the cursor. */
+.altModes label[data-checked]:hover {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 .altModes label:has(input:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -1396,6 +1403,10 @@
   outline: 0;
   color: #fff;
   background: transparent;
+  /* A press on the dark surround closes, and the cursor is the only place
+     that can say so before the press. The picture keeps the ordinary arrow
+     because pressing it does nothing. */
+  cursor: zoom-out;
   transition:
     opacity 180ms var(--ease-out),
     transform 180ms var(--ease-out);
@@ -1405,6 +1416,11 @@
 .lightboxPopup[data-ending-style] {
   opacity: 0;
   transform: scale(0.985);
+}
+
+.lightboxStage img,
+.lightboxStage video {
+  cursor: default;
 }
 
 .lightboxDescription {

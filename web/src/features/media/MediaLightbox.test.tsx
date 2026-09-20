@@ -53,6 +53,16 @@ describe("media lightbox", () => {
     expect(surround).not.toBeNull();
     fireEvent.click(surround!);
     expect(screen.queryByAltText("第一张")).toBeNull();
+
+    // The cursor is the only thing that can say the surround dismisses
+    // before the press lands; the picture keeps the ordinary arrow because
+    // pressing it does nothing.
+    expect(mediaCss).toMatch(
+      /\._lightboxPopup_[\w-]+\s*\{[^}]*cursor: zoom-out;/s,
+    );
+    expect(mediaCss).toMatch(
+      /\._lightboxStage_[\w-]+ img,[\s\S]*?video\s*\{[^}]*cursor: default;/s,
+    );
   });
 
   it("keeps the controls working rather than treating them as the surround", () => {
