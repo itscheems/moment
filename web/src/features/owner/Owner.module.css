@@ -1654,6 +1654,75 @@
   }
 }
 
+/* The compose screen's own way into 草稿. Quiet and to one side: it is a
+   door, not the thing on the page. */
+.pageDrafts {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pageDraftsToggle {
+  min-block-size: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-3);
+  color: var(--accent);
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.pageDraftsToggle:hover,
+.pageDraftsToggle:focus-visible {
+  background: var(--accent-soft);
+}
+
+.pageDraftsToggle:active {
+  transform: scale(0.96);
+}
+
+.pageDraftsToggle small {
+  min-inline-size: 1.25rem;
+  block-size: 1.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  padding-inline: 0.25rem;
+  color: var(--button-primary-contrast);
+  background: var(--accent);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.pageDraftsToggle svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+
+.pageDraftsToggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.pageDraftsList {
+  grid-column: 1 / -1;
+  border-block: 1px solid var(--border-subtle);
+  /* Full bleed, the way the list reads inside the dialog: the rows are the
+     targets, and a row that stops short of the edge invites a press that
+     lands on nothing. */
+  margin-block-end: var(--space-2);
+  margin-inline: calc(0px - var(--space-4));
+}
+
 /* The 草稿 view inside the compose dialog. Rows are the whole target, and
    they say so under the pointer -- the hairline between them is not an
    affordance, the ground lifting under the cursor is. */

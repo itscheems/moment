@@ -566,6 +566,8 @@ function PublicApp() {
                 <div hidden={draftsOpen}>
                   {ownerCapable ? (
                     <Composer
+                      // The header above already carries it.
+                      draftsEntry={false}
                       quotedPostId={quotedPostId}
                       ref={overlayComposer}
                       site={site}

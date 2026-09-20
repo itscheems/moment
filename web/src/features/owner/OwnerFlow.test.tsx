@@ -1548,6 +1548,18 @@ describe("owner composing flow", () => {
     render(<App />);
     expect(await screen.findByLabelText("此刻想到什么？")).toHaveValue("");
     expect(screen.queryByText("发现一段未发布草稿")).toBeNull();
+
+    // A phone never gets the compose dialog, so the screen carries its own
+    // way into 草稿; filing text that cannot be read back is a trap.
+    const entry = screen.getByRole("button", { name: /草稿/ });
+    expect(entry).toHaveTextContent("1");
+    fireEvent.click(entry);
+    fireEvent.click(await screen.findByText("留到以后再发"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
+        "留到以后再发",
+      ),
+    );
   });
 
   it("clears the hidden inline surface after a recovered page draft publishes", async () => {

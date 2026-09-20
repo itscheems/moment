@@ -71,6 +71,7 @@ import {
   type ComposeDraft,
   type ComposeDraftClearEvent,
 } from "./draft";
+import { ComposeDrafts } from "./ComposeDrafts";
 import { dropKeptDraftByContent, keepDraft, listKeptDrafts } from "./drafts";
 import { useOwner } from "./OwnerProvider";
 import { OwnerLogin } from "./OwnerLogin";
@@ -152,10 +153,19 @@ interface ComposerProps {
   post?: PublicPost;
   active?: boolean;
   quotedPostId?: string;
+  /**
+   * Carry the way into 草稿. The compose dialog puts it in its own header,
+   * so the overlay turns this off; the compose screen -- the only compose
+   * surface a phone gets -- carries its own.
+   */
+  draftsEntry?: boolean;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(
-  function Composer({ site, variant, post, active = true, quotedPostId }, ref) {
+  function Composer(
+    { site, variant, post, active = true, quotedPostId, draftsEntry = true },
+    ref,
+  ) {
     const { navigate, goBack, setNavigationBlocker } = useNavigation();
     const { api, session, expireIfInvalidSession } = useOwner();
     const publicApi = useMemo(() => new PublicApi(), []);
@@ -220,6 +230,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [mentionItems, setMentionItems] = useState<MentionSuggestion[]>([]);
     const [mentionActive, setMentionActive] = useState(0);
     const [leavePromptOpen, setLeavePromptOpen] = useState(false);
+    const drafting = variant === "page" && draftsEntry;
+    const [draftsListOpen, setDraftsListOpen] = useState(false);
+    const [keptCount, setKeptCount] = useState(() =>
+      drafting ? listKeptDrafts(site.instanceId).length : 0,
+    );
     const pendingRef = useRef(false);
     const pendingNavigationRef = useRef<(() => void) | null>(null);
     const allowLeaveRef = useRef(false);
@@ -411,6 +426,28 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       setMediaItems([]);
     }, []);
 
+    // Putting a kept draft back in the editor. Reached from the 草稿 list
+    // on this surface, and from the compose dialog's list through the ref.
+    const restoreDraftText = useCallback(
+      (contentMd: string) => {
+        const restored = createComposeDraft(
+          contentMd,
+          activeDraftRef.current?.savedAt,
+        );
+        activeDraftRef.current = restored;
+        setActiveDraft(restored);
+        saveComposeDraft(site.instanceId, restored);
+        setContent(contentMd);
+        setDraft(null);
+        dirtyRef.current = true;
+        setDirty(true);
+        allowLeaveRef.current = false;
+        setAnnouncement("已载入草稿；图片需要重新选择。");
+        window.requestAnimationFrame(() => textareaRef.current?.focus());
+      },
+      [site.instanceId],
+    );
+
     useImperativeHandle(
       ref,
       () => ({
@@ -444,22 +481,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           setLocationChanged(false);
           setVisibility(initialVisibility);
         },
-        loadDraft: (contentMd: string) => {
-          const restored = createComposeDraft(
-            contentMd,
-            activeDraftRef.current?.savedAt,
-          );
-          activeDraftRef.current = restored;
-          setActiveDraft(restored);
-          saveComposeDraft(site.instanceId, restored);
-          setContent(contentMd);
-          setDraft(null);
-          dirtyRef.current = true;
-          setDirty(true);
-          allowLeaveRef.current = false;
-          setAnnouncement("已载入草稿；图片需要重新选择。");
-          window.requestAnimationFrame(() => textareaRef.current?.focus());
-        },
+        loadDraft: restoreDraftText,
       }),
       [
         clearMedia,
@@ -467,6 +489,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         hasUnpublishedChange,
         initialLocation,
         initialVisibility,
+        restoreDraftText,
         site.instanceId,
         variant,
       ],
@@ -1043,6 +1066,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       }
     };
 
+    useEffect(() => {
+      if (!drafting) return;
+      setKeptCount(listKeptDrafts(site.instanceId).length);
+    }, [drafting, draftsListOpen, site.instanceId]);
+
     const recoverDraft = () => {
       if (!draft) return;
       activeDraftRef.current = draft;
@@ -1104,6 +1132,35 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           if (!isTypedInto(event.target)) event.preventDefault();
         }}
       >
+        {/* The compose screen's own way into 草稿. The dialog keeps its own
+            in the header, but a phone never gets the dialog, and filing
+            text you cannot read back is a trap. Spans both columns so the
+            avatar stays level with the audience pill under it. */}
+        {drafting && (keptCount > 0 || draftsListOpen) ? (
+          <div className={styles.pageDrafts}>
+            <button
+              aria-expanded={draftsListOpen}
+              className={styles.pageDraftsToggle}
+              onClick={() => setDraftsListOpen((open) => !open)}
+              type="button"
+            >
+              草稿
+              {keptCount > 0 ? <small>{keptCount}</small> : null}
+              <Icon name="chevron-down" />
+            </button>
+          </div>
+        ) : null}
+        {drafting && draftsListOpen ? (
+          <div className={styles.pageDraftsList}>
+            <ComposeDrafts
+              instanceId={site.instanceId}
+              onOpenDraft={(kept) => {
+                restoreDraftText(kept.contentMd);
+                setDraftsListOpen(false);
+              }}
+            />
+          </div>
+        ) : null}
         <div aria-hidden="true" className={styles.newTick}>
           <SiteAvatar site={site} />
         </div>
