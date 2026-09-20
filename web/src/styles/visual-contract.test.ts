@@ -712,6 +712,15 @@ describe("visual foundation contract", () => {
     );
   });
 
+  // A programmatic focus -- choosing 填写描述 puts the caret in the box --
+  // paints the browser's ring, which reads as a halo around a box that is
+  // already outlined. The field says it has the caret itself instead.
+  it("gives the description field its own focus mark, not the browser's", () => {
+    expect(mediaCss).toMatch(
+      /\._altInput_[\w-]+ textarea:focus,[\s\S]*?\{[^}]*border-color: var\(--accent\);[^}]*outline: none/s,
+    );
+  });
+
   it("keeps small tertiary copy readable on every light surface", () => {
     const tertiary = "#536471";
     expect(globalCss).toContain(`--text-tertiary: ${tertiary}`);

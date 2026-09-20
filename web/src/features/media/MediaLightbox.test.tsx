@@ -96,6 +96,37 @@ describe("media lightbox", () => {
 
   // Two layers each at 94% composite to 99.6% -- a blackout that reads as the
   // page being replaced rather than the picture being lifted off it.
+  // "尚未填写描述" and "纯装饰" are facts about the metadata, not about the
+  // picture; printing them under it told the reader nothing they wanted.
+  it("captions the picture only when the author wrote one", () => {
+    function Bare() {
+      return (
+        <MediaLightbox
+          items={[
+            {
+              key: "a",
+              previewSrc: "/preview/a.png",
+              alt: "无描述",
+              description: "",
+            },
+          ]}
+          onSelectedChange={vi.fn()}
+          selected={0}
+        />
+      );
+    }
+    render(<Bare />);
+
+    expect(screen.getByAltText("无描述")).toBeInTheDocument();
+    expect(document.querySelector('[class*="lightboxDescription"]')).toBeNull();
+    cleanup();
+
+    render(<Harness />);
+    expect(
+      document.querySelector('[class*="lightboxDescription"]'),
+    ).toHaveTextContent("第一张的描述");
+  });
+
   it("lays one scrim over the page instead of two stacked blacks", () => {
     expect(mediaCss).not.toMatch(
       /\._lightboxViewport_[\w-]+\s*\{[^}]*background:/s,

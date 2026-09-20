@@ -121,16 +121,10 @@ export function ImageGrid({
     previewSrc: mediaPreviewUrl(usage.mediaId),
     originalSrc: mediaOriginalUrl(usage.mediaId),
     alt: mediaAlt(usage, index, media.length),
-    description:
-      usage.altText === null
-        ? isVideoMimeType(usage.mimeType)
-          ? "这段视频尚未填写描述。"
-          : "这张图片尚未填写描述。"
-        : usage.altText === ""
-          ? isVideoMimeType(usage.mimeType)
-            ? "这是一段明确标记为装饰用途的视频。"
-            : "这是一张明确标记为装饰用途的图片。"
-          : usage.altText,
+    // Only a description the author wrote. "尚未填写描述" and "纯装饰" are
+    // facts about the metadata, not about the picture, and printing them
+    // under it told the reader nothing they wanted to know.
+    description: usage.altText ?? "",
     width: usage.width,
     height: usage.height,
     kind: isVideoMimeType(usage.mimeType) ? "video" : "image",

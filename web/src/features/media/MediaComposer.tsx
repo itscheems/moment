@@ -665,11 +665,14 @@ export function MediaComposer({
                       const itemLabel = isVideo
                         ? `第 ${index + 1} 项视频`
                         : `第 ${index + 1} 张图片`;
+                      // Too long is a state the writer made; empty is one
+                      // they have not filled yet. Flagging the box red the
+                      // instant it appears calls their own next move a
+                      // mistake -- publishing still refuses an empty one,
+                      // with a sentence that says what to do.
                       const providedInvalid =
                         item.altMode === "provided" &&
-                        (!item.altText.trim() ||
-                          Array.from(item.altText).length >
-                            MAX_ALT_CODE_POINTS);
+                        Array.from(item.altText).length > MAX_ALT_CODE_POINTS;
                       const stageUrl = isVideo
                         ? (item.processingPosterUrl ??
                           (item.mediaId ? mediaPosterUrl(item.mediaId) : null))

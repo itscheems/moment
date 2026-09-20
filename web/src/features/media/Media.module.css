@@ -1063,8 +1063,25 @@
   line-height: 1.5;
 }
 
+/* The field says it has the caret with its own border, the way the
+   reference does. The browser's ring is a heavy blue halo around a box
+   that is already outlined, and it lands there on a programmatic focus --
+   choosing 填写描述 puts the caret in the box, which is not the reader
+   reaching for it with the keyboard. */
+.altInput textarea:focus,
+.altInput textarea:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  outline: none;
+}
+
 .altInput textarea[aria-invalid="true"] {
   border-color: var(--danger);
+}
+
+.altInput textarea[aria-invalid="true"]:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
 }
 
 .altInput small {
@@ -1377,7 +1394,7 @@
   position: fixed;
   z-index: 0;
   inset: 0;
-  background: rgb(0 0 0 / 84%);
+  background: rgb(0 0 0 / 70%);
   backdrop-filter: blur(24px);
   transition: opacity 180ms var(--ease-out);
 }

@@ -173,9 +173,17 @@ export function MediaLightbox({
               ) : null}
             </div>
             <div className={styles.lightboxFooter}>
-              <Dialog.Description className={styles.lightboxDescription}>
-                {shown?.description}
-              </Dialog.Description>
+              {/* Only a description the author wrote. "尚未填写描述" and
+                  "纯装饰" are facts about the metadata, not about the
+                  picture, and printing them under it told the reader
+                  nothing they wanted to know. */}
+              {shown?.description ? (
+                <Dialog.Description className={styles.lightboxDescription}>
+                  {shown.description}
+                </Dialog.Description>
+              ) : (
+                <span />
+              )}
               {canViewOriginal && shown?.originalSrc ? (
                 <a
                   className={styles.lightboxOriginal}
