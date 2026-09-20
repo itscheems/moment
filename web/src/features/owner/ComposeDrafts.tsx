@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Icon } from "../../components/icons";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { dropKeptDraft, type KeptDraft, listKeptDrafts } from "./drafts";
 import styles from "./Owner.module.css";
 
@@ -60,17 +61,27 @@ export function ComposeDrafts({
               {new Date(draft.savedAt).toLocaleString("zh-CN")}
             </time>
           </button>
-          <button
-            aria-label={`删除草稿：${preview(draft.contentMd).slice(0, 24)}`}
-            className={styles.draftsDelete}
-            onClick={() => {
+          {/* Deleting was one press with nothing between it and the only
+              copy of that text. */}
+          <ConfirmDialog
+            confirmLabel="删除草稿"
+            danger
+            description="这段文字只存在这台浏览器里，删除后无法找回。"
+            onConfirm={() => {
               dropKeptDraft(instanceId, draft.id);
               refresh();
             }}
-            type="button"
-          >
-            <Icon name="delete" />
-          </button>
+            title="删除这份草稿？"
+            trigger={
+              <button
+                aria-label={`删除草稿：${preview(draft.contentMd).slice(0, 24)}`}
+                className={styles.draftsDelete}
+                type="button"
+              >
+                <Icon name="delete" />
+              </button>
+            }
+          />
         </li>
       ))}
     </ol>

@@ -554,7 +554,10 @@ function PublicApp() {
                   <ComposeDrafts
                     instanceId={site.instanceId}
                     onOpenDraft={(draft) => {
-                      overlayComposer.current?.loadDraft(draft.contentMd);
+                      overlayComposer.current?.loadDraft(
+                        draft.contentMd,
+                        draft.id,
+                      );
                       setDraftsOpen(false);
                     }}
                   />

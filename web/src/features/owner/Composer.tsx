@@ -44,7 +44,6 @@ import {
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { AudienceSelector, audienceLabel } from "./AudienceSelector";
-import { ConfirmDialog } from "./ConfirmDialog";
 import { ComposerLinkCard } from "./ComposerLinkCard";
 import { useLinkPreview } from "./useLinkPreview";
 import { LocationPicker, SelectedLocationChip } from "./LocationPicker";
@@ -72,7 +71,12 @@ import {
   type ComposeDraftClearEvent,
 } from "./draft";
 import { ComposeDrafts } from "./ComposeDrafts";
-import { dropKeptDraftByContent, keepDraft, listKeptDrafts } from "./drafts";
+import {
+  dropKeptDraft,
+  dropKeptDraftByContent,
+  keepDraft,
+  listKeptDrafts,
+} from "./drafts";
 import { useOwner } from "./OwnerProvider";
 import { OwnerLogin } from "./OwnerLogin";
 import { announceOwnerPost } from "./postEvents";
@@ -143,8 +147,12 @@ export interface ComposerHandle {
   hasUnpublishedChanges: () => boolean;
   leaveAndKeepDraft: () => void;
   leaveAndDiscard: () => void;
-  /** Put a kept draft back in the editor, ready to finish. */
-  loadDraft: (contentMd: string) => void;
+  /**
+   * Put a kept draft back in the editor, ready to finish. Passing its id
+   * takes it out of 草稿: it is the live text now, and filing it again on
+   * the way out replaces it rather than leaving a near-identical copy.
+   */
+  loadDraft: (contentMd: string, keptId?: string) => void;
 }
 
 interface ComposerProps {
@@ -186,19 +194,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [focusWithin, setFocusWithin] = useState(false);
     const [audienceOpen, setAudienceOpen] = useState(false);
     const audienceCloseFrameRef = useRef<number | null>(null);
-    const [draft, setDraft] = useState<ComposeDraft | null>(() => {
-      if (variant === "edit") return null;
-      const recovered = loadComposeDraft(site.instanceId);
-      if (!recovered) return null;
-      // Text the owner already filed under 草稿 is not lost text, so the
-      // composer does not ask about it a second time. Without this the
-      // recovery notice and the 草稿 list both offered the same paragraph
-      // back, one above the other.
-      const filed = listKeptDrafts(site.instanceId).some(
-        (kept) => kept.fingerprint === recovered.fingerprint,
-      );
-      return filed ? null : recovered;
-    });
     const [dirty, setDirty] = useState(false);
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -206,7 +201,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [draftUnavailable, setDraftUnavailable] = useState(
       variant !== "edit" && !site.instanceId,
     );
-    const [activeDraft, setActiveDraft] = useState<ComposeDraft | null>(draft);
+    const [activeDraft, setActiveDraft] = useState<ComposeDraft | null>(null);
     const [announcement, setAnnouncement] = useState("");
     const [quotedPost, setQuotedPost] = useState<PublicPost | null>(null);
     const [quoteError, setQuoteError] = useState(false);
@@ -239,6 +234,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const pendingNavigationRef = useRef<(() => void) | null>(null);
     const allowLeaveRef = useRef(false);
     const dirtyRef = useRef(false);
+    const contentRef = useRef(content);
+    contentRef.current = content;
     const activeDraftRef = useRef(activeDraft);
     const mediaItemsRef = useRef(mediaItems);
     const mediaUploadsRef = useRef(new Map<string, AbortController>());
@@ -426,10 +423,45 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       setMediaItems([]);
     }, []);
 
+    // Text that survived in the recovery slot -- a reload, a crash, a tab
+    // closed mid-sentence -- goes straight into 草稿 rather than being
+    // offered back as a notice above the composer. The notice was a second
+    // place drafts lived, and it sat across the composer's own layout.
+    const filedStrandedDraft = useRef(false);
+    useEffect(() => {
+      // `site.instanceId` arrives with /api/v1/site, a render after the
+      // first: claiming the guard before it lands would skip the only
+      // pass that can read anything.
+      if (variant === "edit" || filedStrandedDraft.current || !site.instanceId)
+        return;
+      filedStrandedDraft.current = true;
+      const stranded = loadComposeDraft(site.instanceId);
+      if (!stranded) return;
+      // Already filed: keep its place in the list rather than refiling it
+      // and making an old draft look like it was just written.
+      const filed = listKeptDrafts(site.instanceId).some(
+        (kept) => kept.fingerprint === stranded.fingerprint,
+      );
+      if (!filed) keepDraft(site.instanceId, stranded.contentMd);
+      clearComposeDraft(site.instanceId, {
+        reason: "discarded",
+        draft: stranded,
+      });
+    }, [site.instanceId, variant]);
+
     // Putting a kept draft back in the editor. Reached from the 草稿 list
     // on this surface, and from the compose dialog's list through the ref.
     const restoreDraftText = useCallback(
-      (contentMd: string) => {
+      (contentMd: string, keptId?: string) => {
+        // Whatever is in the editor right now is not thrown away for it.
+        const current = contentRef.current;
+        if (current.trim() && current !== contentMd) {
+          keepDraft(site.instanceId, current);
+        }
+        // The draft leaves 草稿 as it enters the editor: it is the live
+        // text now, and filing it again on the way out replaces it rather
+        // than adding a second, near-identical copy.
+        if (keptId) dropKeptDraft(site.instanceId, keptId);
         const restored = createComposeDraft(
           contentMd,
           activeDraftRef.current?.savedAt,
@@ -438,7 +470,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         setActiveDraft(restored);
         saveComposeDraft(site.instanceId, restored);
         setContent(contentMd);
-        setDraft(null);
         dirtyRef.current = true;
         setDirty(true);
         allowLeaveRef.current = false;
@@ -729,7 +760,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         allowLeaveRef.current = true;
         activeDraftRef.current = null;
         setActiveDraft(null);
-        setDraft(null);
         setContent("");
         dirtyRef.current = false;
         setDirty(false);
@@ -813,7 +843,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       if (
         variant === "edit" ||
         !dirty ||
-        draft ||
         !activeDraft ||
         allowLeaveRef.current
       ) {
@@ -825,7 +854,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         }
       }, 500);
       return () => window.clearTimeout(timer);
-    }, [activeDraft, dirty, draft, site.instanceId, variant]);
+    }, [activeDraft, dirty, site.instanceId, variant]);
 
     useEffect(() => {
       const requestLeave = (resume: () => void) => {
@@ -880,7 +909,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           }
           activeDraftRef.current = null;
           setActiveDraft(null);
-          setDraft(null);
           setContent("");
           clearMedia();
           setLocation(null);
@@ -1071,32 +1099,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       setKeptCount(listKeptDrafts(site.instanceId).length);
     }, [drafting, draftsListOpen, site.instanceId]);
 
-    const recoverDraft = () => {
-      if (!draft) return;
-      activeDraftRef.current = draft;
-      setActiveDraft(draft);
-      setContent(draft.contentMd);
-      setDraft(null);
-      dirtyRef.current = true;
-      setDirty(true);
-      setAnnouncement(
-        "已恢复未发布草稿；图片需要重新选择。当前版本仅恢复文字。",
-      );
-      window.requestAnimationFrame(() => textareaRef.current?.focus());
-    };
-
-    const discardDraft = () => {
-      if (!draft) return;
-      clearComposeDraft(site.instanceId, {
-        reason: "discarded",
-        draft,
-      });
-      setDraft(null);
-      clearMedia();
-      setAnnouncement("本地草稿已丢弃");
-      window.requestAnimationFrame(() => textareaRef.current?.focus());
-    };
-
     return (
       <section
         aria-label={post ? "编辑 Moment" : "发布 Moment"}
@@ -1155,33 +1157,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             <ComposeDrafts
               instanceId={site.instanceId}
               onOpenDraft={(kept) => {
-                restoreDraftText(kept.contentMd);
+                restoreDraftText(kept.contentMd, kept.id);
                 setDraftsListOpen(false);
               }}
             />
-          </div>
-        ) : null}
-        {draft ? (
-          <div className={styles.draftRecovery} role="status">
-            <div>
-              <strong>发现一段未发布草稿</strong>
-              <span>
-                保存于 {new Date(draft.savedAt).toLocaleString("zh-CN")}
-              </span>
-            </div>
-            <div>
-              <button onClick={recoverDraft} type="button">
-                恢复
-              </button>
-              <ConfirmDialog
-                confirmLabel="丢弃草稿"
-                danger
-                description="这只会移除当前实例里这段未发布的本地文字，不能撤销。"
-                onConfirm={discardDraft}
-                title="丢弃本地草稿？"
-                trigger={<button type="button">丢弃</button>}
-              />
-            </div>
           </div>
         ) : null}
         <div aria-hidden="true" className={styles.newTick}>
@@ -1279,7 +1258,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     activeDraftRef.current = nextDraft;
                     setActiveDraft(nextDraft);
                   }
-                  if (draft) setDraft(null);
                   setContent(event.target.value);
                   setMention(
                     activeMention(

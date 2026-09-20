@@ -25,7 +25,6 @@ import {
   loadComposeDraft,
 } from "./draft";
 import { keepDraft, listKeptDrafts } from "./drafts";
-import ownerCss from "./Owner.module.css?inline";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
 const instance = "0123456789abcdef0123456789abcdef";
@@ -471,7 +470,10 @@ describe("owner composing flow", () => {
     ).toHaveTextContent("@owner");
   });
 
-  it("offers explicit recovery and discarding for the real instance draft", async () => {
+  // A stranded draft used to be offered back as a notice above the
+  // composer: a second place drafts lived, drawn across the composer's own
+  // layout. It goes straight into 草稿 now, where the rest of them are.
+  it("files a draft stranded by a reload into 草稿 without asking", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");
     window.localStorage.setItem(
@@ -482,54 +484,53 @@ describe("owner composing flow", () => {
       }),
     );
     installApi();
-    const { unmount } = render(<App />);
-
-    expect(await screen.findByText("发现一段未发布草稿")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "恢复" }));
-    expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
-      "刷新前留下的草稿",
-    );
-
-    unmount();
-    window.history.replaceState({}, "", "/owner/compose");
     render(<App />);
-    expect(await screen.findByText("发现一段未发布草稿")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "丢弃" }));
-    fireEvent.click(await screen.findByRole("button", { name: "丢弃草稿" }));
+
+    expect(await screen.findByLabelText("此刻想到什么？")).toHaveValue("");
+    expect(screen.queryByText("发现一段未发布草稿")).toBeNull();
+    await waitFor(() =>
+      expect(listKeptDrafts(instance).map((draft) => draft.contentMd)).toEqual([
+        "刷新前留下的草稿",
+      ]),
+    );
+    // The recovery slot has handed it over rather than holding a copy.
+    expect(loadComposeDraft(instance)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /草稿/ }));
+    fireEvent.click(await screen.findByText("刷新前留下的草稿"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
+        "刷新前留下的草稿",
+      ),
+    );
+  });
+
+  // An old draft that is already filed keeps its place in the list rather
+  // than being refiled and reading as though it were just written.
+  it("does not refile a stranded draft that 草稿 already holds", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    const kept = keepDraft(
+      instance,
+      "上周写的",
+      new Date("2026-09-14T02:00:00.000Z"),
+    );
+    window.localStorage.setItem(
+      composeDraftKey(instance),
+      JSON.stringify({
+        content_md: "上周写的",
+        saved_at: new Date().toISOString(),
+      }),
+    );
+    installApi();
+    render(<App />);
+
+    await screen.findByLabelText("此刻想到什么？");
     await waitFor(() => expect(loadComposeDraft(instance)).toBeNull());
+    expect(listKeptDrafts(instance)).toEqual([kept]);
   });
 
-  // The notice lived inside the text column, which left the avatar floating
-  // beside it and -- because `.pageComposer .audienceRow` carries a -6px top
-  // margin tuned for the pill being first in that column -- pulled the
-  // audience pill up through the notice's bottom rule (measured in the
-  // browser: pill top 191.5, rule 195). It spans the composer now.
-  it("puts the recovery notice across the composer, not inside its text column", async () => {
-    preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
-    window.localStorage.setItem(
-      composeDraftKey(instance),
-      JSON.stringify({
-        content_md: "刷新前留下的草稿",
-        saved_at: new Date().toISOString(),
-      }),
-    );
-    installApi();
-    render(<App />);
-
-    const notice = (await screen.findByText("发现一段未发布草稿")).closest(
-      '[role="status"]',
-    );
-    const section = screen.getByRole("region", { name: "发布 Moment" });
-    expect(notice?.parentElement).toBe(section);
-    expect(ownerCss).toMatch(
-      /\._draftRecovery_[\w-]+\s*\{[^}]*grid-column: 1 \/ -1/s,
-    );
-    // A dead class name put the literal string "undefined" in the attribute.
-    expect(section.className).not.toContain("undefined");
-  });
-
-  it("protects new text when typing directly over a recovery choice", async () => {
+  it("gives the recovery slot to new text typed over a filed draft", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");
     window.localStorage.setItem(
@@ -542,15 +543,17 @@ describe("owner composing flow", () => {
     installApi();
     render(<App />);
 
-    expect(await screen.findByText("发现一段未发布草稿")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("此刻想到什么？"), {
+    fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
       target: { value: "直接输入的新文字" },
     });
-    expect(screen.queryByText("发现一段未发布草稿")).toBeNull();
     await new Promise((resolve) => window.setTimeout(resolve, 550));
     expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
       "直接输入的新文字",
     );
+    // The older text was filed on the way in, not overwritten.
+    expect(listKeptDrafts(instance).map((draft) => draft.contentMd)).toEqual([
+      "较早的草稿",
+    ]);
   });
 
   it("debounces the local draft, guards duplicate submit, and clears only after success", async () => {
@@ -1456,8 +1459,11 @@ describe("owner composing flow", () => {
     );
     await keepDraftAndResumeNavigation();
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-    expect(window.localStorage.getItem(composeDraftKey(instance))).toContain(
-      "还没有发布",
+    // Home's composer mounts on arrival and hands the stranded slot to 草稿.
+    await waitFor(() =>
+      expect(listKeptDrafts(instance).map((draft) => draft.contentMd)).toEqual([
+        "还没有发布",
+      ]),
     );
   });
 
@@ -1555,6 +1561,58 @@ describe("owner composing flow", () => {
     expect(screen.queryByRole("dialog", { name: "草稿" })).toBeNull();
   });
 
+  // Editing a draft used to leave the original behind: 草稿 matches on
+  // content, so "aaa" edited to "aaa1" filed a second entry beside it.
+  it("replaces the draft it opened rather than filing a second one", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    keepDraft(instance, "aaa", new Date("2026-09-20T07:12:58.000Z"));
+    installApi();
+    render(<App />);
+
+    await screen.findByLabelText("此刻想到什么？");
+    fireEvent.click(screen.getByRole("button", { name: /草稿/ }));
+    fireEvent.click(await screen.findByText("aaa"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("此刻想到什么？")).toHaveValue("aaa"),
+    );
+    // It is the live text now, so it is no longer waiting in the list.
+    expect(listKeptDrafts(instance)).toEqual([]);
+
+    fireEvent.change(screen.getByLabelText("此刻想到什么？"), {
+      target: { value: "aaa1" },
+    });
+    fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
+    await keepDraftAndResumeNavigation();
+    await waitFor(() => expect(window.location.pathname).toBe("/search"));
+
+    expect(listKeptDrafts(instance).map((draft) => draft.contentMd)).toEqual([
+      "aaa1",
+    ]);
+  });
+
+  // The only copy of that text, one press away from gone.
+  it("asks before deleting a draft", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    keepDraft(instance, "别手滑删了我", new Date("2026-09-20T07:12:58.000Z"));
+    installApi();
+    render(<App />);
+
+    await screen.findByLabelText("此刻想到什么？");
+    fireEvent.click(screen.getByRole("button", { name: /草稿/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /删除草稿：别手滑删了我/ }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "删除这份草稿？" }),
+    ).toBeInTheDocument();
+    expect(listKeptDrafts(instance)).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "删除草稿" }));
+    await waitFor(() => expect(listKeptDrafts(instance)).toEqual([]));
+  });
+
   it("files a kept draft under 草稿 and stops re-offering it as recovery", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/owner/compose");
@@ -1611,19 +1669,27 @@ describe("owner composing flow", () => {
       }
     });
     render(<App />);
-    expect(await screen.findByText("发现一段未发布草稿")).toBeInTheDocument();
+    await screen.findByLabelText("此刻想到什么？");
+    await waitFor(() => expect(listKeptDrafts(instance)).toHaveLength(1));
 
     fireEvent.keyDown(document.body, { key: "n" });
     await waitFor(() =>
       expect(window.location.pathname).toBe("/owner/compose"),
     );
-    fireEvent.click(screen.getByRole("button", { name: "恢复" }));
+    fireEvent.click(screen.getByRole("button", { name: /草稿/ }));
+    fireEvent.click(await screen.findByText("跨 surface 的恢复草稿"));
+    await waitFor(() =>
+      expect(screen.getAllByLabelText("此刻想到什么？")[1]).toHaveValue(
+        "跨 surface 的恢复草稿",
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "发布" }));
 
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-    expect(screen.queryByText("发现一段未发布草稿")).toBeNull();
     expect(screen.getByLabelText("此刻想到什么？")).toHaveValue("");
     expect(loadComposeDraft(instance)).toBeNull();
+    // Publishing takes it out of 草稿 as well.
+    expect(listKeptDrafts(instance)).toEqual([]);
     expect(screen.getAllByText("跨 surface 的恢复草稿")).toHaveLength(1);
 
     const inline = screen.getByLabelText("此刻想到什么？");
@@ -1744,7 +1810,8 @@ describe("owner composing flow", () => {
     await waitFor(() =>
       expect(window.location.pathname).toBe("/owner/compose"),
     );
-    fireEvent.click(screen.getByRole("button", { name: "恢复" }));
+    // The page composer opens empty -- what the inline box left in the
+    // recovery slot went to 草稿 on its way here -- so B writes its own.
     const page = screen.getAllByLabelText("此刻想到什么？")[1];
     fireEvent.change(page, { target: { value: "B 正在发布的版本" } });
     fireEvent.click(screen.getByRole("button", { name: "发布" }));
