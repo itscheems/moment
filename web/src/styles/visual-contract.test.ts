@@ -684,7 +684,7 @@ describe("visual foundation contract", () => {
       /\._draftsCheck_[\w-]+:has\(input:checked\):hover\s*\{[^}]*background: var\(--checkbox-on-halo-hover\)/s,
     );
     expect(ownerCss).toMatch(
-      /\._draftsCheck_[\w-]+ > span\[aria-hidden\]\s*\{[^}]*border: 1px solid var\(--border-strong\);[^}]*background: transparent/s,
+      /\._draftsCheck_[\w-]+ > span\[aria-hidden\]\s*\{[^}]*border: 2px solid var\(--text-secondary\);[^}]*background: transparent/s,
     );
     expect(ownerCss).toMatch(
       /\._draftsDeletePicked_[\w-]+:disabled\s*\{[^}]*color: var\(--danger-disabled\);[^}]*background: transparent;[^}]*cursor: default/s,

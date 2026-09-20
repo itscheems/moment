@@ -1935,12 +1935,15 @@
 }
 
 .draftsCheck > span[aria-hidden] {
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
+  inline-size: 1.375rem;
+  block-size: 1.375rem;
   display: grid;
   place-items: center;
-  border: 1px solid var(--border-strong);
-  border-radius: 0.25rem;
+  /* 2px of the page's secondary ink, not a hairline of --border-strong: at
+     this size a 1px #cfd9de outline reads as a placeholder rather than a
+     control waiting to be ticked. */
+  border: 2px solid var(--text-secondary);
+  border-radius: 0.3125rem;
   background: transparent;
   transition:
     border-color 0.2s,
