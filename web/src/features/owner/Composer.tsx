@@ -935,7 +935,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           //
           // The compose screen only. The inline box asks this same question
           // when it hands off to the full composer -- pressing n over the
-          // timeline routes to /owner/compose through the same blocker --
+          // timeline routes to /compose through the same blocker --
           // and that is not a decision to shelve anything, it is the same
           // sentence continuing on a bigger surface.
           if (variant === "page") {

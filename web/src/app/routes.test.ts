@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveRoute } from "./routes";
+import { COMPOSE_PATH, movedComposePath, resolveRoute } from "./routes";
 
 describe("route boundaries", () => {
   it.each([
@@ -9,6 +9,10 @@ describe("route boundaries", () => {
     ["/search", "search"],
     ["/archive", "archive"],
     ["/login", "login"],
+    ["/compose", "owner-compose"],
+    ["/compose/drafts", "owner-compose"],
+    // Still resolves, so an entry already in somebody's history renders
+    // while the app corrects its address.
     ["/owner/compose", "owner-compose"],
     ["/owner/m/01JABC/edit", "owner-edit"],
     ["/owner/settings", "owner-settings"],
@@ -34,12 +38,38 @@ describe("route boundaries", () => {
     ["/archive/", "archive"],
     ["/login", "login"],
     ["/owner/settings", "owner-settings"],
-    ["/owner/compose", "owner-compose"],
+    ["/compose", "owner-compose"],
+    ["/compose/", "owner-compose"],
     ["/m/01JABC", "detail"],
     ["/", "home"],
   ])("keeps %s out of the root handle route (%s)", (pathname, id) => {
     expect(resolveRoute(pathname).id).toBe(id);
     expect(resolveRoute(pathname).id).not.toBe("profile");
+  });
+});
+
+// Composing moved out from under /owner: it is what the site is for, not an
+// administrative corner of it. The old addresses still resolve so history
+// entries render, and say where they moved to.
+describe("the address composing moved from", () => {
+  it.each([
+    ["/owner/compose", "/compose"],
+    ["/owner/compose/", "/compose"],
+    ["/owner/compose/drafts", "/compose/drafts"],
+    ["/owner/compose/drafts/", "/compose/drafts"],
+  ])("sends %s to %s", (from, to) => {
+    expect(movedComposePath(from)).toBe(to);
+  });
+
+  it("leaves every other address alone", () => {
+    for (const pathname of [
+      "/",
+      COMPOSE_PATH,
+      "/compose/drafts",
+      "/owner/settings",
+    ]) {
+      expect(movedComposePath(pathname)).toBeNull();
+    }
   });
 });
 

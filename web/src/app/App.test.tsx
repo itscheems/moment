@@ -208,10 +208,10 @@ describe("App shell and public routes", () => {
     expect(document.querySelector("main h1")).toHaveTextContent("时间流");
     expect(
       mobileNavigation?.querySelector('a[aria-label="发布"]'),
-    ).toHaveAttribute("href", "/owner/compose");
+    ).toHaveAttribute("href", "/compose");
     expect(screen.getByRole("link", { name: "发布" })).toHaveAttribute(
       "href",
-      "/owner/compose",
+      "/compose",
     );
     expect(
       screen
@@ -442,7 +442,7 @@ describe("App shell and public routes", () => {
     ).toEqual(["首页", "搜索", "归档", "发布", "所有者"]);
     expect(
       mobileNavigation?.querySelector('a[aria-label="发布"]'),
-    ).toHaveAttribute("href", "/owner/compose");
+    ).toHaveAttribute("href", "/compose");
     expect(
       mobileNavigation?.querySelector('a[aria-label="所有者"]'),
     ).toHaveAttribute("href", "/owner/settings");
@@ -454,7 +454,7 @@ describe("App shell and public routes", () => {
   it("hides the mobile bar on deterministic visual-viewport contraction without moving composer focus", async () => {
     const viewport = new FakeVisualViewport(390, 844);
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     vi.stubGlobal("innerHeight", 844);
     vi.stubGlobal("visualViewport", viewport);
     vi.mocked(window.matchMedia).mockImplementation((query) =>
@@ -493,6 +493,8 @@ describe("App shell and public routes", () => {
   });
 
   it("opens desktop Publish as a route-backed dialog and restores shell focus", async () => {
+    // Composing needs a session now, so this one has to have one.
+    preauthenticate();
     vi.mocked(window.matchMedia).mockImplementation((query) => ({
       matches: query === "(min-width: 720px)",
       media: query,
@@ -510,7 +512,7 @@ describe("App shell and public routes", () => {
 
     publish.focus();
     fireEvent.click(publish);
-    expect(window.location.pathname).toBe("/owner/compose");
+    expect(window.location.pathname).toBe("/compose");
     expect(
       await screen.findByRole("dialog", { name: "发布 Moment" }),
     ).toBeInTheDocument();
@@ -533,6 +535,29 @@ describe("App shell and public routes", () => {
     expect(document.documentElement.style.overscrollBehavior).toBe("");
     expect(document.body.style.position).toBe("");
     expect(document.documentElement.style.overflow).toBe("");
+  });
+
+  // Posting needs a session, and the place to get one is the sign-in page --
+  // not a login form folded into the compose dialog.
+  it("sends a visitor from Publish to sign-in rather than a dialog", async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(min-width: 720px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("link", { name: "发布" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(new URLSearchParams(window.location.search).get("return")).toBe(
+      "/compose",
+    );
+    expect(screen.queryByRole("dialog", { name: "发布 Moment" })).toBeNull();
   });
 
   it("replaces discovery placeholders with recoverable URL-state errors", async () => {

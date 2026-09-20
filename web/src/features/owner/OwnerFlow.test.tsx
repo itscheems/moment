@@ -393,7 +393,9 @@ describe("owner composing flow", () => {
   });
 
   it("exchanges a bearer without storing it and restores CSRF across a refresh", async () => {
-    window.history.replaceState({}, "", "/owner/compose");
+    // Composing needs a session, so a guest asking for it is sent here and
+    // sent back; this is that page, with the address it would carry.
+    window.history.replaceState({}, "", "/login?return=%2Fcompose");
     const bearer = "owner-bearer-never-store";
     const fetcher = installApi((url) => {
       if (url === "/api/v1/owner/status") {
@@ -416,6 +418,7 @@ describe("owner composing flow", () => {
     const token = await screen.findByLabelText("所有者令牌");
     fireEvent.change(token, { target: { value: bearer } });
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/compose"));
     expect(await screen.findByLabelText("此刻想到什么？")).toBeInTheDocument();
 
     expect(window.sessionStorage.getItem(sessionKey)).toContain(
@@ -431,7 +434,7 @@ describe("owner composing flow", () => {
 
   it("searches and inserts the owner identity from an active @mention", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     const fetcher = installApi((url) => {
       if (url.startsWith("/api/v1/users/mention-suggestions?")) {
         return json({
@@ -475,7 +478,7 @@ describe("owner composing flow", () => {
   // layout. It goes straight into 草稿 now, where the rest of them are.
   it("files a draft stranded by a reload into 草稿 without asking", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     window.localStorage.setItem(
       composeDraftKey(instance),
       JSON.stringify({
@@ -509,7 +512,7 @@ describe("owner composing flow", () => {
   // than being refiled and reading as though it were just written.
   it("does not refile a stranded draft that 草稿 already holds", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     const kept = keepDraft(
       instance,
       "上周写的",
@@ -532,7 +535,7 @@ describe("owner composing flow", () => {
 
   it("gives the recovery slot to new text typed over a filed draft", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     window.localStorage.setItem(
       composeDraftKey(instance),
       JSON.stringify({
@@ -558,7 +561,7 @@ describe("owner composing flow", () => {
 
   it("debounces the local draft, guards duplicate submit, and clears only after success", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     let resolveCreate!: (response: Response) => void;
     const createResponse = new Promise<Response>((resolve) => {
       resolveCreate = resolve;
@@ -610,7 +613,7 @@ describe("owner composing flow", () => {
   it("turns an empty quote into a repost instead of creating an empty wrapper", async () => {
     preauthenticate();
     const quotedId = "01K2ABCDEF0123456789ABCDE9";
-    window.history.replaceState({}, "", `/owner/compose?quote=${quotedId}`);
+    window.history.replaceState({}, "", `/compose?quote=${quotedId}`);
     const fetcher = installApi((url, init) => {
       if (url === `/api/v1/posts/${quotedId}` && !init?.method) {
         return json({
@@ -660,7 +663,7 @@ describe("owner composing flow", () => {
   it("keeps a quote with commentary as a new nested Moment", async () => {
     preauthenticate();
     const quotedId = "01K2ABCDEF0123456789ABCDE9";
-    window.history.replaceState({}, "", `/owner/compose?quote=${quotedId}`);
+    window.history.replaceState({}, "", `/compose?quote=${quotedId}`);
     const fetcher = installApi((url, init) => {
       if (url === `/api/v1/posts/${quotedId}` && !init?.method) {
         return json({
@@ -710,7 +713,7 @@ describe("owner composing flow", () => {
 
   it("reuses an uploaded media ID when post submission fails and retries", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
     let creates = 0;
     const fetcher = installApi((url, init) => {
@@ -786,7 +789,7 @@ describe("owner composing flow", () => {
 
   it("keeps text paste native and manages image or mixed clipboard ingress", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
     installApi();
     render(<App />);
@@ -876,7 +879,7 @@ describe("owner composing flow", () => {
 
   it("publishes a Moment that contains only an image", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
     const fetcher = installApi((url, init) => {
       if (url === "/api/v1/owner/posts" && init?.method === "POST") {
@@ -934,7 +937,7 @@ describe("owner composing flow", () => {
 
   it("renders an openable local preview without extending the text draft", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
     installApi();
     render(
@@ -969,7 +972,7 @@ describe("owner composing flow", () => {
 
   it("aborts removed uploads and ignores a late success without reviving the usage", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     vi.stubGlobal("XMLHttpRequest", ControlledUploadRequest);
     const fetcher = installApi();
     render(<App />);
@@ -1010,7 +1013,7 @@ describe("owner composing flow", () => {
 
   it("preserves input before an auth-expiry response and requires a fresh exchange", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     installApi((url, init) => {
       if (url === "/api/v1/owner/posts" && init?.method === "POST") {
         return unauthorized();
@@ -1088,7 +1091,7 @@ describe("owner composing flow", () => {
 
   it("preserves a CSRF-invalid compose buffer for re-login instead of retrying forever", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     let creates = 0;
     const fetcher = installApi((url, init) => {
       if (url === "/api/v1/owner/posts" && init?.method === "POST") {
@@ -1155,9 +1158,7 @@ describe("owner composing flow", () => {
     expect(window.location.pathname).toBe("/");
 
     fireEvent.keyDown(document.body, { key: "n" });
-    await waitFor(() =>
-      expect(window.location.pathname).toBe("/owner/compose"),
-    );
+    await waitFor(() => expect(window.location.pathname).toBe("/compose"));
     expect(
       screen.getByRole("heading", { name: "发布 Moment" }),
     ).toBeInTheDocument();
@@ -1433,7 +1434,7 @@ describe("owner composing flow", () => {
   it("keeps an unsaved page composer in place until leave is confirmed", async () => {
     preauthenticate();
     vi.spyOn(window, "scrollY", "get").mockReturnValue(510);
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     installApi();
     render(<App />);
     fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
@@ -1442,14 +1443,14 @@ describe("owner composing flow", () => {
     fireEvent.click(
       screen.getAllByRole("link", { name: "乔乔的 Moment首页" })[0],
     );
-    expect(window.location.pathname).toBe("/owner/compose");
+    expect(window.location.pathname).toBe("/compose");
     const dialog = await screen.findByRole("dialog", { name: "退出发布？" });
     expect(document.documentElement.style.overflow).toBe("hidden");
     expect(document.body.style.position).toBe("");
     expect(document.body.style.top).toBe("");
     expect(window.confirm).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByRole("button", { name: "继续编辑" }));
-    expect(window.location.pathname).toBe("/owner/compose");
+    expect(window.location.pathname).toBe("/compose");
     expect(document.documentElement.style.overflow).toBe("");
     expect(document.body.style.position).toBe("");
     expect(document.documentElement.style.overflow).toBe("");
@@ -1566,7 +1567,7 @@ describe("owner composing flow", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "草稿" })).toBeNull(),
     );
-    expect(window.location.pathname).toBe("/owner/compose");
+    expect(window.location.pathname).toBe("/compose");
   });
 
   // The list is a face of the compose dialog, not a thing stacked on it:
@@ -1609,7 +1610,7 @@ describe("owner composing flow", () => {
     const listPill = within(list).getByRole("button", { name: /编辑/ });
     fireEvent.click(listBack);
     expect(await screen.findByRole("dialog", { name: "发布 Moment" }));
-    expect(window.location.pathname).toBe("/owner/compose");
+    expect(window.location.pathname).toBe("/compose");
     expect(screen.getByRole("button", { name: "关闭发布" })).not.toBe(listBack);
     expect(screen.getByRole("button", { name: /草稿/ })).not.toBe(listPill);
 
@@ -1620,7 +1621,7 @@ describe("owner composing flow", () => {
       key: "Escape",
     });
     expect(await screen.findByRole("dialog", { name: "发布 Moment" }));
-    expect(window.location.pathname).toBe("/owner/compose");
+    expect(window.location.pathname).toBe("/compose");
   });
 
   // Reloading the compose address used to drop to a bare compose screen with
@@ -1641,7 +1642,7 @@ describe("owner composing flow", () => {
     }));
     installApi();
 
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     const cold = render(<App />);
     expect(
       await screen.findByRole("dialog", { name: "发布 Moment" }),
@@ -1650,7 +1651,7 @@ describe("owner composing flow", () => {
     expect(document.querySelector("main h1")).toHaveTextContent("时间流");
     cold.unmount();
 
-    window.history.replaceState({}, "", "/owner/compose/drafts");
+    window.history.replaceState({}, "", "/compose/drafts");
     render(<App />);
     const list = await screen.findByRole("dialog", { name: "草稿" });
     expect(within(list).getByText("刷新之前存下的")).toBeInTheDocument();
@@ -1661,7 +1662,7 @@ describe("owner composing flow", () => {
   // out of reach until something is picked.
   it("picks and deletes drafts from the list's edit mode", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     keepDraft(instance, "第一段", new Date("2026-09-20T01:00:00.000Z"));
     keepDraft(instance, "第二段", new Date("2026-09-20T02:00:00.000Z"));
     installApi();
@@ -1729,7 +1730,7 @@ describe("owner composing flow", () => {
   // content, so "aaa" edited to "aaa1" filed a second entry beside it.
   it("replaces the draft it opened rather than filing a second one", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     keepDraft(instance, "aaa", new Date("2026-09-20T07:12:58.000Z"));
     installApi();
     render(<App />);
@@ -1758,7 +1759,7 @@ describe("owner composing flow", () => {
   // The only copy of that text, one press away from gone.
   it("asks before deleting a draft", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     keepDraft(instance, "别手滑删了我", new Date("2026-09-20T07:12:58.000Z"));
     installApi();
     render(<App />);
@@ -1779,7 +1780,7 @@ describe("owner composing flow", () => {
 
   it("files a kept draft under 草稿 and stops re-offering it as recovery", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     installApi();
     const { unmount } = render(<App />);
 
@@ -1797,7 +1798,7 @@ describe("owner composing flow", () => {
     // Filed text is not lost text: the recovery notice would otherwise
     // offer the same paragraph back above a list that already holds it.
     unmount();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     render(<App />);
     expect(await screen.findByLabelText("此刻想到什么？")).toHaveValue("");
     expect(screen.queryByText("发现一段未发布草稿")).toBeNull();
@@ -1837,9 +1838,7 @@ describe("owner composing flow", () => {
     await waitFor(() => expect(listKeptDrafts(instance)).toHaveLength(1));
 
     fireEvent.keyDown(document.body, { key: "n" });
-    await waitFor(() =>
-      expect(window.location.pathname).toBe("/owner/compose"),
-    );
+    await waitFor(() => expect(window.location.pathname).toBe("/compose"));
     fireEvent.click(screen.getByRole("button", { name: /草稿/ }));
     fireEvent.click(await screen.findByText("跨 surface 的恢复草稿"));
     await waitFor(() =>
@@ -1898,9 +1897,7 @@ describe("owner composing flow", () => {
     fireEvent.change(inline, { target: { value: "无法落盘但已经发布" } });
     fireEvent.keyDown(document.body, { key: "n" });
     await keepDraftAndResumeNavigation();
-    await waitFor(() =>
-      expect(window.location.pathname).toBe("/owner/compose"),
-    );
+    await waitFor(() => expect(window.location.pathname).toBe("/compose"));
     fireEvent.change(screen.getAllByLabelText("此刻想到什么？")[1], {
       target: { value: "无法落盘但已经发布" },
     });
@@ -1937,9 +1934,7 @@ describe("owner composing flow", () => {
     fireEvent.change(inline, { target: { value: "A 标签页仍未发布" } });
     fireEvent.keyDown(document.body, { key: "n" });
     await keepDraftAndResumeNavigation();
-    await waitFor(() =>
-      expect(window.location.pathname).toBe("/owner/compose"),
-    );
+    await waitFor(() => expect(window.location.pathname).toBe("/compose"));
     fireEvent.change(screen.getAllByLabelText("此刻想到什么？")[1], {
       target: { value: "B 标签页发布成功" },
     });
@@ -1971,9 +1966,7 @@ describe("owner composing flow", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 550));
     fireEvent.keyDown(document.body, { key: "n" });
     await keepDraftAndResumeNavigation();
-    await waitFor(() =>
-      expect(window.location.pathname).toBe("/owner/compose"),
-    );
+    await waitFor(() => expect(window.location.pathname).toBe("/compose"));
     // The page composer opens empty -- what the inline box left in the
     // recovery slot went to 草稿 on its way here -- so B writes its own.
     const page = screen.getAllByLabelText("此刻想到什么？")[1];
@@ -2718,7 +2711,7 @@ describe("owner composing flow", () => {
   });
 
   it("turns a provider callback into a session this browser can see", async () => {
-    window.history.replaceState({}, "", "/owner/compose?auth=ok");
+    window.history.replaceState({}, "", "/compose?auth=ok");
     const fetcher = installApi((url) => {
       // The callback left a cookie behind and nothing else: no exchange ever
       // happened in this tab, so session storage is empty.
@@ -2757,7 +2750,7 @@ describe("owner composing flow", () => {
 
   it("keeps a member signed in when the owner probe refuses them", async () => {
     preauthenticate();
-    window.history.replaceState({}, "", "/owner/compose");
+    window.history.replaceState({}, "", "/compose");
     installApi((url) => {
       // Only the site owner may read the owner probe. Reading its refusal as
       // "signed out" is what would sign every member out on every refresh.

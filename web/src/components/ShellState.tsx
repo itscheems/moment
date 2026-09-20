@@ -16,7 +16,7 @@ const emptyCopy: Record<
     marker: "空",
     title: "还没有 Moment",
     detail: "发布第一条 Moment 后会显示在这里。",
-    action: { label: "发布第一个 Moment", href: "/owner/compose" },
+    action: { label: "发布第一个 Moment", href: "/compose" },
   },
   detail: {
     marker: "未找到",
@@ -38,7 +38,7 @@ const emptyCopy: Record<
     marker: "资料",
     title: "还没有公开 Moment",
     detail: "发布后的 Moment 会显示在个人资料页。",
-    action: { label: "发布 Moment", href: "/owner/compose" },
+    action: { label: "发布 Moment", href: "/compose" },
   },
   login: {
     marker: "所有者",

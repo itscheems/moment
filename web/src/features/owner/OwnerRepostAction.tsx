@@ -6,6 +6,7 @@ import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
 import { ActionTooltip } from "../../components/TimelineInteractions";
 import { useNavigation } from "../../app/navigation";
+import { COMPOSE_PATH } from "../../app/routes";
 import postStyles from "../posts/PostPresentation.module.css";
 import styles from "./Owner.module.css";
 import { useOwner } from "./OwnerProvider";
@@ -101,7 +102,7 @@ export function OwnerRepostAction({
               className={styles.ownerMenuItem}
               onClick={() =>
                 navigateOverlay(
-                  `/owner/compose?quote=${encodeURIComponent(post.id)}`,
+                  `${COMPOSE_PATH}?quote=${encodeURIComponent(post.id)}`,
                 )
               }
             >

@@ -1006,7 +1006,7 @@ describe("shared post presentation", () => {
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "引用 Moment" }),
     );
-    expect(window.location.pathname).toBe("/owner/compose");
+    expect(window.location.pathname).toBe("/compose");
     expect(new URLSearchParams(window.location.search).get("quote")).toBe(
       "01K2ABCDEF0123456789ABCDE0",
     );

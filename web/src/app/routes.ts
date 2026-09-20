@@ -18,13 +18,37 @@ export interface AppRoute {
   ownerOnly?: boolean;
 }
 
-export const COMPOSE_PATH = "/owner/compose";
-export const COMPOSE_DRAFTS_PATH = "/owner/compose/drafts";
+// Composing is not an owner-only corner of the site, it is what the site is
+// for, so it answers at the top level. "compose" is a reserved handle
+// (internal/domain/user.go), so this cannot shadow a profile.
+export const COMPOSE_PATH = "/compose";
+export const COMPOSE_DRAFTS_PATH = "/compose/drafts";
+
+function matchesPath(pathname: string, path: string): boolean {
+  return pathname === path || pathname === `${path}/`;
+}
+
+export function isComposePath(pathname: string): boolean {
+  return matchesPath(pathname, COMPOSE_PATH) || isComposeDraftsPath(pathname);
+}
 
 export function isComposeDraftsPath(pathname: string): boolean {
   return (
-    pathname === COMPOSE_DRAFTS_PATH || pathname === `${COMPOSE_DRAFTS_PATH}/`
+    matchesPath(pathname, COMPOSE_DRAFTS_PATH) ||
+    matchesPath(pathname, "/owner/compose/drafts")
   );
+}
+
+/**
+ * Where a link or a history entry written before composing moved out from
+ * under /owner should go. Entries already in somebody's history keep working
+ * rather than turning into a not-found page.
+ */
+export function movedComposePath(pathname: string): string | null {
+  if (matchesPath(pathname, "/owner/compose")) return COMPOSE_PATH;
+  if (matchesPath(pathname, "/owner/compose/drafts"))
+    return COMPOSE_DRAFTS_PATH;
+  return null;
 }
 
 const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
@@ -72,15 +96,15 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     id: "owner-compose",
     title: "发布 Moment",
     eyebrow: "",
-    href: "/owner/compose",
+    href: COMPOSE_PATH,
     ownerOnly: true,
     // The drafts list is a face of the same surface, so it shares the route
     // and carries its own address: reloading it comes back to the list
-    // rather than to a composer with the list shut.
+    // rather than to a composer with the list shut. The old /owner paths
+    // still match, so an entry in somebody's history renders while the
+    // redirect corrects the address.
     match: (pathname) =>
-      pathname === "/owner/compose" ||
-      pathname === "/owner/compose/" ||
-      isComposeDraftsPath(pathname),
+      isComposePath(pathname) || movedComposePath(pathname) !== null,
   },
   {
     id: "owner-edit",

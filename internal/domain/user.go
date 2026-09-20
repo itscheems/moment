@@ -179,7 +179,7 @@ var reservedUsernames = map[string]struct{}{
 	// purpose: only /owner/<something> is a route, bare /owner is not, and it
 	// is the handle a fresh install ships with -- reserving the default would
 	// mean every new site starts out flagging itself.
-	"search": {}, "archive": {}, "profile": {},
+	"compose": {}, "search": {}, "archive": {}, "profile": {},
 	// Bundled asset directories under internal/webassets/dist.
 	"assets": {}, "fonts": {}, "icons": {},
 	// Held back so the paths stay available without renaming anyone later.

@@ -49,7 +49,7 @@ function primaryNavFor(profileHref: string): NavItem[] {
 
 const publishNav: NavItem = {
   label: "发布",
-  href: "/owner/compose",
+  href: "/compose",
   icon: "compose",
   active: ["owner-compose"],
 };
@@ -328,11 +328,11 @@ function LeftRail({
         className={styles.publishAction}
         data-compact-label="发布"
         data-focus-key="shell:compose"
-        href="/owner/compose"
+        href="/compose"
         onClick={(event) => {
           if (!window.matchMedia("(min-width: 720px)").matches) return;
           event.preventDefault();
-          navigateOverlay("/owner/compose");
+          navigateOverlay("/compose");
         }}
       >
         <Icon name="compose" />
@@ -481,84 +481,86 @@ export function AppShell({
   const [railSlot, setRailSlot] = useState<HTMLDivElement | null>(null);
   return (
     <RailSlotContext.Provider value={railSlot}>
-    <div className={styles.viewport}>
-      <a className={styles.skipLink} href="#main-content">
-        跳到主要内容
-      </a>
-      <div
-        className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""}`}
-      >
-        <LeftRail
-          account={account}
-          onSignOut={onSignOut}
-          ownerSettingsAvailable={ownerSettingsAvailable}
-          profileHref={profileHref}
-          route={route}
-          site={site}
-        />
-        <main className={styles.timeline} id="main-content" tabIndex={-1}>
-          <header
-            className={`${styles.timelineHeader} ${
-              route.id === "home" ? styles.homeHeader : ""
-            } ${route.id === "detail" ? styles.detailHeader : ""}`}
-          >
-            {route.id === "detail" ||
-            route.id === "profile" ||
-            route.id === "owner-edit" ||
-            route.id === "owner-compose" ? (
-              <InternalLink
-                aria-label="返回时间流"
-                className={styles.backLink}
-                href="/"
-                onClick={(event) => {
-                  event.preventDefault();
-                  goBack("/");
-                }}
-              >
-                <Icon name="back" />
-              </InternalLink>
-            ) : (
-              <MobileAccountMenu
-                ownerSettingsAvailable={ownerSettingsAvailable}
-                profileHref={profileHref}
-                site={site}
-              />
-            )}
-            {route.id === "home" ? (
-              <nav aria-label="首页时间流" className={styles.homeHeaderNav}>
+      <div className={styles.viewport}>
+        <a className={styles.skipLink} href="#main-content">
+          跳到主要内容
+        </a>
+        <div
+          className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""}`}
+        >
+          <LeftRail
+            account={account}
+            onSignOut={onSignOut}
+            ownerSettingsAvailable={ownerSettingsAvailable}
+            profileHref={profileHref}
+            route={route}
+            site={site}
+          />
+          <main className={styles.timeline} id="main-content" tabIndex={-1}>
+            <header
+              className={`${styles.timelineHeader} ${
+                route.id === "home" ? styles.homeHeader : ""
+              } ${route.id === "detail" ? styles.detailHeader : ""}`}
+            >
+              {route.id === "detail" ||
+              route.id === "profile" ||
+              route.id === "owner-edit" ||
+              route.id === "owner-compose" ? (
                 <InternalLink
-                  aria-current="page"
-                  className={styles.homeHeaderTab}
+                  aria-label="返回时间流"
+                  className={styles.backLink}
                   href="/"
-                  onClick={scrollHomeToTop}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    goBack("/");
+                  }}
                 >
-                  <h1>{route.title}</h1>
-                  <span aria-hidden="true" />
+                  <Icon name="back" />
                 </InternalLink>
-              </nav>
-            ) : (
-              <div>
-                <p>{route.eyebrow}</p>
-                <h1>
-                  {route.id === "profile" ? siteDisplayName(site) : route.title}
-                </h1>
-              </div>
-            )}
-            {route.id !== "detail" && route.id !== "owner-edit" ? (
-              <span className={styles.headerTheme}>
-                <ThemeMenu site={site} />
-              </span>
-            ) : null}
-          </header>
-          {children ?? <ShellState route={route} state={state} />}
-        </main>
-        <MemoryRail route={route} slotRef={setRailSlot} />
+              ) : (
+                <MobileAccountMenu
+                  ownerSettingsAvailable={ownerSettingsAvailable}
+                  profileHref={profileHref}
+                  site={site}
+                />
+              )}
+              {route.id === "home" ? (
+                <nav aria-label="首页时间流" className={styles.homeHeaderNav}>
+                  <InternalLink
+                    aria-current="page"
+                    className={styles.homeHeaderTab}
+                    href="/"
+                    onClick={scrollHomeToTop}
+                  >
+                    <h1>{route.title}</h1>
+                    <span aria-hidden="true" />
+                  </InternalLink>
+                </nav>
+              ) : (
+                <div>
+                  <p>{route.eyebrow}</p>
+                  <h1>
+                    {route.id === "profile"
+                      ? siteDisplayName(site)
+                      : route.title}
+                  </h1>
+                </div>
+              )}
+              {route.id !== "detail" && route.id !== "owner-edit" ? (
+                <span className={styles.headerTheme}>
+                  <ThemeMenu site={site} />
+                </span>
+              ) : null}
+            </header>
+            {children ?? <ShellState route={route} state={state} />}
+          </main>
+          <MemoryRail route={route} slotRef={setRailSlot} />
+        </div>
+        <MobileNavigation
+          ownerSettingsAvailable={ownerSettingsAvailable}
+          route={route}
+        />
       </div>
-      <MobileNavigation
-        ownerSettingsAvailable={ownerSettingsAvailable}
-        route={route}
-      />
-    </div>
     </RailSlotContext.Provider>
   );
 }

@@ -60,7 +60,7 @@ export function PublicEmpty({
         <p>{description}</p>
         {owner ? (
           <div className={styles.actions}>
-            <InternalLink className={styles.action} href="/owner/compose">
+            <InternalLink className={styles.action} href="/compose">
               发布第一条 Moment
             </InternalLink>
           </div>

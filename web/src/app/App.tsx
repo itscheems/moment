@@ -39,6 +39,7 @@ import {
   COMPOSE_DRAFTS_PATH,
   COMPOSE_PATH,
   isComposeDraftsPath,
+  movedComposePath,
   resolveRoute,
 } from "./routes";
 import styles from "./App.module.css";
@@ -271,6 +272,29 @@ function PublicApp() {
     location.replace(own ?? "/login?return=%2Fprofile");
   }, [displayLocation.pathname, location, owner.account, owner.state]);
 
+  // Composing moved out from under /owner. An entry already in somebody's
+  // history renders as it did and has its address corrected in place, rather
+  // than turning into a not-found page.
+  useEffect(() => {
+    const moved = movedComposePath(location.pathname);
+    if (moved) location.replace(`${moved}${location.search}`);
+  }, [location]);
+
+  // Posting needs a session, and the place to get one is the sign-in page --
+  // not a login form folded into the compose dialog, which asked a visitor to
+  // sign in inside a surface they had no business seeing yet.
+  useEffect(() => {
+    if (requestedRoute.id !== "owner-compose" || ownerCapable) return;
+    // Still resolving, or unable to say. Neither is an answer to act on.
+    if (owner.state === "checking" || owner.state === "unavailable") return;
+    // A session that exists but has not been answered for yet is not a
+    // guest. Signing in sets it a tick before the account arrives, and
+    // treating that tick as "no session" sent the owner straight back to
+    // the page they had just signed in on.
+    if (owner.session !== null) return;
+    location.replace(`/login?return=${encodeURIComponent(location.pathname)}`);
+  }, [location, owner.account, owner.state, ownerCapable, requestedRoute.id]);
+
   useEffect(() => {
     const siteTitle = site.title.trim() || "Moment";
     const titleRoute = overlayCompose ? requestedRoute : route;
@@ -307,9 +331,9 @@ function PublicApp() {
       }
       event.preventDefault();
       if (window.matchMedia("(min-width: 720px)").matches) {
-        location.navigateOverlay("/owner/compose");
+        location.navigateOverlay(COMPOSE_PATH);
       } else {
-        location.navigate("/owner/compose");
+        location.navigate(COMPOSE_PATH);
       }
     };
     document.addEventListener("compositionstart", startComposition);

@@ -447,7 +447,7 @@ describe("profile page", () => {
 
     expect(
       await screen.findByRole("link", { name: "发布第一条 Moment" }),
-    ).toHaveAttribute("href", "/owner/compose");
+    ).toHaveAttribute("href", "/compose");
   });
 
   it("keeps loaded posts visible when an append fails and retries in place", async () => {

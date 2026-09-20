@@ -684,6 +684,6 @@ describe("public timeline", () => {
     );
     expect(
       await screen.findByRole("link", { name: "发布第一条 Moment" }),
-    ).toHaveAttribute("href", "/owner/compose");
+    ).toHaveAttribute("href", "/compose");
   });
 });
