@@ -18,6 +18,15 @@ export interface AppRoute {
   ownerOnly?: boolean;
 }
 
+export const COMPOSE_PATH = "/owner/compose";
+export const COMPOSE_DRAFTS_PATH = "/owner/compose/drafts";
+
+export function isComposeDraftsPath(pathname: string): boolean {
+  return (
+    pathname === COMPOSE_DRAFTS_PATH || pathname === `${COMPOSE_DRAFTS_PATH}/`
+  );
+}
+
 const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   {
     id: "home",
@@ -65,8 +74,13 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     eyebrow: "",
     href: "/owner/compose",
     ownerOnly: true,
+    // The drafts list is a face of the same surface, so it shares the route
+    // and carries its own address: reloading it comes back to the list
+    // rather than to a composer with the list shut.
     match: (pathname) =>
-      pathname === "/owner/compose" || pathname === "/owner/compose/",
+      pathname === "/owner/compose" ||
+      pathname === "/owner/compose/" ||
+      isComposeDraftsPath(pathname),
   },
   {
     id: "owner-edit",

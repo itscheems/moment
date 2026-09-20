@@ -1525,6 +1525,9 @@ describe("owner composing flow", () => {
   // list instead of stacking a second one on it.
   it("carries the exit and the drafts list in the compose dialog header", async () => {
     preauthenticate();
+    // This file shares one history; without this the test inherits whatever
+    // address the previous one left behind.
+    window.history.replaceState({}, "", "/");
     keepDraft(instance, "上周没写完的一段", new Date("2026-09-18T02:00:00Z"));
     vi.mocked(window.matchMedia).mockImplementation((query) => ({
       matches: query === "(min-width: 720px)",
@@ -1553,18 +1556,26 @@ describe("owner composing flow", () => {
     expect(within(list).getByLabelText("此刻想到什么？")).toBeInTheDocument();
 
     fireEvent.click(within(list).getByText("上周没写完的一段"));
+    // The dialog's composer, not home's behind it.
     await waitFor(() =>
       expect(within(dialog).getByLabelText("此刻想到什么？")).toHaveValue(
         "上周没写完的一段",
       ),
     );
-    expect(screen.queryByRole("dialog", { name: "草稿" })).toBeNull();
+    // The list has its own address, so leaving it is a navigation.
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "草稿" })).toBeNull(),
+    );
+    expect(window.location.pathname).toBe("/owner/compose");
   });
 
   // The list is a face of the compose dialog, not a thing stacked on it:
   // both ways out of it go back to what was being written.
   it("returns the drafts list to the editor, by arrow or by pressing outside", async () => {
     preauthenticate();
+    // This file shares one history; without this the test inherits whatever
+    // address the previous one left behind.
+    window.history.replaceState({}, "", "/");
     keepDraft(instance, "先放着的一段", new Date("2026-09-20T07:00:00.000Z"));
     vi.mocked(window.matchMedia).mockImplementation((query) => ({
       matches: query === "(min-width: 720px)",
@@ -1610,6 +1621,40 @@ describe("owner composing flow", () => {
     });
     expect(await screen.findByRole("dialog", { name: "发布 Moment" }));
     expect(window.location.pathname).toBe("/owner/compose");
+  });
+
+  // Reloading the compose address used to drop to a bare compose screen with
+  // nothing behind it. The reference keeps the dialog over the timeline, and
+  // gives the list its own address so a reload comes back to the list.
+  it("restores the compose dialog and its list from the address alone", async () => {
+    preauthenticate();
+    keepDraft(instance, "刷新之前存下的", new Date("2026-09-20T07:00:00.000Z"));
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(min-width: 720px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    installApi();
+
+    window.history.replaceState({}, "", "/owner/compose");
+    const cold = render(<App />);
+    expect(
+      await screen.findByRole("dialog", { name: "发布 Moment" }),
+    ).toBeInTheDocument();
+    // The timeline is behind it, not a compose screen of its own.
+    expect(document.querySelector("main h1")).toHaveTextContent("时间流");
+    cold.unmount();
+
+    window.history.replaceState({}, "", "/owner/compose/drafts");
+    render(<App />);
+    const list = await screen.findByRole("dialog", { name: "草稿" });
+    expect(within(list).getByText("刷新之前存下的")).toBeInTheDocument();
+    expect(document.querySelector("main h1")).toHaveTextContent("时间流");
   });
 
   // The reference's edit mode: a checkbox per row, 全选, and a 删除 that is

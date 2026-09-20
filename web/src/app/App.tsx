@@ -30,12 +30,21 @@ import { ThemeProvider } from "../theme/ThemeProvider";
 import { FeedbackProvider } from "../components/Feedback";
 import { useDocumentScrollLock } from "../components/useDocumentScrollLock";
 import {
+  COMPOSE_DIALOG_VIEWPORT_QUERY,
   MOBILE_VIEWPORT_QUERY,
   useMediaQuery,
 } from "../components/useMediaQuery";
 import { NavigationProvider, useNavigation } from "./navigation";
-import { resolveRoute } from "./routes";
+import {
+  COMPOSE_DRAFTS_PATH,
+  COMPOSE_PATH,
+  isComposeDraftsPath,
+  resolveRoute,
+} from "./routes";
 import styles from "./App.module.css";
+
+/** What sits behind the compose dialog when its address was loaded cold. */
+const HOME_LOCATION = { pathname: "/", search: "" };
 
 const fallbackSite: SiteIdentity = {
   ownerId: "00000000000000000000000000000000",
@@ -97,9 +106,16 @@ function routeSearchKey(search: string): string {
 function PublicApp() {
   const location = useNavigation();
   const requestedRoute = resolveRoute(location.pathname);
+  // Composing is a dialog wherever the page has room for one, whether it was
+  // opened from the timeline or the address was loaded cold. Reloading it used
+  // to drop to a bare compose screen with nothing behind it; the reference
+  // keeps the dialog over the timeline, and so does this.
+  const composeDialogViewport = useMediaQuery(COMPOSE_DIALOG_VIEWPORT_QUERY);
   const overlayCompose =
-    requestedRoute.id === "owner-compose" && location.overlayFrom !== null;
-  const displayLocation = overlayCompose ? location.overlayFrom! : location;
+    requestedRoute.id === "owner-compose" && composeDialogViewport;
+  const displayLocation = overlayCompose
+    ? (location.overlayFrom ?? HOME_LOCATION)
+    : location;
   const quotedPostId = hasValidRawQueryEncoding(location.search)
     ? (new URLSearchParams(location.search).get("quote") ?? undefined)
     : undefined;
@@ -121,14 +137,14 @@ function PublicApp() {
   const initialHomeSearch = useRef(
     route.id === "home" ? displayLocation.search : "",
   );
+  // The drafts list lives in the address, so a reload comes back to it.
+  const draftsOpen = overlayCompose && isComposeDraftsPath(location.pathname);
   const overlayComposer = useRef<ComposerHandle>(null);
   const composeDialogRef = useRef<HTMLDivElement>(null);
   const draftsBackRef = useRef<HTMLButtonElement>(null);
   const draftsTriggerRef = useRef<HTMLButtonElement>(null);
   const [composeExitOpen, setComposeExitOpen] = useState(false);
-  // The dialog switches between composing and the drafts list without
-  // opening another dialog.
-  const [draftsOpen, setDraftsOpen] = useState(false);
+  // Selection is a mode inside the drafts list, so it stays out of the URL.
   const [draftsEditing, setDraftsEditing] = useState(false);
   const [keptDrafts, setKeptDrafts] = useState(0);
   const siteIdentityReady = !siteLoading && !siteError;
@@ -160,13 +176,22 @@ function PublicApp() {
     closeOverlayComposer();
   };
 
+  const openDrafts = () => {
+    setDraftsEditing(false);
+    // Keeps whatever is behind the dialog behind it, rather than falling
+    // back to the timeline because this entry has no background of its own.
+    location.navigateOverlay(COMPOSE_DRAFTS_PATH, location.overlayFrom);
+  };
+
+  const closeDrafts = () => {
+    setDraftsEditing(false);
+    location.goBack(COMPOSE_PATH);
+  };
+
   // The count on the header action, read whenever the dialog opens or the
   // list closes -- the two moments it can have changed.
   useEffect(() => {
-    if (!overlayCompose) {
-      setDraftsOpen(false);
-      return;
-    }
+    if (!overlayCompose) return;
     setKeptDrafts(listKeptDrafts(site.instanceId).length);
   }, [draftsOpen, draftsEditing, overlayCompose, site.instanceId]);
 
@@ -458,7 +483,14 @@ function PublicApp() {
         ) : null}
         {siteIdentityReady && route.id === "owner-compose" ? (
           ownerCapable ? (
-            <Composer quotedPostId={quotedPostId} site={site} variant="page" />
+            <Composer
+              // The compose screen has no second face, so the list address
+              // opens its panel instead.
+              draftsListStart={isComposeDraftsPath(displayLocation.pathname)}
+              quotedPostId={quotedPostId}
+              site={site}
+              variant="page"
+            />
           ) : (
             <OwnerLogin embedded site={site} />
           )
@@ -495,7 +527,7 @@ function PublicApp() {
             // arrow does while the list is up: go back to what was being
             // written, not out of the composer.
             if (draftsOpen) {
-              setDraftsOpen(false);
+              closeDrafts();
               return;
             }
             requestOverlayComposerClose();
@@ -529,7 +561,7 @@ function PublicApp() {
                         aria-label="返回发布"
                         className={styles.composeDialogIcon}
                         key="drafts-back"
-                        onClick={() => setDraftsOpen(false)}
+                        onClick={closeDrafts}
                         ref={draftsBackRef}
                         type="button"
                       >
@@ -568,7 +600,7 @@ function PublicApp() {
                       <button
                         className={styles.composeDialogDrafts}
                         key="compose-drafts"
-                        onClick={() => setDraftsOpen(true)}
+                        onClick={openDrafts}
                         ref={draftsTriggerRef}
                         type="button"
                       >
@@ -594,7 +626,7 @@ function PublicApp() {
                         draft.contentMd,
                         draft.id,
                       );
-                      setDraftsOpen(false);
+                      closeDrafts();
                     }}
                   />
                 ) : null}

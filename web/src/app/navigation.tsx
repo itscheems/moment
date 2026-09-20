@@ -29,7 +29,12 @@ interface NavigationContextValue extends NavigationLocation {
    * inside the app still goes back inside the app.
    */
   replace: (href: string) => void;
-  navigateOverlay: (href: string) => void;
+  /**
+   * Opens `href` over what is on screen now, or over `from` when the caller
+   * knows better -- a second face of the same overlay keeps the first one's
+   * background rather than taking the overlay itself as one.
+   */
+  navigateOverlay: (href: string, from?: LocationSnapshot | null) => void;
   goBack: (fallback: string) => void;
   replaceTimelineProgress: (cursor: string, name?: ProgressName) => void;
   /**
@@ -97,11 +102,11 @@ function historyState(): MomentHistoryState {
     : {};
 }
 
-function restoreEntry(state: unknown) {
+function restoreEntry(state: unknown, restoreFocus = true) {
   window.requestAnimationFrame(() => {
     window.scrollTo({ top: scrollPosition(state), behavior: "auto" });
     const focusKey = (state as MomentHistoryState | null)?.momentFocusKey;
-    if (!focusKey) return;
+    if (!restoreFocus || !focusKey) return;
     Array.from(document.querySelectorAll<HTMLElement>("[data-focus-key]"))
       .find((element) => element.dataset.focusKey === focusKey)
       ?.focus({ preventScroll: true });
@@ -192,9 +197,12 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const navigateOverlay = useCallback(
-    function navigateToOverlay(href: string) {
-      if (!canLeave(() => navigateToOverlay(href))) return;
-      commitNavigation(href, currentLocation());
+    function navigateToOverlay(href: string, from?: LocationSnapshot | null) {
+      if (!canLeave(() => navigateToOverlay(href, from))) return;
+      // `undefined` means "over whatever is on screen"; an explicit `null`
+      // means "nothing behind it", and must not fall back to the overlay
+      // itself as its own background.
+      commitNavigation(href, from === undefined ? currentLocation() : from);
     },
     [canLeave, commitNavigation],
   );
@@ -230,7 +238,13 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         return true;
       }
     }
-    restoreEntry(state);
+    // Scroll, but not focus. A load is not a return: no browser puts the
+    // ring back on the control you last pressed when you reload, and doing
+    // it ourselves painted one on the publish action every refresh
+    // (programmatic focus reads as keyboard focus before the document has
+    // been pointed at). Going back inside the app still restores it, from
+    // the popstate handler.
+    restoreEntry(state, false);
     return false;
   }, []);
 

@@ -167,11 +167,21 @@ interface ComposerProps {
    * surface a phone gets -- carries its own.
    */
   draftsEntry?: boolean;
+  /** Open that list straight away, because the address asked for it. */
+  draftsListStart?: boolean;
 }
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(
   function Composer(
-    { site, variant, post, active = true, quotedPostId, draftsEntry = true },
+    {
+      site,
+      variant,
+      post,
+      active = true,
+      quotedPostId,
+      draftsEntry = true,
+      draftsListStart = false,
+    },
     ref,
   ) {
     const { navigate, goBack, setNavigationBlocker } = useNavigation();
@@ -226,7 +236,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [mentionActive, setMentionActive] = useState(0);
     const [leavePromptOpen, setLeavePromptOpen] = useState(false);
     const drafting = variant === "page" && draftsEntry;
-    const [draftsListOpen, setDraftsListOpen] = useState(false);
+    const [draftsListOpen, setDraftsListOpen] = useState(draftsListStart);
     const [draftsEditing, setDraftsEditing] = useState(false);
     const [keptCount, setKeptCount] = useState(() =>
       drafting ? listKeptDrafts(site.instanceId).length : 0,
