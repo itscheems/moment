@@ -85,76 +85,67 @@ export function ComposeDrafts({
       {tabs}
       <ol className={styles.draftsList}>
         {drafts.map((draft) => (
-          <li key={draft.id}>
-            {editing ? (
-              // The whole row picks it, not just the box: a 22px target in a
-              // 68px row is a worse way to say the same thing. The halo is
-              // still the only part that answers the pointer, and the box
-              // keeps the page's own colour inside it.
-              <label className={styles.draftsPick}>
-                <input
-                  checked={picked.has(draft.id)}
-                  className={styles.srOnly}
-                  onChange={(event) =>
-                    setPicked((current) => {
-                      const next = new Set(current);
-                      if (event.target.checked) next.add(draft.id);
-                      else next.delete(draft.id);
-                      return next;
-                    })
-                  }
-                  type="checkbox"
-                />
-                <span aria-hidden="true" className={styles.draftsCheck}>
-                  <span>
-                    <Icon name="audience-check" />
-                  </span>
+          <li data-editing={editing || undefined} key={draft.id}>
+            {/* One row element in both states, so entering the selection
+                widens the checkbox's slot and pushes the text along rather
+                than snapping a new layout into place. While editing the row
+                *is* the checkbox -- a 22px box in a 68px row is a worse way
+                to say the same thing -- and the halo is still the only part
+                that answers the pointer on its own. */}
+            <button
+              aria-checked={editing ? picked.has(draft.id) : undefined}
+              className={styles.draftsRow}
+              data-editing={editing || undefined}
+              onClick={() => {
+                if (!editing) {
+                  onOpenDraft(draft);
+                  return;
+                }
+                setPicked((current) => {
+                  const next = new Set(current);
+                  if (next.has(draft.id)) next.delete(draft.id);
+                  else next.add(draft.id);
+                  return next;
+                });
+              }}
+              role={editing ? "checkbox" : undefined}
+              type="button"
+            >
+              <span aria-hidden="true" className={styles.draftsCheck}>
+                <span>
+                  <Icon name="audience-check" />
                 </span>
-                <span className={styles.draftsBody}>
-                  <span>{preview(draft.contentMd)}</span>
-                  <time dateTime={draft.savedAt}>
-                    {new Date(draft.savedAt).toLocaleString("zh-CN")}
-                  </time>
-                </span>
-              </label>
-            ) : (
-              <>
-                {/* Two controls side by side rather than one inside the
-                    other: a delete button nested in a row button is not a
-                    thing a browser can dispatch unambiguously. */}
+              </span>
+              <span className={styles.draftsText}>
+                <span>{preview(draft.contentMd)}</span>
+                <time dateTime={draft.savedAt}>
+                  {new Date(draft.savedAt).toLocaleString("zh-CN")}
+                </time>
+              </span>
+            </button>
+            {/* Deleting was one press with nothing between it and the only
+                copy of that text. It folds away while editing, where the
+                bottom bar's 删除 does the same job for a selection. */}
+            <ConfirmDialog
+              confirmLabel="删除草稿"
+              danger
+              description="这段文字只存在这台浏览器里，删除后无法找回。"
+              onConfirm={() => {
+                dropKeptDraft(instanceId, draft.id);
+                refresh();
+              }}
+              title="删除这份草稿？"
+              trigger={
                 <button
-                  className={`${styles.draftsOpen} ${styles.draftsBody}`}
-                  onClick={() => onOpenDraft(draft)}
+                  aria-label={`删除草稿：${preview(draft.contentMd).slice(0, 24)}`}
+                  className={styles.draftsDelete}
+                  disabled={editing}
                   type="button"
                 >
-                  <span>{preview(draft.contentMd)}</span>
-                  <time dateTime={draft.savedAt}>
-                    {new Date(draft.savedAt).toLocaleString("zh-CN")}
-                  </time>
+                  <Icon name="delete" />
                 </button>
-                {/* Deleting was one press with nothing between it and the
-                    only copy of that text. */}
-                <ConfirmDialog
-                  confirmLabel="删除草稿"
-                  danger
-                  description="这段文字只存在这台浏览器里，删除后无法找回。"
-                  onConfirm={() => {
-                    dropKeptDraft(instanceId, draft.id);
-                    refresh();
-                  }}
-                  title="删除这份草稿？"
-                  trigger={
-                    <button
-                      aria-label={`删除草稿：${preview(draft.contentMd).slice(0, 24)}`}
-                      className={styles.draftsDelete}
-                      type="button"
-                    >
-                      <Icon name="delete" />
-                    </button>
-                  }
-                />
-              </>
-            )}
+              }
+            />
           </li>
         ))}
       </ol>

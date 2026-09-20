@@ -682,7 +682,17 @@ describe("visual foundation contract", () => {
       /\._draftsCheck_[\w-]+:hover\s*\{[^}]*background: var\(--checkbox-halo-hover\)/s,
     );
     expect(ownerCss).toMatch(
-      /\._draftsPick_[\w-]+:has\(input:checked\) \._draftsCheck_[\w-]+:hover\s*\{[^}]*background: var\(--checkbox-on-halo-hover\)/s,
+      /\._draftsRow_[\w-]+\[aria-checked="true"\] \._draftsCheck_[\w-]+:hover\s*\{[^}]*background: var\(--checkbox-on-halo-hover\)/s,
+    );
+    // The slot widens rather than appearing, so the push can be seen.
+    expect(ownerCss).toMatch(
+      /\._draftsCheck_[\w-]+\s*\{[^}]*inline-size: 0;[^}]*transition:\s*inline-size 220ms var\(--ease-out\)/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._draftsRow_[\w-]+\[data-editing\] \._draftsCheck_[\w-]+\s*\{[^}]*inline-size: 2\.25rem/s,
+    );
+    expect(ownerCss).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\._draftsCheck_[\w-]+,[\s\S]*?transition: none/s,
     );
     expect(ownerCss).toMatch(
       /\._draftsCheck_[\w-]+ > span\s*\{[^}]*border: 2px solid var\(--text-secondary\);[^}]*background: var\(--surface\)/s,

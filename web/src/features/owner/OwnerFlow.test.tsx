@@ -1638,7 +1638,7 @@ describe("owner composing flow", () => {
     // there is no row button left, and the row's own text names the box.
     expect(screen.queryByRole("button", { name: /^第一段/ })).toBeNull();
     const first = screen.getByRole("checkbox", { name: /第一段/ });
-    fireEvent.click(first.closest("label")!);
+    fireEvent.click(first);
     expect(first).toBeChecked();
     expect(remove).toBeEnabled();
 
@@ -1646,13 +1646,13 @@ describe("owner composing flow", () => {
     expect(
       screen
         .getAllByRole("checkbox")
-        .every((box) => (box as HTMLInputElement).checked),
+        .every((box) => box.getAttribute("aria-checked") === "true"),
     ).toBe(true);
     expect(
       screen.getByRole("button", { name: "取消全选" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(first.closest("label")!);
+    fireEvent.click(first);
     expect(first).not.toBeChecked();
     expect(screen.getByRole("button", { name: "全选" })).toBeInTheDocument();
 
