@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import appCss from "../app/App.module.css?inline";
 import shellCss from "../components/AppShell.module.css?inline";
 import identityCss from "../components/SiteIdentity.module.css?inline";
 import stateCss from "../components/ShellState.module.css?inline";
@@ -604,6 +605,43 @@ describe("visual foundation contract", () => {
     );
     expect(profileEditorCss).toMatch(
       /\._mediaMenuItem_[\w-]+\[data-highlighted\]\s*\{[^}]*background: var\(--surface-hover\)/s,
+    );
+  });
+
+  // Measured against the reference: a 32px pill, 16px of side padding, and
+  // 16px in from the dialog's edge rather than hard against it. It answers
+  // the pointer with the audience pill's own two tints rather than a
+  // scale-down, and the neutral ✕ beside it with #e7e7e7 / #cfd0d1.
+  it("gives the compose header consistent pill and press tints", () => {
+    expect(globalCss).toContain("--icon-button-hover: #e7e7e7");
+    expect(globalCss).toContain("--icon-button-pressed: #cfd0d1");
+    expect(appCss).toMatch(
+      /\._composeDialogDrafts_[\w-]+\s*\{[^}]*min-block-size: 2rem;[^}]*margin-inline: auto var\(--space-2\);[^}]*padding-inline: var\(--space-4\)/s,
+    );
+    for (const [selector, token] of [
+      ["_composeDialogDrafts", "--audience-hover"],
+      ["_composeDialogIcon", "--icon-button-hover"],
+    ] as const) {
+      expect(appCss).toMatch(
+        new RegExp(
+          `\\.${selector}_[\\w-]+:hover,[^{]*\\{[^}]*background: var\\(${token}\\)`,
+          "s",
+        ),
+      );
+    }
+    for (const [selector, token] of [
+      ["_composeDialogDrafts", "--audience-pressed"],
+      ["_composeDialogIcon", "--icon-button-pressed"],
+    ] as const) {
+      expect(appCss).toMatch(
+        new RegExp(
+          `\\.${selector}_[\\w-]+:active\\s*\\{[^}]*background: var\\(${token}\\)`,
+          "s",
+        ),
+      );
+    }
+    expect(appCss).not.toMatch(
+      /\._composeDialog(Drafts|Icon)_[\w-]+:active\s*\{[^}]*transform: scale/s,
     );
   });
 

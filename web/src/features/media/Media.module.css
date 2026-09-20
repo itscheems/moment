@@ -752,18 +752,17 @@
   cursor: pointer;
   transition:
     color var(--motion-fast) var(--ease-out),
-    background var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+    background-color 0.2s;
 }
 
 .describePager button:hover:not(:disabled),
 .describePager button:focus-visible {
   color: var(--accent);
-  background: var(--accent-soft);
+  background: var(--audience-hover);
 }
 
 .describePager button:active:not(:disabled) {
-  transform: scale(0.88);
+  background: var(--audience-pressed);
 }
 
 .describePager button:disabled {
@@ -788,11 +787,16 @@
   color: var(--text-primary);
   background: transparent;
   cursor: pointer;
+  transition: background-color 0.2s;
 }
 
 .describeBack:hover,
 .describeBack:focus-visible {
-  background: var(--surface-hover);
+  background: var(--icon-button-hover);
+}
+
+.describeBack:active {
+  background: var(--icon-button-pressed);
 }
 
 .describeBack svg {
@@ -822,7 +826,8 @@
 }
 
 .describeDone:active {
-  transform: scale(0.96);
+  background: var(--accent-pressed, var(--button-primary-hover));
+  filter: brightness(0.94);
 }
 
 .describeBody {

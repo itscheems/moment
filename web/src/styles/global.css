@@ -103,6 +103,10 @@
      and pressed states. Other themes derive them from their own surface. */
   --audience-hover: #ebf5fe;
   --audience-pressed: #d7ecfd;
+  /* Neutral round icon buttons -- a dialog's ✕, a sheet's back arrow.
+     Dark themes derive the same 10% / 20% tint from their own ink below. */
+  --icon-button-hover: #e7e7e7;
+  --icon-button-pressed: #cfd0d1;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -147,6 +151,16 @@
   --surface: #15202b;
   --surface-elevated: #1e2732;
   --surface-hover: #1c2732;
+  --icon-button-hover: color-mix(
+    in srgb,
+    var(--text-primary) 10%,
+    var(--surface)
+  );
+  --icon-button-pressed: color-mix(
+    in srgb,
+    var(--text-primary) 20%,
+    var(--surface)
+  );
   --surface-hover-strong: #26313d;
   --surface-muted: #273340;
   --text-primary: #f7f9f9;
@@ -167,6 +181,16 @@
   --surface: #000000;
   --surface-elevated: #16181c;
   --surface-hover: #181818;
+  --icon-button-hover: color-mix(
+    in srgb,
+    var(--text-primary) 10%,
+    var(--surface)
+  );
+  --icon-button-pressed: color-mix(
+    in srgb,
+    var(--text-primary) 20%,
+    var(--surface)
+  );
   --surface-hover-strong: #272727;
   --surface-muted: #202327;
   --text-primary: #e7e9ea;
@@ -323,6 +347,16 @@ a {
     --surface: #000000;
     --surface-elevated: #16181c;
     --surface-hover: #181818;
+    --icon-button-hover: color-mix(
+      in srgb,
+      var(--text-primary) 10%,
+      var(--surface)
+    );
+    --icon-button-pressed: color-mix(
+      in srgb,
+      var(--text-primary) 20%,
+      var(--surface)
+    );
     --surface-hover-strong: #272727;
     --surface-muted: #202327;
     --text-primary: #e7e9ea;

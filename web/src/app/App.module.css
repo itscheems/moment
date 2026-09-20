@@ -209,18 +209,18 @@
   color: var(--text-primary);
   background: transparent;
   cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+  /* Darkening under the press, the way the audience pill does it, over the
+     same 0.2s. A scale-down reads as a different kind of control. */
+  transition: background-color 0.2s;
 }
 
 .composeDialogIcon:hover,
 .composeDialogIcon:focus-visible {
-  background: var(--surface-hover);
+  background: var(--icon-button-hover);
 }
 
 .composeDialogIcon:active {
-  transform: scale(0.9);
+  background: var(--icon-button-pressed);
 }
 
 .composeDialogIcon svg {
@@ -231,38 +231,39 @@
 /* `margin-inline-start: auto` rather than a grid track: the title is
    visually hidden on the compose face, and an absolutely positioned grid
    child leaves the grid, which pulled 草稿 back against the ✕. */
+/* Measured against the reference: a 32px pill with 16px of side padding,
+   sitting 16px in from the dialog's edge rather than hard against it, and
+   taking the audience pill's own hover and pressed tints. */
 .composeDialogDrafts {
-  min-block-size: 2.25rem;
-  margin-inline-start: auto;
+  min-block-size: 2rem;
+  margin-inline: auto var(--space-2);
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   border: 0;
   border-radius: 999px;
-  padding-inline: var(--space-3);
+  padding-inline: var(--space-4);
   color: var(--accent);
   background: transparent;
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
+  transition: background-color 0.2s;
 }
 
 .composeDialogDrafts:hover,
 .composeDialogDrafts:focus-visible {
-  background: var(--accent-soft);
+  background: var(--audience-hover);
 }
 
 .composeDialogDrafts:active {
-  transform: scale(0.96);
+  background: var(--audience-pressed);
 }
 
 /* How many are waiting, without a second line of text saying so. */
 .composeDialogDrafts small {
-  min-inline-size: 1.25rem;
-  block-size: 1.25rem;
+  min-inline-size: 1.125rem;
+  block-size: 1.125rem;
   display: grid;
   place-items: center;
   border-radius: 999px;
