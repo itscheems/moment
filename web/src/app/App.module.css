@@ -280,6 +280,33 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The reference's 编辑 / 完成: an ink pill, the one filled button in this
+   header that is not the accent. */
+.composeDialogEdit {
+  min-block-size: 2rem;
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: var(--ink-button-contrast);
+  background: var(--ink-button);
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.composeDialogEdit:hover,
+.composeDialogEdit:focus-visible {
+  background: var(--ink-button-hover);
+}
+
+.composeDialogEdit:active {
+  background: var(--ink-button-pressed);
+}
+
 .composeDialogHeader h2 {
   min-inline-size: 0;
   flex: 1 1 auto;

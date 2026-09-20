@@ -111,6 +111,24 @@
      page, which is this app's own ink at 16%; the dark themes lift the page
      with the blue-grey instead, where a black scrim would be invisible. */
   --compose-scrim: rgb(15 20 25 / 16%);
+  /* The ink pill -- the reference's 编辑 / 完成 button. Black on light, and
+     the page's own ink everywhere else. */
+  --ink-button: #0f1419;
+  --ink-button-hover: #272c30;
+  --ink-button-pressed: #3f4347;
+  --ink-button-contrast: #ffffff;
+  /* The round halo behind a checkbox. The box keeps its own colour; only
+     the ring answers the pointer. */
+  --checkbox-halo-hover: #e8eaeb;
+  --checkbox-halo-pressed: #d7dbde;
+  --checkbox-on-halo-hover: #e4eff8;
+  --checkbox-on-halo-pressed: #d1e7f8;
+  /* Destructive text actions and the confirm sheet's Delete. */
+  --danger-hover: #dc1e29;
+  --danger-pressed: #c31b25;
+  --danger-disabled: #fd989a;
+  --danger-soft: #ffe8e9;
+  --danger-soft-pressed: #ffd6d7;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -156,6 +174,43 @@
   --surface-elevated: #1e2732;
   --surface-hover: #1c2732;
   --compose-scrim: rgb(91 112 131 / 40%);
+  --ink-button: var(--text-primary);
+  --ink-button-hover: color-mix(
+    in srgb,
+    var(--text-primary) 90%,
+    var(--surface)
+  );
+  --ink-button-pressed: color-mix(
+    in srgb,
+    var(--text-primary) 78%,
+    var(--surface)
+  );
+  --ink-button-contrast: var(--surface);
+  --checkbox-halo-hover: color-mix(
+    in srgb,
+    var(--text-primary) 10%,
+    var(--surface)
+  );
+  --checkbox-halo-pressed: color-mix(
+    in srgb,
+    var(--text-primary) 20%,
+    var(--surface)
+  );
+  --checkbox-on-halo-hover: color-mix(
+    in srgb,
+    var(--accent) 12%,
+    var(--surface)
+  );
+  --checkbox-on-halo-pressed: color-mix(
+    in srgb,
+    var(--accent) 24%,
+    var(--surface)
+  );
+  --danger-hover: color-mix(in srgb, var(--danger) 90%, #000000);
+  --danger-pressed: color-mix(in srgb, var(--danger) 80%, #000000);
+  --danger-disabled: color-mix(in srgb, var(--danger) 55%, var(--surface));
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  --danger-soft-pressed: color-mix(in srgb, var(--danger) 24%, var(--surface));
   --icon-button-hover: color-mix(
     in srgb,
     var(--text-primary) 10%,
@@ -187,6 +242,43 @@
   --surface-elevated: #16181c;
   --surface-hover: #181818;
   --compose-scrim: rgb(91 112 131 / 40%);
+  --ink-button: var(--text-primary);
+  --ink-button-hover: color-mix(
+    in srgb,
+    var(--text-primary) 90%,
+    var(--surface)
+  );
+  --ink-button-pressed: color-mix(
+    in srgb,
+    var(--text-primary) 78%,
+    var(--surface)
+  );
+  --ink-button-contrast: var(--surface);
+  --checkbox-halo-hover: color-mix(
+    in srgb,
+    var(--text-primary) 10%,
+    var(--surface)
+  );
+  --checkbox-halo-pressed: color-mix(
+    in srgb,
+    var(--text-primary) 20%,
+    var(--surface)
+  );
+  --checkbox-on-halo-hover: color-mix(
+    in srgb,
+    var(--accent) 12%,
+    var(--surface)
+  );
+  --checkbox-on-halo-pressed: color-mix(
+    in srgb,
+    var(--accent) 24%,
+    var(--surface)
+  );
+  --danger-hover: color-mix(in srgb, var(--danger) 90%, #000000);
+  --danger-pressed: color-mix(in srgb, var(--danger) 80%, #000000);
+  --danger-disabled: color-mix(in srgb, var(--danger) 55%, var(--surface));
+  --danger-soft: color-mix(in srgb, var(--danger) 12%, var(--surface));
+  --danger-soft-pressed: color-mix(in srgb, var(--danger) 24%, var(--surface));
   --icon-button-hover: color-mix(
     in srgb,
     var(--text-primary) 10%,
@@ -354,6 +446,47 @@ a {
     --surface-elevated: #16181c;
     --surface-hover: #181818;
     --compose-scrim: rgb(91 112 131 / 40%);
+    --ink-button: var(--text-primary);
+    --ink-button-hover: color-mix(
+      in srgb,
+      var(--text-primary) 90%,
+      var(--surface)
+    );
+    --ink-button-pressed: color-mix(
+      in srgb,
+      var(--text-primary) 78%,
+      var(--surface)
+    );
+    --ink-button-contrast: var(--surface);
+    --checkbox-halo-hover: color-mix(
+      in srgb,
+      var(--text-primary) 10%,
+      var(--surface)
+    );
+    --checkbox-halo-pressed: color-mix(
+      in srgb,
+      var(--text-primary) 20%,
+      var(--surface)
+    );
+    --checkbox-on-halo-hover: color-mix(
+      in srgb,
+      var(--accent) 12%,
+      var(--surface)
+    );
+    --checkbox-on-halo-pressed: color-mix(
+      in srgb,
+      var(--accent) 24%,
+      var(--surface)
+    );
+    --danger-hover: color-mix(in srgb, var(--danger) 90%, #000000);
+    --danger-pressed: color-mix(in srgb, var(--danger) 80%, #000000);
+    --danger-disabled: color-mix(in srgb, var(--danger) 55%, var(--surface));
+    --danger-soft: color-mix(in srgb, var(--danger) 12%, var(--surface));
+    --danger-soft-pressed: color-mix(
+      in srgb,
+      var(--danger) 24%,
+      var(--surface)
+    );
     --icon-button-hover: color-mix(
       in srgb,
       var(--text-primary) 10%,

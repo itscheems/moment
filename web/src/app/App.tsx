@@ -129,6 +129,7 @@ function PublicApp() {
   // The dialog switches between composing and the drafts list without
   // opening another dialog.
   const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftsEditing, setDraftsEditing] = useState(false);
   const [keptDrafts, setKeptDrafts] = useState(0);
   const siteIdentityReady = !siteLoading && !siteError;
   // Accounts arrived, so being signed in stopped meaning owning the site.
@@ -167,7 +168,11 @@ function PublicApp() {
       return;
     }
     setKeptDrafts(listKeptDrafts(site.instanceId).length);
-  }, [draftsOpen, overlayCompose, site.instanceId]);
+  }, [draftsOpen, draftsEditing, overlayCompose, site.instanceId]);
+
+  useEffect(() => {
+    if (!draftsOpen) setDraftsEditing(false);
+  }, [draftsOpen]);
 
   // Turning the dialog over takes the pressed control with it, and focus
   // with nowhere to go falls back to the popup -- which then wears a ring
@@ -539,7 +544,17 @@ function PublicApp() {
                     >
                       {draftsOpen ? "草稿" : "发布 Moment"}
                     </Dialog.Title>
-                    {draftsOpen ? null : (
+                    {draftsOpen ? (
+                      keptDrafts > 0 ? (
+                        <button
+                          className={styles.composeDialogEdit}
+                          onClick={() => setDraftsEditing((on) => !on)}
+                          type="button"
+                        >
+                          {draftsEditing ? "完成" : "编辑"}
+                        </button>
+                      ) : null
+                    ) : (
                       <button
                         className={styles.composeDialogDrafts}
                         onClick={() => setDraftsOpen(true)}
@@ -560,7 +575,9 @@ function PublicApp() {
                   <OwnerLogin embedded site={site} />
                 ) : draftsOpen ? (
                   <ComposeDrafts
+                    editing={draftsEditing}
                     instanceId={site.instanceId}
+                    onEditingChange={setDraftsEditing}
                     onOpenDraft={(draft) => {
                       overlayComposer.current?.loadDraft(
                         draft.contentMd,

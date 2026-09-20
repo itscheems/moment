@@ -227,6 +227,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [leavePromptOpen, setLeavePromptOpen] = useState(false);
     const drafting = variant === "page" && draftsEntry;
     const [draftsListOpen, setDraftsListOpen] = useState(false);
+    const [draftsEditing, setDraftsEditing] = useState(false);
     const [keptCount, setKeptCount] = useState(() =>
       drafting ? listKeptDrafts(site.instanceId).length : 0,
     );
@@ -1097,7 +1098,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     useEffect(() => {
       if (!drafting) return;
       setKeptCount(listKeptDrafts(site.instanceId).length);
-    }, [drafting, draftsListOpen, site.instanceId]);
+    }, [drafting, draftsEditing, draftsListOpen, site.instanceId]);
 
     return (
       <section
@@ -1140,10 +1141,22 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             avatar stays level with the audience pill under it. */}
         {drafting && (keptCount > 0 || draftsListOpen) ? (
           <div className={styles.pageDrafts}>
+            {draftsListOpen && keptCount > 0 ? (
+              <button
+                className={styles.pageDraftsEdit}
+                onClick={() => setDraftsEditing((on) => !on)}
+                type="button"
+              >
+                {draftsEditing ? "完成" : "编辑"}
+              </button>
+            ) : null}
             <button
               aria-expanded={draftsListOpen}
               className={styles.pageDraftsToggle}
-              onClick={() => setDraftsListOpen((open) => !open)}
+              onClick={() => {
+                setDraftsEditing(false);
+                setDraftsListOpen((open) => !open);
+              }}
               type="button"
             >
               草稿
@@ -1155,7 +1168,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         {drafting && draftsListOpen ? (
           <div className={styles.pageDraftsList}>
             <ComposeDrafts
+              editing={draftsEditing}
               instanceId={site.instanceId}
+              onEditingChange={setDraftsEditing}
               onOpenDraft={(kept) => {
                 restoreDraftText(kept.contentMd, kept.id);
                 setDraftsListOpen(false);

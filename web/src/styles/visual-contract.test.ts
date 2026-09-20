@@ -657,6 +657,46 @@ describe("visual foundation contract", () => {
     );
   });
 
+  // The reference's edit mode, colour by colour: an ink pill for 编辑, a
+  // checkbox whose round halo is the only thing answering the pointer, and a
+  // 删除 that is out of reach until something is picked.
+  it("takes the reference's edit-mode colours", () => {
+    for (const declaration of [
+      "--ink-button: #0f1419",
+      "--ink-button-hover: #272c30",
+      "--ink-button-pressed: #3f4347",
+      "--checkbox-halo-hover: #e8eaeb",
+      "--checkbox-halo-pressed: #d7dbde",
+      "--checkbox-on-halo-hover: #e4eff8",
+      "--checkbox-on-halo-pressed: #d1e7f8",
+      "--danger-pressed: #c31b25",
+      "--danger-disabled: #fd989a",
+      "--danger-soft: #ffe8e9",
+      "--danger-soft-pressed: #ffd6d7",
+    ]) {
+      expect(globalCss).toContain(declaration);
+    }
+    // The box keeps its own colour; only the ring around it fills.
+    expect(ownerCss).toMatch(
+      /\._draftsCheck_[\w-]+:hover\s*\{[^}]*background: var\(--checkbox-halo-hover\)/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._draftsCheck_[\w-]+:has\(input:checked\):hover\s*\{[^}]*background: var\(--checkbox-on-halo-hover\)/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._draftsCheck_[\w-]+ > span\[aria-hidden\]\s*\{[^}]*border: 1px solid var\(--border-strong\);[^}]*background: transparent/s,
+    );
+    expect(ownerCss).toMatch(
+      /\._draftsDeletePicked_[\w-]+:disabled\s*\{[^}]*color: var\(--danger-disabled\);[^}]*background: transparent;[^}]*cursor: default/s,
+    );
+    // Stacked full width with the answer on top, and the reference's own
+    // greys on the way out.
+    expect(ownerCss).toMatch(/\._dialogActions_[\w-]+\s*\{[^}]*display: grid/s);
+    expect(ownerCss).toMatch(
+      /\._dialogActions_[\w-]+ \._secondaryButton_[\w-]+:hover:not\(:disabled\)\s*\{[^}]*background: var\(--icon-button-hover\)/s,
+    );
+  });
+
   it("keeps small tertiary copy readable on every light surface", () => {
     const tertiary = "#536471";
     expect(globalCss).toContain(`--text-tertiary: ${tertiary}`);

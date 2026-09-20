@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Icon } from "../../components/icons";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -13,18 +13,24 @@ function preview(contentMd: string): string {
 /**
  * The 草稿 view inside the compose dialog: the text the owner chose to keep
  * rather than publish, newest first, each one a press away from being
- * finished.
+ * finished. 编辑 turns it into a selection -- a checkbox per row, 全选, and a
+ * 删除 that stays out of reach until something is picked.
  */
 export function ComposeDrafts({
+  editing,
   instanceId,
+  onEditingChange,
   onOpenDraft,
 }: {
+  editing: boolean;
   instanceId: string | null;
+  onEditingChange: (editing: boolean) => void;
   onOpenDraft: (draft: KeptDraft) => void;
 }) {
   const [drafts, setDrafts] = useState<KeptDraft[]>(() =>
     listKeptDrafts(instanceId),
   );
+  const [picked, setPicked] = useState<ReadonlySet<string>>(() => new Set());
   const refresh = useCallback(
     () => setDrafts(listKeptDrafts(instanceId)),
     [instanceId],
@@ -35,6 +41,20 @@ export function ComposeDrafts({
     window.addEventListener("storage", refresh);
     return () => window.removeEventListener("storage", refresh);
   }, [refresh]);
+
+  // Nothing left to edit; and leaving the selection forgets it.
+  useEffect(() => {
+    if (drafts.length === 0 && editing) onEditingChange(false);
+  }, [drafts.length, editing, onEditingChange]);
+  useEffect(() => {
+    if (!editing) setPicked(new Set());
+  }, [editing]);
+
+  const pickedHere = useMemo(
+    () => drafts.filter((draft) => picked.has(draft.id)),
+    [drafts, picked],
+  );
+  const allPicked = drafts.length > 0 && pickedHere.length === drafts.length;
 
   // The reference splits this row between "Unsent posts" and "Scheduled".
   // Only the first exists here, so it takes the row; a second tab splits it
@@ -66,11 +86,36 @@ export function ComposeDrafts({
       <ol className={styles.draftsList}>
         {drafts.map((draft) => (
           <li key={draft.id}>
+            {editing ? (
+              // The halo is the only thing that answers the pointer; the box
+              // itself keeps its own colour, as the reference's does.
+              <label className={styles.draftsCheck}>
+                <input
+                  checked={picked.has(draft.id)}
+                  onChange={(event) =>
+                    setPicked((current) => {
+                      const next = new Set(current);
+                      if (event.target.checked) next.add(draft.id);
+                      else next.delete(draft.id);
+                      return next;
+                    })
+                  }
+                  type="checkbox"
+                />
+                <span aria-hidden="true">
+                  <Icon name="audience-check" />
+                </span>
+                <span className={styles.srOnly}>
+                  选择草稿：{preview(draft.contentMd).slice(0, 24)}
+                </span>
+              </label>
+            ) : null}
             {/* Two controls side by side rather than one inside the other:
-              a delete button nested in a row button is not a thing a
-              browser can dispatch unambiguously. */}
+                a delete button nested in a row button is not a thing a
+                browser can dispatch unambiguously. */}
             <button
               className={styles.draftsOpen}
+              disabled={editing}
               onClick={() => onOpenDraft(draft)}
               type="button"
             >
@@ -79,30 +124,69 @@ export function ComposeDrafts({
                 {new Date(draft.savedAt).toLocaleString("zh-CN")}
               </time>
             </button>
-            {/* Deleting was one press with nothing between it and the only
-              copy of that text. */}
-            <ConfirmDialog
-              confirmLabel="删除草稿"
-              danger
-              description="这段文字只存在这台浏览器里，删除后无法找回。"
-              onConfirm={() => {
-                dropKeptDraft(instanceId, draft.id);
-                refresh();
-              }}
-              title="删除这份草稿？"
-              trigger={
-                <button
-                  aria-label={`删除草稿：${preview(draft.contentMd).slice(0, 24)}`}
-                  className={styles.draftsDelete}
-                  type="button"
-                >
-                  <Icon name="delete" />
-                </button>
-              }
-            />
+            {editing ? null : (
+              // Deleting was one press with nothing between it and the only
+              // copy of that text.
+              <ConfirmDialog
+                confirmLabel="删除草稿"
+                danger
+                description="这段文字只存在这台浏览器里，删除后无法找回。"
+                onConfirm={() => {
+                  dropKeptDraft(instanceId, draft.id);
+                  refresh();
+                }}
+                title="删除这份草稿？"
+                trigger={
+                  <button
+                    aria-label={`删除草稿：${preview(draft.contentMd).slice(0, 24)}`}
+                    className={styles.draftsDelete}
+                    type="button"
+                  >
+                    <Icon name="delete" />
+                  </button>
+                }
+              />
+            )}
           </li>
         ))}
       </ol>
+      {editing ? (
+        <div className={styles.draftsSelection}>
+          <button
+            className={styles.draftsSelectAll}
+            onClick={() =>
+              setPicked(
+                allPicked ? new Set() : new Set(drafts.map((one) => one.id)),
+              )
+            }
+            type="button"
+          >
+            {allPicked ? "取消全选" : "全选"}
+          </button>
+          {/* Disabled until something is picked, so it cannot be hovered
+              either -- there is nothing for it to do yet. */}
+          <ConfirmDialog
+            confirmLabel="删除"
+            danger
+            description={`这 ${pickedHere.length} 段文字只存在这台浏览器里，删除后无法找回。`}
+            onConfirm={() => {
+              for (const one of pickedHere) dropKeptDraft(instanceId, one.id);
+              setPicked(new Set());
+              refresh();
+            }}
+            title="删除选中的草稿？"
+            trigger={
+              <button
+                className={styles.draftsDeletePicked}
+                disabled={pickedHere.length === 0}
+                type="button"
+              >
+                删除
+              </button>
+            }
+          />
+        </div>
+      ) : null}
     </>
   );
 }

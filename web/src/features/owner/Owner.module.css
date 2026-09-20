@@ -42,9 +42,16 @@
   background: var(--surface-hover);
 }
 
+.secondaryButton {
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
+}
+
 .dangerButton {
   color: #fff;
   background: var(--danger);
+  transition: background-color 0.2s;
 }
 
 .primaryButton:disabled,
@@ -827,11 +834,33 @@
   line-height: 1.5;
 }
 
+/* Stacked, full width, the answer on top -- the reference's confirm sheet. */
 .dialogActions {
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
   gap: var(--space-3);
   margin-block-start: var(--space-6);
+}
+
+.dialogActions .dangerButton {
+  background: var(--danger);
+}
+
+.dialogActions .dangerButton:hover:not(:disabled) {
+  background: var(--danger-hover);
+}
+
+.dialogActions .dangerButton:active:not(:disabled) {
+  background: var(--danger-pressed);
+}
+
+/* The reference keeps the border grey and only tints the ground. */
+.dialogActions .secondaryButton:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--icon-button-hover);
+}
+
+.dialogActions .secondaryButton:active:not(:disabled) {
+  background: var(--icon-button-pressed);
 }
 
 .locationTrigger {
@@ -1617,7 +1646,9 @@
 .pageDrafts {
   grid-column: 1 / -1;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .pageDraftsToggle {
@@ -1643,6 +1674,28 @@
 
 .pageDraftsToggle:active {
   background: var(--audience-pressed);
+}
+
+.pageDraftsEdit {
+  min-block-size: 2rem;
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: var(--ink-button-contrast);
+  background: var(--ink-button);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.pageDraftsEdit:hover,
+.pageDraftsEdit:focus-visible {
+  background: var(--ink-button-hover);
+}
+
+.pageDraftsEdit:active {
+  background: var(--ink-button-pressed);
 }
 
 .pageDraftsToggle small {
@@ -1853,4 +1906,146 @@
   font-size: var(--text-sm);
   line-height: 1.7;
   text-align: center;
+}
+
+/* The checkbox, from the reference: a 20px rounded box that keeps its own
+   colour, inside a round 36px halo that is the only thing answering the
+   pointer. Checked, the box fills with the accent and the tick appears. */
+.draftsCheck {
+  position: relative;
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  align-self: center;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.draftsCheck input {
+  position: absolute;
+  inset: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.draftsCheck > span[aria-hidden] {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.25rem;
+  background: transparent;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
+}
+
+.draftsCheck svg {
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+  color: var(--accent-contrast);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease-out);
+}
+
+.draftsCheck:hover {
+  background: var(--checkbox-halo-hover);
+}
+
+.draftsCheck:active {
+  background: var(--checkbox-halo-pressed);
+}
+
+.draftsCheck:has(input:checked) > span[aria-hidden] {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.draftsCheck:has(input:checked) svg {
+  opacity: 1;
+}
+
+.draftsCheck:has(input:checked):hover {
+  background: var(--checkbox-on-halo-hover);
+}
+
+.draftsCheck:has(input:checked):active {
+  background: var(--checkbox-on-halo-pressed);
+}
+
+.draftsCheck:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A row being picked is not a row being opened. */
+.draftsOpen:disabled {
+  cursor: default;
+}
+
+.draftsList li:has(.draftsOpen:disabled):hover {
+  background: transparent;
+}
+
+/* 全选 on one side, 删除 on the other, as the reference has it. */
+.draftsSelection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-block-start: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-3);
+}
+
+.draftsSelectAll,
+.draftsDeletePicked {
+  min-block-size: 2.25rem;
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-3);
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.draftsSelectAll {
+  color: var(--accent);
+}
+
+.draftsSelectAll:hover,
+.draftsSelectAll:focus-visible {
+  background: var(--audience-hover);
+}
+
+.draftsSelectAll:active {
+  background: var(--audience-pressed);
+}
+
+.draftsDeletePicked {
+  color: var(--danger);
+}
+
+.draftsDeletePicked:hover:not(:disabled),
+.draftsDeletePicked:focus-visible {
+  background: var(--danger-soft);
+}
+
+.draftsDeletePicked:active:not(:disabled) {
+  background: var(--danger-soft-pressed);
+}
+
+/* Nothing picked, so nothing for it to do: it says so, and does not answer
+   the pointer at all. */
+.draftsDeletePicked:disabled {
+  color: var(--danger-disabled);
+  background: transparent;
+  cursor: default;
 }

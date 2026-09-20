@@ -1604,6 +1604,70 @@ describe("owner composing flow", () => {
     expect(window.location.pathname).toBe("/owner/compose");
   });
 
+  // The reference's edit mode: a checkbox per row, 全选, and a 删除 that is
+  // out of reach until something is picked.
+  it("picks and deletes drafts from the list's edit mode", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    keepDraft(instance, "第一段", new Date("2026-09-20T01:00:00.000Z"));
+    keepDraft(instance, "第二段", new Date("2026-09-20T02:00:00.000Z"));
+    installApi();
+    render(<App />);
+
+    await screen.findByLabelText("此刻想到什么？");
+    fireEvent.click(screen.getByRole("button", { name: /草稿/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+
+    // Nothing picked: the delete is disabled, so it cannot even be pressed.
+    const remove = screen.getByRole("button", { name: "删除" });
+    expect(remove).toBeDisabled();
+    fireEvent.click(remove);
+    expect(
+      screen.queryByRole("dialog", { name: "删除选中的草稿？" }),
+    ).toBeNull();
+
+    // A row is for picking now, not for opening. `^` because the row's own
+    // delete trigger is named 删除草稿：第一段 once editing is done.
+    expect(screen.getByRole("button", { name: /^第一段/ })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "全选" }));
+    expect(
+      screen
+        .getAllByRole("checkbox")
+        .every((box) => (box as HTMLInputElement).checked),
+    ).toBe(true);
+    expect(
+      screen.getByRole("button", { name: "取消全选" }),
+    ).toBeInTheDocument();
+    expect(remove).toBeEnabled();
+
+    fireEvent.click(screen.getByLabelText(/选择草稿：第一段/));
+    expect(screen.getByRole("button", { name: "全选" })).toBeInTheDocument();
+
+    fireEvent.click(remove);
+    expect(
+      await screen.findByRole("dialog", { name: "删除选中的草稿？" }),
+    ).toBeInTheDocument();
+    // The safe answer holds the opening focus even though 删除 reads first.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "保留" })).toHaveFocus(),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: "删除选中的草稿？" }),
+      ).getByRole("button", { name: "删除" }),
+    );
+
+    await waitFor(() =>
+      expect(listKeptDrafts(instance).map((draft) => draft.contentMd)).toEqual([
+        "第一段",
+      ]),
+    );
+    // One left, and it is openable again once editing is done.
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    expect(screen.getByRole("button", { name: /^第一段/ })).toBeEnabled();
+  });
+
   // Editing a draft used to leave the original behind: 草稿 matches on
   // content, so "aaa" edited to "aaa1" filed a second entry beside it.
   it("replaces the draft it opened rather than filing a second one", async () => {
