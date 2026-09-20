@@ -24,6 +24,7 @@ import {
   composeDraftKey,
   loadComposeDraft,
 } from "./draft";
+import { keepDraft, listKeptDrafts } from "./drafts";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
 const instance = "0123456789abcdef0123456789abcdef";
@@ -1480,6 +1481,73 @@ describe("owner composing flow", () => {
     expect(window.confirm).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "丢弃并退出" }));
     await waitFor(() => expect(window.location.pathname).toBe("/"));
+  });
+
+  // The compose dialog carries the exit on one side of its header and
+  // Drafts on the other; pressing Drafts turns the same dialog into the
+  // list instead of stacking a second one on it.
+  it("carries the exit and the drafts list in the compose dialog header", async () => {
+    preauthenticate();
+    keepDraft(instance, "上周没写完的一段", new Date("2026-09-18T02:00:00Z"));
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(min-width: 720px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    installApi();
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("link", { name: "发布" }));
+    const dialog = await screen.findByRole("dialog", { name: "发布 Moment" });
+    const drafts = within(dialog).getByRole("button", { name: /草稿/ });
+    expect(drafts).toHaveTextContent("1");
+    expect(
+      within(dialog).getByRole("button", { name: "关闭发布" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(drafts);
+    const list = await screen.findByRole("dialog", { name: "草稿" });
+    // The composer is still mounted behind the list, holding its text.
+    expect(within(list).getByLabelText("此刻想到什么？")).toBeInTheDocument();
+
+    fireEvent.click(within(list).getByText("上周没写完的一段"));
+    await waitFor(() =>
+      expect(within(dialog).getByLabelText("此刻想到什么？")).toHaveValue(
+        "上周没写完的一段",
+      ),
+    );
+    expect(screen.queryByRole("dialog", { name: "草稿" })).toBeNull();
+  });
+
+  it("files a kept draft under 草稿 and stops re-offering it as recovery", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner/compose");
+    installApi();
+    const { unmount } = render(<App />);
+
+    fireEvent.change(await screen.findByLabelText("此刻想到什么？"), {
+      target: { value: "留到以后再发" },
+    });
+    fireEvent.click(screen.getAllByRole("link", { name: "搜索" })[0]);
+    await keepDraftAndResumeNavigation();
+    await waitFor(() => expect(window.location.pathname).toBe("/search"));
+
+    expect(listKeptDrafts(instance).map((draft) => draft.contentMd)).toEqual([
+      "留到以后再发",
+    ]);
+
+    // Filed text is not lost text: the recovery notice would otherwise
+    // offer the same paragraph back above a list that already holds it.
+    unmount();
+    window.history.replaceState({}, "", "/owner/compose");
+    render(<App />);
+    expect(await screen.findByLabelText("此刻想到什么？")).toHaveValue("");
+    expect(screen.queryByText("发现一段未发布草稿")).toBeNull();
   });
 
   it("clears the hidden inline surface after a recovered page draft publishes", async () => {

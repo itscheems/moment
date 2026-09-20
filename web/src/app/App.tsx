@@ -3,10 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { PublicApi, type SiteIdentity } from "../api/public";
 import { AppShell } from "../components/AppShell";
+import { Icon } from "../components/icons";
 import { ShellState } from "../components/ShellState";
 import { DetailPage } from "../features/timeline/DetailPage";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { Composer, type ComposerHandle } from "../features/owner/Composer";
+import { ComposeDrafts } from "../features/owner/ComposeDrafts";
+import { listKeptDrafts } from "../features/owner/drafts";
 import { EditPage } from "../features/owner/EditPage";
 import { LoginPage } from "../features/owner/LoginPage";
 import { MentionProvider } from "./mentions";
@@ -119,7 +122,14 @@ function PublicApp() {
     route.id === "home" ? displayLocation.search : "",
   );
   const overlayComposer = useRef<ComposerHandle>(null);
+  const composeDialogRef = useRef<HTMLDivElement>(null);
+  const draftsBackRef = useRef<HTMLButtonElement>(null);
+  const draftsTriggerRef = useRef<HTMLButtonElement>(null);
   const [composeExitOpen, setComposeExitOpen] = useState(false);
+  // The dialog switches between composing and the drafts list without
+  // opening another dialog.
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [keptDrafts, setKeptDrafts] = useState(0);
   const siteIdentityReady = !siteLoading && !siteError;
   // Accounts arrived, so being signed in stopped meaning owning the site.
   // Every owner-only surface asks the account instead of the session state. A
@@ -148,6 +158,30 @@ function PublicApp() {
     }
     closeOverlayComposer();
   };
+
+  // The count on the header action, read whenever the dialog opens or the
+  // list closes -- the two moments it can have changed.
+  useEffect(() => {
+    if (!overlayCompose) {
+      setDraftsOpen(false);
+      return;
+    }
+    setKeptDrafts(listKeptDrafts(site.instanceId).length);
+  }, [draftsOpen, overlayCompose, site.instanceId]);
+
+  // Turning the dialog over takes the pressed control with it, and focus
+  // with nowhere to go falls back to the popup -- which then wears a ring
+  // around the whole dialog. It lands on the other face's way back instead.
+  const draftsWereOpen = useRef(false);
+  useEffect(() => {
+    if (!overlayCompose) {
+      draftsWereOpen.current = false;
+      return;
+    }
+    if (draftsOpen === draftsWereOpen.current) return;
+    draftsWereOpen.current = draftsOpen;
+    (draftsOpen ? draftsBackRef : draftsTriggerRef).current?.focus();
+  }, [draftsOpen, overlayCompose]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -458,20 +492,87 @@ function PublicApp() {
           <Dialog.Portal>
             <Dialog.Backdrop className={styles.composeBackdrop} />
             <Dialog.Viewport className={styles.composeViewport}>
-              <Dialog.Popup className={styles.composeDialog}>
-                <Dialog.Title className={styles.srOnly}>
-                  发布 Moment
-                </Dialog.Title>
+              <Dialog.Popup
+                className={styles.composeDialog}
+                // Focus the textarea so the owner can write immediately.
+                // Base UI otherwise focuses the first tabbable control.
+                initialFocus={() =>
+                  composeDialogRef.current?.querySelector("textarea") ??
+                  composeDialogRef.current
+                }
+                ref={composeDialogRef}
+              >
                 {ownerCapable ? (
-                  <Composer
-                    quotedPostId={quotedPostId}
-                    ref={overlayComposer}
-                    site={site}
-                    variant="page"
-                  />
+                  <header className={styles.composeDialogHeader}>
+                    {draftsOpen ? (
+                      <button
+                        aria-label="返回发布"
+                        className={styles.composeDialogIcon}
+                        onClick={() => setDraftsOpen(false)}
+                        ref={draftsBackRef}
+                        type="button"
+                      >
+                        <Icon name="back" />
+                      </button>
+                    ) : (
+                      <button
+                        aria-label="关闭发布"
+                        className={styles.composeDialogIcon}
+                        onClick={requestOverlayComposerClose}
+                        type="button"
+                      >
+                        <Icon name="close" />
+                      </button>
+                    )}
+                    {/* Show the title in the drafts list and retain an
+                        accessible dialog name while composing. */}
+                    <Dialog.Title
+                      className={draftsOpen ? undefined : styles.srOnly}
+                    >
+                      {draftsOpen ? "草稿" : "发布 Moment"}
+                    </Dialog.Title>
+                    {draftsOpen ? null : (
+                      <button
+                        className={styles.composeDialogDrafts}
+                        onClick={() => setDraftsOpen(true)}
+                        ref={draftsTriggerRef}
+                        type="button"
+                      >
+                        草稿
+                        {keptDrafts > 0 ? <small>{keptDrafts}</small> : null}
+                      </button>
+                    )}
+                  </header>
                 ) : (
-                  <OwnerLogin embedded site={site} />
+                  <Dialog.Title className={styles.srOnly}>
+                    发布 Moment
+                  </Dialog.Title>
                 )}
+                {!ownerCapable ? (
+                  <OwnerLogin embedded site={site} />
+                ) : draftsOpen ? (
+                  <ComposeDrafts
+                    instanceId={site.instanceId}
+                    onOpenDraft={(draft) => {
+                      overlayComposer.current?.loadDraft(draft.contentMd);
+                      setDraftsOpen(false);
+                    }}
+                  />
+                ) : null}
+                {/* The composer stays mounted behind the list: it holds the
+                    text, the media and the upload in flight, and a draft
+                    opened from the list is handed to it through its own
+                    ref. */}
+                <div hidden={draftsOpen}>
+                  {ownerCapable ? (
+                    <Composer
+                      quotedPostId={quotedPostId}
+                      ref={overlayComposer}
+                      site={site}
+                      variant="page"
+                    />
+                  ) : null}
+                </div>
               </Dialog.Popup>
             </Dialog.Viewport>
           </Dialog.Portal>

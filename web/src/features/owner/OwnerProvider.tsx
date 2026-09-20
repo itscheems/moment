@@ -17,6 +17,7 @@ import {
 import { PublicApiError, type Account } from "../../api/public";
 import { notify } from "../../components/Feedback";
 import { clearComposeDraft } from "./draft";
+import { clearKeptDrafts } from "./drafts";
 import { providerLabel, PROVIDER_NAME_PATTERN } from "./providers";
 
 const SESSION_KEY = "moment.owner.session.v1";
@@ -582,6 +583,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       clearSession("guest", marker);
       broadcast({ type: "clear-session", marker });
       clearComposeDraft(instanceId, { reason: "logout" });
+      clearKeptDrafts(instanceId);
     },
     [broadcast, clearSession],
   );

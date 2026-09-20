@@ -691,6 +691,11 @@
     transform var(--motion-dialog) var(--ease-out);
 }
 
+.describePopup:focus,
+.describePopup:focus-visible {
+  outline: none;
+}
+
 .describePopup[data-starting-style],
 .describePopup[data-ending-style] {
   opacity: 0;

@@ -12,6 +12,7 @@ import { NavigationProvider } from "../../app/navigation";
 import { makeAccountLimits } from "../../test/accountFixtures";
 import { AccountAccess } from "./AccountAccess";
 import { OwnerProvider } from "./OwnerProvider";
+import { keepDraft, listKeptDrafts } from "./drafts";
 
 const instance = "0123456789abcdef0123456789abcdef";
 const sessionKey = "moment.owner.session.v1";
@@ -145,11 +146,15 @@ describe("signing out from settings", () => {
     const { calls } = installApi(() =>
       json({ data: { logged_out: true }, meta: { request_id: "req_out" } }),
     );
+    keepDraft(instance, "签退前写的一段");
     const onSignedOut = renderAccess();
 
     fireEvent.click(await screen.findByRole("button", { name: "退出登录" }));
 
     await waitFor(() => expect(onSignedOut).toHaveBeenCalled());
+    // Drafts are text the owner has not published; they leave with the
+    // session the way the recovery slot does.
+    expect(listKeptDrafts(instance)).toEqual([]);
     expect(calls).toContain("DELETE /api/v1/login/session");
     // The bulk control posts to the account's session collection. Reaching it
     // from here would mean the ordinary button had the drastic effect.

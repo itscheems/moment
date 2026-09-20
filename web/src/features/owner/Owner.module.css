@@ -1653,3 +1653,116 @@
     padding: 4.5rem var(--space-4) var(--space-8);
   }
 }
+
+/* The 草稿 view inside the compose dialog. Rows are the whole target, and
+   they say so under the pointer -- the hairline between them is not an
+   affordance, the ground lifting under the cursor is. */
+.draftsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.draftsList li {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  border-block-start: 1px solid var(--border-subtle);
+  padding-inline: var(--space-2);
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.draftsList li:first-child {
+  border-block-start: 0;
+}
+
+.draftsList li:hover,
+.draftsList li:focus-within {
+  background: var(--surface-hover);
+}
+
+.draftsOpen {
+  min-inline-size: 0;
+  display: grid;
+  flex: 1 1 auto;
+  gap: var(--space-1);
+  border: 0;
+  border-radius: var(--radius-action);
+  padding: var(--space-3) var(--space-2);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+
+.draftsOpen span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.draftsOpen time {
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.draftsDelete {
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  align-self: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.draftsDelete:hover,
+.draftsDelete:focus-visible {
+  color: var(--danger);
+  background: var(--surface-hover);
+}
+
+.draftsDelete:active {
+  transform: scale(0.9);
+}
+
+.draftsDelete svg {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+}
+
+/* Quiet until the row is under the pointer, and always there for a finger
+   or a keyboard, which have no hover to reveal it with. */
+@media (hover: hover) {
+  .draftsDelete {
+    opacity: 0;
+  }
+
+  .draftsList li:hover .draftsDelete,
+  .draftsDelete:focus-visible {
+    opacity: 1;
+  }
+}
+
+.draftsEmpty {
+  margin: 0;
+  padding: var(--space-6) var(--space-4) var(--space-8);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  text-align: center;
+}

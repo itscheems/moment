@@ -71,6 +71,7 @@ import {
   type ComposeDraft,
   type ComposeDraftClearEvent,
 } from "./draft";
+import { dropKeptDraftByContent, keepDraft, listKeptDrafts } from "./drafts";
 import { useOwner } from "./OwnerProvider";
 import { OwnerLogin } from "./OwnerLogin";
 import { announceOwnerPost } from "./postEvents";
@@ -141,6 +142,8 @@ export interface ComposerHandle {
   hasUnpublishedChanges: () => boolean;
   leaveAndKeepDraft: () => void;
   leaveAndDiscard: () => void;
+  /** Put a kept draft back in the editor, ready to finish. */
+  loadDraft: (contentMd: string) => void;
 }
 
 interface ComposerProps {
@@ -173,9 +176,19 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [focusWithin, setFocusWithin] = useState(false);
     const [audienceOpen, setAudienceOpen] = useState(false);
     const audienceCloseFrameRef = useRef<number | null>(null);
-    const [draft, setDraft] = useState<ComposeDraft | null>(() =>
-      variant === "edit" ? null : loadComposeDraft(site.instanceId),
-    );
+    const [draft, setDraft] = useState<ComposeDraft | null>(() => {
+      if (variant === "edit") return null;
+      const recovered = loadComposeDraft(site.instanceId);
+      if (!recovered) return null;
+      // Text the owner already filed under 草稿 is not lost text, so the
+      // composer does not ask about it a second time. Without this the
+      // recovery notice and the 草稿 list both offered the same paragraph
+      // back, one above the other.
+      const filed = listKeptDrafts(site.instanceId).some(
+        (kept) => kept.fingerprint === recovered.fingerprint,
+      );
+      return filed ? null : recovered;
+    });
     const [dirty, setDirty] = useState(false);
     const [pending, setPending] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -411,6 +424,10 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               : createComposeDraft(content, activeDraftRef.current?.savedAt);
           activeDraftRef.current = current;
           saveComposeDraft(site.instanceId, current);
+          // Keeping is a decision, so it also files a copy under 草稿 --
+          // the recovery slot only ever holds the most recent text, and a
+          // second keep would otherwise erase the first.
+          keepDraft(site.instanceId, content);
         },
         leaveAndDiscard: () => {
           allowLeaveRef.current = true;
@@ -420,11 +437,28 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               reason: "discarded",
               draft: current,
             });
+            dropKeptDraftByContent(site.instanceId, current.contentMd);
           }
           clearMedia();
           setLocation(initialLocation);
           setLocationChanged(false);
           setVisibility(initialVisibility);
+        },
+        loadDraft: (contentMd: string) => {
+          const restored = createComposeDraft(
+            contentMd,
+            activeDraftRef.current?.savedAt,
+          );
+          activeDraftRef.current = restored;
+          setActiveDraft(restored);
+          saveComposeDraft(site.instanceId, restored);
+          setContent(contentMd);
+          setDraft(null);
+          dirtyRef.current = true;
+          setDirty(true);
+          allowLeaveRef.current = false;
+          setAnnouncement("已载入草稿；图片需要重新选择。");
+          window.requestAnimationFrame(() => textareaRef.current?.focus());
         },
       }),
       [
@@ -817,6 +851,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               reason: "discarded",
               draft: currentDraft,
             });
+            if (variant === "page") {
+              dropKeptDraftByContent(site.instanceId, currentDraft.contentMd);
+            }
           }
           activeDraftRef.current = null;
           setActiveDraft(null);
@@ -830,6 +867,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           setDirty(false);
         } else if (currentDraft) {
           saveComposeDraft(site.instanceId, currentDraft);
+          // Keeping files a copy under 草稿, because the recovery slot only
+          // ever holds the most recent text and the next keep would erase
+          // this one.
+          //
+          // The compose screen only. The inline box asks this same question
+          // when it hands off to the full composer -- pressing n over the
+          // timeline routes to /owner/compose through the same blocker --
+          // and that is not a decision to shelve anything, it is the same
+          // sentence continuing on a bigger surface.
+          if (variant === "page") {
+            keepDraft(site.instanceId, currentDraft.contentMd);
+          }
         }
       }
 
@@ -934,6 +983,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             reason: "published",
             draft: submittedDraft,
           });
+          dropKeptDraftByContent(site.instanceId, submittedDraft.contentMd);
         }
         announceOwnerPost({
           kind: post ? "updated" : repostOnly ? "reordered" : "created",
