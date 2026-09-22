@@ -213,16 +213,8 @@ export function MediaComposer({
             : isVideoMimeType(item.mimeType)
               ? `未提供视频描述，第 ${index + 1} 项，共 ${items.length} 项`
               : `未提供图片描述，第 ${index + 1} 张，共 ${items.length} 张`,
-      description:
-        item.altMode === "provided"
-          ? item.altText
-          : item.altMode === "decorative"
-            ? isVideoMimeType(item.mimeType)
-              ? "这是一段明确标记为装饰用途的视频。"
-              : "这是一张明确标记为装饰用途的图片。"
-            : isVideoMimeType(item.mimeType)
-              ? "这段视频尚未填写描述。"
-              : "这张图片尚未填写描述。",
+      // Only a description the author wrote; see ImageGrid.
+      description: item.altMode === "provided" ? item.altText : "",
       kind: videoReady ? "video" : "image",
       posterSrc:
         videoReady && item.mediaId ? mediaPosterUrl(item.mediaId) : null,
