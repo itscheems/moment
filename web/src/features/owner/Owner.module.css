@@ -27,8 +27,10 @@
   background: var(--button-primary);
 }
 
-.primaryButton:hover {
-  background: var(--button-primary-hover);
+@media (hover: hover) {
+  .primaryButton:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .secondaryButton {
@@ -37,9 +39,11 @@
   background: transparent;
 }
 
-.secondaryButton:hover {
-  border-color: var(--accent);
-  background: var(--surface-hover);
+@media (hover: hover) {
+  .secondaryButton:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
 }
 
 .secondaryButton {
@@ -99,10 +103,16 @@
   background: transparent;
 }
 
-.loginGate .oauthButton:hover:not(:disabled),
 .loginGate .oauthButton:focus-visible:not(:disabled) {
   border-color: var(--accent);
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .loginGate .oauthButton:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
 }
 
 .loginGate .oauthButton:disabled {
@@ -217,9 +227,14 @@
   font-size: var(--text-sm);
 }
 
-.loginMethodSwitch:hover:not(:disabled),
 .loginMethodSwitch:focus-visible {
   background: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .loginMethodSwitch:hover:not(:disabled) {
+    background: var(--accent-soft);
+  }
 }
 
 .inlineNotice {
@@ -383,9 +398,14 @@
   text-align: start;
 }
 
-.mentionSuggestion:hover,
 .mentionSuggestion[aria-selected="true"] {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .mentionSuggestion:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .mentionSuggestion > :first-child {
@@ -557,10 +577,16 @@
   cursor: pointer;
 }
 
-.quoteComposerPreview > header button:hover:not(:disabled),
 .quoteComposerPreview > header button:focus-visible {
   color: var(--text-primary);
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .quoteComposerPreview > header button:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
 }
 
 .quoteComposerPreview > header button svg,
@@ -630,8 +656,10 @@
     opacity var(--motion-fast) var(--ease-out);
 }
 
-.composerPublishButton:hover:not(:disabled) {
-  background: var(--button-primary-hover);
+@media (hover: hover) {
+  .composerPublishButton:hover:not(:disabled) {
+    background: var(--button-primary-hover);
+  }
 }
 
 .composerPublishButton:active:not(:disabled) {
@@ -681,11 +709,17 @@
   block-size: 1.15rem;
 }
 
-.ownerMenuTrigger:hover,
 .ownerMenuTrigger:focus-visible,
 .ownerMenuTrigger[data-popup-open] {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .ownerMenuTrigger:hover {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
 }
 
 .ownerMenuPositioner {
@@ -845,8 +879,10 @@
   background: var(--danger);
 }
 
-.dialogActions .dangerButton:hover:not(:disabled) {
-  background: var(--danger-hover);
+@media (hover: hover) {
+  .dialogActions .dangerButton:hover:not(:disabled) {
+    background: var(--danger-hover);
+  }
 }
 
 .dialogActions .dangerButton:active:not(:disabled) {
@@ -854,9 +890,11 @@
 }
 
 /* The reference keeps the border grey and only tints the ground. */
-.dialogActions .secondaryButton:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background: var(--icon-button-hover);
+@media (hover: hover) {
+  .dialogActions .secondaryButton:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--icon-button-hover);
+  }
 }
 
 .dialogActions .secondaryButton:active:not(:disabled) {
@@ -876,10 +914,15 @@
   cursor: pointer;
 }
 
-.locationTrigger:hover:not(:disabled),
 .locationTrigger:focus-visible,
 .locationTrigger[data-popup-open] {
   background: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .locationTrigger:hover:not(:disabled) {
+    background: var(--accent-soft);
+  }
 }
 
 .locationTrigger:disabled {
@@ -932,9 +975,14 @@
   cursor: pointer;
 }
 
-.selectedLocation button:hover,
 .selectedLocation button:focus-visible {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+@media (hover: hover) {
+  .selectedLocation button:hover {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
 }
 
 .locationBackdrop {
@@ -1016,9 +1064,14 @@
   padding: 0;
 }
 
-.locationClose:hover,
 .locationClose:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .locationClose:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .locationClose svg {
@@ -1081,11 +1134,16 @@
   cursor: pointer;
 }
 
-.locationNearby:hover:not(:disabled),
 .locationNearby:focus-visible,
-.locationResult:hover,
 .locationResult:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .locationNearby:hover:not(:disabled),
+  .locationResult:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .locationNearby > span:first-child,
@@ -1393,10 +1451,16 @@
   cursor: pointer;
 }
 
-.composerLinkRemove:hover:not(:disabled),
 .composerLinkRemove:focus-visible {
   color: var(--text-primary);
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .composerLinkRemove:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
 }
 
 .composerLinkRemove:disabled {
@@ -1588,9 +1652,14 @@
   block-size: 1.25rem;
 }
 
-.loginBack:hover,
 .loginBack:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .loginBack:hover {
+    background: var(--surface-hover);
+  }
 }
 
 /* 1280 is one of this project's two shell breakpoints, so the tablet range gets
@@ -1631,9 +1700,14 @@
       0 4px 12px rgb(15 20 25 / 12%);
   }
 
-  .loginBack:hover,
   .loginBack:focus-visible {
     background: #eff3f4;
+  }
+
+  @media (hover: hover) {
+    .loginBack:hover {
+      background: #eff3f4;
+    }
   }
 
   .headlineBlock {
@@ -1675,9 +1749,14 @@
   transition: background-color 0.2s;
 }
 
-.pageDraftsToggle:hover,
 .pageDraftsToggle:focus-visible {
   background: var(--audience-hover);
+}
+
+@media (hover: hover) {
+  .pageDraftsToggle:hover {
+    background: var(--audience-hover);
+  }
 }
 
 .pageDraftsToggle:active {
@@ -1697,9 +1776,14 @@
   transition: background-color 0.2s;
 }
 
-.pageDraftsEdit:hover,
 .pageDraftsEdit:focus-visible {
   background: var(--ink-button-hover);
+}
+
+@media (hover: hover) {
+  .pageDraftsEdit:hover {
+    background: var(--ink-button-hover);
+  }
 }
 
 .pageDraftsEdit:active {
@@ -1769,8 +1853,10 @@
   transition: background-color 0.2s;
 }
 
-.draftsTabs button:hover {
-  background: var(--icon-button-hover);
+@media (hover: hover) {
+  .draftsTabs button:hover {
+    background: var(--icon-button-hover);
+  }
 }
 
 .draftsTabs button[aria-selected="true"] {
@@ -1826,9 +1912,14 @@
   border-block-start: 0;
 }
 
-.draftsList li:hover,
 .draftsList li:focus-within {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .draftsList li:hover {
+    background: var(--surface-hover);
+  }
 }
 
 /* One element for both states: opening a draft and picking one are the
@@ -1891,10 +1982,16 @@
     background-color 0.2s;
 }
 
-.draftsDelete:hover,
 .draftsDelete:focus-visible {
   color: var(--danger);
   background: var(--icon-button-hover);
+}
+
+@media (hover: hover) {
+  .draftsDelete:hover {
+    color: var(--danger);
+    background: var(--icon-button-hover);
+  }
 }
 
 .draftsDelete:active {
@@ -1987,12 +2084,16 @@
   transition: opacity 0.15s var(--ease-out);
 }
 
-.draftsRow[data-editing] .draftsCheck:hover {
-  background: var(--checkbox-halo-hover);
+@media (hover: hover) {
+  .draftsRow[data-editing] .draftsCheck:hover {
+    background: var(--checkbox-halo-hover);
+  }
 }
 
-.draftsRow[data-editing]:active .draftsCheck:hover {
-  background: var(--checkbox-halo-pressed);
+@media (hover: hover) {
+  .draftsRow[data-editing]:active .draftsCheck:hover {
+    background: var(--checkbox-halo-pressed);
+  }
 }
 
 .draftsRow[aria-checked="true"] .draftsCheck > span {
@@ -2004,12 +2105,16 @@
   opacity: 1;
 }
 
-.draftsRow[aria-checked="true"] .draftsCheck:hover {
-  background: var(--checkbox-on-halo-hover);
+@media (hover: hover) {
+  .draftsRow[aria-checked="true"] .draftsCheck:hover {
+    background: var(--checkbox-on-halo-hover);
+  }
 }
 
-.draftsRow[aria-checked="true"]:active .draftsCheck:hover {
-  background: var(--checkbox-on-halo-pressed);
+@media (hover: hover) {
+  .draftsRow[aria-checked="true"]:active .draftsCheck:hover {
+    background: var(--checkbox-on-halo-pressed);
+  }
 }
 
 /* The row's own delete folds away while editing, where the bottom bar does
@@ -2045,9 +2150,14 @@
   color: var(--accent);
 }
 
-.draftsSelectAll:hover,
 .draftsSelectAll:focus-visible {
   background: var(--audience-hover);
+}
+
+@media (hover: hover) {
+  .draftsSelectAll:hover {
+    background: var(--audience-hover);
+  }
 }
 
 .draftsSelectAll:active {
@@ -2058,9 +2168,14 @@
   color: var(--danger);
 }
 
-.draftsDeletePicked:hover:not(:disabled),
 .draftsDeletePicked:focus-visible {
   background: var(--danger-soft);
+}
+
+@media (hover: hover) {
+  .draftsDeletePicked:hover:not(:disabled) {
+    background: var(--danger-soft);
+  }
 }
 
 .draftsDeletePicked:active:not(:disabled) {

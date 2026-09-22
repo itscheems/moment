@@ -16,9 +16,14 @@
   text-decoration: none;
 }
 
-.surface:hover,
 .surface:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .surface:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .media {
@@ -141,9 +146,14 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.play:hover svg,
 .play:focus-visible svg {
   background: rgb(0 0 0 / 85%);
+}
+
+@media (hover: hover) {
+  .play:hover svg {
+    background: rgb(0 0 0 / 85%);
+  }
 }
 
 .frame {
@@ -173,9 +183,14 @@
   text-decoration: none;
 }
 
-.sourceLink:hover,
 .sourceLink:focus-visible {
   color: var(--accent);
+}
+
+@media (hover: hover) {
+  .sourceLink:hover {
+    color: var(--accent);
+  }
 }
 
 .sourceLink svg {

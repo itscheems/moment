@@ -171,10 +171,16 @@
   background: transparent;
 }
 
-.exitSecondary:hover,
 .exitSecondary:focus-visible {
   border-color: var(--accent);
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .exitSecondary:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
 }
 
 .exitDanger {
@@ -183,9 +189,14 @@
   background: var(--danger);
 }
 
-.exitDanger:hover,
 .exitDanger:focus-visible {
   filter: brightness(0.94);
+}
+
+@media (hover: hover) {
+  .exitDanger:hover {
+    filter: brightness(0.94);
+  }
 }
 
 /* Keep the exit and drafts actions at opposite sides of the compose header.
@@ -222,9 +233,14 @@
   transition: background-color 0.2s;
 }
 
-.composeDialogIcon:hover,
 .composeDialogIcon:focus-visible {
   background: var(--icon-button-hover);
+}
+
+@media (hover: hover) {
+  .composeDialogIcon:hover {
+    background: var(--icon-button-hover);
+  }
 }
 
 .composeDialogIcon:active {
@@ -260,9 +276,14 @@
   transition: background-color 0.2s;
 }
 
-.composeDialogDrafts:hover,
 .composeDialogDrafts:focus-visible {
   background: var(--audience-hover);
+}
+
+@media (hover: hover) {
+  .composeDialogDrafts:hover {
+    background: var(--audience-hover);
+  }
 }
 
 .composeDialogDrafts:active {
@@ -302,9 +323,14 @@
   transition: background-color 0.2s;
 }
 
-.composeDialogEdit:hover,
 .composeDialogEdit:focus-visible {
   background: var(--ink-button-hover);
+}
+
+@media (hover: hover) {
+  .composeDialogEdit:hover {
+    background: var(--ink-button-hover);
+  }
 }
 
 .composeDialogEdit:active {

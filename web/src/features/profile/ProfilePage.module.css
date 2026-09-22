@@ -68,11 +68,16 @@
   padding-inline: var(--space-4);
 }
 
-.profileActions > button:hover,
 .profileActions > button:focus-visible,
-.profileActions > a:hover,
 .profileActions > a:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .profileActions > button:hover,
+  .profileActions > a:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .profileActions > button svg,

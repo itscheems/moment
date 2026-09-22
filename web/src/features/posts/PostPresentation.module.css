@@ -23,8 +23,10 @@
   }
 }
 
-.post:not(.detail):hover {
-  background: #f7f7f7;
+@media (hover: hover) {
+  .post:not(.detail):hover {
+    background: #f7f7f7;
+  }
 }
 
 .post.timelineDensity {
@@ -76,9 +78,14 @@
   transition: filter var(--motion-fast) var(--ease-out);
 }
 
-.identityLink:hover,
 .identityLink:focus-visible {
   filter: brightness(0.88);
+}
+
+@media (hover: hover) {
+  .identityLink:hover {
+    filter: brightness(0.88);
+  }
 }
 
 .avatar,
@@ -161,10 +168,16 @@
   text-overflow: ellipsis;
 }
 
-.nameLink:hover strong,
 .nameLink:focus-visible strong {
   text-decoration: underline;
   text-underline-offset: 0.15em;
+}
+
+@media (hover: hover) {
+  .nameLink:hover strong {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
 }
 
 .bylineIdentity a {
@@ -175,11 +188,18 @@
   text-overflow: ellipsis;
 }
 
-.bylineIdentity a:hover,
 .bylineIdentity a:focus-visible {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 0.18em;
+}
+
+@media (hover: hover) {
+  .bylineIdentity a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
 }
 
 .usernameLink {
@@ -218,9 +238,14 @@
   block-size: 1em;
 }
 
-.bylineIdentity .usernameLink:hover,
 .bylineIdentity .usernameLink:focus-visible {
   text-decoration: none;
+}
+
+@media (hover: hover) {
+  .bylineIdentity .usernameLink:hover {
+    text-decoration: none;
+  }
 }
 
 .timeLink {
@@ -342,11 +367,17 @@
     background var(--motion-fast) var(--ease-out);
 }
 
-.postLocationTrigger:hover,
 .postLocationTrigger:focus-visible,
 .postLocationTrigger[data-popup-open] {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .postLocationTrigger:hover {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
 }
 
 .postLocationTrigger:focus-visible {
@@ -504,9 +535,14 @@
   text-decoration: none;
 }
 
-.readMore:hover,
 .readMore:focus-visible {
   text-decoration: underline;
+}
+
+@media (hover: hover) {
+  .readMore:hover {
+    text-decoration: underline;
+  }
 }
 
 .postActions {
@@ -592,27 +628,49 @@
   white-space: nowrap;
 }
 
-.postAction:hover,
 .postAction:focus-visible {
   color: var(--accent);
   background: var(--accent-soft);
 }
 
-.postAction.replyAction:hover,
+@media (hover: hover) {
+  .postAction:hover {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+}
+
 .postAction.replyAction:focus-visible {
   color: #1d9bf0;
   background: #e8f5fd;
 }
 
-.postAction.repostAction:hover,
+@media (hover: hover) {
+  .postAction.replyAction:hover {
+    color: #1d9bf0;
+    background: #e8f5fd;
+  }
+}
+
 .postAction.repostAction:focus-visible,
 .postAction.repostActive {
   color: #07ba7c;
 }
 
-.postAction.repostAction:hover,
+@media (hover: hover) {
+  .postAction.repostAction:hover {
+    color: #07ba7c;
+  }
+}
+
 .postAction.repostAction:focus-visible {
   background: #e3f1eb;
+}
+
+@media (hover: hover) {
+  .postAction.repostAction:hover {
+    background: #e3f1eb;
+  }
 }
 
 .shareAction {
@@ -633,9 +691,14 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.quoteCard:hover,
 .quoteCard:focus-visible {
   background: #efefef;
+}
+
+@media (hover: hover) {
+  .quoteCard:hover {
+    background: #efefef;
+  }
 }
 
 .quoteUnavailable {
@@ -777,24 +840,44 @@
   block-size: 1.40625rem;
 }
 
-.detail .postAction:hover,
 .detail .postAction:focus-visible {
   background: transparent;
 }
 
-.detail .postAction:hover::before,
+@media (hover: hover) {
+  .detail .postAction:hover {
+    background: transparent;
+  }
+}
+
 .detail .postAction:focus-visible::before {
   background: var(--accent-soft);
 }
 
-.detail .postAction.replyAction:hover::before,
+@media (hover: hover) {
+  .detail .postAction:hover::before {
+    background: var(--accent-soft);
+  }
+}
+
 .detail .postAction.replyAction:focus-visible::before {
   background: #e8f5fd;
 }
 
-.detail .postAction.repostAction:hover::before,
+@media (hover: hover) {
+  .detail .postAction.replyAction:hover::before {
+    background: #e8f5fd;
+  }
+}
+
 .detail .postAction.repostAction:focus-visible::before {
   background: #e3f1eb;
+}
+
+@media (hover: hover) {
+  .detail .postAction.repostAction:hover::before {
+    background: #e3f1eb;
+  }
 }
 
 .detail .shareAction {
@@ -839,10 +922,16 @@
   font-weight: 700;
 }
 
-.detailStats:hover span,
 .detailStats:focus-visible span {
   text-decoration: underline;
   text-underline-offset: 0.18em;
+}
+
+@media (hover: hover) {
+  .detailStats:hover span {
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
 }
 
 .detailStats + .postActions {

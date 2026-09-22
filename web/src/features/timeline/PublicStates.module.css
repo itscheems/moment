@@ -63,8 +63,10 @@
   cursor: pointer;
 }
 
-.action:hover {
-  background: var(--button-primary-hover);
+@media (hover: hover) {
+  .action:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .secondaryAction {
@@ -73,8 +75,10 @@
   background: transparent;
 }
 
-.secondaryAction:hover {
-  background: var(--surface-hover);
+@media (hover: hover) {
+  .secondaryAction:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .loading {

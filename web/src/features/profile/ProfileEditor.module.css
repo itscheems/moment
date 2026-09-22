@@ -14,10 +14,16 @@
     background var(--motion-fast) var(--ease-out);
 }
 
-.trigger:hover,
 .trigger:focus-visible {
   border-color: var(--text-secondary);
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .trigger:hover {
+    border-color: var(--text-secondary);
+    background: var(--surface-hover);
+  }
 }
 
 .backdrop {
@@ -153,17 +159,28 @@
   background: var(--button-primary);
 }
 
-.iconButton:hover,
 .iconButton:focus-visible,
-.resetButton:hover,
 .resetButton:focus-visible {
   color: var(--text-primary);
   background: var(--surface-hover);
 }
 
-.saveButton:hover,
+@media (hover: hover) {
+  .iconButton:hover,
+  .resetButton:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+}
+
 .saveButton:focus-visible {
   background: var(--button-primary-hover);
+}
+
+@media (hover: hover) {
+  .saveButton:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .saveButton:active:not(:disabled) {
@@ -182,10 +199,12 @@
   background: var(--button-primary-disabled);
 }
 
-.iconButton:disabled:hover,
-.resetButton:disabled:hover {
-  color: var(--text-secondary);
-  background: transparent;
+@media (hover: hover) {
+  .iconButton:disabled:hover,
+  .resetButton:disabled:hover {
+    color: var(--text-secondary);
+    background: transparent;
+  }
 }
 
 .identityStage {
@@ -258,9 +277,14 @@
   block-size: 1.15rem;
 }
 
-.coverActions button:hover,
 .coverActions button:focus-visible {
   background: rgb(15 20 25 / 88%);
+}
+
+@media (hover: hover) {
+  .coverActions button:hover {
+    background: rgb(15 20 25 / 88%);
+  }
 }
 
 .coverUploadStatus {
@@ -336,7 +360,6 @@
   block-size: 1.15rem;
 }
 
-.avatarChangeButton:hover,
 .avatarChangeButton:focus-visible {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 36%, var(--border-strong));
@@ -344,6 +367,17 @@
   box-shadow:
     0 0 0 0.2rem color-mix(in srgb, var(--accent) 10%, transparent),
     var(--shadow-popover);
+}
+
+@media (hover: hover) {
+  .avatarChangeButton:hover {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 36%, var(--border-strong));
+    background: var(--surface-hover);
+    box-shadow:
+      0 0 0 0.2rem color-mix(in srgb, var(--accent) 10%, transparent),
+      var(--shadow-popover);
+  }
 }
 
 .mediaMenuPositioner {
@@ -491,8 +525,10 @@
     background var(--motion-fast) var(--ease-out);
 }
 
-.fields label:hover {
-  border-color: var(--text-secondary);
+@media (hover: hover) {
+  .fields label:hover {
+    border-color: var(--text-secondary);
+  }
 }
 
 .fields label:focus-within {

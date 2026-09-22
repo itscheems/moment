@@ -120,12 +120,19 @@ describe("visual foundation contract", () => {
   });
 
   it("keeps profile media menu anchors stable during hover and focus", () => {
+    // :hover lives behind `@media (hover: hover)` since a touch tap latches
+    // it; :focus-visible is the half that still applies everywhere.
     const avatarState = profileEditorCss.match(
-      /\._avatarChangeButton_[\w-]+:hover,\s*\._avatarChangeButton_[\w-]+:focus-visible\s*\{([^}]*)\}/,
+      /\._avatarChangeButton_[\w-]+:focus-visible\s*\{([^}]*)\}/,
     )?.[1];
     const coverState = profileEditorCss.match(
-      /\._coverActions_[\w-]+ button:hover,\s*\._coverActions_[\w-]+ button:focus-visible\s*\{([^}]*)\}/,
+      /\._coverActions_[\w-]+ button:focus-visible\s*\{([^}]*)\}/,
     )?.[1];
+    const avatarHover = profileEditorCss.match(
+      /@media \(hover: hover\)\s*\{\s*\._avatarChangeButton_[\w-]+:hover\s*\{([^}]*)\}/,
+    )?.[1];
+    expect(avatarHover).toBeDefined();
+    expect(avatarHover).not.toContain("transform:");
 
     expect(avatarState).toBeDefined();
     expect(coverState).toBeDefined();
@@ -246,7 +253,7 @@ describe("visual foundation contract", () => {
       /\._inlineTopLevelForm_[\w-]+ \._commentForm_[\w-]+ textarea\s*\{[^}]*min-block-size:\s*3\.5rem;[^}]*border:\s*0\.125rem solid transparent;[^}]*padding-block:\s*0\.75rem;/s,
     );
     expect(commentsCss).toMatch(
-      /\._inlineTopLevelForm_[\w-]+[\s\S]*?\._commentMediaComposer_[\w-]+[\s\S]*?button:hover:not\(:disabled\),[\s\S]*?button:focus-visible\s*\{[^}]*color:\s*#829aab;[^}]*background:\s*rgb\(15 20 25 \/ 10%\);[^}]*transform:\s*scale\(1\.12\);/s,
+      /@media \(hover: hover\)[\s\S]*?\._commentMediaComposer_[\w-]+[\s\S]*?button:hover:not\(:disabled\)\s*\{[^}]*color:\s*#829aab;[^}]*background:\s*rgb\(15 20 25 \/ 10%\);[^}]*transform:\s*scale\(1\.12\);/s,
     );
     expect(commentsCss).toMatch(
       /\._replyDialogPopup_[\w-]+ > \._formSurface_[\w-]+\s*\{[^}]*padding-block-start:\s*var\(--space-2\);/s,
@@ -636,7 +643,7 @@ describe("visual foundation contract", () => {
     ] as const) {
       expect(appCss).toMatch(
         new RegExp(
-          `\\.${selector}_[\\w-]+:hover,[^{]*\\{[^}]*background: var\\(${token}\\)`,
+          `@media \\(hover: hover\\)[^{]*\\{\\s*\\.${selector}_[\\w-]+:hover\\s*\\{[^}]*background: var\\(${token}\\)`,
           "s",
         ),
       );

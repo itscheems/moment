@@ -112,12 +112,19 @@
   will-change: transform, filter;
 }
 
-.mediaToolbar button:hover:not(:disabled),
 .mediaToolbar button:focus-visible,
 .mediaToolbar button[data-popup-open] {
   color: #829aab;
   background: rgb(15 20 25 / 10%);
   transform: scale(1.12);
+}
+
+@media (hover: hover) {
+  .mediaToolbar button:hover:not(:disabled) {
+    color: #829aab;
+    background: rgb(15 20 25 / 10%);
+    transform: scale(1.12);
+  }
 }
 
 .mediaToolbar button:active:not(:disabled) {
@@ -265,9 +272,14 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.editorPreviewButton:hover:not(:disabled)::after,
 .editorPreviewButton:focus-visible::after {
   background: rgb(0 0 0 / 9%);
+}
+
+@media (hover: hover) {
+  .editorPreviewButton:hover:not(:disabled)::after {
+    background: rgb(0 0 0 / 9%);
+  }
 }
 
 .editorPreviewButton:focus-visible {
@@ -370,11 +382,16 @@
   transition: transform var(--motion-fast) var(--ease-out);
 }
 
-.editorPreviewButton:hover:not(:disabled) img,
-.editorPreviewButton:hover:not(:disabled) video,
 .editorPreviewButton:focus-visible img,
 .editorPreviewButton:focus-visible video {
   transform: scale(1.015);
+}
+
+@media (hover: hover) {
+  .editorPreviewButton:hover:not(:disabled) img,
+  .editorPreviewButton:hover:not(:disabled) video {
+    transform: scale(1.015);
+  }
 }
 
 .editorPreviewPending {
@@ -447,8 +464,10 @@
   fill: currentColor;
 }
 
-.mediaRemoveControl:hover:not(:disabled) {
-  background: rgb(15 20 25 / 55%);
+@media (hover: hover) {
+  .mediaRemoveControl:hover:not(:disabled) {
+    background: rgb(15 20 25 / 55%);
+  }
 }
 
 .mediaRemoveControl:focus-visible {
@@ -597,9 +616,14 @@
   font-weight: 750;
 }
 
-.mediaFailures button:hover:not(:disabled),
 .mediaFailures button:focus-visible {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+@media (hover: hover) {
+  .mediaFailures button:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+  }
 }
 
 /* "Add description": one quiet text action directly under the picture.
@@ -628,10 +652,16 @@
     background var(--motion-fast) var(--ease-out);
 }
 
-.mediaDescribe:hover:not(:disabled),
 .mediaDescribe:focus-visible {
   color: var(--accent);
   background: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .mediaDescribe:hover:not(:disabled) {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
 }
 
 .mediaDescribe:disabled {
@@ -755,10 +785,16 @@
     background-color 0.2s;
 }
 
-.describePager button:hover:not(:disabled),
 .describePager button:focus-visible {
   color: var(--accent);
   background: var(--audience-hover);
+}
+
+@media (hover: hover) {
+  .describePager button:hover:not(:disabled) {
+    color: var(--accent);
+    background: var(--audience-hover);
+  }
 }
 
 .describePager button:active:not(:disabled) {
@@ -790,9 +826,14 @@
   transition: background-color 0.2s;
 }
 
-.describeBack:hover,
 .describeBack:focus-visible {
   background: var(--icon-button-hover);
+}
+
+@media (hover: hover) {
+  .describeBack:hover {
+    background: var(--icon-button-hover);
+  }
 }
 
 .describeBack:active {
@@ -820,9 +861,14 @@
     transform var(--motion-fast) var(--ease-out);
 }
 
-.describeDone:hover,
 .describeDone:focus-visible {
   background: var(--button-primary-hover);
+}
+
+@media (hover: hover) {
+  .describeDone:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .describeDone:active {
@@ -940,10 +986,16 @@
   object-fit: cover;
 }
 
-.describeRail button:hover,
 .describeRail button:focus-visible {
   opacity: 1;
   transform: translateY(-1px);
+}
+
+@media (hover: hover) {
+  .describeRail button:hover {
+    opacity: 1;
+    transform: translateY(-1px);
+  }
 }
 
 .describeRail button:active {
@@ -1018,9 +1070,11 @@
     background var(--motion-fast) var(--ease-out);
 }
 
-.altModes label:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-hover);
+@media (hover: hover) {
+  .altModes label:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
+  }
 }
 
 .altModes label[data-checked] {
@@ -1033,8 +1087,10 @@
 /* The chosen pill answers the pointer too. Its filled ground already wins
    over the hover ground, so it says yes with a ring instead -- measured,
    it was the one control on the sheet that went dead under the cursor. */
-.altModes label[data-checked]:hover {
-  box-shadow: inset 0 0 0 1px var(--accent);
+@media (hover: hover) {
+  .altModes label[data-checked]:hover {
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
 }
 
 .altModes label:has(input:focus-visible) {
@@ -1100,10 +1156,12 @@
   font-size: var(--text-xs);
 }
 
-.editorActions button:hover:not(:disabled),
-.lightboxOriginal:hover:not(:disabled) {
-  color: var(--accent);
-  background: var(--surface-hover);
+@media (hover: hover) {
+  .editorActions button:hover:not(:disabled),
+  .lightboxOriginal:hover:not(:disabled) {
+    color: var(--accent);
+    background: var(--surface-hover);
+  }
 }
 
 @media (max-width: 519px) {
@@ -1185,9 +1243,14 @@
   object-fit: cover;
 }
 
-.imageButton:hover img,
 .imageButton:focus-visible img {
   transform: scale(1.015);
+}
+
+@media (hover: hover) {
+  .imageButton:hover img {
+    transform: scale(1.015);
+  }
 }
 
 .imageTile img,
@@ -1250,10 +1313,16 @@
   margin-inline-start: 0.15rem;
 }
 
-.videoPlayIndicator:hover,
 .videoPlayIndicator:focus-visible {
   background: rgb(15 20 25 / 90%);
   transform: translate(-50%, -50%) scale(1.04);
+}
+
+@media (hover: hover) {
+  .videoPlayIndicator:hover {
+    background: rgb(15 20 25 / 90%);
+    transform: translate(-50%, -50%) scale(1.04);
+  }
 }
 
 .videoLoadingIndicator {
@@ -1463,9 +1532,14 @@
   inset-inline-start: max(var(--space-4), env(safe-area-inset-left));
 }
 
-.lightboxNav:hover,
 .lightboxNav:focus-visible {
   background: rgb(47 51 54 / 92%);
+}
+
+@media (hover: hover) {
+  .lightboxNav:hover {
+    background: rgb(47 51 54 / 92%);
+  }
 }
 
 .lightboxCounter {
@@ -1566,11 +1640,18 @@
   text-underline-offset: 0.2em;
 }
 
-.lightboxOriginal:hover:not(:disabled),
 .lightboxOriginal:focus-visible {
   color: #fff;
   background: transparent;
   text-decoration-color: currentColor;
+}
+
+@media (hover: hover) {
+  .lightboxOriginal:hover:not(:disabled) {
+    color: #fff;
+    background: transparent;
+    text-decoration-color: currentColor;
+  }
 }
 
 @keyframes lightbox-image-in {

@@ -47,8 +47,10 @@
   text-decoration: none;
 }
 
-.action:hover {
-  background: var(--button-primary-hover);
+@media (hover: hover) {
+  .action:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .loading {

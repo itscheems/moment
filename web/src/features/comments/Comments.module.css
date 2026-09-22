@@ -253,14 +253,24 @@
   cursor: not-allowed;
 }
 
-.inlineTopLevelForm .collapsedReplyAction:hover,
 .inlineTopLevelForm .collapsedReplyAction:focus-visible {
   opacity: 0.25;
 }
 
-.collapsedReplyAction:hover,
+@media (hover: hover) {
+  .inlineTopLevelForm .collapsedReplyAction:hover {
+    opacity: 0.25;
+  }
+}
+
 .collapsedReplyAction:focus-visible {
   opacity: 0.75;
+}
+
+@media (hover: hover) {
+  .collapsedReplyAction:hover {
+    opacity: 0.75;
+  }
 }
 
 .commentForm > header {
@@ -472,15 +482,22 @@
   .commentMediaComposer
   > div
   > div:first-child
-  button:hover:not(:disabled),
-.inlineTopLevelForm
-  .commentMediaComposer
-  > div
-  > div:first-child
   button:focus-visible {
   color: #829aab;
   background: rgb(15 20 25 / 10%);
   transform: scale(1.12);
+}
+
+@media (hover: hover) {
+  .inlineTopLevelForm
+    .commentMediaComposer
+    > div
+    > div:first-child
+    button:hover:not(:disabled) {
+    color: #829aab;
+    background: rgb(15 20 25 / 10%);
+    transform: scale(1.12);
+  }
 }
 
 .inlineTopLevelForm
@@ -517,12 +534,14 @@
   white-space: nowrap;
 }
 
-.inlineTopLevelForm
-  .commentMediaComposer
-  button[data-picker-tooltip]:hover
-  > span[aria-hidden="true"] {
-  opacity: 1;
-  transition-delay: 0.45s;
+@media (hover: hover) {
+  .inlineTopLevelForm
+    .commentMediaComposer
+    button[data-picker-tooltip]:hover
+    > span[aria-hidden="true"] {
+    opacity: 1;
+    transition-delay: 0.45s;
+  }
 }
 
 .inlineTopLevelForm .commentProgress {
@@ -669,8 +688,10 @@
   transition: box-shadow 0.2s;
 }
 
-.inlineTopLevelForm .primaryAction:hover:not(:disabled) {
-  background: var(--button-primary-hover);
+@media (hover: hover) {
+  .inlineTopLevelForm .primaryAction:hover:not(:disabled) {
+    background: var(--button-primary-hover);
+  }
 }
 
 .inlineTopLevelForm .primaryAction:disabled {
@@ -684,8 +705,10 @@
   transform: none;
 }
 
-.primaryAction:hover {
-  background: var(--button-primary-hover);
+@media (hover: hover) {
+  .primaryAction:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .primaryAction:active:not(:disabled) {
@@ -698,10 +721,12 @@
   background: transparent;
 }
 
-.secondaryAction:hover,
-.commentAction:hover {
-  color: var(--accent);
-  background: var(--accent-soft);
+@media (hover: hover) {
+  .secondaryAction:hover,
+  .commentAction:hover {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
 }
 
 .dangerAction {
@@ -831,9 +856,14 @@
   text-decoration: none;
 }
 
-.signInNotice a:hover,
 .signInNotice a:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .signInNotice a:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .replyDialogPopup > .signInNotice {
@@ -862,8 +892,10 @@
   transition: background-color 0.2s ease;
 }
 
-.commentItem:hover {
-  background: light-dark(#f7f7f7, var(--surface-hover));
+@media (hover: hover) {
+  .commentItem:hover {
+    background: light-dark(#f7f7f7, var(--surface-hover));
+  }
 }
 
 .commentItem > article {
@@ -900,9 +932,14 @@
   text-decoration: none;
 }
 
-.commentAuthor:hover,
 .commentAuthor:focus-visible {
   text-decoration: underline;
+}
+
+@media (hover: hover) {
+  .commentAuthor:hover {
+    text-decoration: underline;
+  }
 }
 
 .commentHandle {
@@ -912,9 +949,14 @@
   text-decoration: none;
 }
 
-.commentHandle:hover,
 .commentHandle:focus-visible {
   text-decoration: underline;
+}
+
+@media (hover: hover) {
+  .commentHandle:hover {
+    text-decoration: underline;
+  }
 }
 
 .commentReplyTo {
@@ -939,9 +981,14 @@
   cursor: pointer;
 }
 
-.commentReplyToLink:hover,
 .commentReplyToLink:focus-visible {
   text-decoration: underline;
+}
+
+@media (hover: hover) {
+  .commentReplyToLink:hover {
+    text-decoration: underline;
+  }
 }
 
 /*
@@ -1017,8 +1064,10 @@
   cursor: default;
 }
 
-.replyBranch button:hover:not(:disabled) {
-  text-decoration: underline;
+@media (hover: hover) {
+  .replyBranch button:hover:not(:disabled) {
+    text-decoration: underline;
+  }
 }
 
 .replyBranch [role="alert"] {
@@ -1302,9 +1351,14 @@
   cursor: pointer;
 }
 
-.commentFoldToggle:hover,
 .commentFoldToggle:focus-visible {
   text-decoration: underline;
+}
+
+@media (hover: hover) {
+  .commentFoldToggle:hover {
+    text-decoration: underline;
+  }
 }
 
 /*
@@ -1418,9 +1472,14 @@
   cursor: pointer;
 }
 
-.replyDialogClose:hover,
 .replyDialogClose:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .replyDialogClose:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .replyContext {
@@ -1750,7 +1809,9 @@
   text-decoration: none;
 }
 
-.signInPopupAction:hover {
-  border-color: var(--accent);
-  color: var(--accent);
+@media (hover: hover) {
+  .signInPopupAction:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
 }

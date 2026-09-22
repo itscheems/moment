@@ -99,8 +99,10 @@
   block-size: 100%;
 }
 
-.identityAvatarLink:hover .identityAvatar {
-  filter: brightness(0.9);
+@media (hover: hover) {
+  .identityAvatarLink:hover .identityAvatar {
+    filter: brightness(0.9);
+  }
 }
 
 .identityAvatarLink:focus-visible {
@@ -129,8 +131,10 @@
   text-decoration: none;
 }
 
-.identityNameLink:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .identityNameLink:hover {
+    text-decoration: underline;
+  }
 }
 
 .identityNameLink:focus-visible {

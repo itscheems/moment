@@ -102,10 +102,16 @@
   cursor: pointer;
 }
 
-.searchClear:hover,
 .searchClear:focus-visible {
   color: var(--text-primary);
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .searchClear:hover {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
 }
 
 .searchClear svg {
@@ -113,8 +119,10 @@
   block-size: 1rem;
 }
 
-.searchSubmit:hover {
-  background: var(--button-primary-hover);
+@media (hover: hover) {
+  .searchSubmit:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .filterBar {
@@ -166,9 +174,11 @@
   color: var(--accent);
 }
 
-.filterToggle:hover,
-.clearFilter:hover {
-  background: var(--surface-hover);
+@media (hover: hover) {
+  .filterToggle:hover,
+  .clearFilter:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .dateFields {
@@ -204,11 +214,13 @@
   cursor: pointer;
 }
 
-.dateFields > button:hover,
-.message button:hover,
-.moreError button:hover,
-.moreRow button:hover {
-  background: var(--button-primary-hover);
+@media (hover: hover) {
+  .dateFields > button:hover,
+  .message button:hover,
+  .moreError button:hover,
+  .moreRow button:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .formError {
@@ -499,10 +511,15 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.monthTitle:hover,
 .monthTitle:focus-visible,
 .monthTitle[data-popup-open] {
   background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+@media (hover: hover) {
+  .monthTitle:hover {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  }
 }
 
 /* The words never wrap: a flex heading offers its child its narrowest
@@ -540,9 +557,14 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.calendarPage:hover:not(:disabled),
 .calendarPage:focus-visible {
   background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+@media (hover: hover) {
+  .calendarPage:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  }
 }
 
 /* Dimmed rather than removed, so the header keeps its shape at either end
@@ -615,11 +637,18 @@
     transform var(--motion-fast) var(--ease-out);
 }
 
-.calendarDay a:hover,
 .calendarDay a:focus-visible {
   color: var(--accent);
   background: var(--accent-soft);
   transform: scale(1.05);
+}
+
+@media (hover: hover) {
+  .calendarDay a:hover {
+    color: var(--accent);
+    background: var(--accent-soft);
+    transform: scale(1.05);
+  }
 }
 
 .calendarDay a[data-selected="true"] {
@@ -688,10 +717,16 @@
   text-decoration: none;
 }
 
-.calendarFooter a:hover,
 .calendarFooter a:focus-visible {
   text-decoration: underline;
   text-underline-offset: 0.2em;
+}
+
+@media (hover: hover) {
+  .calendarFooter a:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
 }
 
 .calendarNote {
@@ -782,9 +817,14 @@
   font-size: var(--text-xs);
 }
 
-.pickerYear:hover,
 .pickerYear:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .pickerYear:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .pickerYear[aria-pressed="true"] {
@@ -822,9 +862,14 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.pickerMonths a:hover,
 .pickerMonths a:focus-visible {
   background: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .pickerMonths a:hover {
+    background: var(--accent-soft);
+  }
 }
 
 .pickerMonths a[aria-current="date"] {

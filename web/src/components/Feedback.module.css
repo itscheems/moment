@@ -77,9 +77,14 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.action:hover,
 .action:focus-visible {
   background: rgb(127 196 247 / 14%);
+}
+
+@media (hover: hover) {
+  .action:hover {
+    background: rgb(127 196 247 / 14%);
+  }
 }
 
 /* Dismissal keeps a full 44px target while the glyph itself stays quiet. */
@@ -105,10 +110,16 @@
   block-size: 1.05rem;
 }
 
-.close:hover,
 .close:focus-visible {
   color: #ffffff;
   background: rgb(255 255 255 / 10%);
+}
+
+@media (hover: hover) {
+  .close:hover {
+    color: #ffffff;
+    background: rgb(255 255 255 / 10%);
+  }
 }
 
 .action:focus-visible,

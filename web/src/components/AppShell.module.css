@@ -60,8 +60,10 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.brand:hover {
-  background: var(--surface-hover-strong);
+@media (hover: hover) {
+  .brand:hover {
+    background: var(--surface-hover-strong);
+  }
 }
 
 .brandLabel {
@@ -117,9 +119,14 @@
 /* One wash for every pill in this rail, the account row included. Two values
    made the account row look like a different kind of control sitting under the
    navigation rather than the last item of it. */
-.navLink:hover,
 .navLink:focus-visible {
   background: var(--surface-hover-strong);
+}
+
+@media (hover: hover) {
+  .navLink:hover {
+    background: var(--surface-hover-strong);
+  }
 }
 
 .navLink[aria-current="page"] {
@@ -137,9 +144,14 @@
   font-weight: 700;
 }
 
-.publishAction:hover,
 .publishAction:focus-visible {
   background: var(--button-primary-hover);
+}
+
+@media (hover: hover) {
+  .publishAction:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .publishAction svg {
@@ -233,9 +245,14 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.homeHeaderTab:hover,
 .homeHeaderTab:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .homeHeaderTab:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .homeHeaderTab h1 {
@@ -267,9 +284,14 @@
   color: var(--text-primary);
 }
 
-.backLink:hover,
 .backLink:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .backLink:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .mobileAvatar,
@@ -343,9 +365,14 @@
   transition: box-shadow var(--motion-fast) var(--ease-out);
 }
 
-.searchPrompt:hover,
 .searchPrompt:focus-visible {
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+@media (hover: hover) {
+  .searchPrompt:hover {
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
 }
 
 .searchPrompt strong {
@@ -438,12 +465,18 @@
     white-space: nowrap;
   }
 
-  .navLink[data-compact-label]:hover::after,
   .navLink[data-compact-label]:focus-visible::after,
-  .publishAction[data-compact-label]:hover::after,
   .publishAction[data-compact-label]:focus-visible::after {
     opacity: 1;
     transform: translate(0, -50%);
+  }
+
+  @media (hover: hover) {
+    .navLink[data-compact-label]:hover::after,
+    .publishAction[data-compact-label]:hover::after {
+      opacity: 1;
+      transform: translate(0, -50%);
+    }
   }
 }
 
@@ -621,9 +654,14 @@
     box-shadow var(--motion-fast) var(--ease-out);
 }
 
-.accountRail:hover,
 .accountRail[data-popup-open] {
   background: var(--surface-hover-strong);
+}
+
+@media (hover: hover) {
+  .accountRail:hover {
+    background: var(--surface-hover-strong);
+  }
 }
 
 .accountRail:focus-visible {

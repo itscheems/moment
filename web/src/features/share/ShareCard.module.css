@@ -104,9 +104,14 @@
   background: transparent;
 }
 
-.quiet:hover:not(:disabled),
 .quiet:focus-visible:not(:disabled) {
   background: var(--surface-hover-strong);
+}
+
+@media (hover: hover) {
+  .quiet:hover:not(:disabled) {
+    background: var(--surface-hover-strong);
+  }
 }
 
 .primary {
@@ -114,9 +119,14 @@
   background: var(--button-primary);
 }
 
-.primary:hover:not(:disabled),
 .primary:focus-visible:not(:disabled) {
   background: var(--button-primary-hover);
+}
+
+@media (hover: hover) {
+  .primary:hover:not(:disabled) {
+    background: var(--button-primary-hover);
+  }
 }
 
 .quiet:disabled,

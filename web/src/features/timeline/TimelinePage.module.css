@@ -21,10 +21,12 @@
   cursor: pointer;
 }
 
-.moreRow button:hover,
-.moreError button:hover {
-  border-color: var(--accent);
-  background: var(--surface-hover);
+@media (hover: hover) {
+  .moreRow button:hover,
+  .moreError button:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
 }
 
 .moreRow button:disabled {

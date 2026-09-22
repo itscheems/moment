@@ -7,11 +7,18 @@
   text-decoration: none;
 }
 
-.root :global(a[data-moment-mention]:hover),
 .root :global(a[data-moment-mention]:focus-visible) {
   text-decoration: underline;
   text-decoration-thickness: 0.08em;
   text-underline-offset: 0.18em;
+}
+
+@media (hover: hover) {
+  .root :global(a[data-moment-mention]:hover) {
+    text-decoration: underline;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.18em;
+  }
 }
 
 .root :global(.hljs-comment),

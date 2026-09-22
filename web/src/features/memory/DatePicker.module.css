@@ -26,8 +26,10 @@
   cursor: pointer;
 }
 
-.trigger:hover {
-  background: var(--surface-hover);
+@media (hover: hover) {
+  .trigger:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .trigger[aria-expanded="true"] {
@@ -103,9 +105,11 @@
   border-radius: 50%;
 }
 
-.popover header button:hover,
-.days button:hover {
-  background: var(--surface-hover);
+@media (hover: hover) {
+  .popover header button:hover,
+  .days button:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .popover header svg {
@@ -149,8 +153,10 @@
   font-weight: 700;
 }
 
-.days button[aria-pressed="true"]:hover {
-  background: var(--button-primary-hover);
+@media (hover: hover) {
+  .days button[aria-pressed="true"]:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .days button[aria-pressed="true"]:active {
@@ -182,8 +188,10 @@
   font-weight: 650;
 }
 
-.popover footer button:hover {
-  background: var(--accent-soft);
+@media (hover: hover) {
+  .popover footer button:hover {
+    background: var(--accent-soft);
+  }
 }
 
 .popover footer button:disabled {

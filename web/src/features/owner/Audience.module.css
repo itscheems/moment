@@ -46,8 +46,10 @@
     box-shadow 0.2s;
 }
 
-.trigger:hover:not(:disabled) {
-  background-color: var(--audience-hover);
+@media (hover: hover) {
+  .trigger:hover:not(:disabled) {
+    background-color: var(--audience-hover);
+  }
 }
 
 .trigger:active:not(:disabled) {
@@ -126,9 +128,14 @@
   transition: background-color 0.2s;
 }
 
-.option:hover,
 .option[data-highlighted] {
   background-color: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .option:hover {
+    background-color: var(--surface-hover);
+  }
 }
 
 .optionIcon {

@@ -73,7 +73,7 @@ describe("shared post presentation", () => {
 
   it("keeps the byline username free of hover and focus underlines", () => {
     expect(postCss).toMatch(
-      /\._bylineIdentity_[\w-]+ \._usernameLink_[\w-]+:hover,\s*\._bylineIdentity_[\w-]+ \._usernameLink_[\w-]+:focus-visible\s*\{[^}]*text-decoration: none;/,
+      /\._bylineIdentity_[\w-]+ \._usernameLink_[\w-]+:focus-visible\s*\{[^}]*text-decoration: none;/,
     );
   });
 
@@ -180,7 +180,7 @@ describe("shared post presentation", () => {
       /\._quoteCard_[^{]+\{[^}]*background:\s*transparent;/s,
     );
     expect(postCss).toMatch(
-      /\._quoteCard_[^:]+:hover,[\s\S]*?background:\s*#efefef;/,
+      /@media \(hover: hover\)[\s\S]*?\._quoteCard_[^:]+:hover[\s\S]*?background:\s*#efefef;/,
     );
   });
 

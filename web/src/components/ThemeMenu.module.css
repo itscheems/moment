@@ -15,10 +15,15 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.trigger:hover,
 .trigger:focus-visible,
 .trigger[data-popup-open] {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .trigger:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .positioner {
@@ -132,9 +137,14 @@
   cursor: pointer;
 }
 
-.dialogHeader button:hover,
 .dialogHeader button:focus-visible {
   background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .dialogHeader button:hover {
+    background: var(--surface-hover);
+  }
 }
 
 .dialogHeader h2 {
@@ -236,9 +246,14 @@
   transition: transform var(--motion-fast) var(--ease-out);
 }
 
-.accentChoice:hover,
 .accentChoice:focus-visible {
   transform: scale(1.08);
+}
+
+@media (hover: hover) {
+  .accentChoice:hover {
+    transform: scale(1.08);
+  }
 }
 
 .accentChoice[data-accent-choice="blue"] {
@@ -343,9 +358,14 @@
   transition: background var(--motion-fast) var(--ease-out);
 }
 
-.doneButton:hover,
 .doneButton:focus-visible {
   background: var(--button-primary-hover);
+}
+
+@media (hover: hover) {
+  .doneButton:hover {
+    background: var(--button-primary-hover);
+  }
 }
 
 .doneButton:active {
@@ -390,10 +410,16 @@
     white-space: nowrap;
   }
 
-  .trigger[data-compact-label]:hover::after,
   .trigger[data-compact-label]:focus-visible::after {
     opacity: 1;
     transform: translate(0, -50%);
+  }
+
+  @media (hover: hover) {
+    .trigger[data-compact-label]:hover::after {
+      opacity: 1;
+      transform: translate(0, -50%);
+    }
   }
 
   .triggerLabel {

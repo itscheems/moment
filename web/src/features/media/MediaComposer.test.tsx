@@ -89,7 +89,7 @@ describe("media editor", () => {
     expect(buttonBlock).toContain("background-color 0.2s ease");
     expect(buttonBlock).toContain("filter 0.15s ease");
     expect(mediaCss).toMatch(
-      /\._mediaToolbar_[\w-]+ button:hover:not\(:disabled\),[\s\S]*?button\[data-popup-open\]\s*\{[^}]*color: #829aab;[^}]*background: rgb\(15 20 25 \/ 10%\);[^}]*transform: scale\(1\.12\);/,
+      /@media \(hover: hover\)[\s\S]*?\._mediaToolbar_[\w-]+ button:hover:not\(:disabled\)\s*\{[^}]*color: #829aab;[^}]*background: rgb\(15 20 25 \/ 10%\);[^}]*transform: scale\(1\.12\);/,
     );
     expect(mediaCss).toMatch(
       /\._mediaToolbar_[\w-]+ button:active:not\(:disabled\)\s*\{[^}]*background: rgb\(15 20 25 \/ 7%\);[^}]*filter: brightness\(0\.7\);[^}]*transform: scale\(1\.12\);/,
