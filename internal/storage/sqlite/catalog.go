@@ -49,6 +49,15 @@ var requiredCatalogObjects = []expectedCatalogObject{
 	{name: "entries_search_revision_insert", kind: "trigger", table: "entries"},
 	{name: "entries_search_revision_update", kind: "trigger", table: "entries"},
 	{name: "entries_search_revision_delete", kind: "trigger", table: "entries"},
+	{name: "entry_article", kind: "table", table: "entry_article"},
+	{name: "article_drafts", kind: "table", table: "article_drafts"},
+	{name: "article_draft_media", kind: "table", table: "article_draft_media"},
+	{name: "entry_article_cover_idx", kind: "index", table: "entry_article"},
+	{name: "article_drafts_published_entry_idx", kind: "index", table: "article_drafts"},
+	{name: "article_drafts_cover_idx", kind: "index", table: "article_drafts"},
+	{name: "article_draft_media_media_idx", kind: "index", table: "article_draft_media"},
+	{name: "entry_article_kind_insert_guard", kind: "trigger", table: "entry_article"},
+	{name: "entry_article_kind_update_guard", kind: "trigger", table: "entry_article"},
 }
 
 type catalogQueryer interface {

@@ -415,7 +415,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, mediaTwo, strings.Repeat("b", 64), "m
 	assertWriteRejected(t, db, `INSERT INTO entry_media VALUES (?, ?, 3, ?)`, entryOne, mediaOne, "\u3000\u00a0")
 	assertWriteRejected(t, db, `INSERT INTO entry_media VALUES (?, ?, 3, ?)`, entryOne, mediaOne, strings.Repeat("界", 1001))
 	assertWriteRejected(t, db, `INSERT INTO entry_media VALUES (?, ?, 3, ?)`, entryOne, mediaOne, []byte("not text"))
-	assertWriteRejected(t, db, `INSERT INTO entry_media VALUES (?, ?, 9, NULL)`, entryOne, mediaOne)
+	// An article body places its own pictures, so the column now stops at 50
+	// and the nine a moment may carry is a rule the domain holds
+	// (domain.MaxEntryMediaUsages), not this check.
+	assertWriteRejected(t, db, `INSERT INTO entry_media VALUES (?, ?, 50, NULL)`, entryOne, mediaOne)
 	assertWriteRejected(t, db, `INSERT INTO entry_media VALUES (?, ?, 3, NULL)`, entryOne, entryThree)
 	assertWriteRejected(t, db, `
 INSERT INTO media VALUES (?, ?, ?, 'bad.bmp', 'image/bmp', 1, 1, 1, 1, NULL)`, entryThree, strings.Repeat("c", 64), "media/original/cc/c.bmp")
