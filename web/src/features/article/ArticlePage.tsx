@@ -62,7 +62,7 @@ export function ArticlePage({
   onSiteChanged?: (site: SiteIdentity) => void;
   onReply?: MouseEventHandler<HTMLButtonElement>;
 }) {
-  const { title, excerpt, cover } = post.article;
+  const { title, cover } = post.article;
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
   const hidden = post.visibility === "only_me";
   const siteName = siteDisplayName(site);
@@ -87,7 +87,9 @@ export function ArticlePage({
           </span>
         </p>
         <h1 className={styles.title}>{title}</h1>
-        {excerpt.trim() ? <p className={styles.lede}>{excerpt}</p> : null}
+        {/* No lede. The excerpt is the opening of the body, so printing it
+            above the body says the same sentence twice -- it earns its place
+            on a card, where the body is not there to say it. */}
         <div className={styles.byline}>
           <SiteIdentityPreview
             site={site}

@@ -391,3 +391,28 @@ func TestArticleDocumentSurvivesASerializationRoundTrip(t *testing.T) {
 		t.Fatalf("round trip changed the page:\n%s\n%s", firstHTML, secondHTML)
 	}
 }
+
+// An excerpt is a sentence about the article. Code and table cells are visible
+// text and belong in the index, but a card subtitle reading
+// "项目 数量 驿马 三百匹 func main() {" tells a reader nothing.
+func TestArticleExcerptIsProseAndTheIndexIsEverything(t *testing.T) {
+	t.Parallel()
+	document := mustParseArticle(t, articleBody(strings.Join([]string{
+		articleParagraph("开头的一段散文"),
+		`{"type":"table","content":[{"type":"tableRow","content":[{"type":"tableCell","content":[` + articleParagraph("驿马") + `]},{"type":"tableCell","content":[` + articleParagraph("三百匹") + `]}]}]}`,
+		`{"type":"codeBlock","attrs":{"language":"go"},"content":[{"type":"text","text":"func main() {}"}]}`,
+		articleParagraph("结尾的一段散文"),
+	}, ",")))
+
+	excerpt := ArticleExcerpt(document)
+	if excerpt != "开头的一段散文 结尾的一段散文" {
+		t.Fatalf("excerpt = %q", excerpt)
+	}
+	// The same words still have to be findable.
+	search := ArticleSearchText("标题", document)
+	for _, term := range []string{"驿马", "三百匹", "func main"} {
+		if !strings.Contains(search, strings.ToLower(term)) {
+			t.Fatalf("search text lost %q: %q", term, search)
+		}
+	}
+}

@@ -20,13 +20,36 @@ func ArticleVisibleText(document ArticleDocument) string {
 }
 
 // ArticleExcerpt is the run of prose a card shows under the title.
+//
+// It is prose and only prose. Code and table cells are visible text and belong
+// in the index, but read as noise in a one-line summary: a card whose subtitle
+// is "项目 数量 驿马 三百匹 func main() {" tells a reader nothing about the
+// article. Headings stay, because a heading is a sentence about what follows.
 func ArticleExcerpt(document ArticleDocument) string {
-	visible := ArticleVisibleText(document)
-	runes := []rune(visible)
+	var output strings.Builder
+	appendArticleProse(&output, document.Content)
+	prose := cleanVisibleText(output.String())
+	runes := []rune(prose)
 	if len(runes) <= ArticleExcerptCodePoints {
-		return visible
+		return prose
 	}
 	return strings.TrimSpace(string(runes[:ArticleExcerptCodePoints]))
+}
+
+func appendArticleProse(output *strings.Builder, nodes []ArticleNode) {
+	for _, node := range nodes {
+		switch node.Type {
+		case ArticleNodeCodeBlock, ArticleNodeTable:
+			continue
+		case ArticleNodeText:
+			output.WriteString(node.Text)
+		case ArticleNodeHardBreak, ArticleNodeHorizontalRule, ArticleNodeImage:
+			output.WriteByte(' ')
+		default:
+			appendArticleProse(output, node.Content)
+			output.WriteByte(' ')
+		}
+	}
 }
 
 // ArticleSearchText derives the indexed text of an article. The title is part
