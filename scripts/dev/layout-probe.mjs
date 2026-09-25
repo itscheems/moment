@@ -595,9 +595,14 @@ async function main() {
 
     const evaluated = [];
     for (const expression of options.eval) {
+      // Awaited, so an expression can drive the page and then report what it
+      // did: typing into a field and waiting for the save that follows is one
+      // question, and splitting it across two probes would ask it of two
+      // different page loads.
       const answer = await devtools.send("Runtime.evaluate", {
-        expression: `(() => { try { return JSON.stringify(${expression}) ?? "undefined"; }
+        expression: `(async () => { try { return JSON.stringify(await (${expression})) ?? "undefined"; }
           catch (error) { return "threw: " + error.message; } })()`,
+        awaitPromise: true,
         returnByValue: true,
       });
       evaluated.push({ expression, value: answer.result.value });
