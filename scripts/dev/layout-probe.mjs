@@ -31,6 +31,8 @@ const usage = `Measure real layout in a headless browser.
   --width <px>        viewport width (default 1280)
   --height <px>       viewport height (default 800)
   --theme <name>      value for data-theme on the document root
+  --reduced-motion    emulate prefers-reduced-motion: reduce
+  --touch             emulate a touch pointer without hover
   --cookie <n=v>      set this cookie before navigating; repeatable
                       (how a signed-in surface is reached)
   --measure <sel>     report this element's box; repeatable
@@ -77,6 +79,8 @@ function parseArguments(argv) {
       case "--width": options.width = Number(value()); break;
       case "--height": options.height = Number(value()); break;
       case "--theme": options.theme = value(); break;
+      case "--reduced-motion": options.reducedMotion = true; break;
+      case "--touch": options.touch = true; break;
       case "--measure": options.measure.push(value()); break;
       case "--computed": options.computed.push(value()); break;
       case "--hover": options.hover = value(); break;
@@ -501,6 +505,15 @@ async function main() {
     await devtools.send("Emulation.setDeviceMetricsOverride", {
       width: options.width, height: options.height, deviceScaleFactor: 1, mobile: false,
     });
+    if (options.reducedMotion) {
+      await devtools.send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+      });
+    }
+    if (options.touch) {
+      await devtools.send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 1 });
+      await devtools.send("Emulation.setEmitTouchEventsForMouse", { enabled: true, configuration: "mobile" });
+    }
     await devtools.send("Network.enable");
     const network = trackNetwork(devtools);
 
@@ -624,6 +637,7 @@ async function main() {
     devtools.close();
     report = {
       viewport: { width: options.width, height: options.height },
+      emulation: { reducedMotion: Boolean(options.reducedMotion), touch: Boolean(options.touch) },
       theme: options.theme ?? null,
       target,
       title,

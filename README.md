@@ -74,6 +74,7 @@ boundary and a leap day:
 ```sh
 mise exec -- task playground              # build, seed once, serve
 mise exec -- task playground -- cases     # every case with its page
+mise exec -- task playground:articles     # add article reader/editor cases to the default playground
 mise exec -- task playground -- reset     # seed again from the current time
 ```
 

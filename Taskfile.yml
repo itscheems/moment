@@ -22,6 +22,11 @@ tasks:
     cmds:
       - node scripts/dev/layout-probe.mjs {{.CLI_ARGS}}
 
+  playground:articles:
+    desc: Add named article cases to the running disposable playground on port 18080
+    cmds:
+      - python3 scripts/dev/article-showcase.py
+
   fmt:
     desc: Format Go and Web sources
     cmds:

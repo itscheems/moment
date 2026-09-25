@@ -29,7 +29,7 @@ const lightBackground = "rgb(255, 255, 255)";
 const usage = `Capture one surface matrix in a real browser.
 
   --url <origin>       the running instance, e.g. http://127.0.0.1:19090
-  --out <directory>    where the shots and index.md are written
+  --out <directory>    where the shots, JSON evidence, and index.md are written
   --surface <n=path>   a named route to capture; repeatable
   --widths <list>      comma separated, default 390,768,1440
   --themes <list>      comma separated, default light,dim
@@ -130,6 +130,7 @@ function probe(options, path, width, theme, shot) {
     "--settle", String(options.settle),
     "--measure", "body",
     "--computed", "background-color",
+    "--eval", "({ documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth })",
     "--json",
   ];
   for (const cookie of options.cookie) args.push("--cookie", cookie);
@@ -162,6 +163,13 @@ function capture(options, surface, width, theme) {
   const shot = `${surface.name}-${width}-${theme}.png`;
   const { report: measured, failure } = probe(options, surface.path, width, theme, shot);
   if (failure) return { shot, failure };
+  writeFileSync(join(options.out, shot.replace(/\.png$/, ".json")), `${JSON.stringify(measured, null, 2)}\n`);
+  const errors = (measured.messages ?? []).filter((entry) => entry.level === "error" || entry.level === "exception");
+  if (errors.length > 0) return { shot, failure: errors.map((entry) => entry.text).join("; ") };
+  const dimensions = JSON.parse(measured.evaluated[0].value);
+  if (dimensions.documentWidth > dimensions.viewportWidth) {
+    return { shot, failure: `horizontal overflow: ${dimensions.documentWidth}px exceeds ${dimensions.viewportWidth}px` };
+  }
   if (measured.title && measured.title === options.notFoundTitle) {
     return { shot, failure: `${surface.path} rendered the not-found page` };
   }
@@ -216,7 +224,7 @@ function main() {
       lines.push(
         row.failure
           ? `- **${label} 失败**：${row.failure}`
-          : `- ${label} — 背景 \`${row.background}\`\n\n  ![${label}](${row.shot})`,
+          : `- ${label} — 背景 \`${row.background}\` · [测量与控制台](${row.shot.replace(/\.png$/, ".json")})\n\n  ![${label}](${row.shot})`,
       );
     }
     lines.push("");
