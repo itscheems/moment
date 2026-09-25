@@ -15,7 +15,7 @@ export default defineConfig({
           if (!chunk || chunk.type !== "chunk") return;
           for (const id of Object.keys(chunk.modules)) {
             if (
-              /node_modules\/(?:@tiptap\/|prosemirror-)/.test(id) ||
+              /node_modules\/@tiptap\/react\//.test(id) ||
               (/\/features\/article\/editor\//.test(id) &&
                 !id.endsWith("/editor/index.ts"))
             ) {

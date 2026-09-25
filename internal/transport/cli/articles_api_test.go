@@ -103,3 +103,34 @@ func TestArticleAPIRejectsMalformedDraftsAndFalseDiscardAcknowledgements(t *test
 		}
 	}
 }
+
+func TestArticleInlineGeometryHasDirectAPIParity(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	t.Setenv("MOMENT_TOKEN", fixture.token)
+	application := momentTestApplication()
+	run := func(args ...string) map[string]any {
+		t.Helper()
+		out := execute(application, "", append(args, "--url", fixture.server.URL, "--json")...)
+		if out.exit != ExitSuccess || out.stderr != "" {
+			t.Fatalf("%v: %#v", args, out)
+		}
+		return commandData(t, out)
+	}
+	media := run("media", "add", writeCLIImage(t))["media"].(map[string]any)
+	body := `{"schema_version":1,"type":"doc","content":[{"type":"image","attrs":{"media_id":"` + media["id"].(string) + `","alt":"river"}}]}`
+	draft := run("article", "new", "--title", "Picture", "--body", writeArticleBodyFile(t, body))
+	post := run("article", "publish", draft["id"].(string))
+	read := run("post", "get", post["id"].(string))
+	direct := commandData(t, execute(application, "", "post", "get", post["id"].(string), "--data-dir", fixture.dataDir, "--json"))
+	if !reflect.DeepEqual(read, direct) {
+		t.Fatalf("read parity: %#v / %#v", read, direct)
+	}
+	geometry := read["article"].(map[string]any)["body_media"].([]any)
+	if len(geometry) != 1 {
+		t.Fatalf("geometry = %#v", geometry)
+	}
+	item := geometry[0].(map[string]any)
+	if item["media_id"] != media["id"] || item["width"] != media["width"] || item["height"] != media["height"] {
+		t.Fatalf("geometry = %#v; source = %#v", item, media)
+	}
+}

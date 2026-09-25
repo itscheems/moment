@@ -7,7 +7,7 @@ import type {
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
 import { Icon } from "../../components/icons";
-import { MarkdownContent } from "../../components/MarkdownContent";
+import { RichContent } from "../../components/content/RichContent";
 import {
   SiteAvatar,
   siteDisplayName,
@@ -31,11 +31,9 @@ import styles from "./Article.module.css";
 /**
  * An article, read in full.
  *
- * The body is the HTML the server rendered from the stored document; nothing
- * here reads that document. An article has exactly one rendering and the
- * server owns it, which is also what keeps this surface free of an editor's
- * schema: a second renderer on this side would be a second answer to what a
- * body means, and the two would drift the first time the grammar grew.
+ * Writing and reading share the Tiptap document grammar and typography.
+ * The validated JSON body is rendered directly; HTML remains a transport
+ * projection for API consumers and generated share cards.
  *
  * The chrome -- the identity line, the reply, repost and share row, the owner's
  * menu -- is the post detail page's own, reused class for class. An article is
@@ -166,9 +164,10 @@ export function ArticlePage({
           />
         </figure>
       ) : null}
-      <MarkdownContent
+      <RichContent
         className={`${styles.column} ${styles.body}`}
-        html={post.contentHtml}
+        document={post.article.body}
+        media={post.article.bodyMedia}
       />
       {post.commentCount > 0 ? (
         <a

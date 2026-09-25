@@ -89,3 +89,14 @@ export function highlightCodeBlocks(root: ParentNode): void {
     code.classList.add("hljs");
   }
 }
+
+/** Escape and highlight a document code node without touching mounted DOM. */
+export function highlightSource(
+  source: string,
+  requested: string,
+): string | null {
+  const name = requested.toLowerCase();
+  const language = aliases[name] ?? name;
+  if (!(language in languages)) return null;
+  return hljs.highlight(source, { language, ignoreIllegals: true }).value;
+}

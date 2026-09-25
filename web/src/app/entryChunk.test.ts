@@ -91,15 +91,7 @@ function staticGraph(entry: string): Set<string> {
   return seen;
 }
 
-/**
- * The editor must not ride along in the entry chunk.
- *
- * Tiptap and ProseMirror are roughly 120 KB gzipped against about 314 KB for
- * the whole application, and only the owner can open the surface they are for.
- * The eslint rule in eslint.config.js refuses the import as it is typed; this
- * is the same promise checked against the graph that is actually built, which
- * is what would catch a route file re-exporting the editor by accident.
- */
+/** The writing UI is lazy; the reader shares only content definitions. */
 describe("what the first page has to download", () => {
   const graph = staticGraph(ENTRY);
 
@@ -119,11 +111,13 @@ describe("what the first page has to download", () => {
     expect(specifiersIn(sources[EDITOR_BARREL])).toEqual(["react"]);
   });
 
-  it("does not reach Tiptap from anywhere the entry point can see", () => {
-    const offenders = [...graph].filter((file) =>
-      specifiersIn(sources[file]).some((specifier) =>
-        specifier.startsWith("@tiptap/"),
-      ),
+  it("only reaches Tiptap through the shared content module", () => {
+    const offenders = [...graph].filter(
+      (file) =>
+        !file.startsWith("/src/components/content/") &&
+        specifiersIn(sources[file]).some((specifier) =>
+          specifier.startsWith("@tiptap/"),
+        ),
     );
     expect(offenders).toEqual([]);
   });

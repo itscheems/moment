@@ -261,3 +261,41 @@ func TestSearchFindsAnArticleAndReturnsItsCard(t *testing.T) {
 		}
 	}
 }
+
+func TestArticleStructuredReadCarriesInlineGeometryWithoutAttachments(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	insertPostHTTPMedia(t, fixture.database, postHTTPMediaOne, "a")
+	body := `{"schema_version":1,"type":"doc","content":[{"type":"image","attrs":{"media_id":"` + postHTTPMediaOne + `","alt":"河流"}},{"type":"image","attrs":{"media_id":"` + postHTTPMediaOne + `","alt":"同一河流"}}]}`
+	created := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts", `{"title":"图文","body":`+body+`}`))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s", created.Code, created.Body.String())
+	}
+	draft := decodeDataMap(t, created)
+	published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts/"+draft["id"].(string)+"/publish", `{"visibility":"only_me"}`))
+	if published.Code != http.StatusCreated {
+		t.Fatalf("publish = %d %s", published.Code, published.Body.String())
+	}
+	post := decodeDataMap(t, published)
+	id := post["id"].(string)
+	read := performRequest(fixture.engine, ownerCall(fixture, http.MethodGet, "/api/v1/posts/"+id, ""))
+	if read.Code != http.StatusOK {
+		t.Fatalf("read = %d %s", read.Code, read.Body.String())
+	}
+	post = decodeDataMap(t, read)
+	media := post["article"].(map[string]any)["body_media"].([]any)
+	if len(media) != 1 || len(post["media"].([]any)) != 0 {
+		t.Fatalf("geometry is deduplicated outside the attachment grid: %#v", post)
+	}
+	item := media[0].(map[string]any)
+	if item["media_id"] != postHTTPMediaOne || item["width"] != float64(8) || item["height"] != float64(8) || item["mime_type"] != "image/jpeg" {
+		t.Fatalf("geometry = %#v", item)
+	}
+	visitor := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/posts/"+id, nil))
+	if visitor.Code != http.StatusNotFound {
+		t.Fatalf("private body leaked: %d %s", visitor.Code, visitor.Body.String())
+	}
+	page := performRequest(fixture.engine, ownerCall(fixture, http.MethodGet, "/api/v1/posts?kind=article", ""))
+	if strings.Contains(page.Body.String(), "body_media") {
+		t.Fatal("list leaked body geometry")
+	}
+}

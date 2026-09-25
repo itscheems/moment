@@ -199,127 +199,7 @@
 }
 
 .body {
-  margin-block-start: var(--space-5);
-  color: var(--text-primary);
-  font-size: 1.125rem;
-  line-height: 1.72;
-  overflow-wrap: break-word;
-}
-
-.body :where(p, ul, ol, blockquote, pre, table, h1, h2, h3) {
-  margin-block: 1.1em;
-}
-
-.body > :first-child {
-  margin-block-start: 0;
-}
-
-.body > :last-child {
-  margin-block-end: 0;
-}
-
-.body :where(h1, h2, h3) {
-  font-weight: 750;
-  line-height: 1.28;
-}
-
-.body h1 {
-  font-size: 1.75rem;
-}
-
-.body h2 {
-  font-size: 1.4375rem;
-}
-
-.body h3 {
-  font-size: 1.1875rem;
-}
-
-.body :where(ul, ol) {
-  padding-inline-start: 1.35em;
-}
-
-.body li {
-  margin-block: 0.3em;
-}
-
-.body a {
-  color: var(--accent);
-  text-decoration-thickness: 0.08em;
-  text-underline-offset: 0.18em;
-}
-
-.body blockquote {
-  border-inline-start: 3px solid var(--border-strong);
-  margin-inline: 0;
-  padding-inline-start: var(--space-4);
-  color: var(--text-secondary);
-}
-
-.body code {
-  border-radius: 0.3rem;
-  padding: 0.08rem 0.28rem;
-  background: var(--surface-muted);
-  font-family: var(--font-mono);
-  font-size: 0.86em;
-}
-
-.body pre {
-  max-inline-size: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-action);
-  padding: var(--space-4);
-  background: var(--surface-hover);
-  font-size: 0.9375rem;
-  line-height: 1.55;
-}
-
-.body pre code {
-  padding: 0;
-  background: transparent;
-  font-size: 1em;
-}
-
-.body hr {
-  border: 0;
-  border-block-start: 1px solid var(--border-subtle);
-  margin-block: var(--space-6);
-}
-
-/* A picture placed in the body arrives without geometry, so it is given a
-   floor to stand on rather than a reserved box: the background keeps the gap
-   from reading as a hole while the bytes are still coming. */
-.body img {
-  display: block;
-  max-inline-size: 100%;
-  block-size: auto;
-  border-radius: var(--radius-action);
-  margin-block: var(--space-5);
-  background: var(--surface-muted);
-}
-
-/* A wide table scrolls inside itself rather than pushing the column sideways.
-   The rendered HTML has no wrapper to scroll, so the table becomes the
-   scroller; the rows keep their table layout in an anonymous table box. */
-.body table {
-  display: block;
-  max-inline-size: 100%;
-  overflow-x: auto;
-  border-collapse: collapse;
-  font-size: 1rem;
-}
-
-.body :where(th, td) {
-  border: 1px solid var(--border-subtle);
-  padding: 0.5rem 0.75rem;
-  text-align: start;
-  vertical-align: top;
-}
-
-.body th {
-  background: var(--surface-muted);
-  font-weight: 700;
+  margin-block-start: var(--space-6);
 }
 
 @media (max-width: 719px) {
@@ -329,11 +209,6 @@
 
   .lede {
     font-size: 1rem;
-  }
-
-  .body {
-    font-size: 1.0625rem;
-    line-height: 1.68;
   }
 }
 

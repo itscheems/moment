@@ -127,11 +127,8 @@ export interface ArticleNode {
 /**
  * An article body as the server serialises it.
  *
- * Nothing in the reading surfaces renders this: an article arrives with its
- * HTML already rendered, and a second renderer here would be a second answer
- * to what the body means. It is parsed so that the document survives a round
- * trip through this client with a type on it, which is what the editor will
- * read and write.
+ * Shared by the Tiptap reading surface and editor. Transport parsing validates
+ * the document before either surface consumes it.
  */
 export interface ArticleDocument {
   schema_version: number;
@@ -161,6 +158,8 @@ export interface PublicArticle {
   cover: PublicArticleCover | null;
   body: ArticleDocument | null;
   bodySchemaVersion: number | null;
+  /** Inline media geometry, independent of the attachment grid. */
+  bodyMedia?: PublicArticleCover[];
 }
 
 export interface PublicPost {
@@ -1479,9 +1478,30 @@ function parseArticle(
       "cover",
       "body",
       "body_schema_version",
+      ...(Object.hasOwn(value, "body_media") ? ["body_media"] : []),
     ])
   ) {
     throw invalidResponse("article contains an unsupported or missing field");
+  }
+  const bodyMedia: PublicArticleCover[] = [];
+  if (Object.hasOwn(value, "body_media")) {
+    if (
+      !Array.isArray(value.body_media) ||
+      value.body_media.length > 50 ||
+      value.body === null
+    ) {
+      throw invalidResponse(
+        "article body media requires a document and at most 50 pictures",
+      );
+    }
+    const seen = new Set<string>();
+    for (const item of value.body_media) {
+      const media = parseArticleCover(item);
+      if (!media || seen.has(media.mediaId))
+        throw invalidResponse("article body media is invalid");
+      seen.add(media.mediaId);
+      bodyMedia.push(media);
+    }
   }
   const title = stringField(value, "title");
   if (!title.trim()) throw invalidResponse("an article must carry a title");
@@ -1516,6 +1536,7 @@ function parseArticle(
     cover: parseArticleCover(value.cover),
     body,
     bodySchemaVersion,
+    bodyMedia,
   };
 }
 

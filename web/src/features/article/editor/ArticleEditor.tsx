@@ -50,6 +50,7 @@ import {
   removeUploadPlaceholder,
 } from "./extensions/UploadPlaceholder";
 import styles from "./Editor.module.css";
+import contentStyles from "../../../components/content/Content.module.css";
 
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {
@@ -148,6 +149,7 @@ export function ArticleEditor({
     editorProps: {
       attributes: {
         "aria-label": "文章正文",
+        class: `${contentStyles.root} ${contentStyles.article}`,
         role: "textbox",
         "aria-multiline": "true",
       },

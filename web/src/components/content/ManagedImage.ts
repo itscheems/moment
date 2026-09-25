@@ -1,6 +1,6 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 
-import { mediaPreviewUrl } from "../../../../api/mediaUrls";
+import { mediaPreviewUrl } from "../../api/mediaUrls";
 
 /**
  * A picture in an article body.
@@ -44,7 +44,7 @@ export const ManagedImage = Node.create({
         parseHTML: (element) => element.getAttribute("alt"),
         renderHTML: (attributes) => {
           const alt: unknown = attributes.alt;
-          return typeof alt === "string" && alt !== "" ? { alt } : {};
+          return { alt: typeof alt === "string" ? alt : "文章图片" };
         },
       },
     };
@@ -57,6 +57,13 @@ export const ManagedImage = Node.create({
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ["img", mergeAttributes(HTMLAttributes, { draggable: "false" })];
+    return [
+      "img",
+      mergeAttributes(HTMLAttributes, {
+        draggable: "false",
+        loading: "lazy",
+        decoding: "async",
+      }),
+    ];
   },
 });

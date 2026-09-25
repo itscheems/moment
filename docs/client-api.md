@@ -191,3 +191,17 @@ exports a selected account under local filesystem authority. API mode uses
 `moment --url http://127.0.0.1:8080 user export --output ./mine.zip --json`, with no
 username: it exports the credential holder. Existing destinations require
 `--overwrite`, and incomplete or invalid files are not published.
+
+## Structured article reading
+
+Article detail reads carry the validated document in `article.body`. Web readers
+render that document using the same Tiptap content extensions as the article
+editor. `content_html` remains a derived representation for API consumers.
+
+An article with inline pictures also carries `article.body_media`: a deduplicated
+array of `{media_id, mime_type, width, height}`. These dimensions reserve space
+before each picture loads. The document owns picture order and descriptions;
+this read projection is neither stored document attributes nor the `media`
+attachment grid. List and quoted article cards omit it alongside the full body.
+The same projection is returned by HTTP and CLI detail reads. Clients accept
+its absence from older servers, and must never infer body media from a cover.

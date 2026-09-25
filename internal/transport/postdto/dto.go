@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/moment/moment/internal/app"
@@ -50,7 +51,22 @@ type Post struct {
 }
 
 func fromArticle(post app.Post) *Article {
-	return fromArticleCard(post.ArticleCard, post.Article)
+	mapped := fromArticleCard(post.ArticleCard, post.Article)
+	if mapped == nil || post.Article == nil {
+		return mapped
+	}
+	seen := make(map[domain.ID]bool)
+	for _, media := range post.Media {
+		if seen[media.MediaID] {
+			continue
+		}
+		seen[media.MediaID] = true
+		mapped.BodyMedia = append(mapped.BodyMedia, ArticleCover{
+			MediaID: media.MediaID.String(), MIMEType: media.MIMEType,
+			Width: media.Width, Height: media.Height,
+		})
+	}
+	return mapped
 }
 
 // fromArticleCard maps a card, adding the body only when the caller has one.
@@ -98,6 +114,9 @@ type Article struct {
 	Cover             *ArticleCover   `json:"cover"`
 	Body              json.RawMessage `json:"body"`
 	BodySchemaVersion *int            `json:"body_schema_version"`
+	// Geometry is a read projection, separate from the stored document and
+	// attachment grid. It lets structured renderers reserve inline image space.
+	BodyMedia []ArticleCover `json:"body_media,omitempty"`
 }
 
 // ArticleCover carries geometry for the same reason every media projection
@@ -538,6 +557,21 @@ func ValidatePost(post Post) error {
 		// with it; a detail read carries both or neither.
 		if (post.Article.Body == nil) != (post.ContentHTML == "") {
 			return errors.New("an article carries its body and its rendered content together")
+		}
+		if len(post.Article.BodyMedia) > 0 {
+			if post.Article.Body == nil {
+				return errors.New("article body media requires a document")
+			}
+			seen := make(map[string]bool)
+			for _, media := range post.Article.BodyMedia {
+				if _, err := domain.ParseID(media.MediaID); err != nil {
+					return err
+				}
+				if seen[media.MediaID] || media.Width == 0 || media.Height == 0 || !strings.HasPrefix(media.MIMEType, "image/") || !validProjectionMIMEType(media.MIMEType) {
+					return errors.New("article body media is invalid")
+				}
+				seen[media.MediaID] = true
+			}
 		}
 	} else {
 		if post.Article != nil {

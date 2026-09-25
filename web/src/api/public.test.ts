@@ -1205,6 +1205,44 @@ describe("post kind and the body it is allowed to carry", () => {
     });
   });
 
+  it("reads validated inline geometry independently of the attachment grid", () => {
+    const geometry = {
+      media_id: "01K2ABCDEF0123456789ABCDE7",
+      mime_type: "image/jpeg",
+      width: 1200,
+      height: 800,
+    };
+    expect(
+      parsePost({
+        ...article,
+        article: { ...article.article, body_media: [geometry] },
+      }).article?.bodyMedia,
+    ).toEqual([
+      {
+        mediaId: geometry.media_id,
+        mimeType: "image/jpeg",
+        width: 1200,
+        height: 800,
+      },
+    ]);
+    for (const body_media of [
+      null,
+      [null],
+      [{ ...geometry, width: 0 }],
+      [geometry, geometry],
+    ]) {
+      expect(() =>
+        parsePost({ ...article, article: { ...article.article, body_media } }),
+      ).toThrow(PublicApiError);
+    }
+    expect(() =>
+      parsePost({
+        ...articleCard,
+        article: { ...articleCard.article, body_media: [geometry] },
+      }),
+    ).toThrow(PublicApiError);
+  });
+
   it("parses a moment, which carries its Markdown source", () => {
     expect(parsePost(post)).toMatchObject({
       kind: "moment",

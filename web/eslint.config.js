@@ -12,7 +12,7 @@ const lazyBoundary = {
     schema: [],
     messages: {
       eager:
-        "Keep Tiptap and article editor internals behind the lazy editor entry.",
+        "Keep content extensions in components/content and editing UI behind the lazy editor entry.",
     },
   },
   create(context) {
@@ -55,16 +55,39 @@ export default tseslint.config(
       },
     },
   },
-  // The article editor is about 120 KB gzipped of Tiptap and ProseMirror, for
-  // a surface only the owner can open. It is reached through one lazily
-  // imported barrel (src/features/article/editor/index.ts); a static import of
-  // anything behind that barrel would pull the whole thing into the entry
-  // chunk, and every reader would download an editor they cannot use.
-  // src/app/entryChunk.test.ts proves the graph; this rule is what says so at
-  // the moment the import is typed.
+  {
+    files: ["src/components/content/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@tiptap/core",
+              importNames: ["Editor"],
+              message:
+                "Reading uses the static renderer, never an Editor instance.",
+            },
+          ],
+          patterns: [
+            {
+              group: [
+                "@tiptap/react",
+                "@tiptap/react/*",
+                "**/features/article/editor/**",
+              ],
+              message: "Shared content must not depend on the editing UI.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // Reading shares content definitions with writing. Only the writing UI and
+  // interaction plugins live behind the lazy editor entry.
   {
     files: ["src/**/*.{ts,tsx}"],
-    ignores: ["src/features/article/editor/**"],
+    ignores: ["src/features/article/editor/**", "src/components/content/**"],
     plugins: { moment: { rules: { "lazy-editor": lazyBoundary } } },
     rules: {
       "moment/lazy-editor": "error",

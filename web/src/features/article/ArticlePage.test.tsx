@@ -15,6 +15,7 @@ import { OwnerProvider } from "../owner/OwnerProvider";
 import { DetailPage } from "../timeline/DetailPage";
 import { ArticlePage } from "./ArticlePage";
 import articleCss from "./Article.module.css?inline";
+import contentCss from "../../components/content/Content.module.css?inline";
 
 afterEach(() => {
   cleanup();
@@ -62,6 +63,63 @@ const body: ArticleDocument = {
       attrs: { level: 2 },
       content: [{ type: "text", text: "上游" }],
     },
+    {
+      type: "paragraph",
+      content: [
+        { type: "text", text: "河面" },
+        { type: "text", text: "很窄", marks: [{ type: "bold" }] },
+        { type: "text", text: "，" },
+        {
+          type: "text",
+          text: "看这里",
+          marks: [{ type: "link", attrs: { href: "https://example.com/x" } }],
+        },
+        { type: "text", text: "。" },
+      ],
+    },
+    {
+      type: "blockquote",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "水色是灰的。" }],
+        },
+      ],
+    },
+    {
+      type: "codeBlock",
+      attrs: { language: "go" },
+      content: [{ type: "text", text: "package main" }],
+    },
+    { type: "horizontalRule" },
+    {
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            {
+              type: "tableHeader",
+              attrs: { colspan: 2 },
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "年份" }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "tableRow",
+          content: ["2016", "清"].map((text) => ({
+            type: "tableCell",
+            content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+          })),
+        },
+      ],
+    },
+    { type: "image", attrs: { media_id: pictureMediaId, alt: "入海口" } },
   ],
 };
 
@@ -136,7 +194,7 @@ describe("article detail page", () => {
     );
   });
 
-  it("renders the HTML the server produced, tables and pictures included", () => {
+  it("renders the structured document with Tiptap, tables and pictures included", () => {
     const { container } = renderArticle();
 
     expect(
@@ -168,13 +226,11 @@ describe("article detail page", () => {
       "code",
     ]) {
       expect(
-        articleCss,
+        contentCss,
         `the article body has no rule for <${selector}>`,
-      ).toMatch(new RegExp(`\\._body_[\\w-]+ ${selector}[\\s,{]`));
+      ).toMatch(new RegExp(`\\._root_[\\w-]+ ${selector}[\\s,{]`));
     }
-    expect(articleCss).toMatch(
-      /\._body_[\w-]+ table\s*\{[^}]*overflow-x: auto/s,
-    );
+    expect(contentCss).toContain("overflow-x: auto");
   });
 
   it("holds the reading column to a measure a reader can follow", () => {
