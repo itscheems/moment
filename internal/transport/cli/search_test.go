@@ -157,3 +157,38 @@ VALUES (?, ?, ?, ?)`, version+1, name, time.Now().UnixMilli(), hex.EncodeToStrin
 		}
 	}
 }
+
+// The search text is what this command is about, so it reads as an argument
+// the way every other single-subject command does. Before it did not, and the
+// error for "moment search query 荔枝" was "unknown command 荔枝" -- which
+// points at the wrong thing entirely.
+func TestSearchQueryTakesItsTextAsAnArgument(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	application := momentTestApplication()
+	if created := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "旧城雨 searchable", "--json"); created.exit != ExitSuccess {
+		t.Fatalf("create = %#v", created)
+	}
+
+	positional := execute(application, "", "search", "query", "旧城", "--data-dir", fixture.dataDir, "--json")
+	flagged := execute(application, "", "search", "query", "--query", "旧城", "--data-dir", fixture.dataDir, "--json")
+	if positional.exit != ExitSuccess || flagged.exit != ExitSuccess {
+		t.Fatalf("positional = %#v\nflagged = %#v", positional, flagged)
+	}
+	// Everything but the per-invocation metadata: the two spellings are one
+	// request said two ways.
+	positionalData := decodeOneDocument(t, positional.stdout)["data"]
+	flaggedData := decodeOneDocument(t, flagged.stdout)["data"]
+	if !reflect.DeepEqual(positionalData, flaggedData) {
+		t.Fatalf("the two spellings must answer identically:\n%v\n%v", positionalData, flaggedData)
+	}
+
+	// Saying it twice is a mistake worth pointing at rather than resolving.
+	both := execute(application, "", "search", "query", "旧城", "--query", "别的", "--data-dir", fixture.dataDir, "--json")
+	if both.exit == ExitSuccess {
+		t.Fatalf("naming the text twice must fail: %#v", both)
+	}
+	none := execute(application, "", "search", "query", "--data-dir", fixture.dataDir, "--json")
+	if none.exit == ExitSuccess {
+		t.Fatalf("no text at all must fail: %#v", none)
+	}
+}

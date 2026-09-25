@@ -14,18 +14,22 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 	"github.com/moment/moment/internal/transport/searchdto"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 func registerSearch(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
-		Path:       []string{"search", "query"},
-		Short:      "Search published Moment history",
-		Long:       "Search normalized published post text with stable relevance pagination and complete site-timezone year counts through the selected transport.",
-		Inputs:     "Required --query text; optional inclusive --from, exclusive --to, opaque --cursor, and --limit. Dates use the persisted site IANA timezone.",
-		Output:     "Canonical post hits with plain safe snippets, complete year_counts, and a nullable next cursor in metadata.",
-		Errors:     "Empty, overlong, malformed, or cursor-mismatched input returns INVALID_ARGUMENT; unavailable derived state returns a stable integrity error.",
-		Example:    "moment search query --query '旧城 雨' --from 2025-01-01 --data-dir ./moment-data --json",
+		Path:      []string{"search", "query"},
+		ArgsUsage: "[text]",
+		Short:     "Search published Moment history",
+		Long:      "Search normalized published post text with stable relevance pagination and complete site-timezone year counts through the selected transport.",
+		Inputs:    "The search text, either as the single argument or as --query; optional inclusive --from, exclusive --to, opaque --cursor, and --limit. Dates use the persisted site IANA timezone.",
+		Output:    "Canonical post hits with plain safe snippets, complete year_counts, and a nullable next cursor in metadata.",
+		Errors:    "Empty, overlong, malformed, or cursor-mismatched input returns INVALID_ARGUMENT; unavailable derived state returns a stable integrity error.",
+		Example: "moment search query '旧城 雨' --data-dir ./moment-data --json\n" +
+			"moment search query --query '旧城 雨' --from 2025-01-01 --data-dir ./moment-data --json",
+		Args:       cobra.MaximumNArgs(1),
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("query", "", "search text containing Chinese, English, numbers, or a phrase")
@@ -56,8 +60,17 @@ func runSearchQuery(ctx context.Context, invocation Invocation, input CommandInp
 	if err != nil {
 		return Result{}, err
 	}
-	if !input.Changed("query") {
-		return Result{}, invalidArgument("--query is required", "provide search text with --query")
+	// The search text is the one thing this command is about, so it reads as
+	// an argument the way every other single-subject command does. The flag
+	// stays for symmetry with the rest of the flag set, and naming both is a
+	// mistake worth pointing at rather than silently resolving.
+	if positional := input.Args(); len(positional) == 1 {
+		if input.Changed("query") {
+			return Result{}, invalidArgument("search text was given twice", "pass the text as the argument or as --query, not both")
+		}
+		query = positional[0]
+	} else if !input.Changed("query") {
+		return Result{}, invalidArgument("search text is required", "pass it as the argument: moment search query '旧城 雨'")
 	}
 	searchInput := app.SearchInput{Query: query}
 	if searchInput.Cursor, err = input.String("cursor"); err != nil {
