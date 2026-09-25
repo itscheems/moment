@@ -3,6 +3,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  PublicApi,
   PublicApiError,
   type ArticleDocument,
   type PostVisibility,
@@ -15,6 +16,7 @@ import { mediaPreviewUrl } from "../../../api/mediaUrls";
 import { SiteAvatar, siteDisplayName } from "../../../components/SiteIdentity";
 import { AudienceSelector } from "../../owner/AudienceSelector";
 import { useOwner } from "../../owner/OwnerProvider";
+import { ConfirmDialog } from "../../owner/ConfirmDialog";
 import {
   ArticleDraftApi,
   MAX_ARTICLE_TITLE_CODE_POINTS,
@@ -82,6 +84,7 @@ export function ArticleEditor({
   const owner = useOwner();
   const location = useNavigation();
   const api = useMemo(() => new ArticleDraftApi(), []);
+  const publicApi = useMemo(() => new PublicApi(), []);
   const csrfToken = owner.session?.csrfToken ?? "";
 
   const [phase, setPhase] = useState<"loading" | "ready" | "gone">(
@@ -96,6 +99,7 @@ export function ArticleEditor({
   const [uploads, setUploads] = useState<readonly UploadTask[]>([]);
   const [coverBusy, setCoverBusy] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [drafts, setDrafts] = useState<readonly ArticleDraft[]>([]);
@@ -108,7 +112,17 @@ export function ArticleEditor({
   const firstChangeAt = useRef(0);
   const lastChangeAt = useRef(0);
   const [changeTick, setChangeTick] = useState(0);
-  const saving = useRef(false);
+  const saving = useRef<Promise<ArticleDraft | null> | null>(null);
+  const draftRef = useRef<ArticleDraft | null>(null);
+  const revision = useRef(0);
+  const conflicted = useRef(false);
+  const saveLatest = useRef<
+    (reason: "auto" | "force") => Promise<ArticleDraft | null>
+  >(async () => null);
+  const blockerId = useRef(Symbol("article-editor"));
+  const leaving = useRef(false);
+  const allowLeave = useRef(false);
+  const titleInput = useRef<HTMLTextAreaElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const publishKey = useRef(createIdempotencyKey());
@@ -138,6 +152,7 @@ export function ArticleEditor({
   });
 
   const markChanged = useCallback(() => {
+    revision.current += 1;
     const at = Date.now();
     if (firstChangeAt.current === 0) firstChangeAt.current = at;
     lastChangeAt.current = at;
@@ -168,6 +183,12 @@ export function ArticleEditor({
       return;
     }
     uploadGeneration.current += 1;
+    draftRef.current = null;
+    conflicted.current = false;
+    allowLeave.current = false;
+    setVisibility("everyone");
+    setLoadError(null);
+    publishKey.current = createIdempotencyKey();
     clearUploadPlaceholders(editor);
     setUploads([]);
     setCoverBusy(false);
@@ -191,6 +212,15 @@ export function ArticleEditor({
       try {
         const loaded = await api.read(draftId, controller.signal);
         if (abandoned) return;
+        if (loaded.publishedEntryId !== null) {
+          const published = await publicApi.post(
+            loaded.publishedEntryId,
+            controller.signal,
+          );
+          if (abandoned) return;
+          setVisibility(published.visibility);
+        }
+        draftRef.current = loaded;
         setDraft(loaded);
         setTitle(loaded.title);
         setCoverMediaId(loaded.coverMediaId);
@@ -220,7 +250,7 @@ export function ArticleEditor({
     // `owner` is deliberately not a dependency: it is read for its
     // session-expiry hook only, and re-running this on every session tick
     // would reload the draft over what is being typed.
-  }, [api, draftId, editor]);
+  }, [api, publicApi, draftId, editor]);
 
   const refreshDrafts = useCallback(async () => {
     setRailLoading(true);
@@ -253,8 +283,15 @@ export function ArticleEditor({
     // is what marks the draft dirty -- so merely opening the page, or looking
     // at the preview and coming back, would report unsaved changes nobody
     // made. Whether the sheet can be typed on is not a change to what it says.
-    editor?.setEditable(!previewing, false);
-  }, [editor, previewing]);
+    editor?.setEditable(
+      !previewing &&
+        !publishing &&
+        !discarding &&
+        phase === "ready" &&
+        loadError === null,
+      false,
+    );
+  }, [editor, previewing, publishing, discarding, phase, loadError]);
 
   /** The status line counts in minutes, so it has to be told the time. */
   useEffect(() => {
@@ -275,7 +312,15 @@ export function ArticleEditor({
 
   const save = useCallback(
     async (reason: "auto" | "force"): Promise<ArticleDraft | null> => {
-      if (saving.current) return null;
+      if (conflicted.current) return null;
+      if (saving.current) {
+        const stored = await saving.current;
+        return stored && reason === "force"
+          ? saveLatest.current(reason)
+          : stored;
+      }
+      if (firstChangeAt.current === 0 && draftRef.current)
+        return draftRef.current;
       const input = currentInput();
       if (input === null) {
         setSaveState({ kind: "failed", message: "正文里有存不下的内容。" });
@@ -285,63 +330,139 @@ export function ArticleEditor({
         setSaveState({ kind: "failed", message: "登录状态已经失效。" });
         return null;
       }
-      saving.current = true;
-      const savedThrough = lastChangeAt.current;
+      const savedThrough = revision.current;
       setSaveState({ kind: "saving" });
-      try {
-        const current = draft;
-        const stored =
-          current === null
-            ? await api.create(csrfToken, input)
-            : await api.replace(
-                csrfToken,
-                current.id,
-                input,
-                current.updatedAt,
-              );
-        setDraft(stored);
-        setSaveState({ kind: "saved", at: stored.updatedAt });
-        // Only the work that went into this request is saved. Anything typed
-        // while it was in flight is still unsaved, and the ceiling restarts
-        // from when that happened rather than from now.
-        if (lastChangeAt.current <= savedThrough) {
-          firstChangeAt.current = 0;
-        } else {
-          firstChangeAt.current = lastChangeAt.current;
-          setSaveState({ kind: "dirty" });
-        }
-        if (current === null) {
-          // The address follows the draft rather than the other way round, so
-          // a reload comes back to what was just written. Replaced, not
-          // pushed: nobody navigated anywhere.
-          createdDraftId.current = stored.id;
-          location.replace(articleDraftPath(stored.id));
-        }
-        void refreshDrafts();
-        return stored;
-      } catch (error) {
-        if (isStaleDraftError(error)) {
-          setSaveState({
-            kind: "conflict",
-            serverUpdatedAt:
-              error instanceof PublicApiError &&
-              typeof error.details.updated_at === "string"
-                ? error.details.updated_at
-                : null,
-          });
+      const attempt = async (): Promise<ArticleDraft | null> => {
+        try {
+          const current = draftRef.current;
+          const stored =
+            current === null
+              ? await api.create(csrfToken, input)
+              : await api.replace(
+                  csrfToken,
+                  current.id,
+                  input,
+                  current.updatedAt,
+                );
+          draftRef.current = stored;
+          setDraft(stored);
+          setSaveState({ kind: "saved", at: stored.updatedAt });
+          // Only the work that went into this request is saved. Anything typed
+          // while it was in flight is still unsaved, and the ceiling restarts
+          // from when that happened rather than from now.
+          if (revision.current === savedThrough) {
+            firstChangeAt.current = 0;
+          } else {
+            firstChangeAt.current = lastChangeAt.current;
+            setSaveState({ kind: "dirty" });
+            setChangeTick((tick) => tick + 1);
+          }
+          if (current === null) {
+            // The address follows the draft rather than the other way round, so
+            // a reload comes back to what was just written. Replaced, not
+            // pushed: nobody navigated anywhere.
+            createdDraftId.current = stored.id;
+            location.replace(articleDraftPath(stored.id));
+          }
+          void refreshDrafts();
+          return stored;
+        } catch (error) {
+          if (isStaleDraftError(error)) {
+            conflicted.current = true;
+            setSaveState({
+              kind: "conflict",
+              serverUpdatedAt:
+                error instanceof PublicApiError &&
+                typeof error.details.updated_at === "string"
+                  ? error.details.updated_at
+                  : null,
+            });
+            return null;
+          }
+          owner.expireIfInvalidSession(error);
+          const message = articleDraftErrorMessage(error);
+          setSaveState({ kind: "failed", message });
+          if (reason === "force") notify(message, { type: "error" });
           return null;
         }
-        owner.expireIfInvalidSession(error);
-        const message = articleDraftErrorMessage(error);
-        setSaveState({ kind: "failed", message });
-        if (reason === "force") notify(message, { type: "error" });
-        return null;
+      };
+      saving.current = attempt();
+      try {
+        const stored = await saving.current;
+        return stored;
       } finally {
-        saving.current = false;
+        saving.current = null;
       }
     },
-    [api, csrfToken, currentInput, draft, location, refreshDrafts],
+    [api, csrfToken, currentInput, location, refreshDrafts],
   );
+
+  useEffect(() => {
+    saveLatest.current = save;
+  }, [save]);
+
+  // Internal navigation saves first. Failed/conflicted saves keep the page open.
+  useEffect(() => {
+    const id = blockerId.current;
+    location.setNavigationBlocker(id, (resume) => {
+      if (allowLeave.current) return true;
+      if (discarding || publishing) return false;
+      if (coverBusy || uploads.some((task) => task.failed === null)) {
+        notify("图片还在上传，请稍候再离开。", { type: "error" });
+        return false;
+      }
+      if (conflicted.current) {
+        notify("请先选择要保留哪一份草稿。", { type: "error" });
+        return false;
+      }
+      if (firstChangeAt.current === 0 && !saving.current) return true;
+      if (!leaving.current) {
+        leaving.current = true;
+        void saveLatest
+          .current("force")
+          .then(async (stored) => {
+            if (!stored) return;
+            if (
+              firstChangeAt.current !== 0 &&
+              !(await saveLatest.current("force"))
+            )
+              return;
+            allowLeave.current = true;
+            resume();
+          })
+          .finally(() => {
+            leaving.current = false;
+          });
+      }
+      return false;
+    });
+    return () => location.setNavigationBlocker(id, null);
+  }, [
+    location.setNavigationBlocker,
+    coverBusy,
+    uploads,
+    discarding,
+    publishing,
+  ]);
+
+  // Keep a long title visible at narrow widths as well as after a resize.
+  useEffect(() => {
+    const field = titleInput.current;
+    if (!field) return;
+    const resize = () => {
+      field.style.height = "auto";
+      field.style.height = `${field.scrollHeight}px`;
+    };
+    resize();
+    let width = field.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (field.clientWidth === width) return;
+      width = field.clientWidth;
+      resize();
+    });
+    observer.observe(field);
+    return () => observer.disconnect();
+  }, [title, previewing]);
 
   /** Debounced: 2s idle, and never more than 15s after the first change. */
   useEffect(() => {
@@ -362,12 +483,15 @@ export function ArticleEditor({
     const risky =
       saveState.kind === "dirty" ||
       saveState.kind === "saving" ||
-      saveState.kind === "conflict";
+      saveState.kind === "conflict" ||
+      saveState.kind === "failed" ||
+      coverBusy ||
+      uploads.some((task) => task.failed === null);
     if (!risky) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [saveState.kind]);
+  }, [saveState.kind, coverBusy, uploads]);
 
   const uploadImage = useCallback(
     async (file: File, place: "cover" | "body") => {
@@ -442,7 +566,7 @@ export function ArticleEditor({
   );
 
   const publish = useCallback(async () => {
-    if (publishing) return;
+    if (publishing || conflicted.current) return;
     const trimmed = title.trim();
     if (trimmed === "") {
       notify("文章要有标题才能发布。", { type: "error" });
@@ -469,7 +593,8 @@ export function ArticleEditor({
         visibility,
       );
       notify("文章已发布。");
-      location.navigate(`/m/${encodeURIComponent(post.id)}`);
+      allowLeave.current = true;
+      location.replace(`/m/${encodeURIComponent(post.id)}`);
     } catch (error) {
       owner.expireIfInvalidSession(error);
       notify(articleDraftErrorMessage(error), { type: "error" });
@@ -492,26 +617,45 @@ export function ArticleEditor({
   ]);
 
   const discardCurrent = useCallback(async () => {
-    if (draft === null || csrfToken === "") {
-      location.navigate(ARTICLE_COMPOSE_PATH);
+    if (draft === null) {
+      firstChangeAt.current = 0;
+      setTitle("");
+      setCoverMediaId(null);
+      setSaveState({ kind: "idle" });
+      editor?.commands.setContent(toEditorContent(emptyArticleDocument()), {
+        emitUpdate: false,
+      });
+      location.replace(ARTICLE_COMPOSE_PATH);
       return;
     }
+    if (csrfToken === "") return;
+    if (saving.current) await saving.current;
+    const unsavedSince = firstChangeAt.current;
+    firstChangeAt.current = 0;
+    setSaveState({ kind: "idle" });
+    setDiscarding(true);
     try {
       await api.discard(csrfToken, draft.id);
       notify("草稿已删除。");
       void refreshDrafts();
       location.replace(ARTICLE_COMPOSE_PATH);
     } catch (error) {
+      firstChangeAt.current = unsavedSince;
+      setSaveState(saveState);
       owner.expireIfInvalidSession(error);
       notify(articleDraftErrorMessage(error), { type: "error" });
+    } finally {
+      setDiscarding(false);
     }
-  }, [api, csrfToken, draft, location, refreshDrafts]);
+  }, [api, csrfToken, draft, editor, location, refreshDrafts, saveState]);
 
   const takeServerCopy = useCallback(async () => {
     if (draft === null || !editor || editor.isDestroyed) return;
     setResolving(true);
     try {
       const stored = await api.read(draft.id);
+      draftRef.current = stored;
+      conflicted.current = false;
       setDraft(stored);
       setTitle(stored.title);
       setCoverMediaId(stored.coverMediaId);
@@ -535,7 +679,9 @@ export function ArticleEditor({
       // Read only for its revision. The body stays the one on screen; what is
       // taken from the server is permission to write over it.
       const stored = await api.read(draft.id);
-      setDraft({ ...draft, updatedAt: stored.updatedAt });
+      draftRef.current = { ...draft, updatedAt: stored.updatedAt };
+      conflicted.current = false;
+      setDraft(draftRef.current);
       firstChangeAt.current = Date.now();
       lastChangeAt.current = Date.now();
       setSaveState({ kind: "dirty" });
@@ -592,7 +738,12 @@ export function ArticleEditor({
         </p>
         <div className={styles.topActions}>
           <AudienceSelector
-            disabled={publishing}
+            disabled={
+              publishing ||
+              discarding ||
+              phase !== "ready" ||
+              loadError !== null
+            }
             onChange={setVisibility}
             value={visibility}
           />
@@ -608,7 +759,11 @@ export function ArticleEditor({
             className={styles.primaryAction}
             disabled={
               publishing ||
+              discarding ||
               titleTooLong ||
+              phase !== "ready" ||
+              loadError !== null ||
+              saveState.kind === "conflict" ||
               coverBusy ||
               uploads.some((task) => task.failed === null)
             }
@@ -626,17 +781,40 @@ export function ArticleEditor({
                 <Menu.Popup aria-label="更多选项" className={styles.menuPopup}>
                   <Menu.Item
                     className={styles.menuItem}
-                    disabled={saveState.kind === "saving"}
+                    disabled={
+                      saveState.kind === "saving" ||
+                      saveState.kind === "conflict" ||
+                      publishing ||
+                      discarding ||
+                      phase !== "ready" ||
+                      loadError !== null
+                    }
                     onClick={() => void save("force")}
                   >
                     立即保存
                   </Menu.Item>
-                  <Menu.Item
-                    className={`${styles.menuItem} ${styles.menuItemDanger}`}
-                    onClick={() => void discardCurrent()}
-                  >
-                    删除这份草稿
-                  </Menu.Item>
+                  <ConfirmDialog
+                    title="删除这份草稿？"
+                    description="删除后无法找回。已发布的文章不受影响。"
+                    confirmLabel="删除草稿"
+                    danger
+                    onConfirm={discardCurrent}
+                    trigger={
+                      <Menu.Item
+                        closeOnClick={false}
+                        disabled={
+                          saveState.kind === "saving" ||
+                          publishing ||
+                          discarding ||
+                          coverBusy ||
+                          uploads.some((task) => task.failed === null)
+                        }
+                        className={`${styles.menuItem} ${styles.menuItemDanger}`}
+                      >
+                        删除这份草稿
+                      </Menu.Item>
+                    }
+                  />
                 </Menu.Popup>
               </Menu.Positioner>
             </Menu.Portal>
@@ -644,7 +822,12 @@ export function ArticleEditor({
         </div>
       </header>
 
-      {editor && !previewing ? (
+      {editor &&
+      !previewing &&
+      !publishing &&
+      !discarding &&
+      phase === "ready" &&
+      !loadError ? (
         <Toolbar
           editor={editor}
           onPickImage={() => imageInput.current?.click()}
@@ -660,21 +843,30 @@ export function ArticleEditor({
             error={railError}
             loading={railLoading}
             onDiscard={(one) => {
-              void (async () => {
-                if (csrfToken === "") return;
-                try {
-                  await api.discard(csrfToken, one.id);
-                  if (one.id === draft?.id) {
-                    location.replace(ARTICLE_COMPOSE_PATH);
-                  }
-                  void refreshDrafts();
-                } catch (error) {
+              if (one.id === draft?.id) {
+                void discardCurrent();
+                return;
+              }
+              void api
+                .discard(csrfToken, one.id)
+                .then(refreshDrafts)
+                .catch((error: unknown) => {
                   notify(articleDraftErrorMessage(error), { type: "error" });
-                }
-              })();
+                });
             }}
             onNew={() => location.navigate(ARTICLE_COMPOSE_PATH)}
             onOpen={(one) => location.navigate(articleDraftPath(one.id))}
+            onOpenPublished={async (id) => {
+              try {
+                // The navigation guard saves any current work before loading the copy.
+                const workingCopy = await api.openPublished(csrfToken, id);
+                void refreshDrafts();
+                location.navigate(articleDraftPath(workingCopy.id));
+              } catch (error) {
+                notify(articleDraftErrorMessage(error), { type: "error" });
+              }
+            }}
+            disabled={publishing || discarding || saving.current !== null}
             timezone={site.timezone}
           />
         )}
@@ -704,7 +896,13 @@ export function ArticleEditor({
               setCoverMediaId(null);
               markChanged();
             }}
-            readOnly={previewing}
+            readOnly={
+              previewing ||
+              publishing ||
+              discarding ||
+              phase !== "ready" ||
+              loadError !== null
+            }
           />
 
           {previewing ? (
@@ -717,6 +915,13 @@ export function ArticleEditor({
               <textarea
                 className={styles.title}
                 id="article-title"
+                ref={titleInput}
+                disabled={
+                  publishing ||
+                  discarding ||
+                  phase !== "ready" ||
+                  loadError !== null
+                }
                 onChange={(event) => {
                   setTitle(event.target.value.replace(/[\r\n]+/g, " "));
                   markChanged();

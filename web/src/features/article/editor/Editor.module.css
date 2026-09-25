@@ -319,6 +319,29 @@
   color: var(--danger);
 }
 
+.railTabs {
+  display: flex;
+  border-block-end: 1px solid var(--border-subtle);
+  margin-block-end: var(--space-3);
+}
+
+.railTab {
+  flex: 1;
+  min-block-size: 2.75rem;
+  border: 0;
+  border-block-end: 3px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.railTab[data-active] {
+  border-block-end-color: var(--accent);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
 .newDraft {
   inline-size: 100%;
   margin-block-end: var(--space-3);

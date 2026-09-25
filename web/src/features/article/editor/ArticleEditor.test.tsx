@@ -9,7 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SiteIdentity } from "../../../api/public";
-import { NavigationProvider } from "../../../app/navigation";
+import { NavigationProvider, useNavigation } from "../../../app/navigation";
 import { FeedbackProvider } from "../../../components/Feedback";
 
 const uploadMedia = vi.fn();
@@ -95,8 +95,9 @@ interface Call {
 }
 
 let calls: Call[] = [];
-let onPut: (() => Response) | null = null;
-let onPost: (() => Response) | null = null;
+let onPut: (() => Response | Promise<Response>) | null = null;
+let onPost: (() => Response | Promise<Response>) | null = null;
+let onRead: (() => Response) | null = null;
 
 function stubFetch() {
   const fetcher = vi.fn(
@@ -111,6 +112,8 @@ function stubFetch() {
             ? (JSON.parse(init.body) as unknown)
             : null,
       });
+      if (url.endsWith("/publish") || url.startsWith("/api/v1/posts/"))
+        return Promise.resolve(success(publishedRow()));
       if (url === "/api/v1/owner/articles/drafts" && method === "GET") {
         return Promise.resolve(success([draftRow()]));
       }
@@ -124,7 +127,7 @@ function stubFetch() {
             : success(draftRow({ updated_at: "2026-09-25T02:05:00.000Z" })),
         );
       }
-      return Promise.resolve(success(draftRow()));
+      return Promise.resolve(onRead ? onRead() : success(draftRow()));
     },
   );
   vi.stubGlobal("fetch", fetcher);
@@ -210,6 +213,7 @@ beforeEach(() => {
   calls = [];
   onPut = null;
   onPost = null;
+  onRead = null;
   // floating-ui, which the selection menu positions itself with, asks for one.
   vi.stubGlobal(
     "ResizeObserver",
@@ -421,5 +425,166 @@ describe("what the toolbar writes into the document", () => {
   it("keeps the one paragraph it started with", async () => {
     const saved = await pressAndSave("引用");
     expect(JSON.stringify(saved)).toContain("上游的水是清的");
+  });
+});
+
+function publishedRow() {
+  return {
+    id: DRAFT_ID,
+    kind: "article",
+    content_md: null,
+    article: {
+      title: "一条河流的十年",
+      excerpt: "上游",
+      cover: null,
+      body,
+      body_schema_version: 1,
+    },
+    content_html: "<p>上游</p>",
+    created_at: "2026-09-25T02:00:00Z",
+    updated_at: "2026-09-25T02:00:00Z",
+    published_at: "2026-09-25T02:00:00Z",
+    reposted_at: null,
+    visibility: "only_me",
+    timeline_item_kind: "original",
+    quoted_post: null,
+    comment_count: 0,
+    media: [],
+    link_cards: [],
+  };
+}
+function RoutedEditor() {
+  const navigation = useNavigation();
+  if (!navigation.pathname.startsWith("/compose/article"))
+    return <p>已离开编辑器</p>;
+  return (
+    <ArticleEditor
+      draftId={navigation.pathname.split("/")[3] ?? null}
+      site={site}
+    />
+  );
+}
+function renderRouted(draftId: string | null) {
+  window.history.replaceState(
+    {},
+    "",
+    `/compose/article${draftId ? `/${draftId}` : ""}`,
+  );
+  return render(
+    <FeedbackProvider>
+      <NavigationProvider>
+        <RoutedEditor />
+      </NavigationProvider>
+    </FeedbackProvider>,
+  );
+}
+
+describe("keeping work through asynchronous saves and navigation", () => {
+  it("does not reload an older first save over text typed while it was pending", async () => {
+    let finish!: (response: Response) => void;
+    onPost = () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      });
+    renderRouted(null);
+    await advance();
+    await typeTitle("先写的标题");
+    await advance(2_000);
+    await typeTitle("请求期间继续写的标题");
+    await act(async () => finish(success(draftRow({ title: "先写的标题" }))));
+    await advance();
+    expect(titleField().value).toBe("请求期间继续写的标题");
+    expect(
+      calls.filter((c) => c.method === "GET" && c.url.endsWith(DRAFT_ID)),
+    ).toHaveLength(0);
+    await advance(2_100);
+    expect(putCalls().at(-1)?.body).toMatchObject({
+      title: "请求期间继续写的标题",
+    });
+  });
+
+  it("saves immediately before leaving instead of losing the debounce window", async () => {
+    renderRouted(DRAFT_ID);
+    await advance();
+    await typeTitle("还没等到自动保存");
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "返回时间流" })),
+    );
+    await advance();
+    expect(putCalls()[0].body).toMatchObject({ title: "还没等到自动保存" });
+    expect(screen.getByText("已离开编辑器")).toBeInTheDocument();
+  });
+
+  it("keeps failed saves on screen, warns before unloading, and retries on leaving", async () => {
+    onPut = () => Promise.reject(new TypeError("offline"));
+    renderRouted(DRAFT_ID);
+    await advance();
+    await typeTitle("断网也要留下的文字");
+    await advance(2_100);
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "返回时间流" })),
+    );
+    await advance();
+    expect(titleField().value).toBe("断网也要留下的文字");
+    onPut = null;
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "返回时间流" })),
+    );
+    await advance();
+    expect(putCalls().at(-1)?.body).toMatchObject({
+      title: "断网也要留下的文字",
+    });
+    expect(screen.getByText("已离开编辑器")).toBeInTheDocument();
+  });
+
+  it("waits for an in-flight autosave and saves newer text before publishing", async () => {
+    let finish!: (response: Response) => void;
+    onPut = () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      });
+    renderRouted(DRAFT_ID);
+    await advance();
+    await typeTitle("自动保存的版本");
+    await advance(2_000);
+    await typeTitle("发布时的最终版本");
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "发布" }),
+      ),
+    );
+    expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(false);
+    onPut = null;
+    await act(async () =>
+      finish(success(draftRow({ updated_at: "2026-09-25T02:04:00.000Z" }))),
+    );
+    await advance();
+    expect(putCalls()).toHaveLength(2);
+    expect(putCalls()[1].body).toMatchObject({
+      title: "发布时的最终版本",
+      expected_updated_at: "2026-09-25T02:04:00.000Z",
+    });
+    expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(true);
+  });
+
+  it("keeps a private published article private when publishing its working copy", async () => {
+    onRead = () => success(draftRow({ published_entry_id: DRAFT_ID }));
+    renderEditor(DRAFT_ID);
+    await advance();
+    expect(screen.getByRole("button", { name: "选择受众" })).toHaveTextContent(
+      "仅自己",
+    );
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "发布" }),
+      ),
+    );
+    await advance();
+    expect(calls.find((c) => c.url.endsWith("/publish"))?.body).toEqual({
+      visibility: "only_me",
+    });
   });
 });
