@@ -47,6 +47,16 @@ type PostStore interface {
 	ReplaceArticle(context.Context, domain.ID, domain.Article) error
 	ArticleByEntryID(context.Context, domain.ID) (domain.Article, bool, error)
 	ArticleCards(context.Context, []domain.ID) (map[domain.ID]ArticleCard, error)
+	// Drafts live outside entries on purpose: eighteen read paths select from
+	// entries, and a status column there would need every one of them to
+	// filter correctly for an unfinished article to stay unpublished.
+	InsertArticleDraft(context.Context, ArticleDraftRecord) error
+	UpdateArticleDraft(context.Context, ArticleDraftRecord, time.Time) (bool, error)
+	ArticleDraftByID(context.Context, domain.ID) (ArticleDraftRecord, bool, error)
+	ArticleDraftForEntry(context.Context, domain.ID) (ArticleDraftRecord, bool, error)
+	ListArticleDrafts(context.Context, int) ([]ArticleDraftRecord, error)
+	CountArticleDrafts(context.Context) (int, error)
+	DeleteArticleDraft(context.Context, domain.ID) (bool, error)
 }
 
 // PostTransactions supplies consistent read and atomic write transactions to

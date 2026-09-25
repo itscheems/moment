@@ -200,6 +200,17 @@ type articleWalk struct {
 // typed tree. Every refusal names the path of the first node that broke the
 // rule, because a body is deep enough that "invalid" on its own is useless.
 func ParseArticleDocument(source []byte) (ArticleDocument, error) {
+	return parseArticleDocument(source, true)
+}
+
+// ParseArticleDraftDocument applies the same grammar without insisting the
+// document says anything. A draft is allowed to be empty -- that is most of
+// what being a draft means -- while publishing one is not.
+func ParseArticleDraftDocument(source []byte) (ArticleDocument, error) {
+	return parseArticleDocument(source, false)
+}
+
+func parseArticleDocument(source []byte, requireSubstance bool) (ArticleDocument, error) {
 	if length := len(source); length > MaxArticleBodyBytes {
 		return ArticleDocument{}, NewError(CodeContentTooLarge, "article body exceeds the byte limit",
 			map[string]any{"field": "body", "limit": MaxArticleBodyBytes, "actual": length})
@@ -235,8 +246,10 @@ func ParseArticleDocument(source []byte) (ArticleDocument, error) {
 		return ArticleDocument{}, err
 	}
 	document := ArticleDocument{SchemaVersion: *raw.SchemaVersion, Content: content}
-	if err := articleHasSubstance(document, walk); err != nil {
-		return ArticleDocument{}, err
+	if requireSubstance {
+		if err := articleHasSubstance(document, walk); err != nil {
+			return ArticleDocument{}, err
+		}
 	}
 	return document, nil
 }
@@ -244,7 +257,10 @@ func ParseArticleDocument(source []byte) (ArticleDocument, error) {
 // An article with no words, no picture and no table is not an article. The
 // rule mirrors the one a media-only moment already lives under.
 func articleHasSubstance(document ArticleDocument, walk *articleWalk) error {
-	if walk.images > 0 {
+	if walk != nil && walk.images > 0 {
+		return nil
+	}
+	if walk == nil && len(Article{Body: document}.InlineMedia()) > 0 {
 		return nil
 	}
 	if strings.TrimSpace(ArticleVisibleText(document)) != "" {

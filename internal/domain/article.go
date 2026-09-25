@@ -99,3 +99,47 @@ func appendArticleMedia(usages *[]EntryMediaUsage, nodes []ArticleNode) {
 		appendArticleMedia(usages, node.Content)
 	}
 }
+
+// ArticleDraft is an article that is not finished.
+//
+// It is a separate type from Article because it is allowed to break the one
+// rule a published article cannot: it may have no title yet, and it may say
+// nothing at all. Publishing is where those become requirements, which is why
+// Publish is the only way to turn one into the other.
+type ArticleDraft struct {
+	Title   string
+	Body    ArticleDocument
+	CoverID *ID
+}
+
+// NewArticleDraft validates what a draft still has to get right: a title that
+// is not absurdly long, and a cover that names managed media.
+func NewArticleDraft(title string, body ArticleDocument, coverID *ID) (ArticleDraft, error) {
+	trimmed := strings.TrimSpace(title)
+	if count := utf8.RuneCountInString(trimmed); count > MaxArticleTitleCodePoints {
+		return ArticleDraft{}, NewError(CodeContentTooLarge, "article title exceeds the code-point limit",
+			map[string]any{"field": "title", "limit": MaxArticleTitleCodePoints, "actual": count})
+	}
+	if coverID != nil {
+		if _, err := ParseID(coverID.String()); err != nil {
+			return ArticleDraft{}, NewError(CodeInvalidArgument, "an article cover must name managed media",
+				map[string]any{"field": "cover_media_id"})
+		}
+	}
+	return ArticleDraft{Title: trimmed, Body: body, CoverID: coverID}, nil
+}
+
+// Publish promotes a draft into an article, applying the rules a draft was
+// exempt from. A draft that says nothing cannot become a post.
+func (draft ArticleDraft) Publish() (Article, error) {
+	if err := articleHasSubstance(draft.Body, nil); err != nil {
+		return Article{}, err
+	}
+	return NewArticle(draft.Title, draft.Body, draft.CoverID)
+}
+
+// InlineMedia projects the pictures a draft's body places, so an unpublished
+// draft keeps its uploads from being reclaimed.
+func (draft ArticleDraft) InlineMedia() []EntryMediaUsage {
+	return Article{Body: draft.Body}.InlineMedia()
+}

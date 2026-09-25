@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/mediacontract"
@@ -16,6 +17,21 @@ type ArticleCard struct {
 	Excerpt      string
 	CoverMediaID *domain.ID
 }
+
+// ArticleDraftRecord is one stored draft. PublishedEntryID is nil for a draft
+// that was never published and names the entry when the draft is the working
+// copy of one: editing a published article must not change what readers see
+// with every keystroke.
+type ArticleDraftRecord struct {
+	ID               domain.ID
+	Draft            domain.ArticleDraft
+	PublishedEntryID *domain.ID
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// MaxArticleDrafts bounds how many unfinished articles one site keeps.
+const MaxArticleDrafts = 50
 
 // ArticleMediaURL addresses a managed picture the way a browser reaches it.
 //
