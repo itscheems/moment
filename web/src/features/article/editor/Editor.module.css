@@ -1,0 +1,874 @@
+/* The article editor is its own page, not a panel inside the timeline shell.
+   The shell's middle column is 37.5rem on a detail route, and an article is
+   written at 700-760px -- wider than the column it would have had to live in,
+   which is why this route renders outside the shell entirely. */
+.page {
+  --editor-measure: 45rem; /* 720px, inside the 700-760px band */
+  --editor-rail: 17rem;
+  min-block-size: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+  color: var(--text-primary);
+}
+
+/* ---- the bars ---- */
+
+.topBar,
+.toolBar {
+  position: sticky;
+  z-index: var(--layer-header);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.topBar {
+  inset-block-start: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-4);
+  min-block-size: 3.25rem;
+}
+
+.status {
+  flex: 1;
+  min-inline-size: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusAlert {
+  color: var(--danger);
+}
+
+.topActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.toolBar {
+  inset-block-start: 3.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-4);
+}
+
+.toolGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.toolDivider {
+  inline-size: 1px;
+  block-size: 1.25rem;
+  margin-inline: var(--space-2);
+  background: var(--border-subtle);
+}
+
+/* ---- buttons ---- */
+
+.toolButton {
+  min-inline-size: 2rem;
+  block-size: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 0;
+  border-radius: 0.5rem;
+  padding-inline: 0.4rem;
+  color: var(--text-primary);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.toolButton svg {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+}
+
+.toolButton[aria-pressed="true"],
+.toolButton[data-popup-open] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.toolButton:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* A tap latches :hover on a touch screen until the next tap lands somewhere
+   else, which left toolbar buttons lit long after they were pressed (b121e4e).
+   Every hover rule in this file sits behind this query for that reason. */
+@media (hover: hover) {
+  .toolButton:not(:disabled):hover {
+    background: var(--surface-hover-strong);
+  }
+
+  .toolButton[aria-pressed="true"]:not(:disabled):hover {
+    background: var(--accent-soft);
+  }
+}
+
+.primaryAction {
+  block-size: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.primaryAction:disabled {
+  cursor: not-allowed;
+  opacity: var(--button-primary-disabled-opacity);
+}
+
+.secondaryAction {
+  block-size: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: var(--text-primary);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .primaryAction:not(:disabled):hover {
+    background: var(--button-primary-hover);
+  }
+
+  .secondaryAction:not(:disabled):hover {
+    background: var(--surface-hover);
+  }
+}
+
+/* ---- the body of the page ---- */
+
+.main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: var(--editor-rail) minmax(0, 1fr);
+  align-items: start;
+}
+
+.main.railHidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.rail {
+  position: sticky;
+  inset-block-start: 6.25rem;
+  max-block-size: calc(100dvh - 7rem);
+  overflow-y: auto;
+  border-inline-end: 1px solid var(--border-subtle);
+  padding: var(--space-4) var(--space-3);
+}
+
+.railHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding-inline: var(--space-2);
+}
+
+.railTitle {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: var(--tracking-utility);
+}
+
+.railCount {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.draftList {
+  display: grid;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.draftRow {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: var(--radius-action);
+}
+
+.draftOpen {
+  min-inline-size: 0;
+  display: grid;
+  gap: 0.15rem;
+  border: 0;
+  border-radius: var(--radius-action);
+  padding: var(--space-2);
+  color: inherit;
+  background: transparent;
+  font-family: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.draftRow[data-current="true"] .draftOpen {
+  background: var(--surface-muted);
+}
+
+@media (hover: hover) {
+  .draftOpen:hover {
+    background: var(--surface-hover-strong);
+  }
+}
+
+.draftName {
+  overflow: hidden;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draftUntitled {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.draftWhen {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.draftDiscard {
+  inline-size: 2rem;
+  block-size: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.draftDiscard svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+@media (hover: hover) {
+  .draftDiscard:hover {
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+}
+
+.railEmpty,
+.railError {
+  margin: 0;
+  padding: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.railError {
+  color: var(--danger);
+}
+
+.newDraft {
+  inline-size: 100%;
+  margin-block-end: var(--space-3);
+  block-size: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-primary);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .newDraft:hover {
+    background: var(--surface-hover);
+  }
+}
+
+/* ---- the sheet ---- */
+
+.sheet {
+  inline-size: min(100%, var(--editor-measure));
+  margin-inline: auto;
+  padding: 0 var(--space-4) 30dvh;
+}
+
+.cover {
+  position: relative;
+  /* Full bleed inside the sheet: an article's cover runs edge to edge the way
+     it does when the article is read. */
+  inline-size: calc(100% + 2 * var(--space-4));
+  margin: 0 calc(0px - var(--space-4)) var(--space-6);
+  overflow: hidden;
+  background: var(--surface-muted);
+}
+
+.coverImage {
+  display: block;
+  inline-size: 100%;
+  max-block-size: 24rem;
+  object-fit: cover;
+}
+
+.coverActions {
+  position: absolute;
+  inset-block-start: var(--space-3);
+  inset-inline-end: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+  opacity: 1;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+/* Shown on hover where there is a pointer, and always where there is not:
+   a touch screen has no hover to reveal them with. */
+@media (hover: hover) {
+  .coverActions {
+    opacity: 0;
+  }
+
+  .cover:hover .coverActions,
+  .coverActions:focus-within {
+    opacity: 1;
+  }
+}
+
+.coverAction {
+  block-size: 2rem;
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-3);
+  color: #fff;
+  background: rgb(0 0 0 / 68%);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.coverAdd {
+  inline-size: 100%;
+  min-block-size: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-panel);
+  margin-block-end: var(--space-5);
+  color: var(--text-secondary);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .coverAdd:hover {
+    color: var(--text-primary);
+    border-color: var(--text-tertiary);
+  }
+}
+
+.title {
+  inline-size: 100%;
+  display: block;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  resize: none;
+  color: var(--text-primary);
+  background: transparent;
+  font-family: var(--font-display);
+  font-size: 2.125rem;
+  font-weight: 800;
+  letter-spacing: var(--tracking-display);
+  line-height: 1.16;
+}
+
+.title::placeholder {
+  color: var(--text-tertiary);
+}
+
+.title:focus {
+  outline: none;
+}
+
+.titleOverflow {
+  margin: var(--space-2) 0 0;
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+.byline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block: var(--space-4) var(--space-5);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.bylineName {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* ---- the document ---- */
+
+.body {
+  font-size: 1.125rem;
+  line-height: 1.72;
+}
+
+.body :global(.tiptap) {
+  min-block-size: 40dvh;
+  outline: none;
+}
+
+.body :global(.tiptap) :where(p, ul, ol, blockquote, pre, table, h1, h2, h3) {
+  margin-block: 1.1em;
+}
+
+.body :global(.tiptap) > :first-child {
+  margin-block-start: 0;
+}
+
+.body :global(.tiptap) :where(h1, h2, h3) {
+  font-weight: 750;
+  line-height: 1.28;
+}
+
+.body :global(.tiptap) h1 {
+  font-size: 1.75rem;
+}
+
+.body :global(.tiptap) h2 {
+  font-size: 1.4375rem;
+}
+
+.body :global(.tiptap) h3 {
+  font-size: 1.1875rem;
+}
+
+.body :global(.tiptap) :where(ul, ol) {
+  padding-inline-start: 1.35em;
+}
+
+.body :global(.tiptap) ul {
+  list-style: disc;
+}
+
+.body :global(.tiptap) ol {
+  list-style: decimal;
+}
+
+.body :global(.tiptap) li {
+  margin-block: 0.3em;
+}
+
+.body :global(.tiptap) a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.18em;
+}
+
+.body :global(.tiptap) blockquote {
+  border-inline-start: 3px solid var(--border-strong);
+  margin-inline: 0;
+  padding-inline-start: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.body :global(.tiptap) code {
+  border-radius: 0.3rem;
+  padding: 0.08rem 0.28rem;
+  background: var(--surface-muted);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.body :global(.tiptap) pre {
+  max-inline-size: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-action);
+  padding: var(--space-4);
+  background: var(--surface-hover);
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.body :global(.tiptap) pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 1em;
+}
+
+.body :global(.tiptap) hr {
+  border: 0;
+  border-block-start: 1px solid var(--border-subtle);
+  margin-block: var(--space-6);
+}
+
+.body :global(.tiptap) hr.ProseMirror-selectednode {
+  border-block-start-color: var(--accent);
+}
+
+.body :global(.tiptap) img {
+  display: block;
+  max-inline-size: 100%;
+  block-size: auto;
+  border-radius: var(--radius-action);
+  margin-block: var(--space-5);
+  background: var(--surface-muted);
+}
+
+.body :global(.tiptap) img.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.body :global(.tiptap) table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 1rem;
+}
+
+.body :global(.tiptap) :where(th, td) {
+  position: relative;
+  border: 1px solid var(--border-subtle);
+  padding: 0.5rem 0.75rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.body :global(.tiptap) th {
+  background: var(--surface-muted);
+  font-weight: 700;
+}
+
+.body :global(.tiptap) :where(th, td) > * {
+  margin-block: 0.25em;
+}
+
+.body :global(.tiptap) .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+/* Tiptap's placeholder decoration, on the first empty block only. */
+.body :global(.tiptap) p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: inline-start;
+  block-size: 0;
+  color: var(--text-tertiary);
+  pointer-events: none;
+}
+
+/* ---- the selection menu ---- */
+
+.bubble {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  z-index: var(--layer-popover);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  padding: 0.25rem;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  opacity: 0;
+  transform: translateY(0.25rem);
+  animation: bubbleIn var(--motion-popover) var(--ease-out) forwards;
+}
+
+@keyframes bubbleIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- popovers ---- */
+
+.popup {
+  z-index: var(--layer-popover);
+  min-inline-size: 13rem;
+  display: grid;
+  gap: var(--space-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-action);
+  padding: var(--space-3);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+
+.menuPopup {
+  z-index: var(--layer-popover);
+  min-inline-size: 11rem;
+  display: grid;
+  gap: 0.125rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-action);
+  padding: var(--space-1);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  border-radius: 0.5rem;
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-primary);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.menuItem[data-highlighted],
+.menuItem[data-selected] {
+  background: var(--surface-hover-strong);
+}
+
+.menuItemDanger {
+  color: var(--danger);
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.fieldLabel {
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+.input {
+  inline-size: 100%;
+  block-size: 2.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 0.5rem;
+  padding-inline: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: var(--text-sm);
+}
+
+.popupActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.popupError {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+/* ---- uploads ---- */
+
+.uploads {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-end: var(--space-4);
+}
+
+.upload {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-action);
+  padding: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.uploadBar {
+  grid-column: 1 / -1;
+  block-size: 0.25rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.uploadFill {
+  block-size: 100%;
+  background: var(--accent);
+  transition: inline-size var(--motion-fast) linear;
+}
+
+.uploadFailed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* ---- conflict ---- */
+
+.conflict {
+  display: grid;
+  gap: var(--space-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-panel);
+  margin-block-end: var(--space-5);
+  padding: var(--space-4);
+  background: var(--danger-soft);
+  color: var(--text-primary);
+}
+
+.conflictTitle {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 700;
+}
+
+.conflictBody {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+.conflictActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.loading,
+.pageError {
+  margin: var(--space-8) auto;
+  inline-size: min(100%, var(--editor-measure));
+  padding-inline: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- narrow ---- */
+
+@media (max-width: 62rem) {
+  .main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail {
+    position: static;
+    max-block-size: none;
+    border-inline-end: 0;
+    border-block-end: 1px solid var(--border-subtle);
+  }
+
+  .title {
+    font-size: 1.75rem;
+  }
+
+  .body {
+    font-size: 1.0625rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toolButton,
+  .primaryAction,
+  .secondaryAction,
+  .coverActions,
+  .coverAdd,
+  .draftOpen,
+  .draftDiscard,
+  .uploadFill {
+    transition: none;
+  }
+
+  .bubble {
+    opacity: 1;
+    transform: none;
+    animation: none;
+  }
+}

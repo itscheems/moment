@@ -1,0 +1,754 @@
+import { Menu } from "@base-ui/react/menu";
+import { EditorContent, useEditor } from "@tiptap/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import {
+  PublicApiError,
+  type ArticleDocument,
+  type PostVisibility,
+  type SiteIdentity,
+} from "../../../api/public";
+import { useNavigation } from "../../../app/navigation";
+import { notify } from "../../../components/Feedback";
+import { Icon } from "../../../components/icons";
+import { SiteAvatar, siteDisplayName } from "../../../components/SiteIdentity";
+import { AudienceSelector } from "../../owner/AudienceSelector";
+import { useOwner } from "../../owner/OwnerProvider";
+import {
+  ArticleDraftApi,
+  MAX_ARTICLE_TITLE_CODE_POINTS,
+  articleDraftErrorMessage,
+  isDraftMissingError,
+  isStaleDraftError,
+  type ArticleDraft,
+  type ArticleDraftInput,
+} from "../articleDrafts";
+import { ARTICLE_COMPOSE_PATH, articleDraftPath } from "../../../app/routes";
+import { autosaveDelay, saveStatusLabel, type SaveState } from "./autosave";
+import { ConflictNotice } from "./components/ConflictNotice";
+import { CoverField } from "./components/CoverField";
+import { DraftRail } from "./components/DraftRail";
+import { ImageUploads, type UploadTask } from "./components/ImageUploads";
+import { SelectionMenu } from "./components/SelectionMenu";
+import { Toolbar } from "./components/Toolbar";
+import {
+  emptyArticleDocument,
+  hasArticleSubstance,
+  toArticleDocument,
+  toEditorContent,
+} from "./document";
+import { articleEditorExtensions } from "./schema";
+import styles from "./Editor.module.css";
+
+function createIdempotencyKey(): string {
+  if (typeof crypto.randomUUID === "function") {
+    return `web-article-${crypto.randomUUID()}`;
+  }
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return `web-article-${Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** Code points, not UTF-16 units: the server counts the title the same way. */
+function codePoints(value: string): number {
+  return Array.from(value).length;
+}
+
+/**
+ * The article editor: a whole page, not a dialog.
+ *
+ * It renders outside AppShell on purpose. The shell's middle column is 600px
+ * on a detail route, and an article is written at the width it is read at --
+ * closer to 720 -- so an editor squeezed into that column would be narrower
+ * than the page it produces. The top bar carries the way back instead.
+ *
+ * The title is its own field and never enters the document. That is how the
+ * server stores it, and a title that lived as a first heading would be a title
+ * the owner could delete by pressing backspace in the wrong place.
+ */
+export function ArticleEditor({
+  site,
+  draftId,
+}: {
+  site: SiteIdentity;
+  draftId: string | null;
+}) {
+  const owner = useOwner();
+  const location = useNavigation();
+  const api = useMemo(() => new ArticleDraftApi(), []);
+  const csrfToken = owner.session?.csrfToken ?? "";
+
+  const [phase, setPhase] = useState<"loading" | "ready" | "gone">(
+    draftId === null ? "ready" : "loading",
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [draft, setDraft] = useState<ArticleDraft | null>(null);
+  const [title, setTitle] = useState("");
+  const [coverMediaId, setCoverMediaId] = useState<string | null>(null);
+  const [visibility, setVisibility] = useState<PostVisibility>("everyone");
+  const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
+  const [uploads, setUploads] = useState<readonly UploadTask[]>([]);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [resolving, setResolving] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [drafts, setDrafts] = useState<readonly ArticleDraft[]>([]);
+  const [railError, setRailError] = useState<string | null>(null);
+  const [railLoading, setRailLoading] = useState(true);
+  const [now, setNow] = useState(() => new Date());
+
+  // The clocks the autosave runs on. Refs and not state: a keystroke must not
+  // re-render the page, only reschedule the save.
+  const firstChangeAt = useRef(0);
+  const lastChangeAt = useRef(0);
+  const [changeTick, setChangeTick] = useState(0);
+  const saving = useRef(false);
+  const coverInput = useRef<HTMLInputElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const publishKey = useRef(createIdempotencyKey());
+
+  const editor = useEditor({
+    extensions: articleEditorExtensions({ placeholder: "从这里开始写…" }),
+    shouldRerenderOnTransaction: false,
+    // Built in an effect, not during the render that asks for it.
+    //
+    // useEditor's default builds the editor while rendering and starts a 1ms
+    // timer that destroys it unless the component has mounted by then. This
+    // page arrives through React.lazy, so the gap between render and commit is
+    // a chunk download: the timer wins, the editor is destroyed, and the
+    // effects below run holding the corpse. Deferring creation to the effect
+    // means the first render sees null -- which they already handle -- and the
+    // second sees a live editor.
+    immediatelyRender: false,
+    editorProps: {
+      attributes: {
+        "aria-label": "文章正文",
+        role: "textbox",
+        "aria-multiline": "true",
+      },
+    },
+  });
+
+  const markChanged = useCallback(() => {
+    const at = Date.now();
+    if (firstChangeAt.current === 0) firstChangeAt.current = at;
+    lastChangeAt.current = at;
+    setChangeTick((tick) => tick + 1);
+    setSaveState((current) =>
+      // A conflict is a question the owner has not answered yet. Typing on is
+      // allowed; quietly resuming the saves that would overwrite the other
+      // copy is not.
+      current.kind === "conflict" ? current : { kind: "dirty" },
+    );
+  }, []);
+
+  useEffect(() => {
+    // A destroyed editor still answers to a stale closure, and every call on
+    // it throws. Tiptap guards its own chain() for this; the rest is ours.
+    if (!editor || editor.isDestroyed) return;
+    editor.on("update", markChanged);
+    return () => {
+      editor.off("update", markChanged);
+    };
+  }, [editor, markChanged]);
+
+  /** Load the draft named in the address, or start an empty one. */
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    let abandoned = false;
+    const controller = new AbortController();
+    if (draftId === null) {
+      setDraft(null);
+      setTitle("");
+      setCoverMediaId(null);
+      setSaveState({ kind: "idle" });
+      firstChangeAt.current = 0;
+      editor.commands.setContent(toEditorContent(emptyArticleDocument()), {
+        emitUpdate: false,
+      });
+      setPhase("ready");
+      return;
+    }
+    setPhase("loading");
+    setLoadError(null);
+    void (async () => {
+      try {
+        const loaded = await api.read(draftId, controller.signal);
+        if (abandoned) return;
+        setDraft(loaded);
+        setTitle(loaded.title);
+        setCoverMediaId(loaded.coverMediaId);
+        setSaveState({ kind: "saved", at: loaded.updatedAt });
+        firstChangeAt.current = 0;
+        // Loading is not an edit, so the update that would mark the draft
+        // dirty -- and schedule a save of what was just read -- is suppressed.
+        editor.commands.setContent(toEditorContent(loaded.body), {
+          emitUpdate: false,
+        });
+        setPhase("ready");
+      } catch (error) {
+        if (abandoned || controller.signal.aborted) return;
+        if (isDraftMissingError(error)) {
+          setPhase("gone");
+          return;
+        }
+        owner.expireIfInvalidSession(error);
+        setLoadError(articleDraftErrorMessage(error));
+        setPhase("ready");
+      }
+    })();
+    return () => {
+      abandoned = true;
+      controller.abort();
+    };
+    // `owner` is deliberately not a dependency: it is read for its
+    // session-expiry hook only, and re-running this on every session tick
+    // would reload the draft over what is being typed.
+  }, [api, draftId, editor]);
+
+  const refreshDrafts = useCallback(async () => {
+    setRailLoading(true);
+    try {
+      const listed = await api.list();
+      setDrafts(listed);
+      setRailError(null);
+    } catch (error) {
+      owner.expireIfInvalidSession(error);
+      setRailError(articleDraftErrorMessage(error));
+    } finally {
+      setRailLoading(false);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void refreshDrafts();
+  }, [refreshDrafts]);
+
+  /**
+   * Preview is the same sheet, read-only.
+   *
+   * Not a second renderer: an article has exactly one rendering and the server
+   * owns it (see ArticlePage), so the honest preview is the document the owner
+   * is looking at, with the chrome taken away and the typography it will be
+   * read in left in place.
+   */
+  useEffect(() => {
+    // Without the second argument setEditable emits an "update", and "update"
+    // is what marks the draft dirty -- so merely opening the page, or looking
+    // at the preview and coming back, would report unsaved changes nobody
+    // made. Whether the sheet can be typed on is not a change to what it says.
+    editor?.setEditable(!previewing, false);
+  }, [editor, previewing]);
+
+  /** The status line counts in minutes, so it has to be told the time. */
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const currentInput = useCallback((): ArticleDraftInput | null => {
+    if (!editor || editor.isDestroyed) return null;
+    let body: ArticleDocument;
+    try {
+      body = toArticleDocument(editor.getJSON());
+    } catch {
+      return null;
+    }
+    return { title, body, coverMediaId };
+  }, [coverMediaId, editor, title]);
+
+  const save = useCallback(
+    async (reason: "auto" | "force"): Promise<ArticleDraft | null> => {
+      if (saving.current) return null;
+      const input = currentInput();
+      if (input === null) {
+        setSaveState({ kind: "failed", message: "正文里有存不下的内容。" });
+        return null;
+      }
+      if (csrfToken === "") {
+        setSaveState({ kind: "failed", message: "登录状态已经失效。" });
+        return null;
+      }
+      saving.current = true;
+      const savedThrough = lastChangeAt.current;
+      setSaveState({ kind: "saving" });
+      try {
+        const current = draft;
+        const stored =
+          current === null
+            ? await api.create(csrfToken, input)
+            : await api.replace(
+                csrfToken,
+                current.id,
+                input,
+                current.updatedAt,
+              );
+        setDraft(stored);
+        setSaveState({ kind: "saved", at: stored.updatedAt });
+        // Only the work that went into this request is saved. Anything typed
+        // while it was in flight is still unsaved, and the ceiling restarts
+        // from when that happened rather than from now.
+        if (lastChangeAt.current <= savedThrough) {
+          firstChangeAt.current = 0;
+        } else {
+          firstChangeAt.current = lastChangeAt.current;
+          setSaveState({ kind: "dirty" });
+        }
+        if (current === null) {
+          // The address follows the draft rather than the other way round, so
+          // a reload comes back to what was just written. Replaced, not
+          // pushed: nobody navigated anywhere.
+          location.replace(articleDraftPath(stored.id));
+        }
+        void refreshDrafts();
+        return stored;
+      } catch (error) {
+        if (isStaleDraftError(error)) {
+          setSaveState({
+            kind: "conflict",
+            serverUpdatedAt:
+              error instanceof PublicApiError &&
+              typeof error.details.updated_at === "string"
+                ? error.details.updated_at
+                : null,
+          });
+          return null;
+        }
+        owner.expireIfInvalidSession(error);
+        const message = articleDraftErrorMessage(error);
+        setSaveState({ kind: "failed", message });
+        if (reason === "force") notify(message, { type: "error" });
+        return null;
+      } finally {
+        saving.current = false;
+      }
+    },
+    [api, csrfToken, currentInput, draft, location, refreshDrafts],
+  );
+
+  /** Debounced: 2s idle, and never more than 15s after the first change. */
+  useEffect(() => {
+    if (phase !== "ready") return;
+    if (saveState.kind !== "dirty") return;
+    if (firstChangeAt.current === 0) return;
+    const delay = autosaveDelay(
+      firstChangeAt.current,
+      lastChangeAt.current,
+      Date.now(),
+    );
+    const timer = window.setTimeout(() => void save("auto"), delay);
+    return () => window.clearTimeout(timer);
+  }, [changeTick, phase, save, saveState.kind]);
+
+  /** A tab closed mid-sentence should say so rather than lose the sentence. */
+  useEffect(() => {
+    const risky =
+      saveState.kind === "dirty" ||
+      saveState.kind === "saving" ||
+      saveState.kind === "conflict";
+    if (!risky) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [saveState.kind]);
+
+  const uploadImage = useCallback(
+    async (file: File, place: "cover" | "body") => {
+      if (csrfToken === "") {
+        notify("登录状态已经失效。", { type: "error" });
+        return;
+      }
+      const id = createIdempotencyKey();
+      if (place === "cover") setCoverBusy(true);
+      else {
+        setUploads((current) => [
+          ...current,
+          { id, name: file.name, percent: 0, failed: null },
+        ]);
+      }
+      try {
+        const uploaded = await owner.api.uploadMedia(
+          csrfToken,
+          file,
+          (percent) =>
+            setUploads((current) =>
+              current.map((task) =>
+                task.id === id ? { ...task, percent } : task,
+              ),
+            ),
+        );
+        if (place === "cover") {
+          setCoverMediaId(uploaded.id);
+        } else {
+          // Inserted only now: the document may name managed media and
+          // nothing else, so there is no id to write down until the server
+          // has given one.
+          editor
+            ?.chain()
+            .focus()
+            .insertContent({ type: "image", attrs: { media_id: uploaded.id } })
+            .run();
+          setUploads((current) => current.filter((task) => task.id !== id));
+        }
+        markChanged();
+      } catch (error) {
+        owner.expireIfInvalidSession(error);
+        const message =
+          error instanceof PublicApiError ? error.message : "上传没有成功。";
+        if (place === "cover") notify(`封面${message}`, { type: "error" });
+        else {
+          setUploads((current) =>
+            current.map((task) =>
+              task.id === id ? { ...task, failed: message } : task,
+            ),
+          );
+        }
+      } finally {
+        if (place === "cover") setCoverBusy(false);
+      }
+    },
+    [csrfToken, editor, markChanged],
+  );
+
+  const publish = useCallback(async () => {
+    if (publishing) return;
+    const trimmed = title.trim();
+    if (trimmed === "") {
+      notify("文章要有标题才能发布。", { type: "error" });
+      return;
+    }
+    const input = currentInput();
+    if (input === null || !hasArticleSubstance(input.body)) {
+      notify("正文还没有内容。", { type: "error" });
+      return;
+    }
+    setPublishing(true);
+    try {
+      // Saved first, so the article published is the article on screen: the
+      // publish endpoint reads the stored draft and not this browser's copy.
+      const stored =
+        draft === null || saveState.kind !== "saved"
+          ? await save("force")
+          : draft;
+      if (stored === null) return;
+      const post = await api.publish(
+        csrfToken,
+        stored.id,
+        publishKey.current,
+        visibility,
+      );
+      notify("文章已发布。");
+      location.navigate(`/m/${encodeURIComponent(post.id)}`);
+    } catch (error) {
+      owner.expireIfInvalidSession(error);
+      notify(articleDraftErrorMessage(error), { type: "error" });
+      // A refused publish is a new attempt, not a replay of the refused one.
+      publishKey.current = createIdempotencyKey();
+    } finally {
+      setPublishing(false);
+    }
+  }, [
+    api,
+    csrfToken,
+    currentInput,
+    draft,
+    location,
+    publishing,
+    save,
+    saveState.kind,
+    title,
+    visibility,
+  ]);
+
+  const discardCurrent = useCallback(async () => {
+    if (draft === null || csrfToken === "") {
+      location.navigate(ARTICLE_COMPOSE_PATH);
+      return;
+    }
+    try {
+      await api.discard(csrfToken, draft.id);
+      notify("草稿已删除。");
+      void refreshDrafts();
+      location.replace(ARTICLE_COMPOSE_PATH);
+    } catch (error) {
+      owner.expireIfInvalidSession(error);
+      notify(articleDraftErrorMessage(error), { type: "error" });
+    }
+  }, [api, csrfToken, draft, location, refreshDrafts]);
+
+  const takeServerCopy = useCallback(async () => {
+    if (draft === null || !editor || editor.isDestroyed) return;
+    setResolving(true);
+    try {
+      const stored = await api.read(draft.id);
+      setDraft(stored);
+      setTitle(stored.title);
+      setCoverMediaId(stored.coverMediaId);
+      editor.commands.setContent(toEditorContent(stored.body), {
+        emitUpdate: false,
+      });
+      firstChangeAt.current = 0;
+      setSaveState({ kind: "saved", at: stored.updatedAt });
+    } catch (error) {
+      owner.expireIfInvalidSession(error);
+      notify(articleDraftErrorMessage(error), { type: "error" });
+    } finally {
+      setResolving(false);
+    }
+  }, [api, draft, editor]);
+
+  const keepMyCopy = useCallback(async () => {
+    if (draft === null) return;
+    setResolving(true);
+    try {
+      // Read only for its revision. The body stays the one on screen; what is
+      // taken from the server is permission to write over it.
+      const stored = await api.read(draft.id);
+      setDraft({ ...draft, updatedAt: stored.updatedAt });
+      firstChangeAt.current = Date.now();
+      lastChangeAt.current = Date.now();
+      setSaveState({ kind: "dirty" });
+      setChangeTick((tick) => tick + 1);
+    } catch (error) {
+      owner.expireIfInvalidSession(error);
+      notify(articleDraftErrorMessage(error), { type: "error" });
+    } finally {
+      setResolving(false);
+    }
+  }, [api, draft]);
+
+  const titleLength = codePoints(title);
+  const titleTooLong = titleLength > MAX_ARTICLE_TITLE_CODE_POINTS;
+  const statusLine = saveStatusLabel(saveState, site.timezone, now);
+
+  if (phase === "gone") {
+    return (
+      <div className={styles.page}>
+        <div className={styles.pageError} role="alert">
+          <p>这份草稿已经不在了。</p>
+          <button
+            className={styles.secondaryAction}
+            onClick={() => location.replace(ARTICLE_COMPOSE_PATH)}
+            type="button"
+          >
+            写一篇新的
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.page}>
+      <header className={styles.topBar}>
+        <button
+          aria-label="返回时间流"
+          className={styles.toolButton}
+          onClick={() => location.goBack("/")}
+          type="button"
+        >
+          <Icon name="back" />
+        </button>
+        <p
+          className={`${styles.status} ${
+            saveState.kind === "failed" || saveState.kind === "conflict"
+              ? styles.statusAlert
+              : ""
+          }`}
+          role="status"
+        >
+          {statusLine}
+        </p>
+        <div className={styles.topActions}>
+          <AudienceSelector
+            disabled={publishing}
+            onChange={setVisibility}
+            value={visibility}
+          />
+          <button
+            aria-pressed={previewing}
+            className={styles.secondaryAction}
+            onClick={() => setPreviewing((current) => !current)}
+            type="button"
+          >
+            {previewing ? "继续编辑" : "预览"}
+          </button>
+          <button
+            className={styles.primaryAction}
+            disabled={publishing || titleTooLong}
+            onClick={() => void publish()}
+            type="button"
+          >
+            {publishing ? "正在发布…" : "发布"}
+          </button>
+          <Menu.Root>
+            <Menu.Trigger aria-label="更多" className={styles.toolButton}>
+              <Icon name="more" />
+            </Menu.Trigger>
+            <Menu.Portal>
+              <Menu.Positioner align="end" side="bottom" sideOffset={6}>
+                <Menu.Popup aria-label="更多选项" className={styles.menuPopup}>
+                  <Menu.Item
+                    className={styles.menuItem}
+                    disabled={saveState.kind === "saving"}
+                    onClick={() => void save("force")}
+                  >
+                    立即保存
+                  </Menu.Item>
+                  <Menu.Item
+                    className={`${styles.menuItem} ${styles.menuItemDanger}`}
+                    onClick={() => void discardCurrent()}
+                  >
+                    删除这份草稿
+                  </Menu.Item>
+                </Menu.Popup>
+              </Menu.Positioner>
+            </Menu.Portal>
+          </Menu.Root>
+        </div>
+      </header>
+
+      {editor && !previewing ? (
+        <Toolbar
+          editor={editor}
+          onPickImage={() => imageInput.current?.click()}
+          uploading={uploads.some((task) => task.failed === null)}
+        />
+      ) : null}
+
+      <div className={`${styles.main} ${previewing ? styles.railHidden : ""}`}>
+        {previewing ? null : (
+          <DraftRail
+            currentId={draft?.id ?? null}
+            drafts={drafts}
+            error={railError}
+            loading={railLoading}
+            onDiscard={(one) => {
+              void (async () => {
+                if (csrfToken === "") return;
+                try {
+                  await api.discard(csrfToken, one.id);
+                  if (one.id === draft?.id) {
+                    location.replace(ARTICLE_COMPOSE_PATH);
+                  }
+                  void refreshDrafts();
+                } catch (error) {
+                  notify(articleDraftErrorMessage(error), { type: "error" });
+                }
+              })();
+            }}
+            onNew={() => location.navigate(ARTICLE_COMPOSE_PATH)}
+            onOpen={(one) => location.navigate(articleDraftPath(one.id))}
+            timezone={site.timezone}
+          />
+        )}
+
+        <div className={styles.sheet}>
+          {phase === "loading" ? (
+            <p className={styles.loading}>正在读取草稿…</p>
+          ) : null}
+          {loadError ? (
+            <p className={styles.pageError} role="alert">
+              {loadError}
+            </p>
+          ) : null}
+          {saveState.kind === "conflict" ? (
+            <ConflictNotice
+              busy={resolving}
+              onKeepMine={() => void keepMyCopy()}
+              onTakeServer={() => void takeServerCopy()}
+            />
+          ) : null}
+
+          <CoverField
+            busy={coverBusy}
+            mediaId={coverMediaId}
+            onPick={() => coverInput.current?.click()}
+            onRemove={() => {
+              setCoverMediaId(null);
+              markChanged();
+            }}
+            readOnly={previewing}
+          />
+
+          {previewing ? (
+            <h1 className={styles.title}>{title.trim() || "无标题"}</h1>
+          ) : (
+            <>
+              <label className={styles.srOnly} htmlFor="article-title">
+                文章标题
+              </label>
+              <textarea
+                className={styles.title}
+                id="article-title"
+                onChange={(event) => {
+                  setTitle(event.target.value.replace(/[\r\n]+/g, " "));
+                  markChanged();
+                }}
+                placeholder="标题"
+                rows={1}
+                value={title}
+              />
+            </>
+          )}
+          {titleTooLong ? (
+            <p className={styles.titleOverflow} role="alert">
+              标题最多 {MAX_ARTICLE_TITLE_CODE_POINTS} 个字符，现在是{" "}
+              {titleLength} 个。
+            </p>
+          ) : null}
+
+          <div className={styles.byline}>
+            <SiteAvatar site={site} />
+            <span className={styles.bylineName}>{siteDisplayName(site)}</span>
+            <span aria-hidden="true">·</span>
+            <span>@{site.username}</span>
+          </div>
+
+          {previewing ? null : (
+            <ImageUploads
+              onDismiss={(id) =>
+                setUploads((current) =>
+                  current.filter((task) => task.id !== id),
+                )
+              }
+              uploads={uploads}
+            />
+          )}
+
+          <div className={styles.body}>
+            <EditorContent editor={editor} />
+          </div>
+        </div>
+      </div>
+
+      {editor && !previewing ? <SelectionMenu editor={editor} /> : null}
+
+      <input
+        accept="image/*"
+        className={styles.srOnly}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void uploadImage(file, "cover");
+        }}
+        ref={coverInput}
+        tabIndex={-1}
+        type="file"
+      />
+      <input
+        accept="image/*"
+        className={styles.srOnly}
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void uploadImage(file, "body");
+        }}
+        ref={imageInput}
+        tabIndex={-1}
+        type="file"
+      />
+    </div>
+  );
+}
+
+export default ArticleEditor;

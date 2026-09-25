@@ -50,6 +50,11 @@ const emptyCopy: Record<
     title: "发布 Moment",
     detail: "写下内容或添加图片。",
   },
+  "owner-article": {
+    marker: "文章",
+    title: "写文章",
+    detail: "标题、封面和正文，写到一半也会自己存成草稿。",
+  },
   "owner-edit": {
     marker: "编辑",
     title: "编辑 Moment",

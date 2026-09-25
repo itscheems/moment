@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { COMPOSE_PATH, movedComposePath, resolveRoute } from "./routes";
+import {
+  ARTICLE_COMPOSE_PATH,
+  COMPOSE_PATH,
+  articleDraftIdFromPath,
+  articleDraftPath,
+  isComposePath,
+  movedComposePath,
+  resolveRoute,
+} from "./routes";
 
 describe("route boundaries", () => {
   it.each([
@@ -85,5 +93,38 @@ describe("the retired owner sign-in address", () => {
   // segments, so it lands where any other address nobody serves lands.
   it("is a page that does not exist rather than somebody's profile", () => {
     expect(resolveRoute("/owner/login").id).toBe("not-found");
+  });
+});
+
+describe("where an article is written", () => {
+  it("answers under compose rather than under /owner", () => {
+    expect(ARTICLE_COMPOSE_PATH).toBe("/compose/article");
+    expect(resolveRoute(ARTICLE_COMPOSE_PATH).id).toBe("owner-article");
+    expect(resolveRoute("/compose/article/").id).toBe("owner-article");
+  });
+
+  it("carries the draft being edited in the address", () => {
+    expect(resolveRoute("/compose/article/01K2ABC").id).toBe("owner-article");
+    expect(articleDraftIdFromPath("/compose/article/01K2ABC")).toBe("01K2ABC");
+    expect(articleDraftIdFromPath("/compose/article/01K2ABC/")).toBe("01K2ABC");
+  });
+
+  it("means a new article when it names no draft", () => {
+    expect(articleDraftIdFromPath(ARTICLE_COMPOSE_PATH)).toBeNull();
+    expect(articleDraftIdFromPath("/compose")).toBeNull();
+  });
+
+  it("builds the address for a draft with the id escaped", () => {
+    expect(articleDraftPath("01K2/ABC")).toBe("/compose/article/01K2%2FABC");
+  });
+
+  it("does not take the moment composer's addresses with it", () => {
+    expect(resolveRoute(COMPOSE_PATH).id).toBe("owner-compose");
+    expect(resolveRoute("/compose/drafts").id).toBe("owner-compose");
+    expect(isComposePath(ARTICLE_COMPOSE_PATH)).toBe(false);
+  });
+
+  it("is the owner's, the way every other composing address is", () => {
+    expect(resolveRoute(ARTICLE_COMPOSE_PATH).ownerOnly).toBe(true);
   });
 });

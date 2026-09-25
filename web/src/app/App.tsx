@@ -1,10 +1,18 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { PublicApi, type SiteIdentity } from "../api/public";
 import { AppShell } from "../components/AppShell";
 import { Icon } from "../components/icons";
 import { ShellState } from "../components/ShellState";
+import { ArticleEditorPage } from "../features/article/editor";
 import { DetailPage } from "../features/timeline/DetailPage";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { Composer, type ComposerHandle } from "../features/owner/Composer";
@@ -38,6 +46,7 @@ import { NavigationProvider, useNavigation } from "./navigation";
 import {
   COMPOSE_DRAFTS_PATH,
   COMPOSE_PATH,
+  articleDraftIdFromPath,
   isComposeDraftsPath,
   movedComposePath,
   resolveRoute,
@@ -284,7 +293,10 @@ function PublicApp() {
   // not a login form folded into the compose dialog, which asked a visitor to
   // sign in inside a surface they had no business seeing yet.
   useEffect(() => {
-    if (requestedRoute.id !== "owner-compose" || ownerCapable) return;
+    const composing =
+      requestedRoute.id === "owner-compose" ||
+      requestedRoute.id === "owner-article";
+    if (!composing || ownerCapable) return;
     // Still resolving, or unable to say. Neither is an answer to act on.
     if (owner.state === "checking" || owner.state === "unavailable") return;
     // A session that exists but has not been answered for yet is not a
@@ -393,6 +405,7 @@ function PublicApp() {
     route.id !== "detail" &&
     route.id !== "login" &&
     route.id !== "owner-compose" &&
+    route.id !== "owner-article" &&
     route.id !== "owner-edit" &&
     route.id !== "owner-settings" &&
     route.id !== "search" &&
@@ -417,6 +430,28 @@ function PublicApp() {
   // has already run, so returning here changes what is rendered without
   // changing what is evaluated.
   if (route.id === "login") return <LoginPage site={site} />;
+
+  // The article editor is the whole window. The shell's middle column is
+  // 600px wide and an article is written at 720; squeezing the editor into
+  // the timeline's grid would make the page narrower than what it produces.
+  // Everything it needs is already loaded here, and the editor's own bundle
+  // is fetched on the way in -- nobody who cannot open it pays for it.
+  if (siteIdentityReady && route.id === "owner-article" && ownerCapable) {
+    return (
+      <Suspense
+        fallback={
+          <p className={styles.editorLoading} role="status">
+            正在打开编辑器…
+          </p>
+        }
+      >
+        <ArticleEditorPage
+          draftId={articleDraftIdFromPath(displayLocation.pathname)}
+          site={site}
+        />
+      </Suspense>
+    );
+  }
 
   return (
     // The owner's handle is the one this app knows without asking. Anything
@@ -518,6 +553,11 @@ function PublicApp() {
           ) : (
             <OwnerLogin embedded site={site} />
           )
+        ) : null}
+        {/* Only reached by somebody who cannot open the editor: the owner
+            returned above, before the shell was drawn at all. */}
+        {siteIdentityReady && route.id === "owner-article" ? (
+          <OwnerLogin embedded site={site} />
         ) : null}
         {siteIdentityReady && route.id === "owner-edit" ? (
           ownerCapable ? (

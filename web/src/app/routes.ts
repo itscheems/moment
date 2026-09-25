@@ -6,6 +6,7 @@ export type RouteId =
   | "profile"
   | "login"
   | "owner-compose"
+  | "owner-article"
   | "owner-edit"
   | "owner-settings"
   | "not-found";
@@ -23,6 +24,15 @@ export interface AppRoute {
 // (internal/domain/user.go), so this cannot shadow a profile.
 export const COMPOSE_PATH = "/compose";
 export const COMPOSE_DRAFTS_PATH = "/compose/drafts";
+// Writing an article is composing, so it lives under the same top-level
+// address rather than under /owner: what a page is for decides where it sits,
+// and who may open it is the server's answer and not the URL's.
+export const ARTICLE_COMPOSE_PATH = "/compose/article";
+
+/** Where one draft is edited. The id is the server's, so it is escaped. */
+export function articleDraftPath(id: string): string {
+  return `${ARTICLE_COMPOSE_PATH}/${encodeURIComponent(id)}`;
+}
 
 function matchesPath(pathname: string, path: string): boolean {
   return pathname === path || pathname === `${path}/`;
@@ -30,6 +40,30 @@ function matchesPath(pathname: string, path: string): boolean {
 
 export function isComposePath(pathname: string): boolean {
   return matchesPath(pathname, COMPOSE_PATH) || isComposeDraftsPath(pathname);
+}
+
+const ARTICLE_DRAFT_PATTERN = /^\/compose\/article\/([^/]+)\/?$/;
+
+export function isArticleComposePath(pathname: string): boolean {
+  return (
+    matchesPath(pathname, ARTICLE_COMPOSE_PATH) ||
+    ARTICLE_DRAFT_PATTERN.test(pathname)
+  );
+}
+
+/**
+ * The draft an address names, and null for the address that starts a new one.
+ * A segment that is not a legal escape is handed on as it arrived: the server
+ * decides what is and is not one of its ids.
+ */
+export function articleDraftIdFromPath(pathname: string): string | null {
+  const raw = ARTICLE_DRAFT_PATTERN.exec(pathname)?.[1];
+  if (raw === undefined) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 export function isComposeDraftsPath(pathname: string): boolean {
@@ -91,6 +125,16 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     eyebrow: "",
     href: "/login",
     match: (pathname) => pathname === "/login" || pathname === "/login/",
+  },
+  // Ahead of the compose route so the reading of "/compose/article" is never
+  // decided by how loosely that one happens to match today.
+  {
+    id: "owner-article",
+    title: "写文章",
+    eyebrow: "",
+    href: ARTICLE_COMPOSE_PATH,
+    ownerOnly: true,
+    match: isArticleComposePath,
   },
   {
     id: "owner-compose",

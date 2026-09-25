@@ -367,3 +367,13 @@
     transition: none;
   }
 }
+
+/* The article editor is fetched on the way into its route, so the window is
+   briefly empty. A line rather than a spinner: the wait is one request. */
+.editorLoading {
+  min-block-size: 100dvh;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--text-secondary);
+}
