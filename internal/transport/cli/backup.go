@@ -972,7 +972,7 @@ func decodeImportInspectionAPI(body []byte, expectedArchiveBytes int64, observed
 // decoder below is an exact-field-set reader: every name here must appear and
 // nothing else may, so this list and the struct's JSON tags are one contract.
 // TestImportCountsWireFieldsMatchTheStrictDecoder holds them together.
-var importCountsFields = []string{"entries", "comments", "media", "users", "identities"}
+var importCountsFields = []string{"entries", "comments", "media", "users", "articles", "article_drafts", "identities"}
 
 func decodeExactJSONObject(raw []byte, expectedKeys ...string) (map[string]json.RawMessage, error) {
 	return decodeJSONObjectWithOptional(raw, expectedKeys, nil)

@@ -273,6 +273,8 @@ function mergePlanData() {
     incoming_counts: makeImportCounts({
       entries: 2,
       users: 3,
+      articles: 0,
+      article_drafts: 0,
       identities: 3,
     }),
     incoming_media_bytes: 0,

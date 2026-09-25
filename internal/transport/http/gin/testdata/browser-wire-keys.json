@@ -41,6 +41,8 @@
     "username"
   ],
   "archive.ImportCounts": [
+    "article_drafts",
+    "articles",
     "comments",
     "entries",
     "identities",

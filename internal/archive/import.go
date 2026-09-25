@@ -89,11 +89,19 @@ type InspectOptions struct {
 // omitted when zero -- a preview that silently drops "users" reads as an import
 // that leaves accounts alone, which is the one thing it never does.
 type ImportCounts struct {
-	Entries    int64 `json:"entries"`
-	Comments   int64 `json:"comments"`
-	Media      int64 `json:"media"`
-	Users      int64 `json:"users"`
-	Identities int64 `json:"identities"`
+	Entries  int64 `json:"entries"`
+	Comments int64 `json:"comments"`
+	Media    int64 `json:"media"`
+	Users    int64 `json:"users"`
+	// Articles is a subset of Entries, since every article is one. It is
+	// reported separately because a preview that says only "entries" tells
+	// nobody how much of what is about to be replaced is long-form.
+	Articles int64 `json:"articles"`
+	// ArticleDrafts appears nowhere else. A replacement destroys unfinished
+	// articles, and a preview that does not name them is under-reporting the
+	// least recoverable thing on the site.
+	ArticleDrafts int64 `json:"article_drafts"`
+	Identities    int64 `json:"identities"`
 }
 
 // ImportTimeRange describes the published range that will replace the site.
@@ -900,6 +908,7 @@ func (inspector *Inspector) currentReplacementImpact(ctx context.Context, runtim
 		Counts: ImportCounts{
 			Entries: impact.Entries, Comments: impact.Comments, Media: impact.Media,
 			Users: impact.Users, Identities: impact.Identities,
+			Articles: impact.Articles, ArticleDrafts: impact.ArticleDrafts,
 		},
 		MediaBytes: impact.MediaBytes, DataBytes: dataBytes,
 	}, nil
@@ -1477,6 +1486,7 @@ func portableImportCounts(document manifest, carriesAccounts, carriesArticles bo
 	return ImportCounts{
 		Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media,
 		Users: expected.Users, Identities: expected.Identities,
+		Articles: expected.Articles, ArticleDrafts: expected.ArticleDrafts,
 	}
 }
 

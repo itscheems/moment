@@ -942,8 +942,9 @@ func TestBackupInspectAPIRejectsMalformedSuccessEnvelopes(t *testing.T) {
 		{name: "duplicate nested field", raw: func(value map[string]any) []byte {
 			data := value["data"].(map[string]any)
 			counts := data["counts"].(map[string]any)
-			data["counts"] = json.RawMessage(fmt.Sprintf(`{"entries":%v,"entries":%v,"comments":%v,"media":%v,"users":%v,"identities":%v}`,
-				counts["entries"], counts["entries"], counts["comments"], counts["media"], counts["users"], counts["identities"]))
+			data["counts"] = json.RawMessage(fmt.Sprintf(`{"entries":%v,"entries":%v,"comments":%v,"media":%v,"users":%v,"articles":%v,"article_drafts":%v,"identities":%v}`,
+				counts["entries"], counts["entries"], counts["comments"], counts["media"], counts["users"],
+				counts["articles"], counts["article_drafts"], counts["identities"]))
 			body, _ := json.Marshal(value)
 			return body
 		}},
@@ -1103,7 +1104,7 @@ func validImportInspectionAPIEnvelope(archiveBytes int64, expiresAt time.Time) m
 			"generation_id": "import-20260811T020000000Z-0102030405060708",
 			"counts": map[string]any{
 				"entries": int64(1), "comments": int64(2), "media": int64(3),
-				"users": int64(4), "identities": int64(5),
+				"users": int64(4), "articles": int64(0), "article_drafts": int64(0), "identities": int64(5),
 			},
 			"time_range": map[string]any{
 				"from": "2026-08-10T01:02:03Z", "to": "2026-08-11T01:02:03.123Z",
@@ -1119,7 +1120,7 @@ func validImportInspectionAPIEnvelope(archiveBytes int64, expiresAt time.Time) m
 			"replacement": map[string]any{
 				"counts": map[string]any{
 					"entries": int64(0), "comments": int64(0), "media": int64(0),
-					"users": int64(1), "identities": int64(0),
+					"users": int64(1), "articles": int64(0), "article_drafts": int64(0), "identities": int64(0),
 				},
 				"media_bytes": int64(0), "data_bytes": replacementBytes,
 			},

@@ -277,6 +277,13 @@ export interface ImportCounts {
    * needs before an irreversible decision, not after it.
    */
   users: number;
+  /**
+   * Articles are a subset of `entries`; drafts are in neither. A draft exists
+   * only here, so a preview that leaves it out under-reports exactly the part
+   * of a replacement that cannot be undone.
+   */
+  articles: number;
+  articleDrafts: number;
   identities: number;
 }
 
@@ -719,6 +726,8 @@ function parseImportCounts(value: unknown): ImportCounts {
       "comments",
       "media",
       "users",
+      "articles",
+      "article_drafts",
       "identities",
     ])
   ) {
@@ -729,6 +738,8 @@ function parseImportCounts(value: unknown): ImportCounts {
     comments: nonNegativeIntegerField(record, "comments"),
     media: nonNegativeIntegerField(record, "media"),
     users: nonNegativeIntegerField(record, "users"),
+    articles: nonNegativeIntegerField(record, "articles"),
+    articleDrafts: nonNegativeIntegerField(record, "article_drafts"),
     identities: nonNegativeIntegerField(record, "identities"),
   };
 }

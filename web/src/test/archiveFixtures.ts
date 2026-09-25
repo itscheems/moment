@@ -19,6 +19,8 @@ export interface ImportCountsWire {
   comments: number;
   media: number;
   users: number;
+  articles: number;
+  article_drafts: number;
   identities: number;
 }
 
@@ -36,6 +38,8 @@ export function makeImportCounts(
     comments: 0,
     media: 0,
     users: 1,
+    articles: 0,
+    article_drafts: 0,
     identities: 1,
     ...overrides,
   };

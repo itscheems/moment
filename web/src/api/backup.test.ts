@@ -61,6 +61,8 @@ function planData(archiveBytes: number) {
         comments: 13,
         media: 5,
         users: 2,
+        articles: 0,
+        article_drafts: 0,
         identities: 3,
       }),
       media_bytes: 1_000,
@@ -201,6 +203,8 @@ function mergePlanData() {
       entries: 1,
       comments: 1,
       users: 3,
+      articles: 0,
+      article_drafts: 0,
       identities: 3,
     }),
     incoming_media_bytes: 0,
@@ -349,6 +353,8 @@ describe("backup and restore owner API", () => {
         comments: 2,
         media: 1,
         users: 1,
+        articles: 0,
+        articleDrafts: 0,
         identities: 1,
       },
       disk: { spaceOK: true },
@@ -376,6 +382,8 @@ describe("backup and restore owner API", () => {
       comments: 1,
       media: 0,
       users: 3,
+      articles: 0,
+      article_drafts: 0,
       identities: 3,
     });
     FakeArchiveRequest.requests[0].respond(data);
@@ -386,6 +394,8 @@ describe("backup and restore owner API", () => {
       comments: 1,
       media: 0,
       users: 3,
+      articles: 0,
+      articleDrafts: 0,
       identities: 3,
     });
     // The replacement side is the same object read through a second call site,
@@ -395,6 +405,8 @@ describe("backup and restore owner API", () => {
       comments: 13,
       media: 5,
       users: 2,
+      articles: 0,
+      articleDrafts: 0,
       identities: 3,
     });
   });
