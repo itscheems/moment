@@ -36,7 +36,8 @@ const usage = `Measure real layout in a headless browser.
   --hover <sel>       move a real pointer onto this element first
   --shot <file>       write a screenshot
   --scan <y>          report the first non-background pixel on this row; repeatable
-  --settle <ms>       keep waiting this long for every selector to appear
+  --settle <ms>       keep waiting this long for every selector to appear,
+                      and for the pictures on screen to decode before a shot
                       (default 1500 for --url, 0 for --fragment)
   --keep              leave the generated page on disk and print where
   --json              print one JSON document instead of a table
@@ -164,6 +165,40 @@ function freePort() {
  * targets and windows and refuses `Page.enable` outright. The domains this
  * probe uses all live on a page.
  */
+// A screenshot taken before the pictures decode is not evidence of anything: an
+// image still arriving looks exactly like one that is broken, and a reader of
+// the shot cannot tell the difference. Wait for the ones the viewport can
+// actually see -- a lazy image below the fold never loads, so requiring all of
+// them would only ever spend the whole budget and time out.
+//
+// decode() rather than complete: complete says the bytes arrived, decode says
+// the frame is ready to paint, and with decoding="async" those are not the same
+// moment. A broken image rejects, which is also an answer.
+async function waitForPaintedContent(devtools, budgetMs) {
+  const until = Date.now() + budgetMs;
+  for (;;) {
+    const settled = await devtools.send("Runtime.evaluate", {
+      expression: `(async () => {
+        try { await document.fonts.ready; } catch {}
+        const onscreen = [...document.images].filter((image) => {
+          const box = image.getBoundingClientRect();
+          return box.width > 0 && box.height > 0 &&
+            box.bottom > 0 && box.top < innerHeight && box.right > 0 && box.left < innerWidth;
+        });
+        await Promise.all(onscreen.map((image) =>
+          image.decode ? image.decode().catch(() => {}) : Promise.resolve()));
+        await new Promise((paint) => requestAnimationFrame(() => requestAnimationFrame(paint)));
+        return onscreen.every((image) => image.complete);
+      })()`,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    if (settled.result.value === true) return true;
+    if (Date.now() >= until) return false;
+    await new Promise((again) => setTimeout(again, 100));
+  }
+}
+
 async function waitForPageEndpoint(port, deadlineMs) {
   const until = Date.now() + deadlineMs;
   for (;;) {
@@ -440,6 +475,10 @@ async function main() {
       await new Promise((settle) => setTimeout(settle, 250));
     }
 
+    const title = (await devtools.send("Runtime.evaluate", {
+      expression: "document.title", returnByValue: true,
+    })).result.value;
+
     const measured = selectors.length
       ? JSON.parse((await devtools.send("Runtime.evaluate", {
           expression: measureScript(selectors, options.computed), returnByValue: true,
@@ -447,7 +486,9 @@ async function main() {
       : {};
 
     let scans = [];
+    let painted = null;
     if (options.shot || options.scan.length > 0) {
+      painted = await waitForPaintedContent(devtools, Math.max(options.settle, options.url ? 2_000 : 0));
       const shot = await devtools.send("Page.captureScreenshot", { format: "png" });
       const bytes = Buffer.from(shot.data, "base64");
       if (options.shot) writeFileSync(options.shot, bytes);
@@ -462,10 +503,14 @@ async function main() {
       viewport: { width: options.width, height: options.height },
       theme: options.theme ?? null,
       target,
+      title,
       stylesheet: sheet.path ?? null,
       measured,
       scans,
       screenshot: options.shot ?? null,
+      // false means the budget ran out with something on screen still
+      // undecoded, so the shot shows less than the page has.
+      painted,
     };
   } finally {
     // Wait for it to go before taking its profile away: Chrome writes on the
