@@ -1,8 +1,18 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import type { PublicArticlePost, PublicPost, SiteIdentity } from "../../api/public";
+import type {
+  PublicArticlePost,
+  PublicPost,
+  SiteIdentity,
+} from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 
@@ -66,7 +76,13 @@ function article(): PublicArticlePost {
 }
 
 function moment(): PublicPost {
-  return { ...article(), id: "01K2ABCDEF0123456789ABCDE1", kind: "moment", contentMd: "下雨了。", article: null };
+  return {
+    ...article(),
+    id: "01K2ABCDEF0123456789ABCDE1",
+    kind: "moment",
+    contentMd: "下雨了。",
+    article: null,
+  };
 }
 
 function show(post: PublicPost) {

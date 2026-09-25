@@ -464,9 +464,10 @@ describe("App shell and public routes", () => {
     });
 
     render(<App />);
-    expect(
-      await screen.findByRole("link", { name: "写文章" }),
-    ).toHaveAttribute("href", "/compose/article");
+    expect(await screen.findByRole("link", { name: "写文章" })).toHaveAttribute(
+      "href",
+      "/compose/article",
+    );
   });
 
   it("hides the mobile bar on deterministic visual-viewport contraction without moving composer focus", async () => {

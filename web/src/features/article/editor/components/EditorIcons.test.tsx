@@ -33,7 +33,9 @@ describe("EditorIcon", () => {
   });
 
   it("still lets a caller override the size", () => {
-    const { container } = render(<EditorIcon height="2rem" name="bold" width="2rem" />);
+    const { container } = render(
+      <EditorIcon height="2rem" name="bold" width="2rem" />,
+    );
     expect(container.querySelector("svg")?.getAttribute("width")).toBe("2rem");
   });
 });

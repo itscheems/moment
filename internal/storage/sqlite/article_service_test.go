@@ -263,7 +263,7 @@ func TestOpeningAWorkingCopyAnswersToTheDraftCeiling(t *testing.T) {
 
 	// The copy that already exists is still reachable: the ceiling stops new
 	// drafts, not the one an owner is in the middle of.
-	if err := service.DiscardArticleDraft(ctx, draftIDOfNewest(t, ctx, service)); err != nil {
+	if err := service.DiscardArticleDraft(ctx, draftIDOfNewest(ctx, t, service)); err != nil {
 		t.Fatal(err)
 	}
 	working, err := service.EditArticle(ctx, published.Entry.ID)
@@ -329,7 +329,7 @@ func TestADraftNamingAMissingPictureIsRefusedByName(t *testing.T) {
 	}
 }
 
-func draftIDOfNewest(t *testing.T, ctx context.Context, service *app.PostService) domain.ID {
+func draftIDOfNewest(ctx context.Context, t *testing.T, service *app.PostService) domain.ID {
 	t.Helper()
 	drafts, err := service.ArticleDrafts(ctx)
 	if err != nil || len(drafts) == 0 {

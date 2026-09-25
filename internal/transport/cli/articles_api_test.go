@@ -39,11 +39,11 @@ func TestArticleAPIWholeWorkflowAndDirectReadParity(t *testing.T) {
 	if post["id"] != replay["id"] || post["visibility"] != "only_me" {
 		t.Fatalf("publish/replay = %#v / %#v", post, replay)
 	}
-	copy := commandData(t, run("article", "edit", post["id"].(string)))
-	if copy["published_entry_id"] != post["id"] {
-		t.Fatalf("working copy = %#v", copy)
+	workingCopy := commandData(t, run("article", "edit", post["id"].(string)))
+	if workingCopy["published_entry_id"] != post["id"] {
+		t.Fatalf("working copy = %#v", workingCopy)
 	}
-	discarded := commandData(t, run("article", "discard", copy["id"].(string), "--yes"))
+	discarded := commandData(t, run("article", "discard", workingCopy["id"].(string), "--yes"))
 	if discarded["discarded"] != true {
 		t.Fatalf("discard = %#v", discarded)
 	}

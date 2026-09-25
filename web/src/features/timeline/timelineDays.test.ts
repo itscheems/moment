@@ -3,10 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { PublicPost } from "../../api/public";
 import { siteDate, siteDayOf } from "./timelineDays";
 
-function row(
-  publishedAt: string,
-  extra: Partial<PublicPost> = {},
-): PublicPost {
+function row(publishedAt: string, extra: Partial<PublicPost> = {}): PublicPost {
   return {
     publishedAt,
     repostedAt: null,
@@ -32,8 +29,8 @@ describe("timeline days", () => {
       timelineItemKind: "repost",
     });
     expect(siteDayOf(reposted, "Asia/Shanghai")).toBe("2026-09-09");
-    expect(
-      siteDayOf(row("2019-03-03T02:00:00Z"), "Asia/Shanghai"),
-    ).toBe("2019-03-03");
+    expect(siteDayOf(row("2019-03-03T02:00:00Z"), "Asia/Shanghai")).toBe(
+      "2019-03-03",
+    );
   });
 });

@@ -63,7 +63,9 @@ export function QuotedArticle({ article }: { article: PublicArticle }) {
         </span>
       </p>
       <h3 className={styles.quotedTitle}>{title}</h3>
-      {excerpt.trim() ? <p className={styles.quotedExcerpt}>{excerpt}</p> : null}
+      {excerpt.trim() ? (
+        <p className={styles.quotedExcerpt}>{excerpt}</p>
+      ) : null}
     </div>
   );
 }
