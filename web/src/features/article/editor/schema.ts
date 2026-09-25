@@ -3,6 +3,7 @@ import { Dropcursor, Gapcursor, UndoRedo } from "@tiptap/extensions";
 import { ListKeymap } from "@tiptap/extension-list";
 import Placeholder from "@tiptap/extension-placeholder";
 import { articleContentExtensions } from "../../../components/content/schema";
+import { CodeHighlight } from "./extensions/CodeHighlight";
 import { BlockHandles } from "./extensions/BlockHandles";
 import { UploadPlaceholder } from "./extensions/UploadPlaceholder";
 
@@ -25,6 +26,7 @@ export function articleEditorExtensions(
     ListKeymap,
     UploadPlaceholder,
     BlockHandles,
+    CodeHighlight,
     Placeholder.configure({
       placeholder: options.placeholder ?? "输入文字，或按 / 插入内容…",
       showOnlyWhenEditable: true,

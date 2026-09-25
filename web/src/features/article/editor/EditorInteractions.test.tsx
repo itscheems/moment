@@ -39,6 +39,47 @@ function setup(content: string) {
   );
 }
 
+it("duplicates and deletes complete blocks with undo, and inserts from the block menu", () => {
+  setup("<p><strong>first</strong></p><p>last</p>");
+  fireEvent.click(screen.getByRole("button", { name: "移动第 1 块" }));
+  fireEvent.click(screen.getByRole("button", { name: "复制块" }));
+  expect(editor.state.doc.childCount).toBe(3);
+  expect(editor.state.doc.child(1).eq(editor.state.doc.child(0))).toBe(true);
+  act(() => {
+    editor.commands.undo();
+  });
+  expect(editor.state.doc.childCount).toBe(2);
+  fireEvent.click(screen.getByRole("button", { name: "移动第 1 块" }));
+  fireEvent.click(screen.getByRole("button", { name: "删除块" }));
+  expect(editor.state.doc.textContent).toBe("last");
+  act(() => {
+    editor.commands.undo();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "移动第 1 块" }));
+  fireEvent.click(screen.getByRole("button", { name: "在下方插入" }));
+  expect(editor.state.doc.child(1).textContent).toBe("/");
+  expect(screen.getByRole("listbox", { name: "插入内容" })).toBeInTheDocument();
+});
+
+it("colours code while writing without persisting highlighting marks", () => {
+  setup('<pre><code class="language-js">const value = 1;</code></pre>');
+  expect(editor.view.dom.querySelector(".hljs-keyword")).toHaveTextContent(
+    "const",
+  );
+  expect(JSON.stringify(toArticleDocument(editor.getJSON()))).not.toContain(
+    "hljs",
+  );
+  act(() => {
+    editor.commands.setContent(
+      '<pre><code class="language-python">return True</code></pre>',
+    );
+  });
+  expect(editor.view.dom.querySelector(".hljs-keyword")).toHaveTextContent(
+    "return",
+  );
+  expect(editor.state.doc.textContent).toBe("return True");
+});
+
 it("filters slash commands and applies the selected command from the keyboard", async () => {
   setup("<p></p>");
   await act(async () => {

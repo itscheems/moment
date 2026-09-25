@@ -1,0 +1,69 @@
+.sheet {
+  --article-inset: 3rem;
+  inline-size: min(100%, 44.25rem);
+  min-inline-size: 0;
+  margin-inline: auto;
+  padding: 3rem var(--article-inset) 4rem;
+  color: var(--text-primary);
+  font-feature-settings: normal;
+  letter-spacing: normal;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+}
+.heading :where(h1, textarea) {
+  display: block;
+  inline-size: 100%;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  overflow: hidden;
+  resize: none;
+  color: inherit;
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.22;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.heading textarea:focus {
+  outline: none;
+}
+.heading textarea::placeholder {
+  color: var(--text-tertiary);
+}
+.byline {
+  min-block-size: 2.5rem;
+  margin-block: 1.25rem 2rem;
+}
+.body {
+  min-inline-size: 0;
+}
+.cover {
+  position: relative;
+  inline-size: calc(100% + 2 * var(--article-inset));
+  margin: -3rem calc(-1 * var(--article-inset)) 2.5rem;
+  overflow: hidden;
+  background: var(--surface-muted);
+}
+.cover > img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+@media (max-width: 719px) {
+  .sheet {
+    --article-inset: 2rem;
+    padding-block-start: 2rem;
+  }
+  .heading :where(h1, textarea) {
+    font-size: 1.875rem;
+  }
+  .cover {
+    margin-block-start: -2rem;
+    margin-block-end: 2rem;
+  }
+}

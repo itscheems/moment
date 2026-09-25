@@ -93,13 +93,14 @@ export const BlockHandles = Extension.create({
                   (view) => {
                     const wrap = document.createElement("span");
                     wrap.className = styles.blockHandle;
+                    wrap.dataset.contentDecoration = "true";
                     wrap.contentEditable = "false";
                     const handle = document.createElement("button");
                     handle.type = "button";
                     handle.textContent = "⠿";
                     handle.draggable = false;
                     handle.setAttribute("aria-label", `移动第 ${index + 1} 块`);
-                    handle.title = "拖动排序，或按 Alt + ↑ / ↓";
+                    handle.title = "拖动排序，点击打开块菜单；Alt + ↑ / ↓ 移动";
                     handle.setAttribute("aria-expanded", "false");
                     const controls = document.createElement("span");
                     controls.className = styles.blockMoveActions;
@@ -133,6 +134,59 @@ export const BlockHandles = Extension.create({
                       button.onclick = () => move(direction);
                       controls.append(button);
                     }
+                    const actOnBlock = (label: string, action: () => void) => {
+                      const button = document.createElement("button");
+                      button.type = "button";
+                      button.textContent = label;
+                      button.onclick = () => {
+                        action();
+                        controls.hidden = true;
+                        handle.setAttribute("aria-expanded", "false");
+                      };
+                      controls.append(button);
+                    };
+                    actOnBlock("在下方插入", () => {
+                      const at = pos + block.nodeSize;
+                      const paragraph =
+                        view.state.schema.nodes.paragraph.create(
+                          null,
+                          view.state.schema.text("/"),
+                        );
+                      const tr = view.state.tr.insert(at, paragraph);
+                      tr.setSelection(TextSelection.create(tr.doc, at + 2));
+                      view.dispatch(tr.scrollIntoView());
+                      view.focus();
+                    });
+                    actOnBlock("复制块", () => {
+                      const tr = view.state.tr.insert(
+                        pos + block.nodeSize,
+                        view.state.doc.nodeAt(pos)!,
+                      );
+                      view.dispatch(tr.scrollIntoView());
+                      view.focus();
+                    });
+                    actOnBlock("删除块", () => {
+                      view.dispatch(
+                        view.state.tr
+                          .delete(pos, pos + block.nodeSize)
+                          .scrollIntoView(),
+                      );
+                      view.focus();
+                    });
+                    wrap.onkeydown = (event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        controls.hidden = true;
+                        handle.setAttribute("aria-expanded", "false");
+                        handle.focus();
+                      }
+                    };
+                    wrap.addEventListener("focusout", (event) => {
+                      if (!wrap.contains(event.relatedTarget as Node | null)) {
+                        controls.hidden = true;
+                        handle.setAttribute("aria-expanded", "false");
+                      }
+                    });
                     let suppressClick = false;
                     handle.onclick = () => {
                       if (suppressClick) {

@@ -735,3 +735,16 @@
     display: none;
   }
 }
+
+/* A document needs the same paper width it has while being written. */
+@media (min-width: 1280px) {
+  .shell.detailShell:has([data-article-sheet]) {
+    grid-template-columns: 15.5rem 44.375rem 15.625rem;
+  }
+}
+@media (min-width: 720px) and (max-width: 1279px) {
+  .shell.detailShell:has([data-article-sheet]) {
+    inline-size: min(100%, 49.875rem);
+    grid-template-columns: 5.5rem minmax(0, 44.375rem);
+  }
+}

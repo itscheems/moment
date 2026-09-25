@@ -32,6 +32,7 @@ import { ConflictNotice } from "./components/ConflictNotice";
 import { CoverField } from "./components/CoverField";
 import { DraftRail } from "./components/DraftRail";
 import { ImageUploads, type UploadTask } from "./components/ImageUploads";
+import { ImageMenu } from "./components/ImageMenu";
 import { SelectionMenu } from "./components/SelectionMenu";
 import { SlashMenu } from "./components/SlashMenu";
 import { CharacterCount } from "./components/CharacterCount";
@@ -50,6 +51,9 @@ import {
   removeUploadPlaceholder,
 } from "./extensions/UploadPlaceholder";
 import styles from "./Editor.module.css";
+import { ArticleSheet } from "../../../components/content/ArticleSheet";
+import { RichContent } from "../../../components/content/RichContent";
+import { MentionProvider } from "../../../app/mentions";
 import contentStyles from "../../../components/content/Content.module.css";
 
 function createIdempotencyKey(): string {
@@ -65,18 +69,7 @@ function codePoints(value: string): number {
   return Array.from(value).length;
 }
 
-/**
- * The article editor: a whole page, not a dialog.
- *
- * It renders outside AppShell on purpose. The shell's middle column is 600px
- * on a detail route, and an article is written at the width it is read at --
- * closer to 720 -- so an editor squeezed into that column would be narrower
- * than the page it produces. The top bar carries the way back instead.
- *
- * The title is its own field and never enters the document. That is how the
- * server stores it, and a title that lived as a first heading would be a title
- * the owner could delete by pressing backspace in the wrong place.
- */
+/** Full-page writing surface; persistence stays separate from the shared paper. */
 export function ArticleEditor({
   site,
   draftId,
@@ -105,6 +98,8 @@ export function ArticleEditor({
   const [discarding, setDiscarding] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [railOpen, setRailOpen] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(false);
   const [drafts, setDrafts] = useState<readonly ArticleDraft[]>([]);
   const [railError, setRailError] = useState<string | null>(null);
   const [railLoading, setRailLoading] = useState(true);
@@ -127,6 +122,8 @@ export function ArticleEditor({
   const allowLeave = useRef(false);
   const titleInput = useRef<HTMLTextAreaElement>(null);
   const topBar = useRef<HTMLElement>(null);
+  const libraryButton = useRef<HTMLButtonElement>(null);
+  const libraryPanel = useRef<HTMLDivElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const publishKey = useRef(createIdempotencyKey());
@@ -134,7 +131,7 @@ export function ArticleEditor({
   const createdDraftId = useRef<string | null>(null);
 
   const editor = useEditor({
-    extensions: articleEditorExtensions({ placeholder: "从这里开始写…" }),
+    extensions: articleEditorExtensions(),
     shouldRerenderOnTransaction: false,
     // Built in an effect, not during the render that asks for it.
     //
@@ -275,14 +272,7 @@ export function ArticleEditor({
     void refreshDrafts();
   }, [refreshDrafts]);
 
-  /**
-   * Preview is the same sheet, read-only.
-   *
-   * Not a second renderer: an article has exactly one rendering and the server
-   * owns it (see ArticlePage), so the honest preview is the document the owner
-   * is looking at, with the chrome taken away and the typography it will be
-   * read in left in place.
-   */
+  // Read mode uses the publication renderer; the editor retains its selection.
   useEffect(() => {
     // Without the second argument setEditable emits an "update", and "update"
     // is what marks the draft dirty -- so merely opening the page, or looking
@@ -447,6 +437,29 @@ export function ArticleEditor({
     discarding,
     publishing,
   ]);
+
+  useEffect(() => {
+    if (!railOpen) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setRailOpen(false);
+      libraryButton.current?.focus();
+    };
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !libraryPanel.current?.contains(target) &&
+        !libraryButton.current?.contains(target)
+      )
+        setRailOpen(false);
+    };
+    document.addEventListener("keydown", dismiss);
+    document.addEventListener("pointerdown", outside);
+    return () => {
+      document.removeEventListener("keydown", dismiss);
+      document.removeEventListener("pointerdown", outside);
+    };
+  }, [railOpen]);
 
   useEffect(() => {
     const bar = topBar.current;
@@ -711,6 +724,13 @@ export function ArticleEditor({
     }
   }, [api, draft]);
 
+  const previewDocument = useMemo(() => {
+    // A clock/save-status update must not replace selected reading text.
+    void changeTick;
+    void draft;
+    return previewing && editor ? toArticleDocument(editor.getJSON()) : null;
+  }, [previewing, editor, changeTick, draft]);
+
   const titleLength = codePoints(title);
   const titleTooLong = titleLength > MAX_ARTICLE_TITLE_CODE_POINTS;
   const statusLine = saveStatusLabel(saveState, site.timezone, now);
@@ -733,289 +753,355 @@ export function ArticleEditor({
   }
 
   return (
-    <div className={styles.page}>
-      <header className={styles.topBar} ref={topBar}>
-        <button
-          aria-label="返回时间流"
-          className={styles.toolButton}
-          onClick={() => location.goBack("/")}
-          type="button"
-        >
-          <Icon name="back" />
-        </button>
-        <p
-          className={`${styles.status} ${
-            saveState.kind === "failed" || saveState.kind === "conflict"
-              ? styles.statusAlert
-              : ""
-          }`}
-          role="status"
-        >
-          {statusLine}
-        </p>
-        <div className={styles.topActions}>
-          <AudienceSelector
-            disabled={
-              publishing ||
-              discarding ||
-              phase !== "ready" ||
-              loadError !== null
-            }
-            onChange={setVisibility}
-            value={visibility}
-          />
+    <MentionProvider known={[site.username]}>
+      <div className={styles.page}>
+        <header className={styles.topBar} ref={topBar}>
           <button
-            aria-pressed={previewing}
-            className={styles.secondaryAction}
-            onClick={() => setPreviewing((current) => !current)}
+            aria-label="返回时间流"
+            className={styles.toolButton}
+            onClick={() => location.goBack("/")}
             type="button"
           >
-            {previewing ? "继续编辑" : "预览"}
+            <Icon name="back" />
           </button>
           <button
-            className={styles.primaryAction}
-            disabled={
-              publishing ||
-              discarding ||
-              titleTooLong ||
-              phase !== "ready" ||
-              loadError !== null ||
-              saveState.kind === "conflict" ||
-              coverBusy ||
-              uploads.some((task) => task.failed === null)
-            }
-            onClick={() => void publish()}
+            aria-expanded={railOpen}
+            ref={libraryButton}
+            aria-controls="article-library"
+            className={styles.toolButton}
+            onClick={() => setRailOpen((value) => !value)}
             type="button"
           >
-            {publishing ? "正在发布…" : "发布"}
+            文章
           </button>
-          <Menu.Root>
-            <Menu.Trigger aria-label="更多" className={styles.toolButton}>
-              <Icon name="more" />
-            </Menu.Trigger>
-            <Menu.Portal>
-              <Menu.Positioner align="end" side="bottom" sideOffset={6}>
-                <Menu.Popup aria-label="更多选项" className={styles.menuPopup}>
-                  <Menu.Item
-                    className={styles.menuItem}
-                    disabled={
-                      saveState.kind === "saving" ||
-                      saveState.kind === "conflict" ||
-                      publishing ||
-                      discarding ||
-                      phase !== "ready" ||
-                      loadError !== null
-                    }
-                    onClick={() => void save("force")}
-                  >
-                    立即保存
-                  </Menu.Item>
-                  <ConfirmDialog
-                    title="删除这份草稿？"
-                    description="删除后无法找回。已发布的文章不受影响。"
-                    confirmLabel="删除草稿"
-                    danger
-                    onConfirm={discardCurrent}
-                    trigger={
-                      <Menu.Item
-                        closeOnClick={false}
-                        disabled={
-                          saveState.kind === "saving" ||
-                          publishing ||
-                          discarding ||
-                          coverBusy ||
-                          uploads.some((task) => task.failed === null)
-                        }
-                        className={`${styles.menuItem} ${styles.menuItemDanger}`}
-                      >
-                        删除这份草稿
-                      </Menu.Item>
-                    }
-                  />
-                </Menu.Popup>
-              </Menu.Positioner>
-            </Menu.Portal>
-          </Menu.Root>
-        </div>
-      </header>
-
-      {editor &&
-      !previewing &&
-      !publishing &&
-      !discarding &&
-      phase === "ready" &&
-      !loadError ? (
-        <Toolbar
-          editor={editor}
-          onPickImage={() => imageInput.current?.click()}
-          uploading={uploads.some((task) => task.failed === null)}
-        />
-      ) : null}
-
-      <div className={`${styles.main} ${previewing ? styles.railHidden : ""}`}>
-        {previewing ? null : (
-          <DraftRail
-            currentId={draft?.id ?? null}
-            drafts={drafts}
-            error={railError}
-            loading={railLoading}
-            onDiscard={(one) => {
-              if (one.id === draft?.id) {
-                void discardCurrent();
-                return;
-              }
-              void api
-                .discard(csrfToken, one.id)
-                .then(refreshDrafts)
-                .catch((error: unknown) => {
-                  notify(articleDraftErrorMessage(error), { type: "error" });
-                });
-            }}
-            onNew={() => location.navigate(ARTICLE_COMPOSE_PATH)}
-            onOpen={(one) => location.navigate(articleDraftPath(one.id))}
-            onOpenPublished={async (id) => {
-              try {
-                // The navigation guard saves any current work before loading the copy.
-                const workingCopy = await api.openPublished(csrfToken, id);
-                void refreshDrafts();
-                location.navigate(articleDraftPath(workingCopy.id));
-              } catch (error) {
-                notify(articleDraftErrorMessage(error), { type: "error" });
-              }
-            }}
-            disabled={publishing || discarding || saving.current !== null}
-            timezone={site.timezone}
-          />
-        )}
-
-        <div className={styles.sheet}>
-          {phase === "loading" ? (
-            <p className={styles.loading}>正在读取草稿…</p>
-          ) : null}
-          {loadError ? (
-            <p className={styles.pageError} role="alert">
-              {loadError}
-            </p>
-          ) : null}
-          {saveState.kind === "conflict" ? (
-            <ConflictNotice
-              busy={resolving}
-              onKeepMine={() => void keepMyCopy()}
-              onTakeServer={() => void takeServerCopy()}
-            />
-          ) : null}
-
-          <CoverField
-            busy={coverBusy}
-            mediaId={coverMediaId}
-            onPick={() => coverInput.current?.click()}
-            onRemove={() => {
-              setCoverMediaId(null);
-              markChanged();
-            }}
-            readOnly={
-              previewing ||
-              publishing ||
-              discarding ||
-              phase !== "ready" ||
-              loadError !== null
-            }
-          />
-
-          {previewing ? (
-            <h1 className={styles.title}>{title.trim() || "无标题"}</h1>
-          ) : (
-            <>
-              <label className={styles.srOnly} htmlFor="article-title">
-                文章标题
-              </label>
-              <textarea
-                className={styles.title}
-                id="article-title"
-                ref={titleInput}
+          <p
+            className={`${styles.status} ${
+              saveState.kind === "failed" || saveState.kind === "conflict"
+                ? styles.statusAlert
+                : ""
+            }`}
+            role="status"
+          >
+            {statusLine}
+          </p>
+          <div className={styles.topActions}>
+            {!previewing && (
+              <button
+                aria-pressed={formatOpen}
+                aria-label="格式工具"
+                className={styles.toolButton}
+                onClick={() => setFormatOpen((value) => !value)}
+                type="button"
+              >
+                Aa
+              </button>
+            )}
+            <span className={styles.audience}>
+              <AudienceSelector
                 disabled={
                   publishing ||
                   discarding ||
                   phase !== "ready" ||
                   loadError !== null
                 }
-                onChange={(event) => {
-                  setTitle(event.target.value.replace(/[\r\n]+/g, " "));
-                  markChanged();
-                }}
-                placeholder="标题"
-                rows={1}
-                value={title}
+                onChange={setVisibility}
+                value={visibility}
               />
-            </>
-          )}
-          {titleTooLong ? (
-            <p className={styles.titleOverflow} role="alert">
-              标题最多 {MAX_ARTICLE_TITLE_CODE_POINTS} 个字符，现在是{" "}
-              {titleLength} 个。
-            </p>
-          ) : null}
-
-          <div className={styles.byline}>
-            <SiteAvatar site={site} />
-            <span className={styles.bylineName}>{siteDisplayName(site)}</span>
-            <span aria-hidden="true">·</span>
-            <span>@{site.username}</span>
-          </div>
-
-          {previewing ? null : (
-            <ImageUploads
-              onDismiss={(id) =>
-                setUploads((current) =>
-                  current.filter((task) => task.id !== id),
-                )
+            </span>
+            <button
+              aria-pressed={previewing}
+              className={styles.secondaryAction}
+              onClick={() => setPreviewing((current) => !current)}
+              type="button"
+            >
+              {previewing ? "继续编辑" : "预览"}
+            </button>
+            <button
+              className={styles.primaryAction}
+              disabled={
+                publishing ||
+                discarding ||
+                titleTooLong ||
+                phase !== "ready" ||
+                loadError !== null ||
+                saveState.kind === "conflict" ||
+                coverBusy ||
+                uploads.some((task) => task.failed === null)
               }
-              uploads={uploads}
-            />
-          )}
-
-          <div className={styles.body}>
-            <EditorContent editor={editor} />
-            {editor ? <CharacterCount editor={editor} /> : null}
+              onClick={() => void publish()}
+              type="button"
+            >
+              {publishing ? "正在发布…" : "发布"}
+            </button>
+            <Menu.Root>
+              <Menu.Trigger aria-label="更多" className={styles.toolButton}>
+                <Icon name="more" />
+              </Menu.Trigger>
+              <Menu.Portal>
+                <Menu.Positioner align="end" side="bottom" sideOffset={6}>
+                  <Menu.Popup
+                    aria-label="更多选项"
+                    className={styles.menuPopup}
+                  >
+                    <Menu.Item
+                      className={styles.menuItem}
+                      disabled={
+                        saveState.kind === "saving" ||
+                        saveState.kind === "conflict" ||
+                        publishing ||
+                        discarding ||
+                        phase !== "ready" ||
+                        loadError !== null
+                      }
+                      onClick={() => void save("force")}
+                    >
+                      立即保存
+                    </Menu.Item>
+                    <ConfirmDialog
+                      title="删除这份草稿？"
+                      description="删除后无法找回。已发布的文章不受影响。"
+                      confirmLabel="删除草稿"
+                      danger
+                      onConfirm={discardCurrent}
+                      trigger={
+                        <Menu.Item
+                          closeOnClick={false}
+                          disabled={
+                            saveState.kind === "saving" ||
+                            publishing ||
+                            discarding ||
+                            coverBusy ||
+                            uploads.some((task) => task.failed === null)
+                          }
+                          className={`${styles.menuItem} ${styles.menuItemDanger}`}
+                        >
+                          删除这份草稿
+                        </Menu.Item>
+                      }
+                    />
+                  </Menu.Popup>
+                </Menu.Positioner>
+              </Menu.Portal>
+            </Menu.Root>
           </div>
-        </div>
-      </div>
+        </header>
 
-      {editor && !previewing && !publishing && !discarding ? (
-        <>
-          <SelectionMenu editor={editor} />
-          <SlashMenu
+        {editor &&
+        !previewing &&
+        formatOpen &&
+        !publishing &&
+        !discarding &&
+        phase === "ready" &&
+        !loadError ? (
+          <Toolbar
             editor={editor}
             onPickImage={() => imageInput.current?.click()}
+            uploading={uploads.some((task) => task.failed === null)}
           />
-        </>
-      ) : null}
+        ) : null}
 
-      <input
-        accept="image/*"
-        className={styles.srOnly}
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) void uploadImage(file, "cover");
-        }}
-        ref={coverInput}
-        tabIndex={-1}
-        type="file"
-      />
-      <input
-        accept="image/*"
-        className={styles.srOnly}
-        onChange={(event) => {
-          const file = event.target.files?.[0];
-          event.target.value = "";
-          if (file) void uploadImage(file, "body");
-        }}
-        ref={imageInput}
-        tabIndex={-1}
-        type="file"
-      />
-    </div>
+        <div className={styles.main}>
+          <div
+            className={styles.railPanel}
+            id="article-library"
+            ref={libraryPanel}
+            hidden={!railOpen || previewing}
+          >
+            <button
+              className={styles.railClose}
+              aria-label="收起文章列表"
+              onClick={() => setRailOpen(false)}
+              type="button"
+            >
+              <Icon name="close" />
+            </button>
+            <DraftRail
+              currentId={draft?.id ?? null}
+              drafts={drafts}
+              error={railError}
+              loading={railLoading}
+              onDiscard={(one) => {
+                if (one.id === draft?.id) {
+                  void discardCurrent();
+                  return;
+                }
+                void api
+                  .discard(csrfToken, one.id)
+                  .then(refreshDrafts)
+                  .catch((error: unknown) => {
+                    notify(articleDraftErrorMessage(error), { type: "error" });
+                  });
+              }}
+              onNew={() => {
+                setRailOpen(false);
+                location.navigate(ARTICLE_COMPOSE_PATH);
+              }}
+              onOpen={(one) => {
+                setRailOpen(false);
+                location.navigate(articleDraftPath(one.id));
+              }}
+              onOpenPublished={async (id) => {
+                try {
+                  // The navigation guard saves any current work before loading the copy.
+                  const workingCopy = await api.openPublished(csrfToken, id);
+                  void refreshDrafts();
+                  setRailOpen(false);
+                  location.navigate(articleDraftPath(workingCopy.id));
+                } catch (error) {
+                  notify(articleDraftErrorMessage(error), { type: "error" });
+                }
+              }}
+              disabled={publishing || discarding || saving.current !== null}
+              timezone={site.timezone}
+            />
+          </div>
+
+          <div className={styles.document}>
+            {phase === "loading" ? (
+              <p className={styles.loading}>正在读取草稿…</p>
+            ) : null}
+            {loadError ? (
+              <p className={styles.pageError} role="alert">
+                {loadError}
+              </p>
+            ) : null}
+            {saveState.kind === "conflict" ? (
+              <ConflictNotice
+                busy={resolving}
+                onKeepMine={() => void keepMyCopy()}
+                onTakeServer={() => void takeServerCopy()}
+              />
+            ) : null}
+
+            <ArticleSheet
+              cover={
+                <CoverField
+                  busy={coverBusy}
+                  mediaId={coverMediaId}
+                  onPick={() => coverInput.current?.click()}
+                  onRemove={() => {
+                    setCoverMediaId(null);
+                    markChanged();
+                  }}
+                  readOnly={
+                    previewing ||
+                    publishing ||
+                    discarding ||
+                    phase !== "ready" ||
+                    loadError !== null
+                  }
+                />
+              }
+              title={
+                <>
+                  {previewing ? (
+                    <h1>{title.trim() || "无标题"}</h1>
+                  ) : (
+                    <>
+                      <label className={styles.srOnly} htmlFor="article-title">
+                        文章标题
+                      </label>
+                      <textarea
+                        id="article-title"
+                        ref={titleInput}
+                        disabled={
+                          publishing ||
+                          discarding ||
+                          phase !== "ready" ||
+                          loadError !== null
+                        }
+                        onChange={(event) => {
+                          setTitle(event.target.value.replace(/[\r\n]+/g, " "));
+                          markChanged();
+                        }}
+                        placeholder="标题"
+                        rows={1}
+                        value={title}
+                      />
+                    </>
+                  )}
+                  {titleTooLong ? (
+                    <p className={styles.titleOverflow} role="alert">
+                      标题最多 {MAX_ARTICLE_TITLE_CODE_POINTS} 个字符，现在是{" "}
+                      {titleLength} 个。
+                    </p>
+                  ) : null}
+                </>
+              }
+              byline={
+                <div className={styles.byline}>
+                  <SiteAvatar site={site} />
+                  <span className={styles.bylineName}>
+                    {siteDisplayName(site)}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>@{site.username}</span>
+                </div>
+              }
+            >
+              {previewing ? null : (
+                <ImageUploads
+                  onDismiss={(id) =>
+                    setUploads((current) =>
+                      current.filter((task) => task.id !== id),
+                    )
+                  }
+                  uploads={uploads}
+                />
+              )}
+
+              <div className={styles.body}>
+                <div hidden={previewing}>
+                  <EditorContent editor={editor} />
+                </div>
+                {previewing && previewDocument ? (
+                  <RichContent document={previewDocument} />
+                ) : null}
+                {editor && !previewing ? (
+                  <CharacterCount editor={editor} />
+                ) : null}
+              </div>
+            </ArticleSheet>
+          </div>
+        </div>
+
+        {editor && !previewing && !publishing && !discarding ? (
+          <>
+            <SelectionMenu editor={editor} />
+            <ImageMenu editor={editor} />
+            <SlashMenu
+              editor={editor}
+              onPickImage={() => imageInput.current?.click()}
+            />
+          </>
+        ) : null}
+
+        <input
+          accept="image/*"
+          className={styles.srOnly}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void uploadImage(file, "cover");
+          }}
+          ref={coverInput}
+          tabIndex={-1}
+          type="file"
+        />
+        <input
+          accept="image/*"
+          className={styles.srOnly}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (file) void uploadImage(file, "body");
+          }}
+          ref={imageInput}
+          tabIndex={-1}
+          type="file"
+        />
+      </div>
+    </MentionProvider>
   );
 }
 

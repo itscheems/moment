@@ -1,12 +1,11 @@
 import { Menu } from "@base-ui/react/menu";
-import { Popover } from "@base-ui/react/popover";
 import type { Editor } from "@tiptap/core";
 import { useEditorState } from "@tiptap/react";
-import { useId, useState } from "react";
 
 import { ARTICLE_CODE_LANGUAGES } from "../schema";
 import styles from "../Editor.module.css";
 import { EditorIcon } from "./EditorIcons";
+import { ImageAltPopover } from "./ImageAltPopover";
 import { LinkPopover } from "./LinkPopover";
 
 const BLOCK_LABELS: ReadonlyArray<{ level: 0 | 1 | 2 | 3; label: string }> = [
@@ -45,71 +44,6 @@ function ToolButton({
 }
 
 /**
- * The image's description, edited where the image is.
- *
- * `alt` is the only thing a reader who cannot see the picture will ever get
- * from it, and it is the one attribute of a picture the owner can write. It is
- * optional on the wire, so an empty field removes it rather than storing "".
- */
-function ImageAltPopover({ editor }: { editor: Editor }) {
-  const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
-  const fieldId = useId();
-
-  return (
-    <Popover.Root
-      onOpenChange={(next) => {
-        if (next) {
-          const current: unknown = editor.getAttributes("image").alt;
-          setValue(typeof current === "string" ? current : "");
-        }
-        setOpen(next);
-      }}
-      open={open}
-    >
-      <Popover.Trigger className={styles.toolButton}>图片说明</Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner align="start" side="bottom" sideOffset={6}>
-          <Popover.Popup aria-label="图片说明" className={styles.popup}>
-            <div className={styles.field}>
-              <label className={styles.fieldLabel} htmlFor={fieldId}>
-                图片说明
-              </label>
-              <input
-                autoFocus
-                className={styles.input}
-                id={fieldId}
-                onChange={(event) => setValue(event.target.value)}
-                placeholder="看不到这张图的人会读到这句话"
-                type="text"
-                value={value}
-              />
-            </div>
-            <div className={styles.popupActions}>
-              <button
-                className={styles.primaryAction}
-                onClick={() => {
-                  const alt = value.trim();
-                  editor
-                    .chain()
-                    .focus()
-                    .updateAttributes("image", { alt: alt === "" ? null : alt })
-                    .run();
-                  setOpen(false);
-                }}
-                type="button"
-              >
-                应用
-              </button>
-            </div>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
-/**
  * The one row of controls above the sheet.
  *
  * Every button here produces something the allowlist names. There is no button
@@ -129,6 +63,8 @@ export function Toolbar({
   const state = useEditorState({
     editor,
     selector: ({ editor: current }) => ({
+      canUndo: current.can().undo(),
+      canRedo: current.can().redo(),
       bold: current.isActive("bold"),
       italic: current.isActive("italic"),
       strike: current.isActive("strike"),
@@ -154,6 +90,23 @@ export function Toolbar({
 
   return (
     <div aria-label="排版" className={styles.toolBar} role="toolbar">
+      <div className={styles.toolGroup}>
+        <ToolButton
+          label="撤销"
+          disabled={!state.canUndo}
+          onClick={() => editor.chain().focus().undo().run()}
+        >
+          <EditorIcon name="undo" />
+        </ToolButton>
+        <ToolButton
+          label="重做"
+          disabled={!state.canRedo}
+          onClick={() => editor.chain().focus().redo().run()}
+        >
+          <EditorIcon name="redo" />
+        </ToolButton>
+      </div>
+      <span aria-hidden="true" className={styles.toolDivider} />
       <div className={styles.toolGroup}>
         <ToolButton
           active={state.bold}

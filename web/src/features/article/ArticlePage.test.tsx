@@ -14,7 +14,7 @@ import { FeedbackProvider } from "../../components/Feedback";
 import { OwnerProvider } from "../owner/OwnerProvider";
 import { DetailPage } from "../timeline/DetailPage";
 import { ArticlePage } from "./ArticlePage";
-import articleCss from "./Article.module.css?inline";
+import sheetCss from "../../components/content/ArticleSheet.module.css?inline";
 import contentCss from "../../components/content/Content.module.css?inline";
 
 afterEach(() => {
@@ -169,13 +169,15 @@ function renderArticle(post = makeArticle()) {
 }
 
 describe("article detail page", () => {
-  it("leads with the title, the mark and the identity that wrote it", () => {
+  it("shows the title and the identity on the shared article sheet", () => {
     renderArticle();
 
     expect(
       screen.getByRole("heading", { level: 1, name: "一条河流的十年" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("文章")).toBeInTheDocument();
+    expect(screen.getByRole("article")).toHaveAccessibleName(
+      "Moment发布的文章：一条河流的十年",
+    );
     expect(screen.getByText("Moment")).toBeInTheDocument();
     expect(screen.getAllByText("@owner").length).toBeGreaterThan(0);
   });
@@ -189,8 +191,8 @@ describe("article detail page", () => {
     expect(cover).toHaveAttribute("height", "900");
     // Above the fold: it is not deferred the way a card's cover is.
     expect(cover).not.toHaveAttribute("loading");
-    expect(articleCss).toMatch(
-      /\._hero_[\w-]+\s*\{[^}]*margin:[^;]*calc\(0px - var\(--article-bleed\)\)/s,
+    expect(sheetCss).toMatch(
+      /\._cover_[\w-]+\s*\{[^}]*inline-size: calc\(100% \+ 2 \* var\(--article-inset\)\)/s,
     );
   });
 
@@ -234,12 +236,11 @@ describe("article detail page", () => {
   });
 
   it("holds the reading column to a measure a reader can follow", () => {
-    // 47.5rem is 760px, the top of the range this page was specified at; the
-    // column it sits in may still be narrower, which `min` handles.
-    expect(articleCss).toMatch(/--article-measure:\s*47\.5rem/);
-    expect(articleCss).toMatch(
-      /\._column_[\w-]+\s*\{[^}]*inline-size: min\(100%, var\(--article-measure\)\)/s,
-    );
+    expect(sheetCss).toMatch(/inline-size: min\(100%, 44\.25rem\)/);
+    const { container } = renderArticle();
+    expect(
+      container.querySelector("[data-article-sheet] [data-content-renderer]"),
+    ).toBeInTheDocument();
   });
 
   it("keeps the reply and share actions a post detail page has", () => {
@@ -346,7 +347,9 @@ describe("the post detail route", () => {
         screen.getByRole("heading", { level: 1, name: "一条河流的十年" }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByText("文章")).toBeInTheDocument();
+    expect(screen.getByRole("article")).toHaveAccessibleName(
+      "Moment发布的文章：一条河流的十年",
+    );
   });
 
   it("leaves a moment on the post page", async () => {

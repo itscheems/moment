@@ -10,6 +10,8 @@ import type { SVGProps } from "react";
  * draws.
  */
 export type EditorIconName =
+  | "undo"
+  | "redo"
   | "bold"
   | "italic"
   | "underline"
@@ -26,6 +28,28 @@ export type EditorIconName =
   | "chevron";
 
 const paths: Record<EditorIconName, React.ReactNode> = {
+  undo: (
+    <path
+      d="M9 5 4 10l5 5M4 10h10a6 6 0 0 1 0 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      transform="translate(0 -2)"
+    />
+  ),
+  redo: (
+    <path
+      d="m15 5 5 5-5 5m5-5H10a6 6 0 0 0 0 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      transform="translate(0 -2)"
+    />
+  ),
   bold: (
     <path
       d="M7 4h5.5a4 4 0 0 1 0 8H7zm0 8h6.2a4 4 0 0 1 0 8H7z"

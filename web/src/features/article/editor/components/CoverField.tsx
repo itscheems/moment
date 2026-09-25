@@ -1,4 +1,4 @@
-import { mediaPreviewUrl } from "../../../../api/mediaUrls";
+import { ArticleCover } from "../../../../components/content/ArticleSheet";
 import styles from "../Editor.module.css";
 import { EditorIcon } from "./EditorIcons";
 
@@ -41,12 +41,7 @@ export function CoverField({
   }
 
   return (
-    <figure className={styles.cover}>
-      <img
-        alt=""
-        className={styles.coverImage}
-        src={mediaPreviewUrl(mediaId)}
-      />
+    <ArticleCover mediaId={mediaId}>
       {readOnly ? null : (
         <div className={styles.coverActions}>
           <button
@@ -67,6 +62,6 @@ export function CoverField({
           </button>
         </div>
       )}
-    </figure>
+    </ArticleCover>
   );
 }

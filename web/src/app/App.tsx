@@ -431,11 +431,7 @@ function PublicApp() {
   // changing what is evaluated.
   if (route.id === "login") return <LoginPage site={site} />;
 
-  // The article editor is the whole window. The shell's middle column is
-  // 600px wide and an article is written at 720; squeezing the editor into
-  // the timeline's grid would make the page narrower than what it produces.
-  // Everything it needs is already loaded here, and the editor's own bundle
-  // is fetched on the way in -- nobody who cannot open it pays for it.
+  // Writing gets a full-window workspace; the editor bundle loads on demand.
   if (siteIdentityReady && route.id === "owner-article" && ownerCapable) {
     return (
       <Suspense

@@ -244,6 +244,23 @@ afterEach(() => {
 });
 
 describe("opening a draft", () => {
+  it("previews with the publication renderer and returns to the retained editor without saving", async () => {
+    renderEditor(DRAFT_ID);
+    await advance();
+    const textbox = screen.getByRole("textbox", { name: "文章正文" });
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    expect(screen.queryByRole("textbox", { name: "文章正文" })).toBeNull();
+    const reading = document.querySelector(
+      "[data-article-sheet] [data-content-renderer]",
+    );
+    expect(reading).toHaveTextContent("上游的水是清的");
+    expect(reading?.querySelector("[contenteditable]")).toBeNull();
+    await advance(20_000);
+    expect(document.querySelector("[data-content-renderer]")).toBe(reading);
+    fireEvent.click(screen.getByRole("button", { name: "继续编辑" }));
+    expect(screen.getByRole("textbox", { name: "文章正文" })).toBe(textbox);
+    expect(putCalls()).toHaveLength(0);
+  });
   it("shows the title and the body the server is holding", async () => {
     renderEditor(DRAFT_ID);
     await advance();
@@ -267,6 +284,10 @@ describe("opening a draft", () => {
   it("lists the drafts the server keeps, not this browser's", async () => {
     renderEditor(DRAFT_ID);
     await advance();
+    expect(
+      screen.queryByRole("button", { name: /^一条河流的十年/ }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "文章" }));
     // The row that opens it, not the one that deletes it: the delete button
     // names the draft too.
     expect(
@@ -395,6 +416,7 @@ describe("what the toolbar writes into the document", () => {
   async function pressAndSave(label: string) {
     renderEditor(DRAFT_ID);
     await advance();
+    fireEvent.click(screen.getByRole("button", { name: "格式工具" }));
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: label }));
     });

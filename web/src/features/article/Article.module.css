@@ -118,44 +118,12 @@
 /* ---- the detail page ---- */
 
 .page {
-  /* The measure an article reads at. It is a ceiling, not a width: the detail
-     shell hands this page a 37.5rem column, so today the article fills it and
-     widens on its own the day the shell gives an article the room. */
-  --article-measure: 47.5rem;
-  /* What the post surface pads with; the cover cancels exactly this much to
-     run edge to edge. */
-  --article-bleed: var(--space-4);
-}
-
-.column {
-  inline-size: min(100%, var(--article-measure));
-  margin-inline: auto;
-}
-
-.head {
   display: block;
-  margin-block-start: var(--space-2);
+  padding: 0 0 1rem;
 }
-
-.headBadge {
-  margin: 0 0 var(--space-2);
-}
-
-.title {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 2.125rem;
-  font-weight: 800;
-  line-height: 1.16;
-  overflow-wrap: break-word;
-}
-
-.lede {
-  margin: var(--space-3) 0 0;
-  color: var(--text-secondary);
-  font-size: 1.0625rem;
-  line-height: 1.55;
-  overflow-wrap: break-word;
+.column {
+  inline-size: min(calc(100% - 4rem), 38.25rem);
+  margin-inline: auto;
 }
 
 .byline {
@@ -163,7 +131,7 @@
   grid-template-columns: 2.5rem minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-2);
-  margin-block-start: var(--space-4);
+  min-block-size: 2.5rem;
 }
 
 .bylineText {
@@ -179,37 +147,6 @@
   color: var(--text-secondary);
   font-size: 0.875rem;
   line-height: 1.25rem;
-}
-
-.hero {
-  /* Edge to edge: the post surface pads the page and the cover gives that
-     padding back on both sides. */
-  inline-size: calc(100% + 2 * var(--article-bleed));
-  margin: var(--space-5) calc(0px - var(--article-bleed)) 0;
-  overflow: hidden;
-  background: var(--surface-muted);
-}
-
-.heroImage {
-  display: block;
-  inline-size: 100%;
-  block-size: auto;
-  max-block-size: 34rem;
-  object-fit: cover;
-}
-
-.body {
-  margin-block-start: var(--space-6);
-}
-
-@media (max-width: 719px) {
-  .title {
-    font-size: 1.75rem;
-  }
-
-  .lede {
-    font-size: 1rem;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -256,4 +193,14 @@
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.bylineMeta a {
+  color: inherit;
+  text-decoration: none;
+}
+@media (hover: hover) {
+  .bylineMeta a:hover {
+    text-decoration: underline;
+  }
 }

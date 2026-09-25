@@ -25,22 +25,13 @@ import { OwnerRepostAction } from "../owner/OwnerRepostAction";
 import { formatMomentDate } from "../posts/dates";
 import postStyles from "../posts/PostPresentation.module.css";
 import { shareCardBlocks } from "../share/shareCard";
-import { articleCoverUrl } from "./articleApi";
+import {
+  ArticleSheet,
+  ArticleCover,
+} from "../../components/content/ArticleSheet";
 import styles from "./Article.module.css";
 
-/**
- * An article, read in full.
- *
- * Writing and reading share the Tiptap document grammar and typography.
- * The validated JSON body is rendered directly; HTML remains a transport
- * projection for API consumers and generated share cards.
- *
- * The chrome -- the identity line, the reply, repost and share row, the owner's
- * menu -- is the post detail page's own, reused class for class. An article is
- * a post, and a reader who has learned where the share button sits should not
- * have to learn it twice. Only the reading column is the article's: a longer
- * measure, a title that leads the page, and a cover that runs edge to edge.
- */
+/** Read the document using the same grammar, paper, and typography as writing. */
 export function ArticlePage({
   post,
   site,
@@ -78,97 +69,88 @@ export function ArticlePage({
           <span>已转发</span>
         </div>
       ) : null}
-      <header className={`${styles.column} ${styles.head}`}>
-        <p className={styles.headBadge}>
-          <span className={styles.badge}>
-            <span className={styles.srOnly}>类型：</span>文章
-          </span>
-        </p>
-        <h1 className={styles.title}>{title}</h1>
-        {/* No lede. The excerpt is the opening of the body, so printing it
-            above the body says the same sentence twice -- it earns its place
-            on a card, where the body is not there to say it. */}
-        <div className={styles.byline}>
-          <SiteIdentityPreview
-            site={site}
-            children={
-              <InternalLink
-                aria-label={`查看 ${siteName} 的个人资料`}
-                className={postStyles.identityLink}
-                href={siteProfileHref(site)}
-              >
-                <SiteAvatar eager site={site} />
-              </InternalLink>
-            }
-          />
-          <div className={styles.bylineText}>
+      <ArticleSheet
+        cover={
+          cover ? (
+            <ArticleCover
+              mediaId={cover.mediaId}
+              width={cover.width}
+              height={cover.height}
+            />
+          ) : null
+        }
+        title={<h1>{title}</h1>}
+        byline={
+          <div className={styles.byline}>
             <SiteIdentityPreview
               site={site}
               children={
                 <InternalLink
-                  className={postStyles.nameLink}
+                  aria-label={`查看 ${siteName} 的个人资料`}
+                  className={postStyles.identityLink}
                   href={siteProfileHref(site)}
                 >
-                  <strong>{site.displayName}</strong>
+                  <SiteAvatar eager site={site} />
                 </InternalLink>
               }
             />
-            <p className={styles.bylineMeta}>
-              <InternalLink
-                className={postStyles.usernameLink}
-                href={siteProfileHref(site)}
-              >
-                @{site.username}
-              </InternalLink>
-              <span aria-hidden="true">·</span>
-              <ExactTimeTooltip
-                exact={published.absolute}
+            <div className={styles.bylineText}>
+              <SiteIdentityPreview
+                site={site}
                 children={
-                  <time dateTime={post.publishedAt}>{published.absolute}</time>
+                  <InternalLink
+                    className={postStyles.nameLink}
+                    href={siteProfileHref(site)}
+                  >
+                    <strong>{site.displayName}</strong>
+                  </InternalLink>
                 }
               />
-              {hidden ? (
-                <ActionTooltip label="仅自己可见">
-                  <span
-                    aria-label="仅自己可见"
-                    className={postStyles.hiddenMark}
-                    role="img"
-                  >
-                    <Icon name="audience-only-me" />
-                  </span>
-                </ActionTooltip>
-              ) : null}
-            </p>
+              <p className={styles.bylineMeta}>
+                <InternalLink
+                  className={postStyles.usernameLink}
+                  href={siteProfileHref(site)}
+                >
+                  @{site.username}
+                </InternalLink>
+                <span aria-hidden="true">·</span>
+                <ExactTimeTooltip
+                  exact={published.absolute}
+                  children={
+                    <time dateTime={post.publishedAt}>
+                      {published.absolute}
+                    </time>
+                  }
+                />
+                {hidden ? (
+                  <ActionTooltip label="仅自己可见">
+                    <span
+                      aria-label="仅自己可见"
+                      className={postStyles.hiddenMark}
+                      role="img"
+                    >
+                      <Icon name="audience-only-me" />
+                    </span>
+                  </ActionTooltip>
+                ) : null}
+              </p>
+            </div>
+            {owner ? (
+              <OwnerPostActions
+                onDeleted={onDeleted}
+                onSiteChanged={onSiteChanged}
+                post={post}
+                site={site}
+              />
+            ) : null}
           </div>
-          {owner ? (
-            <OwnerPostActions
-              onDeleted={onDeleted}
-              onSiteChanged={onSiteChanged}
-              post={post}
-              site={site}
-            />
-          ) : null}
-        </div>
-      </header>
-      {cover ? (
-        <figure className={styles.hero}>
-          {/* Above the fold and never lazy, but still sized from the geometry
-              the card carries so the title does not jump when it lands. */}
-          <img
-            alt=""
-            className={styles.heroImage}
-            decoding="async"
-            height={cover.height}
-            src={articleCoverUrl(cover)}
-            width={cover.width}
-          />
-        </figure>
-      ) : null}
-      <RichContent
-        className={`${styles.column} ${styles.body}`}
-        document={post.article.body}
-        media={post.article.bodyMedia}
-      />
+        }
+      >
+        <RichContent
+          document={post.article.body}
+          media={post.article.bodyMedia}
+        />
+      </ArticleSheet>
       {post.commentCount > 0 ? (
         <a
           className={`${postStyles.detailStats} ${styles.column}`}
