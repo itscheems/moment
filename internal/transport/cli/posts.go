@@ -1496,7 +1496,7 @@ func validRawAPIPost(data json.RawMessage, post postdto.Post) bool {
 	// content_md is absent for an article, so the parity check asks only for
 	// the fields every kind carries and checks the body against the kind.
 	if !hasRequiredNonNullAPIDataFields(data, "id", "kind", "content_html", "created_at", "updated_at", "published_at", "comment_count", "media") ||
-		!hasRequiredAPIDataFields(data, "content_md") ||
+		!hasRequiredAPIDataFields(data, "content_md", "article") ||
 		!hasRequiredAPIDataFields(data, "location") ||
 		!validCanonicalAPIInstantField(data, "created_at", post.CreatedAt) ||
 		!validCanonicalAPIInstantField(data, "updated_at", post.UpdatedAt) ||
