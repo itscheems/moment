@@ -179,7 +179,9 @@ type MergePlanInput struct {
 // failure the whole portability layer exists to prevent.
 //
 // Replacement import is unaffected: it carries articles and drafts in full.
-var ErrMergeArticleUnsupported = errors.New("merge import does not carry articles yet, so a site with one cannot be merged; replace import carries them")
+var ErrMergeArticleUnsupported = domain.NewError(domain.CodeImportMergeUnsupported,
+	"merge import does not carry articles yet, so a site with one cannot be merged; replace import carries them",
+	map[string]any{"alternative": "backup import"})
 
 // ReadPortableAuthority reads one consistent portable snapshot. Storage paths
 // are retained only so the later generation builder can locate originals;

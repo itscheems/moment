@@ -269,6 +269,11 @@ func writeImportUploadError(ctx *gin.Context, operation string, err error) {
 		status = http.StatusUnauthorized
 	case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeImportMergePlanStale, domain.CodeInstanceInUse:
 		status = http.StatusConflict
+	case domain.CodeImportMergeUnsupported:
+		// The archive is fine and the request is well formed; this site holds
+		// something the comparison cannot reconcile, and the error names the
+		// path that can.
+		status = http.StatusUnprocessableEntity
 	case domain.CodeImportStagingExpired:
 		status = http.StatusGone
 	case domain.CodeImportDiskSpaceInsufficient:
@@ -546,6 +551,11 @@ func writeImportCommitError(ctx *gin.Context, err error) {
 		status = http.StatusUnauthorized
 	case domain.CodeImportInProgress, domain.CodeImportStagingInvalid, domain.CodeImportMergePlanStale, domain.CodeInstanceInUse:
 		status = http.StatusConflict
+	case domain.CodeImportMergeUnsupported:
+		// The archive is fine and the request is well formed; this site holds
+		// something the comparison cannot reconcile, and the error names the
+		// path that can.
+		status = http.StatusUnprocessableEntity
 	case domain.CodeImportStagingExpired:
 		status = http.StatusGone
 	case domain.CodeImportDiskSpaceInsufficient:

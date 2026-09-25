@@ -67,12 +67,16 @@ const (
 	CodeImportStagingExpired        Code = "IMPORT_STAGING_EXPIRED"
 	CodeImportOwnerMismatch         Code = "IMPORT_OWNER_MISMATCH"
 	CodeImportMergePlanStale        Code = "IMPORT_MERGE_PLAN_STALE"
-	CodeExportInvalid               Code = "EXPORT_INVALID"
-	CodeExportVersionUnsupported    Code = "EXPORT_VERSION_UNSUPPORTED"
-	CodeExportChecksumMismatch      Code = "EXPORT_CHECKSUM_MISMATCH"
-	CodeDataIntegrityFailed         Code = "DATA_INTEGRITY_FAILED"
-	CodeMaintenanceMode             Code = "MAINTENANCE_MODE"
-	CodeInternal                    Code = "INTERNAL"
+	// CodeImportMergeUnsupported means the merge comparison does not know how
+	// to reconcile something this site or this archive holds. It is a refusal
+	// with a reason and an alternative, not a failure.
+	CodeImportMergeUnsupported   Code = "IMPORT_MERGE_UNSUPPORTED"
+	CodeExportInvalid            Code = "EXPORT_INVALID"
+	CodeExportVersionUnsupported Code = "EXPORT_VERSION_UNSUPPORTED"
+	CodeExportChecksumMismatch   Code = "EXPORT_CHECKSUM_MISMATCH"
+	CodeDataIntegrityFailed      Code = "DATA_INTEGRITY_FAILED"
+	CodeMaintenanceMode          Code = "MAINTENANCE_MODE"
+	CodeInternal                 Code = "INTERNAL"
 )
 
 // Error is safe to map into CLI and HTTP error envelopes. Details must contain

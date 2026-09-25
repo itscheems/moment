@@ -11,6 +11,8 @@ data/site.json
 data/users.jsonl
 data/identities.jsonl
 data/entries.jsonl
+data/entry_articles.jsonl
+data/article_drafts.jsonl
 data/comments.jsonl
 data/media.jsonl
 media/<lowercase-sha256>.<jpg|png|webp|gif|heic|mp4> (zero or more, SHA order)
@@ -18,7 +20,7 @@ manifest.json
 checksums.sha256
 ```
 
-## Two layouts, one version
+## Three layouts, one version
 
 `data/users.jsonl` and `data/identities.jsonl` were added after v1 shipped.
 The format version was **not** raised, and must not be: `format_version` is
@@ -27,20 +29,55 @@ the only way back from an upgrade is the backup taken just before it. Raising
 the version would make exactly that backup unreadable by exactly the binary
 that needs to read it.
 
-The rule that already governs added record fields therefore governs added
-members. A writer always emits all nine fixed members. A reader accepts both
-layouts:
+`data/entry_articles.jsonl` and `data/article_drafts.jsonl` arrived later still
+and did not raise it either, for the same reason.
 
-- **with accounts** — the seven leading members above, then media, then the
+The rule that already governs added record fields therefore governs added
+members. A writer always emits every fixed member of the layout it writes. A
+reader accepts all three:
+
+- **with articles** — the nine leading members above, then media, then the
   trailer.
+- **with accounts** — the same without the two article members.
 - **without accounts** — `README.txt`, `data/site.json`,
   `data/entries.jsonl`, `data/comments.jsonl`, `data/media.jsonl`, then media,
   then the trailer.
 
-The two accounts members are present together or not at all; one without the
-other is neither layout and is rejected. `manifest.json` gains
-`counts.users` and `counts.identities`, both omitted when zero; a manifest that
-declares accounts an archive does not carry is rejected.
+Members added together are present together. The two accounts members are one
+such pair and the two article members are another; one without the other is no
+layout at all and is rejected. Articles also imply accounts, because no writer
+has ever produced articles without them.
+
+`manifest.json` gains `counts.users`, `counts.identities`, `counts.articles`
+and `counts.article_drafts`, each omitted when zero; a manifest that declares
+something the archive does not carry is rejected.
+
+## Articles
+
+`data/entries.jsonl` carries an article like any other entry, except that its
+`content_md` is `null`. The key is always present; the value may be null only
+when `kind` is `article`, and a moment carrying null or an article carrying a
+string is rejected before anything is written.
+
+`data/entry_articles.jsonl` holds one line per published article:
+`entry_id`, `title`, `body`, `cover_media_id`. `body` is the document itself,
+embedded rather than escaped into a string, byte for byte as the column holds
+it.
+
+`data/article_drafts.jsonl` holds one line per unfinished article: `id`,
+`title`, `body`, `cover_media_id`, `published_entry_id`, `media`,
+`created_at`, `updated_at`. Drafts are in the backup deliberately — a draft
+exists in one place and nowhere else, so an operation whose whole job is to
+lose nothing cannot leave out the least recoverable thing on the site.
+
+Nothing derived travels. The excerpt, the body schema version and the indexed
+text are all computed from the title and the body, and a second copy in the
+archive would only be a second answer that can disagree with the first.
+
+An article entry with no body, a body with no article entry, and a picture
+projection that does not match the body it claims to describe are each refused
+on the way in and on the way out. Each of them would otherwise restore as
+something quietly different from what was exported.
 
 An archive without the accounts members still describes exactly one account,
 in `data/site.json`: `owner_id`, `username`, `display_name`, `bio`,
