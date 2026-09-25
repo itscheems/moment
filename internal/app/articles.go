@@ -133,6 +133,25 @@ type PublishArticleDraftInput struct {
 	IdempotencyKey string
 }
 
+// reconcileArticleMedia restarts or stops the reclamation clock on every
+// picture a write could have changed the reachability of -- the ones it named
+// before and the ones it names now.
+//
+// Every other write path in this service does this, and an article's did not:
+// a cover on the timeline still read as unreferenced, and a picture that lost
+// its last reference when a draft was thrown away kept a null clock forever,
+// which is the one state prune will never collect.
+func reconcileArticleMedia(ctx context.Context, store PostStore, now time.Time, groups ...[]domain.ID) error {
+	var affected []domain.ID
+	for _, group := range groups {
+		affected = append(affected, group...)
+	}
+	if len(affected) == 0 {
+		return nil
+	}
+	return store.ReconcileMediaReferences(ctx, affected, now)
+}
+
 // SaveArticleDraft writes an unfinished article. The body goes through the
 // grammar but not the rule that a document has to say something: a draft is
 // allowed to be empty, and publishing is where that stops being allowed.
@@ -164,7 +183,10 @@ func (service *PostService) SaveArticleDraft(ctx context.Context, input SaveArti
 				return idErr
 			}
 			saved = ArticleDraftRecord{ID: id, Draft: draft, CreatedAt: now, UpdatedAt: now}
-			return store.InsertArticleDraft(ctx, saved)
+			if insertErr := store.InsertArticleDraft(ctx, saved); insertErr != nil {
+				return insertErr
+			}
+			return reconcileArticleMedia(ctx, store, now, draft.CoverAndInlineMedia())
 		}
 
 		existing, found, readErr := store.ArticleDraftByID(ctx, *input.ID)
@@ -198,7 +220,10 @@ func (service *PostService) SaveArticleDraft(ctx context.Context, input SaveArti
 				"this draft changed since it was read",
 				map[string]any{"id": existing.ID.String(), "updated_at": existing.UpdatedAt.UTC()})
 		}
-		return nil
+		// Both sides: a picture the replacement dropped has just lost a
+		// reference, and one it added has just gained one.
+		return reconcileArticleMedia(ctx, store, now,
+			existing.Draft.CoverAndInlineMedia(), draft.CoverAndInlineMedia())
 	})
 	if err != nil {
 		return ArticleDraftRecord{}, normalizePostRepositoryError(err)
@@ -251,7 +276,10 @@ func (service *PostService) EditArticle(ctx context.Context, entryID domain.ID) 
 		}
 		target := entryID
 		record = ArticleDraftRecord{ID: id, Draft: draft, PublishedEntryID: &target, CreatedAt: now, UpdatedAt: now}
-		return store.InsertArticleDraft(ctx, record)
+		if insertErr := store.InsertArticleDraft(ctx, record); insertErr != nil {
+			return insertErr
+		}
+		return reconcileArticleMedia(ctx, store, now, draft.CoverAndInlineMedia())
 	})
 	if err != nil {
 		return ArticleDraftRecord{}, normalizePostRepositoryError(err)
@@ -296,7 +324,18 @@ func (service *PostService) ArticleDraft(ctx context.Context, id domain.ID) (Art
 
 // DiscardArticleDraft throws away unfinished work at the owner's word.
 func (service *PostService) DiscardArticleDraft(ctx context.Context, id domain.ID) error {
+	now := domain.NormalizeTime(service.clock())
 	err := service.transactions.Write(ctx, func(store PostStore) error {
+		// Read what it pointed at before it is gone: afterwards there is
+		// nothing left to ask, and a picture whose last reference this was
+		// would keep a null clock and never be collected.
+		existing, found, readErr := store.ArticleDraftByID(ctx, id)
+		if readErr != nil {
+			return readErr
+		}
+		if !found {
+			return articleDraftNotFound(id)
+		}
 		deleted, writeErr := store.DeleteArticleDraft(ctx, id)
 		if writeErr != nil {
 			return writeErr
@@ -304,7 +343,7 @@ func (service *PostService) DiscardArticleDraft(ctx context.Context, id domain.I
 		if !deleted {
 			return articleDraftNotFound(id)
 		}
-		return nil
+		return reconcileArticleMedia(ctx, store, now, existing.Draft.CoverAndInlineMedia())
 	})
 	if err != nil {
 		return normalizePostRepositoryError(err)
@@ -367,18 +406,37 @@ func (service *PostService) PublishArticleDraft(ctx context.Context, input Publi
 
 		now := domain.NormalizeTime(service.clock())
 		entryID := draft.PublishedEntryID
+		// What the version being replaced pointed at, read before it is
+		// overwritten: a picture this publish drops loses its last reference
+		// here and its clock has to start.
+		var superseded []domain.ID
 		if entryID == nil {
 			created, createErr := service.insertArticleEntry(ctx, store, article, contentText, visibility, now)
 			if createErr != nil {
 				return createErr
 			}
 			entryID = &created
-		} else if replaceErr := service.replaceArticleEntry(ctx, store, *entryID, article, contentText, now); replaceErr != nil {
-			return replaceErr
+		} else {
+			previous, hadOne, readPreviousErr := store.ArticleByEntryID(ctx, *entryID)
+			if readPreviousErr != nil {
+				return readPreviousErr
+			}
+			if hadOne {
+				superseded = previous.CoverAndInlineMedia()
+			}
+			if replaceErr := service.replaceArticleEntry(ctx, store, *entryID, article, contentText, now); replaceErr != nil {
+				return replaceErr
+			}
 		}
 
 		if _, deleteErr := store.DeleteArticleDraft(ctx, draft.ID); deleteErr != nil {
 			return deleteErr
+		}
+		// The draft's rows are gone and the article's are in place, so this is
+		// the moment the reachability of all three sets is finally true.
+		if reconcileErr := reconcileArticleMedia(ctx, store, now,
+			superseded, draft.Draft.CoverAndInlineMedia(), article.CoverAndInlineMedia()); reconcileErr != nil {
+			return reconcileErr
 		}
 		if input.IdempotencyKey != "" {
 			if recordErr := store.InsertIdempotencyRecord(ctx, IdempotencyRecord{

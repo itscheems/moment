@@ -337,3 +337,117 @@ func draftIDOfNewest(t *testing.T, ctx context.Context, service *app.PostService
 	}
 	return drafts[0].ID
 }
+
+// uploadedMedia is a picture that has just arrived and belongs to nothing: its
+// reclamation clock is running, the way the media store leaves a fresh upload.
+func uploadedMedia(t *testing.T, db *Database, fill string) string {
+	t.Helper()
+	id := articleMediaID(t, db, fill)
+	mustWrite(t, db, `UPDATE media SET unreferenced_since_ms = 1 WHERE id = ?`, id)
+	return id
+}
+
+// assertMediaClocksAgree checks the invariant the doctor checks: a picture
+// something points at has no clock running, and a picture nothing points at
+// does. The two halves fail differently -- a stuck clock makes a live picture
+// look collectable, and a missing one makes an orphan uncollectable forever.
+func assertMediaClocksAgree(t *testing.T, db *Database, step string) {
+	t.Helper()
+	if err := db.ReadTx(context.Background(), func(queries Queries) error {
+		rows, err := queries.QueryContext(context.Background(), `
+SELECT media.id, media.unreferenced_since_ms IS NULL, `+mediaReferencedSQL+`
+FROM media ORDER BY media.id`)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var id string
+			var clockSaysReferenced, referenced bool
+			if err := rows.Scan(&id, &clockSaysReferenced, &referenced); err != nil {
+				return err
+			}
+			if clockSaysReferenced != referenced {
+				t.Fatalf("after %s: media %s is referenced=%t but its clock says referenced=%t",
+					step, id, referenced, clockSaysReferenced)
+			}
+		}
+		return rows.Err()
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Every write in this service can change which pictures are reachable, and the
+// clock prune reads has to follow. It did not: a cover on the timeline still
+// read as unreferenced, and a picture whose last reference was a draft somebody
+// threw away kept a null clock -- the one state prune never collects.
+func TestEveryArticleWriteKeepsTheReclamationClockHonest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
+	cover, inline, dropped := uploadedMedia(t, db, "a"), uploadedMedia(t, db, "b"), uploadedMedia(t, db, "c")
+	assertMediaClocksAgree(t, db, "upload")
+
+	coverID, err := domain.ParseID(cover)
+	if err != nil {
+		t.Fatal(err)
+	}
+	withPictures := []byte(`{"schema_version":1,"type":"doc","content":[
+		{"type":"paragraph","content":[{"type":"text","text":"正文"}]},
+		{"type":"image","attrs":{"media_id":"` + inline + `"}},
+		{"type":"image","attrs":{"media_id":"` + dropped + `"}}]}`)
+
+	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
+		Title: "带图的草稿", BodyJSON: withPictures, CoverMediaID: &coverID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClocksAgree(t, db, "saving a draft")
+
+	// A replacement that drops one picture starts that one's clock again.
+	fewer := []byte(`{"schema_version":1,"type":"doc","content":[
+		{"type":"paragraph","content":[{"type":"text","text":"正文"}]},
+		{"type":"image","attrs":{"media_id":"` + inline + `"}}]}`)
+	saved, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
+		ID: &draft.ID, Title: "少了一张", BodyJSON: fewer, CoverMediaID: &coverID,
+		ExpectedUpdatedAt: &draft.UpdatedAt,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClocksAgree(t, db, "replacing a draft")
+
+	published, err := service.PublishArticleDraft(ctx, app.PublishArticleDraftInput{DraftID: saved.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClocksAgree(t, db, "publishing")
+
+	working, err := service.EditArticle(ctx, published.Entry.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClocksAgree(t, db, "opening a working copy")
+
+	if err := service.DiscardArticleDraft(ctx, working.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClocksAgree(t, db, "discarding a working copy")
+
+	// And a draft that is the last thing holding a picture: throwing it away
+	// has to hand that picture to prune rather than strand it.
+	only, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
+		Title: "只有这一份引用", BodyJSON: []byte(`{"schema_version":1,"type":"doc","content":[
+			{"type":"image","attrs":{"media_id":"` + dropped + `"}}]}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClocksAgree(t, db, "a draft taking the last picture back")
+	if err := service.DiscardArticleDraft(ctx, only.ID); err != nil {
+		t.Fatal(err)
+	}
+	assertMediaClocksAgree(t, db, "discarding the last reference")
+}

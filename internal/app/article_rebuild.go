@@ -72,6 +72,13 @@ func (service *PostService) RebuildArticleDerivations(ctx context.Context, dryRu
 			if err := store.ReplaceArticle(ctx, derivation.EntryID, derivation.Article); err != nil {
 				return err
 			}
+			// A drifted projection was a disagreement about which pictures the
+			// article holds, so repairing it changes reachability and the
+			// reclamation clock has to follow.
+			if err := reconcileArticleMedia(ctx, store, service.clock(),
+				derivation.Article.CoverAndInlineMedia()); err != nil {
+				return err
+			}
 			result.Rebuilt++
 		}
 		return nil

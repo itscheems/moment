@@ -143,3 +143,10 @@ func (draft ArticleDraft) Publish() (Article, error) {
 func (draft ArticleDraft) InlineMedia() []EntryMediaUsage {
 	return Article{Body: draft.Body}.InlineMedia()
 }
+
+// CoverAndInlineMedia is every managed media object a draft refers to, for the
+// same reason the published article has one: a caller asking "which media does
+// this touch" must not have to assemble the answer and forget the cover.
+func (draft ArticleDraft) CoverAndInlineMedia() []ID {
+	return Article{Body: draft.Body, CoverID: draft.CoverID}.CoverAndInlineMedia()
+}
