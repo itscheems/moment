@@ -351,6 +351,13 @@ func (store postStore) ReplaceEntryMediaUsages(ctx context.Context, entryID doma
 	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
 	}
+	return store.replaceEntryMedia(ctx, entryID, usages, domain.MaxEntryMediaBytes)
+}
+
+// replaceEntryMedia writes an already-validated usage list. The two callers
+// differ only in how many pictures and how many bytes they allow, so the write
+// itself stays in one place.
+func (store postStore) replaceEntryMedia(ctx context.Context, entryID domain.ID, usages []domain.EntryMediaUsage, maxBytes int64) error {
 	var totalBytes int64
 	for _, usage := range usages {
 		var byteSize int64
@@ -361,8 +368,8 @@ func (store postStore) ReplaceEntryMediaUsages(ctx context.Context, entryID doma
 			return fmt.Errorf("validate entry media usage: %w", err)
 		}
 		totalBytes += byteSize
-		if totalBytes > domain.MaxEntryMediaBytes {
-			return domain.NewError(domain.CodeMediaTooLarge, "post media exceed the 50 MiB aggregate budget", map[string]any{"field": "media", "max_bytes": domain.MaxEntryMediaBytes})
+		if totalBytes > maxBytes {
+			return domain.NewError(domain.CodeMediaTooLarge, "post media exceed the aggregate byte budget", map[string]any{"field": "media", "max_bytes": maxBytes})
 		}
 	}
 	if _, err := store.queries.ExecContext(ctx, `DELETE FROM entry_media WHERE entry_id = ?`, entryID.String()); err != nil {

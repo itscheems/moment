@@ -381,11 +381,7 @@ func validateArticleTable(table ArticleNode, path string) error {
 	for index, row := range table.Content {
 		columns := 0
 		for _, cell := range row.Content {
-			span := cell.ColSpan
-			if span == 0 {
-				span = 1
-			}
-			columns += span
+			columns += cell.ColSpan
 		}
 		if columns > MaxArticleTableColumns {
 			return articleError(fmt.Sprintf("%s.content[%d]", path, index),
@@ -488,6 +484,14 @@ func applyArticleAttributes(node *ArticleNode, attrs map[string]any, path string
 		if err != nil {
 			return err
 		}
+		// An absent span means one. Normalizing here rather than at each
+		// reader is what makes serializing and parsing an exact round trip.
+		if colspan == 0 {
+			colspan = 1
+		}
+		if rowspan == 0 {
+			rowspan = 1
+		}
 		node.ColSpan, node.RowSpan = colspan, rowspan
 	}
 	return nil
@@ -565,4 +569,98 @@ func articleError(path, message string) error {
 		details["path"] = path
 	}
 	return NewError(CodeInvalidArgument, message, details)
+}
+
+// MarshalArticleDocument serializes a validated body back to its canonical
+// JSON. Storing this rather than the bytes that arrived means what is written
+// is exactly what the grammar accepted: there is no room for a field that
+// slipped past because nobody looked at it.
+//
+// Parsing the result returns an equal document, and a test holds it to that.
+func MarshalArticleDocument(document ArticleDocument) ([]byte, error) {
+	encoded, err := json.Marshal(marshalledArticleDocument{
+		SchemaVersion: document.SchemaVersion,
+		Type:          "doc",
+		Content:       marshalArticleNodes(document.Content),
+	})
+	if err != nil {
+		return nil, NewError(CodeInternal, "could not serialize the article body", nil)
+	}
+	return encoded, nil
+}
+
+type marshalledArticleDocument struct {
+	SchemaVersion int                     `json:"schema_version"`
+	Type          string                  `json:"type"`
+	Content       []marshalledArticleNode `json:"content"`
+}
+
+type marshalledArticleNode struct {
+	Type    string                  `json:"type"`
+	Attrs   map[string]any          `json:"attrs,omitempty"`
+	Content []marshalledArticleNode `json:"content,omitempty"`
+	Text    *string                 `json:"text,omitempty"`
+	Marks   []marshalledArticleMark `json:"marks,omitempty"`
+}
+
+type marshalledArticleMark struct {
+	Type  string         `json:"type"`
+	Attrs map[string]any `json:"attrs,omitempty"`
+}
+
+func marshalArticleNodes(nodes []ArticleNode) []marshalledArticleNode {
+	if len(nodes) == 0 {
+		return nil
+	}
+	encoded := make([]marshalledArticleNode, 0, len(nodes))
+	for _, node := range nodes {
+		encoded = append(encoded, marshalArticleNode(node))
+	}
+	return encoded
+}
+
+func marshalArticleNode(node ArticleNode) marshalledArticleNode {
+	encoded := marshalledArticleNode{Type: node.Type, Content: marshalArticleNodes(node.Content)}
+	if node.Type == ArticleNodeText {
+		text := node.Text
+		encoded.Text = &text
+	}
+	// Only attributes that carry information are written. A default written out
+	// and read back in is noise that makes two equal documents differ in bytes.
+	attrs := map[string]any{}
+	switch node.Type {
+	case ArticleNodeHeading:
+		attrs["level"] = node.Level
+	case ArticleNodeOrderedList:
+		if node.Start > 1 {
+			attrs["start"] = node.Start
+		}
+	case ArticleNodeCodeBlock:
+		if node.Language != "" {
+			attrs["language"] = node.Language
+		}
+	case ArticleNodeImage:
+		attrs["media_id"] = node.MediaID.String()
+		if node.Alt != "" {
+			attrs["alt"] = node.Alt
+		}
+	case ArticleNodeTableHeader, ArticleNodeTableCell:
+		if node.ColSpan > 1 {
+			attrs["colspan"] = node.ColSpan
+		}
+		if node.RowSpan > 1 {
+			attrs["rowspan"] = node.RowSpan
+		}
+	}
+	if len(attrs) > 0 {
+		encoded.Attrs = attrs
+	}
+	for _, mark := range node.Marks {
+		item := marshalledArticleMark{Type: mark.Type}
+		if mark.Type == ArticleMarkLink {
+			item.Attrs = map[string]any{"href": mark.Href}
+		}
+		encoded.Marks = append(encoded.Marks, item)
+	}
+	return encoded
 }

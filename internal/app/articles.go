@@ -8,6 +8,15 @@ import (
 	"github.com/moment/moment/internal/mediacontract"
 )
 
+// ArticleCard is what a list needs of an article: enough to draw its card
+// without shipping the body. A timeline page holding twenty full bodies would
+// send megabytes nobody reads.
+type ArticleCard struct {
+	Title        string
+	Excerpt      string
+	CoverMediaID *domain.ID
+}
+
 // ArticleMediaURL addresses a managed picture the way a browser reaches it.
 //
 // The recipe version rides in the query because it is part of the browser's

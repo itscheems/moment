@@ -41,6 +41,12 @@ type PostStore interface {
 	DeleteEntry(context.Context, domain.ID) (bool, error)
 	IdempotencyRecord(context.Context, string, string) (IdempotencyRecord, bool, error)
 	InsertIdempotencyRecord(context.Context, IdempotencyRecord) error
+	// Publishing an article writes an entry and a body together, so the two
+	// belong to one store rather than to two that could drift apart mid-write.
+	InsertArticle(context.Context, domain.ID, domain.Article) error
+	ReplaceArticle(context.Context, domain.ID, domain.Article) error
+	ArticleByEntryID(context.Context, domain.ID) (domain.Article, bool, error)
+	ArticleCards(context.Context, []domain.ID) (map[domain.ID]ArticleCard, error)
 }
 
 // PostTransactions supplies consistent read and atomic write transactions to

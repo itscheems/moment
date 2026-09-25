@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -339,3 +340,54 @@ func TestArticleCoverAndInlineMediaListsEverythingItTouches(t *testing.T) {
 }
 
 func stringPointer(value string) *string { return &value }
+
+// Storing the canonical serialization rather than the bytes that arrived only
+// works if the two are the same document.
+func TestArticleDocumentSurvivesASerializationRoundTrip(t *testing.T) {
+	t.Parallel()
+	body := articleBody(strings.Join([]string{
+		`{"type":"heading","attrs":{"level":3},"content":[{"type":"text","text":"标题"}]}`,
+		`{"type":"paragraph","content":[{"type":"text","marks":[{"type":"bold"},{"type":"link","attrs":{"href":"https://example.com/x"}}],"text":"粗链接"},{"type":"hardBreak"}]}`,
+		`{"type":"orderedList","attrs":{"start":7},"content":[{"type":"listItem","content":[` + articleParagraph("七") + `]}]}`,
+		`{"type":"bulletList","content":[{"type":"listItem","content":[` + articleParagraph("点") + `]}]}`,
+		`{"type":"codeBlock","attrs":{"language":"rust"},"content":[{"type":"text","text":"fn main() {}"}]}`,
+		`{"type":"blockquote","content":[` + articleParagraph("引") + `]}`,
+		`{"type":"horizontalRule"}`,
+		`{"type":"table","content":[{"type":"tableRow","content":[{"type":"tableHeader","attrs":{"colspan":2},"content":[` + articleParagraph("头") + `]}]},{"type":"tableRow","content":[{"type":"tableCell","content":[` + articleParagraph("格") + `]},{"type":"tableCell","content":[` + articleParagraph("格") + `]}]}]}`,
+		`{"type":"image","attrs":{"media_id":"` + articleTestMediaOne + `","alt":"描述"}}`,
+		`{"type":"image","attrs":{"media_id":"` + articleTestMediaTwo + `"}}`,
+	}, ","))
+
+	first := mustParseArticle(t, body)
+	encoded, err := MarshalArticleDocument(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ParseArticleDocument(encoded)
+	if err != nil {
+		t.Fatalf("the canonical form must parse: %v\n%s", err, encoded)
+	}
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("round trip changed the document:\nfirst  %+v\nsecond %+v", first, second)
+	}
+	again, err := MarshalArticleDocument(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(again) != string(encoded) {
+		t.Fatalf("serialization is not stable:\n%s\n%s", encoded, again)
+	}
+
+	// And the rendered page is the same either way.
+	firstHTML, err := RenderArticleHTML(first, articleTestOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondHTML, err := RenderArticleHTML(second, articleTestOptions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstHTML != secondHTML {
+		t.Fatalf("round trip changed the page:\n%s\n%s", firstHTML, secondHTML)
+	}
+}

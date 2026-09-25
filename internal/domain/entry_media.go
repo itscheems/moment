@@ -16,6 +16,10 @@ const (
 	MaxMediaAltCodePoints = 1_000
 	// MaxEntryMediaBytes is the aggregate logical usage budget for one post.
 	MaxEntryMediaBytes int64 = 50 << 20
+	// MaxArticleMediaBytes is the same budget for an article, which places up
+	// to fifty pictures where a moment places nine. Holding an article to the
+	// moment's total would make the picture limit unreachable in practice.
+	MaxArticleMediaBytes int64 = 250 << 20
 	// MaxCommentMediaBytes is the aggregate logical usage budget for one comment.
 	MaxCommentMediaBytes int64 = 40 << 20
 )
@@ -32,6 +36,13 @@ type EntryMediaUsage struct {
 // ValidateEntryMediaUsages enforces the canonical ordered usage contract.
 func ValidateEntryMediaUsages(usages []EntryMediaUsage) error {
 	return validateMediaUsages(usages, MaxEntryMediaUsages, "a post may contain at most 9 media usages")
+}
+
+// ValidateArticleMediaUsages applies the same ordering and alt contract to the
+// pictures an article body places. The projection is derived from the body, so
+// a failure here means the body and its projection disagree.
+func ValidateArticleMediaUsages(usages []EntryMediaUsage) error {
+	return validateMediaUsages(usages, MaxArticleInlineImages, "an article may place at most 50 pictures")
 }
 
 // ValidateCommentMediaUsages applies the same ordering and alt contract with
