@@ -35,6 +35,7 @@ const usage = `Capture one surface matrix in a real browser.
   --themes <list>      comma separated, default light,dim
   --height <px>        viewport height, default 900
   --settle <ms>        how long to wait for the page, default 2500
+  --cookie <n=v>       carry this cookie, for a surface behind a sign-in
 
 Themes are this project's own names. The dark ones are "dim" and "lights-out";
 there is no theme called "dark", and asking for one renders light.
@@ -56,6 +57,7 @@ function parseArguments(argv) {
     themes: ["light", "dim"],
     height: 900,
     settle: 2500,
+    cookie: [],
   };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
@@ -100,6 +102,11 @@ function parseArguments(argv) {
         options.settle = Number.parseInt(value, 10);
         index += 1;
         break;
+      case "--cookie":
+        if (!(value ?? "").includes("=")) fail(`--cookie wants name=value, got ${value}`);
+        options.cookie.push(value);
+        index += 1;
+        break;
       default:
         fail(`unknown option ${flag}`);
     }
@@ -125,6 +132,7 @@ function probe(options, path, width, theme, shot) {
     "--computed", "background-color",
     "--json",
   ];
+  for (const cookie of options.cookie) args.push("--cookie", cookie);
   if (shot) args.push("--shot", join(options.out, shot));
   const result = spawnSync(process.execPath, args, {
     encoding: "utf8",

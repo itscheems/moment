@@ -838,11 +838,17 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* One column puts the rail somewhere, and above the sheet it is the first
+     thing on a phone: a list of other drafts standing in front of the page
+     somebody opened in order to write. It goes under instead, where switching
+     drafts is still one scroll away and writing is not. */
   .rail {
+    order: 1;
     position: static;
     max-block-size: none;
     border-inline-end: 0;
-    border-block-end: 1px solid var(--border-subtle);
+    border-block-start: 1px solid var(--border-subtle);
+    border-block-end: 0;
   }
 
   .title {
