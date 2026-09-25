@@ -1,5 +1,46 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
+import path from "node:path";
+
+const editorDirectory = path.join(
+  import.meta.dirname,
+  "src/features/article/editor",
+);
+const lazyBoundary = {
+  meta: {
+    type: "problem",
+    schema: [],
+    messages: {
+      eager:
+        "Keep Tiptap and article editor internals behind the lazy editor entry.",
+    },
+  },
+  create(context) {
+    const check = (node) => {
+      const source = node.source?.value;
+      if (
+        typeof source !== "string" ||
+        node.importKind === "type" ||
+        node.exportKind === "type"
+      )
+        return;
+      const resolved = path.resolve(path.dirname(context.filename), source);
+      if (
+        source.startsWith("@tiptap/") ||
+        source.startsWith("prosemirror-") ||
+        (resolved.startsWith(`${editorDirectory}/`) &&
+          !/^index(?:\.tsx?)?$/.test(path.basename(resolved)))
+      ) {
+        context.report({ node, messageId: "eager" });
+      }
+    };
+    return {
+      ImportDeclaration: check,
+      ExportNamedDeclaration: check,
+      ExportAllDeclaration: check,
+    };
+  },
+};
 
 export default tseslint.config(
   { ignores: ["../internal/webassets/dist", "coverage"] },
@@ -24,7 +65,9 @@ export default tseslint.config(
   {
     files: ["src/**/*.{ts,tsx}"],
     ignores: ["src/features/article/editor/**"],
+    plugins: { moment: { rules: { "lazy-editor": lazyBoundary } } },
     rules: {
+      "moment/lazy-editor": "error",
       "no-restricted-imports": [
         "error",
         {
