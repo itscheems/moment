@@ -582,9 +582,10 @@ type usageRecord struct {
 }
 
 type entryRecord struct {
-	ID          string  `json:"id"`
-	Kind        string  `json:"kind"`
-	ContentMD   string  `json:"content_md"`
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	// ContentMD is null for an article, whose body travels in its own member.
+	ContentMD   *string `json:"content_md"`
 	CreatedAt   string  `json:"created_at"`
 	UpdatedAt   string  `json:"updated_at"`
 	PublishedAt string  `json:"published_at"`
@@ -1002,10 +1003,25 @@ func fixedPointBytes(otherBytes int64, render func(int64) ([]byte, error)) ([]by
 	return nil, errors.New("archive manifest expanded_bytes did not reach a fixed point")
 }
 
+// errArticleNotPortable is what both directions answer while this layout has
+// no member to carry an article body.
+//
+// Exporting has to refuse as loudly as importing does. The alternative -- write
+// the envelope and leave the body behind -- produces a backup that looks
+// complete and restores an article as a blank post, which is the one failure a
+// backup exists to prevent. Skipping article rows instead would lose them from
+// the backup silently, which is the same failure wearing a different hat.
+func errArticleNotPortable(id string) error {
+	return fmt.Errorf("entry %s is an article, which this archive layout does not carry yet", id)
+}
+
 func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 	id, err := domain.ParseID(value.ID)
 	if err != nil {
 		return err
+	}
+	if domain.EntryKind(value.Kind) != domain.KindMoment {
+		return errArticleNotPortable(value.ID)
 	}
 	entry := domain.Entry{
 		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
@@ -1038,8 +1054,11 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
 	}
-	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil {
-		return err
+	body, isMoment := domain.Entry{Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD}.Markdown()
+	if isMoment {
+		if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil {
+			return err
+		}
 	}
 	if value.QuotedEntryID != nil {
 		if _, err := domain.ParseID(*value.QuotedEntryID); err != nil || *value.QuotedEntryID == value.ID {

@@ -40,7 +40,7 @@ func TestPostServiceCRUDPreservesTimelineAndRendersSafely(t *testing.T) {
 	}
 
 	got, err := service.Get(ctx, created.Post.Entry.ID, app.OwnerViewer())
-	if err != nil || got.Entry != created.Post.Entry {
+	if err != nil || !reflect.DeepEqual(got.Entry, created.Post.Entry) {
 		t.Fatalf("get = %+v, %v", got, err)
 	}
 	originalCreated := got.Entry.CreatedAt
@@ -325,7 +325,7 @@ END`); err != nil {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unchanged.Entry != created.Post.Entry {
+	if !reflect.DeepEqual(unchanged.Entry, created.Post.Entry) {
 		t.Fatalf("failed update changed persisted Entry: %+v", unchanged.Entry)
 	}
 }

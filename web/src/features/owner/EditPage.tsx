@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   PublicApi,
   PublicApiError,
-  type PublicPost,
+  isMomentPost,
+  type PublicMomentPost,
   type SiteIdentity,
 } from "../../api/public";
 import { Composer } from "./Composer";
@@ -18,7 +19,7 @@ export function EditPage({
   id: string;
   site: SiteIdentity;
 }) {
-  const [post, setPost] = useState<PublicPost | null>(null);
+  const [post, setPost] = useState<PublicMomentPost | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const active = useRef<AbortController | null>(null);
@@ -30,7 +31,15 @@ export function EditPage({
     setLoading(true);
     setError(null);
     try {
-      setPost(await api.post(id, controller.signal));
+      const loaded = await api.post(id, controller.signal);
+      // The composer edits Markdown and saves it back over `content_md`. An
+      // article has none, so opening one here would offer an empty editor and
+      // then write that emptiness over a body it never showed.
+      if (!isMomentPost(loaded)) {
+        setError("这是一篇文章，不能在这里编辑。");
+        return;
+      }
+      setPost(loaded);
     } catch (nextError) {
       if (controller.signal.aborted) return;
       setError(

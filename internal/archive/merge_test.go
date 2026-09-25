@@ -18,9 +18,9 @@ func TestMergePlanClassifiesContentDependenciesAndSHAReuse(t *testing.T) {
 			Timezone: "UTC", AvatarMediaID: &localMediaID, CommentsEnabled: true,
 		},
 		Entries: []sqlitestore.ArchiveEntry{
-			{ID: "entry-local", Kind: "moment", ContentMD: "local", CreatedAtMS: 1, UpdatedAtMS: 1, PublishedAtMS: 1},
-			{ID: "entry-same", Kind: "moment", ContentMD: "same", CreatedAtMS: 2, UpdatedAtMS: 2, PublishedAtMS: 2, Media: []sqlitestore.ArchiveUsage{{MediaID: localMediaID, Position: 0}}},
-			{ID: "entry-conflict", Kind: "moment", ContentMD: "local version", CreatedAtMS: 3, UpdatedAtMS: 3, PublishedAtMS: 3},
+			{ID: "entry-local", Kind: "moment", ContentMD: domain.MarkdownBody("local"), CreatedAtMS: 1, UpdatedAtMS: 1, PublishedAtMS: 1},
+			{ID: "entry-same", Kind: "moment", ContentMD: domain.MarkdownBody("same"), CreatedAtMS: 2, UpdatedAtMS: 2, PublishedAtMS: 2, Media: []sqlitestore.ArchiveUsage{{MediaID: localMediaID, Position: 0}}},
+			{ID: "entry-conflict", Kind: "moment", ContentMD: domain.MarkdownBody("local version"), CreatedAtMS: 3, UpdatedAtMS: 3, PublishedAtMS: 3},
 		},
 		Comments: []sqlitestore.ArchiveComment{{ID: "comment-same", EntryID: "entry-same", AuthorKind: "owner", AuthorName: "Owner", ContentMD: "same", CreatedAtMS: 4}},
 		Media:    []sqlitestore.ArchiveMedia{{ID: localMediaID, SHA256: repeatHex("a"), OriginalName: "local.jpg", MIMEType: "image/jpeg", ByteSize: 10, Width: 2, Height: 2, CreatedAtMS: 1}},
@@ -31,9 +31,9 @@ func TestMergePlanClassifiesContentDependenciesAndSHAReuse(t *testing.T) {
 			Timezone: "UTC", AvatarMediaID: &incomingMediaID, CommentsEnabled: true,
 		},
 		Entries: []sqlitestore.ArchiveEntry{
-			{ID: "entry-same", Kind: "moment", ContentMD: "same", CreatedAtMS: 2, UpdatedAtMS: 2, PublishedAtMS: 2, Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID, Position: 0}}},
-			{ID: "entry-conflict", Kind: "moment", ContentMD: "incoming version", CreatedAtMS: 3, UpdatedAtMS: 5, PublishedAtMS: 3},
-			{ID: "entry-new", Kind: "moment", ContentMD: "new", CreatedAtMS: 6, UpdatedAtMS: 6, PublishedAtMS: 6, Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID, Position: 0}}},
+			{ID: "entry-same", Kind: "moment", ContentMD: domain.MarkdownBody("same"), CreatedAtMS: 2, UpdatedAtMS: 2, PublishedAtMS: 2, Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID, Position: 0}}},
+			{ID: "entry-conflict", Kind: "moment", ContentMD: domain.MarkdownBody("incoming version"), CreatedAtMS: 3, UpdatedAtMS: 5, PublishedAtMS: 3},
+			{ID: "entry-new", Kind: "moment", ContentMD: domain.MarkdownBody("new"), CreatedAtMS: 6, UpdatedAtMS: 6, PublishedAtMS: 6, Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID, Position: 0}}},
 		},
 		Comments: []sqlitestore.ArchiveComment{
 			{ID: "comment-same", EntryID: "entry-same", AuthorKind: "owner", AuthorName: "Owner", ContentMD: "same", CreatedAtMS: 4},
@@ -164,8 +164,8 @@ func TestMergeReviewShowsRecognizableContentAndSiteMedia(t *testing.T) {
 			OwnerID: "owner", AvatarMediaID: &localAvatar, PinnedPostID: &localPinned,
 		},
 		Entries: []sqlitestore.ArchiveEntry{
-			{ID: localPinned, ContentMD: "keep this local post", CreatedAtMS: 10, UpdatedAtMS: 10, PublishedAtMS: 10},
-			{ID: "entry-conflict", ContentMD: "local version", CreatedAtMS: 20, UpdatedAtMS: 20, PublishedAtMS: 20},
+			{ID: localPinned, ContentMD: domain.MarkdownBody("keep this local post"), CreatedAtMS: 10, UpdatedAtMS: 10, PublishedAtMS: 10},
+			{ID: "entry-conflict", ContentMD: domain.MarkdownBody("local version"), CreatedAtMS: 20, UpdatedAtMS: 20, PublishedAtMS: 20},
 		},
 		Comments: []sqlitestore.ArchiveComment{{ID: "comment-local", EntryID: localPinned, AuthorKind: "guest", AuthorName: "Local guest", ContentMD: "local reply", CreatedAtMS: 30}},
 		Media:    []sqlitestore.ArchiveMedia{{ID: localAvatar, SHA256: repeatHex("a"), OriginalName: "local-avatar.jpg", MIMEType: "image/jpeg", ByteSize: 42, Width: 32, Height: 24}},
@@ -175,8 +175,8 @@ func TestMergeReviewShowsRecognizableContentAndSiteMedia(t *testing.T) {
 			OwnerID: "owner", AvatarMediaID: &incomingAvatar, PinnedPostID: &incomingPinned,
 		},
 		Entries: []sqlitestore.ArchiveEntry{
-			{ID: incomingPinned, ContentMD: "incoming post", CreatedAtMS: 40, UpdatedAtMS: 40, PublishedAtMS: 40},
-			{ID: "entry-conflict", ContentMD: "incoming version", CreatedAtMS: 20, UpdatedAtMS: 50, PublishedAtMS: 20},
+			{ID: incomingPinned, ContentMD: domain.MarkdownBody("incoming post"), CreatedAtMS: 40, UpdatedAtMS: 40, PublishedAtMS: 40},
+			{ID: "entry-conflict", ContentMD: domain.MarkdownBody("incoming version"), CreatedAtMS: 20, UpdatedAtMS: 50, PublishedAtMS: 20},
 		},
 		Media: []sqlitestore.ArchiveMedia{{ID: incomingAvatar, SHA256: repeatHex("b"), OriginalName: "incoming-avatar.png", MIMEType: "image/png", ByteSize: 84, Width: 64, Height: 48}},
 	}
@@ -191,10 +191,10 @@ func TestMergeReviewShowsRecognizableContentAndSiteMedia(t *testing.T) {
 	if review.LocalOnly.Total != 2 || review.IncomingOnly.Total != 1 || review.Conflicts.Total != 1 {
 		t.Fatalf("review buckets = %#v", review)
 	}
-	if review.LocalOnly.Items[0].Local == nil || review.LocalOnly.Items[0].Local.ContentMD != "local reply" {
+	if review.LocalOnly.Items[0].Local == nil || markdownText(review.LocalOnly.Items[0].Local.ContentMD) != "local reply" {
 		t.Fatalf("local-only content = %#v", review.LocalOnly.Items)
 	}
-	if review.Conflicts.Items[0].Local.ContentMD != "local version" || review.Conflicts.Items[0].Incoming.ContentMD != "incoming version" {
+	if markdownText(review.Conflicts.Items[0].Local.ContentMD) != "local version" || markdownText(review.Conflicts.Items[0].Incoming.ContentMD) != "incoming version" {
 		t.Fatalf("conflict sides = %#v", review.Conflicts.Items[0])
 	}
 	fields := map[string]MergeReviewSiteField{}
@@ -205,8 +205,8 @@ func TestMergeReviewShowsRecognizableContentAndSiteMedia(t *testing.T) {
 		fields["avatar_media_id"].IncomingMedia == nil || fields["avatar_media_id"].IncomingMedia.OriginalName != "incoming-avatar.png" {
 		t.Fatalf("avatar review = %#v", fields["avatar_media_id"])
 	}
-	if fields["pinned_post_id"].LocalEntry == nil || fields["pinned_post_id"].LocalEntry.ContentMD != "keep this local post" ||
-		fields["pinned_post_id"].IncomingEntry == nil || fields["pinned_post_id"].IncomingEntry.ContentMD != "incoming post" {
+	if fields["pinned_post_id"].LocalEntry == nil || markdownText(fields["pinned_post_id"].LocalEntry.ContentMD) != "keep this local post" ||
+		fields["pinned_post_id"].IncomingEntry == nil || markdownText(fields["pinned_post_id"].IncomingEntry.ContentMD) != "incoming post" {
 		t.Fatalf("pinned review = %#v", fields["pinned_post_id"])
 	}
 }
@@ -253,6 +253,17 @@ func repeatHex(value string) string {
 	return result[:64]
 }
 
+// markdownText is the Markdown body an optional content field carries, and the
+// empty string when it carries none. Only an article has no body, and no test
+// here builds one, so a missing body reads as "" and still fails every
+// assertion that names real words.
+func markdownText(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
 // Migration 0020 backfilled author_user_id from the site owner, so every owner
 // comment in a live database carries a reference that the same comment in a
 // backup taken before that migration does not: the key is omitted and decodes
@@ -270,7 +281,7 @@ func TestMergePlanTreatsABackfilledOwnerReferenceAsUnchanged(t *testing.T) {
 	}
 	local := PortableAuthority{
 		Site:    site,
-		Entries: []sqlitestore.ArchiveEntry{{ID: "entry", Kind: "moment", ContentMD: "post", CreatedAtMS: 1, UpdatedAtMS: 1, PublishedAtMS: 1}},
+		Entries: []sqlitestore.ArchiveEntry{{ID: "entry", Kind: "moment", ContentMD: domain.MarkdownBody("post"), CreatedAtMS: 1, UpdatedAtMS: 1, PublishedAtMS: 1}},
 		Comments: []sqlitestore.ArchiveComment{
 			comment("comment-owner", "owner", &ownerID),
 			comment("comment-moved", "owner", &ownerID),

@@ -1493,7 +1493,10 @@ func validPostAPIRawData(data json.RawMessage, destination any) bool {
 }
 
 func validRawAPIPost(data json.RawMessage, post postdto.Post) bool {
-	if !hasRequiredNonNullAPIDataFields(data, "id", "content_md", "content_html", "created_at", "updated_at", "published_at", "comment_count", "media") ||
+	// content_md is absent for an article, so the parity check asks only for
+	// the fields every kind carries and checks the body against the kind.
+	if !hasRequiredNonNullAPIDataFields(data, "id", "kind", "content_html", "created_at", "updated_at", "published_at", "comment_count", "media") ||
+		!hasRequiredAPIDataFields(data, "content_md") ||
 		!hasRequiredAPIDataFields(data, "location") ||
 		!validCanonicalAPIInstantField(data, "created_at", post.CreatedAt) ||
 		!validCanonicalAPIInstantField(data, "updated_at", post.UpdatedAt) ||
@@ -1635,10 +1638,19 @@ func decodePostAPIEnvelope(body []byte) (json.RawMessage, map[string]any, error)
 	return decodeStrictAPIEnvelope(body)
 }
 
+// postBodyText is what a terminal shows for a post body. An article has no
+// Markdown, so its rendered line is empty rather than a nil dereference.
+func postBodyText(post postdto.Post) string {
+	if post.ContentMD == nil {
+		return ""
+	}
+	return *post.ContentMD
+}
+
 func postResult(action string, post postdto.Post, meta map[string]any) Result {
 	return Result{
 		Data: post,
-		Text: fmt.Sprintf("%s %s.\nPublished: %s\n%s", action, post.ID, post.PublishedAt.Format("2006-01-02 15:04:05Z07:00"), post.ContentMD),
+		Text: fmt.Sprintf("%s %s.\nPublished: %s\n%s", action, post.ID, post.PublishedAt.Format("2006-01-02 15:04:05Z07:00"), postBodyText(post)),
 		Meta: meta,
 	}
 }
@@ -1649,7 +1661,7 @@ func postPageText(page postdto.Page, nextCursor *string) string {
 	}
 	lines := make([]string, 0, len(page.Items)+1)
 	for _, post := range page.Items {
-		content := strings.ReplaceAll(post.ContentMD, "\n", " ")
+		content := strings.ReplaceAll(postBodyText(post), "\n", " ")
 		if len([]rune(content)) > 80 {
 			content = string([]rune(content)[:80]) + "…"
 		}

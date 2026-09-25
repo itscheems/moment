@@ -296,8 +296,8 @@ function ReviewEntityCard({
         </time>
       </header>
       {entity.username !== undefined ? (
-        // An account row. `content_md` exists on the wire and is always empty
-        // here, so rendering it would print "（无文字内容）" over a person.
+        // An account row. `content_md` is on the wire but holds nothing for a
+        // person, so rendering it would print "（无文字内容）" over one.
         <dl className={styles.reviewAccount}>
           <div>
             <dt>用户名</dt>

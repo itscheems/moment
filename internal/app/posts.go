@@ -65,6 +65,9 @@ type Post struct {
 	Entry        domain.Entry
 	TimelineKind TimelineItemKind
 	ContentHTML  string
+	// Article is the body of a KindArticle entry and nil for a moment. The
+	// Entry's ContentMD is nil in exactly the same cases.
+	Article      *domain.Article
 	Media        []MediaUsageProjection
 	Location     *domain.Location
 	LinkCards    []LinkCardProjection
@@ -444,7 +447,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err != nil {
 		return CreatePostResult{}, normalizePostRepositoryError(err)
 	}
-	result.Post.ContentHTML, err = domain.RenderMarkdownWithLinkCards(result.Post.Entry.ContentMD, LinkCardsOf(result.Post.LinkCards))
+	result.Post.ContentHTML, err = renderEntryHTML(result.Post.Entry, result.Post.Article, LinkCardsOf(result.Post.LinkCards))
 	if err != nil {
 		return CreatePostResult{}, storedEntryError(result.Post.Entry.ID)
 	}
@@ -893,9 +896,19 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 			return mediaErr
 		}
 		commentCount = counts[input.ID]
+		// This path replaces a Markdown body. An article is edited through
+		// its own path, which rewrites the whole aggregate at once.
+		if entry.Kind != domain.KindMoment {
+			return domain.NewError(domain.CodeInvalidArgument,
+				"an article is not edited through the post body", map[string]any{"field": "kind"})
+		}
 		content := input.ContentMD
 		if input.PreserveContent {
-			content = entry.ContentMD
+			previous, present := entry.Markdown()
+			if !present {
+				return storedEntryError(entry.ID)
+			}
+			content = previous
 		}
 		updatedMedia = currentMedia
 		updatedLocation = currentLocation
@@ -935,7 +948,8 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		}
 		mediaChanged := (len(currentMedia) != 0 || len(updatedMedia) != 0) && !reflect.DeepEqual(currentMedia, updatedMedia)
 		cardsChanged := (len(currentLinkCards) != 0 || len(nextLinkCards) != 0) && !reflect.DeepEqual(LinkCardsOf(currentLinkCards), nextLinkCards)
-		contentChanged := content != entry.ContentMD || mediaChanged || cardsChanged || !reflect.DeepEqual(currentLocation, updatedLocation)
+		previousContent, _ := entry.Markdown()
+		contentChanged := content != previousContent || mediaChanged || cardsChanged || !reflect.DeepEqual(currentLocation, updatedLocation)
 		if updateErr := entry.UpdateContent(content, now); updateErr != nil {
 			return updateErr
 		}
@@ -1225,7 +1239,7 @@ func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id doma
 	if err != nil {
 		return nil, err
 	}
-	html, err := domain.RenderMarkdown(entry.ContentMD)
+	html, err := renderEntryHTML(entry, nil, nil)
 	if err != nil {
 		return nil, storedEntryError(id)
 	}
@@ -1236,10 +1250,10 @@ func renderPost(entry domain.Entry, media []MediaUsageProjection, location *doma
 	if err := validatePostMediaProjections(media); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	if err := domain.ValidatePostMarkdown(entry.ContentMD, len(media)); err != nil {
+	if err := validateStoredEntryBody(entry, nil, len(media)); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	html, err := domain.RenderMarkdownWithLinkCards(entry.ContentMD, LinkCardsOf(cards))
+	html, err := renderEntryHTML(entry, nil, LinkCardsOf(cards))
 	if err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}

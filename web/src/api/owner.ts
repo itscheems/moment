@@ -404,8 +404,12 @@ export interface MergeReviewLinkCard {
  */
 export interface MergeReviewEntity {
   id: string;
-  /** Empty on an account or identity row, which the Go field still emits. */
-  content_md: string;
+  /**
+   * Empty on an account or identity row, which the Go field still emits, and
+   * null on an entry row that is an article -- an article's body is not
+   * Markdown, so there is nothing for this column to hold.
+   */
+  content_md: string | null;
   created_at: string;
   media: MergeReviewMedia[];
 
@@ -558,6 +562,17 @@ function booleanField(record: Record<string, unknown>, field: string): boolean {
   const value = record[field];
   if (typeof value !== "boolean") {
     throw invalidResponse(`response field ${field} must be a boolean`);
+  }
+  return value;
+}
+
+function nullableStringField(
+  record: Record<string, unknown>,
+  field: string,
+): string | null {
+  const value = record[field];
+  if (value !== null && typeof value !== "string") {
+    throw invalidResponse(`response field ${field} must be a string or null`);
   }
   return value;
 }
@@ -1209,9 +1224,10 @@ function parseMergeReviewLinkCard(value: unknown): MergeReviewLinkCard {
  *
  * Four of them are always on the wire because their Go fields carry no
  * `omitempty`: a zero `content_md` still serialises, which is how an account
- * row satisfies a field that means nothing to it. The rest are pointers or
- * slices that vanish when unset, and which of them appear is decided by the
- * projection that built the row.
+ * row satisfies a field that means nothing to it, and an article entry sends
+ * it as null for the same reason. The rest are pointers or slices that vanish
+ * when unset, and which of them appear is decided by the projection that built
+ * the row.
  */
 /**
  * The kinds a review bucket can contain.
@@ -1319,7 +1335,7 @@ function parseMergeReviewEntity(value: unknown): MergeReviewEntity {
   return {
     ...optional,
     id: stringField(record, "id"),
-    content_md: stringField(record, "content_md"),
+    content_md: nullableStringField(record, "content_md"),
     created_at: canonicalUTCField(record, "created_at"),
     media: record.media.map(parseMergeReviewMedia),
   } as MergeReviewEntity;

@@ -11,6 +11,7 @@ function json(body: unknown, status = 200): Response {
 
 const post = {
   id: "01K2ABCDEF0123456789ABCDE0",
+  kind: "moment",
   content_md: "今天下了一场雨。",
   content_html: "<p>今天下了一场雨。</p>",
   created_at: "2026-08-10T01:02:03.000Z",
@@ -81,6 +82,7 @@ describe("public API client", () => {
       quoted_post: {
         unavailable: false,
         id: "01K2ABCDEF0123456789ABCDE9",
+        kind: "moment",
         content_md: "被引用的正文",
         content_html: "<p>被引用的正文</p>",
         published_at: "2026-08-09T01:02:03.000Z",
@@ -114,6 +116,7 @@ describe("public API client", () => {
       quoted_post: {
         unavailable: true,
         id: null,
+        kind: null,
         content_md: null,
         content_html: null,
         published_at: null,
@@ -400,6 +403,7 @@ describe("public API client", () => {
       items: [
         {
           id: post.id,
+          kind: "moment",
           contentMd: post.content_md,
           contentHtml: post.content_html,
           createdAt: post.created_at,
@@ -1144,4 +1148,148 @@ it("reads authoritative edit time and accepts legacy posts without it", () => {
     parsePost({ ...post, updated_at: edited, edited_at: edited }).editedAt,
   ).toBe(edited);
   expect(() => parsePost({ ...post, edited_at: "nonsense" })).toThrow();
+});
+
+describe("post kind and the body it is allowed to carry", () => {
+  const article = {
+    ...post,
+    kind: "article",
+    content_md: null,
+    content_html: "<h1>一篇文章</h1>\n<p>正文。</p>",
+  };
+
+  it("parses an article, which renders from HTML and carries no Markdown", () => {
+    expect(parsePost(article)).toMatchObject({
+      kind: "article",
+      contentMd: null,
+      contentHtml: "<h1>一篇文章</h1>\n<p>正文。</p>",
+    });
+  });
+
+  it("parses a moment, which carries its Markdown source", () => {
+    expect(parsePost(post)).toMatchObject({
+      kind: "moment",
+      contentMd: "今天下了一场雨。",
+    });
+  });
+
+  it("rejects a moment whose content_md is null", () => {
+    expect(() => parsePost({ ...post, content_md: null })).toThrow(
+      PublicApiError,
+    );
+  });
+
+  it("rejects an article whose content_md is a string", () => {
+    expect(() =>
+      parsePost({ ...article, content_md: "文章的正文不是 Markdown" }),
+    ).toThrow(PublicApiError);
+  });
+
+  it("rejects a post that carries no kind", () => {
+    const withoutKind: Record<string, unknown> = { ...post };
+    delete withoutKind.kind;
+    expect(() => parsePost(withoutKind)).toThrow(PublicApiError);
+  });
+
+  it("rejects a kind this client does not know", () => {
+    expect(() => parsePost({ ...post, kind: "newsletter" })).toThrow(
+      PublicApiError,
+    );
+    expect(() => parsePost({ ...post, kind: null })).toThrow(PublicApiError);
+  });
+
+  it("carries the kind through a search hit", async () => {
+    const api = new PublicApi(
+      vi.fn(async () =>
+        json({
+          data: {
+            items: [{ ...article, snippet: "文章里的一段" }],
+            year_counts: [{ year: 2026, count: 1 }],
+          },
+          meta: { next_cursor: null, request_id: "req_search" },
+        }),
+      ) as typeof fetch,
+    );
+
+    await expect(api.search({ query: "文章" })).resolves.toMatchObject({
+      items: [{ post: { kind: "article", contentMd: null } }],
+    });
+  });
+
+  it("parses a quoted article, which is available while carrying no Markdown", () => {
+    const quoting = {
+      ...post,
+      quoted_post: {
+        unavailable: false,
+        id: "01K2ABCDEF0123456789ABCDE9",
+        kind: "article",
+        content_md: null,
+        content_html: "<h1>被引用的文章</h1>",
+        published_at: "2026-08-09T01:02:03.000Z",
+        media: [],
+        location: null,
+      },
+    };
+
+    expect(parsePost(quoting).quotedPost).toEqual({
+      unavailable: false,
+      id: "01K2ABCDEF0123456789ABCDE9",
+      kind: "article",
+      contentMd: null,
+      contentHtml: "<h1>被引用的文章</h1>",
+      publishedAt: "2026-08-09T01:02:03.000Z",
+      media: [],
+      location: null,
+    });
+  });
+
+  it("holds a quoted post to the same pairing as the post quoting it", () => {
+    const quoting = (overrides: Record<string, unknown>) => ({
+      ...post,
+      quoted_post: {
+        unavailable: false,
+        id: "01K2ABCDEF0123456789ABCDE9",
+        kind: "moment",
+        content_md: "被引用的正文",
+        content_html: "<p>被引用的正文</p>",
+        published_at: "2026-08-09T01:02:03.000Z",
+        media: [],
+        location: null,
+        ...overrides,
+      },
+    });
+
+    expect(() => parsePost(quoting({ content_md: null }))).toThrow(
+      PublicApiError,
+    );
+    expect(() => parsePost(quoting({ kind: "article" }))).toThrow(
+      PublicApiError,
+    );
+    expect(() => parsePost(quoting({ kind: "newsletter" }))).toThrow(
+      PublicApiError,
+    );
+  });
+
+  it("tells a tombstone from an article by unavailable rather than by content_md", () => {
+    const tombstone = {
+      unavailable: true,
+      id: null,
+      kind: null,
+      content_md: null,
+      content_html: null,
+      published_at: null,
+      media: null,
+      location: null,
+    };
+
+    expect(parsePost({ ...post, quoted_post: tombstone }).quotedPost).toEqual({
+      unavailable: true,
+    });
+    // A null content_md is what an article looks like now, so it can no longer
+    // stand for a deleted target: the tombstone still has to be empty of
+    // everything, kind included.
+    expect(() =>
+      parsePost({ ...post, quoted_post: { ...tombstone, kind: "article" } }),
+    ).toThrow(PublicApiError);
+  });
 });

@@ -50,6 +50,7 @@ function makePost(
 ): PublicPost {
   return {
     id: "01K2ABCDEF0123456789ABCDE0",
+    kind: "moment",
     contentMd,
     contentHtml,
     createdAt: "2026-08-10T01:00:00.000Z",
@@ -149,6 +150,24 @@ describe("shared post presentation", () => {
     );
   });
 
+  it("renders an article, which has no Markdown for the fold to measure", () => {
+    const html = `<p>${"一段很长的文章正文。".repeat(70)}</p>`;
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          now={new Date("2026-08-10T02:00:00.000Z")}
+          post={{ ...makePost("", html), kind: "article", contentMd: null }}
+          site={site}
+        />
+      </NavigationProvider>,
+    );
+
+    // Long enough to be folded had it been a moment. An article keeps its body
+    // out of content_md, so there is nothing to measure and nothing to throw
+    // on; it reads as short until articles get a timeline shape of their own.
+    expect(screen.queryByRole("link", { name: "阅读全文" })).toBeNull();
+  });
+
   it("renders a quoted Moment as a nested interactive card", () => {
     render(
       <NavigationProvider>
@@ -158,6 +177,7 @@ describe("shared post presentation", () => {
             quotedPost: {
               unavailable: false,
               id: "01K2ABCDEF0123456789ABCDE9",
+              kind: "moment",
               contentMd: "原始内容",
               contentHtml: "<p>原始内容</p>",
               publishedAt: "2026-08-09T01:00:00.000Z",
@@ -944,6 +964,7 @@ describe("shared post presentation", () => {
             JSON.stringify({
               data: {
                 id: "01K2ABCDEF0123456789ABCDE0",
+                kind: "moment",
                 content_md: "可转发",
                 content_html: "<p>可转发</p>",
                 created_at: "2026-08-10T01:00:00.000Z",

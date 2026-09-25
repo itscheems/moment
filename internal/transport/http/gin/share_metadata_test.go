@@ -51,7 +51,7 @@ func TestShareMetadataShellEscapesCanonicalPostAndPreservesSPABoundaries(t *test
 	service, err := app.NewShareMetadataService(
 		shareHTTPSite{settings: app.SiteSettings{Title: `乔乔"><script>alert(1)</script>`, Bio: "沿着日常留下坐标", PublicBaseURL: &base}},
 		shareHTTPPosts{id: postID, post: app.Post{
-			Entry: domain.Entry{ID: postID, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: "# 安全标题\n\n[只保留文字](https://secret.example/path)", CreatedAt: time.UnixMilli(1), UpdatedAt: time.UnixMilli(1), PublishedAt: time.UnixMilli(1)},
+			Entry: domain.Entry{ID: postID, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: domain.MarkdownBody("# 安全标题\n\n[只保留文字](https://secret.example/path)"), CreatedAt: time.UnixMilli(1), UpdatedAt: time.UnixMilli(1), PublishedAt: time.UnixMilli(1)},
 			Media: []app.MediaUsageProjection{{MediaID: mediaID, Position: 0, MIMEType: "image/jpeg", Width: 32, Height: 32}},
 		}},
 	)

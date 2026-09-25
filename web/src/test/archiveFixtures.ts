@@ -51,9 +51,10 @@ export function makeImportCounts(
  * that is four different shapes, and a fixture that blends them describes a
  * response the server cannot produce.
  *
- * Note `content_md` on the two account shapes: the Go field is a plain string
- * with no `omitempty`, so an account row still carries it, empty. Fixtures
- * that leave it out would be testing a response that never arrives.
+ * Note `content_md` on the two account shapes: the Go field carries no
+ * `omitempty`, so every row sends the key whatever it means to that row --
+ * empty on an account, and null on an entry that is an article. Fixtures that
+ * leave it out would be testing a response that never arrives.
  */
 export type ReviewEntityWire = Record<string, unknown>;
 

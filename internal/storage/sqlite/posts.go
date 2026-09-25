@@ -721,7 +721,7 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 	var (
 		idString                          string
 		kind                              string
-		content                           string
+		content                           sql.NullString
 		visibility                        string
 		createdAt, updatedAt, publishedAt int64
 		repostedAt                        sql.NullInt64
@@ -737,7 +737,7 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 	entry := domain.Entry{
 		ID:          id,
 		Kind:        domain.EntryKind(kind),
-		ContentMD:   content,
+		ContentMD:   nullableText(content),
 		Visibility:  domain.Visibility(visibility),
 		CreatedAt:   domain.TimeFromMillis(createdAt),
 		UpdatedAt:   domain.TimeFromMillis(updatedAt),
@@ -761,7 +761,7 @@ func scanTimelineEntry(scanner entryScanner) (app.TimelineEntry, error) {
 	var (
 		idString                          string
 		kind                              string
-		content                           string
+		content                           sql.NullString
 		visibility                        string
 		createdAt, updatedAt, publishedAt int64
 		repostedAt                        sql.NullInt64
@@ -779,7 +779,7 @@ func scanTimelineEntry(scanner entryScanner) (app.TimelineEntry, error) {
 	entry := domain.Entry{
 		ID:          id,
 		Kind:        domain.EntryKind(kind),
-		ContentMD:   content,
+		ContentMD:   nullableText(content),
 		Visibility:  domain.Visibility(visibility),
 		CreatedAt:   domain.TimeFromMillis(createdAt),
 		UpdatedAt:   domain.TimeFromMillis(updatedAt),
@@ -825,4 +825,14 @@ func optionalTimeMillis(value *time.Time) any {
 		return nil
 	}
 	return domain.TimeToMillis(*value)
+}
+
+// nullableText turns a possibly absent column into the pointer the domain uses
+// to say "this kind of entry has no Markdown body at all".
+func nullableText(value sql.NullString) *string {
+	if !value.Valid {
+		return nil
+	}
+	text := value.String
+	return &text
 }

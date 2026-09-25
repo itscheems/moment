@@ -79,8 +79,9 @@ type MergeReviewLinkCard struct {
 // tell whether the plan is wrong or the display is. mergeReviewFieldKeys states
 // that correspondence and a test holds the two comparators to it.
 type MergeReviewEntity struct {
-	ID        string  `json:"id"`
-	ContentMD string  `json:"content_md"`
+	ID string `json:"id"`
+	// ContentMD is null for an article, whose body is not Markdown.
+	ContentMD *string `json:"content_md"`
 	EntryID   *string `json:"entry_id,omitempty"`
 	ParentID  *string `json:"parent_id,omitempty"`
 	// Kind is the post kind; comments and accounts leave it unset.
@@ -355,8 +356,9 @@ func reviewEntry(value sqlitestore.ArchiveEntry, source MergeReviewSource, media
 
 func reviewComment(value sqlitestore.ArchiveComment, source MergeReviewSource, mediaByID map[string]sqlitestore.ArchiveMedia) MergeReviewEntity {
 	entryID, authorKind, authorName, pinned := value.EntryID, value.AuthorKind, value.AuthorName, value.Pinned
+	body := value.ContentMD
 	return MergeReviewEntity{
-		ID: value.ID, ContentMD: value.ContentMD, EntryID: &entryID,
+		ID: value.ID, ContentMD: &body, EntryID: &entryID,
 		ParentID: cloneString(value.ParentID), AuthorKind: &authorKind, AuthorName: &authorName,
 		AuthorUserID: cloneString(value.AuthorUserID), ReplyToCommentID: cloneString(value.ReplyToCommentID),
 		Pinned: &pinned, Location: reviewLocation(value.Location),

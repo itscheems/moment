@@ -39,6 +39,7 @@ const site: SiteIdentity = {
 function post(id: string, text: string) {
   return {
     id,
+    kind: "moment",
     content_md: text,
     content_html: `<p>${text}</p>`,
     created_at: "2026-08-10T01:00:00.000Z",
@@ -143,6 +144,7 @@ describe("profile page", () => {
         kind: "created",
         post: {
           id: pinnedId,
+          kind: "moment",
           contentMd: "刚刚发布的引用",
           contentHtml: "<p>刚刚发布的引用</p>",
           createdAt: "2026-08-16T02:00:00.000Z",

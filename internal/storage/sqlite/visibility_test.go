@@ -120,8 +120,11 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 		t.Fatalf("visitor quote = %+v %v", visitorQuote.Quoted, err)
 	}
 	ownerQuote, err := posts.Get(ctx, quote.Post.Entry.ID, app.OwnerViewer())
-	if err != nil || ownerQuote.Quoted == nil || ownerQuote.Quoted.Unavailable || ownerQuote.Quoted.Entry.ContentMD != "shoreline hidden" {
+	if err != nil || ownerQuote.Quoted == nil || ownerQuote.Quoted.Unavailable {
 		t.Fatalf("owner quote = %+v %v", ownerQuote.Quoted, err)
+	}
+	if quotedBody, ok := ownerQuote.Quoted.Entry.Markdown(); !ok || quotedBody != "shoreline hidden" {
+		t.Fatalf("owner quote body = %q, present = %t", quotedBody, ok)
 	}
 
 	// Comments under a hidden post: a member is a visitor here.

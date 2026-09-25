@@ -83,7 +83,7 @@ func TestMergeCommitKeepsBothThroughBackupAndAtomicGenerationSwitch(t *testing.T
 	}
 	contents := map[string]bool{}
 	for _, entry := range authority.Entries {
-		contents[entry.ContentMD] = true
+		contents[markdownText(entry.ContentMD)] = true
 	}
 	if !contents["local edit"] || !contents["Unicode 世界"] {
 		t.Fatalf("merged contents = %#v", contents)

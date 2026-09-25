@@ -81,7 +81,7 @@ func TestTildesThatWereNeverStrikethroughAreUnchanged(t *testing.T) {
 	t.Parallel()
 	for source, want := range map[string]string{
 		"`~~不是删除线~~`": "~~不是删除线~~",
-		"价格 ~100 元":     "价格 ~100 元",
+		"价格 ~100 元":   "价格 ~100 元",
 	} {
 		normalized, err := NormalizeContentV2(source)
 		if err != nil {

@@ -219,6 +219,7 @@ function post(
 ) {
   return {
     id,
+    kind: "moment",
     content_md: content,
     content_html: `<p>${content}</p>`,
     created_at: "2026-08-10T01:00:00.000Z",
@@ -679,6 +680,7 @@ describe("owner composing flow", () => {
               quoted_post: {
                 unavailable: false,
                 id: quotedId,
+                kind: "moment",
                 content_md: "原始 Moment",
                 content_html: "<p>原始 Moment</p>",
                 published_at: "2026-08-10T01:00:00.000Z",

@@ -39,7 +39,7 @@ func TestShareMetadataUsesPortableBaseAndManagedPreview(t *testing.T) {
 	service, err := NewShareMetadataService(
 		shareSiteStub{settings: SiteSettings{Title: "乔乔 <家>", Bio: "沿着\u0000日常留下坐标", PublicBaseURL: &base, AvatarMediaID: &avatar}},
 		sharePostStub{post: Post{
-			Entry: domain.Entry{ID: postID, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: "# 第一行 **记忆**\n\n[可见文字](https://private.example/path)", CreatedAt: time.UnixMilli(1), UpdatedAt: time.UnixMilli(1), PublishedAt: time.UnixMilli(1)},
+			Entry: domain.Entry{ID: postID, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: domain.MarkdownBody("# 第一行 **记忆**\n\n[可见文字](https://private.example/path)"), CreatedAt: time.UnixMilli(1), UpdatedAt: time.UnixMilli(1), PublishedAt: time.UnixMilli(1)},
 			Media: []MediaUsageProjection{{MediaID: mediaID, Position: 0, MIMEType: "image/jpeg", Width: 32, Height: 32}},
 		}},
 	)
@@ -125,7 +125,7 @@ func TestShareMetadataRejectsInvalidPortableIdentityAndBoundsUnicode(t *testing.
 			ID:          postID,
 			Kind:        domain.KindMoment,
 			Visibility:  domain.VisibilityEveryone,
-			ContentMD:   strings.Repeat("界", 240),
+			ContentMD:   domain.MarkdownBody(strings.Repeat("界", 240)),
 			CreatedAt:   time.UnixMilli(1),
 			UpdatedAt:   time.UnixMilli(1),
 			PublishedAt: time.UnixMilli(1),

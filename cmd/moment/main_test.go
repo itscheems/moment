@@ -165,7 +165,8 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		t.Fatalf("decode direct post create: %v output=%s", err, directCreateOutput)
 	}
 	postID, _ := directPost.Data["id"].(string)
-	if postID == "" || directPost.Data["kind"] != nil {
+	// kind is on the wire now that a post can be a moment or an article.
+	if postID == "" || directPost.Data["kind"] != "moment" {
 		t.Fatalf("direct post DTO = %#v", directPost.Data)
 	}
 	apiGetPost := exec.Command(binary, "--url", "http://"+address, "post", "get", postID, "--json")

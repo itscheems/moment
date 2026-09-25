@@ -2,12 +2,35 @@ package domain
 
 import "time"
 
-// EntryKind identifies the stable timeline envelope. v0 intentionally accepts
-// only Moment entries.
+// EntryKind identifies the stable timeline envelope.
 type EntryKind string
 
-// KindMoment is the only Entry kind accepted by v0 writes and imports.
-const KindMoment EntryKind = "moment"
+const (
+	// KindMoment is a short post whose body is Markdown.
+	KindMoment EntryKind = "moment"
+	// KindArticle is a long post with a title, a cover and a structured body.
+	// Its body is not Markdown and does not live on the Entry at all.
+	KindArticle EntryKind = "article"
+)
+
+// EntryKinds lists every accepted value in wire order.
+var EntryKinds = []EntryKind{KindMoment, KindArticle}
+
+// ParseEntryKind accepts exactly the wire spellings.
+func ParseEntryKind(value string) (EntryKind, error) {
+	for _, candidate := range EntryKinds {
+		if string(candidate) == value {
+			return candidate, nil
+		}
+	}
+	return "", NewError(CodeInvalidArgument, "kind must be moment or article", map[string]any{"field": "kind"})
+}
+
+// Valid reports whether the value is one of the accepted kinds.
+func (kind EntryKind) Valid() bool {
+	_, err := ParseEntryKind(string(kind))
+	return err == nil
+}
 
 // Visibility names who may read an Entry. The author always reads their own
 // entries; the value only ever narrows everybody else.
@@ -43,9 +66,13 @@ func (visibility Visibility) Valid() bool {
 
 // Entry is the authoritative transport-independent timeline item.
 type Entry struct {
-	ID          ID
-	Kind        EntryKind
-	ContentMD   string
+	ID   ID
+	Kind EntryKind
+	// ContentMD is the Markdown body of a moment. It is nil exactly when Kind
+	// is KindArticle, whose body is structured and lives in its own aggregate.
+	// The pointer is deliberate: a reader that forgets which kind it holds
+	// fails loudly here instead of rendering an article as a blank post.
+	ContentMD   *string
 	Visibility  Visibility
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -54,7 +81,7 @@ type Entry struct {
 	EditedAt    *time.Time
 }
 
-// NewEntry validates and creates one v0 Moment at millisecond precision.
+// NewEntry validates and creates one Moment at millisecond precision.
 func NewEntry(id ID, content string, now time.Time) (Entry, error) {
 	if _, err := ParseID(id.String()); err != nil {
 		return Entry{}, err
@@ -63,10 +90,11 @@ func NewEntry(id ID, content string, now time.Time) (Entry, error) {
 		return Entry{}, err
 	}
 	instant := NormalizeTime(now)
+	body := content
 	return Entry{
 		ID:          id,
 		Kind:        KindMoment,
-		ContentMD:   content,
+		ContentMD:   &body,
 		Visibility:  VisibilityEveryone,
 		CreatedAt:   instant,
 		UpdatedAt:   instant,
@@ -74,16 +102,64 @@ func NewEntry(id ID, content string, now time.Time) (Entry, error) {
 	}, nil
 }
 
+// MarkdownBody is the body of a moment, ready to be assigned to an Entry.
+// Go has no literal for "a pointer to this string", and an Entry body is
+// optional precisely so that forgetting which kind you hold is an error rather
+// than a blank page.
+func MarkdownBody(content string) *string {
+	return &content
+}
+
+// NewArticleEntry creates the timeline envelope of an article. The title, cover
+// and body are validated by the Article aggregate and stored beside this row.
+func NewArticleEntry(id ID, now time.Time) (Entry, error) {
+	if _, err := ParseID(id.String()); err != nil {
+		return Entry{}, err
+	}
+	instant := NormalizeTime(now)
+	return Entry{
+		ID:          id,
+		Kind:        KindArticle,
+		ContentMD:   nil,
+		Visibility:  VisibilityEveryone,
+		CreatedAt:   instant,
+		UpdatedAt:   instant,
+		PublishedAt: instant,
+	}, nil
+}
+
+// Markdown reports the moment body and whether this entry has one at all. The
+// comma-ok shape is the point: an article has no Markdown, and a caller that
+// wants text has to say what it does in that case.
+func (entry Entry) Markdown() (string, bool) {
+	if entry.ContentMD == nil {
+		return "", false
+	}
+	return *entry.ContentMD, true
+}
+
 // Validate checks an Entry loaded from storage or archive input.
 func (entry Entry) Validate() error {
-	if entry.Kind != KindMoment {
+	if !entry.Kind.Valid() {
 		return NewError(CodeInvalidArgument, "entry kind is not supported", map[string]any{"field": "kind"})
 	}
 	if _, err := ParseID(entry.ID.String()); err != nil {
 		return err
 	}
-	if err := ValidateMarkdown(entry.ContentMD); err != nil {
-		return err
+	// The body belongs to exactly one of the two shapes, and the database
+	// carries the same rule as a check constraint.
+	switch entry.Kind {
+	case KindMoment:
+		if entry.ContentMD == nil {
+			return NewError(CodeInvalidArgument, "a moment must carry Markdown", map[string]any{"field": "content_md"})
+		}
+		if err := ValidateMarkdown(*entry.ContentMD); err != nil {
+			return err
+		}
+	case KindArticle:
+		if entry.ContentMD != nil {
+			return NewError(CodeInvalidArgument, "an article keeps its body outside the entry", map[string]any{"field": "content_md"})
+		}
 	}
 	if !entry.Visibility.Valid() {
 		return NewError(CodeInvalidArgument, "entry visibility is not supported", map[string]any{"field": "visibility"})
@@ -146,6 +222,9 @@ func (entry *Entry) SetVisibility(visibility Visibility, now time.Time) error {
 // UpdateContent changes only editable state. Original creation and publication
 // instants remain the timeline authority.
 func (entry *Entry) UpdateContent(content string, now time.Time) error {
+	if entry.Kind != KindMoment {
+		return NewError(CodeInvalidArgument, "only a moment has a Markdown body to replace", map[string]any{"field": "kind"})
+	}
 	if err := ValidateMarkdown(content); err != nil {
 		return err
 	}
@@ -153,11 +232,12 @@ func (entry *Entry) UpdateContent(content string, now time.Time) error {
 	if updated.Before(entry.CreatedAt) {
 		return NewError(CodeInvalidArgument, "updated time cannot precede creation", map[string]any{"field": "updated_at"})
 	}
-	if entry.ContentMD != content {
+	if previous, ok := entry.Markdown(); !ok || previous != content {
 		edited := updated
 		entry.EditedAt = &edited
 	}
-	entry.ContentMD = content
+	body := content
+	entry.ContentMD = &body
 	entry.UpdatedAt = updated
 	return nil
 }

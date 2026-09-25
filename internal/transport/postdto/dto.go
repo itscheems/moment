@@ -22,8 +22,14 @@ import (
 // ever receives posts they may read, so for anyone but the owner it is always
 // "everyone".
 type Post struct {
-	ID           string            `json:"id"`
-	ContentMD    string            `json:"content_md"`
+	ID string `json:"id"`
+	// Kind says which body shape this post has: "moment" or "article". It is
+	// on the wire because a reader has to be able to tell them apart, and
+	// because ContentMD being absent is a consequence of it rather than a
+	// signal of its own.
+	Kind string `json:"kind"`
+	// ContentMD is null for an article.
+	ContentMD    *string           `json:"content_md"`
 	ContentHTML  string            `json:"content_html"`
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at"`
@@ -39,10 +45,24 @@ type Post struct {
 	QuotedPost   *QuotedPost       `json:"quoted_post"`
 }
 
+// cloneOptionalText copies an optional body so the projection cannot be used
+// to reach back and change the entry it was built from, the same reason media
+// usages are deep-copied on their way across this boundary.
+func cloneOptionalText(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+
 // QuotedPost is either a complete embedded target or an explicit unavailable tombstone.
 type QuotedPost struct {
-	Unavailable bool              `json:"unavailable"`
-	ID          *string           `json:"id"`
+	Unavailable bool    `json:"unavailable"`
+	ID          *string `json:"id"`
+	// Kind is set whenever the target is available. Unavailable is what says a
+	// target is missing; a null ContentMD only says the target is an article.
+	Kind        *string           `json:"kind"`
 	ContentMD   *string           `json:"content_md"`
 	ContentHTML *string           `json:"content_html"`
 	PublishedAt *time.Time        `json:"published_at"`
@@ -300,7 +320,8 @@ func FromPost(post app.Post) Post {
 	}
 	mapped := Post{
 		ID:           post.Entry.ID.String(),
-		ContentMD:    post.Entry.ContentMD,
+		Kind:         string(post.Entry.Kind),
+		ContentMD:    cloneOptionalText(post.Entry.ContentMD),
 		ContentHTML:  post.ContentHTML,
 		CreatedAt:    post.Entry.CreatedAt.UTC(),
 		UpdatedAt:    post.Entry.UpdatedAt.UTC(),
@@ -330,10 +351,10 @@ func FromPost(post app.Post) Post {
 			quotedMedia = append(quotedMedia, item)
 		}
 		id := post.Quoted.Entry.ID.String()
-		contentMD := post.Quoted.Entry.ContentMD
+		kind := string(post.Quoted.Entry.Kind)
 		contentHTML := post.Quoted.ContentHTML
 		publishedAt := post.Quoted.Entry.PublishedAt.UTC()
-		mapped.QuotedPost = &QuotedPost{ID: &id, ContentMD: &contentMD, ContentHTML: &contentHTML, PublishedAt: &publishedAt, Media: quotedMedia}
+		mapped.QuotedPost = &QuotedPost{ID: &id, Kind: &kind, ContentMD: cloneOptionalText(post.Quoted.Entry.ContentMD), ContentHTML: &contentHTML, PublishedAt: &publishedAt, Media: quotedMedia}
 		if post.Quoted.Location != nil {
 			mapped.QuotedPost.Location = &Location{Name: post.Quoted.Location.Name, DisplayName: post.Quoted.Location.DisplayName}
 		}
@@ -425,28 +446,47 @@ func ValidatePost(post Post) error {
 	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
 	}
-	if err := domain.ValidatePostMarkdown(post.ContentMD, len(usages)); err != nil {
-		return err
-	}
-	cards := make([]domain.LinkCard, 0, len(post.LinkCards))
-	for _, card := range post.LinkCards {
-		cards = append(cards, domain.LinkCard{SourceURL: card.CanonicalURL, CanonicalURL: card.CanonicalURL})
-	}
-	html, err := domain.RenderMarkdownWithLinkCards(post.ContentMD, cards)
+	kind, err := domain.ParseEntryKind(post.Kind)
 	if err != nil {
 		return err
 	}
-	if html != post.ContentHTML {
-		return errors.New("post content_html does not match content_md")
+	// A moment's HTML is derivable from its Markdown, so the two are held to
+	// each other here. An article's is derived from a body this projection
+	// does not carry, so the only thing to insist on is that it exists.
+	if kind == domain.KindArticle {
+		if post.ContentMD != nil {
+			return errors.New("an article carries no Markdown body")
+		}
+		if post.ContentHTML == "" {
+			return errors.New("an article must carry rendered content")
+		}
+	} else {
+		if post.ContentMD == nil {
+			return errors.New("a moment must carry a Markdown body")
+		}
+		if err := domain.ValidatePostMarkdown(*post.ContentMD, len(usages)); err != nil {
+			return err
+		}
+		cards := make([]domain.LinkCard, 0, len(post.LinkCards))
+		for _, card := range post.LinkCards {
+			cards = append(cards, domain.LinkCard{SourceURL: card.CanonicalURL, CanonicalURL: card.CanonicalURL})
+		}
+		html, renderErr := domain.RenderMarkdownWithLinkCards(*post.ContentMD, cards)
+		if renderErr != nil {
+			return renderErr
+		}
+		if html != post.ContentHTML {
+			return errors.New("post content_html does not match content_md")
+		}
 	}
 	if post.QuotedPost != nil {
 		if post.QuotedPost.Unavailable {
-			if post.QuotedPost.ID != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.Location != nil {
+			if post.QuotedPost.ID != nil || post.QuotedPost.Kind != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.Location != nil {
 				return errors.New("unavailable quoted post must not contain target data")
 			}
 			return nil
 		}
-		if post.QuotedPost.ID == nil || post.QuotedPost.ContentMD == nil || post.QuotedPost.ContentHTML == nil || post.QuotedPost.PublishedAt == nil || post.QuotedPost.Media == nil {
+		if post.QuotedPost.ID == nil || post.QuotedPost.Kind == nil || post.QuotedPost.ContentHTML == nil || post.QuotedPost.PublishedAt == nil || post.QuotedPost.Media == nil {
 			return errors.New("available quoted post requires complete target data")
 		}
 		if _, err := domain.ParseID(*post.QuotedPost.ID); err != nil {
@@ -466,15 +506,28 @@ func ValidatePost(post Post) error {
 }
 
 func validateQuotedPost(post QuotedPost) error {
-	if post.ID == nil || post.ContentMD == nil || post.ContentHTML == nil || post.PublishedAt == nil {
+	if post.ID == nil || post.Kind == nil || post.ContentHTML == nil || post.PublishedAt == nil {
 		return errors.New("quoted post target data is incomplete")
 	}
-	if err := domain.ValidateMarkdown(*post.ContentMD); err != nil {
+	kind, err := domain.ParseEntryKind(*post.Kind)
+	if err != nil {
 		return err
 	}
-	html, err := domain.RenderMarkdown(*post.ContentMD)
-	if err != nil || html != *post.ContentHTML {
-		return errors.New("quoted post content_html does not match content_md")
+	if kind == domain.KindArticle {
+		if post.ContentMD != nil {
+			return errors.New("a quoted article carries no Markdown body")
+		}
+	} else {
+		if post.ContentMD == nil {
+			return errors.New("quoted post target data is incomplete")
+		}
+		if err := domain.ValidateMarkdown(*post.ContentMD); err != nil {
+			return err
+		}
+		html, renderErr := domain.RenderMarkdown(*post.ContentMD)
+		if renderErr != nil || html != *post.ContentHTML {
+			return errors.New("quoted post content_html does not match content_md")
+		}
 	}
 	if post.Location != nil {
 		location := domain.Location{Name: post.Location.Name, DisplayName: post.Location.DisplayName, Provider: "manual"}

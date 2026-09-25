@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moment/moment/internal/domain"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
 
@@ -14,14 +15,14 @@ func TestResolvePortableMergeKeepsLocalByDefaultAndAddsIncoming(t *testing.T) {
 	localURL, incomingURL := "https://local.test", "https://incoming.test"
 	local := PortableAuthority{
 		Site:    sqlitestore.ArchiveSite{OwnerID: "owner", Username: "local", DisplayName: "Local", Title: "Local", PublicBaseURL: &localURL, Timezone: "UTC", CommentsEnabled: true},
-		Entries: []sqlitestore.ArchiveEntry{{ID: "01H00000000000000000000003", ContentMD: "local conflict"}},
+		Entries: []sqlitestore.ArchiveEntry{{ID: "01H00000000000000000000003", ContentMD: domain.MarkdownBody("local conflict")}},
 		Media:   []sqlitestore.ArchiveMedia{{ID: localMediaID, SHA256: repeatHex("a"), StoragePath: "media/original/aa/local.jpg"}},
 	}
 	incoming := PortableAuthority{
 		Site: sqlitestore.ArchiveSite{OwnerID: "owner", Username: "incoming", DisplayName: "Incoming", Title: "Incoming", PublicBaseURL: &incomingURL, Timezone: "Asia/Shanghai", CommentsEnabled: false},
 		Entries: []sqlitestore.ArchiveEntry{
-			{ID: "01H00000000000000000000003", ContentMD: "incoming conflict", Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID}}},
-			{ID: "01H00000000000000000000004", ContentMD: "incoming only", Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID}}},
+			{ID: "01H00000000000000000000003", ContentMD: domain.MarkdownBody("incoming conflict"), Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID}}},
+			{ID: "01H00000000000000000000004", ContentMD: domain.MarkdownBody("incoming only"), Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID}}},
 		},
 		Comments: []sqlitestore.ArchiveComment{{ID: "01H00000000000000000000005", EntryID: "01H00000000000000000000004", ContentMD: "new"}},
 		Media:    []sqlitestore.ArchiveMedia{{ID: incomingMediaID, SHA256: repeatHex("b"), StoragePath: "media/original/bb/incoming.jpg"}},
@@ -38,7 +39,7 @@ func TestResolvePortableMergeKeepsLocalByDefaultAndAddsIncoming(t *testing.T) {
 		t.Fatalf("site = %#v", resolved.Authority.Site)
 	}
 	entries := indexEntries(resolved.Authority.Entries)
-	if len(entries) != 2 || entries["01H00000000000000000000003"].ContentMD != "local conflict" || entries["01H00000000000000000000004"].ContentMD != "incoming only" {
+	if len(entries) != 2 || markdownText(entries["01H00000000000000000000003"].ContentMD) != "local conflict" || markdownText(entries["01H00000000000000000000004"].ContentMD) != "incoming only" {
 		t.Fatalf("entries = %#v", entries)
 	}
 	if len(resolved.Authority.Comments) != 1 || len(resolved.Authority.Media) != 1 || resolved.Authority.Media[0].ID != incomingMediaID {
@@ -52,13 +53,13 @@ func TestResolvePortableMergeKeepBothRemapsPostReplyAndMediaCollision(t *testing
 	mediaID := "01H00000000000000000000012"
 	local := PortableAuthority{
 		Site:     sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"},
-		Entries:  []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: "local", Media: []sqlitestore.ArchiveUsage{{MediaID: mediaID}}}},
+		Entries:  []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: domain.MarkdownBody("local"), Media: []sqlitestore.ArchiveUsage{{MediaID: mediaID}}}},
 		Comments: []sqlitestore.ArchiveComment{{ID: commentID, EntryID: entryID, ContentMD: "local"}},
 		Media:    []sqlitestore.ArchiveMedia{{ID: mediaID, SHA256: repeatHex("a")}},
 	}
 	incoming := PortableAuthority{
 		Site:     sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"},
-		Entries:  []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: "incoming", Media: []sqlitestore.ArchiveUsage{{MediaID: mediaID}}}},
+		Entries:  []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: domain.MarkdownBody("incoming"), Media: []sqlitestore.ArchiveUsage{{MediaID: mediaID}}}},
 		Comments: []sqlitestore.ArchiveComment{{ID: commentID, EntryID: entryID, ContentMD: "incoming"}},
 		Media:    []sqlitestore.ArchiveMedia{{ID: mediaID, SHA256: repeatHex("b")}},
 	}
@@ -100,15 +101,15 @@ func TestResolvePortableMergeRemapsOnlyIncomingQuoteGraph(t *testing.T) {
 	local := PortableAuthority{
 		Site: sqlitestore.ArchiveSite{OwnerID: "owner"},
 		Entries: []sqlitestore.ArchiveEntry{
-			{ID: targetID, ContentMD: "local target"},
-			{ID: quoteID, ContentMD: "local quote", QuotedEntryID: &targetID},
+			{ID: targetID, ContentMD: domain.MarkdownBody("local target")},
+			{ID: quoteID, ContentMD: domain.MarkdownBody("local quote"), QuotedEntryID: &targetID},
 		},
 	}
 	incoming := PortableAuthority{
 		Site: sqlitestore.ArchiveSite{OwnerID: "owner"},
 		Entries: []sqlitestore.ArchiveEntry{
-			{ID: targetID, ContentMD: "incoming target"},
-			{ID: quoteID, ContentMD: "incoming quote", QuotedEntryID: &targetID},
+			{ID: targetID, ContentMD: domain.MarkdownBody("incoming target")},
+			{ID: quoteID, ContentMD: domain.MarkdownBody("incoming quote"), QuotedEntryID: &targetID},
 		},
 	}
 	plan, err := ComparePortableAuthorities(MergePlanInput{ArchiveSHA256: repeatHex("d"), BaseGeneration: "generation", ExpiresAt: time.Unix(35, 0).UTC(), Local: local, Incoming: incoming})
@@ -163,7 +164,7 @@ func TestResolvePortableMergeRemapsReplyTargetOfKeptBothComment(t *testing.T) {
 	authority := func(suffix string) PortableAuthority {
 		return PortableAuthority{
 			Site:    sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"},
-			Entries: []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: "post"}},
+			Entries: []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: domain.MarkdownBody("post")}},
 			Comments: []sqlitestore.ArchiveComment{
 				{ID: rootID, EntryID: entryID, ContentMD: "root"},
 				{ID: targetID, EntryID: entryID, ParentID: &rootID, ContentMD: "target " + suffix},
@@ -219,7 +220,7 @@ func TestResolvePortableMergeDropsReplyTargetLeftBehindBySelection(t *testing.T)
 	local := PortableAuthority{Site: sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"}}
 	incoming := PortableAuthority{
 		Site:    sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"},
-		Entries: []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: "post"}},
+		Entries: []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: domain.MarkdownBody("post")}},
 		Comments: []sqlitestore.ArchiveComment{
 			{ID: rootID, EntryID: entryID, ContentMD: "root"},
 			{ID: targetID, EntryID: entryID, ParentID: &rootID, ContentMD: "target"},
@@ -273,7 +274,7 @@ func TestResolvePortableMergeDropsReplyTargetStrandedByAReissuedRoot(t *testing.
 	authority := func(suffix string) PortableAuthority {
 		return PortableAuthority{
 			Site:    sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Timezone: "UTC"},
-			Entries: []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: "post"}},
+			Entries: []sqlitestore.ArchiveEntry{{ID: entryID, ContentMD: domain.MarkdownBody("post")}},
 			Comments: []sqlitestore.ArchiveComment{
 				{ID: rootID, EntryID: entryID, ContentMD: "root " + suffix},
 				{ID: targetID, EntryID: entryID, ParentID: &rootID, ContentMD: "target " + suffix},

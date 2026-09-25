@@ -386,7 +386,8 @@ func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 	var (
 		idString                          string
 		kind                              string
-		contentMD, contentText            string
+		contentMD                         sql.NullString
+		contentText                       string
 		visibility                        string
 		createdAt, updatedAt, publishedAt int64
 		repostedAt                        sql.NullInt64
@@ -401,7 +402,7 @@ func scanSearchRecord(scanner entryScanner) (app.SearchRecord, error) {
 		return app.SearchRecord{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored search entry has an invalid ID", nil)
 	}
 	entry := domain.Entry{
-		ID: id, Kind: domain.EntryKind(kind), ContentMD: contentMD, Visibility: domain.Visibility(visibility),
+		ID: id, Kind: domain.EntryKind(kind), ContentMD: nullableText(contentMD), Visibility: domain.Visibility(visibility),
 		CreatedAt: domain.TimeFromMillis(createdAt), UpdatedAt: domain.TimeFromMillis(updatedAt), PublishedAt: domain.TimeFromMillis(publishedAt),
 	}
 	if editedAt.Valid {

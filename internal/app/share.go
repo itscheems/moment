@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"path"
 	"strings"
@@ -122,7 +123,10 @@ func (service *ShareMetadataService) Post(ctx context.Context, id domain.ID) (Sh
 		metadata.NoIndex = true
 		return metadata, nil
 	}
-	description, err := domain.NormalizeContentV2(post.Entry.ContentMD)
+	// A moment has no title, so its first visible line stands in for one and
+	// the whole body becomes the description. An article has both already, and
+	// using them is the whole reason it has a title.
+	description, lead, err := shareTextOf(post)
 	if err != nil {
 		return ShareMetadata{}, err
 	}
@@ -131,19 +135,6 @@ func (service *ShareMetadataService) Post(ctx context.Context, id domain.ID) (Sh
 		description = genericShareDescription(settings)
 	}
 	siteTitle := genericShareTitle(settings)
-	lead := ""
-	for _, line := range strings.Split(post.Entry.ContentMD, "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		lead, err = domain.VisibleContent(line)
-		if err != nil {
-			return ShareMetadata{}, err
-		}
-		if lead != "" {
-			break
-		}
-	}
 	lead = boundedShareText(lead, sharePostLeadLimit)
 	if lead == "" {
 		lead = boundedShareText(description, sharePostLeadLimit)
@@ -164,6 +155,37 @@ func (service *ShareMetadataService) Post(ctx context.Context, id domain.ID) (Sh
 		metadata.ImageURL = avatarShareURL(settings)
 	}
 	return metadata, nil
+}
+
+// shareTextOf answers the description and the stand-in title for one post.
+func shareTextOf(post Post) (string, string, error) {
+	if post.Entry.Kind == domain.KindArticle {
+		if post.Article == nil {
+			return "", "", fmt.Errorf("article %s was read without its body", post.Entry.ID)
+		}
+		return post.Article.Excerpt(), post.Article.Title, nil
+	}
+	body, present := post.Entry.Markdown()
+	if !present {
+		return "", "", fmt.Errorf("moment %s was read without its body", post.Entry.ID)
+	}
+	description, err := domain.NormalizeContentV2(body)
+	if err != nil {
+		return "", "", err
+	}
+	for _, line := range strings.Split(body, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lead, lineErr := domain.VisibleContent(line)
+		if lineErr != nil {
+			return "", "", lineErr
+		}
+		if lead != "" {
+			return description, lead, nil
+		}
+	}
+	return description, "", nil
 }
 
 func genericShareMetadata(settings SiteSettings) ShareMetadata {

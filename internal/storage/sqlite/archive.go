@@ -96,9 +96,10 @@ type ArchiveUsage struct {
 
 // ArchiveEntry excludes derived content_text and embeds ordered media uses.
 type ArchiveEntry struct {
-	ID               string
-	Kind             string
-	ContentMD        string
+	ID   string
+	Kind string
+	// ContentMD is nil for an article, whose body is carried separately.
+	ContentMD        *string
 	Visibility       domain.Visibility
 	CreatedAtMS      int64
 	UpdatedAtMS      int64

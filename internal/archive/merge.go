@@ -603,7 +603,8 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	if local.Kind != incoming.Kind {
 		fields = append(fields, "kind")
 	}
-	if local.ContentMD != incoming.ContentMD {
+	// Pointers here, so compare what they point at rather than where.
+	if !equalOptionalText(local.ContentMD, incoming.ContentMD) {
 		fields = append(fields, "content_md")
 	}
 	if local.CreatedAtMS != incoming.CreatedAtMS {
@@ -998,4 +999,17 @@ func ValidateMergePlan(plan MergePlan) error {
 		return fmt.Errorf("merge plan identity does not match its bound inputs")
 	}
 	return nil
+}
+
+// equalOptionalText compares two bodies that may be absent. A moment with an
+// empty body and an article with no body at all are different things.
+func equalOptionalText(left, right *string) bool {
+	switch {
+	case left == nil && right == nil:
+		return true
+	case left == nil || right == nil:
+		return false
+	default:
+		return *left == *right
+	}
 }

@@ -416,6 +416,15 @@ describe("backup and restore owner API", () => {
       () => makeReviewEntry(),
       { kind: "moment", quote_unavailable: false },
     ],
+    // An article keeps its body out of content_md, so the column arrives null
+    // on a row that is otherwise an ordinary entry.
+    [
+      "article",
+      "entry",
+      "post-1",
+      () => makeReviewEntry({ kind: "article", content_md: null }),
+      { kind: "article", content_md: null },
+    ],
     [
       "comment",
       "comment",

@@ -21,7 +21,7 @@ func TestPostMediaReadProjectionCarriesStrictPositiveDimensions(t *testing.T) {
 	instant := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
 	wire := FromPost(app.Post{
 		Entry: domain.Entry{
-			ID: id, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: "with image",
+			ID: id, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: domain.MarkdownBody("with image"),
 			CreatedAt: instant, UpdatedAt: instant, PublishedAt: instant,
 		},
 		ContentHTML: "<p>with image</p>\n",
@@ -71,7 +71,7 @@ func TestRepostTimelineProjectionRequiresActiveRepost(t *testing.T) {
 	}
 	wire := FromPost(app.Post{
 		Entry: domain.Entry{
-			ID: id, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: "reposted",
+			ID: id, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: domain.MarkdownBody("reposted"),
 			CreatedAt: instant, UpdatedAt: instant, PublishedAt: instant,
 		},
 		TimelineKind: app.TimelineItemRepost,
@@ -97,7 +97,7 @@ func TestUnavailableQuoteUsesAnExplicitNullOnlyTombstone(t *testing.T) {
 	}
 	wire := FromPost(app.Post{
 		Entry: domain.Entry{
-			ID: id, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: "保留引用外层",
+			ID: id, Kind: domain.KindMoment, Visibility: domain.VisibilityEveryone, ContentMD: domain.MarkdownBody("保留引用外层"),
 			CreatedAt: instant, UpdatedAt: instant, PublishedAt: instant,
 		},
 		ContentHTML: "<p>保留引用外层</p>\n",
@@ -115,7 +115,7 @@ func TestUnavailableQuoteUsesAnExplicitNullOnlyTombstone(t *testing.T) {
 	if err := json.Unmarshal(encoded, &fields); err != nil {
 		t.Fatal(err)
 	}
-	if len(fields) != 7 || fields["unavailable"] != true || fields["id"] != nil || fields["content_md"] != nil || fields["content_html"] != nil || fields["published_at"] != nil || fields["media"] != nil || fields["location"] != nil {
+	if len(fields) != 8 || fields["unavailable"] != true || fields["id"] != nil || fields["kind"] != nil || fields["content_md"] != nil || fields["content_html"] != nil || fields["published_at"] != nil || fields["media"] != nil || fields["location"] != nil {
 		t.Fatalf("quote tombstone = %s", encoded)
 	}
 

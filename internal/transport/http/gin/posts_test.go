@@ -147,7 +147,8 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	}
 	createdData := decodeDataMap(t, created)
 	id := createdData["id"].(string)
-	if createdData["content_md"] != "first **post**" || createdData["content_html"] == "" || createdData["kind"] != nil {
+	// kind is on the wire now that a post can be a moment or an article.
+	if createdData["content_md"] != "first **post**" || createdData["content_html"] == "" || createdData["kind"] != "moment" {
 		t.Fatalf("created DTO = %#v", createdData)
 	}
 	if media, ok := createdData["media"].([]any); !ok || media == nil || len(media) != 0 {

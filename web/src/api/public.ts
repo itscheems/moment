@@ -40,9 +40,27 @@ export function isPostVisibility(value: unknown): value is PostVisibility {
   return (POST_VISIBILITIES as readonly unknown[]).includes(value);
 }
 
+/**
+ * What a post's body is made of.
+ *
+ * A moment is written in Markdown and carries it as `content_md`. An article
+ * keeps its body in a form Markdown cannot describe, so it arrives with no
+ * `content_md` at all. Both render from `content_html`, which is why one
+ * timeline can carry the two without a renderer knowing the difference.
+ */
+export type PostKind = "moment" | "article";
+
+export const POST_KINDS: readonly PostKind[] = ["moment", "article"];
+
+export function isPostKind(value: unknown): value is PostKind {
+  return (POST_KINDS as readonly unknown[]).includes(value);
+}
+
 export interface PublicPost {
   id: string;
-  contentMd: string;
+  kind: PostKind;
+  /** The Markdown source of a moment; null on an article, which has none. */
+  contentMd: string | null;
   contentHtml: string;
   createdAt: string;
   updatedAt: string;
@@ -56,6 +74,23 @@ export interface PublicPost {
   linkCards: PublicLinkCard[];
   location?: PublicPostLocation | null;
   quotedPost?: PublicQuotedPost | null;
+}
+
+/**
+ * A post whose body is the Markdown a writer typed.
+ *
+ * Kept as its own type because the composer round-trips `content_md`: handing
+ * it a post that has none would save an empty body over whatever the post
+ * actually holds. Narrowing with `isMomentPost` is what keeps that impossible
+ * to express rather than merely discouraged.
+ */
+export interface PublicMomentPost extends PublicPost {
+  kind: "moment";
+  contentMd: string;
+}
+
+export function isMomentPost(post: PublicPost): post is PublicMomentPost {
+  return post.kind === "moment" && post.contentMd !== null;
 }
 
 /**
@@ -96,7 +131,8 @@ export interface PublicLinkCard {
 export interface PublicAvailableQuotedPost {
   unavailable: false;
   id: string;
-  contentMd: string;
+  kind: PostKind;
+  contentMd: string | null;
   contentHtml: string;
   publishedAt: string;
   media: PublicMediaUsage[];
@@ -915,10 +951,34 @@ function parseCommentReplyPage(
   return { items, nextCursor };
 }
 
+/**
+ * A post's kind together with the body that kind is allowed to carry.
+ *
+ * The two are one fact split across two fields, so they are decoded as one:
+ * a moment without Markdown and an article with it both describe a post the
+ * server cannot have produced, and letting either through would push the
+ * contradiction into a renderer that has no way to resolve it.
+ */
+function postBody(
+  record: Record<string, unknown>,
+  subject: string,
+): { kind: PostKind; contentMd: string | null } {
+  const kind = record.kind;
+  if (!isPostKind(kind)) {
+    throw invalidResponse(`${subject} kind is invalid`);
+  }
+  const contentMd = nullableStringField(record, "content_md");
+  if (kind === "moment" ? contentMd === null : contentMd !== null) {
+    throw invalidResponse(`${subject} content_md does not match its kind`);
+  }
+  return { kind, contentMd };
+}
+
 export function parsePost(value: unknown): PublicPost {
   if (!isRecord(value)) throw invalidResponse("post must be an object");
   const postKeys = [
     "id",
+    "kind",
     "content_md",
     "content_html",
     "created_at",
@@ -971,6 +1031,7 @@ export function parsePost(value: unknown): PublicPost {
       !hasExactKeys(quoted, [
         "unavailable",
         "id",
+        "kind",
         "content_md",
         "content_html",
         "published_at",
@@ -980,10 +1041,14 @@ export function parsePost(value: unknown): PublicPost {
     ) {
       throw invalidResponse("quoted post is invalid");
     }
+    // Which branch a quote takes is decided by `unavailable` alone. A null
+    // `content_md` cannot stand in for it any more: that is now what an
+    // article looks like, and an article quote is perfectly available.
     const unavailable = booleanField(quoted, "unavailable");
     if (unavailable) {
       if (
         quoted.id !== null ||
+        quoted.kind !== null ||
         quoted.content_md !== null ||
         quoted.content_html !== null ||
         quoted.published_at !== null ||
@@ -1014,10 +1079,12 @@ export function parsePost(value: unknown): PublicPost {
         }
         quotedLocation = { name: quotedName, displayName: quotedDisplayName };
       }
+      const quotedBody = postBody(quoted, "quoted post");
       quotedPost = {
         unavailable: false,
         id: stringField(quoted, "id"),
-        contentMd: stringField(quoted, "content_md"),
+        kind: quotedBody.kind,
+        contentMd: quotedBody.contentMd,
         contentHtml: stringField(quoted, "content_html"),
         publishedAt: instantField(quoted, "published_at"),
         media: parseMediaUsages(quoted.media, 9, "quoted post"),
@@ -1040,9 +1107,11 @@ export function parsePost(value: unknown): PublicPost {
   if (!isPostVisibility(visibility)) {
     throw invalidResponse("post visibility is invalid");
   }
+  const body = postBody(value, "post");
   return {
     id: stringField(value, "id"),
-    contentMd: stringField(value, "content_md"),
+    kind: body.kind,
+    contentMd: body.contentMd,
     contentHtml: stringField(value, "content_html"),
     createdAt: instantField(value, "created_at"),
     updatedAt: instantField(value, "updated_at"),
@@ -1203,6 +1272,7 @@ function nullableCursor(meta: Record<string, unknown>): string | null {
 function parseSearchHit(value: unknown): SearchHit {
   const searchKeys = [
     "id",
+    "kind",
     "content_md",
     "content_html",
     "created_at",

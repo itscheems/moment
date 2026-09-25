@@ -132,6 +132,7 @@
     "created_at",
     "edited_at",
     "id",
+    "kind",
     "link_cards",
     "location",
     "media",

@@ -48,6 +48,7 @@ const site: SiteIdentity = {
 
 const post: PublicPost = {
   id: postId,
+  kind: "moment",
   contentMd: "一段需要回应的 Moment",
   contentHtml: "<p>一段需要回应的 Moment</p>\n",
   createdAt: "2026-08-10T01:00:00Z",

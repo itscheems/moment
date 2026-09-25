@@ -343,7 +343,15 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
 	}
-	if err := domain.ValidatePostMarkdown(value.ContentMD, len(usages)); err != nil && value.QuotedEntryID == nil && !value.QuoteUnavailable {
+	// Only a moment travels through this layout. Importing an article envelope
+	// without the body that belongs to it would restore a blank post, so both
+	// directions refuse until a member carries that body; the export side
+	// refuses in validateArchiveEntry for the same reason.
+	body, isMoment := entry.Markdown()
+	if !isMoment {
+		return fmt.Errorf("portable entry %s is an article, which this archive layout does not carry yet", value.ID)
+	}
+	if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil && value.QuotedEntryID == nil && !value.QuoteUnavailable {
 		return err
 	}
 	if value.QuoteUnavailable && value.QuotedEntryID != nil {
@@ -373,7 +381,7 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	for _, card := range value.LinkCards {
 		cards = append(cards, card.Card)
 	}
-	contentText, err := app.DerivedSearchText(value.ContentMD, cards)
+	contentText, err := app.DerivedSearchText(body, cards)
 	if err != nil {
 		return err
 	}

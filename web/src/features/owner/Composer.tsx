@@ -17,6 +17,7 @@ import {
   PublicApiError,
   type MentionSuggestion,
   type PostVisibility,
+  type PublicMomentPost,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
@@ -158,7 +159,11 @@ export interface ComposerHandle {
 interface ComposerProps {
   site: SiteIdentity;
   variant: "inline" | "page" | "edit";
-  post?: PublicPost;
+  /**
+   * The post being edited. A moment and nothing else: this editor writes
+   * `content_md` back, which an article has no room for.
+   */
+  post?: PublicMomentPost;
   active?: boolean;
   quotedPostId?: string;
   /**

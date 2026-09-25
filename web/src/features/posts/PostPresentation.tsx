@@ -41,10 +41,13 @@ const interactiveSurfaceSelector = [
 ].join(", ");
 
 function longInTimeline(post: PublicPost): boolean {
-  return (
-    Array.from(post.contentMd).length > 480 ||
-    post.contentMd.split(/\r?\n/).length > 9
-  );
+  const body = post.contentMd;
+  // An article keeps its body out of `content_md`, so there is no Markdown to
+  // measure here. Reading as short is deliberate: the timeline shape an
+  // article deserves is its own change, and until then the collapse control
+  // would fold a card it was never measured against.
+  if (body === null) return false;
+  return Array.from(body).length > 480 || body.split(/\r?\n/).length > 9;
 }
 
 export function PostLocation({

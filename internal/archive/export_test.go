@@ -106,7 +106,7 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	if err := json.Unmarshal(entryLines[0], &entry); err != nil {
 		t.Fatal(err)
 	}
-	if entry.ContentMD != "Unicode 世界" || len(entry.Media) != 3 || entry.Media[0].AltText != nil || entry.Media[1].AltText == nil || *entry.Media[1].AltText != "" || entry.Media[2].AltText == nil || *entry.Media[2].AltText != "街景" {
+	if markdownText(entry.ContentMD) != "Unicode 世界" || len(entry.Media) != 3 || entry.Media[0].AltText != nil || entry.Media[1].AltText == nil || *entry.Media[1].AltText != "" || entry.Media[2].AltText == nil || *entry.Media[2].AltText != "街景" {
 		t.Fatalf("entry alt tri-state = %#v", entry)
 	}
 	if entry.Location == nil || entry.Location.Name != "静安寺" || entry.Location.LatitudeE7 == nil || *entry.Location.LatitudeE7 != 312231860 || entry.Location.CoordinateSystem == nil || *entry.Location.CoordinateSystem != "gcj02" {
@@ -1193,4 +1193,28 @@ func (writer *maxWriteRecorder) Write(data []byte) (int, error) {
 		return 0, fmt.Errorf("write too large: %d", len(data))
 	}
 	return len(data), nil
+}
+
+// The archive layout has no member for an article body yet, so both directions
+// refuse rather than produce a backup that restores an article as a blank post.
+func TestExportRefusesAnArticleUntilTheLayoutCarriesOne(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	const articleID = "01ARZ3NDEKTSV4RRFFQ69G5FD9"
+	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
+		_, err := queries.ExecContext(context.Background(), `
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
+VALUES (?, 'article', NULL, 1, 1, 1, '标题 正文')`, articleID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var output bytes.Buffer
+	_, err := fixture.exporter.Export(context.Background(), &output)
+	if err == nil {
+		t.Fatal("expected the export to refuse an article rather than leave its body behind")
+	}
+	if !strings.Contains(err.Error(), "does not carry yet") {
+		t.Fatalf("the refusal should name the reason, got %v", err)
+	}
 }

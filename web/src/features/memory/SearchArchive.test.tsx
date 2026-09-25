@@ -39,6 +39,7 @@ const site = {
 function post(id: string, content: string) {
   return {
     id,
+    kind: "moment",
     content_md: content,
     content_html: `<p>${content}</p>`,
     created_at: "2026-08-10T01:00:00.000Z",

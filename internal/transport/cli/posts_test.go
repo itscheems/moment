@@ -113,7 +113,8 @@ func TestPostDirectAgentContractIdempotencyAndDeleteSafety(t *testing.T) {
 	createdOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "first **moment**", "--idempotency-key", "cli-post-001", "--json")
 	created := commandData(t, createdOutput)
 	id := created["id"].(string)
-	if createdOutput.exit != ExitSuccess || createdOutput.stderr != "" || created["kind"] != nil || created["content_html"] == "" {
+	// kind is on the wire now that a post can be a moment or an article.
+	if createdOutput.exit != ExitSuccess || createdOutput.stderr != "" || created["kind"] != "moment" || created["content_html"] == "" {
 		t.Fatalf("create = %#v", createdOutput)
 	}
 	createdEnvelope := decodeOneDocument(t, createdOutput.stdout)
@@ -686,7 +687,8 @@ func TestPostAPIRequiresMutationMetadataAndStatusPairing(t *testing.T) {
 	instant := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
 	canonical := postdto.Post{
 		ID:          "01ARZ3NDEKTSV4RRFFQ69G5FAV",
-		ContentMD:   "valid",
+		Kind:        string(domain.KindMoment),
+		ContentMD:   domain.MarkdownBody("valid"),
 		ContentHTML: "<p>valid</p>\n",
 		CreatedAt:   instant,
 		UpdatedAt:   instant,
