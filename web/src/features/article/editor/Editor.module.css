@@ -878,3 +878,26 @@
     animation: none;
   }
 }
+
+/* Upload widgets keep their place while typing continues elsewhere. */
+.uploadPlaceholder {
+  position: relative;
+  margin-block: var(--space-5);
+  min-block-size: 6rem;
+  background: var(--surface-muted);
+  border-radius: var(--radius-action);
+  overflow: hidden;
+}
+.body :global(.tiptap) .uploadPlaceholder img {
+  margin: 0;
+  opacity: 0.55;
+}
+.uploadPlaceholder span {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  padding: var(--space-2);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  font-size: var(--text-sm);
+}

@@ -11,6 +11,7 @@ import {
 import { useNavigation } from "../../../app/navigation";
 import { notify } from "../../../components/Feedback";
 import { Icon } from "../../../components/icons";
+import { mediaPreviewUrl } from "../../../api/mediaUrls";
 import { SiteAvatar, siteDisplayName } from "../../../components/SiteIdentity";
 import { AudienceSelector } from "../../owner/AudienceSelector";
 import { useOwner } from "../../owner/OwnerProvider";
@@ -38,6 +39,12 @@ import {
   toEditorContent,
 } from "./document";
 import { articleEditorExtensions } from "./schema";
+import {
+  addUploadPlaceholder,
+  clearUploadPlaceholders,
+  finishImageUpload,
+  removeUploadPlaceholder,
+} from "./extensions/UploadPlaceholder";
 import styles from "./Editor.module.css";
 
 function createIdempotencyKey(): string {
@@ -105,6 +112,8 @@ export function ArticleEditor({
   const coverInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const publishKey = useRef(createIdempotencyKey());
+  const uploadGeneration = useRef(0);
+  const createdDraftId = useRef<string | null>(null);
 
   const editor = useEditor({
     extensions: articleEditorExtensions({ placeholder: "从这里开始写…" }),
@@ -154,6 +163,14 @@ export function ArticleEditor({
   /** Load the draft named in the address, or start an empty one. */
   useEffect(() => {
     if (!editor || editor.isDestroyed) return;
+    if (draftId !== null && draftId === createdDraftId.current) {
+      createdDraftId.current = null;
+      return;
+    }
+    uploadGeneration.current += 1;
+    clearUploadPlaceholders(editor);
+    setUploads([]);
+    setCoverBusy(false);
     let abandoned = false;
     const controller = new AbortController();
     if (draftId === null) {
@@ -297,6 +314,7 @@ export function ArticleEditor({
           // The address follows the draft rather than the other way round, so
           // a reload comes back to what was just written. Replaced, not
           // pushed: nobody navigated anywhere.
+          createdDraftId.current = stored.id;
           location.replace(articleDraftPath(stored.id));
         }
         void refreshDrafts();
@@ -358,6 +376,10 @@ export function ArticleEditor({
         return;
       }
       const id = createIdempotencyKey();
+      const generation = uploadGeneration.current;
+      const previewUrl = place === "body" ? URL.createObjectURL(file) : null;
+      if (previewUrl && editor)
+        addUploadPlaceholder(editor, id, file.name, previewUrl);
       if (place === "cover") setCoverBusy(true);
       else {
         setUploads((current) => [
@@ -376,21 +398,29 @@ export function ArticleEditor({
               ),
             ),
         );
+        if (generation !== uploadGeneration.current || editor?.isDestroyed)
+          return;
         if (place === "cover") {
           setCoverMediaId(uploaded.id);
         } else {
-          // Inserted only now: the document may name managed media and
-          // nothing else, so there is no id to write down until the server
-          // has given one.
-          editor
-            ?.chain()
-            .focus()
-            .insertContent({ type: "image", attrs: { media_id: uploaded.id } })
-            .run();
+          // Decode the server preview before exchanging the local preview.
+          const image = new Image();
+          image.src = mediaPreviewUrl(uploaded.id);
+          await image.decode().catch(() => undefined);
+          if (
+            generation !== uploadGeneration.current ||
+            !editor ||
+            editor.isDestroyed
+          )
+            return;
+          finishImageUpload(editor, id, uploaded.id);
           setUploads((current) => current.filter((task) => task.id !== id));
         }
         markChanged();
       } catch (error) {
+        if (generation !== uploadGeneration.current || editor?.isDestroyed)
+          return;
+        if (editor) removeUploadPlaceholder(editor, id);
         owner.expireIfInvalidSession(error);
         const message =
           error instanceof PublicApiError ? error.message : "上传没有成功。";
@@ -403,7 +433,9 @@ export function ArticleEditor({
           );
         }
       } finally {
-        if (place === "cover") setCoverBusy(false);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        if (place === "cover" && generation === uploadGeneration.current)
+          setCoverBusy(false);
       }
     },
     [csrfToken, editor, markChanged],
@@ -574,7 +606,12 @@ export function ArticleEditor({
           </button>
           <button
             className={styles.primaryAction}
-            disabled={publishing || titleTooLong}
+            disabled={
+              publishing ||
+              titleTooLong ||
+              coverBusy ||
+              uploads.some((task) => task.failed === null)
+            }
             onClick={() => void publish()}
             type="button"
           >

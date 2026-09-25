@@ -12,11 +12,9 @@ export interface UploadTask {
 /**
  * What stands in for a picture while it is still arriving.
  *
- * The node is inserted only once the server has given the picture an id, so
- * there is nothing to put in the document yet -- the document may only name
- * managed media, and a half-uploaded file is not that. The strip carries the
- * progress instead, and announces itself, because an upload that shows nothing
- * reads as an editor that ignored the file.
+ * UploadPlaceholder shows the local picture at its mapped insertion point.
+ * This strip announces progress and keeps failures visible after the local
+ * placeholder has been removed. Neither becomes part of the saved body.
  */
 export function ImageUploads({
   uploads,

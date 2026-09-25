@@ -20,6 +20,7 @@ import StarterKit from "@tiptap/starter-kit";
 import type { ArticleMarkType, ArticleNodeType } from "../../../api/public";
 import { isAllowedArticleHref } from "./links";
 import { ManagedImage } from "./extensions/ManagedImage";
+import { UploadPlaceholder } from "./extensions/UploadPlaceholder";
 
 /**
  * The grammar an article body is allowed to be written in.
@@ -203,6 +204,7 @@ export function articleEditorExtensions(
       },
     }),
     ManagedImage,
+    UploadPlaceholder,
     Placeholder.configure({
       placeholder: options.placeholder ?? "写点什么…",
       showOnlyWhenEditable: true,
