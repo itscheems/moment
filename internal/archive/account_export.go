@@ -136,6 +136,55 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	if err != nil {
 		return Summary{}, err
 	}
+	// An article's words are not in its entry, so an export that stopped at the
+	// envelope would hand somebody a file full of posts with nothing in them.
+	// Drafts come too: unfinished writing exists nowhere else, which makes it
+	// the part of a personal export a person is most likely to actually want.
+	articles, err := protocol.jsonLines("data/entry_articles.jsonl", func(write func(any) error) error {
+		if account.Role != string(domain.UserRoleOwner) {
+			return nil
+		}
+		return snapshot.EntryArticles(ctx, func(value sqlitestore.ArchiveEntryArticle) error {
+			if _, err := validateArchiveEntryArticle(value); err != nil {
+				return err
+			}
+			if value.CoverMediaID != nil {
+				selected[*value.CoverMediaID] = true
+			}
+			record, err := portableEntryArticleRecord(value)
+			if err != nil {
+				return err
+			}
+			return write(record)
+		})
+	})
+	if err != nil {
+		return Summary{}, err
+	}
+	drafts, err := protocol.jsonLines("data/article_drafts.jsonl", func(write func(any) error) error {
+		if account.Role != string(domain.UserRoleOwner) {
+			return nil
+		}
+		return snapshot.ArticleDrafts(ctx, func(value sqlitestore.ArchiveArticleDraft) error {
+			if err := validateArchiveArticleDraft(value); err != nil {
+				return err
+			}
+			if value.CoverMediaID != nil {
+				selected[*value.CoverMediaID] = true
+			}
+			for _, usage := range value.Media {
+				selected[usage.MediaID] = true
+			}
+			record, err := portableArticleDraftRecord(value)
+			if err != nil {
+				return err
+			}
+			return write(record)
+		})
+	})
+	if err != nil {
+		return Summary{}, err
+	}
 	comments, err := protocol.jsonLines("data/comments.jsonl", func(write func(any) error) error {
 		return snapshot.Comments(ctx, func(value sqlitestore.ArchiveComment) error {
 			if value.AuthorUserID == nil || *value.AuthorUserID != accountID {
@@ -211,7 +260,7 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	if err != nil {
 		return Summary{}, err
 	}
-	manifest := accountManifest{Format: accountFormatName, FormatVersion: 1, CreatedAt: now.Format(time.RFC3339Nano), AccountID: accountID, Counts: countManifest{Users: 1, Identities: identities, Entries: entries, Comments: comments, Media: mediaCount}}
+	manifest := accountManifest{Format: accountFormatName, FormatVersion: 1, CreatedAt: now.Format(time.RFC3339Nano), AccountID: accountID, Counts: countManifest{Users: 1, Identities: identities, Entries: entries, Comments: comments, Media: mediaCount, Articles: articles, ArticleDrafts: drafts}}
 	if err := protocol.jsonMember("manifest.json", manifest); err != nil {
 		return Summary{}, err
 	}
@@ -241,7 +290,7 @@ func ValidateAccountFileContext(ctx context.Context, name string) error {
 		return err
 	}
 	defer func() { _ = reader.Close() }()
-	if int64(len(reader.File)) > defaultMaxMedia+8 {
+	if int64(len(reader.File)) > defaultMaxMedia+10 {
 		return archiveInvalid("account archive member count exceeds the budget", nil)
 	}
 	files := map[string]*zip.File{}
@@ -261,7 +310,9 @@ func ValidateAccountFileContext(ctx context.Context, name string) error {
 		}
 		expanded += file.UncompressedSize64
 		switch file.Name {
-		case "README.txt", "manifest.json", "checksums.sha256", "data/account.json", "data/entries.jsonl", "data/comments.jsonl", "data/identities.jsonl", "data/media.jsonl":
+		case "README.txt", "manifest.json", "checksums.sha256", "data/account.json", "data/entries.jsonl",
+			"data/entry_articles.jsonl", "data/article_drafts.jsonl", "data/comments.jsonl",
+			"data/identities.jsonl", "data/media.jsonl":
 		default:
 			if !strings.HasPrefix(file.Name, "media/") {
 				return archiveInvalid("unknown account archive member", nil)
@@ -269,7 +320,11 @@ func ValidateAccountFileContext(ctx context.Context, name string) error {
 		}
 		files[file.Name] = file
 	}
-	for _, name := range []string{"README.txt", "manifest.json", "checksums.sha256", "data/account.json", "data/entries.jsonl", "data/comments.jsonl", "data/identities.jsonl", "data/media.jsonl"} {
+	for _, name := range []string{
+		"README.txt", "manifest.json", "checksums.sha256", "data/account.json", "data/entries.jsonl",
+		"data/entry_articles.jsonl", "data/article_drafts.jsonl", "data/comments.jsonl",
+		"data/identities.jsonl", "data/media.jsonl",
+	} {
 		if files[name] == nil {
 			return archiveInvalid("account archive member missing", nil)
 		}

@@ -167,9 +167,28 @@ type MergePlanInput struct {
 	Incoming       PortableAuthority
 }
 
+// ErrMergeArticleUnsupported is what every merge path answers once an article
+// is on either side of the comparison.
+//
+// Merge compares and rewrites a graph of entries, comments, media and accounts.
+// An article is none of those on its own: its words are a separate record, an
+// unfinished one is not an entry at all, and "keep both" would have to fork a
+// body and reissue the pictures it places by position inside a document. Until
+// the comparison learns that shape, refusing is the honest answer -- the
+// alternative is a merged site whose articles came back blank, which is the
+// failure the whole portability layer exists to prevent.
+//
+// Replacement import is unaffected: it carries articles and drafts in full.
+var ErrMergeArticleUnsupported = errors.New("merge import does not carry articles yet, so a site with one cannot be merged; replace import carries them")
+
 // ReadPortableAuthority reads one consistent portable snapshot. Storage paths
 // are retained only so the later generation builder can locate originals;
 // they are excluded from equality and authority digests.
+//
+// It refuses a snapshot holding an article or a draft. This is the one place
+// every merge path -- review, plan and commit, on both the live site and the
+// staged backup -- reads its input from, so refusing here is what keeps the
+// rest of the merge code honest about a shape it cannot carry.
 func ReadPortableAuthority(ctx context.Context, database archiveSnapshotDatabase) (authority PortableAuthority, resultErr error) {
 	if database == nil {
 		return PortableAuthority{}, errors.New("portable authority database is required")
@@ -181,6 +200,9 @@ func ReadPortableAuthority(ctx context.Context, database archiveSnapshotDatabase
 	defer func() { resultErr = errors.Join(resultErr, snapshot.Close()) }()
 	if err := snapshot.ValidateIntegrity(ctx); err != nil {
 		return PortableAuthority{}, err
+	}
+	if counts := snapshot.Counts(); counts.Articles != 0 || counts.ArticleDrafts != 0 {
+		return PortableAuthority{}, ErrMergeArticleUnsupported
 	}
 	authority.Site, err = snapshot.Site(ctx)
 	if err != nil {

@@ -38,6 +38,7 @@ const (
 	defaultMaxMedia          = int64(100_000)
 	defaultMaxUsers          = int64(100_000)
 	defaultMaxIdentities     = int64(500_000)
+	defaultMaxArticleDrafts  = int64(100_000)
 	defaultMaxCompression    = uint64(1_000)
 	defaultInspectionTTL     = 30 * time.Minute
 	minimumSafetyMarginBytes = int64(2 << 30)
@@ -61,6 +62,10 @@ type InspectLimits struct {
 	MaxMedia         int64
 	MaxUsers         int64
 	MaxIdentities    int64
+	// MaxArticleDrafts bounds unfinished articles, which are the one portable
+	// record that is not an entry, a comment, a media object or an account and
+	// so has no other budget to sit under.
+	MaxArticleDrafts int64
 	MaxCompression   uint64
 }
 
@@ -215,6 +220,9 @@ func NewInspector(options InspectOptions) (*Inspector, error) {
 	if limits.MaxIdentities == 0 {
 		limits.MaxIdentities = defaultMaxIdentities
 	}
+	if limits.MaxArticleDrafts == 0 {
+		limits.MaxArticleDrafts = defaultMaxArticleDrafts
+	}
 	if limits.MaxCompression == 0 {
 		limits.MaxCompression = defaultMaxCompression
 	}
@@ -225,6 +233,7 @@ func NewInspector(options InspectOptions) (*Inspector, error) {
 		limits.MaxMedia < 1 || limits.MaxMedia > defaultMaxMedia ||
 		limits.MaxUsers < 1 || limits.MaxUsers > defaultMaxUsers ||
 		limits.MaxIdentities < 1 || limits.MaxIdentities > defaultMaxIdentities ||
+		limits.MaxArticleDrafts < 1 || limits.MaxArticleDrafts > defaultMaxArticleDrafts ||
 		limits.MaxCompression < 1 || limits.MaxCompression > defaultMaxCompression {
 		return nil, errors.New("import inspection limits must be positive and no greater than product ceilings")
 	}
@@ -685,9 +694,9 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 		return manifest{}, importInvalid("archive ZIP central directory is invalid", err)
 	}
 	defer func() { _ = reader.Close() }()
-	// The budget is stated against the larger of the two v1 layouts, and the
-	// floor against the smaller, so both remain readable.
-	maxMembers := inspector.limits.MaxMedia + int64(len(accountPortableMembers)+len(portableTrailerMembers))
+	// The budget is stated against the largest v1 layout, and the floor
+	// against the smallest, so all of them remain readable.
+	maxMembers := inspector.limits.MaxMedia + int64(len(articlePortableMembers)+len(portableTrailerMembers))
 	if int64(len(reader.File)) > maxMembers || len(reader.File) < len(legacyPortableMembers)+len(portableTrailerMembers) {
 		return manifest{}, importInvalid("archive ZIP member count exceeds the inspection budget", nil)
 	}
@@ -754,11 +763,16 @@ func (inspector *Inspector) preflight(ctx context.Context, archivePath string) (
 	if document.FormatVersion != FormatVersion {
 		return manifest{}, domain.NewError(domain.CodeExportVersionUnsupported, "archive format version is not supported", map[string]any{"format_version": document.FormatVersion, "supported_version": FormatVersion})
 	}
+	// Articles are bounded by the entry budget because every article is an
+	// entry. Drafts are not entries and therefore need a bound of their own, or
+	// a hostile archive could declare a member of any length.
 	if document.Counts.Entries < 0 || document.Counts.Entries > inspector.limits.MaxEntries ||
 		document.Counts.Comments < 0 || document.Counts.Comments > inspector.limits.MaxComments ||
 		document.Counts.Media < 0 || document.Counts.Media > inspector.limits.MaxMedia ||
 		document.Counts.Users < 0 || document.Counts.Users > inspector.limits.MaxUsers ||
 		document.Counts.Identities < 0 || document.Counts.Identities > inspector.limits.MaxIdentities ||
+		document.Counts.Articles < 0 || document.Counts.Articles > document.Counts.Entries ||
+		document.Counts.ArticleDrafts < 0 || document.Counts.ArticleDrafts > inspector.limits.MaxArticleDrafts ||
 		document.Limits.ExpandedBytes < 1 || document.Limits.ExpandedBytes > inspector.limits.MaxExpandedBytes {
 		return manifest{}, importInvalid("archive manifest counts or expanded bytes exceed the inspection budget", nil)
 	}
@@ -805,7 +819,7 @@ func summarizePortable(ctx context.Context, archivePath string, document manifes
 	for _, file := range reader.File {
 		files[file.Name] = file
 	}
-	result := portableSummary{counts: portableImportCounts(document, archiveCarriesAccounts(files))}
+	result := portableSummary{counts: portableImportCounts(document, archiveCarriesAccounts(files), archiveCarriesArticles(files))}
 	_, err = validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
 		if _, err := domainLocation(value.Location); err != nil {
 			return err
@@ -1243,7 +1257,20 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		return err
 	}
 
-	_, err = validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
+	// The bodies are read beside the entries rather than before them: both
+	// members are in entry ID order, so one cursor walking alongside the entry
+	// stream finds each article's words exactly when the envelope that needs
+	// them is being written.
+	var bodies *jsonLinesReader[entryArticleRecord]
+	if archiveCarriesArticles(files) {
+		bodies, err = openJSONLines[entryArticleRecord](ctx, files["data/entry_articles.jsonl"], portableEntryArticleFields)
+		if err != nil {
+			return err
+		}
+		defer func() { resultErr = errors.Join(resultErr, bodies.close()) }()
+	}
+
+	_, err = validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], portableEntryFields, func(value entryRecord, _ map[string]json.RawMessage) error {
 		created, err := parsePortableTimestamp(value.CreatedAt)
 		if err != nil {
 			return err
@@ -1290,13 +1317,50 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		if err != nil {
 			return err
 		}
-		return importer.InsertEntry(ctx, sqlitestore.ArchiveEntry{
+		entry := sqlitestore.ArchiveEntry{
 			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
 			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
-		})
+		}
+		if domain.EntryKind(value.Kind) != domain.KindArticle {
+			return importer.InsertEntry(ctx, entry)
+		}
+		if bodies == nil {
+			return fmt.Errorf("entry %s is an article and this archive carries no bodies", value.ID)
+		}
+		body, _, more, err := bodies.next(ctx)
+		if err != nil {
+			return err
+		}
+		if !more || body.EntryID != value.ID {
+			return fmt.Errorf("entry %s has no body in this archive", value.ID)
+		}
+		article, err := archiveEntryArticleOf(body)
+		if err != nil {
+			return err
+		}
+		return importer.InsertArticleEntry(ctx, entry, article)
 	})
 	if err != nil {
 		return err
+	}
+	if bodies != nil {
+		// Every body the member holds has now been claimed by the entry that
+		// sits in front of it. One left over belongs to no post at all.
+		if _, _, more, err := bodies.next(ctx); err != nil || more {
+			return errors.Join(errors.New("an article body in this archive belongs to no entry"), err)
+		}
+	}
+
+	if archiveCarriesArticles(files) {
+		if _, err := validateJSONLines[articleDraftRecord](ctx, files["data/article_drafts.jsonl"], portableArticleDraftFields, func(value articleDraftRecord, _ map[string]json.RawMessage) error {
+			draft, err := archiveArticleDraftOf(value)
+			if err != nil {
+				return err
+			}
+			return importer.InsertArticleDraft(ctx, draft)
+		}); err != nil {
+			return err
+		}
 	}
 
 	_, err = validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
@@ -1326,7 +1390,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 	if err := importer.SetSite(ctx, archiveSiteOf(site)); err != nil {
 		return err
 	}
-	expected := portableExpectedCounts(document, archiveCarriesAccounts(files))
+	expected := portableExpectedCounts(document, archiveCarriesAccounts(files), archiveCarriesArticles(files))
 	if err := importer.Commit(ctx, expected); err != nil {
 		return err
 	}
@@ -1386,13 +1450,21 @@ func readPortableSite(ctx context.Context, files map[string]*zip.File) (siteReco
 // archive that names no owner at all keeps the account the migrations
 // generated. Either way the answer is one, which is why every valid Moment
 // database has an owner and none has two.
-func portableExpectedCounts(document manifest, carriesAccounts bool) sqlitestore.ArchiveCounts {
+// An archive without the article members carries no article and no draft, so
+// the rebuilt generation must hold none either -- which is also the right
+// answer, not a degraded one: those backups were taken from a site that had no
+// articles to lose.
+func portableExpectedCounts(document manifest, carriesAccounts, carriesArticles bool) sqlitestore.ArchiveCounts {
 	counts := sqlitestore.ArchiveCounts{
 		Entries: document.Counts.Entries, Comments: document.Counts.Comments, Media: document.Counts.Media,
 		Users: document.Counts.Users, Identities: document.Counts.Identities,
+		Articles: document.Counts.Articles, ArticleDrafts: document.Counts.ArticleDrafts,
 	}
 	if !carriesAccounts {
 		counts.Users, counts.Identities = 1, 0
+	}
+	if !carriesArticles {
+		counts.Articles, counts.ArticleDrafts = 0, 0
 	}
 	return counts
 }
@@ -1400,8 +1472,8 @@ func portableExpectedCounts(document manifest, carriesAccounts bool) sqlitestore
 // portableImportCounts is what a preview must say the archive holds. It is
 // derived from portableExpectedCounts so the number shown before the decision
 // and the number the rebuilt generation is held to are the same number.
-func portableImportCounts(document manifest, carriesAccounts bool) ImportCounts {
-	expected := portableExpectedCounts(document, carriesAccounts)
+func portableImportCounts(document manifest, carriesAccounts, carriesArticles bool) ImportCounts {
+	expected := portableExpectedCounts(document, carriesAccounts, carriesArticles)
 	return ImportCounts{
 		Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media,
 		Users: expected.Users, Identities: expected.Identities,
@@ -1727,11 +1799,11 @@ type stagingAuthorityDatabase interface {
 }
 
 func validateStagingAuthority(ctx context.Context, generation runtimefs.Generation, archivePath string, document manifest, database stagingAuthorityDatabase) error {
-	carriesAccounts, err := archiveFileCarriesAccounts(archivePath)
+	carriesAccounts, carriesArticles, err := archiveFileLayout(archivePath)
 	if err != nil {
 		return err
 	}
-	if err := database.ValidatePortableReady(ctx, portableExpectedCounts(document, carriesAccounts)); err != nil {
+	if err := database.ValidatePortableReady(ctx, portableExpectedCounts(document, carriesAccounts, carriesArticles)); err != nil {
 		return err
 	}
 	snapshot, err := database.BeginArchiveSnapshot(ctx)
@@ -1825,17 +1897,19 @@ func validatePortableGenerationTree(ctx context.Context, generation runtimefs.Ge
 	return nil
 }
 
-func archiveFileCarriesAccounts(archivePath string) (bool, error) {
+// archiveFileLayout reports which of the optional member pairs an archive on
+// disk carries, which is what says how much a rebuilt generation must hold.
+func archiveFileLayout(archivePath string) (accounts, articles bool, err error) {
 	reader, err := zip.OpenReader(archivePath)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	defer func() { _ = reader.Close() }()
 	files := make(map[string]*zip.File, len(reader.File))
 	for _, file := range reader.File {
 		files[file.Name] = file
 	}
-	return archiveCarriesAccounts(files), nil
+	return archiveCarriesAccounts(files), archiveCarriesArticles(files), nil
 }
 
 // validatePortableAuthority proves a rebuilt generation says exactly what the
@@ -1872,8 +1946,11 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 	if err := validateStagedAccounts(ctx, snapshot, files, document, expectedSite); err != nil {
 		return err
 	}
+	if err := validateStagedArticles(ctx, snapshot, files); err != nil {
+		return err
+	}
 	expectedEntries := make([]entryRecord, 0)
-	if _, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, _ map[string]json.RawMessage) error {
+	if _, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], portableEntryFields, func(value entryRecord, _ map[string]json.RawMessage) error {
 		expectedEntries = append(expectedEntries, value)
 		return nil
 	}); err != nil {
@@ -1931,6 +2008,61 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 	sort.Slice(actualMedia, func(i, j int) bool { return actualMedia[i].ID < actualMedia[j].ID })
 	if mediaErr != nil || !reflect.DeepEqual(expectedMedia, actualMedia) {
 		return errors.Join(errors.New("staged media metadata do not match the portable archive"), mediaErr)
+	}
+	return nil
+}
+
+// validateStagedArticles compares the staged articles and drafts against the
+// archive, body bytes included.
+//
+// Both sides are produced by the same conversion function, and that function
+// re-serializes the parsed document rather than copying whatever bytes it was
+// given, so the comparison is byte for byte over the canonical form. A body
+// that came back spelled differently is a body that came back changed.
+func validateStagedArticles(ctx context.Context, snapshot *sqlitestore.ArchiveSnapshot, files map[string]*zip.File) error {
+	expectedArticles := make([]entryArticleRecord, 0)
+	expectedDrafts := make([]articleDraftRecord, 0)
+	if archiveCarriesArticles(files) {
+		if _, err := validateJSONLines[entryArticleRecord](ctx, files["data/entry_articles.jsonl"], portableEntryArticleFields, func(value entryArticleRecord, _ map[string]json.RawMessage) error {
+			expectedArticles = append(expectedArticles, value)
+			return nil
+		}); err != nil {
+			return err
+		}
+		if _, err := validateJSONLines[articleDraftRecord](ctx, files["data/article_drafts.jsonl"], portableArticleDraftFields, func(value articleDraftRecord, _ map[string]json.RawMessage) error {
+			expectedDrafts = append(expectedDrafts, value)
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	sort.Slice(expectedArticles, func(i, j int) bool { return expectedArticles[i].EntryID < expectedArticles[j].EntryID })
+	actualArticles := make([]entryArticleRecord, 0, len(expectedArticles))
+	articlesErr := snapshot.EntryArticles(ctx, func(value sqlitestore.ArchiveEntryArticle) error {
+		record, err := portableEntryArticleRecord(value)
+		if err != nil {
+			return err
+		}
+		actualArticles = append(actualArticles, record)
+		return nil
+	})
+	sort.Slice(actualArticles, func(i, j int) bool { return actualArticles[i].EntryID < actualArticles[j].EntryID })
+	if articlesErr != nil || !reflect.DeepEqual(expectedArticles, actualArticles) {
+		return errors.Join(errors.New("staged articles do not match the portable archive"), articlesErr)
+	}
+	sort.Slice(expectedDrafts, func(i, j int) bool { return expectedDrafts[i].ID < expectedDrafts[j].ID })
+	actualDrafts := make([]articleDraftRecord, 0, len(expectedDrafts))
+	draftsErr := snapshot.ArticleDrafts(ctx, func(value sqlitestore.ArchiveArticleDraft) error {
+		record, err := portableArticleDraftRecord(value)
+		if err != nil {
+			return err
+		}
+		actualDrafts = append(actualDrafts, record)
+		return nil
+	})
+	sort.Slice(actualDrafts, func(i, j int) bool { return actualDrafts[i].ID < actualDrafts[j].ID })
+	if draftsErr != nil || !reflect.DeepEqual(expectedDrafts, actualDrafts) {
+		return errors.Join(errors.New("staged article drafts do not match the portable archive"), draftsErr)
 	}
 	return nil
 }

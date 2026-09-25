@@ -262,6 +262,46 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 	if err != nil {
 		return Summary{}, archiveInvalid("entries could not be exported", err)
 	}
+	// An article's body follows its envelope, and a draft follows the article
+	// it may be the working copy of, for the same reason accounts precede
+	// content: reading the archive top to bottom should never meet a reference
+	// before the thing it refers to.
+	articleCount, err := protocol.jsonLines("data/entry_articles.jsonl", func(write func(any) error) error {
+		return snapshot.EntryArticles(ctx, func(value sqlitestore.ArchiveEntryArticle) error {
+			if _, err := validateArchiveEntryArticle(value); err != nil {
+				return err
+			}
+			if exporter.recordYield != nil {
+				exporter.recordYield("article", 1)
+			}
+			record, err := portableEntryArticleRecord(value)
+			if err != nil {
+				return err
+			}
+			return write(record)
+		})
+	})
+	if err != nil {
+		return Summary{}, archiveInvalid("articles could not be exported", err)
+	}
+	draftCount, err := protocol.jsonLines("data/article_drafts.jsonl", func(write func(any) error) error {
+		return snapshot.ArticleDrafts(ctx, func(value sqlitestore.ArchiveArticleDraft) error {
+			if err := validateArchiveArticleDraft(value); err != nil {
+				return err
+			}
+			if exporter.recordYield != nil {
+				exporter.recordYield("article_draft", 1)
+			}
+			record, err := portableArticleDraftRecord(value)
+			if err != nil {
+				return err
+			}
+			return write(record)
+		})
+	})
+	if err != nil {
+		return Summary{}, archiveInvalid("article drafts could not be exported", err)
+	}
 	commentCount, err := protocol.jsonLines("data/comments.jsonl", func(write func(any) error) error {
 		return snapshot.Comments(ctx, func(value sqlitestore.ArchiveComment) error {
 			if err := validateArchiveComment(value); err != nil {
@@ -361,7 +401,8 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 
 	counts := snapshot.Counts()
 	if entryCount != counts.Entries || commentCount != counts.Comments || mediaCount != counts.Media || blobCount != counts.Media ||
-		userCount != counts.Users || identityCount != counts.Identities {
+		userCount != counts.Users || identityCount != counts.Identities ||
+		articleCount != counts.Articles || draftCount != counts.ArticleDrafts {
 		return Summary{}, archiveInvalid("archive record counts changed inside one snapshot", nil)
 	}
 	manifestBytes, err := canonicalManifest(manifest{
@@ -370,6 +411,7 @@ func (exporter *Exporter) exportResolved(ctx context.Context, destination io.Wri
 		Counts: countManifest{
 			Entries: counts.Entries, Comments: counts.Comments, Media: counts.Media,
 			Users: counts.Users, Identities: counts.Identities,
+			Articles: counts.Articles, ArticleDrafts: counts.ArticleDrafts,
 		},
 	}, protocol.expandedBytes)
 	if err != nil {
@@ -513,6 +555,12 @@ type countManifest struct {
 	// archive as carrying no accounts members at all.
 	Users      int64 `json:"users,omitempty"`
 	Identities int64 `json:"identities,omitempty"`
+	// Articles and ArticleDrafts are additive on the same terms. Articles
+	// counts bodies rather than article entries: the two are the same number
+	// in a consistent archive, so stating the bodies is what makes an envelope
+	// whose body was left behind a rejection instead of a blank post.
+	Articles      int64 `json:"articles,omitempty"`
+	ArticleDrafts int64 `json:"article_drafts,omitempty"`
 }
 
 type limitManifest struct {
@@ -603,6 +651,52 @@ type entryRecord struct {
 	// LinkCards is additive within format version 1, exactly as location was:
 	// the key is absent when there are none, and an older reader ignores it.
 	LinkCards []linkCardRecord `json:"link_cards,omitempty"`
+}
+
+// entryArticleRecord is the v1 wire shape of one published article body.
+//
+// It travels in its own member rather than inside the entry record because an
+// entry line is small and read by everything, while a body is up to half a
+// megabyte and read by one thing. The entry it belongs to is the line in
+// data/entries.jsonl with the same id and a null content_md; neither half is
+// meaningful without the other, and a reader rejects an archive carrying one
+// without the other.
+//
+// The excerpt and the indexed text are absent on purpose. Both are derived
+// from the title and the body by one function each, and a second stored answer
+// would be free to disagree with the words it claims to summarize.
+type entryArticleRecord struct {
+	EntryID string `json:"entry_id"`
+	Title   string `json:"title"`
+	// Body is the canonical serialization of the document, embedded as JSON
+	// rather than as a quoted string: a reader that wants to look inside
+	// should not have to unescape a document first. The bytes are what
+	// domain.MarshalArticleDocument produces, which is also what the column
+	// holds, so a round trip compares byte for byte.
+	Body json.RawMessage `json:"body"`
+	// CoverMediaID is the one article picture that does not travel through
+	// entry_media, so it is the one an archive has to name itself.
+	CoverMediaID *string `json:"cover_media_id"`
+}
+
+// articleDraftRecord is the v1 wire shape of one unfinished article.
+//
+// A draft is writing that exists nowhere else, so a backup that skipped it
+// would lose work rather than lose a copy. It is not an entry: drafts live
+// outside the timeline precisely so an unfinished article cannot be published
+// by a query that forgot to filter.
+type articleDraftRecord struct {
+	ID    string          `json:"id"`
+	Title string          `json:"title"`
+	Body  json.RawMessage `json:"body"`
+	// CoverMediaID and PublishedEntryID are both optional: a draft may have no
+	// cover, and it names an entry only when it is the working copy of an
+	// already published article.
+	CoverMediaID     *string       `json:"cover_media_id"`
+	PublishedEntryID *string       `json:"published_entry_id"`
+	Media            []usageRecord `json:"media"`
+	CreatedAt        string        `json:"created_at"`
+	UpdatedAt        string        `json:"updated_at"`
 }
 
 // linkCardRecord is the portable card snapshot. The thumbnail travels by
@@ -800,6 +894,82 @@ func portableEntryRecord(value sqlitestore.ArchiveEntry) entryRecord {
 		Media: portableUsageRecords(value.Media), Location: portableLocation(value.Location),
 		LinkCards: portableLinkCards(value.LinkCards),
 	}
+}
+
+// portableEntryArticleRecord canonicalizes one stored body on the way out.
+//
+// The bytes are re-derived from the parsed document rather than copied from the
+// column, so what the archive carries is exactly what the grammar accepted. It
+// is also what makes the staged-authority comparison a byte comparison: both
+// sides pass through here.
+func portableEntryArticleRecord(value sqlitestore.ArchiveEntryArticle) (entryArticleRecord, error) {
+	body, err := domain.ParseArticleDocument([]byte(value.BodyJSON))
+	if err != nil {
+		return entryArticleRecord{}, err
+	}
+	serialized, err := domain.MarshalArticleDocument(body)
+	if err != nil {
+		return entryArticleRecord{}, err
+	}
+	return entryArticleRecord{
+		EntryID: value.EntryID, Title: value.Title,
+		Body: json.RawMessage(serialized), CoverMediaID: value.CoverMediaID,
+	}, nil
+}
+
+func archiveEntryArticleOf(value entryArticleRecord) (sqlitestore.ArchiveEntryArticle, error) {
+	body, err := domain.ParseArticleDocument(value.Body)
+	if err != nil {
+		return sqlitestore.ArchiveEntryArticle{}, err
+	}
+	return sqlitestore.ArchiveEntryArticle{
+		EntryID: value.EntryID, Title: value.Title, BodyJSON: string(value.Body),
+		SchemaVersion: body.SchemaVersion, CoverMediaID: value.CoverMediaID,
+	}, nil
+}
+
+// portableArticleDraftRecord is the same canonicalization for a draft, read
+// through the grammar that lets a draft say nothing yet.
+func portableArticleDraftRecord(value sqlitestore.ArchiveArticleDraft) (articleDraftRecord, error) {
+	body, err := domain.ParseArticleDraftDocument([]byte(value.BodyJSON))
+	if err != nil {
+		return articleDraftRecord{}, err
+	}
+	serialized, err := domain.MarshalArticleDocument(body)
+	if err != nil {
+		return articleDraftRecord{}, err
+	}
+	return articleDraftRecord{
+		ID: value.ID, Title: value.Title, Body: json.RawMessage(serialized),
+		CoverMediaID: value.CoverMediaID, PublishedEntryID: value.PublishedEntryID,
+		Media:     portableUsageRecords(value.Media),
+		CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
+	}, nil
+}
+
+func archiveArticleDraftOf(value articleDraftRecord) (sqlitestore.ArchiveArticleDraft, error) {
+	body, err := domain.ParseArticleDraftDocument(value.Body)
+	if err != nil {
+		return sqlitestore.ArchiveArticleDraft{}, err
+	}
+	created, err := parsePortableTimestamp(value.CreatedAt)
+	if err != nil {
+		return sqlitestore.ArchiveArticleDraft{}, err
+	}
+	updated, err := parsePortableTimestamp(value.UpdatedAt)
+	if err != nil {
+		return sqlitestore.ArchiveArticleDraft{}, err
+	}
+	usages := make([]sqlitestore.ArchiveUsage, len(value.Media))
+	for index, usage := range value.Media {
+		usages[index] = sqlitestore.ArchiveUsage{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
+	}
+	return sqlitestore.ArchiveArticleDraft{
+		ID: value.ID, Title: value.Title, BodyJSON: string(value.Body),
+		SchemaVersion: body.SchemaVersion, CoverMediaID: value.CoverMediaID,
+		PublishedEntryID: value.PublishedEntryID, Media: usages,
+		CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(),
+	}, nil
 }
 
 // portableVisibility spells the audience for the archive: nothing for the
@@ -1003,25 +1173,10 @@ func fixedPointBytes(otherBytes int64, render func(int64) ([]byte, error)) ([]by
 	return nil, errors.New("archive manifest expanded_bytes did not reach a fixed point")
 }
 
-// errArticleNotPortable is what both directions answer while this layout has
-// no member to carry an article body.
-//
-// Exporting has to refuse as loudly as importing does. The alternative -- write
-// the envelope and leave the body behind -- produces a backup that looks
-// complete and restores an article as a blank post, which is the one failure a
-// backup exists to prevent. Skipping article rows instead would lose them from
-// the backup silently, which is the same failure wearing a different hat.
-func errArticleNotPortable(id string) error {
-	return fmt.Errorf("entry %s is an article, which this archive layout does not carry yet", id)
-}
-
 func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 	id, err := domain.ParseID(value.ID)
 	if err != nil {
 		return err
-	}
-	if domain.EntryKind(value.Kind) != domain.KindMoment {
-		return errArticleNotPortable(value.ID)
 	}
 	entry := domain.Entry{
 		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
@@ -1051,7 +1206,14 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 		}
 		usages[index] = domain.EntryMediaUsage{MediaID: mediaID, Position: usage.Position, AltText: usage.AltText}
 	}
-	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
+	// An article body places up to fifty pictures where a moment's grid holds
+	// nine, so the usage contract is chosen by kind rather than one limit
+	// standing in for both.
+	if domain.EntryKind(value.Kind) == domain.KindArticle {
+		if err := domain.ValidateArticleMediaUsages(usages); err != nil {
+			return err
+		}
+	} else if err := domain.ValidateEntryMediaUsages(usages); err != nil {
 		return err
 	}
 	body, isMoment := domain.Entry{Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD}.Markdown()
@@ -1070,6 +1232,111 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 	}
 	if value.Location != nil {
 		return value.Location.Validate()
+	}
+	return nil
+}
+
+// validateArchiveEntryArticle reads one body through the grammar that let it
+// in and returns the aggregate, so a caller holding the entry beside it can
+// check that the pictures the two describe are the same pictures.
+func validateArchiveEntryArticle(value sqlitestore.ArchiveEntryArticle) (domain.Article, error) {
+	if _, err := domain.ParseID(value.EntryID); err != nil {
+		return domain.Article{}, err
+	}
+	body, err := domain.ParseArticleDocument([]byte(value.BodyJSON))
+	if err != nil {
+		return domain.Article{}, err
+	}
+	coverID, err := archiveCoverID(value.CoverMediaID)
+	if err != nil {
+		return domain.Article{}, err
+	}
+	article, err := domain.NewArticle(value.Title, body, coverID)
+	if err != nil {
+		return domain.Article{}, err
+	}
+	// The column holds the trimmed spelling as a check constraint. A title the
+	// constructor rewrites is one the archive and the restored database would
+	// disagree about, so it is refused rather than quietly corrected.
+	if article.Title != value.Title {
+		return domain.Article{}, errors.New("article title is not the spelling the database stores")
+	}
+	return article, nil
+}
+
+// validateArchiveArticleDraft applies the same rules a draft is actually held
+// to, which are fewer: it may have no title and it may say nothing yet.
+func validateArchiveArticleDraft(value sqlitestore.ArchiveArticleDraft) error {
+	if _, err := domain.ParseID(value.ID); err != nil {
+		return err
+	}
+	if value.CreatedAtMS <= 0 || value.UpdatedAtMS < value.CreatedAtMS {
+		return errors.New("article draft timestamps must be positive and ordered")
+	}
+	body, err := domain.ParseArticleDraftDocument([]byte(value.BodyJSON))
+	if err != nil {
+		return err
+	}
+	coverID, err := archiveCoverID(value.CoverMediaID)
+	if err != nil {
+		return err
+	}
+	draft, err := domain.NewArticleDraft(value.Title, body, coverID)
+	if err != nil {
+		return err
+	}
+	if draft.Title != value.Title {
+		return errors.New("article draft title is not the spelling the database stores")
+	}
+	if value.PublishedEntryID != nil {
+		if _, err := domain.ParseID(*value.PublishedEntryID); err != nil {
+			return err
+		}
+	}
+	usages := make([]domain.EntryMediaUsage, len(value.Media))
+	for index, usage := range value.Media {
+		mediaID, err := domain.ParseID(usage.MediaID)
+		if err != nil {
+			return err
+		}
+		usages[index] = domain.EntryMediaUsage{MediaID: mediaID, Position: usage.Position, AltText: usage.AltText}
+	}
+	if err := domain.ValidateArticleMediaUsages(usages); err != nil {
+		return err
+	}
+	return sameArchiveUsages(draft.InlineMedia(), usages)
+}
+
+func archiveCoverID(value *string) (*domain.ID, error) {
+	if value == nil {
+		return nil, nil
+	}
+	parsed, err := domain.ParseID(*value)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
+// sameArchiveUsages holds a stated picture list to the one the body places.
+//
+// The rows are a projection of the document: the body is the only place a
+// picture's position is recorded, and the rows exist so reference counting and
+// media visibility stay one SQL predicate. A record free to state a different
+// list is free to keep a file alive the article no longer shows, or to publish
+// one it does not.
+func sameArchiveUsages(placed, stated []domain.EntryMediaUsage) error {
+	if len(placed) != len(stated) {
+		return fmt.Errorf("the body places %d pictures and the record lists %d", len(placed), len(stated))
+	}
+	for index := range placed {
+		left, right := placed[index], stated[index]
+		if left.MediaID != right.MediaID || left.Position != right.Position {
+			return fmt.Errorf("picture %d is not the one the body places", index)
+		}
+		if (left.AltText == nil) != (right.AltText == nil) || left.AltText != nil && *left.AltText != *right.AltText {
+			return fmt.Errorf("picture %d does not carry the description the body gives it", index)
+		}
 	}
 	return nil
 }
@@ -1549,15 +1816,16 @@ func createPartial(destination string) (*os.File, error) {
 	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 }
 
-// Format version 1 has two member layouts, and both are valid to read.
+// Format version 1 has three member layouts, and all three are valid to read.
 //
-// accountPortableMembers is what an exporter writes today. legacyPortableMembers
-// is what one wrote before accounts existed. The format version is compared with
-// strict equality, so bumping it would make the backup a person took just before
-// upgrading unreadable by the binary they upgraded to -- which is the one moment
-// a backup exists for, since a schema migration only runs forwards. The rule
-// that already governs added fields therefore governs added members: always
-// write the newest layout, always accept either on read.
+// articlePortableMembers is what an exporter writes today. accountPortableMembers
+// is what one wrote before articles existed, and legacyPortableMembers before
+// accounts did. The format version is compared with strict equality, so bumping
+// it would make the backup a person took just before upgrading unreadable by the
+// binary they upgraded to -- which is the one moment a backup exists for, since a
+// schema migration only runs forwards. The rule that already governs added
+// fields therefore governs added members: always write the newest layout, always
+// accept any of them on read.
 var (
 	legacyPortableMembers = []string{
 		"README.txt", "data/site.json", "data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl",
@@ -1566,20 +1834,41 @@ var (
 		"README.txt", "data/site.json", "data/users.jsonl", "data/identities.jsonl",
 		"data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl",
 	}
+	articlePortableMembers = []string{
+		"README.txt", "data/site.json", "data/users.jsonl", "data/identities.jsonl",
+		"data/entries.jsonl", "data/entry_articles.jsonl", "data/article_drafts.jsonl",
+		"data/comments.jsonl", "data/media.jsonl",
+	}
 	portableTrailerMembers = []string{"manifest.json", "checksums.sha256"}
 )
 
 // portableLeadingMembers decides which layout an archive uses and proves every
-// member that layout requires is present. The two accounts members arrive
-// together or not at all: one without the other is neither layout.
+// member that layout requires is present.
+//
+// Each pair arrives together or not at all: one accounts member without the
+// other is no layout, and so is a body member without a drafts member. Articles
+// additionally imply accounts, because no exporter ever wrote the one without
+// the other, and accepting the combination would mean inventing a fourth layout
+// nothing produces.
 func portableLeadingMembers(seen map[string]struct{}) ([]string, error) {
 	_, users := seen["data/users.jsonl"]
 	_, identities := seen["data/identities.jsonl"]
 	if users != identities {
 		return nil, errors.New("portable accounts members must be present together")
 	}
+	_, articles := seen["data/entry_articles.jsonl"]
+	_, drafts := seen["data/article_drafts.jsonl"]
+	if articles != drafts {
+		return nil, errors.New("portable article members must be present together")
+	}
+	if articles && !users {
+		return nil, errors.New("portable article members require the accounts members")
+	}
 	leading := legacyPortableMembers
-	if users {
+	switch {
+	case articles:
+		leading = articlePortableMembers
+	case users:
 		leading = accountPortableMembers
 	}
 	for _, required := range append(append([]string{}, leading...), portableTrailerMembers...) {
@@ -1595,6 +1884,15 @@ func archiveCarriesAccounts(files map[string]*zip.File) bool {
 	_, users := files["data/users.jsonl"]
 	_, identities := files["data/identities.jsonl"]
 	return users && identities
+}
+
+// archiveCarriesArticles reports whether a ZIP holds the article members. An
+// archive without them carries no article and no draft, which is what every
+// backup written before articles existed says, and it is true.
+func archiveCarriesArticles(files map[string]*zip.File) bool {
+	_, articles := files["data/entry_articles.jsonl"]
+	_, drafts := files["data/article_drafts.jsonl"]
+	return articles && drafts
 }
 
 // ValidateFile independently validates one complete v1 archive using only its
@@ -1847,12 +2145,21 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	quoteRefs := make(map[string]string)
 	usageMediaIDs := make(map[string]struct{})
 	thumbnailSHAs := make(map[string]struct{})
+	// The pictures an article entry projects, kept until its body arrives, so
+	// the two can be held to describing the same pictures.
+	articleEntryUsages := make(map[string][]sqlitestore.ArchiveUsage)
 	lastEntryID := ""
-	entries, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}, func(value entryRecord, fields map[string]json.RawMessage) error {
+	entries, err := validateJSONLines[entryRecord](ctx, files["data/entries.jsonl"], portableEntryFields, func(value entryRecord, fields map[string]json.RawMessage) error {
 		if int64(len(entryIDs)) >= document.Counts.Entries {
 			return errors.New("entry records exceed the manifest count")
 		}
-		if err := requireNonNull(fields, "id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"); err != nil {
+		// content_md is required to be present and allowed to be null, but
+		// only for an article: a moment with no Markdown and an article with
+		// some are both entries that disagree with themselves about what they
+		// are. validateArchiveEntry below is what states that rule; requiring
+		// the key non-null here would refuse every article before it got
+		// there.
+		if err := requireNonNull(fields, "id", "kind", "created_at", "updated_at", "published_at", "media"); err != nil {
 			return err
 		}
 		if value.Media == nil {
@@ -1940,6 +2247,9 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			return err
 		}
 		entryIDs[value.ID] = struct{}{}
+		if domain.EntryKind(value.Kind) == domain.KindArticle {
+			articleEntryUsages[value.ID] = usages
+		}
 		if value.QuotedEntryID != nil {
 			quoteRefs[value.ID] = *value.QuotedEntryID
 		}
@@ -1953,6 +2263,10 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if _, exists := entryIDs[quotedID]; !exists {
 			return fmt.Errorf("entry %s quotes missing entry %s", id, quotedID)
 		}
+	}
+	articleMediaIDs, err := validatePortableArticles(ctx, files, document, entryIDs, articleEntryUsages)
+	if err != nil {
+		return err
 	}
 	type commentReference struct {
 		entryID string
@@ -2135,7 +2449,163 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			return errors.New("an account picture refers to media absent from the archive")
 		}
 	}
+	// Covers and draft pictures are the article references that do not travel
+	// through entry_media, so they are the ones a packaging mistake loses. An
+	// archive naming a file it did not pack restores an article with a hole in
+	// it.
+	for id := range articleMediaIDs {
+		if _, exists := mediaIDs[id]; !exists {
+			return errors.New("an article or draft picture refers to media absent from the archive")
+		}
+	}
 	return nil
+}
+
+// portableEntryFields and the two article field lists are the keys a reader
+// requires of each record. They are shared by validation and rebuild so the
+// two cannot disagree about what a well-formed record contains.
+var (
+	portableEntryFields        = []string{"id", "kind", "content_md", "created_at", "updated_at", "published_at", "media"}
+	portableEntryArticleFields = []string{"entry_id", "title", "body", "cover_media_id"}
+	portableArticleDraftFields = []string{
+		"id", "title", "body", "cover_media_id", "published_entry_id", "media", "created_at", "updated_at",
+	}
+)
+
+// validatePortableArticles validates the two article members and returns every
+// media id an article or a draft points at, for the reachability sweep the
+// caller runs once media records are known.
+//
+// An archive without those members is not rejected: it was written before they
+// existed, and it carries no article entry either -- which the entry stream has
+// already proved, because an article entry with no body is refused here.
+func validatePortableArticles(
+	ctx context.Context,
+	files map[string]*zip.File,
+	document manifest,
+	entryIDs map[string]struct{},
+	articleEntryUsages map[string][]sqlitestore.ArchiveUsage,
+) (map[string]struct{}, error) {
+	pictures := make(map[string]struct{})
+	if !archiveCarriesArticles(files) {
+		if document.Counts.Articles != 0 || document.Counts.ArticleDrafts != 0 {
+			return nil, errors.New("manifest declares articles the archive does not carry")
+		}
+		if len(articleEntryUsages) != 0 {
+			return nil, errors.New("an article entry has no body in this archive")
+		}
+		return pictures, nil
+	}
+	bodies := make(map[string]struct{}, len(articleEntryUsages))
+	lastArticleID := ""
+	articles, err := validateJSONLines[entryArticleRecord](ctx, files["data/entry_articles.jsonl"], portableEntryArticleFields, func(value entryArticleRecord, fields map[string]json.RawMessage) error {
+		if int64(len(bodies)) >= document.Counts.Articles {
+			return errors.New("article records exceed the manifest count")
+		}
+		if err := requireNonNull(fields, "entry_id", "title", "body"); err != nil {
+			return err
+		}
+		if value.EntryID <= lastArticleID {
+			return errors.New("article records are not in strict entry ID order")
+		}
+		usages, exists := articleEntryUsages[value.EntryID]
+		if !exists {
+			return fmt.Errorf("article body %s belongs to no article entry in this archive", value.EntryID)
+		}
+		archived, err := archiveEntryArticleOf(value)
+		if err != nil {
+			return err
+		}
+		article, err := validateArchiveEntryArticle(archived)
+		if err != nil {
+			return err
+		}
+		stated := make([]domain.EntryMediaUsage, len(usages))
+		for index, usage := range usages {
+			mediaID, err := domain.ParseID(usage.MediaID)
+			if err != nil {
+				return err
+			}
+			stated[index] = domain.EntryMediaUsage{MediaID: mediaID, Position: usage.Position, AltText: usage.AltText}
+		}
+		if err := sameArchiveUsages(article.InlineMedia(), stated); err != nil {
+			return fmt.Errorf("article %s: %w", value.EntryID, err)
+		}
+		if value.CoverMediaID != nil {
+			pictures[*value.CoverMediaID] = struct{}{}
+		}
+		bodies[value.EntryID] = struct{}{}
+		lastArticleID = value.EntryID
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for id := range articleEntryUsages {
+		if _, exists := bodies[id]; !exists {
+			return nil, fmt.Errorf("article entry %s has no body in this archive", id)
+		}
+	}
+	draftIDs := make(map[string]struct{})
+	publishedEntries := make(map[string]struct{})
+	lastDraftID := ""
+	drafts, err := validateJSONLines[articleDraftRecord](ctx, files["data/article_drafts.jsonl"], portableArticleDraftFields, func(value articleDraftRecord, fields map[string]json.RawMessage) error {
+		if int64(len(draftIDs)) >= document.Counts.ArticleDrafts {
+			return errors.New("article draft records exceed the manifest count")
+		}
+		if err := requireNonNull(fields, "id", "title", "body", "media", "created_at", "updated_at"); err != nil {
+			return err
+		}
+		if value.Media == nil {
+			return errors.New("article draft media must be an array, not null")
+		}
+		var rawUsages []json.RawMessage
+		if err := json.Unmarshal(fields["media"], &rawUsages); err != nil || rawUsages == nil || len(rawUsages) != len(value.Media) {
+			return errors.New("article draft media must be a complete array")
+		}
+		for _, raw := range rawUsages {
+			if err := requireObjectFields(raw, []string{"media_id", "position", "alt_text"}, []string{"media_id", "position"}); err != nil {
+				return err
+			}
+		}
+		if value.ID <= lastDraftID {
+			return errors.New("article draft records are not in strict ID order")
+		}
+		archived, err := archiveArticleDraftOf(value)
+		if err != nil {
+			return err
+		}
+		if err := validateArchiveArticleDraft(archived); err != nil {
+			return err
+		}
+		if value.PublishedEntryID != nil {
+			if _, exists := entryIDs[*value.PublishedEntryID]; !exists {
+				return errors.New("an article draft names an entry absent from the archive")
+			}
+			// The column is a unique index where it is not null: two drafts
+			// claiming one article would restore as one draft or neither.
+			if _, exists := publishedEntries[*value.PublishedEntryID]; exists {
+				return errors.New("two article drafts are the working copy of one article")
+			}
+			publishedEntries[*value.PublishedEntryID] = struct{}{}
+		}
+		if value.CoverMediaID != nil {
+			pictures[*value.CoverMediaID] = struct{}{}
+		}
+		for _, usage := range value.Media {
+			pictures[usage.MediaID] = struct{}{}
+		}
+		draftIDs[value.ID] = struct{}{}
+		lastDraftID = value.ID
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if articles != document.Counts.Articles || drafts != document.Counts.ArticleDrafts {
+		return nil, errors.New("manifest article counts do not match portable records")
+	}
+	return pictures, nil
 }
 
 // validatePortableAccounts validates the two accounts members and returns every
@@ -2304,44 +2774,85 @@ func compareCommentOrder(left, right commentOrder) int {
 	return strings.Compare(left.id, right.id)
 }
 
-func validateJSONLines[T any](ctx context.Context, file *zip.File, required []string, validate func(T, map[string]json.RawMessage) error) (int64, error) {
+// jsonLinesReader reads one JSONL member a record at a time.
+//
+// It exists because two members have to be read in lockstep when a generation
+// is rebuilt: an article's body lives in its own member, and the entry it
+// belongs to cannot be written without it -- an article's indexed text is its
+// title and its words. Buffering every body first would hold half a megabyte
+// per article in memory, and writing the envelope first and patching it after
+// would leave the index claiming the article says nothing. Every other reader
+// takes a member whole through validateJSONLines, which is this reader with the
+// loop already written.
+type jsonLinesReader[T any] struct {
+	source   io.ReadCloser
+	tracked  *lastByteReader
+	scanner  *bufio.Scanner
+	required []string
+}
+
+func openJSONLines[T any](ctx context.Context, file *zip.File, required []string) (*jsonLinesReader[T], error) {
 	if file == nil {
-		return 0, errors.New("JSONL member is missing")
+		return nil, errors.New("JSONL member is missing")
 	}
 	source, err := file.Open()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	defer func() { _ = source.Close() }()
 	tracked := &lastByteReader{reader: contextReader{ctx: ctx, reader: source}}
 	scanner := bufio.NewScanner(tracked)
 	scanner.Buffer(make([]byte, 64<<10), maxPortableRecordBytes)
+	return &jsonLinesReader[T]{source: source, tracked: tracked, scanner: scanner, required: required}, nil
+}
+
+// next reports the following record, or false once the member is exhausted.
+func (reader *jsonLinesReader[T]) next(ctx context.Context) (T, map[string]json.RawMessage, bool, error) {
+	var value T
+	if !reader.scanner.Scan() {
+		if err := reader.scanner.Err(); err != nil {
+			return value, nil, false, err
+		}
+		if reader.tracked.total > 0 && reader.tracked.last != '\n' {
+			return value, nil, false, errors.New("JSONL member must end with LF")
+		}
+		return value, nil, false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return value, nil, false, err
+	}
+	if len(reader.scanner.Bytes()) == 0 || !utf8.Valid(reader.scanner.Bytes()) {
+		return value, nil, false, errors.New("JSONL record is empty or not UTF-8")
+	}
+	line := append(append([]byte(nil), reader.scanner.Bytes()...), '\n')
+	fields, err := decodePortableJSONObject(line, &value, reader.required)
+	if err != nil {
+		return value, nil, false, err
+	}
+	return value, fields, true, nil
+}
+
+func (reader *jsonLinesReader[T]) close() error { return reader.source.Close() }
+
+func validateJSONLines[T any](ctx context.Context, file *zip.File, required []string, validate func(T, map[string]json.RawMessage) error) (int64, error) {
+	reader, err := openJSONLines[T](ctx, file, required)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = reader.close() }()
 	var count int64
-	for scanner.Scan() {
-		if err := ctx.Err(); err != nil {
-			return 0, err
-		}
-		if len(scanner.Bytes()) == 0 || !utf8.Valid(scanner.Bytes()) {
-			return 0, errors.New("JSONL record is empty or not UTF-8")
-		}
-		line := append(append([]byte(nil), scanner.Bytes()...), '\n')
-		var value T
-		fields, err := decodePortableJSONObject(line, &value, required)
+	for {
+		value, fields, more, err := reader.next(ctx)
 		if err != nil {
 			return 0, err
+		}
+		if !more {
+			return count, nil
 		}
 		if err := validate(value, fields); err != nil {
 			return 0, err
 		}
 		count++
 	}
-	if err := scanner.Err(); err != nil {
-		return 0, err
-	}
-	if tracked.total > 0 && tracked.last != '\n' {
-		return 0, errors.New("JSONL member must end with LF")
-	}
-	return count, nil
 }
 
 func decodePortableJSONObject(data []byte, destination any, required []string) (map[string]json.RawMessage, error) {

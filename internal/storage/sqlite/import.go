@@ -23,6 +23,8 @@ type PortableImporter struct {
 	media          int64
 	users          int64
 	identities     int64
+	articles       int64
+	drafts         int64
 	pendingQuotes  []pendingQuote
 	pendingReplies []pendingReplyTarget
 }
@@ -305,10 +307,29 @@ func validatePortableIdentity(value ArchiveIdentity) error {
 	return nil
 }
 
-// InsertEntry writes one authority entry and its ordered media usages. Search
+// InsertEntry writes one authority moment and its ordered media usages. Search
 // text and FTS rows are rebuilt from content_md through the current normalizer
 // and current schema triggers.
+//
+// An article does not come through here, because an article envelope on its own
+// is a blank post: its words are in the body record, and the two are written
+// together by InsertArticleEntry or not at all.
 func (importer *PortableImporter) InsertEntry(ctx context.Context, value ArchiveEntry) error {
+	return importer.insertEntry(ctx, value, nil)
+}
+
+// InsertArticleEntry writes one article: the timeline envelope and the body
+// that belongs to it, in one call.
+//
+// They are one call rather than two because the envelope cannot be written
+// correctly without the body. The indexed text of an article is its title and
+// its words, and those are here; an envelope written first and patched later
+// would spend the gap claiming the article says nothing.
+func (importer *PortableImporter) InsertArticleEntry(ctx context.Context, value ArchiveEntry, article ArchiveEntryArticle) error {
+	return importer.insertEntry(ctx, value, &article)
+}
+
+func (importer *PortableImporter) insertEntry(ctx context.Context, value ArchiveEntry, article *ArchiveEntryArticle) error {
 	if err := importer.requireOpen(); err != nil {
 		return err
 	}
@@ -332,27 +353,37 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	if err := entry.Validate(); err != nil {
 		return err
 	}
-	usages := make([]domain.EntryMediaUsage, len(value.Media))
-	for index, usage := range value.Media {
-		mediaID, err := domain.ParseID(usage.MediaID)
-		if err != nil {
+	usages, err := portableMediaUsages(value.Media)
+	if err != nil {
+		return err
+	}
+	// An article places up to fifty pictures where a moment places nine, so the
+	// usage contract is chosen by kind rather than by one limit standing in for
+	// both.
+	isArticle := entry.Kind == domain.KindArticle
+	usageBudget := domain.MaxEntryMediaBytes
+	usageErr := domain.ValidateEntryMediaUsages(usages)
+	if isArticle {
+		usageBudget = domain.MaxArticleMediaBytes
+		usageErr = domain.ValidateArticleMediaUsages(usages)
+	}
+	if usageErr != nil {
+		return usageErr
+	}
+	body, isMoment := entry.Markdown()
+	if isArticle == isMoment {
+		return fmt.Errorf("portable entry %s does not agree with itself about carrying Markdown", value.ID)
+	}
+	if isArticle != (article != nil) {
+		// An article envelope with no body restores as a post with nothing in
+		// it, which is the one failure a backup exists to prevent; a body
+		// attached to a moment is a record that belongs to no post at all.
+		return fmt.Errorf("portable entry %s and its article body do not match", value.ID)
+	}
+	if isMoment {
+		if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil && value.QuotedEntryID == nil && !value.QuoteUnavailable {
 			return err
 		}
-		usages[index] = domain.EntryMediaUsage{MediaID: mediaID, Position: usage.Position, AltText: usage.AltText}
-	}
-	if err := domain.ValidateEntryMediaUsages(usages); err != nil {
-		return err
-	}
-	// Only a moment travels through this layout. Importing an article envelope
-	// without the body that belongs to it would restore a blank post, so both
-	// directions refuse until a member carries that body; the export side
-	// refuses in validateArchiveEntry for the same reason.
-	body, isMoment := entry.Markdown()
-	if !isMoment {
-		return fmt.Errorf("portable entry %s is an article, which this archive layout does not carry yet", value.ID)
-	}
-	if err := domain.ValidatePostMarkdown(body, len(usages)); err != nil && value.QuotedEntryID == nil && !value.QuoteUnavailable {
-		return err
 	}
 	if value.QuoteUnavailable && value.QuotedEntryID != nil {
 		return errors.New("portable entry quote cannot be both available and unavailable")
@@ -381,9 +412,19 @@ func (importer *PortableImporter) InsertEntry(ctx context.Context, value Archive
 	for _, card := range value.LinkCards {
 		cards = append(cards, card.Card)
 	}
-	contentText, err := app.DerivedSearchText(body, cards)
-	if err != nil {
-		return err
+	var contentText string
+	var document domain.Article
+	if isArticle {
+		document, err = portableArticle(*article, value.ID, usages)
+		if err != nil {
+			return err
+		}
+		contentText = app.DerivedArticleSearchText(document.Title, document.Body)
+	} else {
+		contentText, err = app.DerivedSearchText(body, cards)
+		if err != nil {
+			return err
+		}
 	}
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO entries (
@@ -392,14 +433,28 @@ INSERT INTO entries (
 		value.ID, value.Kind, value.ContentMD, string(entry.Visibility), value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, value.RepostedAtMS, value.EditedAtMS, contentText); err != nil {
 		return fmt.Errorf("insert portable entry %s: %w", value.ID, err)
 	}
+	if isArticle {
+		serialized, err := domain.MarshalArticleDocument(document.Body)
+		if err != nil {
+			return err
+		}
+		if _, err := importer.tx.ExecContext(ctx, `
+INSERT INTO entry_article (entry_id, title, body_json, body_schema_version, cover_media_id, excerpt)
+VALUES (?, ?, ?, ?, ?, ?)`,
+			value.ID, document.Title, string(serialized), document.Body.SchemaVersion,
+			article.CoverMediaID, document.Excerpt()); err != nil {
+			return fmt.Errorf("insert portable article %s: %w", value.ID, err)
+		}
+		importer.articles++
+	}
 	var aggregateBytes int64
 	for _, usage := range value.Media {
 		var byteSize int64
 		if err := importer.tx.QueryRowContext(ctx, `SELECT byte_size FROM media WHERE id = ?`, usage.MediaID).Scan(&byteSize); err != nil {
 			return fmt.Errorf("resolve portable entry media %s: %w", usage.MediaID, err)
 		}
-		if byteSize > domain.MaxEntryMediaBytes-aggregateBytes {
-			return domain.NewError(domain.CodeMediaTooLarge, "post media exceed the 50 MiB aggregate budget", map[string]any{"field": "media", "max_bytes": domain.MaxEntryMediaBytes})
+		if byteSize > usageBudget-aggregateBytes {
+			return domain.NewError(domain.CodeMediaTooLarge, "post media exceed the aggregate budget", map[string]any{"field": "media", "max_bytes": usageBudget})
 		}
 		aggregateBytes += byteSize
 		if _, err := importer.tx.ExecContext(ctx, `
@@ -465,6 +520,167 @@ INSERT INTO entry_link_card (
 		}
 	}
 	importer.entries++
+	return nil
+}
+
+// InsertArticleDraft writes one unfinished article and the pictures it places.
+//
+// A draft is written after every entry because it may name the article it is
+// the working copy of, and that entry has to exist before the reference can.
+func (importer *PortableImporter) InsertArticleDraft(ctx context.Context, value ArchiveArticleDraft) error {
+	if err := importer.requireOpen(); err != nil {
+		return err
+	}
+	id, err := domain.ParseID(value.ID)
+	if err != nil {
+		return err
+	}
+	if value.CreatedAtMS <= 0 || value.UpdatedAtMS < value.CreatedAtMS {
+		return fmt.Errorf("portable article draft %s has impossible timestamps", value.ID)
+	}
+	usages, err := portableMediaUsages(value.Media)
+	if err != nil {
+		return err
+	}
+	if err := domain.ValidateArticleMediaUsages(usages); err != nil {
+		return err
+	}
+	// A draft is read through the grammar that let it in, minus the rule that
+	// it has to say something: an empty draft is still a draft.
+	body, err := domain.ParseArticleDraftDocument([]byte(value.BodyJSON))
+	if err != nil {
+		return err
+	}
+	if value.SchemaVersion != body.SchemaVersion {
+		return fmt.Errorf("portable article draft %s names schema version %d and carries %d", value.ID, value.SchemaVersion, body.SchemaVersion)
+	}
+	var coverID *domain.ID
+	if value.CoverMediaID != nil {
+		parsed, parseErr := domain.ParseID(*value.CoverMediaID)
+		if parseErr != nil {
+			return parseErr
+		}
+		coverID = &parsed
+	}
+	draft, err := domain.NewArticleDraft(value.Title, body, coverID)
+	if err != nil {
+		return err
+	}
+	if draft.Title != value.Title {
+		return fmt.Errorf("portable article draft %s carries a title the database would rewrite", value.ID)
+	}
+	if err := samePortableUsages(draft.InlineMedia(), usages); err != nil {
+		return fmt.Errorf("portable article draft %s: %w", value.ID, err)
+	}
+	if value.PublishedEntryID != nil {
+		if _, err := domain.ParseID(*value.PublishedEntryID); err != nil {
+			return err
+		}
+	}
+	serialized, err := domain.MarshalArticleDocument(draft.Body)
+	if err != nil {
+		return err
+	}
+	if _, err := importer.tx.ExecContext(ctx, `
+INSERT INTO article_drafts (
+    id, title, body_json, body_schema_version, cover_media_id,
+    published_entry_id, created_at_ms, updated_at_ms
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id.String(), draft.Title, string(serialized), draft.Body.SchemaVersion,
+		value.CoverMediaID, value.PublishedEntryID, value.CreatedAtMS, value.UpdatedAtMS); err != nil {
+		return fmt.Errorf("insert portable article draft %s: %w", value.ID, err)
+	}
+	var aggregateBytes int64
+	for _, usage := range value.Media {
+		var byteSize int64
+		if err := importer.tx.QueryRowContext(ctx, `SELECT byte_size FROM media WHERE id = ?`, usage.MediaID).Scan(&byteSize); err != nil {
+			return fmt.Errorf("resolve portable article draft media %s: %w", usage.MediaID, err)
+		}
+		if byteSize > domain.MaxArticleMediaBytes-aggregateBytes {
+			return domain.NewError(domain.CodeMediaTooLarge, "article draft media exceed the aggregate budget",
+				map[string]any{"field": "media", "max_bytes": domain.MaxArticleMediaBytes})
+		}
+		aggregateBytes += byteSize
+		if _, err := importer.tx.ExecContext(ctx, `
+INSERT INTO article_draft_media (draft_id, media_id, position, alt_text)
+VALUES (?, ?, ?, ?)`, value.ID, usage.MediaID, usage.Position, usage.AltText); err != nil {
+			return fmt.Errorf("insert portable article draft media usage: %w", err)
+		}
+	}
+	importer.drafts++
+	return nil
+}
+
+// portableArticle reads one archived body back through the grammar that let it
+// in, and holds the entry's picture list to what that body actually places.
+//
+// entry_media is a projection of the body: the body is the only place a
+// picture's position is recorded, and those rows exist so reference counting
+// and media visibility stay one SQL predicate. An archive free to state a
+// different list would be free to keep a file alive the article no longer
+// shows, or to publish one it does not.
+func portableArticle(value ArchiveEntryArticle, entryID string, usages []domain.EntryMediaUsage) (domain.Article, error) {
+	if value.EntryID != entryID {
+		return domain.Article{}, fmt.Errorf("portable article body names entry %s beside entry %s", value.EntryID, entryID)
+	}
+	body, err := domain.ParseArticleDocument([]byte(value.BodyJSON))
+	if err != nil {
+		return domain.Article{}, err
+	}
+	if value.SchemaVersion != body.SchemaVersion {
+		return domain.Article{}, fmt.Errorf("portable article %s names schema version %d and carries %d", entryID, value.SchemaVersion, body.SchemaVersion)
+	}
+	var coverID *domain.ID
+	if value.CoverMediaID != nil {
+		parsed, parseErr := domain.ParseID(*value.CoverMediaID)
+		if parseErr != nil {
+			return domain.Article{}, parseErr
+		}
+		coverID = &parsed
+	}
+	article, err := domain.NewArticle(value.Title, body, coverID)
+	if err != nil {
+		return domain.Article{}, err
+	}
+	// The column holds the trimmed spelling as a check constraint, so a title
+	// this would silently rewrite is one the archive and the restored database
+	// would disagree about.
+	if article.Title != value.Title {
+		return domain.Article{}, fmt.Errorf("portable article %s carries a title the database would rewrite", entryID)
+	}
+	if err := samePortableUsages(article.InlineMedia(), usages); err != nil {
+		return domain.Article{}, fmt.Errorf("portable article %s: %w", entryID, err)
+	}
+	return article, nil
+}
+
+func portableMediaUsages(values []ArchiveUsage) ([]domain.EntryMediaUsage, error) {
+	usages := make([]domain.EntryMediaUsage, len(values))
+	for index, usage := range values {
+		mediaID, err := domain.ParseID(usage.MediaID)
+		if err != nil {
+			return nil, err
+		}
+		usages[index] = domain.EntryMediaUsage{MediaID: mediaID, Position: usage.Position, AltText: usage.AltText}
+	}
+	return usages, nil
+}
+
+// samePortableUsages compares what a body places against the projection an
+// archive states for it.
+func samePortableUsages(expected, actual []domain.EntryMediaUsage) error {
+	if len(expected) != len(actual) {
+		return fmt.Errorf("the body places %d pictures and the record lists %d", len(expected), len(actual))
+	}
+	for index := range expected {
+		left, right := expected[index], actual[index]
+		if left.MediaID != right.MediaID || left.Position != right.Position {
+			return fmt.Errorf("picture %d is not the one the body places", index)
+		}
+		if (left.AltText == nil) != (right.AltText == nil) || left.AltText != nil && *left.AltText != *right.AltText {
+			return fmt.Errorf("picture %d does not carry the description the body gives it", index)
+		}
+	}
 	return nil
 }
 
@@ -645,7 +861,8 @@ func (importer *PortableImporter) Commit(ctx context.Context, expected ArchiveCo
 		return err
 	}
 	if importer.entries != expected.Entries || importer.comments != expected.Comments || importer.media != expected.Media ||
-		importer.users != expected.Users || importer.identities != expected.Identities {
+		importer.users != expected.Users || importer.identities != expected.Identities ||
+		importer.articles != expected.Articles || importer.drafts != expected.ArticleDrafts {
 		return errors.New("portable import counts do not match the manifest")
 	}
 	for _, quote := range importer.pendingQuotes {
@@ -763,6 +980,7 @@ func validatePortableReady(ctx context.Context, pool *sql.DB, expected ArchiveCo
 	}
 	var entries, comments, mediaCount, mediaGC, ftsRows, missingFTS, extraFTS, mismatchedFTS, duplicateFTS int64
 	var users, identities, ownerAccounts, sessions int64
+	var articles, drafts, bodylessArticles int64
 	if err := pool.QueryRowContext(ctx, `
 SELECT
   (SELECT count(*) FROM entries),
@@ -778,9 +996,13 @@ SELECT
 	  (SELECT count(*) FROM identities),
 	  (SELECT count(*) FROM users AS account JOIN site_settings AS site ON site.owner_id = account.id
 	    WHERE site.id = 1 AND account.role = 'owner'),
-	  (SELECT count(*) FROM sessions)`).Scan(
+	  (SELECT count(*) FROM sessions),
+	  (SELECT count(*) FROM entry_article),
+	  (SELECT count(*) FROM article_drafts),
+	  (SELECT count(*) FROM entries AS e WHERE e.kind = 'article'
+	    AND NOT EXISTS (SELECT 1 FROM entry_article AS a WHERE a.entry_id = e.id))`).Scan(
 		&entries, &comments, &mediaCount, &mediaGC, &ftsRows, &missingFTS, &extraFTS, &mismatchedFTS, &duplicateFTS,
-		&users, &identities, &ownerAccounts, &sessions,
+		&users, &identities, &ownerAccounts, &sessions, &articles, &drafts, &bodylessArticles,
 	); err != nil {
 		return fmt.Errorf("check staged portable counts: %w", err)
 	}
@@ -793,19 +1015,38 @@ SELECT
 		normalizerVersion != domain.ContentNormalizerVersion {
 		return errors.New("staged portable counts, FTS content, or normalizer version are inconsistent")
 	}
+	// A body row can only exist for an article entry -- a trigger says so --
+	// but nothing in the schema stops an article entry from arriving without
+	// one, and that is the shape that restores as a post with no words.
+	if articles != expected.Articles || drafts != expected.ArticleDrafts || bodylessArticles != 0 {
+		return errors.New("staged portable articles are inconsistent")
+	}
 	// Sessions are excluded from the archive on purpose, so a staged generation
 	// that somehow holds one is carrying a sign-in a restore was supposed to
 	// end.
 	if users != expected.Users || identities != expected.Identities || ownerAccounts != 1 || sessions != 0 {
 		return errors.New("staged portable accounts are inconsistent")
 	}
-	rows, err = pool.QueryContext(ctx, `SELECT e.id, e.content_md, e.content_text, `+searchSourceCardsSQL+` FROM entries AS e ORDER BY e.id`)
+	// The indexed text is derived, and which authority derives it depends on
+	// the kind: a moment's is its Markdown and its cards, an article's is its
+	// title and its body. Reading both halves here is what lets one loop hold
+	// every entry to the same rule the write path followed.
+	rows, err = pool.QueryContext(ctx, `
+SELECT e.id, e.kind, e.content_md, e.content_text,
+       coalesce(a.title, ''), coalesce(a.body_json, ''),
+       `+searchSourceCardsSQL+`
+FROM entries AS e
+LEFT JOIN entry_article AS a ON a.entry_id = e.id
+ORDER BY e.id`)
 	if err != nil {
 		return fmt.Errorf("query staged normalized content: %w", err)
 	}
 	for rows.Next() {
-		var id, contentMD, contentText, cardsJSON string
-		if err := rows.Scan(&id, &contentMD, &contentText, &cardsJSON); err != nil {
+		source := searchBootstrapSource{}
+		var contentText string
+		var cardsJSON string
+		if err := rows.Scan(&source.id, &source.kind, &source.contentMD, &contentText,
+			&source.title, &source.bodyJSON, &cardsJSON); err != nil {
 			_ = rows.Close()
 			return fmt.Errorf("scan staged normalized content: %w", err)
 		}
@@ -814,10 +1055,11 @@ SELECT
 			_ = rows.Close()
 			return err
 		}
-		expectedText, err := app.DerivedSearchText(contentMD, cards)
+		source.cards = cards
+		expectedText, err := bootstrapSearchText(source)
 		if err != nil || contentText != expectedText {
 			_ = rows.Close()
-			return errors.Join(fmt.Errorf("staged normalized content for %s is inconsistent", id), err)
+			return errors.Join(fmt.Errorf("staged normalized content for %s is inconsistent", source.id), err)
 		}
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {

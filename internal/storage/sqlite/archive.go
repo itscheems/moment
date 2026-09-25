@@ -14,14 +14,22 @@ import (
 // subsequent archive query.
 //
 // Users and Identities join the three original counts because accounts are now
-// authoritative portable records. Every field here must be read by that same
-// first statement or it describes a different instant than the rest.
+// authoritative portable records. Articles and ArticleDrafts join them for the
+// same reason: an article's body and an unfinished one are authority, not
+// derived state. Every field here must be read by that same first statement or
+// it describes a different instant than the rest.
 type ArchiveCounts struct {
 	Entries    int64
 	Comments   int64
 	Media      int64
 	Users      int64
 	Identities int64
+	// Articles counts published bodies, not article entries. The two are the
+	// same number in any consistent database, which is exactly why counting
+	// the bodies is worth doing: an envelope whose body was left behind shows
+	// up here as a disagreement instead of restoring as a blank post.
+	Articles      int64
+	ArticleDrafts int64
 }
 
 // ArchiveImpact describes authoritative portable data currently selected by
@@ -111,6 +119,48 @@ type ArchiveEntry struct {
 	Media            []ArchiveUsage
 	Location         *domain.Location
 	LinkCards        []ArchiveLinkCard
+}
+
+// ArchiveEntryArticle is the body of one published article.
+//
+// It is a separate record from ArchiveEntry for the same reason it is a
+// separate table: the entry is the timeline envelope and its ContentMD is nil
+// precisely because the body is here. The two are one post, so anything that
+// carries an article entry has to carry this beside it or it is carrying a
+// blank post.
+//
+// Excerpt and the search text are deliberately absent: both are derived from
+// the title and the body by one function each, and a stored second answer is
+// free to disagree with the body it claims to summarize.
+type ArchiveEntryArticle struct {
+	EntryID string
+	Title   string
+	// BodyJSON is the stored document exactly as the column holds it. It is
+	// canonicalized by whoever serializes it, not here, because the archive
+	// writer is the one that has to promise byte-stable output.
+	BodyJSON      string
+	SchemaVersion int
+	CoverMediaID  *string
+}
+
+// ArchiveArticleDraft is one unfinished article and the pictures it places.
+//
+// A draft is authority a backup cannot skip: it is writing nobody has published
+// yet, so losing it in a restore loses work that exists nowhere else. Media is
+// the article_draft_media projection rather than something re-derived on read,
+// so the archive states what the database states.
+type ArchiveArticleDraft struct {
+	ID            string
+	Title         string
+	BodyJSON      string
+	SchemaVersion int
+	CoverMediaID  *string
+	// PublishedEntryID names the article this draft is the working copy of,
+	// and is nil for a draft that was never published.
+	PublishedEntryID *string
+	Media            []ArchiveUsage
+	CreatedAtMS      int64
+	UpdatedAtMS      int64
 }
 
 // ArchiveLinkCard pairs a portable card with its thumbnail's content hash.
@@ -224,12 +274,16 @@ SELECT
     (SELECT count(*) FROM comments),
     (SELECT count(*) FROM media WHERE `+mediaReferencedSQL+`),
     (SELECT count(*) FROM users),
-    (SELECT count(*) FROM identities)`).Scan(
+    (SELECT count(*) FROM identities),
+    (SELECT count(*) FROM entry_article),
+    (SELECT count(*) FROM article_drafts)`).Scan(
 		&snapshot.counts.Entries,
 		&snapshot.counts.Comments,
 		&snapshot.counts.Media,
 		&snapshot.counts.Users,
 		&snapshot.counts.Identities,
+		&snapshot.counts.Articles,
+		&snapshot.counts.ArticleDrafts,
 	)
 	if err != nil {
 		_ = tx.Rollback()
@@ -308,6 +362,21 @@ WHERE site.id = 1 AND account.role = 'owner'`).Scan(&ownerAccounts); err != nil 
 	}
 	if ownerAccounts != 1 {
 		return errors.New("archive snapshot does not contain exactly one owner account")
+	}
+	// The foreign key runs from entry_article to entries, so PRAGMA
+	// foreign_key_check sees a body without an entry. It cannot see the other
+	// direction -- an article entry whose body row is missing -- and that is
+	// the one that would export as a post with no words in it.
+	var bodylessArticles int64
+	if err := snapshot.tx.QueryRowContext(ctx, `
+SELECT count(*)
+FROM entries AS entry
+WHERE entry.kind = 'article'
+  AND NOT EXISTS (SELECT 1 FROM entry_article AS article WHERE article.entry_id = entry.id)`).Scan(&bodylessArticles); err != nil {
+		return fmt.Errorf("check archive article bodies: %w", err)
+	}
+	if bodylessArticles != 0 {
+		return errors.New("archive snapshot contains an article entry with no body")
 	}
 	return nil
 }
@@ -543,6 +612,111 @@ ORDER BY e.id, usage.position`)
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate archive entries: %w", err)
+	}
+	if current != nil {
+		return yield(*current)
+	}
+	return nil
+}
+
+// EntryArticles streams every published body in the entry order Entries uses,
+// so a reader consuming both members in lockstep never has to seek.
+func (snapshot *ArchiveSnapshot) EntryArticles(ctx context.Context, yield func(ArchiveEntryArticle) error) error {
+	if err := snapshot.requireOpen(); err != nil {
+		return err
+	}
+	if yield == nil {
+		return errors.New("archive article callback is required")
+	}
+	rows, err := snapshot.tx.QueryContext(ctx, `
+SELECT entry_id, title, body_json, body_schema_version, cover_media_id
+FROM entry_article
+ORDER BY entry_id`)
+	if err != nil {
+		return fmt.Errorf("query archive articles: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var value ArchiveEntryArticle
+		var cover sql.NullString
+		if err := rows.Scan(&value.EntryID, &value.Title, &value.BodyJSON, &value.SchemaVersion, &cover); err != nil {
+			return fmt.Errorf("scan archive article: %w", err)
+		}
+		if cover.Valid {
+			value.CoverMediaID = &cover.String
+		}
+		if err := yield(value); err != nil {
+			return err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate archive articles: %w", err)
+	}
+	return nil
+}
+
+// ArticleDrafts streams every unfinished article in stable ID order while
+// folding its bounded picture projection, the way Entries folds entry_media.
+func (snapshot *ArchiveSnapshot) ArticleDrafts(ctx context.Context, yield func(ArchiveArticleDraft) error) error {
+	if err := snapshot.requireOpen(); err != nil {
+		return err
+	}
+	if yield == nil {
+		return errors.New("archive article draft callback is required")
+	}
+	rows, err := snapshot.tx.QueryContext(ctx, `
+SELECT draft.id, draft.title, draft.body_json, draft.body_schema_version,
+       draft.cover_media_id, draft.published_entry_id,
+       draft.created_at_ms, draft.updated_at_ms,
+       usage.media_id, usage.position, usage.alt_text
+FROM article_drafts AS draft
+LEFT JOIN article_draft_media AS usage ON usage.draft_id = draft.id
+ORDER BY draft.id, usage.position`)
+	if err != nil {
+		return fmt.Errorf("query archive article drafts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var current *ArchiveArticleDraft
+	for rows.Next() {
+		var draft ArchiveArticleDraft
+		var cover, published, mediaID, alt sql.NullString
+		var position sql.NullInt64
+		if err := rows.Scan(
+			&draft.ID, &draft.Title, &draft.BodyJSON, &draft.SchemaVersion,
+			&cover, &published, &draft.CreatedAtMS, &draft.UpdatedAtMS,
+			&mediaID, &position, &alt,
+		); err != nil {
+			return fmt.Errorf("scan archive article draft: %w", err)
+		}
+		if current == nil || current.ID != draft.ID {
+			if current != nil {
+				if err := yield(*current); err != nil {
+					return err
+				}
+			}
+			if cover.Valid {
+				draft.CoverMediaID = &cover.String
+			}
+			if published.Valid {
+				draft.PublishedEntryID = &published.String
+			}
+			draft.Media = make([]ArchiveUsage, 0, 4)
+			current = &draft
+		}
+		if mediaID.Valid {
+			if !position.Valid {
+				return errors.New("archive article draft usage has no position")
+			}
+			usage := ArchiveUsage{MediaID: mediaID.String, Position: int(position.Int64)}
+			if alt.Valid {
+				text := alt.String
+				usage.AltText = &text
+			}
+			current.Media = append(current.Media, usage)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate archive article drafts: %w", err)
 	}
 	if current != nil {
 		return yield(*current)

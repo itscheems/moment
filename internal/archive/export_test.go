@@ -40,6 +40,10 @@ const (
 	orphanMediaID = "01ARZ3NDEKTSV4RRFFQ69G5FB0"
 )
 
+// exportFixtureClock is the one instant every fixture row is stamped with, so
+// an archive built from it is byte-stable across runs.
+var exportFixtureClock = time.Date(2026, 8, 10, 12, 0, 0, 123_000_000, time.UTC)
+
 func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	var first bytes.Buffer
@@ -53,7 +57,8 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	members, order := readArchive(t, first.Bytes())
 	wantOrder := []string{
 		"README.txt", "data/site.json", "data/users.jsonl", "data/identities.jsonl",
-		"data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl",
+		"data/entries.jsonl", "data/entry_articles.jsonl", "data/article_drafts.jsonl",
+		"data/comments.jsonl", "data/media.jsonl",
 	}
 	blobs := []string{"media/" + fixture.mediaOneSHA + ".jpg", "media/" + fixture.mediaTwoSHA + ".png"}
 	sort.Strings(blobs)
@@ -149,8 +154,12 @@ func TestExportV1EmptyArchiveAndManifestFixedPointBoundaries(t *testing.T) {
 	}
 	members, order := readArchive(t, output.Bytes())
 	// An empty site is still not an accountless one: the owner is always there.
-	if len(order) != 9 || len(members["data/entries.jsonl"]) != 0 || len(members["data/comments.jsonl"]) != 0 ||
+	// The article members are written even when they hold nothing, because the
+	// member set a writer emits is fixed; an absent one means "this archive
+	// predates articles", not "this site has none".
+	if len(order) != 11 || len(members["data/entries.jsonl"]) != 0 || len(members["data/comments.jsonl"]) != 0 ||
 		len(members["data/media.jsonl"]) != 0 || len(members["data/identities.jsonl"]) != 0 ||
+		len(members["data/entry_articles.jsonl"]) != 0 || len(members["data/article_drafts.jsonl"]) != 0 ||
 		len(nonemptyLines(members["data/users.jsonl"])) != 1 {
 		t.Fatalf("empty archive = %#v", order)
 	}
@@ -839,7 +848,7 @@ func newExportFixture(t *testing.T, full bool) exportFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	clock := time.Date(2026, 8, 10, 12, 0, 0, 123_000_000, time.UTC)
+	clock := exportFixtureClock
 	exporter, err := NewExporter(Options{DataDir: runtimeState.Root, AppVersion: "0.1.0", Clock: func() time.Time { return clock }})
 	if err != nil {
 		t.Fatal(err)
@@ -993,21 +1002,40 @@ func nonemptyLines(data []byte) [][]byte {
 
 func shaHex(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 
-// stripAccountMembers turns a current archive into one an older binary would
-// have written: the two accounts members gone and the manifest silent about
-// them. It is how the backward-compatibility tests get a genuine pre-accounts
-// archive without keeping a fixture binary around.
+// stripAccountMembers turns a current archive into one the binary before
+// accounts would have written: the two accounts members gone and the manifest
+// silent about them. That binary predates articles too, so the two article
+// members go with them -- an archive with article bodies and no accounts is a
+// shape nothing ever wrote. It is how the backward-compatibility tests get a
+// genuine pre-accounts archive without keeping a fixture binary around.
 func stripAccountMembers(t *testing.T, members map[string][]byte, order []string) []string {
 	t.Helper()
-	delete(members, "data/users.jsonl")
-	delete(members, "data/identities.jsonl")
-	remaining := make([]string, 0, len(order))
-	for _, name := range order {
-		if name == "data/users.jsonl" || name == "data/identities.jsonl" {
-			continue
-		}
-		remaining = append(remaining, name)
-	}
+	return stripMembers(t, members, order,
+		map[string]string{
+			"data/users.jsonl":      "users",
+			"data/identities.jsonl": "identities",
+		},
+		map[string]string{
+			"data/entry_articles.jsonl": "articles",
+			"data/article_drafts.jsonl": "article_drafts",
+		})
+}
+
+// stripArticleMembers turns a current archive into one the binary before
+// articles would have written: accounts intact, the two article members gone
+// and the manifest silent about them.
+func stripArticleMembers(t *testing.T, members map[string][]byte, order []string) []string {
+	t.Helper()
+	return stripMembers(t, members, order, map[string]string{
+		"data/entry_articles.jsonl": "articles",
+		"data/article_drafts.jsonl": "article_drafts",
+	})
+}
+
+// stripMembers removes the named members and the manifest counts they answer
+// for, then republishes the derived trailer.
+func stripMembers(t *testing.T, members map[string][]byte, order []string, groups ...map[string]string) []string {
+	t.Helper()
 	var document map[string]json.RawMessage
 	if err := json.Unmarshal(members["manifest.json"], &document); err != nil {
 		t.Fatal(err)
@@ -1016,8 +1044,21 @@ func stripAccountMembers(t *testing.T, members map[string][]byte, order []string
 	if err := json.Unmarshal(document["counts"], &counts); err != nil {
 		t.Fatal(err)
 	}
-	delete(counts, "users")
-	delete(counts, "identities")
+	dropped := make(map[string]struct{})
+	for _, group := range groups {
+		for member, count := range group {
+			delete(members, member)
+			delete(counts, count)
+			dropped[member] = struct{}{}
+		}
+	}
+	remaining := make([]string, 0, len(order))
+	for _, name := range order {
+		if _, gone := dropped[name]; gone {
+			continue
+		}
+		remaining = append(remaining, name)
+	}
 	document["counts"] = mustMarshalTest(t, counts)
 	members["manifest.json"] = append(mustMarshalTest(t, document), '\n')
 	rebuildManifestExpanded(t, members)
@@ -1197,24 +1238,107 @@ func (writer *maxWriteRecorder) Write(data []byte) (int, error) {
 
 // The archive layout has no member for an article body yet, so both directions
 // refuse rather than produce a backup that restores an article as a blank post.
-func TestExportRefusesAnArticleUntilTheLayoutCarriesOne(t *testing.T) {
+// TestExportCarriesAnArticleAndImportRestoresItVerbatim is the whole point of
+// the two article members.
+//
+// An article is a post whose words live outside the entry, so a backup that
+// carried the envelope alone would look complete and restore a blank page. The
+// body comes back compared byte for byte against its canonical serialization,
+// because "the article is still there" and "the article still says the same
+// thing" are different claims and only the second one is worth making.
+func TestExportCarriesAnArticleAndImportRestoresItVerbatim(t *testing.T) {
 	fixture := newExportFixture(t, true)
-	const articleID = "01ARZ3NDEKTSV4RRFFQ69G5FD9"
-	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
-		_, err := queries.ExecContext(context.Background(), `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES (?, 'article', NULL, 1, 1, 1, '标题 正文')`, articleID)
-		return err
+	seeded := seedArticleFixture(t, fixture)
+
+	members, _ := readArchive(t, exportFixtureBytes(t, fixture))
+	// The envelope says nothing and the body member says everything.
+	var envelope entryRecord
+	for _, line := range nonemptyLines(members["data/entries.jsonl"]) {
+		if bytes.Contains(line, []byte(`"id":"`+articleEntryID+`"`)) {
+			if err := json.Unmarshal(line, &envelope); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if envelope.ID != articleEntryID || envelope.Kind != "article" || envelope.ContentMD != nil {
+		t.Fatalf("article envelope = %#v", envelope)
+	}
+	articleLines := nonemptyLines(members["data/entry_articles.jsonl"])
+	draftLines := nonemptyLines(members["data/article_drafts.jsonl"])
+	if len(articleLines) != 1 || len(draftLines) != 1 {
+		t.Fatalf("article members hold %d bodies and %d drafts", len(articleLines), len(draftLines))
+	}
+
+	target := newExportFixture(t, false)
+	snapshot := stagedSnapshot(t, stageArchive(t, target, writeArchiveBytes(t, exportFixtureBytes(t, fixture))))
+	ctx := context.Background()
+	if counts := snapshot.Counts(); counts.Articles != 1 || counts.ArticleDrafts != 1 || counts.Entries != 2 {
+		t.Fatalf("restored counts = %#v", counts)
+	}
+
+	var articles []sqlitestore.ArchiveEntryArticle
+	if err := snapshot.EntryArticles(ctx, func(value sqlitestore.ArchiveEntryArticle) error {
+		articles = append(articles, value)
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-
-	var output bytes.Buffer
-	_, err := fixture.exporter.Export(context.Background(), &output)
-	if err == nil {
-		t.Fatal("expected the export to refuse an article rather than leave its body behind")
+	if len(articles) != 1 {
+		t.Fatalf("restored %d articles", len(articles))
 	}
-	if !strings.Contains(err.Error(), "does not carry yet") {
-		t.Fatalf("the refusal should name the reason, got %v", err)
+	restored := articles[0]
+	if restored.EntryID != articleEntryID || restored.Title != articleTitle || restored.SchemaVersion != 1 {
+		t.Fatalf("restored article = %#v", restored)
+	}
+	if restored.BodyJSON != string(seeded.body) {
+		t.Fatalf("restored body\n got %s\nwant %s", restored.BodyJSON, seeded.body)
+	}
+	if restored.CoverMediaID == nil || *restored.CoverMediaID != articleCoverID {
+		t.Fatalf("restored cover = %#v", restored.CoverMediaID)
+	}
+
+	// The body's pictures are projected into entry_media so reference counting
+	// stays one SQL predicate. A restore that loses the projection loses the
+	// picture to the collector.
+	var articleEntry sqlitestore.ArchiveEntry
+	if err := snapshot.Entries(ctx, func(value sqlitestore.ArchiveEntry) error {
+		if value.ID == articleEntryID {
+			articleEntry = value
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if articleEntry.Kind != "article" || articleEntry.ContentMD != nil || len(articleEntry.Media) != 1 ||
+		articleEntry.Media[0].MediaID != articleInlineID || articleEntry.Media[0].Position != 0 ||
+		articleEntry.Media[0].AltText == nil || *articleEntry.Media[0].AltText != "街景" {
+		t.Fatalf("restored article entry = %#v", articleEntry)
+	}
+
+	var drafts []sqlitestore.ArchiveArticleDraft
+	if err := snapshot.ArticleDrafts(ctx, func(value sqlitestore.ArchiveArticleDraft) error {
+		drafts = append(drafts, value)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(drafts) != 1 {
+		t.Fatalf("restored %d drafts", len(drafts))
+	}
+	draft := drafts[0]
+	if draft.ID != articleDraftID || draft.Title != draftTitle || draft.BodyJSON != string(seeded.draftBody) {
+		t.Fatalf("restored draft = %#v", draft)
+	}
+	if draft.CoverMediaID == nil || *draft.CoverMediaID != draftCoverID {
+		t.Fatalf("restored draft cover = %#v", draft.CoverMediaID)
+	}
+	if draft.PublishedEntryID == nil || *draft.PublishedEntryID != articleEntryID {
+		t.Fatalf("restored draft lost the article it belongs to: %#v", draft.PublishedEntryID)
+	}
+	if len(draft.Media) != 1 || draft.Media[0].MediaID != draftPictureID || draft.Media[0].Position != 0 || draft.Media[0].AltText != nil {
+		t.Fatalf("restored draft pictures = %#v", draft.Media)
+	}
+	if draft.CreatedAtMS != exportFixtureClock.UnixMilli() || draft.UpdatedAtMS != exportFixtureClock.UnixMilli() {
+		t.Fatalf("restored draft timestamps = %d/%d", draft.CreatedAtMS, draft.UpdatedAtMS)
 	}
 }
