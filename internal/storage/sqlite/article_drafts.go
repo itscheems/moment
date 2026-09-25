@@ -15,6 +15,9 @@ const articleDraftColumns = `id, title, body_json, body_schema_version, cover_me
        published_entry_id, created_at_ms, updated_at_ms`
 
 func (store postStore) InsertArticleDraft(ctx context.Context, record app.ArticleDraftRecord) error {
+	if err := store.checkMediaPresent(ctx, record.Draft.CoverID); err != nil {
+		return err
+	}
 	body, err := domain.MarshalArticleDocument(record.Draft.Body)
 	if err != nil {
 		return err
@@ -36,6 +39,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 // should be told rather than have its words disappear, so a stale write
 // answers false instead of overwriting.
 func (store postStore) UpdateArticleDraft(ctx context.Context, record app.ArticleDraftRecord, expected time.Time) (bool, error) {
+	if err := store.checkMediaPresent(ctx, record.Draft.CoverID); err != nil {
+		return false, err
+	}
 	body, err := domain.MarshalArticleDocument(record.Draft.Body)
 	if err != nil {
 		return false, err
@@ -126,6 +132,9 @@ func (store postStore) DeleteArticleDraft(ctx context.Context, id domain.ID) (bo
 func (store postStore) replaceArticleDraftMedia(ctx context.Context, draftID domain.ID, draft domain.ArticleDraft) error {
 	usages := draft.InlineMedia()
 	if err := domain.ValidateArticleMediaUsages(usages); err != nil {
+		return err
+	}
+	if err := store.checkMediaUsages(ctx, usages, domain.MaxArticleMediaBytes); err != nil {
 		return err
 	}
 	if _, err := store.queries.ExecContext(ctx, `DELETE FROM article_draft_media WHERE draft_id = ?`, draftID.String()); err != nil {

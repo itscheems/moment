@@ -228,6 +228,19 @@ func (service *PostService) EditArticle(ctx context.Context, entryID domain.ID) 
 		if !found {
 			return postNotFound(entryID)
 		}
+		// A working copy is a draft like any other, so it answers to the same
+		// ceiling. Enforcing it only where a draft is written from scratch
+		// would let opening one published article after another walk straight
+		// past a limit the other door refuses at.
+		count, countErr := store.CountArticleDrafts(ctx)
+		if countErr != nil {
+			return countErr
+		}
+		if count >= MaxArticleDrafts {
+			return domain.NewError(domain.CodeArticleDraftLimit,
+				"this site already keeps the maximum number of drafts",
+				map[string]any{"limit": MaxArticleDrafts})
+		}
 		draft, draftErr := domain.NewArticleDraft(article.Title, article.Body, article.CoverID)
 		if draftErr != nil {
 			return draftErr
@@ -311,7 +324,7 @@ func (service *PostService) PublishArticleDraft(ctx context.Context, input Publi
 		return Post{}, err
 	}
 
-	requestHash := hashPublishArticle(input.DraftID)
+	requestHash := hashPublishArticle(input.DraftID, visibility)
 	var published Post
 	err = service.transactions.Write(ctx, func(store PostStore) error {
 		if input.IdempotencyKey != "" {
@@ -471,11 +484,18 @@ func loadArticlePost(ctx context.Context, store PostStore, entryID domain.ID) (P
 	return post, nil
 }
 
-// hashPublishArticle identifies one publish request. The draft is the request:
-// publishing the same draft twice is a retry, publishing a different one under
-// the same key is a mistake.
-func hashPublishArticle(draftID domain.ID) string {
-	digest := sha256.Sum256([]byte("moment-article-publish-v1\x00" + draftID.String()))
+// hashPublishArticle identifies one publish request. Publishing the same draft
+// to the same audience twice is a retry; publishing a different draft, or the
+// same one to a different audience, is a mistake worth naming.
+//
+// The audience belongs in here for the reason it belongs in hashCreatePost: it
+// changes who can read the result, and a retry that quietly keeps the first
+// answer would publish to an audience the caller did not ask for. This scope is
+// new, so unlike hashCreatePost there are no keys minted before it existed and
+// no carve-out to keep them replaying.
+func hashPublishArticle(draftID domain.ID, visibility domain.Visibility) string {
+	digest := sha256.Sum256([]byte("moment-article-publish-v1\x00" + draftID.String() +
+		"\x00visibility-v1\x00" + string(visibility)))
 	return hex.EncodeToString(digest[:])
 }
 

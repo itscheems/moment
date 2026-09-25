@@ -18,6 +18,9 @@ import (
 // reclamation and media visibility keep working as one SQL predicate over rows
 // rather than having to parse a document in three more places.
 func (store postStore) InsertArticle(ctx context.Context, entryID domain.ID, article domain.Article) error {
+	if err := store.checkMediaPresent(ctx, article.CoverID); err != nil {
+		return err
+	}
 	body, err := domain.MarshalArticleDocument(article.Body)
 	if err != nil {
 		return err
@@ -36,6 +39,9 @@ VALUES (?, ?, ?, ?, ?, ?)`,
 // ReplaceArticle rewrites the whole body at once. An article is edited as a
 // document, so there is no partial update to express.
 func (store postStore) ReplaceArticle(ctx context.Context, entryID domain.ID, article domain.Article) error {
+	if err := store.checkMediaPresent(ctx, article.CoverID); err != nil {
+		return err
+	}
 	body, err := domain.MarshalArticleDocument(article.Body)
 	if err != nil {
 		return err

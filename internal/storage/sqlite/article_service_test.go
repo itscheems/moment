@@ -230,3 +230,110 @@ func TestAnEmptyDraftCannotBePublished(t *testing.T) {
 		t.Fatalf("a refused publish must leave the draft alone: %v", err)
 	}
 }
+
+// A working copy is a draft, so it answers to the same ceiling. Before, opening
+// published articles one after another walked straight past a limit the other
+// door refuses at.
+func TestOpeningAWorkingCopyAnswersToTheDraftCeiling(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
+
+	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
+		Title: "已经发布的", BodyJSON: draftBodyJSON("正文"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	published, err := service.PublishArticleDraft(ctx, app.PublishArticleDraftInput{DraftID: draft.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for range app.MaxArticleDrafts {
+		if _, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
+			Title: "占位", BodyJSON: draftBodyJSON("内容"),
+		}); err != nil {
+			t.Fatalf("filling up to the limit must work: %v", err)
+		}
+	}
+	if _, err := service.EditArticle(ctx, published.Entry.ID); !domain.HasCode(err, domain.CodeArticleDraftLimit) {
+		t.Fatalf("a full site must refuse another working copy by name, got %v", err)
+	}
+
+	// The copy that already exists is still reachable: the ceiling stops new
+	// drafts, not the one an owner is in the middle of.
+	if err := service.DiscardArticleDraft(ctx, draftIDOfNewest(t, ctx, service)); err != nil {
+		t.Fatal(err)
+	}
+	working, err := service.EditArticle(ctx, published.Entry.ID)
+	if err != nil {
+		t.Fatalf("room again means a working copy opens: %v", err)
+	}
+	if again, err := service.EditArticle(ctx, published.Entry.ID); err != nil || again.ID != working.ID {
+		t.Fatalf("reopening must reuse the copy rather than make a second, got %v %v", again, err)
+	}
+}
+
+// The audience is part of the request, so a key reused for a different audience
+// is a mistake rather than a retry. Answering it with the first publish would
+// silently put an article in front of people the caller did not name.
+func TestRepublishingWithTheSameKeyButADifferentAudienceIsRefused(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
+
+	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
+		Title: "只给自己看", BodyJSON: draftBodyJSON("正文"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.PublishArticleDraft(ctx, app.PublishArticleDraftInput{
+		DraftID: draft.ID, Visibility: domain.VisibilityOnlyMe, IdempotencyKey: "same-key",
+	}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	_, err = service.PublishArticleDraft(ctx, app.PublishArticleDraftInput{
+		DraftID: draft.ID, Visibility: domain.VisibilityEveryone, IdempotencyKey: "same-key",
+	})
+	if !domain.HasCode(err, domain.CodeIdempotencyKeyReused) {
+		t.Fatalf("a different audience under the same key must be named, got %v", err)
+	}
+}
+
+// A body naming a picture nobody uploaded is the caller's mistake. The foreign
+// key would catch it either way, as an INTERNAL storage failure advising a
+// retry that can never work.
+func TestADraftNamingAMissingPictureIsRefusedByName(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	_, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
+
+	absent := "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	inline := []byte(`{"schema_version":1,"type":"doc","content":[{"type":"image","attrs":{"media_id":"` + absent + `"}}]}`)
+	if _, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
+		Title: "引用不存在的图", BodyJSON: inline,
+	}); !domain.HasCode(err, domain.CodeMediaNotFound) {
+		t.Fatalf("an absent inline picture must be named, got %v", err)
+	}
+
+	coverID, err := domain.ParseID(absent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
+		Title: "封面不存在", BodyJSON: draftBodyJSON("正文"), CoverMediaID: &coverID,
+	}); !domain.HasCode(err, domain.CodeMediaNotFound) {
+		t.Fatalf("an absent cover must be named, got %v", err)
+	}
+}
+
+func draftIDOfNewest(t *testing.T, ctx context.Context, service *app.PostService) domain.ID {
+	t.Helper()
+	drafts, err := service.ArticleDrafts(ctx)
+	if err != nil || len(drafts) == 0 {
+		t.Fatalf("list drafts: %v", err)
+	}
+	return drafts[0].ID
+}

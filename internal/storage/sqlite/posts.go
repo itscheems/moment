@@ -357,10 +357,14 @@ func (store postStore) ReplaceEntryMediaUsages(ctx context.Context, entryID doma
 	return store.replaceEntryMedia(ctx, entryID, usages, domain.MaxEntryMediaBytes)
 }
 
-// replaceEntryMedia writes an already-validated usage list. The two callers
-// differ only in how many pictures and how many bytes they allow, so the write
-// itself stays in one place.
-func (store postStore) replaceEntryMedia(ctx context.Context, entryID domain.ID, usages []domain.EntryMediaUsage, maxBytes int64) error {
+// checkMediaUsages refuses a projection that names a picture this site does not
+// hold, or one that together exceeds what the caller allows.
+//
+// Every table that projects media has a foreign key to media, so an absent
+// picture would be caught either way -- as a constraint violation, reported as
+// an INTERNAL storage failure telling the client to retry something that can
+// never work. Naming it here says whose mistake it is.
+func (store postStore) checkMediaUsages(ctx context.Context, usages []domain.EntryMediaUsage, maxBytes int64) error {
 	var totalBytes int64
 	for _, usage := range usages {
 		var byteSize int64
@@ -374,6 +378,33 @@ func (store postStore) replaceEntryMedia(ctx context.Context, entryID domain.ID,
 		if totalBytes > maxBytes {
 			return domain.NewError(domain.CodeMediaTooLarge, "post media exceed the aggregate byte budget", map[string]any{"field": "media", "max_bytes": maxBytes})
 		}
+	}
+	return nil
+}
+
+// checkMediaPresent answers the same question for a single optional picture,
+// such as the one an article puts on its card.
+func (store postStore) checkMediaPresent(ctx context.Context, id *domain.ID) error {
+	if id == nil {
+		return nil
+	}
+	var present int
+	if err := store.queries.QueryRowContext(ctx,
+		`SELECT 1 FROM media WHERE id = ?`, id.String()).Scan(&present); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", id), map[string]any{"media_id": id.String()})
+		}
+		return fmt.Errorf("validate media reference: %w", err)
+	}
+	return nil
+}
+
+// replaceEntryMedia writes an already-validated usage list. The two callers
+// differ only in how many pictures and how many bytes they allow, so the write
+// itself stays in one place.
+func (store postStore) replaceEntryMedia(ctx context.Context, entryID domain.ID, usages []domain.EntryMediaUsage, maxBytes int64) error {
+	if err := store.checkMediaUsages(ctx, usages, maxBytes); err != nil {
+		return err
 	}
 	if _, err := store.queries.ExecContext(ctx, `DELETE FROM entry_media WHERE entry_id = ?`, entryID.String()); err != nil {
 		return fmt.Errorf("clear entry media usages: %w", err)
