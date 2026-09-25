@@ -422,11 +422,9 @@ export function ArticleEditor({
           .current("force")
           .then(async (stored) => {
             if (!stored) return;
-            if (
-              firstChangeAt.current !== 0 &&
-              !(await saveLatest.current("force"))
-            )
-              return;
+            while (firstChangeAt.current !== 0) {
+              if (!(await saveLatest.current("force"))) return;
+            }
             allowLeave.current = true;
             resume();
           })

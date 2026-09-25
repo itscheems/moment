@@ -540,6 +540,31 @@ describe("keeping work through asynchronous saves and navigation", () => {
     expect(screen.getByText("已离开编辑器")).toBeInTheDocument();
   });
 
+  it("keeps saving edits made during consecutive navigation saves before leaving", async () => {
+    let finish!: (response: Response) => void;
+    onPut = () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      });
+    renderRouted(DRAFT_ID);
+    await advance();
+    await typeTitle("first");
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "返回时间流" })),
+    );
+    await typeTitle("second");
+    await act(async () => finish(success(draftRow({ title: "first" }))));
+    await advance();
+    await typeTitle("third");
+    await act(async () => finish(success(draftRow({ title: "second" }))));
+    await advance();
+    expect(titleField().value).toBe("third");
+    expect(putCalls().at(-1)?.body).toMatchObject({ title: "third" });
+    await act(async () => finish(success(draftRow({ title: "third" }))));
+    await advance();
+    expect(screen.getByText("已离开编辑器")).toBeInTheDocument();
+  });
+
   it("waits for an in-flight autosave and saves newer text before publishing", async () => {
     let finish!: (response: Response) => void;
     onPut = () =>
@@ -552,9 +577,7 @@ describe("keeping work through asynchronous saves and navigation", () => {
     await advance(2_000);
     await typeTitle("发布时的最终版本");
     await act(async () =>
-      fireEvent.click(
-        screen.getByRole("button", { name: "发布" }),
-      ),
+      fireEvent.click(screen.getByRole("button", { name: "发布" })),
     );
     expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(false);
     onPut = null;
@@ -578,9 +601,7 @@ describe("keeping work through asynchronous saves and navigation", () => {
       "仅自己",
     );
     await act(async () =>
-      fireEvent.click(
-        screen.getByRole("button", { name: "发布" }),
-      ),
+      fireEvent.click(screen.getByRole("button", { name: "发布" })),
     );
     await advance();
     expect(calls.find((c) => c.url.endsWith("/publish"))?.body).toEqual({
