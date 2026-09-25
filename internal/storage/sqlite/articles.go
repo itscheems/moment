@@ -195,3 +195,69 @@ func optionalMediaID(id *domain.ID) any {
 	}
 	return id.String()
 }
+
+// ArticleDerivations reads every article's body beside the two values copied
+// out of it. The body is the authority; the excerpt a card shows and the
+// entry_media rows reclamation counts are both taken from it, and either can be
+// left behind when the rule that derives it changes.
+//
+// A body that no longer parses is reported rather than returned as an article,
+// because a repair that cannot read the authority has nothing to repair from.
+func (store postStore) ArticleDerivations(ctx context.Context) ([]app.ArticleDerivation, error) {
+	rows, err := store.queries.QueryContext(ctx, `
+SELECT article.entry_id, article.title, article.body_json, article.cover_media_id, article.excerpt,
+       (SELECT count(*) FROM entry_media WHERE entry_media.entry_id = article.entry_id)
+FROM entry_article AS article
+ORDER BY article.entry_id`)
+	if err != nil {
+		return nil, fmt.Errorf("query article derivations: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var derivations []app.ArticleDerivation
+	for rows.Next() {
+		var (
+			entryID   string
+			title     string
+			bodyJSON  string
+			cover     sql.NullString
+			excerpt   string
+			projected int
+		)
+		if err := rows.Scan(&entryID, &title, &bodyJSON, &cover, &excerpt, &projected); err != nil {
+			return nil, fmt.Errorf("scan article derivation: %w", err)
+		}
+		id, err := domain.ParseID(entryID)
+		if err != nil {
+			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored article has an invalid entry ID", nil)
+		}
+		derivation := app.ArticleDerivation{EntryID: id, StoredExcerpt: excerpt, ProjectedMedia: projected}
+		body, parseErr := domain.ParseArticleDocument([]byte(bodyJSON))
+		if parseErr != nil {
+			derivation.Unparsable = true
+			derivations = append(derivations, derivation)
+			continue
+		}
+		var coverID *domain.ID
+		if cover.Valid {
+			parsed, coverErr := domain.ParseID(cover.String)
+			if coverErr != nil {
+				return nil, domain.NewError(domain.CodeDataIntegrityFailed,
+					"stored article cover has an invalid ID", map[string]any{"id": entryID})
+			}
+			coverID = &parsed
+		}
+		article, articleErr := domain.NewArticle(title, body, coverID)
+		if articleErr != nil {
+			derivation.Unparsable = true
+			derivations = append(derivations, derivation)
+			continue
+		}
+		derivation.Article = article
+		derivations = append(derivations, derivation)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read article derivations: %w", err)
+	}
+	return derivations, nil
+}

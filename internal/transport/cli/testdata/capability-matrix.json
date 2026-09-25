@@ -219,6 +219,37 @@
       ]
     },
     {
+      "command": "article rebuild",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared_or_exclusive"
+        ]
+      },
+      "api": {
+        "availability": "unsupported",
+        "auth": "not_applicable",
+        "locks": []
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
+      "output_schema": "article_rebuild_v1",
+      "parity_strategy": "api_mode_unsupported",
+      "expected_exits": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        10
+      ]
+    },
+    {
       "command": "article save",
       "direct": {
         "availability": "supported",

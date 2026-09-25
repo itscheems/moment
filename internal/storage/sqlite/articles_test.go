@@ -288,3 +288,81 @@ func equalStrings(left, right []string) bool {
 	}
 	return true
 }
+
+func readArticleDerivations(t *testing.T, db *Database) []app.ArticleDerivation {
+	t.Helper()
+	var derivations []app.ArticleDerivation
+	if err := db.ReadTx(context.Background(), func(queries Queries) error {
+		var err error
+		derivations, err = newPostStore(queries).ArticleDerivations(context.Background())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return derivations
+}
+
+// The excerpt a card reads and the entry_media rows reclamation counts are both
+// copies taken from the body. This is how a repair finds the ones that no
+// longer agree with it -- and how it tells those apart from a body it cannot
+// read, which it must leave alone.
+func TestArticleDerivationsFindEveryCopyThatLeftItsBodyBehind(t *testing.T) {
+	t.Parallel()
+	db, _ := openTestDatabase(t, Options{})
+	first, _ := seedArticleEntry(t, db)
+	body := articleTestBody(t, `{"type":"paragraph","content":[{"type":"text","text":"正文说了什么"}]},`+articleImage(first, "图"))
+	article, err := domain.NewArticle("标题", body, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeArticle(t, db, article, false); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	// What was just written agrees with itself.
+	derivations := readArticleDerivations(t, db)
+	if len(derivations) != 1 {
+		t.Fatalf("derivations = %#v", derivations)
+	}
+	if derivations[0].Unparsable || derivations[0].Drifted() {
+		t.Fatalf("a freshly written article must not look drifted: %#v", derivations[0])
+	}
+
+	// An excerpt left behind by a change to how excerpts are derived.
+	mustWrite(t, db, `UPDATE entry_article SET excerpt = '这是上一版的摘要' WHERE entry_id = ?`, articleEntryID)
+	derivations = readArticleDerivations(t, db)
+	if !derivations[0].Drifted() || derivations[0].StoredExcerpt != "这是上一版的摘要" {
+		t.Fatalf("a stale excerpt must be reported: %#v", derivations[0])
+	}
+	if got := derivations[0].Article.Excerpt(); got != article.Excerpt() {
+		t.Fatalf("the body is the authority, so it must still derive %q, got %q", article.Excerpt(), got)
+	}
+
+	// A projection lost while the excerpt is correct.
+	mustWrite(t, db, `UPDATE entry_article SET excerpt = ? WHERE entry_id = ?`, article.Excerpt(), articleEntryID)
+	mustWrite(t, db, `DELETE FROM entry_media WHERE entry_id = ?`, articleEntryID)
+	derivations = readArticleDerivations(t, db)
+	if !derivations[0].Drifted() || derivations[0].ProjectedMedia != 0 {
+		t.Fatalf("a lost picture projection must be reported: %#v", derivations[0])
+	}
+
+	// Writing the body back is the repair, and it restores both copies.
+	if err := writeArticle(t, db, derivations[0].Article, true); err != nil {
+		t.Fatalf("repair: %v", err)
+	}
+	if rows := articleMediaRows(t, db, articleEntryID); len(rows) != 1 || rows[0] != first+"@图" {
+		t.Fatalf("projection after repair = %#v", rows)
+	}
+	if derivations = readArticleDerivations(t, db); derivations[0].Drifted() {
+		t.Fatalf("nothing should drift after a repair: %#v", derivations[0])
+	}
+
+	// A body that no longer parses is reported, not returned as an article and
+	// not counted as drift: there is nothing to repair it from.
+	mustWrite(t, db, `UPDATE entry_article SET body_json = ? WHERE entry_id = ?`,
+		`{"schema_version":1,"type":"doc","content":[{"type":"这不是一个节点类型"}]}`, articleEntryID)
+	derivations = readArticleDerivations(t, db)
+	if !derivations[0].Unparsable || derivations[0].Drifted() {
+		t.Fatalf("an unreadable body must be reported and left alone: %#v", derivations[0])
+	}
+}

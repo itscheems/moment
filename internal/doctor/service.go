@@ -640,10 +640,10 @@ func (service *Service) inspectArticles(ctx context.Context, builder *reportBuil
 			"restore the affected articles from a backup", evidence, failureIntegrity))
 	case articles.DriftedProjections > 0:
 		builder.set(failed(CheckArticleIntegrity, "some article picture projections disagree with the body they came from",
-			"republish the affected articles so their projections are rebuilt", evidence, failureIntegrity))
+			"run 'moment article rebuild --yes' to take both copies from the bodies again", evidence, failureIntegrity))
 	case articles.StaleExcerpts > 0:
 		builder.set(warning(CheckArticleIntegrity, "some article excerpts no longer match their body",
-			"republish the affected articles; cards will read from a stale excerpt until then", evidence))
+			"run 'moment article rebuild --yes'; cards read from a stale excerpt until then", evidence))
 	default:
 		builder.set(pass(CheckArticleIntegrity, "every article agrees with what was derived from it", "no action is required", evidence))
 	}

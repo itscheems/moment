@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -119,6 +120,19 @@ func registerArticles(application *Application) {
 			flags.String("idempotency-key", "", "retry key forwarded unchanged to the application service")
 		},
 		Run: runArticlePublish,
+	})
+	application.MustRegisterLeaf(LeafSpec{
+		Path:       []string{"article", "rebuild"},
+		Short:      "Repair the values derived from article bodies",
+		Long:       "Re-derive the excerpt a card shows and the picture projection reclamation counts from each article's stored body, without touching the article itself or its timestamps.",
+		Inputs:     "A local data directory. Use --dry-run for a read-only count; API mode is rejected as MODE_UNSUPPORTED.",
+		Output:     "Total, drifted, rebuilt and unparsable article counts.",
+		Errors:     "A body that no longer parses is counted and left alone; it is repaired by restoring that article from a backup.",
+		Safety:     "Only derived copies are rewritten. Bodies, titles, covers, visibility and timestamps are left exactly as they are, so a repaired article is not marked edited.",
+		Example:    "moment article rebuild --data-dir ./moment-data --dry-run --json",
+		Capability: CapabilityDirectOnly,
+		Policy:     SafetyPolicy{Destructive: true, SupportsDryRun: true, Confirmation: "Re-derive the stored article excerpts and picture projections now?"},
+		Run:        runArticleRebuild,
 	})
 	application.MustRegisterLeaf(LeafSpec{
 		Path:       []string{"article", "edit"},
@@ -531,4 +545,47 @@ func articleDiscardResult(id domain.ID, meta map[string]any) Result {
 		Text: "Discarded draft " + id.String() + ".",
 		Meta: meta,
 	}
+}
+
+// runArticleRebuild repairs the copies an article's body is the authority for.
+//
+// It is deliberately not "open each article and publish it again": publishing
+// moves updated_at and sets edited_at, which would tell every reader the author
+// revised an article that in fact only had a derived value corrected.
+func runArticleRebuild(ctx context.Context, invocation Invocation, _ CommandInput) (Result, error) {
+	// CapabilityDirectOnly already refuses API mode in the kernel, and both
+	// helpers below resolve a direct transport, so there is no second check to
+	// write here.
+	dryRun := invocation.Safety().DryRun
+	if dryRun {
+		service, _, database, err := openDirectPostRead(ctx, invocation)
+		if err != nil {
+			return Result{}, err
+		}
+		defer func() { _ = database.Close() }()
+		result, err := service.RebuildArticleDerivations(ctx, true)
+		if err != nil {
+			return Result{}, postCLIError(err)
+		}
+		return articleRebuildResult(result), nil
+	}
+	runtime, err := openDirectPostWrite(ctx, invocation)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() { _ = runtime.Close() }()
+	result, err := runtime.service.RebuildArticleDerivations(ctx, false)
+	if err != nil {
+		return Result{}, postCLIError(err)
+	}
+	return articleRebuildResult(result), nil
+}
+
+func articleRebuildResult(result app.ArticleRebuildResult) Result {
+	verb := "Articles inspected"
+	if !result.DryRun {
+		verb = "Articles rebuilt"
+	}
+	return Result{Data: result, Text: fmt.Sprintf("%s: %d total, %d drifted, %d rebuilt, %d unreadable",
+		verb, result.Total, result.Drifted, result.Rebuilt, result.Unparsable)}
 }

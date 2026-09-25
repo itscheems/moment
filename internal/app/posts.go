@@ -48,6 +48,7 @@ type PostStore interface {
 	UpdateArticleEntry(context.Context, domain.Entry, string) (bool, error)
 	ArticleByEntryID(context.Context, domain.ID) (domain.Article, bool, error)
 	ArticleCards(context.Context, []domain.ID) (map[domain.ID]ArticleCard, error)
+	ArticleDerivations(context.Context) ([]ArticleDerivation, error)
 	// Drafts live outside entries on purpose: eighteen read paths select from
 	// entries, and a status column there would need every one of them to
 	// filter correctly for an unfinished article to stay unpublished.
