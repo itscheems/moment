@@ -86,7 +86,7 @@ func TestRegistryJSONV1AndHealthyReadOnlyModes(t *testing.T) {
 	}
 
 	ids := Registry()
-	if len(ids) != 22 {
+	if len(ids) != 23 {
 		t.Fatalf("registry length = %d", len(ids))
 	}
 	seen := make(map[string]bool, len(ids))
@@ -453,6 +453,31 @@ func TestDeterministicCorruptionChecks(t *testing.T) {
 			corrupt: func(t *testing.T, fixture doctorFixture) {
 				mutateDatabase(t, fixture.current.DatabasePath, `PRAGMA foreign_keys = OFF;
 INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', '01ARZ3NDEKTSV4RRFFQ69G5FAY', 0, NULL)`)
+			},
+		},
+		{
+			// The projection is a copy of what the body says. A copy that
+			// drifts is invisible until a picture is deleted while still
+			// shown, or kept forever after being removed.
+			name: "article projection drifted from its body", checkID: CheckArticleIntegrity, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				mutateDatabase(t, fixture.current.DatabasePath, `
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD7', 'article', NULL, 1, 1, 1, '标题');
+INSERT INTO entry_article (entry_id, title, body_json, body_schema_version, cover_media_id, excerpt)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD7', '标题',
+  '{"schema_version":1,"type":"doc","content":[{"type":"image","attrs":{"media_id":"01ARZ3NDEKTSV4RRFFQ69G5FAY"}}]}',
+  1, NULL, '')`)
+			},
+		},
+		{
+			name: "article body that no longer parses", checkID: CheckArticleIntegrity, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
+			corrupt: func(t *testing.T, fixture doctorFixture) {
+				mutateDatabase(t, fixture.current.DatabasePath, `
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD8', 'article', NULL, 1, 1, 1, '标题');
+INSERT INTO entry_article (entry_id, title, body_json, body_schema_version, cover_media_id, excerpt)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD8', '标题', '{"schema_version":1,"type":"doc","content":[{"type":"callout"}]}', 1, NULL, '')`)
 			},
 		},
 		{

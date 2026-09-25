@@ -74,6 +74,7 @@ const (
 	CheckSiteConfiguration         = "site_configuration"
 	CheckImportRecoveryState       = "import_recovery_state"
 	CheckAccountIntegrity          = "account_integrity"
+	CheckArticleIntegrity          = "article_integrity"
 )
 
 var registry = []string{
@@ -99,6 +100,7 @@ var registry = []string{
 	CheckSiteConfiguration,
 	CheckImportRecoveryState,
 	CheckAccountIntegrity,
+	CheckArticleIntegrity,
 }
 
 // Check is one stable, independently actionable diagnostic result.

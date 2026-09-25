@@ -571,6 +571,7 @@ func (service *Service) inspectSite(ctx context.Context, builder *reportBuilder,
 		builder.set(pass(CheckSiteConfiguration, "stored site settings satisfy the application contract", "no action is required", map[string]any{"valid": true}))
 	}
 	service.inspectAccounts(ctx, builder, database)
+	service.inspectArticles(ctx, builder, database)
 }
 
 // inspectAccounts reports whether the account graph still holds together.
@@ -609,6 +610,42 @@ func (service *Service) inspectAccounts(ctx context.Context, builder *reportBuil
 			"rename accounts holding reserved handles; comments naming a removed account render as plain text", evidence))
 	default:
 		builder.set(pass(CheckAccountIntegrity, "the account graph is consistent", "no action is required", evidence))
+	}
+}
+
+// inspectArticles checks the parts of an article that are copies of its body.
+//
+// The picture projection is the one that can hurt. A body is where a picture's
+// position lives and entry_media is a copy kept so reclamation stays in SQL; a
+// copy that drifts is invisible until a picture is deleted while still shown,
+// or kept forever after being removed.
+func (service *Service) inspectArticles(ctx context.Context, builder *reportBuilder, database *sqlitestore.DiagnosticDatabase) {
+	articles, err := database.Articles(ctx, service.options.MaxMediaRecords)
+	if err != nil {
+		builder.set(skipped(CheckArticleIntegrity, "database_not_open"))
+		return
+	}
+	evidence := map[string]any{
+		"articles":            uint64(articles.Articles),
+		"bounded":             articles.Bounded,
+		"missing_bodies":      uint64(articles.MissingBodies),
+		"orphan_bodies":       uint64(articles.OrphanBodies),
+		"unparsable_bodies":   uint64(articles.UnparsableBodies),
+		"drifted_projections": uint64(articles.DriftedProjections),
+		"stale_excerpts":      uint64(articles.StaleExcerpts),
+	}
+	switch {
+	case articles.MissingBodies > 0 || articles.OrphanBodies > 0 || articles.UnparsableBodies > 0:
+		builder.set(failed(CheckArticleIntegrity, "some articles are missing their body, or hold one that no longer parses",
+			"restore the affected articles from a backup", evidence, failureIntegrity))
+	case articles.DriftedProjections > 0:
+		builder.set(failed(CheckArticleIntegrity, "some article picture projections disagree with the body they came from",
+			"republish the affected articles so their projections are rebuilt", evidence, failureIntegrity))
+	case articles.StaleExcerpts > 0:
+		builder.set(warning(CheckArticleIntegrity, "some article excerpts no longer match their body",
+			"republish the affected articles; cards will read from a stale excerpt until then", evidence))
+	default:
+		builder.set(pass(CheckArticleIntegrity, "every article agrees with what was derived from it", "no action is required", evidence))
 	}
 }
 

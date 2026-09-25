@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/moment/moment/internal/runtimefs"
+
+	"github.com/moment/moment/internal/domain"
 )
 
 const diagnosticRowLimit = 100
@@ -377,4 +379,88 @@ func (database *DiagnosticDatabase) Accounts(ctx context.Context, reserved func(
 		return rows.Err()
 	})
 	return value, err
+}
+
+// DiagnosticArticles reports whether the derived parts of an article still
+// agree with the body they were derived from.
+//
+// The picture projection is the one that matters. A body is where a picture's
+// position lives and entry_media is a copy of that, kept so reference counting
+// and reclamation stay in SQL. A copy that drifts is invisible until a picture
+// is either deleted while still shown or kept forever after being removed.
+type DiagnosticArticles struct {
+	Articles           int
+	Bounded            bool
+	MissingBodies      int
+	OrphanBodies       int
+	UnparsableBodies   int
+	DriftedProjections int
+	StaleExcerpts      int
+}
+
+// Articles walks up to limit articles and compares each body with what was
+// derived from it.
+func (database *DiagnosticDatabase) Articles(ctx context.Context, limit int) (DiagnosticArticles, error) {
+	var value DiagnosticArticles
+	if limit <= 0 {
+		limit = 1000
+	}
+	err := database.ReadTx(ctx, func(queries Queries) error {
+		for _, scalar := range []struct {
+			query  string
+			target *int
+		}{
+			{`SELECT count(*) FROM entries WHERE kind = 'article'
+              AND id NOT IN (SELECT entry_id FROM entry_article)`, &value.MissingBodies},
+			{`SELECT count(*) FROM entry_article
+              WHERE entry_id NOT IN (SELECT id FROM entries WHERE kind = 'article')`, &value.OrphanBodies},
+		} {
+			if err := queries.QueryRowContext(ctx, scalar.query).Scan(scalar.target); err != nil {
+				return fmt.Errorf("read article diagnostics: %w", err)
+			}
+		}
+
+		rows, err := queries.QueryContext(ctx, `
+SELECT article.entry_id, article.body_json, article.excerpt,
+       (SELECT count(*) FROM entry_media WHERE entry_media.entry_id = article.entry_id)
+FROM entry_article AS article
+ORDER BY article.entry_id
+LIMIT ?`, limit+1)
+		if err != nil {
+			return fmt.Errorf("read article bodies: %w", err)
+		}
+		defer func() { _ = rows.Close() }()
+		for rows.Next() {
+			var (
+				entryID   string
+				bodyJSON  string
+				excerpt   string
+				projected int
+			)
+			if err := rows.Scan(&entryID, &bodyJSON, &excerpt, &projected); err != nil {
+				return fmt.Errorf("scan article body: %w", err)
+			}
+			if value.Articles == limit {
+				value.Bounded = true
+				break
+			}
+			value.Articles++
+			body, parseErr := domain.ParseArticleDocument([]byte(bodyJSON))
+			if parseErr != nil {
+				value.UnparsableBodies++
+				continue
+			}
+			if len(domain.Article{Body: body}.InlineMedia()) != projected {
+				value.DriftedProjections++
+			}
+			if domain.ArticleExcerpt(body) != excerpt {
+				value.StaleExcerpts++
+			}
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return DiagnosticArticles{}, err
+	}
+	return value, nil
 }
