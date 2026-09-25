@@ -10,6 +10,7 @@ import (
 var momentGroups = []GroupSpec{
 	{Name: "owner", Short: "Manage the single site owner", Long: "Inspect and manage the single Moment owner."},
 	{Name: "post", Short: "Create and manage Moments", Long: "Create, inspect, update, pin, and delete Moment posts."},
+	{Name: "article", Short: "Write and publish long posts", Long: "Draft, publish, and edit Moment articles, whose body is a structured document rather than Markdown."},
 	{Name: "location", Short: "Resolve post locations", Long: "Search and normalize location snapshots for Moment posts."},
 	{Name: "link", Short: "Capture link preview cards", Long: "Unfurl owner-supplied URLs into portable link card snapshots."},
 	{Name: "comment", Short: "Inspect and manage comments", Long: "Inspect comments and perform owner comment actions."},
@@ -57,6 +58,7 @@ func NewMoment(info buildinfo.Info) *Application {
 	registerLogin(application)
 	registerMedia(application)
 	registerPosts(application)
+	registerArticles(application)
 	registerLocations(application)
 	registerLinks(application)
 	registerComments(application)

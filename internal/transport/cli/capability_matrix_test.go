@@ -202,6 +202,11 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		"user suspend":         {"applicant"},
 		"user identities":      {"applicant"},
 		"user delete":          {"applicant"},
+		"article draft":        {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+		"article save":         {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+		"article discard":      {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+		"article publish":      {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
+		"article edit":         {"01ARZ3NDEKTSV4RRFFQ69G5FAV"},
 	}
 	// A leaf that takes a positional argument and has no entry above would be
 	// executed here with none, and a leaf that takes one without declaring it
