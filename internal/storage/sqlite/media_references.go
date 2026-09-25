@@ -20,6 +20,13 @@ import (
 // 0022 moved them there. Every account's picture has to appear here, not just
 // the owner's: a name missing from this predicate is not a stale query, it is
 // a file the collector is entitled to delete.
+//
+// An article contributes three ways: its cover, a draft's cover, and the
+// pictures a draft body places. Its published body pictures arrive through
+// entry_media like any other post's, which is the reason they are projected
+// there at all. Note what is deliberately absent: none of the draft rows
+// appear in the visibility query below. Being referenced by a draft keeps a
+// file alive; it does not make it public, because a draft is not published.
 const mediaReferencedSQL = `(
     EXISTS (SELECT 1 FROM entry_media AS usage WHERE usage.media_id = media.id)
     OR EXISTS (SELECT 1 FROM comment_media AS usage WHERE usage.media_id = media.id)
@@ -36,6 +43,18 @@ const mediaReferencedSQL = `(
     OR EXISTS (
         SELECT 1 FROM entry_link_card AS card
         WHERE card.favicon_media_id = media.id
+    )
+    OR EXISTS (
+        SELECT 1 FROM entry_article AS article
+        WHERE article.cover_media_id = media.id
+    )
+    OR EXISTS (
+        SELECT 1 FROM article_drafts AS draft
+        WHERE draft.cover_media_id = media.id
+    )
+    OR EXISTS (
+        SELECT 1 FROM article_draft_media AS usage
+        WHERE usage.media_id = media.id
     )
 )`
 
@@ -178,12 +197,17 @@ FROM (
     FROM entry_media
     WHERE entry_id = ?
     UNION ALL
+    -- The cover is the one article picture that is not an entry_media row.
+    SELECT cover_media_id
+    FROM entry_article
+    WHERE entry_id = ? AND cover_media_id IS NOT NULL
+    UNION ALL
     SELECT comment_media.media_id
     FROM comment_media
     INNER JOIN comments ON comments.id = comment_media.comment_id
     WHERE comments.entry_id = ?
 )
-ORDER BY media_id`, entryID.String(), entryID.String())
+ORDER BY media_id`, entryID.String(), entryID.String(), entryID.String())
 	if err != nil {
 		return nil, fmt.Errorf("read entry media references: %w", err)
 	}
@@ -281,7 +305,10 @@ func (repository *MediaReferenceRepository) Visibility(ctx context.Context, id d
 	var referenced, exposed int
 	err := repository.transactions.ReadTx(ctx, func(queries Queries) error {
 		arguments := []any{id.String()}
-		for range 4 {
+		// One pass per EXISTS block below that joins entries and applies the
+		// visibility predicate. Adding a block without adding a pass here
+		// shifts every argument after it.
+		for range 5 {
 			arguments = append(arguments, id.String())
 			arguments = append(arguments, publicArguments...)
 		}
@@ -310,6 +337,11 @@ SELECT
       SELECT 1 FROM entry_link_card AS card
       JOIN entries AS entry ON entry.id = card.entry_id
       WHERE card.favicon_media_id = ? AND `+public+`
+    )
+    OR EXISTS (
+      SELECT 1 FROM entry_article AS article
+      JOIN entries AS entry ON entry.id = article.entry_id
+      WHERE article.cover_media_id = ? AND `+public+`
     )
     OR EXISTS (SELECT 1 FROM users AS account WHERE account.avatar_media_id = ?)
     OR EXISTS (SELECT 1 FROM users AS account WHERE account.cover_media_id = ?)

@@ -214,9 +214,21 @@ func searchIndexRows(t *testing.T, pool *sql.DB) []string {
 	return queryStrings(t, pool, `SELECT entry_id || '\t' || content_text FROM entry_fts ORDER BY entry_id`)
 }
 
+// The live predicate names tables 0025 creates, so it cannot be asked the same
+// question on both sides of the migration. This is the predicate as it stood
+// before, spelled out: what it resolves must not change, whatever else does.
+const mediaReferencedBefore0025SQL = `(
+    EXISTS (SELECT 1 FROM entry_media AS usage WHERE usage.media_id = media.id)
+    OR EXISTS (SELECT 1 FROM comment_media AS usage WHERE usage.media_id = media.id)
+    OR EXISTS (SELECT 1 FROM users AS account WHERE account.avatar_media_id = media.id)
+    OR EXISTS (SELECT 1 FROM users AS account WHERE account.cover_media_id = media.id)
+    OR EXISTS (SELECT 1 FROM entry_link_card AS card WHERE card.thumbnail_media_id = media.id)
+    OR EXISTS (SELECT 1 FROM entry_link_card AS card WHERE card.favicon_media_id = media.id)
+)`
+
 func referencedMediaIDs(t *testing.T, pool *sql.DB) []string {
 	t.Helper()
-	return queryStrings(t, pool, `SELECT id FROM media WHERE `+mediaReferencedSQL+` ORDER BY id`)
+	return queryStrings(t, pool, `SELECT id FROM media WHERE `+mediaReferencedBefore0025SQL+` ORDER BY id`)
 }
 
 func queryStrings(t *testing.T, pool *sql.DB, statement string) []string {

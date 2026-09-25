@@ -283,3 +283,10 @@ func TestArticleDraftCannotPublishWhenItSaysNothing(t *testing.T) {
 		t.Fatalf("a finished draft must publish: %v", err)
 	}
 }
+
+// recordFor wraps a draft for the store without restating timestamps that no
+// assertion depends on.
+func recordFor(id domain.ID, draft domain.ArticleDraft) app.ArticleDraftRecord {
+	at := domain.TimeFromMillis(1_000)
+	return app.ArticleDraftRecord{ID: id, Draft: draft, CreatedAt: at, UpdatedAt: at}
+}
