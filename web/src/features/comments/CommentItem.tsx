@@ -25,7 +25,7 @@ import {
 import { Icon } from "../../components/icons";
 import { notify } from "../../components/Feedback";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
-import { MarkdownContent } from "../../components/MarkdownContent";
+import { MarkdownBody } from "../../components/content/MarkdownBody";
 import { formatMomentDate } from "../posts/dates";
 import { PostLocation } from "../posts/PostPresentation";
 import { ImageGrid } from "../media/ImageGrid";
@@ -779,7 +779,7 @@ export function CommentItem({
             onFocusCapture={() => setExpanded(true)}
             ref={bodyRef}
           >
-            <MarkdownContent
+            <MarkdownBody
               className={styles.commentMarkdown}
               html={comment.contentHtml}
             />

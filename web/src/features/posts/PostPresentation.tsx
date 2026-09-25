@@ -14,7 +14,7 @@ import {
   siteDisplayName,
   siteProfileHref,
 } from "../../components/SiteIdentity";
-import { MarkdownContent } from "../../components/MarkdownContent";
+import { MarkdownBody } from "../../components/content/MarkdownBody";
 import {
   ActionTooltip,
   ExactTimeTooltip,
@@ -128,7 +128,7 @@ export function PostPresentation({
   onReposted,
   onSiteChanged,
   pinned = false,
-  contentHtml,
+  searchQuery,
   onReply,
   eagerVideo = false,
   compactTallVideo = false,
@@ -144,7 +144,7 @@ export function PostPresentation({
   onReposted?: (post: PublicPost) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
   pinned?: boolean;
-  contentHtml?: string;
+  searchQuery?: string;
   onReply?: MouseEventHandler<HTMLButtonElement>;
   eagerVideo?: boolean;
   compactTallVideo?: boolean;
@@ -344,7 +344,7 @@ export function PostPresentation({
         // prose under it, never the article itself.
         <QuotedArticle article={quoted.article} />
       ) : (
-        <MarkdownContent
+        <MarkdownBody
           className={styles.quoteMarkdown}
           html={quoted.contentHtml}
         />
@@ -372,9 +372,10 @@ export function PostPresentation({
           </div>
         </div>
         <div className={styles.detailBody}>
-          <MarkdownContent
+          <MarkdownBody
             className={styles.markdown}
-            html={contentHtml ?? post.contentHtml}
+            html={post.contentHtml}
+            searchQuery={searchQuery}
           />
           {linkCard}
           {post.location ? <PostLocation location={post.location} /> : null}
@@ -454,9 +455,10 @@ export function PostPresentation({
         {isArticlePost(post) ? (
           <ArticleCard post={post} />
         ) : (
-          <MarkdownContent
+          <MarkdownBody
             className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
-            html={contentHtml ?? post.contentHtml}
+            html={post.contentHtml}
+            searchQuery={searchQuery}
           />
         )}
         {collapsed ? (

@@ -55,34 +55,6 @@ function sameYearCounts(
   );
 }
 
-function highlightedContentHtml(contentHtml: string, query: string): string {
-  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (!escaped) return contentHtml;
-  const template = document.createElement("template");
-  template.innerHTML = contentHtml;
-  const walker = document.createTreeWalker(template.content, 4);
-  const textNodes: Text[] = [];
-  while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
-  for (const node of textNodes) {
-    const value = node.data;
-    const matches = Array.from(value.matchAll(new RegExp(escaped, "giu")));
-    if (matches.length === 0) continue;
-    const fragment = document.createDocumentFragment();
-    let cursor = 0;
-    for (const match of matches) {
-      const index = match.index ?? 0;
-      if (index > cursor) fragment.append(value.slice(cursor, index));
-      const mark = document.createElement("mark");
-      mark.textContent = match[0];
-      fragment.append(mark);
-      cursor = index + match[0].length;
-    }
-    if (cursor < value.length) fragment.append(value.slice(cursor));
-    node.replaceWith(fragment);
-  }
-  return template.innerHTML;
-}
-
 function naturalDate(value: string | null, fallback: string): string {
   if (!value) return fallback;
   const [year, month, day] = value.split("-").map(Number);
@@ -591,10 +563,7 @@ export function SearchPage({
             <section aria-label="搜索结果" className={styles.resultList}>
               {hits.map((hit) => (
                 <PostPresentation
-                  contentHtml={highlightedContentHtml(
-                    hit.post.contentHtml,
-                    state.query!,
-                  )}
+                  searchQuery={state.query!}
                   onReply={(event) => openReply(hit.post, event)}
                   onSiteChanged={onSiteChanged}
                   key={hit.post.id}

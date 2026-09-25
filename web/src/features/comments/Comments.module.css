@@ -1208,79 +1208,11 @@
   text-rendering: auto;
 }
 
-.commentMarkdown :where(h1, h2, h3, h4, h5, h6),
 .commentByline :where(strong, time) {
   font-family: inherit;
   font-feature-settings: inherit;
   letter-spacing: inherit;
   text-rendering: inherit;
-}
-
-.commentMarkdown > :first-child {
-  margin-block-start: 0;
-}
-
-.commentMarkdown > :last-child {
-  margin-block-end: 0;
-}
-
-.commentMarkdown p,
-.commentMarkdown ul,
-.commentMarkdown ol,
-.commentMarkdown blockquote,
-.commentMarkdown pre,
-.commentMarkdown h1,
-.commentMarkdown h2,
-.commentMarkdown h3,
-.commentMarkdown h4,
-.commentMarkdown h5,
-.commentMarkdown h6 {
-  margin-block: 0.65em;
-}
-
-.commentMarkdown h1,
-.commentMarkdown h2,
-.commentMarkdown h3,
-.commentMarkdown h4,
-.commentMarkdown h5,
-.commentMarkdown h6 {
-  font-size: 1.05rem;
-  font-weight: 750;
-  line-height: 1.3;
-}
-
-.commentMarkdown a {
-  color: var(--accent);
-  text-underline-offset: 0.18em;
-}
-
-.commentMarkdown blockquote {
-  border-inline-start: 3px solid var(--border-strong);
-  margin-inline: 0;
-  padding-inline-start: var(--space-3);
-  color: var(--text-secondary);
-}
-
-.commentMarkdown code {
-  border-radius: 0.3rem;
-  padding: 0.08rem 0.25rem;
-  background: var(--surface-muted);
-  font-family: var(--font-mono);
-  font-size: 0.88em;
-}
-
-.commentMarkdown pre {
-  max-inline-size: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-action);
-  padding: var(--space-3);
-  background: var(--surface-hover);
-}
-
-.commentMarkdown pre code {
-  padding: 0;
-  background: transparent;
 }
 
 /*

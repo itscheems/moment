@@ -1,4 +1,4 @@
-import type { Extensions } from "@tiptap/core";
+import { Mark, getSchema, type Extensions } from "@tiptap/core";
 import Document from "@tiptap/extension-document";
 import Paragraph from "@tiptap/extension-paragraph";
 import Text from "@tiptap/extension-text";
@@ -96,3 +96,53 @@ export function articleContentExtensions(): Extensions {
     ManagedImage,
   ];
 }
+
+/** Markdown keeps its existing grammar; only its presentation is shared. */
+function markdownContentExtensions(): Extensions {
+  const SearchMatch = Mark.create({
+    name: "searchMatch",
+    parseHTML: () => [{ tag: "mark" }],
+    renderHTML: () => ["mark", 0],
+  });
+  return articleContentExtensions()
+    .map((extension) => {
+      switch (extension.name) {
+        case "heading":
+          return Heading.extend({
+            addAttributes() {
+              return { ...this.parent?.(), id: { default: null } };
+            },
+          }).configure({ levels: [1, 2, 3, 4, 5, 6] });
+        case "blockquote":
+          return Blockquote;
+        case "listItem":
+          return ListItem;
+        case "tableCell":
+          return TableCell;
+        case "tableHeader":
+          return TableHeader;
+        case "link":
+          return Link.configure({
+            openOnClick: false,
+            autolink: false,
+            HTMLAttributes: {
+              target: null,
+              rel: "nofollow noopener noreferrer",
+            },
+            isAllowedUri: (url) => isAllowedArticleHref(url),
+          });
+        default:
+          return extension;
+      }
+    })
+    .concat(SearchMatch);
+}
+
+export const contentExtensions = {
+  article: articleContentExtensions(),
+  markdown: markdownContentExtensions(),
+};
+export const contentSchemas = {
+  article: getSchema(contentExtensions.article),
+  markdown: getSchema(contentExtensions.markdown),
+};

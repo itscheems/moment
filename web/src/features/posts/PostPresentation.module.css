@@ -302,27 +302,6 @@
   text-align: start;
 }
 
-.timelineDensity .markdown p,
-.timelineDensity .markdown li,
-.timelineDensity .markdown blockquote,
-.timelineDensity .markdown h1,
-.timelineDensity .markdown h2,
-.timelineDensity .markdown h3,
-.timelineDensity .markdown h4 {
-  white-space: pre-wrap;
-}
-
-.timelineDensity .markdown p,
-.timelineDensity .markdown ul,
-.timelineDensity .markdown ol,
-.timelineDensity .markdown blockquote,
-.timelineDensity .markdown pre,
-.timelineDensity .markdown h2,
-.timelineDensity .markdown h3,
-.timelineDensity .markdown h4 {
-  margin-block: 0.55em;
-}
-
 .timelineDensity .postLocation {
   min-block-size: 1.25rem;
   margin-block-start: 0.25rem;
@@ -331,14 +310,6 @@
 
 .timelineDensity .postActions {
   margin-block-start: 0;
-}
-
-.markdown > :first-child {
-  margin-block-start: 0;
-}
-
-.markdown > :last-child {
-  margin-block-end: 0;
 }
 
 .postLocation {
@@ -437,85 +408,6 @@
   font-size: 0.8125rem;
   line-height: 1.4;
   overflow-wrap: anywhere;
-}
-
-.markdown p,
-.markdown ul,
-.markdown ol,
-.markdown blockquote,
-.markdown pre,
-.markdown h2,
-.markdown h3,
-.markdown h4 {
-  margin-block: 0.72em;
-}
-
-.markdown h1,
-.markdown h2,
-.markdown h3,
-.markdown h4 {
-  font-weight: 750;
-  line-height: 1.25;
-}
-
-.markdown h1 {
-  font-size: 1.45rem;
-}
-
-.markdown h2 {
-  font-size: 1.25rem;
-}
-
-.markdown h3,
-.markdown h4 {
-  font-size: 1.08rem;
-}
-
-.markdown a {
-  color: var(--accent);
-  text-decoration-thickness: 0.08em;
-  text-underline-offset: 0.18em;
-}
-
-.markdown mark {
-  border-radius: 0.2rem;
-  color: inherit;
-  background: color-mix(in srgb, var(--accent) 24%, transparent);
-  font-weight: 700;
-}
-
-.markdown blockquote {
-  border-inline-start: 3px solid var(--border-strong);
-  margin-inline: 0;
-  padding-inline-start: var(--space-3);
-  color: var(--text-secondary);
-}
-
-.markdown code {
-  border-radius: 0.3rem;
-  padding: 0.08rem 0.28rem;
-  background: var(--surface-muted);
-  font-family: var(--font-mono);
-  font-size: 0.88em;
-}
-
-.markdown pre {
-  max-inline-size: 100%;
-  overflow-x: auto;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-action);
-  padding: var(--space-4);
-  background: var(--surface-hover);
-}
-
-.markdown pre code {
-  padding: 0;
-  background: transparent;
-}
-
-.markdown hr {
-  border: 0;
-  border-block-start: 1px solid var(--border-subtle);
 }
 
 .collapsed {
@@ -768,23 +660,6 @@
   font-size: 1.0625rem;
   font-weight: 400;
   line-height: 1.5rem;
-}
-
-.detailBody .markdown p,
-.detailBody .markdown li,
-.detailBody .markdown blockquote,
-.detailBody .markdown h1,
-.detailBody .markdown h2,
-.detailBody .markdown h3,
-.detailBody .markdown h4,
-.detailBody .markdown h5,
-.detailBody .markdown h6 {
-  overflow-wrap: break-word;
-  font-family: inherit;
-  font-feature-settings: normal;
-  letter-spacing: normal;
-  text-rendering: auto;
-  white-space: pre-wrap;
 }
 
 .detail .usernameLink {

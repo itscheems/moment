@@ -8,9 +8,9 @@ import {
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MentionProvider } from "../app/mentions";
-import { NavigationProvider, useNavigation } from "../app/navigation";
-import { MarkdownContent } from "./MarkdownContent";
+import { MentionProvider } from "../../app/mentions";
+import { NavigationProvider, useNavigation } from "../../app/navigation";
+import { MarkdownBody } from "./MarkdownBody";
 
 // Rendered markdown carries real anchors, and keeping the internal ones inside
 // the app needs the router. A mention is a link only once its handle is known
@@ -28,7 +28,7 @@ function render(ui: ReactElement, known: readonly string[] = MENTIONABLE) {
 
 afterEach(cleanup);
 
-describe("MarkdownContent", () => {
+describe("MarkdownBody", () => {
   it.each([
     ["python", "def hello():\n    return True"],
     ["java", "class Hello { public static void main(String[] args) {} }"],
@@ -37,7 +37,7 @@ describe("MarkdownContent", () => {
     ["sql", "SELECT id FROM moments WHERE id = 1;"],
   ])("highlights an explicit %s fence", async (language, source) => {
     const { container } = render(
-      <MarkdownContent
+      <MarkdownBody
         html={`<pre><code class="language-${language}">${source}</code></pre>`}
       />,
     );
@@ -45,13 +45,7 @@ describe("MarkdownContent", () => {
     expect(container.querySelector("code .hljs-keyword")).toBeInTheDocument();
   });
 
-  // React compares dangerouslySetInnerHTML by the identity of the prop object,
-  // and a render builds a fresh one every time -- so every re-render re-commits
-  // the markup it was given. Colouring the committed DOM from an effect
-  // survived exactly one commit: a post read on its own page kept its colours
-  // because nothing re-rendered it, and the same post in a timeline lost them
-  // on the next hover, with the effect never running again because the html it
-  // depended on had not changed.
+  // Parent updates must preserve code colour and the reader’s DOM selection.
   it("keeps a fence coloured when what is around it re-renders", () => {
     const body =
       '<pre><code class="language-python">def hi():\n    return 1</code></pre>';
@@ -62,7 +56,7 @@ describe("MarkdownContent", () => {
       <NavigationProvider>
         <MentionProvider known={MENTIONABLE}>
           <span>{tick}</span>
-          <MarkdownContent html={body} />
+          <MarkdownBody html={body} />
         </MentionProvider>
       </NavigationProvider>
     );
@@ -77,7 +71,7 @@ describe("MarkdownContent", () => {
 
   it("keeps plain and unknown fences readable without guessing", () => {
     const { container } = render(
-      <MarkdownContent
+      <MarkdownBody
         html={
           '<pre><code class="language-moment">plain &amp; safe</code></pre>'
         }
@@ -90,7 +84,7 @@ describe("MarkdownContent", () => {
   });
 
   it("still links the owner's handle", () => {
-    render(<MarkdownContent html="<p>你好 @owner。</p>" />);
+    render(<MarkdownBody html="<p>你好 @owner。</p>" />);
 
     const mention = screen.getByRole("link", { name: "@owner" });
     expect(mention).toHaveAttribute("href", "/owner");
@@ -101,7 +95,7 @@ describe("MarkdownContent", () => {
     // The composer's autocomplete searches every approved account, so a name
     // it offered has to arrive as a link. Recognising only the owner left a
     // member's handle as grey text in the middle of a sentence about them.
-    render(<MarkdownContent html="<p>@owner 和 @linlin 都在。</p>" />);
+    render(<MarkdownBody html="<p>@owner 和 @linlin 都在。</p>" />);
 
     expect(screen.getByRole("link", { name: "@owner" })).toHaveAttribute(
       "href",
@@ -115,7 +109,7 @@ describe("MarkdownContent", () => {
   it("addresses a capitalised handle at its canonical lowercase", () => {
     // Handles are lowercase by rule and nobody typing one thinks about that.
     // What was typed stays on screen; only the address is lowered.
-    render(<MarkdownContent html="<p>谢谢 @Cheems！</p>" />);
+    render(<MarkdownBody html="<p>谢谢 @Cheems！</p>" />);
 
     const mention = screen.getByRole("link", { name: "@Cheems" });
     expect(mention).toHaveAttribute("href", "/cheems");
@@ -124,7 +118,7 @@ describe("MarkdownContent", () => {
 
   it("leaves mentions inside code and inside existing links alone", () => {
     render(
-      <MarkdownContent
+      <MarkdownBody
         html={
           '<p><a href="/elsewhere">@linlin</a> 写道：</p>' +
           "<pre><code>@owner</code></pre><p>用 <code>@linlin</code> 引用。</p>"
@@ -147,7 +141,7 @@ describe("MarkdownContent", () => {
     ["@" + "a".repeat(31), "太长"],
   ])("leaves %s as text (%s)", (handle) => {
     const { container } = render(
-      <MarkdownContent html={`<p>看 ${handle} 这个。</p>`} />,
+      <MarkdownBody html={`<p>看 ${handle} 这个。</p>`} />,
     );
 
     expect(container.querySelector("a")).toBeNull();
@@ -165,7 +159,7 @@ describe("MarkdownContent", () => {
     // reloads the browser onto the sign-in form or an asset directory and takes
     // the reader out of the conversation they were reading.
     const { container } = render(
-      <MarkdownContent html={`<p>看 ${handle} 这个。</p>`} />,
+      <MarkdownBody html={`<p>看 ${handle} 这个。</p>`} />,
     );
 
     expect(container.querySelector("a")).toBeNull();
@@ -174,7 +168,7 @@ describe("MarkdownContent", () => {
 
   it("still links a real handle standing beside a reserved one", () => {
     const { container } = render(
-      <MarkdownContent html="<p>@login 之后找 @linlin。</p>" />,
+      <MarkdownBody html="<p>@login 之后找 @linlin。</p>" />,
     );
 
     expect(container.querySelectorAll("a")).toHaveLength(1);
@@ -189,7 +183,7 @@ describe("MarkdownContent", () => {
     // The leading guard carries this: an address has a word character before
     // the at sign and a mention never does.
     const { container } = render(
-      <MarkdownContent html="<p>写信到 alice@example.com 就好。</p>" />,
+      <MarkdownBody html="<p>写信到 alice@example.com 就好。</p>" />,
     );
 
     expect(container.querySelector("a")).toBeNull();
@@ -197,10 +191,7 @@ describe("MarkdownContent", () => {
   });
 });
 
-// The markup goes in through dangerouslySetInnerHTML, so these are real
-// anchors with no React handler on them. Every one of them reloaded the whole
-// page -- mentions included -- throwing away the timeline the reader was in
-// the middle of.
+// Links emitted by the shared renderer keep internal navigation inside the app.
 describe("links written into rendered markdown", () => {
   afterEach(() => {
     cleanup();
@@ -212,7 +203,7 @@ describe("links written into rendered markdown", () => {
     function Probe() {
       const { pathname } = useNavigation();
       seen.push(pathname);
-      return <MarkdownContent html={html} />;
+      return <MarkdownBody html={html} />;
     }
     render(<Probe />);
     return seen;
@@ -271,7 +262,7 @@ describe("a mention that names nobody", () => {
   });
 
   it("stays the text it was typed as", () => {
-    render(<MarkdownContent html="<p>@owner hi</p>" />, []);
+    render(<MarkdownBody html="<p>@owner hi</p>" />, []);
 
     expect(screen.queryByRole("link", { name: "@owner" })).toBeNull();
     expect(screen.getByText(/@owner hi/)).toBeInTheDocument();
@@ -284,7 +275,7 @@ describe("a mention that names nobody", () => {
         : new Response("{}", { status: 404 }),
     );
     vi.stubGlobal("fetch", fetcher);
-    render(<MarkdownContent html="<p>@linlin 和 @owner</p>" />, []);
+    render(<MarkdownBody html="<p>@linlin 和 @owner</p>" />, []);
 
     expect(
       await screen.findByRole("link", { name: "@linlin" }),
@@ -306,7 +297,7 @@ describe("a mention that names nobody", () => {
       { length: 40 },
       (_, index) => `@user${index}0`,
     ).join(" ");
-    render(<MarkdownContent html={`<p>${many}</p>`} />, []);
+    render(<MarkdownBody html={`<p>${many}</p>`} />, []);
 
     expect(fetcher.mock.calls.length).toBeLessThanOrEqual(16);
   });

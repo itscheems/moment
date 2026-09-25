@@ -15,6 +15,7 @@ import { FeedbackProvider } from "../../components/Feedback";
 import { OwnerProvider } from "../owner/OwnerProvider";
 import ownerCss from "../owner/Owner.module.css?inline";
 import { PostPresentation } from "./PostPresentation";
+import contentCss from "../../components/content/Content.module.css?inline";
 import postCss from "./PostPresentation.module.css?inline";
 
 afterEach(() => {
@@ -112,8 +113,8 @@ describe("shared post presentation", () => {
     expect(postCss).toMatch(
       /\._timelineDensity_[\w-]+ \._markdown_[\w-]+\s*\{[^}]*margin-block-start:\s*0;[^}]*overflow-wrap:\s*break-word;[^}]*font-size:\s*0\.9375rem;[^}]*font-weight:\s*400;[^}]*line-height:\s*1\.25rem;/s,
     );
-    expect(postCss).toMatch(
-      /\._timelineDensity_[\w-]+ \._markdown_[\w-]+ p,[\s\S]*?\._timelineDensity_[\w-]+ \._markdown_[\w-]+ h4\s*\{[^}]*white-space:\s*pre-wrap;/,
+    expect(contentCss).toMatch(
+      /\._root_[\w-]+\s*\{[^}]*white-space:\s*pre-wrap;/,
     );
     expect(postCss).toMatch(
       /\._timelineDensity_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*margin-block-start:\s*0;/,

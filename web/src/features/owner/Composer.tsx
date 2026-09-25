@@ -25,7 +25,7 @@ import type { OwnerLocation } from "../../api/owner";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { ARTICLE_COMPOSE_PATH } from "../../app/routes";
 import { notify } from "../../components/Feedback";
-import { MarkdownContent } from "../../components/MarkdownContent";
+import { MarkdownBody } from "../../components/content/MarkdownBody";
 import { MediaComposer } from "../media/MediaComposer";
 import { ImageGrid } from "../media/ImageGrid";
 import { SiteAvatar } from "../../components/SiteIdentity";
@@ -1446,7 +1446,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     <Icon name="close" />
                   </button>
                 </header>
-                <MarkdownContent html={quotedPost.contentHtml} />
+                <MarkdownBody html={quotedPost.contentHtml} />
                 {quotedPost.location ? (
                   <p className={styles.quoteComposerLocation}>
                     <Icon name="location" />

@@ -16,7 +16,7 @@ import {
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
-import { MarkdownContent } from "../../components/MarkdownContent";
+import { MarkdownBody } from "../../components/content/MarkdownBody";
 import { CommentForm, SignInToReply, useCanComment } from "./CommentComposer";
 import styles from "./Comments.module.css";
 
@@ -95,7 +95,7 @@ export function PostReplyDialog({
                   <strong>{site.displayName}</strong>
                   <span>@{site.username}</span>
                 </p>
-                <MarkdownContent
+                <MarkdownBody
                   className={styles.replyContextContent}
                   html={post.contentHtml}
                 />
