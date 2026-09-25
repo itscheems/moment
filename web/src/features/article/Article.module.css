@@ -342,3 +342,43 @@
     transition: none;
   }
 }
+
+/* A quoted article: the same three things one size down, and no frame of its
+   own -- the quote already draws one, and a second would read as two posts
+   rather than one quoting another. */
+.quoted {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.quotedCover {
+  inline-size: 100%;
+  block-size: auto;
+  border-radius: 0.75rem;
+  object-fit: cover;
+  aspect-ratio: 16 / 9;
+  margin-block-end: 0.25rem;
+}
+
+.quotedBadge {
+  margin: 0;
+}
+
+.quotedTitle {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.quotedExcerpt {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}

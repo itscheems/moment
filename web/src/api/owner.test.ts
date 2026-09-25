@@ -143,6 +143,7 @@ describe("owner API client", () => {
             content_html: "<p>我的补充</p>",
             quoted_post: {
               unavailable: false,
+              article: null,
               id: "01K2ABCDEF0123456789ABCDE9",
               kind: "moment",
               content_md: "原始内容",

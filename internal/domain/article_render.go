@@ -12,6 +12,10 @@ import (
 // /api/v1, and it makes the renderer testable without a server.
 type ArticleRenderOptions struct {
 	MediaURL func(mediaID ID) string
+	// MediaGeometry answers a picture's stored size when the caller knows it.
+	// Without it an article body is the only place on this site whose pictures
+	// do not reserve their space, and the page jumps as they arrive.
+	MediaGeometry func(mediaID ID) (width, height uint32, known bool)
 }
 
 // Marks nest in a fixed order so the same document always renders to the same
@@ -88,7 +92,14 @@ func renderArticleNode(output *strings.Builder, node ArticleNode, options Articl
 		output.WriteString("</code></pre>")
 	case ArticleNodeImage:
 		output.WriteString(`<img src="` + html.EscapeString(options.MediaURL(node.MediaID)) + `"`)
-		output.WriteString(` alt="` + html.EscapeString(node.Alt) + `" loading="lazy">`)
+		output.WriteString(` alt="` + html.EscapeString(node.Alt) + `"`)
+		if options.MediaGeometry != nil {
+			if width, height, known := options.MediaGeometry(node.MediaID); known && width > 0 && height > 0 {
+				output.WriteString(` width="` + strconv.FormatUint(uint64(width), 10) + `"`)
+				output.WriteString(` height="` + strconv.FormatUint(uint64(height), 10) + `"`)
+			}
+		}
+		output.WriteString(` loading="lazy">`)
 	case ArticleNodeTable:
 		renderArticleTable(output, node, options)
 	case ArticleNodeTableRow:

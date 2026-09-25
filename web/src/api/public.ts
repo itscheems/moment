@@ -279,6 +279,14 @@ export interface PublicAvailableQuotedPost {
   unavailable: false;
   id: string;
   kind: PostKind;
+  /**
+   * The quoted article's card, and null when the target is a moment.
+   *
+   * A quote shows a card. Its `body` is always null here: embedding a whole
+   * long post inside a short one is not a quote, so the server does not send
+   * one and this refuses a response that does.
+   */
+  article: PublicArticle | null;
   contentMd: string | null;
   contentHtml: string;
   publishedAt: string;
@@ -1569,6 +1577,7 @@ export function parsePost(value: unknown): PublicPost {
         "unavailable",
         "id",
         "kind",
+        "article",
         "content_md",
         "content_html",
         "published_at",
@@ -1586,6 +1595,7 @@ export function parsePost(value: unknown): PublicPost {
       if (
         quoted.id !== null ||
         quoted.kind !== null ||
+        quoted.article !== null ||
         quoted.content_md !== null ||
         quoted.content_html !== null ||
         quoted.published_at !== null ||
@@ -1617,12 +1627,22 @@ export function parsePost(value: unknown): PublicPost {
         quotedLocation = { name: quotedName, displayName: quotedDisplayName };
       }
       const quotedBody = postBody(quoted, "quoted post");
+      const quotedContentHtml = stringField(quoted, "content_html");
+      const quotedArticle = parseArticle(
+        quoted.article,
+        quotedBody.kind,
+        quotedContentHtml,
+      );
+      if (quotedArticle !== null && quotedArticle.body !== null) {
+        throw invalidResponse("a quote shows an article's card, not its body");
+      }
       quotedPost = {
         unavailable: false,
         id: stringField(quoted, "id"),
         kind: quotedBody.kind,
+        article: quotedArticle,
         contentMd: quotedBody.contentMd,
-        contentHtml: stringField(quoted, "content_html"),
+        contentHtml: quotedContentHtml,
         publishedAt: instantField(quoted, "published_at"),
         media: parseMediaUsages(
           quoted.media,

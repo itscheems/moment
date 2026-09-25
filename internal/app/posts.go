@@ -164,6 +164,10 @@ type QuotedPost struct {
 	Unavailable bool
 	Entry       domain.Entry
 	ContentHTML string
+	// ArticleCard stands in for the body when the target is an article. A
+	// quote shows a card, not a whole article; embedding one would put a
+	// complete long post inside somebody else's short one.
+	ArticleCard *ArticleCard
 	Media       []MediaUsageProjection
 	Location    *domain.Location
 }
@@ -473,7 +477,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	if err != nil {
 		return CreatePostResult{}, normalizePostRepositoryError(err)
 	}
-	result.Post.ContentHTML, err = renderEntryHTML(result.Post.Entry, result.Post.Article, LinkCardsOf(result.Post.LinkCards))
+	result.Post.ContentHTML, err = renderEntryHTML(result.Post.Entry, result.Post.Article, result.Post.Media, LinkCardsOf(result.Post.LinkCards))
 	if err != nil {
 		return CreatePostResult{}, storedEntryError(result.Post.Entry.ID)
 	}
@@ -1275,15 +1279,29 @@ func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id doma
 	if !found || !viewer.CanRead(entry.Visibility) {
 		return nil, nil
 	}
-	media, err := store.EntryMediaUsages(ctx, id)
-	if err != nil {
-		return nil, err
-	}
 	location, err := store.EntryLocation(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	html, err := renderEntryHTML(entry, nil, nil)
+	// A quoted article shows its card. Rendering the body here would embed a
+	// whole long post inside a short one, and the pictures it places are not
+	// attachments of the quoting post either.
+	if entry.Kind == domain.KindArticle {
+		cards, cardErr := store.ArticleCards(ctx, []domain.ID{id})
+		if cardErr != nil {
+			return nil, cardErr
+		}
+		card, present := cards[id]
+		if !present {
+			return nil, storedEntryError(id)
+		}
+		return &QuotedPost{Entry: entry, ArticleCard: &card, Location: location}, nil
+	}
+	media, err := store.EntryMediaUsages(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	html, err := renderEntryHTML(entry, nil, nil, nil)
 	if err != nil {
 		return nil, storedEntryError(id)
 	}
@@ -1305,7 +1323,7 @@ func renderPost(entry domain.Entry, view articleView, media []MediaUsageProjecti
 	if err := validateStoredEntryBody(entry, view.Body, len(media)); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	html, err := renderEntryHTML(entry, view.Body, LinkCardsOf(cards))
+	html, err := renderEntryHTML(entry, view.Body, media, LinkCardsOf(cards))
 	if err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}

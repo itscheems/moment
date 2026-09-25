@@ -680,6 +680,7 @@ describe("owner composing flow", () => {
               ...post("我的补充", "01K2ABCDEF0123456789ABCDE8"),
               quoted_post: {
                 unavailable: false,
+                article: null,
                 id: quotedId,
                 kind: "moment",
                 content_md: "原始 Moment",

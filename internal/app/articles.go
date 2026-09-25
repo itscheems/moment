@@ -57,20 +57,33 @@ func ArticleMediaURL(mediaID domain.ID) string {
 		"/preview?v=" + url.QueryEscape(mediacontract.RecipeVersion)
 }
 
-func articleRenderOptions() domain.ArticleRenderOptions {
-	return domain.ArticleRenderOptions{MediaURL: ArticleMediaURL}
+// articleRenderOptions carries the stored geometry of the pictures a body
+// places, so the page reserves their space before they arrive. The projection
+// is the only place that size is known at render time.
+func articleRenderOptions(media []MediaUsageProjection) domain.ArticleRenderOptions {
+	sizes := make(map[domain.ID][2]uint32, len(media))
+	for _, usage := range media {
+		sizes[usage.MediaID] = [2]uint32{usage.Width, usage.Height}
+	}
+	return domain.ArticleRenderOptions{
+		MediaURL: ArticleMediaURL,
+		MediaGeometry: func(mediaID domain.ID) (uint32, uint32, bool) {
+			size, known := sizes[mediaID]
+			return size[0], size[1], known
+		},
+	}
 }
 
 // renderEntryHTML produces the HTML a reader receives, whichever body shape the
 // entry has. An entry whose body did not come along is a read that lost half of
 // itself, so it fails here rather than answering an empty page.
-func renderEntryHTML(entry domain.Entry, article *domain.Article, cards []domain.LinkCard) (string, error) {
+func renderEntryHTML(entry domain.Entry, article *domain.Article, media []MediaUsageProjection, cards []domain.LinkCard) (string, error) {
 	switch entry.Kind {
 	case domain.KindArticle:
 		if article == nil {
 			return "", fmt.Errorf("article %s was read without its body", entry.ID)
 		}
-		return domain.RenderArticleHTML(article.Body, articleRenderOptions())
+		return domain.RenderArticleHTML(article.Body, articleRenderOptions(media))
 	default:
 		body, present := entry.Markdown()
 		if !present {

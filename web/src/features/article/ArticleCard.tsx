@@ -35,6 +35,39 @@ export function articleShareBlocks(article: PublicArticle): ShareCardBlock[] {
  * so there is nothing here to truncate, and the excerpt is the summary the
  * server already made.
  */
+/**
+ * QuotedArticle is the article shown inside somebody's quote.
+ *
+ * It is the same three things a card carries, one size down and without the
+ * outer frame: the quote already has one, and nesting a second would read as
+ * two posts rather than one quoting another.
+ */
+export function QuotedArticle({ article }: { article: PublicArticle }) {
+  const { title, excerpt, cover } = article;
+  return (
+    <div className={styles.quoted}>
+      {cover ? (
+        <img
+          alt=""
+          className={styles.quotedCover}
+          decoding="async"
+          height={cover.height}
+          loading="lazy"
+          src={articleCoverUrl(cover)}
+          width={cover.width}
+        />
+      ) : null}
+      <p className={styles.quotedBadge}>
+        <span className={styles.badge}>
+          <span className={styles.srOnly}>类型：</span>文章
+        </span>
+      </p>
+      <h3 className={styles.quotedTitle}>{title}</h3>
+      {excerpt.trim() ? <p className={styles.quotedExcerpt}>{excerpt}</p> : null}
+    </div>
+  );
+}
+
 export function ArticleCard({ post }: { post: PublicArticlePost }) {
   const { title, excerpt, cover } = post.article;
   const badge = (

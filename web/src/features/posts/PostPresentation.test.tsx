@@ -177,6 +177,7 @@ describe("shared post presentation", () => {
             ...makePost("补充说明", "<p>补充说明</p>"),
             quotedPost: {
               unavailable: false,
+              article: null,
               id: "01K2ABCDEF0123456789ABCDE9",
               kind: "moment",
               contentMd: "原始内容",

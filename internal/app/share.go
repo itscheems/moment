@@ -149,9 +149,13 @@ func (service *ShareMetadataService) Post(ctx context.Context, id domain.ID) (Sh
 		CanonicalURL: publicShareURL(settings.PublicBaseURL, "m", id.String()),
 		PostFound:    true,
 	}
-	if len(post.Media) > 0 {
+	// An article leads with its cover; a moment leads with its first picture.
+	switch {
+	case post.ArticleCard != nil && post.ArticleCard.Cover != nil:
+		metadata.ImageURL = derivedShareURL(settings.PublicBaseURL, "api", "v1", "media", post.ArticleCard.Cover.MediaID.String(), "preview")
+	case post.Entry.Kind != domain.KindArticle && len(post.Media) > 0:
 		metadata.ImageURL = derivedShareURL(settings.PublicBaseURL, "api", "v1", "media", post.Media[0].MediaID.String(), "preview")
-	} else {
+	default:
 		metadata.ImageURL = avatarShareURL(settings)
 	}
 	return metadata, nil

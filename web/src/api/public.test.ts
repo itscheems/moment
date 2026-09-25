@@ -82,6 +82,7 @@ describe("public API client", () => {
       content_html: "<p>写一点新的想法</p>",
       quoted_post: {
         unavailable: false,
+        article: null,
         id: "01K2ABCDEF0123456789ABCDE9",
         kind: "moment",
         content_md: "被引用的正文",
@@ -102,6 +103,7 @@ describe("public API client", () => {
       contentMd: "写一点新的想法",
       quotedPost: {
         unavailable: false,
+        article: null,
         id: "01K2ABCDEF0123456789ABCDE9",
         contentMd: "被引用的正文",
         location: { name: "陆悦天地" },
@@ -118,6 +120,7 @@ describe("public API client", () => {
         unavailable: true,
         id: null,
         kind: null,
+        article: null,
         content_md: null,
         content_html: null,
         published_at: null,
@@ -1259,8 +1262,15 @@ describe("post kind and the body it is allowed to carry", () => {
         unavailable: false,
         id: "01K2ABCDEF0123456789ABCDE9",
         kind: "article",
+        article: {
+          title: "被引用的文章",
+          excerpt: "被引用的摘要",
+          cover: null,
+          body: null,
+          body_schema_version: null,
+        },
         content_md: null,
-        content_html: "<h1>被引用的文章</h1>",
+        content_html: "",
         published_at: "2026-08-09T01:02:03.000Z",
         media: [],
         location: null,
@@ -1271,12 +1281,45 @@ describe("post kind and the body it is allowed to carry", () => {
       unavailable: false,
       id: "01K2ABCDEF0123456789ABCDE9",
       kind: "article",
+      article: {
+        title: "被引用的文章",
+        excerpt: "被引用的摘要",
+        cover: null,
+        body: null,
+        bodySchemaVersion: null,
+      },
       contentMd: null,
-      contentHtml: "<h1>被引用的文章</h1>",
+      contentHtml: "",
       publishedAt: "2026-08-09T01:02:03.000Z",
       media: [],
       location: null,
     });
+  });
+
+  // A quote shows a card. Embedding a whole long post inside a short one is
+  // not a quote, and the server does not send one.
+  it("refuses a quoted article that carries its body", () => {
+    const withBody = {
+      ...post,
+      quoted_post: {
+        unavailable: false,
+        id: "01K2ABCDEF0123456789ABCDE9",
+        kind: "article",
+        article: {
+          title: "被引用的文章",
+          excerpt: "摘要",
+          cover: null,
+          body: { schema_version: 1, type: "doc", content: [] },
+          body_schema_version: 1,
+        },
+        content_md: null,
+        content_html: "<h1>被引用的文章</h1>",
+        published_at: "2026-08-09T01:02:03.000Z",
+        media: [],
+        location: null,
+      },
+    };
+    expect(() => parsePost(withBody)).toThrow(PublicApiError);
   });
 
   it("holds a quoted post to the same pairing as the post quoting it", () => {
@@ -1284,6 +1327,7 @@ describe("post kind and the body it is allowed to carry", () => {
       ...post,
       quoted_post: {
         unavailable: false,
+        article: null,
         id: "01K2ABCDEF0123456789ABCDE9",
         kind: "moment",
         content_md: "被引用的正文",
@@ -1311,6 +1355,7 @@ describe("post kind and the body it is allowed to carry", () => {
       unavailable: true,
       id: null,
       kind: null,
+      article: null,
       content_md: null,
       content_html: null,
       published_at: null,

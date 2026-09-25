@@ -24,7 +24,11 @@ import {
 import { formatMomentDate } from "./dates";
 import { OwnerPostActions } from "../owner/OwnerPostActions";
 import { OwnerRepostAction } from "../owner/OwnerRepostAction";
-import { ArticleCard, articleShareBlocks } from "../article/ArticleCard";
+import {
+  ArticleCard,
+  QuotedArticle,
+  articleShareBlocks,
+} from "../article/ArticleCard";
 import { LinkCard } from "../links/LinkCard";
 import { shareCardBlocks, shareCardLink } from "../share/shareCard";
 import { ImageGrid } from "../media/ImageGrid";
@@ -335,12 +339,18 @@ export function PostPresentation({
           {formatMomentDate(quoted.publishedAt, site.timezone, now).relative}
         </time>
       </header>
-      <MarkdownContent
-        className={styles.quoteMarkdown}
-        html={quoted.contentHtml}
-      />
+      {quoted.article ? (
+        // A quoted article is a card inside a card: its title and the run of
+        // prose under it, never the article itself.
+        <QuotedArticle article={quoted.article} />
+      ) : (
+        <MarkdownContent
+          className={styles.quoteMarkdown}
+          html={quoted.contentHtml}
+        />
+      )}
       {quoted.location ? <PostLocation location={quoted.location} /> : null}
-      <ImageGrid media={quoted.media} />
+      {quoted.article ? null : <ImageGrid media={quoted.media} />}
     </div>
   ) : null;
 

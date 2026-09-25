@@ -50,21 +50,27 @@ type Post struct {
 }
 
 func fromArticle(post app.Post) *Article {
-	if post.ArticleCard == nil {
+	return fromArticleCard(post.ArticleCard, post.Article)
+}
+
+// fromArticleCard maps a card, adding the body only when the caller has one.
+// A list read and a quote both stop at the card.
+func fromArticleCard(card *app.ArticleCard, body *domain.Article) *Article {
+	if card == nil {
 		return nil
 	}
-	mapped := &Article{Title: post.ArticleCard.Title, Excerpt: post.ArticleCard.Excerpt}
-	if cover := post.ArticleCard.Cover; cover != nil {
+	mapped := &Article{Title: card.Title, Excerpt: card.Excerpt}
+	if cover := card.Cover; cover != nil {
 		mapped.Cover = &ArticleCover{
 			MediaID: cover.MediaID.String(), MIMEType: cover.MIMEType,
 			Width: cover.Width, Height: cover.Height,
 		}
 	}
-	if post.Article != nil {
-		body, err := domain.MarshalArticleDocument(post.Article.Body)
+	if body != nil {
+		encoded, err := domain.MarshalArticleDocument(body.Body)
 		if err == nil {
-			version := post.Article.Body.SchemaVersion
-			mapped.Body, mapped.BodySchemaVersion = body, &version
+			version := body.Body.SchemaVersion
+			mapped.Body, mapped.BodySchemaVersion = encoded, &version
 		}
 	}
 	return mapped
@@ -109,7 +115,11 @@ type QuotedPost struct {
 	ID          *string `json:"id"`
 	// Kind is set whenever the target is available. Unavailable is what says a
 	// target is missing; a null ContentMD only says the target is an article.
-	Kind        *string           `json:"kind"`
+	Kind *string `json:"kind"`
+	// Article carries the quoted target's card when it is an article, and is
+	// null otherwise. A quote shows a card; embedding a whole long post inside
+	// a short one is not a quote.
+	Article     *Article          `json:"article"`
 	ContentMD   *string           `json:"content_md"`
 	ContentHTML *string           `json:"content_html"`
 	PublishedAt *time.Time        `json:"published_at"`
@@ -340,10 +350,22 @@ func linkCardProjections(cards []app.LinkCardProjection) []LinkCard {
 	return projections
 }
 
+// articleAttachments answers the usages a reader should see as attachments.
+func articleAttachments(post app.Post) []app.MediaUsageProjection {
+	if post.Entry.Kind == domain.KindArticle {
+		return nil
+	}
+	return post.Media
+}
+
 // FromPost maps one application post onto the stable public shape.
 func FromPost(post app.Post) Post {
+	// media is the attachment grid. An article has none: the pictures it
+	// places live inside its body, and entry_media holds them only so that
+	// reference counting and reclamation stay in SQL. Publishing that
+	// bookkeeping as attachments would draw every article twice.
 	media := make([]MediaProjection, 0, len(post.Media))
-	for _, usage := range post.Media {
+	for _, usage := range articleAttachments(post) {
 		mapped := MediaProjection{MediaID: usage.MediaID.String(), Position: usage.Position, MIMEType: usage.MIMEType, Width: usage.Width, Height: usage.Height}
 		if usage.AltText != nil {
 			alt := *usage.AltText
@@ -402,7 +424,11 @@ func FromPost(post app.Post) Post {
 		kind := string(post.Quoted.Entry.Kind)
 		contentHTML := post.Quoted.ContentHTML
 		publishedAt := post.Quoted.Entry.PublishedAt.UTC()
-		mapped.QuotedPost = &QuotedPost{ID: &id, Kind: &kind, ContentMD: cloneOptionalText(post.Quoted.Entry.ContentMD), ContentHTML: &contentHTML, PublishedAt: &publishedAt, Media: quotedMedia}
+		mapped.QuotedPost = &QuotedPost{
+			ID: &id, Kind: &kind, Article: fromArticleCard(post.Quoted.ArticleCard, nil),
+			ContentMD: cloneOptionalText(post.Quoted.Entry.ContentMD), ContentHTML: &contentHTML,
+			PublishedAt: &publishedAt, Media: quotedMedia,
+		}
 		if post.Quoted.Location != nil {
 			mapped.QuotedPost.Location = &Location{Name: post.Quoted.Location.Name, DisplayName: post.Quoted.Location.DisplayName}
 		}
@@ -537,7 +563,7 @@ func ValidatePost(post Post) error {
 	}
 	if post.QuotedPost != nil {
 		if post.QuotedPost.Unavailable {
-			if post.QuotedPost.ID != nil || post.QuotedPost.Kind != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.Location != nil {
+			if post.QuotedPost.ID != nil || post.QuotedPost.Kind != nil || post.QuotedPost.Article != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.Location != nil {
 				return errors.New("unavailable quoted post must not contain target data")
 			}
 			return nil
@@ -572,6 +598,12 @@ func validateQuotedPost(post QuotedPost) error {
 	if kind == domain.KindArticle {
 		if post.ContentMD != nil {
 			return errors.New("a quoted article carries no Markdown body")
+		}
+		if post.Article == nil {
+			return errors.New("a quoted article must carry its card")
+		}
+		if post.Article.Body != nil {
+			return errors.New("a quote shows an article's card, not its body")
 		}
 	} else {
 		if post.ContentMD == nil {
