@@ -198,6 +198,7 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("post routes require owner authentication and site settings")
 		}
 		RegisterPostRoutes(engine, config.Posts, config.SiteSettings, gate)
+		RegisterArticleRoutes(engine, config.Posts, gate)
 	}
 	if config.Locations != nil {
 		if config.OwnerAuth == nil {

@@ -474,8 +474,8 @@ func TestAuthorityTreeSnapshotIgnoresDirectorySizeAndDetectsRegularFileChanges(t
 
 func validateRestoredDoctorRegistry(checks []doctor.Check) error {
 	registry := doctor.Registry()
-	if len(registry) != 22 {
-		return fmt.Errorf("doctor schema v1 registry contains %d checks, want 22", len(registry))
+	if len(registry) != 23 {
+		return fmt.Errorf("doctor schema v1 registry contains %d checks, want 23", len(registry))
 	}
 	if len(checks) != len(registry) {
 		return fmt.Errorf("restored doctor returned %d checks, want %d", len(checks), len(registry))

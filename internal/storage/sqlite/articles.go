@@ -149,20 +149,25 @@ func (store postStore) ArticleCards(ctx context.Context, ids []domain.ID) (map[d
 		arguments = append(arguments, id.String())
 	}
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT entry_id, title, excerpt, cover_media_id
-FROM entry_article
-WHERE entry_id IN (`+string(placeholders)+`)`, arguments...)
+SELECT article.entry_id, article.title, article.excerpt, article.cover_media_id,
+       coalesce(cover.mime_type, ''), coalesce(cover.width, 0), coalesce(cover.height, 0)
+FROM entry_article AS article
+LEFT JOIN media AS cover ON cover.id = article.cover_media_id
+WHERE article.entry_id IN (`+string(placeholders)+`)`, arguments...)
 	if err != nil {
 		return nil, fmt.Errorf("query article cards: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var (
-			entryID string
-			card    app.ArticleCard
-			cover   sql.NullString
+			entryID  string
+			card     app.ArticleCard
+			cover    sql.NullString
+			mimeType string
+			width    uint32
+			height   uint32
 		)
-		if err := rows.Scan(&entryID, &card.Title, &card.Excerpt, &cover); err != nil {
+		if err := rows.Scan(&entryID, &card.Title, &card.Excerpt, &cover, &mimeType, &width, &height); err != nil {
 			return nil, fmt.Errorf("scan article card: %w", err)
 		}
 		id, err := domain.ParseID(entryID)
@@ -174,7 +179,7 @@ WHERE entry_id IN (`+string(placeholders)+`)`, arguments...)
 			if coverErr != nil {
 				return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored article cover has an invalid ID", nil)
 			}
-			card.CoverMediaID = &coverID
+			card.Cover = &app.ArticleCover{MediaID: coverID, MIMEType: mimeType, Width: width, Height: height}
 		}
 		cards[id] = card
 	}

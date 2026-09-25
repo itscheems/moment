@@ -185,3 +185,48 @@ func (stub sharePostRecorder) Get(_ context.Context, id domain.ID, viewer Viewer
 	*stub.seen = &viewer
 	return Post{}, postNotFound(id)
 }
+
+// A moment has no title, so share metadata guesses one from its first visible
+// line. An article has one already, and using it is most of the reason it has
+// one.
+func TestShareMetadataUsesTheTitleAndExcerptAnArticleAlreadyHas(t *testing.T) {
+	base := "https://example.com"
+	postID := mustShareID(t, shareTestPostID)
+	body, err := domain.ParseArticleDocument([]byte(
+		`{"schema_version":1,"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"正文的第一段会成为摘要"}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	article, err := domain.NewArticle("长安的荔枝", body, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewShareMetadataService(
+		shareSiteStub{settings: SiteSettings{Title: "乔乔", PublicBaseURL: &base}},
+		sharePostStub{post: Post{
+			Entry: domain.Entry{
+				ID: postID, Kind: domain.KindArticle, Visibility: domain.VisibilityEveryone,
+				CreatedAt: time.UnixMilli(1), UpdatedAt: time.UnixMilli(1), PublishedAt: time.UnixMilli(1),
+			},
+			Article:     &article,
+			ArticleCard: &ArticleCard{Title: article.Title, Excerpt: article.Excerpt()},
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	metadata, err := service.Post(context.Background(), postID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if metadata.Title != "长安的荔枝 · 乔乔" {
+		t.Fatalf("title = %q", metadata.Title)
+	}
+	if metadata.Description != "正文的第一段会成为摘要" {
+		t.Fatalf("description = %q", metadata.Description)
+	}
+	if !metadata.PostFound || metadata.NoIndex {
+		t.Fatalf("metadata = %#v", metadata)
+	}
+}

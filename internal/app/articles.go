@@ -16,9 +16,19 @@ import (
 // without shipping the body. A timeline page holding twenty full bodies would
 // send megabytes nobody reads.
 type ArticleCard struct {
-	Title        string
-	Excerpt      string
-	CoverMediaID *domain.ID
+	Title   string
+	Excerpt string
+	Cover   *ArticleCover
+}
+
+// ArticleCover is the picture a card leads with. It carries geometry for the
+// same reason every media projection does: the browser has to reserve the
+// space before the bytes arrive, or the page jumps when they do.
+type ArticleCover struct {
+	MediaID  domain.ID
+	MIMEType string
+	Width    uint32
+	Height   uint32
 }
 
 // ArticleDraftRecord is one stored draft. PublishedEntryID is nil for a draft
@@ -428,12 +438,9 @@ func loadArticlePost(ctx context.Context, store PostStore, entryID domain.ID) (P
 	if !found {
 		return Post{}, postNotFound(entryID)
 	}
-	article, found, err := store.ArticleByEntryID(ctx, entryID)
+	view, err := loadArticleView(ctx, store, entry)
 	if err != nil {
 		return Post{}, err
-	}
-	if !found {
-		return Post{}, storedEntryError(entryID)
 	}
 	media, err := store.EntryMediaUsages(ctx, entryID)
 	if err != nil {
@@ -443,18 +450,12 @@ func loadArticlePost(ctx context.Context, store PostStore, entryID domain.ID) (P
 	if err != nil {
 		return Post{}, err
 	}
-	html, err := renderEntryHTML(entry, &article, nil)
+	post, err := renderPost(entry, view, media, nil, nil, counts[entryID])
 	if err != nil {
-		return Post{}, storedEntryError(entryID)
+		return Post{}, err
 	}
-	return Post{
-		Entry:        entry,
-		TimelineKind: TimelineItemOriginal,
-		ContentHTML:  html,
-		Article:      &article,
-		Media:        media,
-		CommentCount: counts[entryID],
-	}, nil
+	post.TimelineKind = TimelineItemOriginal
+	return post, nil
 }
 
 // hashPublishArticle identifies one publish request. The draft is the request:

@@ -82,9 +82,12 @@ type Post struct {
 	Entry        domain.Entry
 	TimelineKind TimelineItemKind
 	ContentHTML  string
-	// Article is the body of a KindArticle entry and nil for a moment. The
-	// Entry's ContentMD is nil in exactly the same cases.
-	Article      *domain.Article
+	// Article is the body of a KindArticle entry, present on a detail read and
+	// nil for a moment. The Entry's ContentMD is nil in exactly the same cases.
+	Article *domain.Article
+	// ArticleCard is what a list read carries instead: enough to draw the card
+	// without the body. A detail read fills both.
+	ArticleCard  *ArticleCard
 	Media        []MediaUsageProjection
 	Location     *domain.Location
 	LinkCards    []LinkCardProjection
@@ -228,6 +231,9 @@ type ListPostsInput struct {
 	// and cannot be combined with one or with a Cursor.
 	Anchor   string
 	Timezone string
+	// Kind narrows the page to one kind of post. Empty means both, because a
+	// timeline with a gap in it is not a timeline.
+	Kind domain.EntryKind
 	// Viewer decides which visibilities the page may contain. The zero value
 	// is a visitor.
 	Viewer Viewer
@@ -511,7 +517,7 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 		return CreatePostResult{}, false, nil
 	}
 	quoted := post.Quoted
-	post, err = renderPost(post.Entry, media, post.Location, post.LinkCards, commentCount)
+	post, err = renderPost(post.Entry, articleView{}, media, post.Location, post.LinkCards, commentCount)
 	if err != nil {
 		return CreatePostResult{}, false, idempotencySnapshotError()
 	}
@@ -573,6 +579,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID, viewer Viewer
 	var commentCount int
 	var quoted *QuotedPost
 	var found bool
+	var view articleView
 	err := service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
 		entry, found, storeErr = store.EntryByID(ctx, id)
@@ -582,6 +589,9 @@ func (service *PostService) Get(ctx context.Context, id domain.ID, viewer Viewer
 		if !viewer.CanRead(entry.Visibility) {
 			found = false
 			return nil
+		}
+		if view, storeErr = loadArticleView(ctx, store, entry); storeErr != nil {
+			return storeErr
 		}
 		media, storeErr = store.EntryMediaUsages(ctx, id)
 		if storeErr != nil {
@@ -609,7 +619,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID, viewer Viewer
 	if !found {
 		return Post{}, postHiddenFrom(id)
 	}
-	post, err := renderPost(entry, media, location, linkCards, commentCount)
+	post, err := renderPost(entry, view, media, location, linkCards, commentCount)
 	post.Quoted = quoted
 	return post, err
 }
@@ -624,6 +634,7 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		return Post{}, err
 	}
 	var result Post
+	var view articleView
 	err := service.transactions.Write(ctx, func(store PostStore) error {
 		entry, found, storeErr := store.EntryByID(ctx, id)
 		if storeErr != nil {
@@ -663,6 +674,9 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if quoteErr != nil {
 			return quoteErr
 		}
+		if view, storeErr = loadArticleView(ctx, store, entry); storeErr != nil {
+			return storeErr
+		}
 		result = Post{Entry: entry, Media: media, Location: location, LinkCards: linkCards, CommentCount: counts[id], Quoted: quoted}
 		return nil
 	})
@@ -670,7 +684,7 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		return Post{}, normalizePostRepositoryError(err)
 	}
 	quoted := result.Quoted
-	result, err = renderPost(result.Entry, result.Media, result.Location, result.LinkCards, result.CommentCount)
+	result, err = renderPost(result.Entry, view, result.Media, result.Location, result.LinkCards, result.CommentCount)
 	result.Quoted = quoted
 	return result, err
 }
@@ -711,10 +725,11 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	locationByEntry := make(map[domain.ID]*domain.Location)
 	linkCardsByEntry := make(map[domain.ID][]LinkCardProjection)
 	commentCounts := make(map[domain.ID]int)
+	articleCards := make(map[domain.ID]ArticleCard)
 	quotedByEntry := make(map[domain.ID]*QuotedPost)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
-		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, Direction: direction, FromMS: fromMS, ToMS: toMS, Viewer: input.Viewer}, limit+1)
+		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, Direction: direction, FromMS: fromMS, ToMS: toMS, Kind: input.Kind, Viewer: input.Viewer}, limit+1)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -744,6 +759,11 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 				return storeErr
 			}
 		}
+		// A list carries article cards, never bodies: twenty full bodies on one
+		// page would be megabytes nobody on that page reads.
+		if articleCards, storeErr = store.ArticleCards(ctx, ids); storeErr != nil {
+			return storeErr
+		}
 		commentCounts, storeErr = store.CommentCounts(ctx, ids)
 		return storeErr
 	})
@@ -763,7 +783,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	page := PostPage{Items: make([]Post, 0, len(entries))}
 	for _, item := range entries {
 		entry := item.Entry
-		post, renderErr := renderPost(entry, mediaByEntry[entry.ID], locationByEntry[entry.ID], linkCardsByEntry[entry.ID], commentCounts[entry.ID])
+		post, renderErr := renderPost(entry, articleView{Card: articleCardFor(articleCards, entry)}, mediaByEntry[entry.ID], locationByEntry[entry.ID], linkCardsByEntry[entry.ID], commentCounts[entry.ID])
 		if renderErr != nil {
 			return PostPage{}, renderErr
 		}
@@ -1030,7 +1050,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 	if err != nil {
 		return Post{}, normalizePostRepositoryError(err)
 	}
-	result, err := renderPost(updated, updatedMedia, updatedLocation, updatedLinkCards, commentCount)
+	result, err := renderPost(updated, articleView{}, updatedMedia, updatedLocation, updatedLinkCards, commentCount)
 	result.Quoted = updatedQuoted
 	return result, err
 }
@@ -1045,6 +1065,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		return Post{}, err
 	}
 	var deleted Post
+	var view articleView
 	err := service.transactions.Write(ctx, func(store PostStore) error {
 		entry, found, storeErr := store.EntryByID(ctx, id)
 		if storeErr != nil {
@@ -1052,6 +1073,9 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		}
 		if !found {
 			return postNotFound(id)
+		}
+		if view, storeErr = loadArticleView(ctx, store, entry); storeErr != nil {
+			return storeErr
 		}
 		mediaUsages, mediaErr := store.EntryMediaUsages(ctx, id)
 		if mediaErr != nil {
@@ -1097,7 +1121,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		return Post{}, normalizePostRepositoryError(err)
 	}
 	quoted := deleted.Quoted
-	deleted, err = renderPost(deleted.Entry, deleted.Media, deleted.Location, deleted.LinkCards, deleted.CommentCount)
+	deleted, err = renderPost(deleted.Entry, view, deleted.Media, deleted.Location, deleted.LinkCards, deleted.CommentCount)
 	deleted.Quoted = quoted
 	return deleted, err
 }
@@ -1266,14 +1290,22 @@ func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id doma
 	return &QuotedPost{Entry: entry, ContentHTML: html, Media: media, Location: location}, nil
 }
 
-func renderPost(entry domain.Entry, media []MediaUsageProjection, location *domain.Location, cards []LinkCardProjection, commentCount int) (Post, error) {
+func renderPost(entry domain.Entry, view articleView, media []MediaUsageProjection, location *domain.Location, cards []LinkCardProjection, commentCount int) (Post, error) {
 	if err := validatePostMediaProjections(media); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	if err := validateStoredEntryBody(entry, nil, len(media)); err != nil {
+	// A list read carries only the card, so there is no body to check or
+	// render; a detail read carries the body and both happen.
+	if entry.Kind == domain.KindArticle && view.Body == nil {
+		if view.Card == nil {
+			return Post{}, storedEntryError(entry.ID)
+		}
+		return assemblePost(entry, view, "", media, location, cards, commentCount)
+	}
+	if err := validateStoredEntryBody(entry, view.Body, len(media)); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	html, err := renderEntryHTML(entry, nil, LinkCardsOf(cards))
+	html, err := renderEntryHTML(entry, view.Body, LinkCardsOf(cards))
 	if err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
@@ -1288,14 +1320,74 @@ func renderPost(entry domain.Entry, media []MediaUsageProjection, location *doma
 	if err := domain.ValidateLinkCards(LinkCardsOf(cards)); err != nil {
 		return Post{}, storedEntryError(entry.ID)
 	}
-	return Post{
+	return assemblePost(entry, view, html, media, location, cards, commentCount)
+}
+
+// articleCardFor answers the card of an article row and nothing for a moment.
+func articleCardFor(cards map[domain.ID]ArticleCard, entry domain.Entry) *ArticleCard {
+	if entry.Kind != domain.KindArticle {
+		return nil
+	}
+	card, found := cards[entry.ID]
+	if !found {
+		return nil
+	}
+	return &card
+}
+
+// loadArticleView reads everything a detail read needs of an article and
+// nothing for a moment. The card comes along because only it carries the
+// cover's geometry, which the browser needs to reserve space for the picture.
+// An article row with no body is a read that lost half of itself.
+func loadArticleView(ctx context.Context, store PostStore, entry domain.Entry) (articleView, error) {
+	if entry.Kind != domain.KindArticle {
+		return articleView{}, nil
+	}
+	article, found, err := store.ArticleByEntryID(ctx, entry.ID)
+	if err != nil {
+		return articleView{}, err
+	}
+	if !found {
+		return articleView{}, storedEntryError(entry.ID)
+	}
+	cards, err := store.ArticleCards(ctx, []domain.ID{entry.ID})
+	if err != nil {
+		return articleView{}, err
+	}
+	view := articleView{Body: &article}
+	if card, present := cards[entry.ID]; present {
+		view.Card = &card
+	}
+	return view, nil
+}
+
+// articleView is how much of an article one read carries: the whole body on a
+// detail read, only the card on a list. A moment has neither.
+type articleView struct {
+	Body *domain.Article
+	Card *ArticleCard
+}
+
+func assemblePost(entry domain.Entry, view articleView, html string, media []MediaUsageProjection, location *domain.Location, cards []LinkCardProjection, commentCount int) (Post, error) {
+	if commentCount < 0 {
+		return Post{}, storedEntryError(entry.ID)
+	}
+	post := Post{
 		Entry:        entry,
 		ContentHTML:  html,
+		Article:      view.Body,
+		ArticleCard:  view.Card,
 		Media:        cloneMediaUsageProjections(media),
 		Location:     domain.CloneLocation(location),
 		LinkCards:    cloneLinkCardProjections(cards),
 		CommentCount: commentCount,
-	}, nil
+	}
+	// A detail read has the body, so its card costs nothing to derive and
+	// every article answers with one whichever way it was read.
+	if post.ArticleCard == nil && view.Body != nil {
+		post.ArticleCard = &ArticleCard{Title: view.Body.Title, Excerpt: view.Body.Excerpt()}
+	}
+	return post, nil
 }
 
 // linkCardMediaIDs collects the managed thumbnails a card set references so

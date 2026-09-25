@@ -29,7 +29,11 @@ type Post struct {
 	// signal of its own.
 	Kind string `json:"kind"`
 	// ContentMD is null for an article.
-	ContentMD    *string           `json:"content_md"`
+	ContentMD *string `json:"content_md"`
+	// Article carries the parts a moment does not have. It is null for a
+	// moment, and its Body is null in a list, where a card needs the title,
+	// the excerpt and the cover and nothing else.
+	Article      *Article          `json:"article"`
 	ContentHTML  string            `json:"content_html"`
 	CreatedAt    time.Time         `json:"created_at"`
 	UpdatedAt    time.Time         `json:"updated_at"`
@@ -45,6 +49,27 @@ type Post struct {
 	QuotedPost   *QuotedPost       `json:"quoted_post"`
 }
 
+func fromArticle(post app.Post) *Article {
+	if post.ArticleCard == nil {
+		return nil
+	}
+	mapped := &Article{Title: post.ArticleCard.Title, Excerpt: post.ArticleCard.Excerpt}
+	if cover := post.ArticleCard.Cover; cover != nil {
+		mapped.Cover = &ArticleCover{
+			MediaID: cover.MediaID.String(), MIMEType: cover.MIMEType,
+			Width: cover.Width, Height: cover.Height,
+		}
+	}
+	if post.Article != nil {
+		body, err := domain.MarshalArticleDocument(post.Article.Body)
+		if err == nil {
+			version := post.Article.Body.SchemaVersion
+			mapped.Body, mapped.BodySchemaVersion = body, &version
+		}
+	}
+	return mapped
+}
+
 // cloneOptionalText copies an optional body so the projection cannot be used
 // to reach back and change the entry it was built from, the same reason media
 // usages are deep-copied on their way across this boundary.
@@ -54,6 +79,28 @@ func cloneOptionalText(value *string) *string {
 	}
 	copied := *value
 	return &copied
+}
+
+// Article is what a reader receives of an article.
+//
+// Body is present on a detail read and null in a list. A page of twenty
+// articles carrying twenty full bodies would be megabytes nobody on that page
+// reads, and the card needs none of it.
+type Article struct {
+	Title             string          `json:"title"`
+	Excerpt           string          `json:"excerpt"`
+	Cover             *ArticleCover   `json:"cover"`
+	Body              json.RawMessage `json:"body"`
+	BodySchemaVersion *int            `json:"body_schema_version"`
+}
+
+// ArticleCover carries geometry for the same reason every media projection
+// does: the browser reserves the space before the bytes arrive.
+type ArticleCover struct {
+	MediaID  string `json:"media_id"`
+	MIMEType string `json:"mime_type"`
+	Width    uint32 `json:"width"`
+	Height   uint32 `json:"height"`
 }
 
 // QuotedPost is either a complete embedded target or an explicit unavailable tombstone.
@@ -322,6 +369,7 @@ func FromPost(post app.Post) Post {
 		ID:           post.Entry.ID.String(),
 		Kind:         string(post.Entry.Kind),
 		ContentMD:    cloneOptionalText(post.Entry.ContentMD),
+		Article:      fromArticle(post),
 		ContentHTML:  post.ContentHTML,
 		CreatedAt:    post.Entry.CreatedAt.UTC(),
 		UpdatedAt:    post.Entry.UpdatedAt.UTC(),
@@ -457,10 +505,18 @@ func ValidatePost(post Post) error {
 		if post.ContentMD != nil {
 			return errors.New("an article carries no Markdown body")
 		}
-		if post.ContentHTML == "" {
-			return errors.New("an article must carry rendered content")
+		if post.Article == nil {
+			return errors.New("an article must carry its title and excerpt")
+		}
+		// A list read leaves the body behind, and leaves the rendering behind
+		// with it; a detail read carries both or neither.
+		if (post.Article.Body == nil) != (post.ContentHTML == "") {
+			return errors.New("an article carries its body and its rendered content together")
 		}
 	} else {
+		if post.Article != nil {
+			return errors.New("a moment carries no article")
+		}
 		if post.ContentMD == nil {
 			return errors.New("a moment must carry a Markdown body")
 		}
@@ -573,4 +629,52 @@ func ValidatePage(page Page) error {
 func wireInstant(value time.Time) bool {
 	_, offset := value.Zone()
 	return offset == 0 && value.Nanosecond()%int(time.Millisecond) == 0
+}
+
+// ArticleDraft is one unfinished article on the wire.
+//
+// UpdatedAt is not decoration: a client sends it back when it saves, and a save
+// based on a revision somebody else has already replaced is refused rather than
+// applied. PublishedEntryID names the article this draft is a working copy of.
+type ArticleDraft struct {
+	ID                string          `json:"id"`
+	Title             string          `json:"title"`
+	Body              json.RawMessage `json:"body"`
+	BodySchemaVersion int             `json:"body_schema_version"`
+	CoverMediaID      *string         `json:"cover_media_id"`
+	PublishedEntryID  *string         `json:"published_entry_id"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+}
+
+// FromArticleDraft maps one stored draft onto the stable public shape.
+func FromArticleDraft(record app.ArticleDraftRecord) ArticleDraft {
+	mapped := ArticleDraft{
+		ID:                record.ID.String(),
+		Title:             record.Draft.Title,
+		BodySchemaVersion: record.Draft.Body.SchemaVersion,
+		CreatedAt:         record.CreatedAt.UTC(),
+		UpdatedAt:         record.UpdatedAt.UTC(),
+	}
+	if body, err := domain.MarshalArticleDocument(record.Draft.Body); err == nil {
+		mapped.Body = body
+	}
+	if record.Draft.CoverID != nil {
+		cover := record.Draft.CoverID.String()
+		mapped.CoverMediaID = &cover
+	}
+	if record.PublishedEntryID != nil {
+		entryID := record.PublishedEntryID.String()
+		mapped.PublishedEntryID = &entryID
+	}
+	return mapped
+}
+
+// FromArticleDrafts maps a whole list, newest first as it arrived.
+func FromArticleDrafts(records []app.ArticleDraftRecord) []ArticleDraft {
+	mapped := make([]ArticleDraft, 0, len(records))
+	for _, record := range records {
+		mapped = append(mapped, FromArticleDraft(record))
+	}
+	return mapped
 }

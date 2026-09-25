@@ -215,7 +215,7 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 	}
 	for key, values := range query {
 		switch key {
-		case "cursor", "limit", "from", "to", "anchor":
+		case "cursor", "limit", "from", "to", "anchor", "kind":
 		default:
 			return app.ListPostsInput{}, invalidPostArgument("unsupported query parameter", key)
 		}
@@ -228,6 +228,15 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 		FromDate: query.Get("from"),
 		ToDate:   query.Get("to"),
 		Anchor:   query.Get("anchor"),
+	}
+	// Absent reads both kinds. An empty value is a client that meant to send
+	// something, which is worth refusing rather than silently widening.
+	if requested, present := query["kind"]; present {
+		kind, kindErr := domain.ParseEntryKind(requested[0])
+		if kindErr != nil {
+			return app.ListPostsInput{}, invalidPostArgument("kind must be moment or article", "kind")
+		}
+		input.Kind = kind
 	}
 	if values, present := query["cursor"]; present && values[0] == "" {
 		return app.ListPostsInput{}, invalidPostArgument("cursor cannot be empty", "cursor")

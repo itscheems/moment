@@ -120,6 +120,7 @@ type SearchStore interface {
 	EntryMediaUsages(context.Context, domain.ID) ([]MediaUsageProjection, error)
 	EntryLocation(context.Context, domain.ID) (*domain.Location, error)
 	EntryLinkCards(context.Context, domain.ID) ([]LinkCardProjection, error)
+	ArticleCards(context.Context, []domain.ID) (map[domain.ID]ArticleCard, error)
 	SearchPublishedMillis(context.Context, SearchRepositoryQuery) ([]int64, error)
 	ArchivePublishedMillis(context.Context, Viewer, *int64, *int64) ([]int64, error)
 	SearchNormalizerVersion(context.Context) (int, error)
@@ -259,6 +260,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 	var revision int64
 	var fromMS, toMS *int64
 	commentCounts := make(map[domain.ID]int)
+	articleCards := make(map[domain.ID]ArticleCard)
 	locations := make(map[domain.ID]*domain.Location)
 	linkCards := make(map[domain.ID][]LinkCardProjection)
 	err = service.transactions.Read(ctx, func(store SearchStore) error {
@@ -317,6 +319,10 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		if storeErr != nil {
 			return storeErr
 		}
+		// A result is a card, like a timeline row: the body stays behind.
+		if articleCards, storeErr = store.ArticleCards(ctx, ids); storeErr != nil {
+			return storeErr
+		}
 		countQuery := prepared
 		countQuery.Position = nil
 		instants, storeErr = store.SearchPublishedMillis(ctx, countQuery)
@@ -335,7 +341,7 @@ func (service *SearchService) Search(ctx context.Context, input SearchInput) (Se
 		YearCounts: aggregateYears(instants, location),
 	}
 	for _, record := range records {
-		post, renderErr := renderPost(record.Entry, record.Media, locations[record.Entry.ID], linkCards[record.Entry.ID], commentCounts[record.Entry.ID])
+		post, renderErr := renderPost(record.Entry, articleView{Card: articleCardFor(articleCards, record.Entry)}, record.Media, locations[record.Entry.ID], linkCards[record.Entry.ID], commentCounts[record.Entry.ID])
 		if renderErr != nil {
 			return SearchPage{}, renderErr
 		}
