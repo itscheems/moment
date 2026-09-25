@@ -60,6 +60,26 @@ WHERE entry_id = ?`,
 	return store.replaceArticleMedia(ctx, entryID, article)
 }
 
+// UpdateArticleEntry moves the timeline row of an article: its derived text,
+// its visibility and its timestamps. The body is replaced separately because
+// it is rewritten as a whole document, not patched.
+func (store postStore) UpdateArticleEntry(ctx context.Context, entry domain.Entry, contentText string) (bool, error) {
+	result, err := store.queries.ExecContext(ctx, `
+UPDATE entries
+SET content_text = ?, visibility = ?, updated_at_ms = ?, edited_at_ms = ?
+WHERE id = ? AND kind = ?`,
+		contentText, string(entry.Visibility), domain.TimeToMillis(entry.UpdatedAt),
+		optionalTimeMillis(entry.EditedAt), entry.ID.String(), string(domain.KindArticle))
+	if err != nil {
+		return false, fmt.Errorf("update article entry: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("update article entry: %w", err)
+	}
+	return changed == 1, nil
+}
+
 func (store postStore) replaceArticleMedia(ctx context.Context, entryID domain.ID, article domain.Article) error {
 	usages := article.InlineMedia()
 	if err := domain.ValidateArticleMediaUsages(usages); err != nil {

@@ -45,14 +45,20 @@ const (
 	// the way the caller offered. Its details carry the kinds that would work,
 	// so a client can say what to do instead rather than guessing that a
 	// third-party provider is the answer.
-	CodeCredentialUnavailable       Code = "CREDENTIAL_UNAVAILABLE"
-	CodeOAuthProviderUnavailable    Code = "OAUTH_PROVIDER_UNAVAILABLE"
-	CodeOAuthStateInvalid           Code = "OAUTH_STATE_INVALID"
-	CodeOAuthExchangeFailed         Code = "OAUTH_EXCHANGE_FAILED"
-	CodeOAuthIdentityUnusable       Code = "OAUTH_IDENTITY_UNUSABLE"
-	CodeOAuthDeviceExpired          Code = "OAUTH_DEVICE_EXPIRED"
-	CodeOAuthDeviceDenied           Code = "OAUTH_DEVICE_DENIED"
-	CodeIdempotencyKeyReused        Code = "IDEMPOTENCY_KEY_REUSED"
+	CodeCredentialUnavailable    Code = "CREDENTIAL_UNAVAILABLE"
+	CodeOAuthProviderUnavailable Code = "OAUTH_PROVIDER_UNAVAILABLE"
+	CodeOAuthStateInvalid        Code = "OAUTH_STATE_INVALID"
+	CodeOAuthExchangeFailed      Code = "OAUTH_EXCHANGE_FAILED"
+	CodeOAuthIdentityUnusable    Code = "OAUTH_IDENTITY_UNUSABLE"
+	CodeOAuthDeviceExpired       Code = "OAUTH_DEVICE_EXPIRED"
+	CodeOAuthDeviceDenied        Code = "OAUTH_DEVICE_DENIED"
+	CodeIdempotencyKeyReused     Code = "IDEMPOTENCY_KEY_REUSED"
+	CodeArticleDraftNotFound     Code = "ARTICLE_DRAFT_NOT_FOUND"
+	// CodeArticleDraftStale means somebody else saved the same draft since
+	// this writer last read it. Two tabs on one draft is ordinary; the answer
+	// is to say so rather than to let one of them disappear.
+	CodeArticleDraftStale           Code = "ARTICLE_DRAFT_STALE"
+	CodeArticleDraftLimit           Code = "ARTICLE_DRAFT_LIMIT"
 	CodeImportInProgress            Code = "IMPORT_IN_PROGRESS"
 	CodeInstanceInUse               Code = "INSTANCE_IN_USE"
 	CodeModeUnsupported             Code = "MODE_UNSUPPORTED"

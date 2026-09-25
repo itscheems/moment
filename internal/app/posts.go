@@ -45,6 +45,7 @@ type PostStore interface {
 	// belong to one store rather than to two that could drift apart mid-write.
 	InsertArticle(context.Context, domain.ID, domain.Article) error
 	ReplaceArticle(context.Context, domain.ID, domain.Article) error
+	UpdateArticleEntry(context.Context, domain.Entry, string) (bool, error)
 	ArticleByEntryID(context.Context, domain.ID) (domain.Article, bool, error)
 	ArticleCards(context.Context, []domain.ID) (map[domain.ID]ArticleCard, error)
 	// Drafts live outside entries on purpose: eighteen read paths select from
