@@ -11,7 +11,9 @@
 .article {
   font-size: 1rem;
   font-weight: 400;
-  font-feature-settings: normal;
+  /* Match ProseMirror's shaping so cursor-safe writing and reading agree. */
+  font-feature-settings: "liga" 0;
+  font-variant-ligatures: none;
   letter-spacing: normal;
   text-rendering: auto;
   -webkit-font-smoothing: auto;
