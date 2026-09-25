@@ -33,6 +33,8 @@ import { CoverField } from "./components/CoverField";
 import { DraftRail } from "./components/DraftRail";
 import { ImageUploads, type UploadTask } from "./components/ImageUploads";
 import { SelectionMenu } from "./components/SelectionMenu";
+import { SlashMenu } from "./components/SlashMenu";
+import { CharacterCount } from "./components/CharacterCount";
 import { Toolbar } from "./components/Toolbar";
 import {
   emptyArticleDocument,
@@ -123,6 +125,7 @@ export function ArticleEditor({
   const leaving = useRef(false);
   const allowLeave = useRef(false);
   const titleInput = useRef<HTMLTextAreaElement>(null);
+  const topBar = useRef<HTMLElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const publishKey = useRef(createIdempotencyKey());
@@ -443,6 +446,20 @@ export function ArticleEditor({
     publishing,
   ]);
 
+  useEffect(() => {
+    const bar = topBar.current;
+    if (!bar) return;
+    const measure = () =>
+      bar.parentElement?.style.setProperty(
+        "--editor-toolbar-top",
+        `${bar.getBoundingClientRect().height}px`,
+      );
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [phase]);
+
   // Keep a long title visible at narrow widths as well as after a resize.
   useEffect(() => {
     const field = titleInput.current;
@@ -715,7 +732,7 @@ export function ArticleEditor({
 
   return (
     <div className={styles.page}>
-      <header className={styles.topBar}>
+      <header className={styles.topBar} ref={topBar}>
         <button
           aria-label="返回时间流"
           className={styles.toolButton}
@@ -957,11 +974,20 @@ export function ArticleEditor({
 
           <div className={styles.body}>
             <EditorContent editor={editor} />
+            {editor ? <CharacterCount editor={editor} /> : null}
           </div>
         </div>
       </div>
 
-      {editor && !previewing ? <SelectionMenu editor={editor} /> : null}
+      {editor && !previewing && !publishing && !discarding ? (
+        <>
+          <SelectionMenu editor={editor} />
+          <SlashMenu
+            editor={editor}
+            onPickImage={() => imageInput.current?.click()}
+          />
+        </>
+      ) : null}
 
       <input
         accept="image/*"

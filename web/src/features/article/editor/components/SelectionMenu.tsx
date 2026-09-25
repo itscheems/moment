@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import type { Editor } from "@tiptap/core";
 import { useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
@@ -19,6 +20,16 @@ import { LinkPopover } from "./LinkPopover";
  * prefers-reduced-motion it simply appears (Editor.module.css).
  */
 export function SelectionMenu({ editor }: { editor: Editor }) {
+  const [shown, setShown] = useState(false);
+  const options = useMemo(
+    () => ({
+      placement: "top" as const,
+      offset: 8,
+      onShow: () => setShown(true),
+      onHide: () => setShown(false),
+    }),
+    [],
+  );
   const state = useEditorState({
     editor,
     selector: ({ editor: current }) => ({
@@ -35,71 +46,73 @@ export function SelectionMenu({ editor }: { editor: Editor }) {
     <BubbleMenu
       className={styles.bubble}
       editor={editor}
-      options={{ placement: "top", offset: 8 }}
+      options={options}
       // A picture is a selection too, and a bold button over a picture does
       // nothing. The toolbar carries what a picture can actually be told.
       shouldShow={({ editor: current, from, to }) =>
         current.isEditable && from !== to && !current.isActive("image")
       }
     >
-      <button
-        aria-label="加粗"
-        aria-pressed={state.bold}
-        className={styles.toolButton}
-        onClick={() => editor.chain().focus().toggleBold().run()}
-        type="button"
-      >
-        <EditorIcon name="bold" />
-      </button>
-      <button
-        aria-label="斜体"
-        aria-pressed={state.italic}
-        className={styles.toolButton}
-        onClick={() => editor.chain().focus().toggleItalic().run()}
-        type="button"
-      >
-        <EditorIcon name="italic" />
-      </button>
-      <button
-        aria-label="删除线"
-        aria-pressed={state.strike}
-        className={styles.toolButton}
-        onClick={() => editor.chain().focus().toggleStrike().run()}
-        type="button"
-      >
-        <EditorIcon name="strike" />
-      </button>
-      <button
-        aria-label="下划线"
-        aria-pressed={state.underline}
-        className={styles.toolButton}
-        onClick={() => editor.chain().focus().toggleUnderline().run()}
-        type="button"
-      >
-        <EditorIcon name="underline" />
-      </button>
-      <button
-        aria-label="行内代码"
-        aria-pressed={state.code}
-        className={styles.toolButton}
-        onClick={() => editor.chain().focus().toggleCode().run()}
-        type="button"
-      >
-        <EditorIcon name="code" />
-      </button>
-      <LinkPopover
-        editor={editor}
-        trigger={
-          <button
-            aria-label="链接"
-            aria-pressed={state.link}
-            className={styles.toolButton}
-            type="button"
-          >
-            <EditorIcon name="link" />
-          </button>
-        }
-      />
+      <div className={styles.bubbleContent} data-visible={shown}>
+        <button
+          aria-label="加粗"
+          aria-pressed={state.bold}
+          className={styles.toolButton}
+          onClick={() => editor.chain().focus().toggleBold().run()}
+          type="button"
+        >
+          <EditorIcon name="bold" />
+        </button>
+        <button
+          aria-label="斜体"
+          aria-pressed={state.italic}
+          className={styles.toolButton}
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+          type="button"
+        >
+          <EditorIcon name="italic" />
+        </button>
+        <button
+          aria-label="删除线"
+          aria-pressed={state.strike}
+          className={styles.toolButton}
+          onClick={() => editor.chain().focus().toggleStrike().run()}
+          type="button"
+        >
+          <EditorIcon name="strike" />
+        </button>
+        <button
+          aria-label="下划线"
+          aria-pressed={state.underline}
+          className={styles.toolButton}
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          type="button"
+        >
+          <EditorIcon name="underline" />
+        </button>
+        <button
+          aria-label="行内代码"
+          aria-pressed={state.code}
+          className={styles.toolButton}
+          onClick={() => editor.chain().focus().toggleCode().run()}
+          type="button"
+        >
+          <EditorIcon name="code" />
+        </button>
+        <LinkPopover
+          editor={editor}
+          trigger={
+            <button
+              aria-label="链接"
+              aria-pressed={state.link}
+              className={styles.toolButton}
+              type="button"
+            >
+              <EditorIcon name="link" />
+            </button>
+          }
+        />
+      </div>
     </BubbleMenu>
   );
 }

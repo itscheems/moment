@@ -20,6 +20,7 @@ import StarterKit from "@tiptap/starter-kit";
 import type { ArticleMarkType, ArticleNodeType } from "../../../api/public";
 import { isAllowedArticleHref } from "./links";
 import { ManagedImage } from "./extensions/ManagedImage";
+import { BlockHandles } from "./extensions/BlockHandles";
 import { UploadPlaceholder } from "./extensions/UploadPlaceholder";
 
 /**
@@ -205,6 +206,7 @@ export function articleEditorExtensions(
     }),
     ManagedImage,
     UploadPlaceholder,
+    BlockHandles,
     Placeholder.configure({
       placeholder: options.placeholder ?? "写点什么…",
       showOnlyWhenEditable: true,

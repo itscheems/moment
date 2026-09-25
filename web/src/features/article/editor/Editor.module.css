@@ -55,7 +55,7 @@
 }
 
 .toolBar {
-  inset-block-start: 3.25rem;
+  inset-block-start: var(--editor-toolbar-top, 3.25rem);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -508,6 +508,8 @@
 }
 
 .body :global(.tiptap) {
+  position: relative;
+  margin-inline-start: 1rem;
   min-block-size: 40dvh;
   outline: none;
 }
@@ -670,8 +672,15 @@
   padding: 0.25rem;
   background: var(--surface-elevated);
   box-shadow: var(--shadow-popover);
+}
+
+.bubbleContent {
+  display: flex;
+  align-items: center;
   opacity: 0;
   transform: translateY(0.25rem);
+}
+.bubbleContent[data-visible="true"] {
   animation: bubbleIn var(--motion-popover) var(--ease-out) forwards;
 }
 
@@ -923,4 +932,136 @@
   color: var(--text-primary);
   background: var(--surface-elevated);
   font-size: var(--text-sm);
+}
+
+.characterCount {
+  margin-block: var(--space-5) 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+.slashMenu {
+  position: fixed;
+  z-index: var(--layer-popover);
+  display: grid;
+  inline-size: 14rem;
+  max-block-size: min(18rem, 60dvh);
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-action);
+  padding: 0.25rem;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  animation: editorMenuIn var(--motion-fast) var(--ease-out);
+}
+.slashOption {
+  min-block-size: 2.75rem;
+  border: 0;
+  border-radius: 0.25rem;
+  padding-inline: var(--space-3);
+  color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.slashOption[data-selected="true"] {
+  background: var(--surface-hover);
+}
+@media (hover: hover) {
+  .slashOption:hover {
+    background: var(--surface-hover);
+  }
+}
+@keyframes editorMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(0.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.blockHandle {
+  position: absolute;
+  inset-inline-start: -2rem;
+  display: inline-flex;
+  align-items: flex-start;
+  z-index: 1;
+  font-size: 1rem;
+  line-height: 1;
+}
+.blockHandle > button {
+  inline-size: 1.75rem;
+  block-size: 2rem;
+  border: 0;
+  border-radius: 0.25rem;
+  color: var(--text-tertiary);
+  background: transparent;
+  font: inherit;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.blockHandle > button:active {
+  cursor: grabbing;
+}
+.blockHandle button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.blockMoveActions:not([hidden]) {
+  display: flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-action);
+  padding: 0.25rem;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+.blockMoveActions button {
+  min-inline-size: 2.75rem;
+  min-block-size: 2.75rem;
+  border: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.blockMoveActions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.blockDropLine {
+  position: absolute;
+  inset-inline: 0;
+  block-size: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slashMenu,
+  .bubbleContent[data-visible="true"] {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 30rem) {
+  .topBar {
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+  }
+  .topActions {
+    margin-inline-start: auto;
+  }
+  .status {
+    order: 1;
+    flex-basis: 100%;
+    white-space: normal;
+    font-size: var(--text-xs);
+  }
 }
