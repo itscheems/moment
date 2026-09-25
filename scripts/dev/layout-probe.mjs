@@ -31,11 +31,15 @@ const usage = `Measure real layout in a headless browser.
   --width <px>        viewport width (default 1280)
   --height <px>       viewport height (default 800)
   --theme <name>      value for data-theme on the document root
+  --cookie <n=v>      set this cookie before navigating; repeatable
+                      (how a signed-in surface is reached)
   --measure <sel>     report this element's box; repeatable
   --computed <prop>   also report this computed property; repeatable
   --hover <sel>       move a real pointer onto this element first
   --shot <file>       write a screenshot
   --scan <y>          report the first non-background pixel on this row; repeatable
+  --eval <js>         evaluate this in the page and report what it returns;
+                      repeatable (for asking a page why it is in this state)
   --settle <ms>       keep waiting this long for every selector to appear,
                       and for the pictures on screen to decode before a shot
                       (default 1500 for --url, 0 for --fragment)
@@ -58,7 +62,7 @@ function fail(message) {
 }
 
 function parseArguments(argv) {
-  const options = { measure: [], computed: [], scan: [], width: 1280, height: 800 };
+  const options = { measure: [], computed: [], scan: [], cookie: [], eval: [], width: 1280, height: 800 };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = () => {
@@ -78,7 +82,15 @@ function parseArguments(argv) {
       case "--hover": options.hover = value(); break;
       case "--shot": options.shot = value(); break;
       case "--scan": options.scan.push(Number(value())); break;
+      case "--eval": options.eval.push(value()); break;
       case "--settle": options.settle = Number(value()); break;
+      case "--cookie": {
+        const pair = value();
+        const separator = pair.indexOf("=");
+        if (separator < 1) fail(`--cookie wants name=value, got ${pair}`);
+        options.cookie.push({ name: pair.slice(0, separator), value: pair.slice(separator + 1) });
+        break;
+      }
       case "--keep": options.keep = true; break;
       case "--json": options.json = true; break;
       case "--help": case "-h": process.stdout.write(usage); process.exit(0); break;
@@ -199,6 +211,54 @@ async function waitForPaintedContent(devtools, budgetMs) {
   }
 }
 
+/**
+ * Count what the page still has in flight.
+ *
+ * "Loaded" is not "finished": a route that splits its editor into its own
+ * chunk fires the load event while that chunk is still arriving, and a shot
+ * taken then shows a loading line rather than the thing being measured. Only
+ * the page itself knows when it has stopped asking for things.
+ */
+function trackNetwork(devtools) {
+  const inflight = new Set();
+  let lastChange = Date.now();
+  const opened = (params) => {
+    inflight.add(params.requestId);
+    lastChange = Date.now();
+  };
+  const closed = (params) => {
+    inflight.delete(params.requestId);
+    lastChange = Date.now();
+  };
+  devtools.on("Network.requestWillBeSent", opened);
+  devtools.on("Network.loadingFinished", closed);
+  devtools.on("Network.loadingFailed", closed);
+  let completed = 0;
+  devtools.on("Network.loadingFinished", () => {
+    completed += 1;
+  });
+  return {
+    // A page that has not asked for anything yet is not quiet, it is still
+    // starting: between the entry script arriving and the chunk it imports
+    // being requested there is a gap with nothing in flight, and calling that
+    // "finished" photographs a loading spinner.
+    quietFor: (ms) => completed > 0 && inflight.size === 0 && Date.now() - lastChange >= ms,
+    reset() {
+      inflight.clear();
+      lastChange = Date.now();
+    },
+  };
+}
+
+async function waitForQuiet(network, budgetMs, quietMs) {
+  const until = Date.now() + budgetMs;
+  for (;;) {
+    if (network.quietFor(quietMs)) return true;
+    if (Date.now() >= until) return false;
+    await new Promise((again) => setTimeout(again, 50));
+  }
+}
+
 async function waitForPageEndpoint(port, deadlineMs) {
   const until = Date.now() + deadlineMs;
   for (;;) {
@@ -258,6 +318,10 @@ function connect(endpoint) {
         if (!listeners.has(method)) listeners.set(method, new Set());
         listeners.get(method).add(listener);
       });
+    },
+    on(method, listener) {
+      if (!listeners.has(method)) listeners.set(method, new Set());
+      listeners.get(method).add(listener);
     },
     close() { socket.close(); },
   };
@@ -437,6 +501,42 @@ async function main() {
     await devtools.send("Emulation.setDeviceMetricsOverride", {
       width: options.width, height: options.height, deviceScaleFactor: 1, mobile: false,
     });
+    await devtools.send("Network.enable");
+    const network = trackNetwork(devtools);
+
+    // A blank page with nothing to say about itself is the worst evidence
+    // there is. Whatever the page complained about travels with the report.
+    const messages = [];
+    await devtools.send("Runtime.enable");
+    devtools.on("Runtime.exceptionThrown", (params) => {
+      const thrown = params.exceptionDetails;
+      messages.push({
+        level: "exception",
+        text: thrown.exception?.description ?? thrown.text ?? "uncaught exception",
+      });
+    });
+    devtools.on("Runtime.consoleAPICalled", (params) => {
+      if (params.type !== "error" && params.type !== "warning") return;
+      messages.push({
+        level: params.type,
+        text: params.args
+          .map((argument) => argument.description ?? argument.value ?? argument.type)
+          .join(" "),
+      });
+    });
+    if (options.cookie.length > 0) {
+      if (!options.url) fail("--cookie needs --url: a fragment is not served from an origin");
+      const origin = new URL(options.url);
+      for (const cookie of options.cookie) {
+        await devtools.send("Network.setCookie", {
+          name: cookie.name,
+          value: cookie.value,
+          domain: origin.hostname,
+          path: "/",
+        });
+      }
+    }
+
     const loaded = devtools.once("Page.loadEventFired");
     await devtools.send("Page.navigate", { url: target });
     await loaded;
@@ -446,17 +546,25 @@ async function main() {
       });
     }
 
+    // What the caller named is the thing worth waiting for, so it is waited
+    // for first; the network settling afterwards is what makes the shot stable.
+    const deadline = Date.now() + options.settle;
     const wanted = [...selectors, ...(hoverSelector ? [hoverSelector] : [])];
     if (wanted.length > 0 && options.settle > 0) {
-      const until = Date.now() + options.settle;
       for (;;) {
         const present = await devtools.send("Runtime.evaluate", {
           expression: `${JSON.stringify(wanted)}.every((s) => document.querySelector(s) !== null)`,
           returnByValue: true,
         });
-        if (present.result.value === true || Date.now() > until) break;
+        if (present.result.value === true || Date.now() > deadline) break;
         await new Promise((settle) => setTimeout(settle, 100));
       }
+    }
+
+    // A page that split a route into its own chunk is still fetching it here.
+    let quiet = true;
+    if (options.settle > 0) {
+      quiet = await waitForQuiet(network, Math.max(deadline - Date.now(), 500), 500);
     }
 
     if (hoverSelector) {
@@ -485,6 +593,16 @@ async function main() {
         })).result.value)
       : {};
 
+    const evaluated = [];
+    for (const expression of options.eval) {
+      const answer = await devtools.send("Runtime.evaluate", {
+        expression: `(() => { try { return JSON.stringify(${expression}) ?? "undefined"; }
+          catch (error) { return "threw: " + error.message; } })()`,
+        returnByValue: true,
+      });
+      evaluated.push({ expression, value: answer.result.value });
+    }
+
     let scans = [];
     let painted = null;
     if (options.shot || options.scan.length > 0) {
@@ -511,6 +629,11 @@ async function main() {
       // false means the budget ran out with something on screen still
       // undecoded, so the shot shows less than the page has.
       painted,
+      // false means the page was still fetching when the budget ran out.
+      quiet,
+      // Every error and warning the page reported, in order.
+      messages,
+      evaluated,
     };
   } finally {
     // Wait for it to go before taking its profile away: Chrome writes on the
@@ -548,6 +671,9 @@ async function main() {
       + "\n");
   }
   if (report.screenshot) process.stdout.write(`  screenshot ${report.screenshot}\n`);
+  for (const message of report.messages ?? []) {
+    process.stdout.write(`  ${message.level}: ${message.text.split("\n")[0]}\n`);
+  }
 }
 
 await main();
