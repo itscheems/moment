@@ -1,11 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 
 import {
   PublicApi,
   PublicApiError,
+  isReadArticlePost,
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
+import { ArticlePage } from "../article/ArticlePage";
 import { PostPresentation } from "../posts/PostPresentation";
 import { CommentThread } from "../comments/CommentThread";
 import { useNavigation } from "../../app/navigation";
@@ -80,21 +88,38 @@ export function DetailPage({
   if (error) {
     return <PublicError kind={detailErrorKind(error)} onRetry={load} />;
   }
-  return post ? (
+  if (!post) return null;
+  const openReply = (event: MouseEvent<HTMLButtonElement>) => {
+    replyTriggerRef.current = event.currentTarget;
+    setReplyDialogOpen(true);
+  };
+  // Articles are read at the post detail address, so the route is shared and
+  // only the surface differs: an article page leads with its title and cover
+  // where a moment leads with its prose.
+  return (
     <>
-      <PostPresentation
-        detail
-        onDeleted={() => navigate("/")}
-        onReply={(event) => {
-          replyTriggerRef.current = event.currentTarget;
-          setReplyDialogOpen(true);
-        }}
-        onReposted={setPost}
-        onSiteChanged={onSiteChanged}
-        owner={owner}
-        post={post}
-        site={site}
-      />
+      {isReadArticlePost(post) ? (
+        <ArticlePage
+          onDeleted={() => navigate("/")}
+          onReply={openReply}
+          onReposted={setPost}
+          onSiteChanged={onSiteChanged}
+          owner={owner}
+          post={post}
+          site={site}
+        />
+      ) : (
+        <PostPresentation
+          detail
+          onDeleted={() => navigate("/")}
+          onReply={openReply}
+          onReposted={setPost}
+          onSiteChanged={onSiteChanged}
+          owner={owner}
+          post={post}
+          site={site}
+        />
+      )}
       <CommentThread
         api={api}
         onCountChange={handleCommentCountChange}
@@ -106,5 +131,5 @@ export function DetailPage({
         site={site}
       />
     </>
-  ) : null;
+  );
 }

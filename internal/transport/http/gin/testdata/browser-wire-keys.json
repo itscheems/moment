@@ -126,6 +126,7 @@
     "native_client_id"
   ],
   "postdto.Post": [
+    "article",
     "comment_count",
     "content_html",
     "content_md",

@@ -14,6 +14,7 @@ const post = {
   id: "01K2ABCDEF0123456789ABCDE0",
   kind: "moment",
   content_md: "现在写下",
+  article: null,
   content_html: "<p>现在写下</p>",
   created_at: "2026-08-10T01:02:03.000Z",
   updated_at: "2026-08-10T01:02:03.000Z",

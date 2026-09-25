@@ -1,7 +1,11 @@
 import { Popover } from "@base-ui/react/popover";
 import { type MouseEvent, type MouseEventHandler } from "react";
 
-import type { PublicPost, SiteIdentity } from "../../api/public";
+import {
+  isArticlePost,
+  type PublicPost,
+  type SiteIdentity,
+} from "../../api/public";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
@@ -20,6 +24,7 @@ import {
 import { formatMomentDate } from "./dates";
 import { OwnerPostActions } from "../owner/OwnerPostActions";
 import { OwnerRepostAction } from "../owner/OwnerRepostAction";
+import { ArticleCard, articleShareBlocks } from "../article/ArticleCard";
 import { LinkCard } from "../links/LinkCard";
 import { shareCardBlocks, shareCardLink } from "../share/shareCard";
 import { ImageGrid } from "../media/ImageGrid";
@@ -267,8 +272,13 @@ export function PostPresentation({
           ? mediaPreviewUrl(site.avatarMediaId)
           : null,
         publishedLabel: published.absolute,
-        blocks: shareCardBlocks(post.contentHtml),
-        media: post.media,
+        // An article's pictures belong to its body, and in a list its body has
+        // not been rendered at all, so the card is built from the title and
+        // the excerpt the server already wrote for exactly this purpose.
+        blocks: isArticlePost(post)
+          ? articleShareBlocks(post.article)
+          : shareCardBlocks(post.contentHtml),
+        media: isArticlePost(post) ? [] : post.media,
         location:
           post.location?.name?.trim() ||
           post.location?.displayName?.trim() ||
@@ -358,7 +368,11 @@ export function PostPresentation({
           />
           {linkCard}
           {post.location ? <PostLocation location={post.location} /> : null}
-          <ImageGrid eagerVideo media={post.media} />
+          {/* See the timeline branch: an article's pictures are already in its
+              body, so there is no attachment grid to draw. */}
+          {isArticlePost(post) ? null : (
+            <ImageGrid eagerVideo media={post.media} />
+          )}
           {quoteCard}
           <p className={styles.publishedLine}>
             <span>发布于</span>
@@ -424,10 +438,17 @@ export function PostPresentation({
       <div className={styles.postMain}>
         {pinLabel}
         {byline}
-        <MarkdownContent
-          className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
-          html={contentHtml ?? post.contentHtml}
-        />
+        {/* An article leads with its cover, title and excerpt instead of its
+            prose: the body is not in a list response at all, and a card is
+            what the reader is choosing between here. */}
+        {isArticlePost(post) ? (
+          <ArticleCard post={post} />
+        ) : (
+          <MarkdownContent
+            className={`${styles.markdown} ${collapsed ? styles.collapsed : ""}`}
+            html={contentHtml ?? post.contentHtml}
+          />
+        )}
         {collapsed ? (
           <InternalLink
             className={styles.readMore}
@@ -439,11 +460,17 @@ export function PostPresentation({
         ) : null}
         {linkCard}
         {post.location ? <PostLocation location={post.location} /> : null}
-        <ImageGrid
-          compactTallVideo={compactTallVideo}
-          eagerVideo={eagerVideo}
-          media={post.media}
-        />
+        {/* An article's `media` is the pictures its body places, projected
+            into the same rows a moment's attachments live in so that reference
+            counting stays one predicate. They are not attachments, and a grid
+            of them under the card would show the article twice. */}
+        {isArticlePost(post) ? null : (
+          <ImageGrid
+            compactTallVideo={compactTallVideo}
+            eagerVideo={eagerVideo}
+            media={post.media}
+          />
+        )}
         {quoteCard}
         <div className={styles.postActions}>
           <ActionTooltip label="回复">

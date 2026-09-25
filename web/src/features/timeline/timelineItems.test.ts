@@ -8,6 +8,7 @@ function original(): PublicPost {
     id: "01K2ABCDEF0123456789ABCDE0",
     kind: "moment",
     contentMd: "原帖",
+    article: null,
     contentHtml: "<p>原帖</p>",
     createdAt: "2026-08-10T01:00:00.000Z",
     updatedAt: "2026-08-10T01:00:00.000Z",

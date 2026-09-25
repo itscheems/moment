@@ -56,11 +56,120 @@ export function isPostKind(value: unknown): value is PostKind {
   return (POST_KINDS as readonly unknown[]).includes(value);
 }
 
+/**
+ * The nodes an article body may be built from, mirroring the allowlist in
+ * internal/domain/article_doc.go. Anything outside it is refused rather than
+ * carried: a client that keeps what it cannot name is a client that hands the
+ * unknown to whatever renders next.
+ */
+export type ArticleNodeType =
+  | "paragraph"
+  | "heading"
+  | "blockquote"
+  | "bulletList"
+  | "orderedList"
+  | "listItem"
+  | "codeBlock"
+  | "horizontalRule"
+  | "table"
+  | "tableRow"
+  | "tableHeader"
+  | "tableCell"
+  | "image"
+  | "hardBreak"
+  | "text";
+
+export type ArticleMarkType =
+  "bold" | "italic" | "strike" | "code" | "underline" | "link";
+
+/**
+ * Every attribute any node may carry, each optional because the server writes
+ * only the ones that carry information: an ordered list starting at one, a
+ * cell spanning one column and a fence with no language all arrive without
+ * `attrs` at all.
+ *
+ * Spelled the way the wire spells them, `media_id` included. This document is
+ * the value an editor will hand straight back, and a shape renamed on the way
+ * in is a shape that has to be renamed on the way out — one more place for the
+ * two spellings to drift apart.
+ */
+export interface ArticleNodeAttrs {
+  /** heading, 1 to 3. */
+  level?: number;
+  /** orderedList, written only when it is not 1. */
+  start?: number;
+  /** codeBlock, written only when the fence named a language this site knows. */
+  language?: string;
+  /** image. */
+  media_id?: string;
+  /** image, written only when the picture has a description. */
+  alt?: string;
+  /** tableHeader and tableCell, written only when greater than 1. */
+  colspan?: number;
+  rowspan?: number;
+}
+
+export interface ArticleMark {
+  type: ArticleMarkType;
+  /** Only a link carries one. */
+  attrs?: { href: string };
+}
+
+export interface ArticleNode {
+  type: ArticleNodeType;
+  attrs?: ArticleNodeAttrs;
+  content?: ArticleNode[];
+  /** Only a text node carries one, and it is never empty. */
+  text?: string;
+  marks?: ArticleMark[];
+}
+
+/**
+ * An article body as the server serialises it.
+ *
+ * Nothing in the reading surfaces renders this: an article arrives with its
+ * HTML already rendered, and a second renderer here would be a second answer
+ * to what the body means. It is parsed so that the document survives a round
+ * trip through this client with a type on it, which is what the editor will
+ * read and write.
+ */
+export interface ArticleDocument {
+  schema_version: number;
+  type: "doc";
+  content: ArticleNode[];
+}
+
+export interface PublicArticleCover {
+  mediaId: string;
+  mimeType: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * What an article carries beyond a post.
+ *
+ * `body` and `bodySchemaVersion` are present on a detail read and null in a
+ * list, together and never singly, because a page of twenty articles carrying
+ * twenty full bodies would be megabytes nobody on that page reads. The same
+ * split governs `contentHtml`, which is the empty string in a list: the body
+ * and its rendering come and go as one fact.
+ */
+export interface PublicArticle {
+  title: string;
+  excerpt: string;
+  cover: PublicArticleCover | null;
+  body: ArticleDocument | null;
+  bodySchemaVersion: number | null;
+}
+
 export interface PublicPost {
   id: string;
   kind: PostKind;
   /** The Markdown source of a moment; null on an article, which has none. */
   contentMd: string | null;
+  /** The title, excerpt and cover of an article; null on a moment. */
+  article: PublicArticle | null;
   contentHtml: string;
   createdAt: string;
   updatedAt: string;
@@ -91,6 +200,44 @@ export interface PublicMomentPost extends PublicPost {
 
 export function isMomentPost(post: PublicPost): post is PublicMomentPost {
   return post.kind === "moment" && post.contentMd !== null;
+}
+
+/**
+ * A post that leads with a title and a cover rather than with its prose.
+ *
+ * The narrowing exists for the same reason `PublicMomentPost` does: a card
+ * that reaches for `post.article.title` must not have to assert that the
+ * field is there, and `parsePost` has already made it impossible for an
+ * article to arrive without one.
+ */
+export interface PublicArticlePost extends PublicPost {
+  kind: "article";
+  article: PublicArticle;
+}
+
+export function isArticlePost(post: PublicPost): post is PublicArticlePost {
+  return post.kind === "article" && post.article !== null;
+}
+
+/**
+ * An article read in full: the detail response, where the body and the HTML
+ * rendered from it both arrive.
+ */
+export interface PublicReadArticlePost extends PublicArticlePost {
+  article: PublicArticle & {
+    body: ArticleDocument;
+    bodySchemaVersion: number;
+  };
+}
+
+export function isReadArticlePost(
+  post: PublicPost,
+): post is PublicReadArticlePost {
+  return (
+    isArticlePost(post) &&
+    post.article.body !== null &&
+    post.article.bodySchemaVersion !== null
+  );
 }
 
 /**
@@ -178,6 +325,13 @@ export interface TimelineRequest {
    * window or a cursor.
    */
   anchor?: string | null;
+  /**
+   * Read one kind of post and leave the other out. Absent reads both, which
+   * is what the timeline itself asks for; a reading list of articles asks for
+   * one. The server answers 400 to anything that is neither kind, so this is
+   * typed rather than free text.
+   */
+  kind?: PostKind | null;
   limit?: number;
   signal?: AbortSignal;
 }
@@ -801,6 +955,22 @@ function parseCommentReplyTarget(
   return { commentId: targetId, author: parseCommentAuthor(value.author) };
 }
 
+/**
+ * A moment attaches at most nine pictures, the grid it is composed in
+ * (MaxEntryMediaUsages). An article's pictures are not attachments: the body
+ * places them, and the storage layer projects them into the same media rows so
+ * that reference counting stays one predicate (internal/storage/sqlite/articles.go).
+ * They arrive in the same field and are bounded by MaxArticleInlineImages, so
+ * holding an article to the grid's nine would reject a perfectly ordinary
+ * article the tenth time it showed a picture.
+ */
+const MAX_MOMENT_MEDIA = 9;
+const MAX_ARTICLE_MEDIA = 50;
+
+function mediaCeiling(kind: PostKind): number {
+  return kind === "article" ? MAX_ARTICLE_MEDIA : MAX_MOMENT_MEDIA;
+}
+
 function parseMediaUsages(
   value: unknown,
   maximum: number,
@@ -974,12 +1144,380 @@ function postBody(
   return { kind, contentMd };
 }
 
+const ARTICLE_NODE_TYPES: readonly ArticleNodeType[] = [
+  "paragraph",
+  "heading",
+  "blockquote",
+  "bulletList",
+  "orderedList",
+  "listItem",
+  "codeBlock",
+  "horizontalRule",
+  "table",
+  "tableRow",
+  "tableHeader",
+  "tableCell",
+  "image",
+  "hardBreak",
+  "text",
+];
+
+const ARTICLE_MARK_TYPES: readonly ArticleMarkType[] = [
+  "bold",
+  "italic",
+  "strike",
+  "code",
+  "underline",
+  "link",
+];
+
+/**
+ * Which attributes each node may carry, mirroring articleNodeSpecs in
+ * internal/domain/article_doc.go. A node whose `attrs` names anything outside
+ * its own row is refused rather than trimmed.
+ */
+const ARTICLE_NODE_ATTRS: Record<ArticleNodeType, readonly string[]> = {
+  paragraph: [],
+  heading: ["level"],
+  blockquote: [],
+  bulletList: [],
+  orderedList: ["start"],
+  listItem: [],
+  codeBlock: ["language"],
+  horizontalRule: [],
+  table: [],
+  tableRow: [],
+  tableHeader: ["colspan", "rowspan"],
+  tableCell: ["colspan", "rowspan"],
+  image: ["media_id", "alt"],
+  hardBreak: [],
+  text: [],
+};
+
+/**
+ * The attributes a node cannot be written without, as against the ones it may
+ * leave out because the default carries no information. A heading is nothing
+ * without its level and a picture is nothing without the media it names.
+ */
+const ARTICLE_REQUIRED_ATTRS: Partial<Record<ArticleNodeType, string>> = {
+  heading: "level",
+  image: "media_id",
+};
+
+/** The nodes that hold nothing: a rule, a break and a picture are leaves. */
+const ARTICLE_LEAF_NODES: readonly ArticleNodeType[] = [
+  "horizontalRule",
+  "hardBreak",
+  "image",
+];
+
+/** Mirrors MaxArticleDepth and MaxArticleNodes (internal/domain/article_doc.go). */
+const MAX_ARTICLE_DEPTH = 10;
+const MAX_ARTICLE_NODES = 10_000;
+
+function isArticleNodeType(value: unknown): value is ArticleNodeType {
+  return (ARTICLE_NODE_TYPES as readonly unknown[]).includes(value);
+}
+
+function isArticleMarkType(value: unknown): value is ArticleMarkType {
+  return (ARTICLE_MARK_TYPES as readonly unknown[]).includes(value);
+}
+
+/**
+ * A link an article may point at, mirroring validateLink in
+ * internal/domain/markdown.go: a relative destination, or one of the three
+ * schemes a reader can be sent to safely.
+ */
+function isSafeArticleHref(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed === "" || trimmed.startsWith("//")) return false;
+  const scheme = trimmed.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
+  if (!scheme) return true;
+  return ["http", "https", "mailto"].includes(scheme[1].toLowerCase());
+}
+
+function parseArticleMarks(value: unknown): ArticleMark[] {
+  if (!Array.isArray(value)) {
+    throw invalidResponse("article body marks must be an array");
+  }
+  const seen = new Set<ArticleMarkType>();
+  return value.map((item): ArticleMark => {
+    if (!isRecord(item)) {
+      throw invalidResponse("article body mark must be an object");
+    }
+    const type = item.type;
+    if (!isArticleMarkType(type)) {
+      throw invalidResponse(
+        "article body carries a mark this client cannot read",
+      );
+    }
+    if (seen.has(type)) {
+      throw invalidResponse("article body repeats a mark on one run of text");
+    }
+    seen.add(type);
+    if (type !== "link") {
+      if (!hasExactKeys(item, ["type"])) {
+        throw invalidResponse(
+          `article body mark ${type} carries no attributes`,
+        );
+      }
+      return { type };
+    }
+    if (!hasExactKeys(item, ["type", "attrs"]) || !isRecord(item.attrs)) {
+      throw invalidResponse("article body link mark must carry its attributes");
+    }
+    if (!hasExactKeys(item.attrs, ["href"])) {
+      throw invalidResponse("article body link mark carries only an href");
+    }
+    const href = stringField(item.attrs, "href");
+    if (!isSafeArticleHref(href)) {
+      throw invalidResponse("article body link destination is not allowed");
+    }
+    return { type, attrs: { href } };
+  });
+}
+
+/**
+ * The attributes of one node, kept in the wire's own spelling and read only
+ * through the row `ARTICLE_NODE_ATTRS` allows the node.
+ */
+function parseArticleNodeAttrs(
+  type: ArticleNodeType,
+  value: unknown,
+): ArticleNodeAttrs {
+  const allowed = ARTICLE_NODE_ATTRS[type];
+  if (!isRecord(value) || allowed.length === 0) {
+    throw invalidResponse(`article body node ${type} carries no attributes`);
+  }
+  if (!Object.keys(value).every((key) => allowed.includes(key))) {
+    throw invalidResponse(
+      `article body node ${type} carries an unknown attribute`,
+    );
+  }
+  const attrs: ArticleNodeAttrs = {};
+  if ("level" in value) {
+    const level = positiveIntegerField(value, "level");
+    if (level > 3) {
+      throw invalidResponse("article body heading level must be 1, 2 or 3");
+    }
+    attrs.level = level;
+  }
+  if ("start" in value) attrs.start = positiveIntegerField(value, "start");
+  if ("language" in value) attrs.language = stringField(value, "language");
+  if ("media_id" in value) {
+    const mediaId = stringField(value, "media_id");
+    if (!isCanonicalUlid(mediaId)) {
+      throw invalidResponse("article body picture names no managed media");
+    }
+    attrs.media_id = mediaId;
+  }
+  if ("alt" in value) attrs.alt = stringField(value, "alt");
+  if ("colspan" in value)
+    attrs.colspan = positiveIntegerField(value, "colspan");
+  if ("rowspan" in value)
+    attrs.rowspan = positiveIntegerField(value, "rowspan");
+  return attrs;
+}
+
+function parseArticleNodes(
+  value: unknown,
+  depth: number,
+  budget: { remaining: number },
+): ArticleNode[] {
+  if (!Array.isArray(value)) {
+    throw invalidResponse("article body content must be an array");
+  }
+  return value.map((item) => parseArticleNode(item, depth, budget));
+}
+
+function parseArticleNode(
+  value: unknown,
+  depth: number,
+  budget: { remaining: number },
+): ArticleNode {
+  if (depth > MAX_ARTICLE_DEPTH) {
+    throw invalidResponse(
+      "article body is nested deeper than this client reads",
+    );
+  }
+  budget.remaining -= 1;
+  if (budget.remaining < 0) {
+    throw invalidResponse(
+      "article body holds more nodes than this client reads",
+    );
+  }
+  if (!isRecord(value)) {
+    throw invalidResponse("article body node must be an object");
+  }
+  const type = value.type;
+  if (!isArticleNodeType(type)) {
+    throw invalidResponse(
+      "article body carries a node this client cannot read",
+    );
+  }
+  if (!hasKeys(value, ["type"], ["attrs", "content", "text", "marks"])) {
+    throw invalidResponse(
+      `article body node ${type} carries an unsupported field`,
+    );
+  }
+  const node: ArticleNode = { type };
+  if ("attrs" in value) node.attrs = parseArticleNodeAttrs(type, value.attrs);
+  const required = ARTICLE_REQUIRED_ATTRS[type];
+  if (required !== undefined && !(required in (node.attrs ?? {}))) {
+    throw invalidResponse(
+      `article body node ${type} must name its ${required}`,
+    );
+  }
+  if ("content" in value) {
+    if (ARTICLE_LEAF_NODES.includes(type)) {
+      throw invalidResponse(`article body node ${type} holds nothing`);
+    }
+    node.content = parseArticleNodes(value.content, depth + 1, budget);
+  }
+  if (type === "text") {
+    const text = stringField(value, "text");
+    if (text === "") {
+      throw invalidResponse("article body carries a run of text with no text");
+    }
+    node.text = text;
+    if ("content" in value) {
+      throw invalidResponse("article body text node carries no children");
+    }
+    if ("marks" in value) node.marks = parseArticleMarks(value.marks);
+    return node;
+  }
+  if ("text" in value || "marks" in value) {
+    throw invalidResponse(`article body node ${type} is not a run of text`);
+  }
+  return node;
+}
+
+/**
+ * One article body. The document is rebuilt field by field rather than passed
+ * through, so what a caller holds is exactly what this grammar allows and
+ * nothing a response smuggled alongside it.
+ */
+export function parseArticleDocument(value: unknown): ArticleDocument {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["schema_version", "type", "content"])
+  ) {
+    throw invalidResponse(
+      "article body contains an unsupported or missing field",
+    );
+  }
+  if (value.type !== "doc") {
+    throw invalidResponse("article body must be a document");
+  }
+  const schemaVersion = positiveIntegerField(value, "schema_version");
+  const budget = { remaining: MAX_ARTICLE_NODES };
+  return {
+    schema_version: schemaVersion,
+    type: "doc",
+    content: parseArticleNodes(value.content, 1, budget),
+  };
+}
+
+function parseArticleCover(value: unknown): PublicArticleCover | null {
+  if (value === null) return null;
+  // mirrors postdto.ArticleCover (internal/transport/postdto/dto.go)
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["media_id", "mime_type", "width", "height"])
+  ) {
+    throw invalidResponse(
+      "article cover contains an unsupported or missing field",
+    );
+  }
+  const mediaId = stringField(value, "media_id");
+  if (!isCanonicalUlid(mediaId)) {
+    throw invalidResponse("article cover names no managed media");
+  }
+  const mimeType = mediaMimeTypeField(value, "mime_type");
+  if (!mimeType.startsWith("image/")) {
+    throw invalidResponse("article cover must be a picture");
+  }
+  return {
+    mediaId,
+    mimeType,
+    width: positiveIntegerField(value, "width"),
+    height: positiveIntegerField(value, "height"),
+  };
+}
+
+/**
+ * The article half of a post, held to the kind it arrived with.
+ *
+ * `body`, `body_schema_version` and `content_html` are one fact in three
+ * fields: a list read leaves all three behind, a detail read brings all three.
+ * Accepting a body without the HTML rendered from it — or HTML with no body
+ * behind it — would hand a page half an article and no way to say which half.
+ */
+function parseArticle(
+  value: unknown,
+  kind: PostKind,
+  contentHtml: string,
+): PublicArticle | null {
+  if (kind === "moment") {
+    if (value !== null) throw invalidResponse("a moment carries no article");
+    return null;
+  }
+  // mirrors postdto.Article (internal/transport/postdto/dto.go)
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "title",
+      "excerpt",
+      "cover",
+      "body",
+      "body_schema_version",
+    ])
+  ) {
+    throw invalidResponse("article contains an unsupported or missing field");
+  }
+  const title = stringField(value, "title");
+  if (!title.trim()) throw invalidResponse("an article must carry a title");
+  const bodyPresent = value.body !== null;
+  if (bodyPresent !== (contentHtml !== "")) {
+    throw invalidResponse(
+      "an article carries its body and its rendered content together",
+    );
+  }
+  if (bodyPresent !== (value.body_schema_version !== null)) {
+    throw invalidResponse(
+      "an article carries its body and its schema version together",
+    );
+  }
+  if (!bodyPresent) {
+    return {
+      title,
+      excerpt: stringField(value, "excerpt"),
+      cover: parseArticleCover(value.cover),
+      body: null,
+      bodySchemaVersion: null,
+    };
+  }
+  const body = parseArticleDocument(value.body);
+  const bodySchemaVersion = positiveIntegerField(value, "body_schema_version");
+  if (body.schema_version !== bodySchemaVersion) {
+    throw invalidResponse("article body names a different schema version");
+  }
+  return {
+    title,
+    excerpt: stringField(value, "excerpt"),
+    cover: parseArticleCover(value.cover),
+    body,
+    bodySchemaVersion,
+  };
+}
+
 export function parsePost(value: unknown): PublicPost {
   if (!isRecord(value)) throw invalidResponse("post must be an object");
   const postKeys = [
     "id",
     "kind",
     "content_md",
+    "article",
     "content_html",
     "created_at",
     "updated_at",
@@ -995,16 +1533,15 @@ export function parsePost(value: unknown): PublicPost {
     postKeys.push("edited_at");
   // mirrors postdto.Post (internal/transport/postdto/dto.go)
   if (
-    (!hasExactKeys(value, postKeys) &&
-      !hasExactKeys(value, [...postKeys, "location"]) &&
-      !hasExactKeys(value, [...postKeys, "quoted_post"]) &&
-      !hasExactKeys(value, [...postKeys, "location", "quoted_post"])) ||
-    !Array.isArray(value.media) ||
-    value.media.length > 9
+    !hasExactKeys(value, postKeys) &&
+    !hasExactKeys(value, [...postKeys, "location"]) &&
+    !hasExactKeys(value, [...postKeys, "quoted_post"]) &&
+    !hasExactKeys(value, [...postKeys, "location", "quoted_post"])
   ) {
     throw invalidResponse("post contains an unsupported or missing field");
   }
-  const media = parseMediaUsages(value.media, 9, "post");
+  const body = postBody(value, "post");
+  const media = parseMediaUsages(value.media, mediaCeiling(body.kind), "post");
   const linkCards = parseLinkCards(value.link_cards);
   let location: PublicPostLocation | null = null;
   if (value.location !== undefined && value.location !== null) {
@@ -1087,7 +1624,11 @@ export function parsePost(value: unknown): PublicPost {
         contentMd: quotedBody.contentMd,
         contentHtml: stringField(quoted, "content_html"),
         publishedAt: instantField(quoted, "published_at"),
-        media: parseMediaUsages(quoted.media, 9, "quoted post"),
+        media: parseMediaUsages(
+          quoted.media,
+          mediaCeiling(quotedBody.kind),
+          "quoted post",
+        ),
         location: quotedLocation,
       };
     }
@@ -1107,12 +1648,13 @@ export function parsePost(value: unknown): PublicPost {
   if (!isPostVisibility(visibility)) {
     throw invalidResponse("post visibility is invalid");
   }
-  const body = postBody(value, "post");
+  const contentHtml = stringField(value, "content_html");
   return {
     id: stringField(value, "id"),
     kind: body.kind,
     contentMd: body.contentMd,
-    contentHtml: stringField(value, "content_html"),
+    article: parseArticle(value.article, body.kind, contentHtml),
+    contentHtml,
     createdAt: instantField(value, "created_at"),
     updatedAt: instantField(value, "updated_at"),
     editedAt,
@@ -1274,6 +1816,7 @@ function parseSearchHit(value: unknown): SearchHit {
     "id",
     "kind",
     "content_md",
+    "article",
     "content_html",
     "created_at",
     "updated_at",
@@ -1842,6 +2385,9 @@ export class PublicApi {
     if (request.from) query.set("from", request.from);
     if (request.to) query.set("to", request.to);
     if (request.anchor) query.set("anchor", request.anchor);
+    // An empty value is a client that meant to send a kind and did not, which
+    // the server rejects; leaving the parameter off is how both kinds are read.
+    if (request.kind) query.set("kind", request.kind);
     const response = await this.fetcher(`/api/v1/posts?${query}`, {
       headers: { Accept: "application/json" },
       signal: request.signal,

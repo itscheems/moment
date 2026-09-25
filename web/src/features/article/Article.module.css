@@ -1,0 +1,344 @@
+/* The card deliberately reuses the link-card shell: a bordered, rounded block
+   that stands for something with a life of its own outside the post it sits
+   in. An article and a captured link are the same idea to a reader scanning a
+   timeline, so they should not look like two unrelated components. */
+.card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  margin-block-start: var(--space-3);
+  background: transparent;
+  transition: border-color var(--motion-fast) var(--ease-out);
+}
+
+/* A tap on a touch screen latches :hover until the next tap somewhere else,
+   which left a card lit long after the reader had moved on (b121e4e). Every
+   hover rule in this file is behind the query for that reason. */
+@media (hover: hover) {
+  .card:hover {
+    border-color: var(--text-tertiary);
+  }
+}
+
+.cover {
+  position: relative;
+  display: block;
+  background: var(--surface-muted);
+}
+
+.coverImage {
+  display: block;
+  inline-size: 100%;
+  /* The width and height attributes carry the stored geometry, so the box is
+     reserved from the aspect ratio before a byte of the picture arrives. */
+  block-size: auto;
+  /* A cover with unusual proportions still must not take the whole screen. */
+  max-block-size: 26rem;
+  object-fit: cover;
+}
+
+.coverBadge {
+  position: absolute;
+  inset-block-end: var(--space-3);
+  inset-inline-start: var(--space-3);
+}
+
+/* Label article cards with text. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  color: #fff;
+  background: rgb(0 0 0 / 78%);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: normal;
+}
+
+/* With no cover the pill has nothing to sit on, so it leads the text block
+   instead. It keeps the same shape and loses the scrim it no longer needs. */
+.metaBadge .badge {
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+}
+
+.meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: var(--space-3);
+}
+
+.meta p {
+  margin: 0;
+}
+
+.metaBadge {
+  margin-block-end: 0.15rem;
+}
+
+.cover + .meta {
+  border-block-start: 1px solid var(--border-subtle);
+}
+
+.cardTitle {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.0625rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.cardExcerpt {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- the detail page ---- */
+
+.page {
+  /* The measure an article reads at. It is a ceiling, not a width: the detail
+     shell hands this page a 37.5rem column, so today the article fills it and
+     widens on its own the day the shell gives an article the room. */
+  --article-measure: 47.5rem;
+  /* What the post surface pads with; the cover cancels exactly this much to
+     run edge to edge. */
+  --article-bleed: var(--space-4);
+}
+
+.column {
+  inline-size: min(100%, var(--article-measure));
+  margin-inline: auto;
+}
+
+.head {
+  display: block;
+  margin-block-start: var(--space-2);
+}
+
+.headBadge {
+  margin: 0 0 var(--space-2);
+}
+
+.title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 2.125rem;
+  font-weight: 800;
+  line-height: 1.16;
+  overflow-wrap: break-word;
+}
+
+.lede {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+}
+
+.byline {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+}
+
+.bylineText {
+  min-inline-size: 0;
+}
+
+.bylineMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.hero {
+  /* Edge to edge: the post surface pads the page and the cover gives that
+     padding back on both sides. */
+  inline-size: calc(100% + 2 * var(--article-bleed));
+  margin: var(--space-5) calc(0px - var(--article-bleed)) 0;
+  overflow: hidden;
+  background: var(--surface-muted);
+}
+
+.heroImage {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+  max-block-size: 34rem;
+  object-fit: cover;
+}
+
+.body {
+  margin-block-start: var(--space-5);
+  color: var(--text-primary);
+  font-size: 1.125rem;
+  line-height: 1.72;
+  overflow-wrap: break-word;
+}
+
+.body :where(p, ul, ol, blockquote, pre, table, h1, h2, h3) {
+  margin-block: 1.1em;
+}
+
+.body > :first-child {
+  margin-block-start: 0;
+}
+
+.body > :last-child {
+  margin-block-end: 0;
+}
+
+.body :where(h1, h2, h3) {
+  font-weight: 750;
+  line-height: 1.28;
+}
+
+.body h1 {
+  font-size: 1.75rem;
+}
+
+.body h2 {
+  font-size: 1.4375rem;
+}
+
+.body h3 {
+  font-size: 1.1875rem;
+}
+
+.body :where(ul, ol) {
+  padding-inline-start: 1.35em;
+}
+
+.body li {
+  margin-block: 0.3em;
+}
+
+.body a {
+  color: var(--accent);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.18em;
+}
+
+.body blockquote {
+  border-inline-start: 3px solid var(--border-strong);
+  margin-inline: 0;
+  padding-inline-start: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.body code {
+  border-radius: 0.3rem;
+  padding: 0.08rem 0.28rem;
+  background: var(--surface-muted);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.body pre {
+  max-inline-size: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-action);
+  padding: var(--space-4);
+  background: var(--surface-hover);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.body pre code {
+  padding: 0;
+  background: transparent;
+  font-size: 1em;
+}
+
+.body hr {
+  border: 0;
+  border-block-start: 1px solid var(--border-subtle);
+  margin-block: var(--space-6);
+}
+
+/* A picture placed in the body arrives without geometry, so it is given a
+   floor to stand on rather than a reserved box: the background keeps the gap
+   from reading as a hole while the bytes are still coming. */
+.body img {
+  display: block;
+  max-inline-size: 100%;
+  block-size: auto;
+  border-radius: var(--radius-action);
+  margin-block: var(--space-5);
+  background: var(--surface-muted);
+}
+
+/* A wide table scrolls inside itself rather than pushing the column sideways.
+   The rendered HTML has no wrapper to scroll, so the table becomes the
+   scroller; the rows keep their table layout in an anonymous table box. */
+.body table {
+  display: block;
+  max-inline-size: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 1rem;
+}
+
+.body :where(th, td) {
+  border: 1px solid var(--border-subtle);
+  padding: 0.5rem 0.75rem;
+  text-align: start;
+  vertical-align: top;
+}
+
+.body th {
+  background: var(--surface-muted);
+  font-weight: 700;
+}
+
+@media (max-width: 719px) {
+  .title {
+    font-size: 1.75rem;
+  }
+
+  .lede {
+    font-size: 1rem;
+  }
+
+  .body {
+    font-size: 1.0625rem;
+    line-height: 1.68;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+}

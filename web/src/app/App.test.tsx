@@ -72,6 +72,7 @@ function post(id: string, content: string, html = `<p>${content}</p>`) {
     id,
     kind: "moment",
     content_md: content,
+    article: null,
     content_html: html,
     created_at: "2026-08-10T01:00:00.000Z",
     updated_at: "2026-08-10T01:00:00.000Z",

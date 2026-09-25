@@ -13,6 +13,7 @@ const post = {
   id: "01K2ABCDEF0123456789ABCDE0",
   kind: "moment",
   content_md: "今天下了一场雨。",
+  article: null,
   content_html: "<p>今天下了一场雨。</p>",
   created_at: "2026-08-10T01:02:03.000Z",
   updated_at: "2026-08-10T01:02:03.000Z",
@@ -405,6 +406,7 @@ describe("public API client", () => {
           id: post.id,
           kind: "moment",
           contentMd: post.content_md,
+          article: null,
           contentHtml: post.content_html,
           createdAt: post.created_at,
           updatedAt: post.updated_at,
@@ -1150,12 +1152,40 @@ it("reads authoritative edit time and accepts legacy posts without it", () => {
   expect(() => parsePost({ ...post, edited_at: "nonsense" })).toThrow();
 });
 
+function textNode(text: string): Record<string, unknown> {
+  return { type: "text", text };
+}
+
 describe("post kind and the body it is allowed to carry", () => {
+  const body = {
+    schema_version: 1,
+    type: "doc",
+    content: [
+      { type: "heading", attrs: { level: 2 }, content: [textNode("一篇文章")] },
+      { type: "paragraph", content: [textNode("正文。")] },
+    ],
+  };
+
   const article = {
     ...post,
     kind: "article",
     content_md: null,
+    article: {
+      title: "一篇文章",
+      excerpt: "正文。",
+      cover: null,
+      body,
+      body_schema_version: 1,
+    },
     content_html: "<h1>一篇文章</h1>\n<p>正文。</p>",
+  };
+
+  // What the timeline receives: the card fields, and neither the body nor the
+  // rendering of it.
+  const articleCard = {
+    ...article,
+    article: { ...article.article, body: null, body_schema_version: null },
+    content_html: "",
   };
 
   it("parses an article, which renders from HTML and carries no Markdown", () => {
@@ -1163,6 +1193,12 @@ describe("post kind and the body it is allowed to carry", () => {
       kind: "article",
       contentMd: null,
       contentHtml: "<h1>一篇文章</h1>\n<p>正文。</p>",
+      article: {
+        title: "一篇文章",
+        excerpt: "正文。",
+        cover: null,
+        bodySchemaVersion: 1,
+      },
     });
   });
 
@@ -1203,7 +1239,7 @@ describe("post kind and the body it is allowed to carry", () => {
       vi.fn(async () =>
         json({
           data: {
-            items: [{ ...article, snippet: "文章里的一段" }],
+            items: [{ ...articleCard, snippet: "文章里的一段" }],
             year_counts: [{ year: 2026, count: 1 }],
           },
           meta: { next_cursor: null, request_id: "req_search" },
@@ -1291,5 +1327,287 @@ describe("post kind and the body it is allowed to carry", () => {
     expect(() =>
       parsePost({ ...post, quoted_post: { ...tombstone, kind: "article" } }),
     ).toThrow(PublicApiError);
+  });
+
+  it("reads a list article, whose body and rendering both stay behind", () => {
+    expect(parsePost(articleCard)).toMatchObject({
+      kind: "article",
+      contentHtml: "",
+      article: {
+        title: "一篇文章",
+        excerpt: "正文。",
+        body: null,
+        bodySchemaVersion: null,
+      },
+    });
+  });
+
+  it("refuses a moment that carries an article, and one that carries none", () => {
+    expect(() =>
+      parsePost({ ...post, article: { title: "", excerpt: "" } }),
+    ).toThrow(PublicApiError);
+    const without: Record<string, unknown> = { ...post };
+    delete without.article;
+    expect(() => parsePost(without)).toThrow(PublicApiError);
+  });
+
+  it("refuses an article whose article object is missing or reshaped", () => {
+    expect(() => parsePost({ ...article, article: null })).toThrow(
+      PublicApiError,
+    );
+    expect(() =>
+      parsePost({
+        ...article,
+        article: { ...article.article, subtitle: "多出来的字段" },
+      }),
+    ).toThrow(PublicApiError);
+    expect(() =>
+      parsePost({ ...article, article: { ...article.article, title: "  " } }),
+    ).toThrow(PublicApiError);
+  });
+
+  it("holds the body, its schema version and the rendered HTML to one another", () => {
+    // A list row that still carries HTML, and a detail row that lost it.
+    expect(() =>
+      parsePost({ ...articleCard, content_html: "<p>正文。</p>" }),
+    ).toThrow(PublicApiError);
+    expect(() => parsePost({ ...article, content_html: "" })).toThrow(
+      PublicApiError,
+    );
+    expect(() =>
+      parsePost({
+        ...article,
+        article: { ...article.article, body_schema_version: null },
+      }),
+    ).toThrow(PublicApiError);
+    expect(() =>
+      parsePost({
+        ...article,
+        article: { ...article.article, body_schema_version: 2 },
+      }),
+    ).toThrow(PublicApiError);
+  });
+
+  it("parses every node and mark the body grammar allows", () => {
+    const rich = {
+      schema_version: 1,
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              ...textNode("粗链接"),
+              marks: [
+                { type: "bold" },
+                { type: "link", attrs: { href: "https://example.com/x" } },
+              ],
+            },
+            { type: "hardBreak" },
+          ],
+        },
+        { type: "heading", attrs: { level: 3 }, content: [textNode("小标题")] },
+        {
+          type: "blockquote",
+          content: [{ type: "paragraph", content: [textNode("引文")] }],
+        },
+        {
+          type: "bulletList",
+          content: [
+            {
+              type: "listItem",
+              content: [{ type: "paragraph", content: [textNode("一")] }],
+            },
+          ],
+        },
+        {
+          type: "orderedList",
+          attrs: { start: 7 },
+          content: [
+            {
+              type: "listItem",
+              content: [{ type: "paragraph", content: [textNode("七")] }],
+            },
+          ],
+        },
+        {
+          type: "codeBlock",
+          attrs: { language: "go" },
+          content: [textNode("package main")],
+        },
+        { type: "horizontalRule" },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  attrs: { colspan: 2 },
+                  content: [{ type: "paragraph", content: [textNode("头")] }],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  attrs: { rowspan: 2 },
+                  content: [{ type: "paragraph", content: [textNode("格")] }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "image",
+          attrs: { media_id: "01K2ABCDEF0123456789ABCDE7", alt: "一张图" },
+        },
+      ],
+    };
+
+    const parsed = parsePost({
+      ...article,
+      article: { ...article.article, body: rich },
+    });
+    expect(parsed.article?.body).toEqual(rich);
+  });
+
+  it("refuses a body node, mark or attribute the grammar does not name", () => {
+    const withBody = (content: unknown) =>
+      parsePost({
+        ...article,
+        article: {
+          ...article.article,
+          body: { schema_version: 1, type: "doc", content },
+        },
+      });
+
+    expect(() => withBody([{ type: "callout", content: [] }])).toThrow(
+      PublicApiError,
+    );
+    expect(() =>
+      withBody([
+        { type: "paragraph", attrs: { align: "center" }, content: [] },
+      ]),
+    ).toThrow(PublicApiError);
+    expect(() =>
+      withBody([
+        {
+          type: "paragraph",
+          content: [{ ...textNode("x"), marks: [{ type: "highlight" }] }],
+        },
+      ]),
+    ).toThrow(PublicApiError);
+    expect(() =>
+      withBody([
+        {
+          type: "paragraph",
+          content: [
+            {
+              ...textNode("x"),
+              marks: [{ type: "link", attrs: { href: "javascript:alert(1)" } }],
+            },
+          ],
+        },
+      ]),
+    ).toThrow(PublicApiError);
+    expect(() =>
+      withBody([
+        { type: "heading", attrs: { level: 4 }, content: [textNode("x")] },
+      ]),
+    ).toThrow(PublicApiError);
+    expect(() =>
+      withBody([{ type: "paragraph", content: [textNode("")] }]),
+    ).toThrow(PublicApiError);
+    expect(() =>
+      withBody([{ type: "paragraph", text: "x", content: [] }]),
+    ).toThrow(PublicApiError);
+    // A heading with no level and a picture naming no media are both nodes
+    // the renderer could not have produced.
+    expect(() =>
+      withBody([{ type: "heading", content: [textNode("x")] }]),
+    ).toThrow(PublicApiError);
+    expect(() => withBody([{ type: "image", attrs: { alt: "x" } }])).toThrow(
+      PublicApiError,
+    );
+    expect(() => withBody([{ type: "horizontalRule", content: [] }])).toThrow(
+      PublicApiError,
+    );
+  });
+
+  it("reads a cover with the geometry a card reserves space from", () => {
+    const cover = {
+      media_id: "01K2ABCDEF0123456789ABCDE7",
+      mime_type: "image/jpeg",
+      width: 1600,
+      height: 900,
+    };
+    expect(
+      parsePost({ ...articleCard, article: { ...articleCard.article, cover } })
+        .article?.cover,
+    ).toEqual({
+      mediaId: "01K2ABCDEF0123456789ABCDE7",
+      mimeType: "image/jpeg",
+      width: 1600,
+      height: 900,
+    });
+    for (const broken of [
+      { ...cover, width: 0 },
+      { ...cover, mime_type: "video/mp4" },
+      { ...cover, media_id: "not-a-ulid" },
+      { ...cover, caption: "多出来的字段" },
+    ]) {
+      expect(() =>
+        parsePost({
+          ...articleCard,
+          article: { ...articleCard.article, cover: broken },
+        }),
+      ).toThrow(PublicApiError);
+    }
+  });
+
+  it("lets an article place more pictures than a moment may attach", () => {
+    const picture = (index: number) => ({
+      media_id: `01K2ABCDEF0123456789ABCDE${"0123456789ABCDEFGHJK"[index]}`,
+      position: index,
+      alt_text: null,
+      mime_type: "image/jpeg",
+      width: 1600,
+      height: 900,
+    });
+    const pictures = Array.from({ length: 12 }, (_, index) => picture(index));
+
+    // An article's body places these; they reach `media` as a projection, and
+    // the grid's nine is not their ceiling.
+    expect(parsePost({ ...article, media: pictures }).media).toHaveLength(12);
+    // A moment attaches them, and nine is exactly the ceiling.
+    expect(() => parsePost({ ...post, media: pictures })).toThrow(
+      PublicApiError,
+    );
+  });
+
+  it("asks the timeline for one kind only when one was named", async () => {
+    const fetcher = vi.fn(async () =>
+      json({
+        data: { items: [] },
+        meta: { next_cursor: null, prev_cursor: null, request_id: "req_posts" },
+      }),
+    );
+    const api = new PublicApi(fetcher as typeof fetch);
+
+    await api.timeline({ kind: "article" });
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.stringContaining("kind=article"),
+      expect.anything(),
+    );
+
+    await api.timeline();
+    expect(fetcher).toHaveBeenLastCalledWith(
+      expect.not.stringContaining("kind="),
+      expect.anything(),
+    );
   });
 });
