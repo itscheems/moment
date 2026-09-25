@@ -51,7 +51,9 @@ const publishNav: NavItem = {
   label: "发布",
   href: "/compose",
   icon: "compose",
-  active: ["owner-compose"],
+  // Writing an article is composing, so the nav says so rather than going
+  // blank while the owner is in the middle of one.
+  active: ["owner-compose", "owner-article"],
 };
 
 const HOME_SCROLL_DURATION_MS = 260;

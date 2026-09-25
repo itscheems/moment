@@ -453,6 +453,22 @@ describe("App shell and public routes", () => {
     ).toBeNull();
   });
 
+  // Articles start from the compose page and land on the same timeline.
+  it("offers the way into an article from the compose page", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/compose");
+    installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === "/api/v1/owner/status") return json(ownerStatusEnvelope());
+      return json({}, 404);
+    });
+
+    render(<App />);
+    expect(
+      await screen.findByRole("link", { name: "写文章" }),
+    ).toHaveAttribute("href", "/compose/article");
+  });
+
   it("hides the mobile bar on deterministic visual-viewport contraction without moving composer focus", async () => {
     const viewport = new FakeVisualViewport(390, 844);
     preauthenticate();

@@ -1729,8 +1729,34 @@
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  /* The way into an article sits at the start, the way back into kept text at
+     the end, and the row holds whichever of the two is there. */
+  justify-content: space-between;
   gap: var(--space-2);
+}
+
+.pageArticleLink {
+  min-block-size: 2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.pageArticleLink svg {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+}
+
+@media (hover: hover) {
+  .pageArticleLink:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
 }
 
 .pageDraftsToggle {

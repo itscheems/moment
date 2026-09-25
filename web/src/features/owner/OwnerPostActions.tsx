@@ -8,6 +8,11 @@ import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { useOwner } from "./OwnerProvider";
+import { articleDraftPath } from "../../app/routes";
+import {
+  ArticleDraftApi,
+  articleDraftErrorMessage,
+} from "../article/articleDrafts";
 import { announceOwnerPost } from "./postEvents";
 import styles from "./Owner.module.css";
 
@@ -39,6 +44,35 @@ export function OwnerPostActions({
 
   const restoreMenuFocus = () => {
     window.requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+
+  /**
+   * Editing an article is not editing a Moment.
+   *
+   * A Moment is its Markdown and the edit page changes it in place. An article
+   * is a document, and what is edited is a working copy that changes nothing a
+   * reader sees until it is published in turn -- so this asks the server for
+   * that copy and goes to it, rather than opening a Markdown box over a body
+   * that is not Markdown.
+   */
+  const editArticle = async () => {
+    if (pendingRef.current || !session) return;
+    pendingRef.current = true;
+    setPending(true);
+    setError(null);
+    try {
+      const draft = await new ArticleDraftApi().openPublished(
+        session.csrfToken,
+        post.id,
+      );
+      navigate(articleDraftPath(draft.id));
+    } catch (failure) {
+      expireIfInvalidSession(failure);
+      setError(articleDraftErrorMessage(failure));
+    } finally {
+      pendingRef.current = false;
+      setPending(false);
+    }
   };
 
   const remove = async () => {
@@ -122,11 +156,15 @@ export function OwnerPostActions({
                 className={styles.ownerMenuItem}
                 onClick={() => {
                   setMenuOpen(false);
+                  if (post.kind === "article") {
+                    void editArticle();
+                    return;
+                  }
                   navigate(`/owner/m/${encodeURIComponent(post.id)}/edit`);
                 }}
               >
                 <Icon name="edit" />
-                <span>编辑</span>
+                <span>{post.kind === "article" ? "编辑文章" : "编辑"}</span>
               </Menu.Item>
               <Menu.Item
                 className={styles.ownerMenuItem}

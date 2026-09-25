@@ -22,7 +22,8 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import type { OwnerLocation } from "../../api/owner";
-import { useNavigation } from "../../app/navigation";
+import { InternalLink, useNavigation } from "../../app/navigation";
+import { ARTICLE_COMPOSE_PATH } from "../../app/routes";
 import { notify } from "../../components/Feedback";
 import { MarkdownContent } from "../../components/MarkdownContent";
 import { MediaComposer } from "../media/MediaComposer";
@@ -1154,9 +1155,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             in the header, but a phone never gets the dialog, and filing
             text you cannot read back is a trap. Spans both columns so the
             avatar stays level with the audience pill under it. */}
-        {drafting && (keptCount > 0 || draftsListOpen) ? (
+        {variant === "page" ? (
           <div className={styles.pageDrafts}>
-            {draftsListOpen && keptCount > 0 ? (
+            {/* Articles start inside composing and land on the same timeline. */}
+            <InternalLink
+              className={styles.pageArticleLink}
+              href={ARTICLE_COMPOSE_PATH}
+            >
+              <Icon name="edit" />
+              写文章
+            </InternalLink>
+            {drafting && draftsListOpen && keptCount > 0 ? (
               <button
                 className={styles.pageDraftsEdit}
                 onClick={() => setDraftsEditing((on) => !on)}
@@ -1165,19 +1174,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 {draftsEditing ? "完成" : "编辑"}
               </button>
             ) : null}
-            <button
-              aria-expanded={draftsListOpen}
-              className={styles.pageDraftsToggle}
-              onClick={() => {
-                setDraftsEditing(false);
-                setDraftsListOpen((open) => !open);
-              }}
-              type="button"
-            >
-              草稿
-              {keptCount > 0 ? <small>{keptCount}</small> : null}
-              <Icon name="chevron-down" />
-            </button>
+            {drafting && (keptCount > 0 || draftsListOpen) ? (
+              <button
+                aria-expanded={draftsListOpen}
+                className={styles.pageDraftsToggle}
+                onClick={() => {
+                  setDraftsEditing(false);
+                  setDraftsListOpen((open) => !open);
+                }}
+                type="button"
+              >
+                草稿
+                {keptCount > 0 ? <small>{keptCount}</small> : null}
+                <Icon name="chevron-down" />
+              </button>
+            ) : null}
           </div>
         ) : null}
         {drafting && draftsListOpen ? (
