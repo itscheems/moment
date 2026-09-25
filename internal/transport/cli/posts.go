@@ -1475,6 +1475,24 @@ func postAPIRequest(
 
 func validPostAPIRawData(data json.RawMessage, destination any) bool {
 	switch typed := destination.(type) {
+	case *postdto.ArticleDraft:
+		return typed != nil && validRawAPIArticleDraft(data, *typed)
+	case *[]postdto.ArticleDraft:
+		if typed == nil {
+			return false
+		}
+		items, ok := apiRawArray(data)
+		if !ok || len(items) != len(*typed) {
+			return false
+		}
+		for index, item := range items {
+			if !validRawAPIArticleDraft(item, (*typed)[index]) {
+				return false
+			}
+		}
+		return true
+	case *articleDiscardResponse:
+		return typed != nil && typed.Discarded && validArticleResponseID(typed.ID) && hasRequiredNonNullAPIDataFields(data, "id", "discarded")
 	case *postdto.Post:
 		return typed != nil && validRawAPIPost(data, *typed)
 	case *postdto.Page:

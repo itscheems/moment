@@ -315,12 +315,12 @@ func runArticleDraftDelete(ctx context.Context, invocation Invocation, input Com
 		}
 		return articleDiscardResult(id, nil), nil
 	case ModeAPI:
-		var discarded map[string]any
+		var discarded articleDiscardResponse
 		meta, status, err := postAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/owner/articles/drafts/"+id.String(), nil, nil, "", true, &discarded)
 		if err != nil {
 			return Result{}, err
 		}
-		if status != http.StatusOK {
+		if status != http.StatusOK || discarded.ID != id.String() {
 			return Result{}, invalidAPIResponse()
 		}
 		return articleDiscardResult(id, meta), nil
@@ -417,6 +417,45 @@ type articleDraftInput struct {
 	Body              []byte
 	CoverMediaID      *string
 	ExpectedUpdatedAt *time.Time
+}
+
+type articleDiscardResponse struct {
+	ID        string `json:"id"`
+	Discarded bool   `json:"discarded"`
+}
+
+func validArticleResponseID(value string) bool {
+	id, err := domain.ParseID(value)
+	return err == nil && id.String() == value
+}
+
+// Draft responses have their own contract: empty bodies are legal, and the
+// revision must retain the exact canonical spelling needed by the next save.
+func validRawAPIArticleDraft(data json.RawMessage, draft postdto.ArticleDraft) bool {
+	if !hasRequiredNonNullAPIDataFields(data, "id", "title", "body", "body_schema_version", "created_at", "updated_at") ||
+		!hasRequiredAPIDataFields(data, "cover_media_id", "published_entry_id") ||
+		!validArticleResponseID(draft.ID) ||
+		!validCanonicalAPIInstantField(data, "created_at", draft.CreatedAt) ||
+		!validCanonicalAPIInstantField(data, "updated_at", draft.UpdatedAt) {
+		return false
+	}
+	var coverID *domain.ID
+	if draft.CoverMediaID != nil {
+		if !validArticleResponseID(*draft.CoverMediaID) {
+			return false
+		}
+		id, _ := domain.ParseID(*draft.CoverMediaID)
+		coverID = &id
+	}
+	if draft.PublishedEntryID != nil && !validArticleResponseID(*draft.PublishedEntryID) {
+		return false
+	}
+	body, err := domain.ParseArticleDraftDocument(draft.Body)
+	if err != nil || body.SchemaVersion != draft.BodySchemaVersion {
+		return false
+	}
+	_, err = domain.NewArticleDraft(draft.Title, body, coverID)
+	return err == nil
 }
 
 func (payload articleDraftInput) wire() map[string]any {
