@@ -18,7 +18,13 @@ import (
 //
 // Version 4: a bare URL after a CJK mark is one link to its end, so a query
 // string with "_" in it no longer leaves its tail behind as search text.
-const ContentNormalizerVersion = 4
+//
+// Version 5: the Markdown grammar gained strikethrough and tables, so the same
+// stored body now yields different visible text. "~~gone~~" indexes as "gone"
+// instead of carrying its tildes, and a table indexes as its cell text instead
+// of one run of pipes. Existing rows must be rebuilt; the version is what
+// stops the two spellings from sharing one index.
+const ContentNormalizerVersion = 5
 
 // NormalizeContentV2 converts Markdown-shaped input into deterministic search
 // text. It keeps visible link labels and code, drops destinations and invisible

@@ -36,7 +36,12 @@ var markdownEngine = goldmark.New(
 			extension.WithLinkifyWWWRegexp(regexp.MustCompile(`a^`)),
 		)}, 999),
 	)),
-	goldmark.WithExtensions(extension.NewLinkify(
+	// Strikethrough and Table are added one by one rather than through
+	// extension.GFM: that bundle carries its own Linkify, which would fight
+	// the CJK-aware one configured above. Task lists stay out -- the composer
+	// has no checkbox control, so enabling them would turn "- [ ] x" in an
+	// existing post into a checkbox nobody asked for.
+	goldmark.WithExtensions(extension.Strikethrough, extension.Table, extension.NewLinkify(
 		extension.WithLinkifyAllowedProtocols([][]byte{[]byte("http:"), []byte("https:")}),
 		extension.WithLinkifyEmailRegexp(regexp.MustCompile(`a^`)),
 		extension.WithLinkifyWWWRegexp(regexp.MustCompile(`a^`)),
