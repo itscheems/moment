@@ -153,7 +153,7 @@ func (store postStore) EntryByID(ctx context.Context, id domain.ID) (domain.Entr
 	entry, err := scanEntry(store.queries.QueryRowContext(ctx, `
 SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms
 FROM entries
-WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment)))
+WHERE id = ?`, id.String()))
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Entry{}, false, nil
 	}
@@ -172,20 +172,23 @@ WITH timeline_entries AS (
   SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
          published_at_ms AS timeline_at_ms, 0 AS timeline_kind
   FROM entries
-  WHERE kind = ? AND ` + visible + `
+  WHERE (? = '' OR kind = ?) AND ` + visible + `
   UNION ALL
   SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
          reposted_at_ms AS timeline_at_ms, 1 AS timeline_kind
   FROM entries
-  WHERE kind = ? AND reposted_at_ms IS NOT NULL AND ` + visible + `
+  WHERE (? = '' OR kind = ?) AND reposted_at_ms IS NOT NULL AND ` + visible + `
 )
 SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
        timeline_at_ms, timeline_kind
 FROM timeline_entries
 WHERE 1 = 1`
-	arguments := []any{string(domain.KindMoment)}
+	// An article is a post on the same timeline, so the default reads both and
+	// only an explicit narrowing picks one.
+	kind := string(query.Kind)
+	arguments := []any{kind, kind}
 	arguments = append(arguments, visibleArguments...)
-	arguments = append(arguments, string(domain.KindMoment))
+	arguments = append(arguments, kind, kind)
 	arguments = append(arguments, visibleArguments...)
 	if query.FromMS != nil {
 		statement += "\n  AND published_at_ms >= ?"
@@ -649,6 +652,10 @@ func (store postStore) ReplaceEntryQuote(ctx context.Context, entryID domain.ID,
 	return nil
 }
 
+// UpdateEntry replaces a Markdown body, and the kind in its WHERE clause is
+// the point rather than an oversight: an article is rewritten as a whole
+// document through ReplaceArticle, and letting this path touch one would leave
+// its body and its projection disagreeing.
 func (store postStore) UpdateEntry(ctx context.Context, entry domain.Entry, contentText string) (bool, error) {
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE entries
@@ -668,7 +675,7 @@ func (store postStore) SetEntryRepostedAt(ctx context.Context, id domain.ID, rep
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE entries
 SET reposted_at_ms = ?, updated_at_ms = ?
-WHERE id = ? AND kind = ?`, reposted, domain.TimeToMillis(updatedAt), id.String(), string(domain.KindMoment))
+WHERE id = ?`, reposted, domain.TimeToMillis(updatedAt), id.String())
 	if err != nil {
 		return false, fmt.Errorf("update entry repost: %w", err)
 	}
@@ -676,7 +683,7 @@ WHERE id = ? AND kind = ?`, reposted, domain.TimeToMillis(updatedAt), id.String(
 }
 
 func (store postStore) DeleteEntry(ctx context.Context, id domain.ID) (bool, error) {
-	result, err := store.queries.ExecContext(ctx, `DELETE FROM entries WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment))
+	result, err := store.queries.ExecContext(ctx, `DELETE FROM entries WHERE id = ?`, id.String())
 	if err != nil {
 		return false, fmt.Errorf("delete entry: %w", err)
 	}

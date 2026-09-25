@@ -122,7 +122,8 @@ var _ app.CommentStore = commentStore{}
 
 func (store commentStore) EntryVisibility(ctx context.Context, id domain.ID) (domain.Visibility, bool, error) {
 	var visibility string
-	err := store.queries.QueryRowContext(ctx, `SELECT visibility FROM entries WHERE id = ? AND kind = ?`, id.String(), string(domain.KindMoment)).Scan(&visibility)
+	// An article is commented on like any other post.
+	err := store.queries.QueryRowContext(ctx, `SELECT visibility FROM entries WHERE id = ?`, id.String()).Scan(&visibility)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

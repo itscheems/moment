@@ -159,8 +159,9 @@ func (store searchStore) SearchPublishedMillis(ctx context.Context, query app.Se
 
 func (store searchStore) ArchivePublishedMillis(ctx context.Context, viewer app.Viewer, fromMS, toMS *int64) ([]int64, error) {
 	visible, visibleArguments := visibilityPredicate(viewer, "visibility")
-	statement := `SELECT published_at_ms FROM entries WHERE kind = ? AND ` + visible
-	arguments := append([]any{string(domain.KindMoment)}, visibleArguments...)
+	// The archive calendar counts every post, articles included.
+	statement := `SELECT published_at_ms FROM entries WHERE ` + visible
+	arguments := append([]any{}, visibleArguments...)
 	statement, arguments = appendDateRange(statement, arguments, "published_at_ms", fromMS, toMS)
 	return queryMillis(ctx, store.queries, statement, arguments...)
 }
@@ -173,13 +174,13 @@ func searchSelect(query app.SearchRepositoryQuery, columns string) (string, []an
 		statement = `SELECT ` + columns + `, bm25(entry_fts) AS rank
 FROM entry_fts
 JOIN entries AS e ON e.id = entry_fts.entry_id
-WHERE entry_fts MATCH ? AND e.kind = ?`
-		arguments = []any{query.QueryValue, string(domain.KindMoment)}
+WHERE entry_fts MATCH ?`
+		arguments = []any{query.QueryValue}
 	case app.SearchModeLike:
 		statement = `SELECT ` + columns + `, 0.0 AS rank
 FROM entries AS e
-WHERE e.content_text LIKE ? ESCAPE '\' AND e.kind = ?`
-		arguments = []any{query.QueryValue, string(domain.KindMoment)}
+WHERE e.content_text LIKE ? ESCAPE '\'`
+		arguments = []any{query.QueryValue}
 	default:
 		return "", nil, errors.New("unsupported prepared search mode")
 	}
@@ -297,27 +298,34 @@ func (store searchStore) SearchSources(ctx context.Context, after domain.ID, lim
 	// carried the whole canonical URL, which the normalizer drops, where the
 	// combiner keeps the host -- so every entry with a card read as drifted.
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT e.id, e.content_md, e.content_text,
+SELECT e.id, e.kind, e.content_md, e.content_text,
+       coalesce(a.title, ''), coalesce(a.body_json, ''),
        `+searchSourceCardsSQL+`,
        count(f.rowid),
        coalesce(sum(CASE WHEN f.content_text = e.content_text THEN 1 ELSE 0 END), 0)
 FROM entries AS e
 LEFT JOIN entry_fts AS f ON f.entry_id = e.id
-WHERE e.kind = ? AND (? = '' OR e.id > ?)
-GROUP BY e.id, e.content_md, e.content_text
+LEFT JOIN entry_article AS a ON a.entry_id = e.id
+WHERE (? = '' OR e.id > ?)
+GROUP BY e.id, e.kind, e.content_md, e.content_text, a.title, a.body_json
 ORDER BY e.id
-LIMIT ?`, string(domain.KindMoment), after.String(), after.String(), limit)
+LIMIT ?`, after.String(), after.String(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("query search sources: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 	sources := make([]app.SearchSource, 0, limit)
 	for rows.Next() {
-		var idString, cardsJSON string
+		var idString, kind, cardsJSON string
+		var contentMD sql.NullString
 		var source app.SearchSource
-		if err := rows.Scan(&idString, &source.ContentMD, &source.ContentText, &cardsJSON, &source.FTSCopies, &source.FTSStoredTextCopies); err != nil {
+		if err := rows.Scan(&idString, &kind, &contentMD, &source.ContentText,
+			&source.ArticleTitle, &source.ArticleBodyJSON,
+			&cardsJSON, &source.FTSCopies, &source.FTSStoredTextCopies); err != nil {
 			return nil, fmt.Errorf("scan search source: %w", err)
 		}
+		source.Kind = domain.EntryKind(kind)
+		source.ContentMD = nullableText(contentMD)
 		cards, err := decodeSearchSourceCards(cardsJSON)
 		if err != nil {
 			return nil, err
@@ -347,7 +355,7 @@ func (store searchStore) UpdateSearchDerived(ctx context.Context, id domain.ID, 
 	result, err := store.queries.ExecContext(ctx, `
 UPDATE entries
 SET content_text = ?
-WHERE id = ? AND kind = ?`, contentText, id.String(), string(domain.KindMoment))
+WHERE id = ?`, contentText, id.String())
 	if err != nil {
 		return fmt.Errorf("update entry search text: %w", err)
 	}

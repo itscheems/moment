@@ -242,7 +242,10 @@ type TimelineQuery struct {
 	Direction TimelineDirection
 	FromMS    *int64
 	ToMS      *int64
-	Viewer    Viewer
+	// Kind narrows the read to one kind of post. Empty reads both, because a
+	// timeline with a gap in it is not a timeline.
+	Kind   domain.EntryKind
+	Viewer Viewer
 }
 
 // PostPage is one stable keyset page, newest first whichever way it was read.

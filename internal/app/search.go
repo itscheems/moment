@@ -51,19 +51,47 @@ type SearchRecord struct {
 // SearchSource reports enough derived state to diagnose one entry without
 // trusting either content_text or FTS as authority.
 type SearchSource struct {
-	ID                  domain.ID
-	ContentMD           string
+	ID domain.ID
+	// Kind decides which of the two bodies below carries the text. A moment
+	// has Markdown; an article has a title and a structured body.
+	Kind                domain.EntryKind
+	ContentMD           *string
+	ArticleTitle        string
+	ArticleBodyJSON     string
 	ContentText         string
 	LinkCardText        string
 	FTSCopies           int
 	FTSStoredTextCopies int
 }
 
-// DerivedSearchText is the single authority for an entry's indexed text. Both
+// DerivedSearchText is the single authority for a moment's indexed text. Both
 // the write path and rebuild call it, so the two can never drift and leave the
 // doctor's FTS consistency check reporting phantom damage.
 func DerivedSearchText(contentMD string, cards []domain.LinkCard) (string, error) {
 	return derivedSearchText(contentMD, domain.LinkCardSearchText(cards))
+}
+
+// DerivedArticleSearchText is the same authority for an article. Its title is
+// part of it because a title is how anybody looks for an article again.
+func DerivedArticleSearchText(title string, body domain.ArticleDocument) string {
+	return domain.ArticleSearchText(title, body)
+}
+
+// sourceSearchText derives what one stored row's indexed text should be,
+// whichever body shape it has. The doctor and the rebuild both go through here
+// so they cannot disagree about what "correct" means.
+func sourceSearchText(source SearchSource) (string, error) {
+	if source.Kind == domain.KindArticle {
+		body, err := domain.ParseArticleDocument([]byte(source.ArticleBodyJSON))
+		if err != nil {
+			return "", err
+		}
+		return DerivedArticleSearchText(source.ArticleTitle, body), nil
+	}
+	if source.ContentMD == nil {
+		return "", domain.NewError(domain.CodeDataIntegrityFailed, "a moment was read without its body", nil)
+	}
+	return derivedSearchText(*source.ContentMD, source.LinkCardText)
 }
 
 func derivedSearchText(contentMD, cardText string) (string, error) {
@@ -485,7 +513,7 @@ func (service *SearchService) DiagnoseDerived(ctx context.Context, maxEntries in
 					result.Bounded = true
 					return nil
 				}
-				expected, err := derivedSearchText(source.ContentMD, source.LinkCardText)
+				expected, err := sourceSearchText(source)
 				if err != nil {
 					return storedEntryError(source.ID)
 				}
@@ -520,7 +548,7 @@ func (service *SearchService) scanDerived(ctx context.Context, store SearchStore
 			return err
 		}
 		for _, source := range sources {
-			expected, err := derivedSearchText(source.ContentMD, source.LinkCardText)
+			expected, err := sourceSearchText(source)
 			if err != nil {
 				return storedEntryError(source.ID)
 			}
@@ -549,7 +577,7 @@ func (service *SearchService) writeAllDerived(ctx context.Context, store SearchS
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			contentText, err := derivedSearchText(source.ContentMD, source.LinkCardText)
+			contentText, err := sourceSearchText(source)
 			if err != nil {
 				return storedEntryError(source.ID)
 			}

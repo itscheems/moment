@@ -210,7 +210,8 @@ func (store siteStore) MediaExists(ctx context.Context, id domain.ID) (bool, err
 
 func (store siteStore) EntryExists(ctx context.Context, id domain.ID) (bool, error) {
 	var exists int
-	err := store.queries.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM entries WHERE id = ? AND kind = ?)`, id.String(), string(domain.KindMoment)).Scan(&exists)
+	// An article can be pinned like any other post.
+	err := store.queries.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM entries WHERE id = ?)`, id.String()).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check pinned post: %w", err)
 	}

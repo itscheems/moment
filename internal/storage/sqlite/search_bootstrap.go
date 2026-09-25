@@ -11,8 +11,27 @@ import (
 
 type searchBootstrapSource struct {
 	id        string
-	contentMD string
+	kind      string
+	contentMD sql.NullString
+	title     string
+	bodyJSON  string
 	cards     []domain.LinkCard
+}
+
+// bootstrapSearchText derives one row's indexed text through the same
+// authority the write path uses, choosing by kind.
+func bootstrapSearchText(source searchBootstrapSource) (string, error) {
+	if domain.EntryKind(source.kind) == domain.KindArticle {
+		body, err := domain.ParseArticleDocument([]byte(source.bodyJSON))
+		if err != nil {
+			return "", err
+		}
+		return app.DerivedArticleSearchText(source.title, body), nil
+	}
+	if !source.contentMD.Valid {
+		return "", fmt.Errorf("entry %s is a moment with no body", source.id)
+	}
+	return app.DerivedSearchText(source.contentMD.String, source.cards)
 }
 
 // bootstrapSearchDerived upgrades existing authoritative rows exactly once
@@ -41,10 +60,11 @@ func bootstrapSearchDerived(ctx context.Context, database *sql.DB) error {
 	// re-indexed from the Markdown alone dropped every card and left the
 	// doctor reading each carded entry as drifted right after an upgrade.
 	rows, err := tx.QueryContext(ctx, `
-SELECT e.id, e.content_md, `+searchSourceCardsSQL+`
+SELECT e.id, e.kind, e.content_md, coalesce(a.title, ''), coalesce(a.body_json, ''),
+       `+searchSourceCardsSQL+`
 FROM entries AS e
-WHERE e.kind = ?
-ORDER BY e.id`, string(domain.KindMoment))
+LEFT JOIN entry_article AS a ON a.entry_id = e.id
+ORDER BY e.id`)
 	if err != nil {
 		return fmt.Errorf("read entries for search bootstrap: %w", err)
 	}
@@ -52,7 +72,7 @@ ORDER BY e.id`, string(domain.KindMoment))
 	for rows.Next() {
 		var source searchBootstrapSource
 		var cardsJSON string
-		if err := rows.Scan(&source.id, &source.contentMD, &cardsJSON); err != nil {
+		if err := rows.Scan(&source.id, &source.kind, &source.contentMD, &source.title, &source.bodyJSON, &cardsJSON); err != nil {
 			_ = rows.Close()
 			return fmt.Errorf("scan entry for search bootstrap: %w", err)
 		}
@@ -77,11 +97,11 @@ ORDER BY e.id`, string(domain.KindMoment))
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		contentText, err := app.DerivedSearchText(source.contentMD, source.cards)
+		contentText, err := bootstrapSearchText(source)
 		if err != nil {
 			return fmt.Errorf("normalize entry %s for search bootstrap: %w", source.id, err)
 		}
-		result, err := tx.ExecContext(ctx, `UPDATE entries SET content_text = ? WHERE id = ? AND kind = ?`, contentText, source.id, string(domain.KindMoment))
+		result, err := tx.ExecContext(ctx, `UPDATE entries SET content_text = ? WHERE id = ?`, contentText, source.id)
 		if err != nil {
 			return fmt.Errorf("write entry %s search bootstrap: %w", source.id, err)
 		}
