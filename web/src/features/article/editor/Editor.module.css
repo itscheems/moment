@@ -881,3 +881,54 @@
     background: var(--surface-hover);
   }
 }
+
+.tableHandle {
+  position: fixed;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  border: 0;
+  border-radius: 5px;
+  padding: 0;
+  font: inherit;
+  color: var(--text-tertiary);
+  background: var(--surface-muted);
+  cursor: pointer;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    opacity 150ms ease-out;
+}
+.tableHandle:hover,
+.tableHandle[data-popup-open] {
+  color: var(--text-primary);
+  background: var(--surface-hover-strong);
+}
+.tableHandle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tableExtendColumn {
+  inline-size: 20px;
+}
+.tableExtendRow {
+  block-size: 20px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tableHandle {
+    transition: none;
+  }
+}
+
+.tableControls {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  clip-path: inset(3.5rem 0 0);
+}
+.tableControls .tableHandle {
+  pointer-events: auto;
+}
