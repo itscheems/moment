@@ -281,3 +281,7 @@
 :global([data-theme="lights-out"]) .root :global(.hljs-built_in) {
   color: #d2a8ff;
 }
+
+.root :is(h1, h2, h3, h4, h5, h6) {
+  scroll-margin-block-start: 7rem;
+}

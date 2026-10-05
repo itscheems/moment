@@ -18,6 +18,10 @@ import { matchedText, highlightedCode } from "./searchHighlight";
 import { contentExtensions, contentSchemas } from "./schema";
 import { collectHandles, HANDLE_MENTION, RESERVED_HANDLES } from "./mentions";
 import styles from "./Content.module.css";
+import {
+  articleOutlineExtensions,
+  articleWithOutline,
+} from "./outlineDocument";
 
 const NO_MEDIA: readonly PublicArticleCover[] = [];
 
@@ -39,9 +43,16 @@ export function RichContent({
 }) {
   const { navigate } = useNavigation();
   const schema = contentSchemas[format];
-  const extensions = contentExtensions[format];
+  const extensions =
+    format === "article" ? articleOutlineExtensions : contentExtensions[format];
   const { resolves, consider } = useMentionResolver();
-  const node = useMemo(() => schema.nodeFromJSON(document), [document, schema]);
+  const node = useMemo(
+    () =>
+      format === "article"
+        ? articleWithOutline(document)
+        : schema.nodeFromJSON(document),
+    [document, schema, format],
+  );
   const handles = useMemo(() => collectHandles(node.textContent), [node]);
   useEffect(() => consider(handles), [consider, handles]);
   const content = useMemo(

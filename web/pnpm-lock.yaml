@@ -67,6 +67,9 @@ importers:
       "@tiptap/extension-table":
         specifier: 3.31.3
         version: 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)
+      "@tiptap/extension-table-of-contents":
+        specifier: 3.31.3
+        version: 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)
       "@tiptap/extension-text":
         specifier: 3.31.3
         version: 3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))
@@ -802,6 +805,15 @@ packages:
       }
     peerDependencies:
       "@tiptap/core": 3.31.3
+
+  "@tiptap/extension-table-of-contents@3.31.3":
+    resolution:
+      {
+        integrity: sha512-A2ZX4Z94HhvlsmumYdYbhvBCQwOSGRuG5TN4CeyhlgTLCQJqy1FSMLJEKeVgjxdejPIm1iTb4DPsqDgj6SP9dw==,
+      }
+    peerDependencies:
+      "@tiptap/core": 3.31.3
+      "@tiptap/pm": 3.31.3
 
   "@tiptap/extension-table@3.31.3":
     resolution:
@@ -2235,6 +2247,13 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
+  uuid@14.0.2:
+    resolution:
+      {
+        integrity: sha512-xZe/16rV4aa+HGSOCiY2YeLT1OybRLrrkL/Rqaq7p7GMVXjFh+6wN4oMYgjFmnSnhY8t6Xpdl2l9qmnHYuMHwQ==,
+      }
+    hasBin: true
+
   vite@8.2.1:
     resolution:
       {
@@ -2768,6 +2787,12 @@ snapshots:
   "@tiptap/extension-strike@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))":
     dependencies:
       "@tiptap/core": 3.31.3(@tiptap/pm@3.31.3)
+
+  "@tiptap/extension-table-of-contents@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)":
+    dependencies:
+      "@tiptap/core": 3.31.3(@tiptap/pm@3.31.3)
+      "@tiptap/pm": 3.31.3
+      uuid: 14.0.2
 
   "@tiptap/extension-table@3.31.3(@tiptap/core@3.31.3(@tiptap/pm@3.31.3))(@tiptap/pm@3.31.3)":
     dependencies:
@@ -3615,6 +3640,8 @@ snapshots:
   use-sync-external-store@1.6.0(react@19.2.8):
     dependencies:
       react: 19.2.8
+
+  uuid@14.0.2: {}
 
   vite@8.2.1:
     dependencies:

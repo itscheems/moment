@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { StaticArticleOutline } from "./ArticleOutline";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import styles from "./ArticleSheet.module.css";
 
@@ -9,19 +10,25 @@ export function ArticleSheet({
   byline,
   children,
   className = "",
+  outline,
 }: {
   cover?: ReactNode;
   title: ReactNode;
   byline: ReactNode;
   children: ReactNode;
   className?: string;
+  outline?: ReactNode;
 }) {
+  const body = useRef<HTMLDivElement>(null);
   return (
     <div className={`${styles.sheet} ${className}`} data-article-sheet>
       {cover}
       <div className={styles.heading}>{title}</div>
       <div className={styles.byline}>{byline}</div>
-      <div className={styles.body}>{children}</div>
+      <div ref={body} className={styles.body}>
+        {children}
+      </div>
+      {outline ?? <StaticArticleOutline container={body} />}
     </div>
   );
 }

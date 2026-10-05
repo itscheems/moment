@@ -33,6 +33,8 @@ const SAMPLE_ATTRS: Readonly<Record<string, unknown>> = {
  * ordered list, and `target`/`rel`/`class`/`title` with a link.
  */
 const FOREIGN_ATTRS: Readonly<Record<string, unknown>> = {
+  id: "heading-id",
+  "data-toc-id": "heading-id",
   colwidth: [120],
   align: "center",
   type: "a",
@@ -80,10 +82,11 @@ describe("the editor's grammar against the server's allowlist", () => {
   });
 
   it.each(Object.entries(ARTICLE_NODE_ATTRS))(
-    "gives the %s node exactly the attributes the allowlist gives it",
+    "limits %s attributes to persisted fields and explicit navigation metadata",
     (name, allowed) => {
       const declared = Object.keys(schema.nodes[name].spec.attrs ?? {}).sort();
-      expect(declared).toEqual([...allowed].sort());
+      const transient = name === "heading" ? ["id", "data-toc-id"] : [];
+      expect(declared).toEqual([...allowed, ...transient].sort());
     },
   );
 

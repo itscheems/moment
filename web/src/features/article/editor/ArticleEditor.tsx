@@ -33,6 +33,7 @@ import { CoverField } from "./components/CoverField";
 import { DraftRail } from "./components/DraftRail";
 import { ImageUploads, type UploadTask } from "./components/ImageUploads";
 import { ImageMenu } from "./components/ImageMenu";
+import { EditorOutline } from "./components/EditorOutline";
 import { TableControls } from "./components/TableControls";
 import { BlockControls } from "./components/BlockControls";
 import { SelectionMenu } from "./components/SelectionMenu";
@@ -976,6 +977,11 @@ export function ArticleEditor({
             ) : null}
 
             <ArticleSheet
+              outline={
+                !previewing && editor ? (
+                  <EditorOutline editor={editor} />
+                ) : undefined
+              }
               cover={
                 <CoverField
                   busy={coverBusy}
