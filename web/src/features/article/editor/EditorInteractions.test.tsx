@@ -126,6 +126,28 @@ it("reopens slash commands after a dismissed query is cleared and typed again", 
   expect(screen.getByRole("listbox", { name: "插入内容" })).toBeInTheDocument();
 });
 
+it("does not request a selection reveal when the slash menu is scrolled", async () => {
+  setup("<p></p>");
+  await act(async () => {
+    editor.commands.insertContent("/");
+  });
+  const reveal = vi.fn();
+  for (const option of screen.getAllByRole("option")) {
+    option.scrollIntoView = reveal;
+  }
+  // This tests which input requests scrolling, not jsdom geometry.
+  // Real pointer scrolling and lower-option clicks are verified in the browser.
+  fireEvent.scroll(screen.getByRole("listbox", { name: "插入内容" }));
+  fireEvent.scroll(window);
+  expect(reveal).not.toHaveBeenCalled();
+  fireEvent.keyDown(editor.view.dom, { key: "ArrowDown" });
+  expect(reveal).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("option", { name: "标题 1" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+});
+
 it("counts Unicode characters without counting whitespace or control labels", async () => {
   setup("<p>河流 🏞️ A</p>");
   expect(screen.getByText("正文 5 字")).toBeInTheDocument();

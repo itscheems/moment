@@ -105,7 +105,12 @@ export function SlashMenu({
   }, [signature]);
   useLayoutEffect(() => {
     if (!active || !query) return;
-    const place = () => {
+    const place = (event?: Event) => {
+      if (
+        event?.target instanceof Node &&
+        menuRef.current?.contains(event.target)
+      )
+        return;
       const caret = editor.view.coordsAtPos(query.to);
       const height = menuRef.current?.offsetHeight ?? 280;
       setPosition({
@@ -163,15 +168,19 @@ export function SlashMenu({
     dom.setAttribute("aria-controls", id);
     dom.setAttribute("aria-activedescendant", `${id}-${index}`);
     dom.addEventListener("keydown", keydown, true);
-    menuRef.current
-      ?.querySelector(`[data-selected="true"]`)
-      ?.scrollIntoView?.({ block: "nearest" });
     return () => {
       dom.removeEventListener("keydown", keydown, true);
       dom.removeAttribute("aria-controls");
       dom.removeAttribute("aria-activedescendant");
     };
   }, [active, editor, filtered, id, index, query, signature]);
+  useEffect(() => {
+    if (!active) return;
+    // Reveal keyboard selection changes, without undoing pointer scrolling.
+    menuRef.current
+      ?.querySelector(`[data-selected="true"]`)
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [active, index, signature]);
   useEffect(() => {
     const dismiss = (event: PointerEvent) => {
       if (!menuRef.current?.contains(event.target as Node))
