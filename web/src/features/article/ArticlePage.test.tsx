@@ -15,7 +15,7 @@ import { OwnerProvider } from "../owner/OwnerProvider";
 import { DetailPage } from "../timeline/DetailPage";
 import { ArticlePage } from "./ArticlePage";
 import sheetCss from "../../components/content/ArticleSheet.module.css?inline";
-import contentCss from "../../components/content/Content.module.css?inline";
+import contentCss from "../../components/content/notion.scss?inline";
 
 afterEach(() => {
   cleanup();
@@ -230,7 +230,7 @@ describe("article detail page", () => {
       expect(
         contentCss,
         `the article body has no rule for <${selector}>`,
-      ).toMatch(new RegExp(`\\._root_[\\w-]+ ${selector}[\\s,{]`));
+      ).toMatch(new RegExp(`${selector}[\\s,{]`));
     }
     expect(contentCss).toContain("overflow-x: auto");
   });

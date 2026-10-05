@@ -7,6 +7,7 @@ import {
   type ArticleNode,
   type ArticleNodeType,
 } from "../../../api/public";
+import { mediaPreviewUrl } from "../../../api/mediaUrls";
 import { isAllowedArticleHref } from "./links";
 import {
   ARTICLE_MARK_ATTRS,
@@ -44,6 +45,8 @@ const NEEDS_CHILD: ReadonlySet<string> = new Set<ArticleNodeType>([
   "bulletList",
   "orderedList",
   "listItem",
+  "taskList",
+  "taskItem",
   "table",
   "tableRow",
   "tableHeader",
@@ -104,7 +107,13 @@ function wireAttrs(
     if (language !== null) attrs.language = language;
   }
   if (type === "image") {
-    const mediaId = nonEmptyString(value.media_id);
+    const mediaId =
+      nonEmptyString(value.media_id) ??
+      (typeof value.src === "string"
+        ? (value.src.match(
+            /^\/api\/v1\/media\/([0-9A-HJKMNP-TV-Z]{26})(?:\/preview)?(?:\?|$)/,
+          )?.[1] ?? null)
+        : null);
     // A picture with no media behind it is not a picture. Returning null drops
     // the node rather than writing one the server has to refuse.
     if (mediaId === null) return null;
@@ -117,6 +126,29 @@ function wireAttrs(
     const rowspan = counted(value.rowspan);
     if (colspan !== null && colspan > 1) attrs.colspan = colspan;
     if (rowspan !== null && rowspan > 1) attrs.rowspan = rowspan;
+  }
+  for (const key of ARTICLE_NODE_ATTRS[type]) {
+    if (
+      key in attrs ||
+      [
+        "level",
+        "start",
+        "language",
+        "media_id",
+        "alt",
+        "colspan",
+        "rowspan",
+      ].includes(key)
+    )
+      continue;
+    const item = value[key];
+    if (item === null || item === undefined || item === "") continue;
+    if (
+      (key === "showCaption" && item === false) ||
+      (key === "showTitle" && item === true)
+    )
+      continue;
+    attrs[key] = item;
   }
   return attrs;
 }
@@ -131,6 +163,16 @@ function wireMarks(value: unknown): Record<string, unknown>[] {
     // One run of text carries a mark once. ProseMirror never repeats one, but
     // a pasted document can, and the server counts a repeat as a broken body.
     if (!isMarkType(type) || seen.has(type)) continue;
+    if (type === "textStyle" || type === "highlight") {
+      const color = isRecord(candidate.attrs)
+        ? nonEmptyString(candidate.attrs.color)
+        : null;
+      if (color) {
+        seen.add(type);
+        marks.push({ type, attrs: { color } });
+      }
+      continue;
+    }
     if (type !== "link") {
       seen.add(type);
       marks.push({ type });
@@ -178,7 +220,7 @@ function wireNode(value: unknown): Record<string, unknown> | null {
   if (attrs === null) return null;
   if (Object.keys(attrs).length > 0) node.attrs = attrs;
 
-  if (type === "horizontalRule" || type === "hardBreak" || type === "image") {
+  if (type === "horizontalRule" || type === "hardBreak" || type === "tocNode") {
     return node;
   }
 
@@ -212,6 +254,11 @@ export function toArticleDocument(value: unknown): ArticleDocument {
 function editorNode(node: ArticleNode): JSONContent {
   const result: JSONContent = { type: node.type };
   if (node.attrs) result.attrs = { ...node.attrs };
+  if (node.type === "image" && node.attrs?.media_id)
+    result.attrs = {
+      ...result.attrs,
+      src: mediaPreviewUrl(node.attrs.media_id),
+    };
   if (node.text !== undefined) result.text = node.text;
   if (node.marks) {
     result.marks = node.marks.map((mark) =>

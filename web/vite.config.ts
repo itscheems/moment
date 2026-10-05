@@ -2,6 +2,12 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "@notion": `${import.meta.dirname}/src/features/article/editor/vendor/notion`,
+      "@content-notion": `${import.meta.dirname}/src/components/content/notion`,
+    },
+  },
   plugins: [
     react(),
     {

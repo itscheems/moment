@@ -28,7 +28,7 @@ import sql from "highlight.js/lib/languages/sql";
 import typescript from "highlight.js/lib/languages/typescript";
 import xml from "highlight.js/lib/languages/xml";
 
-const languages = {
+export const codeLanguages = {
   bash,
   css,
   go,
@@ -42,11 +42,11 @@ const languages = {
   xml,
 };
 
-for (const [name, language] of Object.entries(languages)) {
+for (const [name, language] of Object.entries(codeLanguages)) {
   hljs.registerLanguage(name, language);
 }
 
-const aliases: Record<string, keyof typeof languages> = {
+export const codeLanguageAliases: Record<string, keyof typeof codeLanguages> = {
   html: "xml",
   js: "javascript",
   jsx: "javascript",
@@ -64,8 +64,8 @@ export function registeredLanguage(code: Element): string | null {
   for (const className of code.classList) {
     if (!className.startsWith("language-")) continue;
     const requested = className.slice("language-".length).toLocaleLowerCase();
-    const canonical = aliases[requested] ?? requested;
-    if (canonical in languages) return canonical;
+    const canonical = codeLanguageAliases[requested] ?? requested;
+    if (canonical in codeLanguages) return canonical;
   }
   return null;
 }
@@ -96,7 +96,7 @@ export function highlightSource(
   requested: string,
 ): string | null {
   const name = requested.toLowerCase();
-  const language = aliases[name] ?? name;
-  if (!(language in languages)) return null;
+  const language = codeLanguageAliases[name] ?? name;
+  if (!(language in codeLanguages)) return null;
   return hljs.highlight(source, { language, ignoreIllegals: true }).value;
 }

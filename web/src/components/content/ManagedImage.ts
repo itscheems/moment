@@ -1,69 +1,57 @@
-import { Node, mergeAttributes } from "@tiptap/core";
-
+import { Image } from "@content-notion/components/nodes/image-node/image-node-extension";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 
-/**
- * A picture in an article body.
- *
- * Tiptap's own Image node keeps a `src`, and this one cannot: the server
- * refuses a body that names an address it does not host, so the document
- * stores the media id and the address is derived from it when the picture is
- * drawn. Storing the URL as well would be a second copy of a fact the recipe
- * version can change under us -- the same reason nothing else in this client
- * writes a media URL down (api/mediaUrls.ts).
- *
- * The attributes are spelled the way the wire spells them, `media_id` and not
- * `mediaId`, because Tiptap serialises attribute names straight into the
- * document JSON. A camel-cased name here would need renaming on the way out,
- * and a rename is where two spellings start to drift.
- */
-export const ManagedImage = Node.create({
-  name: "image",
-  group: "block",
-  atom: true,
-  draggable: true,
-
+/** The template image stores a Moment media identity; its URL is derived at render time. */
+export const ManagedImage = Image.extend({
   addAttributes() {
     return {
+      ...this.parent?.(),
       media_id: {
         default: null,
         parseHTML: (element) => element.getAttribute("data-media-id"),
-        renderHTML: (attributes) => {
-          const mediaId: unknown = attributes.media_id;
-          if (typeof mediaId !== "string" || mediaId === "") return {};
-          // `src` is for the editor's own eyes. It never reaches the document,
-          // which carries only the id the server will render from.
-          return {
-            "data-media-id": mediaId,
-            src: mediaPreviewUrl(mediaId),
-          };
-        },
-      },
-      alt: {
-        default: null,
-        parseHTML: (element) => element.getAttribute("alt"),
-        renderHTML: (attributes) => {
-          const alt: unknown = attributes.alt;
-          return { alt: typeof alt === "string" ? alt : "文章图片" };
-        },
+        renderHTML: (attrs) =>
+          attrs.media_id ? { "data-media-id": attrs.media_id } : {},
       },
     };
   },
-
   parseHTML() {
-    // Only a managed picture is recognised. Pasting an `<img>` from anywhere
-    // else drops it rather than writing an address the server will refuse.
-    return [{ tag: "img[data-media-id]" }];
+    return (this.parent?.() ?? []).map((rule) => ({
+      ...rule,
+      getAttrs: (element: HTMLElement) => {
+        const img =
+          element.tagName === "IMG" ? element : element.querySelector("img");
+        if (!img?.getAttribute("data-media-id")) return false;
+        return typeof rule.getAttrs === "function"
+          ? rule.getAttrs(element)
+          : null;
+      },
+    }));
   },
-
-  renderHTML({ HTMLAttributes }) {
-    return [
-      "img",
-      mergeAttributes(HTMLAttributes, {
-        draggable: "false",
-        loading: "lazy",
-        decoding: "async",
-      }),
-    ];
+  renderHTML(props) {
+    const mediaId = props.node.attrs.media_id;
+    const node = mediaId
+      ? props.node.type.create(
+          { ...props.node.attrs, src: mediaPreviewUrl(mediaId) },
+          props.node.content,
+          props.node.marks,
+        )
+      : props.node;
+    const output = this.parent!({ ...props, node });
+    // Product-owned delivery attributes apply to the native image/figure markup.
+    const visit = (value: unknown) => {
+      if (!Array.isArray(value)) return;
+      if (value[0] === "img")
+        Object.assign(value[1], {
+          loading: "lazy",
+          decoding: "async",
+          "data-media-id": mediaId,
+        });
+      else value.forEach(visit);
+    };
+    visit(output);
+    return output;
+  },
+  addInputRules() {
+    return [];
   },
 });

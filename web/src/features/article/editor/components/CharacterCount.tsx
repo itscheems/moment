@@ -6,7 +6,7 @@ export function CharacterCount({ editor }: { editor: Editor }) {
   const count = useEditorState({
     editor,
     selector: ({ editor: current }) =>
-      Array.from(current.state.doc.textContent.replace(/\s/gu, "")).length,
+      current.storage.characterCount.characters(),
   });
   return (
     <p className={styles.characterCount}>

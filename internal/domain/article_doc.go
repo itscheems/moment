@@ -15,7 +15,7 @@ import (
 // what the table and the backup file look like; this says which grammar one
 // particular body was written against. Adding a node type raises it, and a body
 // stored under an older number keeps that number and keeps rendering.
-const ArticleDocSchemaVersion = 1
+const ArticleDocSchemaVersion = 2
 
 // Bounds on one article. They exist so a constructed body cannot make the
 // renderer, the search index or a page unbounded, not because anybody writes
@@ -59,16 +59,23 @@ const (
 	ArticleNodeImage          = "image"
 	ArticleNodeHardBreak      = "hardBreak"
 	ArticleNodeText           = "text"
+	ArticleNodeTaskList       = "taskList"
+	ArticleNodeTaskItem       = "taskItem"
+	ArticleNodeToc            = "tocNode"
 )
 
 // Mark types.
 const (
-	ArticleMarkBold      = "bold"
-	ArticleMarkItalic    = "italic"
-	ArticleMarkStrike    = "strike"
-	ArticleMarkCode      = "code"
-	ArticleMarkUnderline = "underline"
-	ArticleMarkLink      = "link"
+	ArticleMarkBold        = "bold"
+	ArticleMarkItalic      = "italic"
+	ArticleMarkStrike      = "strike"
+	ArticleMarkCode        = "code"
+	ArticleMarkUnderline   = "underline"
+	ArticleMarkLink        = "link"
+	ArticleMarkTextStyle   = "textStyle"
+	ArticleMarkHighlight   = "highlight"
+	ArticleMarkSuperscript = "superscript"
+	ArticleMarkSubscript   = "subscript"
 )
 
 // ArticleDocument is a body that has passed the grammar. Nothing in this
@@ -78,26 +85,28 @@ type ArticleDocument struct {
 	Content       []ArticleNode
 }
 
-// ArticleNode is one validated node. Attributes are flattened rather than kept
-// as a map so that an unvalidated value cannot survive parsing.
+// ArticleNode is one validated node. Presentation retains only attributes
+// checked against the native document contract.
 type ArticleNode struct {
-	Type     string
-	Level    int
-	Start    int
-	Language string
-	MediaID  ID
-	Alt      string
-	ColSpan  int
-	RowSpan  int
-	Text     string
-	Marks    []ArticleMark
-	Content  []ArticleNode
+	Type         string
+	Presentation map[string]any
+	Level        int
+	Start        int
+	Language     string
+	MediaID      ID
+	Alt          string
+	ColSpan      int
+	RowSpan      int
+	Text         string
+	Marks        []ArticleMark
+	Content      []ArticleNode
 }
 
 // ArticleMark is one validated inline mark.
 type ArticleMark struct {
-	Type string
-	Href string
+	Type  string
+	Href  string
+	Color string
 }
 
 type articleContentModel int
@@ -112,6 +121,7 @@ const (
 	articleContentTableRows
 	articleContentRowCells
 	articleContentPlainText
+	articleContentTaskItems
 )
 
 type articleNodeSpec struct {
@@ -134,9 +144,12 @@ var articleNodeSpecs = map[string]articleNodeSpec{
 	ArticleNodeTableRow:       {content: articleContentRowCells, needsChild: true},
 	ArticleNodeTableHeader:    {attributes: []string{"colspan", "rowspan"}, content: articleContentCellBlocks, needsChild: true},
 	ArticleNodeTableCell:      {attributes: []string{"colspan", "rowspan"}, content: articleContentCellBlocks, needsChild: true},
-	ArticleNodeImage:          {attributes: []string{"media_id", "alt"}, content: articleContentNone},
+	ArticleNodeImage:          {attributes: []string{"media_id", "alt"}, content: articleContentInline},
 	ArticleNodeHardBreak:      {content: articleContentNone},
 	ArticleNodeText:           {content: articleContentNone, allowsMarks: true},
+	ArticleNodeTaskList:       {content: articleContentTaskItems, needsChild: true},
+	ArticleNodeTaskItem:       {attributes: []string{"checked"}, content: articleContentNestedBlocks, needsChild: true},
+	ArticleNodeToc:            {content: articleContentNone},
 }
 
 var articleContentSets = map[articleContentModel][]string{
@@ -144,15 +157,16 @@ var articleContentSets = map[articleContentModel][]string{
 	articleContentTopBlocks: {
 		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote,
 		ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock,
-		ArticleNodeHorizontalRule, ArticleNodeTable, ArticleNodeImage,
+		ArticleNodeHorizontalRule, ArticleNodeTable, ArticleNodeImage, ArticleNodeTaskList, ArticleNodeToc,
 	},
 	articleContentNestedBlocks: {
 		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote,
-		ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock,
+		ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc,
 	},
 	articleContentCellBlocks: {
-		ArticleNodeParagraph, ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock,
+		ArticleNodeParagraph, ArticleNodeHeading, ArticleNodeBlockquote, ArticleNodeBulletList, ArticleNodeOrderedList, ArticleNodeCodeBlock, ArticleNodeHorizontalRule, ArticleNodeImage, ArticleNodeTable, ArticleNodeTaskList, ArticleNodeToc,
 	},
+	articleContentTaskItems: {ArticleNodeTaskItem},
 	articleContentListItems: {ArticleNodeListItem},
 	articleContentTableRows: {ArticleNodeTableRow},
 	articleContentRowCells:  {ArticleNodeTableHeader, ArticleNodeTableCell},
@@ -321,6 +335,9 @@ func validateArticleNode(raw rawArticleNode, path string, depth int, walk *artic
 	if err := articleAttributesAllowed(raw.Attrs, spec.attributes, path); err != nil {
 		return ArticleNode{}, err
 	}
+	if err := applyArticlePresentation(&node, raw.Attrs, path); err != nil {
+		return ArticleNode{}, err
+	}
 	if err := applyArticleAttributes(&node, raw.Attrs, path); err != nil {
 		return ArticleNode{}, err
 	}
@@ -413,11 +430,23 @@ func validateArticleMarks(raw []rawArticleMark, path string) ([]ArticleMark, err
 	for index, item := range raw {
 		markPath := fmt.Sprintf("%s.marks[%d]", path, index)
 		switch item.Type {
-		case ArticleMarkBold, ArticleMarkItalic, ArticleMarkStrike, ArticleMarkCode, ArticleMarkUnderline:
+		case ArticleMarkBold, ArticleMarkItalic, ArticleMarkStrike, ArticleMarkCode, ArticleMarkUnderline, ArticleMarkSuperscript, ArticleMarkSubscript:
 			if err := articleAttributesAllowed(item.Attrs, nil, markPath); err != nil {
 				return nil, err
 			}
 			marks = append(marks, ArticleMark{Type: item.Type})
+		case ArticleMarkTextStyle, ArticleMarkHighlight:
+			if err := articleAttributesAllowed(item.Attrs, []string{"color"}, markPath); err != nil {
+				return nil, err
+			}
+			color, err := articleStringAttribute(item.Attrs, "color", markPath)
+			if err != nil {
+				return nil, err
+			}
+			if !articleColorPattern.MatchString(color) {
+				return nil, articleError(markPath, "invalid text color")
+			}
+			marks = append(marks, ArticleMark{Type: item.Type, Color: color})
 		case ArticleMarkLink:
 			if err := articleAttributesAllowed(item.Attrs, []string{"href"}, markPath); err != nil {
 				return nil, err
@@ -668,11 +697,17 @@ func marshalArticleNode(node ArticleNode) marshalledArticleNode {
 			attrs["rowspan"] = node.RowSpan
 		}
 	}
+	for key, value := range node.Presentation {
+		attrs[key] = value
+	}
 	if len(attrs) > 0 {
 		encoded.Attrs = attrs
 	}
 	for _, mark := range node.Marks {
 		item := marshalledArticleMark{Type: mark.Type}
+		if mark.Color != "" {
+			item.Attrs = map[string]any{"color": mark.Color}
+		}
 		if mark.Type == ArticleMarkLink {
 			item.Attrs = map[string]any{"href": mark.Href}
 		}

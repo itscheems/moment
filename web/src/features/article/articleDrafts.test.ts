@@ -68,7 +68,7 @@ describe("reading a draft off the wire", () => {
     expect(() =>
       parseArticleDraft({
         ...wire,
-        body: { ...body, content: [{ type: "taskList" }] },
+        body: { ...body, content: [{ type: "unknownNode" }] },
       }),
     ).toThrow(PublicApiError);
   });

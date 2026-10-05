@@ -6,6 +6,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
+import { TocContent } from "@content-notion/components/nodes/toc-node/toc-content";
 import type { JSONContent } from "@tiptap/core";
 import { renderToReactElement } from "@tiptap/static-renderer/pm/react";
 
@@ -18,6 +19,7 @@ import { matchedText, highlightedCode } from "./searchHighlight";
 import { contentExtensions, contentSchemas } from "./schema";
 import { collectHandles, HANDLE_MENTION, RESERVED_HANDLES } from "./mentions";
 import styles from "./Content.module.css";
+import "./notion.scss";
 import {
   articleOutlineExtensions,
   articleWithOutline,
@@ -55,15 +57,44 @@ export function RichContent({
   );
   const handles = useMemo(() => collectHandles(node.textContent), [node]);
   useEffect(() => consider(handles), [consider, handles]);
+  const renderedNode = useMemo(() => {
+    const adapt = (value: JSONContent): JSONContent => {
+      const attrs = { ...value.attrs };
+      if (value.type === "image" && typeof attrs.media_id === "string") {
+        const geometry = media.find((item) => item.mediaId === attrs.media_id);
+        attrs.src = mediaPreviewUrl(attrs.media_id);
+        if (!attrs.width && geometry?.width) attrs.width = geometry.width;
+        if (!attrs.height && geometry?.height) attrs.height = geometry.height;
+      }
+      return {
+        ...value,
+        attrs,
+        ...(value.content ? { content: value.content.map(adapt) } : {}),
+      };
+    };
+    return node.type.schema.nodeFromJSON(adapt(node.toJSON()));
+  }, [node, media]);
   const content = useMemo(
     () =>
       renderToReactElement({
         extensions,
-        content: node,
+        content: renderedNode,
         options: {
           nodeMapping: {
-            paragraph: ({ children }) => (
-              <p>{Children.count(children) ? children : <br />}</p>
+            tocNode: ({ node }) => <TocContent attrs={node.attrs} />,
+            paragraph: ({ children, node }) => (
+              <p
+                style={{
+                  textAlign:
+                    node.attrs.textAlign ??
+                    node.attrs.nodeTextAlign ??
+                    undefined,
+                  backgroundColor: node.attrs.backgroundColor ?? undefined,
+                }}
+                id={node.attrs.id ?? undefined}
+              >
+                {Children.count(children) ? children : <br />}
+              </p>
             ),
             text: ({ node: text }) => {
               const value = text.text ?? "";
@@ -106,7 +137,7 @@ export function RichContent({
               return (
                 <pre>
                   <code
-                    className={`${language ? `language-${language}` : ""}${highlighted ? " hljs" : ""}`}
+                    className={language ? `language-${language}` : undefined}
                     {...(searchQuery
                       ? {
                           children: highlightedCode(
@@ -122,25 +153,10 @@ export function RichContent({
                 </pre>
               );
             },
-            image: ({ node: picture }) => {
-              const id: string = picture.attrs.media_id;
-              const geometry = media.find((item) => item.mediaId === id);
-              return (
-                <img
-                  src={mediaPreviewUrl(id)}
-                  data-media-id={id}
-                  alt={picture.attrs.alt ?? "文章图片"}
-                  width={geometry?.width}
-                  height={geometry?.height}
-                  loading="lazy"
-                  decoding="async"
-                />
-              );
-            },
           },
         },
       }),
-    [node, media, resolves, extensions, searchQuery],
+    [renderedNode, resolves, extensions, searchQuery],
   );
 
   const followInternalLink = useCallback(
@@ -170,7 +186,7 @@ export function RichContent({
 
   return (
     <div
-      className={`${styles.root} ${styles[density]} ${className}`}
+      className={`tiptap ProseMirror ${styles.root} ${styles[density]} ${className}`}
       data-content-renderer="tiptap"
       onClick={followInternalLink}
     >

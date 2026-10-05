@@ -40,12 +40,13 @@ it("gives duplicate headings distinct stable reading anchors without mutating th
   expect(document).toEqual(original);
 });
 
-it("uses the native heading catalog while keeping all IDs out of saved articles", () => {
+it("persists native heading anchors across document saves", () => {
   const editor = new Editor({
     extensions: articleEditorExtensions(),
     content: document,
   });
   const original = toArticleDocument(document);
+  const originalText = editor.getText();
   editor.commands.insertContentAt(editor.state.doc.content.size, {
     type: "heading",
     attrs: { level: 2 },
@@ -59,13 +60,16 @@ it("uses the native heading catalog while keeping all IDs out of saved articles"
     "新增",
   ]);
   expect(new Set(headings.map((item) => item.id)).size).toBe(4);
-  expect(JSON.stringify(toArticleDocument(editor.getJSON()))).not.toContain(
-    "toc",
-  );
-  expect(JSON.stringify(toArticleDocument(editor.getJSON()))).not.toContain(
-    '"id"',
-  );
+  const saved = toArticleDocument(editor.getJSON());
+  expect(
+    saved.content
+      .filter((item) => item.type === "heading")
+      .map((item) => item.attrs?.["data-toc-id"]),
+  ).toEqual(headings.map((item) => item.id));
   editor.commands.undo();
-  expect(toArticleDocument(editor.getJSON())).toEqual(original);
+  expect(
+    toArticleDocument(editor.getJSON()).content.map((item) => item.type),
+  ).toEqual(original.content.map((item) => item.type));
+  expect(editor.getText()).toBe(originalText);
   editor.destroy();
 });

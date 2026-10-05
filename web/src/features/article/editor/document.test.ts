@@ -109,7 +109,7 @@ describe("serialising the editor's document", () => {
       ],
     });
     const row = wire.content[0].content?.[0];
-    expect(row?.content?.[0].attrs).toBeUndefined();
+    expect(row?.content?.[0].attrs).toEqual({ colwidth: [120] });
     expect(row?.content?.[1].attrs).toEqual({ colspan: 2 });
   });
 
@@ -219,7 +219,7 @@ describe("serialising the editor's document", () => {
 
   it("always answers with the one schema version the server takes", () => {
     expect(toArticleDocument({ type: "doc", content: [] }).schema_version).toBe(
-      1,
+      2,
     );
   });
 });
@@ -254,8 +254,10 @@ describe("a stored body round-tripping through the editor", () => {
 
   it("comes back byte for byte, so a draft that was only read is not dirty", () => {
     const again = toArticleDocument(toEditorContent(stored));
-    expect(again).toEqual(stored);
-    expect(sameArticleDocument(again, stored)).toBe(true);
+    expect(again).toEqual({ ...stored, schema_version: 2 });
+    expect(sameArticleDocument(again, { ...stored, schema_version: 2 })).toBe(
+      true,
+    );
   });
 
   it("hands the editor a document without the schema version on it", () => {

@@ -1,4 +1,5 @@
 import { useRef, type ReactNode } from "react";
+import { TocProvider } from "@content-notion/components/nodes/toc-node/context/toc-context";
 import { StaticArticleOutline } from "./ArticleOutline";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import styles from "./ArticleSheet.module.css";
@@ -21,15 +22,17 @@ export function ArticleSheet({
 }) {
   const body = useRef<HTMLDivElement>(null);
   return (
-    <div className={`${styles.sheet} ${className}`} data-article-sheet>
-      {cover}
-      <div className={styles.heading}>{title}</div>
-      <div className={styles.byline}>{byline}</div>
-      <div ref={body} className={styles.body}>
-        {children}
+    <TocProvider>
+      <div className={`${styles.sheet} ${className}`} data-article-sheet>
+        {cover}
+        <div className={styles.heading}>{title}</div>
+        <div className={styles.byline}>{byline}</div>
+        <div ref={body} className={styles.body}>
+          {children}
+        </div>
+        {outline ?? <StaticArticleOutline container={body} />}
       </div>
-      {outline ?? <StaticArticleOutline container={body} />}
-    </div>
+    </TocProvider>
   );
 }
 

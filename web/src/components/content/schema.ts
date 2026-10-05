@@ -12,7 +12,22 @@ import HardBreak from "@tiptap/extension-hard-break";
 import HorizontalRule from "@tiptap/extension-horizontal-rule";
 import Blockquote from "@tiptap/extension-blockquote";
 import Link from "@tiptap/extension-link";
-import { BulletList, ListItem, OrderedList } from "@tiptap/extension-list";
+import {
+  BulletList,
+  ListItem,
+  OrderedList,
+  TaskList,
+  TaskItem,
+} from "@tiptap/extension-list";
+import TextAlign from "@tiptap/extension-text-align";
+import { TextStyle, Color } from "@tiptap/extension-text-style";
+import Highlight from "@tiptap/extension-highlight";
+import Superscript from "@tiptap/extension-superscript";
+import Subscript from "@tiptap/extension-subscript";
+import UniqueID from "@tiptap/extension-unique-id";
+import { NodeBackground } from "@content-notion/components/extensions/node-background-extension";
+import { NodeAlignment } from "@content-notion/components/extensions/node-alignment-extension";
+import { TocNode } from "@content-notion/components/nodes/toc-node/extensions/toc-node-extension";
 import {
   Table,
   TableCell,
@@ -20,7 +35,6 @@ import {
   TableRow,
 } from "@tiptap/extension-table";
 import Underline from "@tiptap/extension-underline";
-import { BLOCKS_IN_CELL, BLOCKS_IN_QUOTE } from "./articleContract";
 import { isAllowedArticleHref } from "./links";
 import { ManagedImage } from "./ManagedImage";
 
@@ -38,24 +52,46 @@ export function articleContentExtensions(): Extensions {
     HorizontalRule,
     Heading.configure({ levels: [1, 2, 3] }),
     CodeBlock.configure({ languageClassPrefix: "language-" }),
-    Blockquote.extend({ content: `(${BLOCKS_IN_QUOTE})+` }),
+    Blockquote,
     BulletList,
-    OrderedList.extend({
-      // Tiptap 3 also carries `type`, for `<ol type="a">`. The server has no
-      // such attribute, so the node is rebuilt with `start` alone.
-      addAttributes() {
-        return {
-          start: {
-            default: 1,
-            parseHTML: (element) => {
-              const start = element.getAttribute("start");
-              return start ? Number.parseInt(start, 10) : 1;
-            },
-          },
-        };
-      },
+    OrderedList,
+    ListItem,
+    TaskList,
+    TaskItem.configure({ nested: true }),
+    TextAlign.configure({ types: ["heading", "paragraph"] }),
+    TextStyle,
+    Color,
+    Highlight.configure({ multicolor: true }),
+    Superscript,
+    Subscript,
+    NodeBackground.configure({
+      types: [
+        "paragraph",
+        "heading",
+        "blockquote",
+        "taskList",
+        "bulletList",
+        "orderedList",
+        "tableCell",
+        "tableHeader",
+        "tocNode",
+      ],
     }),
-    ListItem.extend({ content: `paragraph (${BLOCKS_IN_QUOTE})*` }),
+    NodeAlignment,
+    UniqueID.configure({
+      types: [
+        "table",
+        "paragraph",
+        "bulletList",
+        "orderedList",
+        "taskList",
+        "heading",
+        "blockquote",
+        "codeBlock",
+        "tocNode",
+      ],
+    }),
+    TocNode,
     Underline,
     Link.configure({
       openOnClick: false,
@@ -73,26 +109,14 @@ export function articleContentExtensions(): Extensions {
         };
       },
     }),
-    Table.configure({ resizable: false, renderWrapper: true }),
-    TableRow.extend({ content: "(tableCell | tableHeader)+" }),
-    TableHeader.extend({
-      content: `(${BLOCKS_IN_CELL})+`,
-      addAttributes() {
-        return {
-          colspan: { default: 1 },
-          rowspan: { default: 1 },
-        };
-      },
+    Table.configure({
+      resizable: false,
+      renderWrapper: true,
+      cellMinWidth: 120,
     }),
-    TableCell.extend({
-      content: `(${BLOCKS_IN_CELL})+`,
-      addAttributes() {
-        return {
-          colspan: { default: 1 },
-          rowspan: { default: 1 },
-        };
-      },
-    }),
+    TableRow,
+    TableHeader,
+    TableCell,
     ManagedImage,
   ];
 }

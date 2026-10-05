@@ -1,6 +1,6 @@
 import { ArticleCover } from "../../../../components/content/ArticleSheet";
 import styles from "../Editor.module.css";
-import { EditorIcon } from "./EditorIcons";
+import { ImageIcon } from "@notion/components/icons/image-icon";
 
 /**
  * The cover, full bleed across the sheet.
@@ -34,7 +34,7 @@ export function CoverField({
         onClick={onPick}
         type="button"
       >
-        <EditorIcon name="image" />
+        <ImageIcon />
         <span>{busy ? "正在上传封面…" : "添加封面图"}</span>
       </button>
     );

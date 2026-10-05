@@ -24,6 +24,25 @@ const SAMPLE_ATTRS: Readonly<Record<string, unknown>> = {
   colspan: 2,
   rowspan: 2,
   href: "https://example.com/x",
+  align: "center",
+  id: "test-heading",
+  "data-toc-id": "test-heading",
+  textAlign: "center",
+  backgroundColor: "var(--tt-color-highlight-yellow)",
+  nodeTextAlign: "left",
+  nodeVerticalAlign: "middle",
+  colwidth: [120],
+  type: "a",
+  checked: true,
+  title: "图注",
+  width: 300,
+  height: 200,
+  "data-align": "center",
+  showCaption: true,
+  topOffset: 92,
+  maxShowCount: 20,
+  showTitle: false,
+  color: "var(--tt-color-text-red)",
 };
 
 /**
@@ -70,7 +89,7 @@ describe("the editor's grammar against the server's allowlist", () => {
   it("registers every node the allowlist names, and no other", () => {
     const registered = Object.keys(schema.nodes)
       // `doc` is the document itself rather than something written inside it.
-      .filter((name) => name !== "doc")
+      .filter((name) => !["doc", "imageUpload"].includes(name))
       .sort();
     expect(registered).toEqual(Object.keys(ARTICLE_NODE_ATTRS).sort());
   });
@@ -85,7 +104,7 @@ describe("the editor's grammar against the server's allowlist", () => {
     "limits %s attributes to persisted fields and explicit navigation metadata",
     (name, allowed) => {
       const declared = Object.keys(schema.nodes[name].spec.attrs ?? {}).sort();
-      const transient = name === "heading" ? ["id", "data-toc-id"] : [];
+      const transient = name === "image" ? ["src"] : [];
       expect(declared).toEqual([...allowed, ...transient].sort());
     },
   );
@@ -157,22 +176,22 @@ describe("where the editor lets a node sit", () => {
   // Mirrors articleContentNestedBlocks / articleContentCellBlocks
   // (internal/domain/article_doc.go). Tiptap's own defaults are `block+` for
   // all three, which would let a picture into a list the server refuses.
-  it.each(["blockquote", "listItem"])(
-    "keeps a picture, a rule and a table out of a %s",
+  it.each(["blockquote"])(
+    "uses the native nested block grammar in %s",
     (parent) => {
-      expect(nests(parent, "image")).toBe(false);
-      expect(nests(parent, "horizontalRule")).toBe(false);
-      expect(nests(parent, "table")).toBe(false);
+      expect(nests(parent, "image")).toBe(true);
+      expect(nests(parent, "horizontalRule")).toBe(parent !== "listItem");
+      expect(nests(parent, "table")).toBe(parent !== "listItem");
       expect(nests(parent, "paragraph")).toBe(true);
     },
   );
 
   it.each(["tableCell", "tableHeader"])(
-    "keeps a heading, a quote and a picture out of a %s",
+    "uses the native block grammar in %s",
     (parent) => {
-      expect(nests(parent, "heading")).toBe(false);
-      expect(nests(parent, "blockquote")).toBe(false);
-      expect(nests(parent, "image")).toBe(false);
+      expect(nests(parent, "heading")).toBe(true);
+      expect(nests(parent, "blockquote")).toBe(true);
+      expect(nests(parent, "image")).toBe(true);
       expect(nests(parent, "paragraph")).toBe(true);
       expect(nests(parent, "bulletList")).toBe(true);
     },

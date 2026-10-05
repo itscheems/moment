@@ -65,6 +65,7 @@ export default tseslint.config(
             {
               name: "@tiptap/core",
               importNames: ["Editor"],
+              allowTypeImports: true,
               message:
                 "Reading uses the static renderer, never an Editor instance.",
             },

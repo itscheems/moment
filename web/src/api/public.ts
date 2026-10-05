@@ -69,6 +69,9 @@ export type ArticleNodeType =
   | "bulletList"
   | "orderedList"
   | "listItem"
+  | "taskList"
+  | "taskItem"
+  | "tocNode"
   | "codeBlock"
   | "horizontalRule"
   | "table"
@@ -80,7 +83,16 @@ export type ArticleNodeType =
   | "text";
 
 export type ArticleMarkType =
-  "bold" | "italic" | "strike" | "code" | "underline" | "link";
+  | "bold"
+  | "italic"
+  | "strike"
+  | "code"
+  | "underline"
+  | "link"
+  | "textStyle"
+  | "highlight"
+  | "superscript"
+  | "subscript";
 
 /**
  * Every attribute any node may carry, each optional because the server writes
@@ -107,12 +119,30 @@ export interface ArticleNodeAttrs {
   /** tableHeader and tableCell, written only when greater than 1. */
   colspan?: number;
   rowspan?: number;
+  id?: string;
+  "data-toc-id"?: string;
+  textAlign?: string;
+  backgroundColor?: string;
+  nodeTextAlign?: string;
+  nodeVerticalAlign?: string;
+  colwidth?: number[];
+  align?: string;
+  type?: string;
+  checked?: boolean;
+  title?: string;
+  width?: number;
+  height?: number;
+  "data-align"?: string;
+  showCaption?: boolean;
+  topOffset?: number;
+  maxShowCount?: number;
+  showTitle?: boolean;
 }
 
 export interface ArticleMark {
   type: ArticleMarkType;
-  /** Only a link carries one. */
-  attrs?: { href: string };
+  /** Link destinations and native text/highlight colors. */
+  attrs?: { href?: string; color?: string };
 }
 
 export interface ArticleNode {
@@ -1158,6 +1188,9 @@ const ARTICLE_NODE_TYPES: readonly ArticleNodeType[] = [
   "bulletList",
   "orderedList",
   "listItem",
+  "taskList",
+  "taskItem",
+  "tocNode",
   "codeBlock",
   "horizontalRule",
   "table",
@@ -1176,6 +1209,10 @@ const ARTICLE_MARK_TYPES: readonly ArticleMarkType[] = [
   "code",
   "underline",
   "link",
+  "textStyle",
+  "highlight",
+  "superscript",
+  "subscript",
 ];
 
 /**
@@ -1184,19 +1221,60 @@ const ARTICLE_MARK_TYPES: readonly ArticleMarkType[] = [
  * its own row is refused rather than trimmed.
  */
 const ARTICLE_NODE_ATTRS: Record<ArticleNodeType, readonly string[]> = {
-  paragraph: [],
-  heading: ["level"],
-  blockquote: [],
-  bulletList: [],
-  orderedList: ["start"],
+  paragraph: [
+    "id",
+    "textAlign",
+    "backgroundColor",
+    "nodeTextAlign",
+    "nodeVerticalAlign",
+  ],
+  heading: [
+    "level",
+    "id",
+    "data-toc-id",
+    "textAlign",
+    "backgroundColor",
+    "nodeTextAlign",
+    "nodeVerticalAlign",
+  ],
+  blockquote: ["id", "backgroundColor", "nodeTextAlign", "nodeVerticalAlign"],
+  bulletList: ["id", "backgroundColor"],
+  orderedList: ["start", "type", "id", "backgroundColor"],
   listItem: [],
-  codeBlock: ["language"],
+  taskList: ["id", "backgroundColor"],
+  taskItem: ["checked"],
+  codeBlock: ["language", "id"],
   horizontalRule: [],
-  table: [],
+  table: ["id"],
   tableRow: [],
-  tableHeader: ["colspan", "rowspan"],
-  tableCell: ["colspan", "rowspan"],
-  image: ["media_id", "alt"],
+  tableHeader: [
+    "colspan",
+    "rowspan",
+    "colwidth",
+    "align",
+    "backgroundColor",
+    "nodeTextAlign",
+    "nodeVerticalAlign",
+  ],
+  tableCell: [
+    "colspan",
+    "rowspan",
+    "colwidth",
+    "align",
+    "backgroundColor",
+    "nodeTextAlign",
+    "nodeVerticalAlign",
+  ],
+  image: [
+    "media_id",
+    "alt",
+    "title",
+    "width",
+    "height",
+    "data-align",
+    "showCaption",
+  ],
+  tocNode: ["id", "backgroundColor", "topOffset", "maxShowCount", "showTitle"],
   hardBreak: [],
   text: [],
 };
@@ -1215,7 +1293,7 @@ const ARTICLE_REQUIRED_ATTRS: Partial<Record<ArticleNodeType, string>> = {
 const ARTICLE_LEAF_NODES: readonly ArticleNodeType[] = [
   "horizontalRule",
   "hardBreak",
-  "image",
+  "tocNode",
 ];
 
 /** Mirrors MaxArticleDepth and MaxArticleNodes (internal/domain/article_doc.go). */
@@ -1262,6 +1340,15 @@ function parseArticleMarks(value: unknown): ArticleMark[] {
       throw invalidResponse("article body repeats a mark on one run of text");
     }
     seen.add(type);
+    if (type === "textStyle" || type === "highlight") {
+      if (
+        !hasExactKeys(item, ["type", "attrs"]) ||
+        !isRecord(item.attrs) ||
+        !hasExactKeys(item.attrs, ["color"])
+      )
+        throw invalidResponse("color mark must carry a color");
+      return { type, attrs: { color: stringField(item.attrs, "color") } };
+    }
     if (type !== "link") {
       if (!hasExactKeys(item, ["type"])) {
         throw invalidResponse(
@@ -1323,6 +1410,36 @@ function parseArticleNodeAttrs(
     attrs.colspan = positiveIntegerField(value, "colspan");
   if ("rowspan" in value)
     attrs.rowspan = positiveIntegerField(value, "rowspan");
+  for (const name of [
+    "id",
+    "data-toc-id",
+    "textAlign",
+    "backgroundColor",
+    "nodeTextAlign",
+    "nodeVerticalAlign",
+    "type",
+    "title",
+    "data-align",
+    "align",
+  ] as const) {
+    if (name in value) attrs[name] = stringField(value, name);
+  }
+  for (const name of ["checked", "showCaption", "showTitle"] as const) {
+    if (name in value) attrs[name] = booleanField(value, name);
+  }
+  for (const name of ["width", "height", "maxShowCount"] as const) {
+    if (name in value) attrs[name] = positiveIntegerField(value, name);
+  }
+  if ("topOffset" in value)
+    attrs.topOffset = nonNegativeIntegerField(value, "topOffset");
+  if ("colwidth" in value) {
+    if (
+      !Array.isArray(value.colwidth) ||
+      !value.colwidth.every((x) => Number.isSafeInteger(x) && x >= 0)
+    )
+      throw invalidResponse("column widths must be positive integers");
+    attrs.colwidth = value.colwidth as number[];
+  }
   return attrs;
 }
 

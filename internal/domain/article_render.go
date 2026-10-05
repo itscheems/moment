@@ -11,7 +11,8 @@ import (
 // URL shape out of the domain is what stops it from having an opinion about
 // /api/v1, and it makes the renderer testable without a server.
 type ArticleRenderOptions struct {
-	MediaURL func(mediaID ID) string
+	MediaURL   func(mediaID ID) string
+	tocEntries []articleTocEntry
 	// MediaGeometry answers a picture's stored size when the caller knows it.
 	// Without it an article body is the only place on this site whose pictures
 	// do not reserve their space, and the page jumps as they arrive.
@@ -22,15 +23,17 @@ type ArticleRenderOptions struct {
 // bytes. Code sits innermost because its content is literal.
 var articleMarkOrder = []string{
 	ArticleMarkLink, ArticleMarkBold, ArticleMarkItalic,
-	ArticleMarkUnderline, ArticleMarkStrike, ArticleMarkCode,
+	ArticleMarkUnderline, ArticleMarkStrike, ArticleMarkSuperscript, ArticleMarkSubscript, ArticleMarkTextStyle, ArticleMarkHighlight, ArticleMarkCode,
 }
 
 var articleMarkTags = map[string][2]string{
-	ArticleMarkBold:      {"<strong>", "</strong>"},
-	ArticleMarkItalic:    {"<em>", "</em>"},
-	ArticleMarkUnderline: {"<u>", "</u>"},
-	ArticleMarkStrike:    {"<del>", "</del>"},
-	ArticleMarkCode:      {"<code>", "</code>"},
+	ArticleMarkBold:        {"<strong>", "</strong>"},
+	ArticleMarkItalic:      {"<em>", "</em>"},
+	ArticleMarkUnderline:   {"<u>", "</u>"},
+	ArticleMarkStrike:      {"<del>", "</del>"},
+	ArticleMarkCode:        {"<code>", "</code>"},
+	ArticleMarkSuperscript: {"<sup>", "</sup>"},
+	ArticleMarkSubscript:   {"<sub>", "</sub>"},
 }
 
 // RenderArticleHTML turns a validated body into the HTML a reader receives.
@@ -44,6 +47,10 @@ func RenderArticleHTML(document ArticleDocument, options ArticleRenderOptions) (
 		return "", NewError(CodeInternal, "rendering an article needs a way to address media", nil)
 	}
 	var output strings.Builder
+	if articleHasToc(document.Content) {
+		index := 0
+		document.Content = articleTocHeadings(document.Content, &index, map[string]bool{}, &options.tocEntries)
+	}
 	renderArticleNodes(&output, document.Content, options)
 	return output.String(), nil
 }
@@ -70,6 +77,22 @@ func renderArticleNode(output *strings.Builder, node ArticleNode, options Articl
 		renderArticleWrapped(output, "blockquote", node, options)
 	case ArticleNodeBulletList:
 		renderArticleWrapped(output, "ul", node, options)
+	case ArticleNodeTaskList:
+		output.WriteString(`<ul data-type="taskList"`)
+		renderArticlePresentation(output, node)
+		output.WriteString(">")
+		renderArticleNodes(output, node.Content, options)
+		output.WriteString("</ul>")
+	case ArticleNodeTaskItem:
+		output.WriteString(`<li data-type="taskItem"><label><input type="checkbox" disabled`)
+		if flag, _ := node.Presentation["checked"].(bool); flag {
+			output.WriteString(" checked")
+		}
+		output.WriteString(`><span></span></label><div>`)
+		renderArticleNodes(output, node.Content, options)
+		output.WriteString("</div></li>")
+	case ArticleNodeToc:
+		renderArticleToc(output, node, options.tocEntries)
 	case ArticleNodeListItem:
 		renderArticleWrapped(output, "li", node, options)
 	case ArticleNodeOrderedList:
@@ -77,11 +100,14 @@ func renderArticleNode(output *strings.Builder, node ArticleNode, options Articl
 		if node.Start > 1 {
 			output.WriteString(` start="` + strconv.Itoa(node.Start) + `"`)
 		}
+		renderArticlePresentation(output, node)
 		output.WriteString(">")
 		renderArticleNodes(output, node.Content, options)
 		output.WriteString("</ol>")
 	case ArticleNodeCodeBlock:
-		output.WriteString("<pre><code")
+		output.WriteString("<pre")
+		renderArticlePresentation(output, node)
+		output.WriteString("><code")
 		if node.Language != "" {
 			output.WriteString(` class="language-` + html.EscapeString(node.Language) + `"`)
 		}
@@ -91,15 +117,33 @@ func renderArticleNode(output *strings.Builder, node ArticleNode, options Articl
 		}
 		output.WriteString("</code></pre>")
 	case ArticleNodeImage:
-		output.WriteString(`<img src="` + html.EscapeString(options.MediaURL(node.MediaID)) + `"`)
-		output.WriteString(` alt="` + html.EscapeString(node.Alt) + `"`)
-		if options.MediaGeometry != nil {
+		caption, _ := node.Presentation["showCaption"].(bool)
+		if caption || len(node.Content) > 0 {
+			output.WriteString("<figure")
+			renderArticlePresentation(output, node)
+			output.WriteString(">")
+		}
+		output.WriteString(`<img src="` + html.EscapeString(options.MediaURL(node.MediaID)) + `" alt="` + html.EscapeString(node.Alt) + `"`)
+		if width, ok := node.Presentation["width"].(int); ok {
+			output.WriteString(` width="` + strconv.Itoa(width) + `"`)
+		}
+		if height, ok := node.Presentation["height"].(int); ok {
+			output.WriteString(` height="` + strconv.Itoa(height) + `"`)
+		}
+		if options.MediaGeometry != nil && node.Presentation["width"] == nil && node.Presentation["height"] == nil {
 			if width, height, known := options.MediaGeometry(node.MediaID); known && width > 0 && height > 0 {
-				output.WriteString(` width="` + strconv.FormatUint(uint64(width), 10) + `"`)
-				output.WriteString(` height="` + strconv.FormatUint(uint64(height), 10) + `"`)
+				output.WriteString(` width="` + strconv.FormatUint(uint64(width), 10) + `" height="` + strconv.FormatUint(uint64(height), 10) + `"`)
 			}
 		}
+		if !caption && len(node.Content) == 0 {
+			renderArticlePresentation(output, node)
+		}
 		output.WriteString(` loading="lazy">`)
+		if caption || len(node.Content) > 0 {
+			output.WriteString("<figcaption>")
+			renderArticleNodes(output, node.Content, options)
+			output.WriteString("</figcaption></figure>")
+		}
 	case ArticleNodeTable:
 		renderArticleTable(output, node, options)
 	case ArticleNodeTableRow:
@@ -114,7 +158,9 @@ func renderArticleNode(output *strings.Builder, node ArticleNode, options Articl
 // The first row becomes a header only when every cell in it is one, which is
 // the shape a Markdown table already renders to.
 func renderArticleTable(output *strings.Builder, node ArticleNode, options ArticleRenderOptions) {
-	output.WriteString("<table>")
+	output.WriteString("<table")
+	renderArticlePresentation(output, node)
+	output.WriteString(">")
 	rows := node.Content
 	if len(rows) > 0 && articleRowIsHeader(rows[0]) {
 		output.WriteString("<thead>")
@@ -150,13 +196,16 @@ func renderArticleCell(output *strings.Builder, tag string, node ArticleNode, op
 	if node.RowSpan > 1 {
 		output.WriteString(` rowspan="` + strconv.Itoa(node.RowSpan) + `"`)
 	}
+	renderArticlePresentation(output, node)
 	output.WriteString(">")
 	renderArticleNodes(output, node.Content, options)
 	output.WriteString("</" + tag + ">")
 }
 
 func renderArticleWrapped(output *strings.Builder, tag string, node ArticleNode, options ArticleRenderOptions) {
-	output.WriteString("<" + tag + ">")
+	output.WriteString("<" + tag)
+	renderArticlePresentation(output, node)
+	output.WriteString(">")
 	renderArticleNodes(output, node.Content, options)
 	output.WriteString("</" + tag + ">")
 }
@@ -172,6 +221,15 @@ func renderArticleText(output *strings.Builder, node ArticleNode) {
 			// The same fixed rel policy the Markdown renderer applies.
 			output.WriteString(`<a rel="nofollow noopener noreferrer" href="` + html.EscapeString(mark.Href) + `">`)
 			closers = append(closers, "</a>")
+			continue
+		}
+		if name == ArticleMarkTextStyle || name == ArticleMarkHighlight {
+			property := "color"
+			if name == ArticleMarkHighlight {
+				property = "background-color"
+			}
+			output.WriteString(`<span style="` + property + ":" + html.EscapeString(mark.Color) + `">`)
+			closers = append(closers, "</span>")
 			continue
 		}
 		tags := articleMarkTags[name]
@@ -191,4 +249,32 @@ func findArticleMark(marks []ArticleMark, name string) (ArticleMark, bool) {
 		}
 	}
 	return ArticleMark{}, false
+}
+
+// Presentation values have already passed the document grammar.
+func renderArticlePresentation(output *strings.Builder, node ArticleNode) {
+	if id, ok := node.Presentation["id"].(string); ok {
+		output.WriteString(` id="` + html.EscapeString(id) + `"`)
+	}
+	if align, ok := node.Presentation["data-align"].(string); ok {
+		output.WriteString(` data-align="` + html.EscapeString(align) + `"`)
+	}
+	var style strings.Builder
+	for _, item := range [][2]string{{"textAlign", "text-align"}, {"nodeTextAlign", "text-align"}, {"align", "text-align"}, {"nodeVerticalAlign", "vertical-align"}, {"backgroundColor", "background-color"}} {
+		if value, ok := node.Presentation[item[0]].(string); ok {
+			style.WriteString(item[1] + ":" + value + ";")
+		}
+	}
+	if widths, ok := node.Presentation["colwidth"].([]int); ok {
+		total := 0
+		for _, width := range widths {
+			total += width
+		}
+		if total > 0 {
+			style.WriteString("width:" + strconv.Itoa(total) + "px;")
+		}
+	}
+	if style.Len() > 0 {
+		output.WriteString(` style="` + html.EscapeString(style.String()) + `"`)
+	}
 }

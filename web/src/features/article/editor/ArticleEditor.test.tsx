@@ -223,6 +223,7 @@ beforeEach(() => {
       disconnect() {}
     },
   );
+  vi.stubGlobal("PointerEvent", MouseEvent);
   vi.useFakeTimers({
     toFake: [
       "setTimeout",
@@ -261,6 +262,40 @@ describe("opening a draft", () => {
     expect(screen.getByRole("textbox", { name: "文章正文" })).toBe(textbox);
     expect(putCalls()).toHaveLength(0);
   });
+  it("uses only reading headings for the inline TOC while retaining the editor", async () => {
+    onRead = () =>
+      success(
+        draftRow({
+          body: {
+            ...body,
+            content: [
+              {
+                type: "heading",
+                attrs: { level: 1, id: "chapter", "data-toc-id": "chapter" },
+                content: [{ type: "text", text: "章节" }],
+              },
+              { type: "tocNode" },
+            ],
+          },
+        }),
+      );
+    renderEditor(DRAFT_ID);
+    await advance();
+    fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    await advance();
+    expect(
+      document.querySelectorAll(
+        "[data-content-renderer] .tiptap-table-of-contents-item",
+      ),
+    ).toHaveLength(1);
+    expect(
+      document.querySelectorAll(
+        "[data-content-renderer] .tiptap-table-of-contents-item",
+      )[0],
+    ).toHaveAttribute("href", "#chapter");
+    expect(putCalls()).toHaveLength(0);
+  });
+
   it("shows the title and the body the server is holding", async () => {
     renderEditor(DRAFT_ID);
     await advance();
@@ -418,34 +453,71 @@ describe("what the toolbar writes into the document", () => {
     await advance();
     fireEvent.click(screen.getByRole("button", { name: "格式工具" }));
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: label }));
+      fireEvent.pointerDown(
+        screen.getByRole("button", { name: /^Turn into/ }),
+        {
+          button: 0,
+          ctrlKey: false,
+          pointerType: "mouse",
+        },
+      );
+    });
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("menuitem", { name: new RegExp(`^${label}$`, "i") }),
+      );
     });
     await advance(2_100);
     expect(putCalls()).toHaveLength(1);
     return putCalls()[0].body;
   }
 
-  it("writes a table with no column widths, which the server would refuse", async () => {
-    const saved = await pressAndSave("表格");
-    const serialised = JSON.stringify(saved);
-    expect(serialised).toContain('"tableHeader"');
-    // The whole reason the table extension is rebuilt: `resizable: false`
-    // hides the drag handles and leaves `colwidth` in the schema.
-    expect(serialised).not.toContain("colwidth");
-    expect(serialised).not.toContain('"align"');
+  it("retains native table column widths across opening and saving", async () => {
+    onRead = () =>
+      success(
+        draftRow({
+          body: {
+            ...body,
+            content: [
+              {
+                type: "table",
+                content: [
+                  {
+                    type: "tableRow",
+                    content: [
+                      {
+                        type: "tableCell",
+                        attrs: { colwidth: [240], backgroundColor: "#eff1f5" },
+                        content: body.content,
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      );
+    renderEditor(DRAFT_ID);
+    await advance();
+    await typeTitle("调整后的表格");
+    await advance(2_100);
+    expect(putCalls()).toHaveLength(1);
+    expect(JSON.stringify(putCalls()[0].body)).toContain('"colwidth":[240]');
+    expect(JSON.stringify(putCalls()[0].body)).toContain(
+      '"backgroundColor":"#eff1f5"',
+    );
   });
 
-  it("writes a list with no list type, which the server would refuse", async () => {
-    const saved = await pressAndSave("有序列表");
+  it("saves a list produced by the template dropdown", async () => {
+    const saved = await pressAndSave("Ordered List");
     const serialised = JSON.stringify(saved);
     expect(serialised).toContain('"orderedList"');
-    // Tiptap 3 carries `type` for `<ol type="a">`; the allowlist has no such
-    // attribute, and a list starting at one carries no attributes at all.
-    expect(serialised).toContain('{"type":"orderedList","content"');
+    expect(serialised).toContain("上游的水是清的");
   });
 
   it("keeps the one paragraph it started with", async () => {
-    const saved = await pressAndSave("引用");
+    const saved = await pressAndSave("Blockquote");
     expect(JSON.stringify(saved)).toContain("上游的水是清的");
   });
 });

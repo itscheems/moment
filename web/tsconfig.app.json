@@ -19,7 +19,11 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "paths": {
+      "@notion/*": ["./src/features/article/editor/vendor/notion/*"],
+      "@content-notion/*": ["./src/components/content/notion/*"]
+    }
   },
   "include": ["src"]
 }

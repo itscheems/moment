@@ -1,0 +1,20 @@
+@use "../../../components/content/notion";
+/* Moment supplies the page shell; document and control styling comes from the template. */
+.notion-like-editor-content {
+  width: 100%;
+  min-width: 0;
+}
+.notion-like-editor {
+  font-size: 1rem;
+  line-height: 1.5;
+  min-height: 50vh;
+  padding-bottom: 30vh;
+  color: var(--text-primary);
+}
+
+/* Keep the template's fixed toolbar below Moment's sticky article header. */
+.moment-article-format.tiptap-toolbar[data-variant="fixed"] {
+  position: sticky;
+  top: var(--editor-toolbar-top, 3rem);
+  height: auto;
+}

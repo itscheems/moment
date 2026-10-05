@@ -36,3 +36,25 @@ Object.defineProperty(window, "localStorage", {
 });
 
 beforeEach(() => localStorage.clear());
+
+// jsdom has no media-query engine. Geometry remains a real-browser check.
+Object.defineProperty(window, "matchMedia", {
+  configurable: true,
+  value: (media: string) => ({
+    matches: false,
+    media,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {
+      return false;
+    },
+  }),
+});
+
+// ProseMirror/Floating UI read a Range rectangle. These placeholders only let
+// command/persistence tests run; they cannot establish layout or appearance.
+Range.prototype.getBoundingClientRect = () => new DOMRect();
+Range.prototype.getClientRects = () => Object.assign([], { item: () => null });

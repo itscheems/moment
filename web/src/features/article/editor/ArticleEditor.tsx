@@ -1,5 +1,6 @@
 import { Menu } from "@base-ui/react/menu";
-import { EditorContent, useEditor } from "@tiptap/react";
+import type { EditorEvents } from "@tiptap/core";
+import { useEditor } from "@tiptap/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -31,15 +32,8 @@ import { autosaveDelay, saveStatusLabel, type SaveState } from "./autosave";
 import { ConflictNotice } from "./components/ConflictNotice";
 import { CoverField } from "./components/CoverField";
 import { DraftRail } from "./components/DraftRail";
-import { ImageUploads, type UploadTask } from "./components/ImageUploads";
-import { ImageMenu } from "./components/ImageMenu";
-import { EditorOutline } from "./components/EditorOutline";
-import { TableControls } from "./components/TableControls";
-import { BlockControls } from "./components/BlockControls";
-import { SelectionMenu } from "./components/SelectionMenu";
-import { SlashMenu } from "./components/SlashMenu";
+type UploadTask = { id: string; failed: string | null };
 import { CharacterCount } from "./components/CharacterCount";
-import { Toolbar } from "./components/Toolbar";
 import {
   emptyArticleDocument,
   hasArticleSubstance,
@@ -47,17 +41,11 @@ import {
   toEditorContent,
 } from "./document";
 import { articleEditorExtensions } from "./schema";
-import {
-  addUploadPlaceholder,
-  clearUploadPlaceholders,
-  finishImageUpload,
-  removeUploadPlaceholder,
-} from "./extensions/UploadPlaceholder";
 import styles from "./Editor.module.css";
 import { ArticleSheet } from "../../../components/content/ArticleSheet";
 import { RichContent } from "../../../components/content/RichContent";
 import { MentionProvider } from "../../../app/mentions";
-import contentStyles from "../../../components/content/Content.module.css";
+import { NotionSurface, NotionFormatToolbar } from "./NotionSurface";
 
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {
@@ -128,13 +116,41 @@ export function ArticleEditor({
   const libraryButton = useRef<HTMLButtonElement>(null);
   const libraryPanel = useRef<HTMLDivElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
-  const imageInput = useRef<HTMLInputElement>(null);
   const publishKey = useRef(createIdempotencyKey());
   const uploadGeneration = useRef(0);
   const createdDraftId = useRef<string | null>(null);
 
+  const uploadOwner = useRef(owner);
+  uploadOwner.current = owner;
+  const extensions = useMemo(
+    () =>
+      articleEditorExtensions({
+        upload: async (file, onProgress, signal) => {
+          const current = uploadOwner.current;
+          const token = current.session?.csrfToken;
+          if (!token) throw new Error("登录状态已经失效。");
+          const id = createIdempotencyKey();
+          setUploads((tasks) => [...tasks, { id, failed: null }]);
+          try {
+            const media = await current.api.uploadMedia(
+              token,
+              file,
+              (percent) => onProgress?.({ progress: percent }),
+              signal,
+            );
+            return mediaPreviewUrl(media.id);
+          } catch (error) {
+            current.expireIfInvalidSession(error);
+            throw error;
+          } finally {
+            setUploads((tasks) => tasks.filter((task) => task.id !== id));
+          }
+        },
+      }),
+    [],
+  );
   const editor = useEditor({
-    extensions: articleEditorExtensions(),
+    extensions,
     shouldRerenderOnTransaction: false,
     // Built in an effect, not during the render that asks for it.
     //
@@ -149,7 +165,7 @@ export function ArticleEditor({
     editorProps: {
       attributes: {
         "aria-label": "文章正文",
-        class: `${contentStyles.root} ${contentStyles.article}`,
+        class: "tiptap ProseMirror notion-like-editor",
         role: "textbox",
         "aria-multiline": "true",
       },
@@ -174,9 +190,14 @@ export function ArticleEditor({
     // A destroyed editor still answers to a stale closure, and every call on
     // it throws. Tiptap guards its own chain() for this; the rest is ours.
     if (!editor || editor.isDestroyed) return;
-    editor.on("update", markChanged);
+    const onUpdate = ({ transaction }: EditorEvents["update"]) => {
+      // UniqueID/TOC metadata initialization is not a user edit.
+      if (transaction.getMeta("addToHistory") === false) return;
+      markChanged();
+    };
+    editor.on("update", onUpdate);
     return () => {
-      editor.off("update", markChanged);
+      editor.off("update", onUpdate);
     };
   }, [editor, markChanged]);
 
@@ -194,7 +215,6 @@ export function ArticleEditor({
     setVisibility("everyone");
     setLoadError(null);
     publishKey.current = createIdempotencyKey();
-    clearUploadPlaceholders(editor);
     setUploads([]);
     setCoverBusy(false);
     let abandoned = false;
@@ -526,76 +546,32 @@ export function ArticleEditor({
     return () => window.removeEventListener("beforeunload", warn);
   }, [saveState.kind, coverBusy, uploads]);
 
-  const uploadImage = useCallback(
-    async (file: File, place: "cover" | "body") => {
-      if (csrfToken === "") {
+  const uploadCover = useCallback(
+    async (file: File) => {
+      if (!csrfToken) {
         notify("登录状态已经失效。", { type: "error" });
         return;
       }
-      const id = createIdempotencyKey();
       const generation = uploadGeneration.current;
-      const previewUrl = place === "body" ? URL.createObjectURL(file) : null;
-      if (previewUrl && editor)
-        addUploadPlaceholder(editor, id, file.name, previewUrl);
-      if (place === "cover") setCoverBusy(true);
-      else {
-        setUploads((current) => [
-          ...current,
-          { id, name: file.name, percent: 0, failed: null },
-        ]);
-      }
+      setCoverBusy(true);
       try {
-        const uploaded = await owner.api.uploadMedia(
-          csrfToken,
-          file,
-          (percent) =>
-            setUploads((current) =>
-              current.map((task) =>
-                task.id === id ? { ...task, percent } : task,
-              ),
-            ),
-        );
-        if (generation !== uploadGeneration.current || editor?.isDestroyed)
-          return;
-        if (place === "cover") {
-          setCoverMediaId(uploaded.id);
-        } else {
-          // Decode the server preview before exchanging the local preview.
-          const image = new Image();
-          image.src = mediaPreviewUrl(uploaded.id);
-          await image.decode().catch(() => undefined);
-          if (
-            generation !== uploadGeneration.current ||
-            !editor ||
-            editor.isDestroyed
-          )
-            return;
-          finishImageUpload(editor, id, uploaded.id);
-          setUploads((current) => current.filter((task) => task.id !== id));
-        }
+        const uploaded = await owner.api.uploadMedia(csrfToken, file);
+        if (generation !== uploadGeneration.current) return;
+        setCoverMediaId(uploaded.id);
         markChanged();
       } catch (error) {
-        if (generation !== uploadGeneration.current || editor?.isDestroyed)
-          return;
-        if (editor) removeUploadPlaceholder(editor, id);
         owner.expireIfInvalidSession(error);
-        const message =
-          error instanceof PublicApiError ? error.message : "上传没有成功。";
-        if (place === "cover") notify(`封面${message}`, { type: "error" });
-        else {
-          setUploads((current) =>
-            current.map((task) =>
-              task.id === id ? { ...task, failed: message } : task,
-            ),
-          );
-        }
+        notify(
+          error instanceof PublicApiError
+            ? error.message
+            : "封面上传没有成功。",
+          { type: "error" },
+        );
       } finally {
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        if (place === "cover" && generation === uploadGeneration.current)
-          setCoverBusy(false);
+        if (generation === uploadGeneration.current) setCoverBusy(false);
       }
     },
-    [csrfToken, editor, markChanged],
+    [csrfToken, owner, markChanged],
   );
 
   const publish = useCallback(async () => {
@@ -896,11 +872,7 @@ export function ArticleEditor({
         !discarding &&
         phase === "ready" &&
         !loadError ? (
-          <Toolbar
-            editor={editor}
-            onPickImage={() => imageInput.current?.click()}
-            uploading={uploads.some((task) => task.failed === null)}
-          />
+          <NotionFormatToolbar editor={editor} />
         ) : null}
 
         <div className={styles.main}>
@@ -977,11 +949,7 @@ export function ArticleEditor({
             ) : null}
 
             <ArticleSheet
-              outline={
-                !previewing && editor ? (
-                  <EditorOutline editor={editor} />
-                ) : undefined
-              }
+              outline={previewing ? undefined : <></>}
               cover={
                 <CoverField
                   busy={coverBusy}
@@ -1047,20 +1015,20 @@ export function ArticleEditor({
                 </div>
               }
             >
-              {previewing ? null : (
-                <ImageUploads
-                  onDismiss={(id) =>
-                    setUploads((current) =>
-                      current.filter((task) => task.id !== id),
-                    )
-                  }
-                  uploads={uploads}
-                />
-              )}
-
               <div className={styles.body}>
                 <div hidden={previewing}>
-                  <EditorContent editor={editor} />
+                  {editor && (
+                    <NotionSurface
+                      editor={editor}
+                      readOnly={
+                        previewing ||
+                        publishing ||
+                        discarding ||
+                        phase !== "ready" ||
+                        loadError !== null
+                      }
+                    />
+                  )}
                 </div>
                 {previewing && previewDocument ? (
                   <RichContent document={previewDocument} />
@@ -1073,40 +1041,15 @@ export function ArticleEditor({
           </div>
         </div>
 
-        {editor && !previewing && !publishing && !discarding ? (
-          <>
-            <BlockControls editor={editor} />
-            <TableControls editor={editor} />
-            <SelectionMenu editor={editor} />
-            <ImageMenu editor={editor} />
-            <SlashMenu
-              editor={editor}
-              onPickImage={() => imageInput.current?.click()}
-            />
-          </>
-        ) : null}
-
         <input
           accept="image/*"
           className={styles.srOnly}
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
-            if (file) void uploadImage(file, "cover");
+            if (file) void uploadCover(file);
           }}
           ref={coverInput}
-          tabIndex={-1}
-          type="file"
-        />
-        <input
-          accept="image/*"
-          className={styles.srOnly}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = "";
-            if (file) void uploadImage(file, "body");
-          }}
-          ref={imageInput}
           tabIndex={-1}
           type="file"
         />
