@@ -747,4 +747,7 @@
     inline-size: min(100%, 49.875rem);
     grid-template-columns: 5.5rem minmax(0, 44.375rem);
   }
+  .shell.detailShell :global([data-article-sheet] .toc-sidebar) {
+    inset-inline-end: 1rem;
+  }
 }
