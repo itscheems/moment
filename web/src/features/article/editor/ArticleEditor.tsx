@@ -33,6 +33,7 @@ import { CoverField } from "./components/CoverField";
 import { DraftRail } from "./components/DraftRail";
 import { ImageUploads, type UploadTask } from "./components/ImageUploads";
 import { ImageMenu } from "./components/ImageMenu";
+import { BlockControls } from "./components/BlockControls";
 import { SelectionMenu } from "./components/SelectionMenu";
 import { SlashMenu } from "./components/SlashMenu";
 import { CharacterCount } from "./components/CharacterCount";
@@ -1067,6 +1068,7 @@ export function ArticleEditor({
 
         {editor && !previewing && !publishing && !discarding ? (
           <>
+            <BlockControls editor={editor} />
             <SelectionMenu editor={editor} />
             <ImageMenu editor={editor} />
             <SlashMenu

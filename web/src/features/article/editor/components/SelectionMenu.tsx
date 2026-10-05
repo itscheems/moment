@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import type { Editor } from "@tiptap/core";
+import { isTextSelection, type Editor } from "@tiptap/core";
+import { useBubbleMotion } from "./useBubbleMotion";
 import { useEditorState } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
 
@@ -7,29 +7,9 @@ import styles from "../Editor.module.css";
 import { EditorIcon } from "./EditorIcons";
 import { LinkPopover } from "./LinkPopover";
 
-/**
- * The menu that arrives over a selection.
- *
- * Only the marks are here. A selection is a run of words, and what somebody
- * wants to do to a run of words is make it bold or make it a link; turning it
- * into a table is a decision about the paragraph, which is what the toolbar
- * above is for. Keeping the two apart is also what keeps this menu narrow
- * enough not to cover the sentence it is about.
- *
- * It fades and rises a quarter of a line on the way in; under
- * prefers-reduced-motion it simply appears (Editor.module.css).
- */
+/** Formatting actions for the native text selection. */
 export function SelectionMenu({ editor }: { editor: Editor }) {
-  const [shown, setShown] = useState(false);
-  const options = useMemo(
-    () => ({
-      placement: "top" as const,
-      offset: 8,
-      onShow: () => setShown(true),
-      onHide: () => setShown(false),
-    }),
-    [],
-  );
+  const { ref, options } = useBubbleMotion();
   const state = useEditorState({
     editor,
     selector: ({ editor: current }) => ({
@@ -44,16 +24,21 @@ export function SelectionMenu({ editor }: { editor: Editor }) {
 
   return (
     <BubbleMenu
+      ref={ref}
+      updateDelay={100}
       className={styles.bubble}
       editor={editor}
       options={options}
       // A picture is a selection too, and a bold button over a picture does
       // nothing. The toolbar carries what a picture can actually be told.
       shouldShow={({ editor: current, from, to }) =>
-        current.isEditable && from !== to && !current.isActive("image")
+        current.isEditable &&
+        isTextSelection(current.state.selection) &&
+        from !== to &&
+        !!current.state.doc.textBetween(from, to).trim()
       }
     >
-      <div className={styles.bubbleContent} data-visible={shown}>
+      <div className={styles.bubbleContent}>
         <button
           aria-label="加粗"
           aria-pressed={state.bold}

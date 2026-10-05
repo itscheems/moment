@@ -11,6 +11,7 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { articleEditorExtensions } from "./schema";
 import { toArticleDocument } from "./document";
+import { BlockActionsMenu } from "./components/BlockControls";
 import { CharacterCount } from "./components/CharacterCount";
 import { SlashMenu } from "./components/SlashMenu";
 import { moveArticleBlock } from "./extensions/BlockHandles";
@@ -33,6 +34,7 @@ function setup(content: string) {
   render(
     <>
       <EditorContent editor={editor} />
+      <BlockActionsMenu editor={editor} />
       <SlashMenu editor={editor} onPickImage={vi.fn()} />
       <CharacterCount editor={editor} />
     </>,
@@ -41,22 +43,22 @@ function setup(content: string) {
 
 it("duplicates and deletes complete blocks with undo, and inserts from the block menu", () => {
   setup("<p><strong>first</strong></p><p>last</p>");
-  fireEvent.click(screen.getByRole("button", { name: "移动第 1 块" }));
-  fireEvent.click(screen.getByRole("button", { name: "复制块" }));
+  fireEvent.click(screen.getByRole("button", { name: "当前块操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "复制块" }));
   expect(editor.state.doc.childCount).toBe(3);
   expect(editor.state.doc.child(1).eq(editor.state.doc.child(0))).toBe(true);
   act(() => {
     editor.commands.undo();
   });
   expect(editor.state.doc.childCount).toBe(2);
-  fireEvent.click(screen.getByRole("button", { name: "移动第 1 块" }));
-  fireEvent.click(screen.getByRole("button", { name: "删除块" }));
+  fireEvent.click(screen.getByRole("button", { name: "当前块操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "删除块" }));
   expect(editor.state.doc.textContent).toBe("last");
   act(() => {
     editor.commands.undo();
   });
-  fireEvent.click(screen.getByRole("button", { name: "移动第 1 块" }));
-  fireEvent.click(screen.getByRole("button", { name: "在下方插入" }));
+  fireEvent.click(screen.getByRole("button", { name: "当前块操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "在下方插入" }));
   expect(editor.state.doc.child(1).textContent).toBe("/");
   expect(screen.getByRole("listbox", { name: "插入内容" })).toBeInTheDocument();
 });
@@ -177,12 +179,26 @@ it("moves a whole nested block, preserves marks, and can undo the move", async (
 
 it("offers keyboard and touch actions for moving blocks without drag and drop", async () => {
   setup("<p>first</p><p>second</p>");
-  fireEvent.keyDown(screen.getByRole("button", { name: "移动第 1 块" }), {
+  fireEvent.keyDown(editor.view.dom, {
     key: "ArrowDown",
     altKey: true,
   });
   expect(editor.state.doc.child(0).textContent).toBe("second");
-  fireEvent.click(screen.getByRole("button", { name: "移动第 2 块" }));
-  fireEvent.click(screen.getByRole("button", { name: "上移" }));
+  fireEvent.click(screen.getByRole("button", { name: "当前块操作" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "上移" }));
   expect(editor.state.doc.child(0).textContent).toBe("first");
+});
+
+it("keeps the drag handle unlocked until the click completes", () => {
+  editor = new Editor({
+    extensions: articleEditorExtensions(),
+    content: "<p>first</p>",
+  });
+  render(<BlockActionsMenu editor={editor} position={0} />);
+  const handle = screen.getByRole("button", { name: "块操作", exact: true });
+  fireEvent.mouseDown(handle, { button: 0 });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  fireEvent.mouseUp(handle, { button: 0 });
+  fireEvent.click(handle);
+  expect(screen.getByRole("menuitem", { name: "复制块" })).toBeInTheDocument();
 });

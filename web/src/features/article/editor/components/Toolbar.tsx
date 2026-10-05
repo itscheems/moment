@@ -6,6 +6,7 @@ import { ARTICLE_CODE_LANGUAGES } from "../schema";
 import styles from "../Editor.module.css";
 import { EditorIcon } from "./EditorIcons";
 import { ImageAltPopover } from "./ImageAltPopover";
+import { BlockActionsMenu } from "./BlockControls";
 import { LinkPopover } from "./LinkPopover";
 
 const BLOCK_LABELS: ReadonlyArray<{ level: 0 | 1 | 2 | 3; label: string }> = [
@@ -90,6 +91,7 @@ export function Toolbar({
 
   return (
     <div aria-label="排版" className={styles.toolBar} role="toolbar">
+      <BlockActionsMenu editor={editor} />
       <div className={styles.toolGroup}>
         <ToolButton
           label="撤销"

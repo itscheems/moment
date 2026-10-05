@@ -25,6 +25,8 @@
     "@tiptap/extension-code": "3.31.3",
     "@tiptap/extension-code-block": "3.31.3",
     "@tiptap/extension-document": "3.31.3",
+    "@tiptap/extension-drag-handle": "3.31.3",
+    "@tiptap/extension-drag-handle-react": "3.31.3",
     "@tiptap/extension-hard-break": "3.31.3",
     "@tiptap/extension-heading": "3.31.3",
     "@tiptap/extension-horizontal-rule": "3.31.3",

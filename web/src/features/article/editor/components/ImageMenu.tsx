@@ -3,16 +3,18 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import { ImageAltPopover } from "./ImageAltPopover";
 import styles from "../Editor.module.css";
 
-const menuOptions = { placement: "top" as const, offset: 8 };
+import { useBubbleMotion } from "./useBubbleMotion";
 
 /** Image actions live at the selected image, also reachable on touch screens. */
 export function ImageMenu({ editor }: { editor: Editor }) {
+  const { ref, options } = useBubbleMotion();
   return (
     <BubbleMenu
+      ref={ref}
       pluginKey="articleImageMenu"
       editor={editor}
       className={styles.bubble}
-      options={menuOptions}
+      options={options}
       shouldShow={({ editor: current }) =>
         current.isEditable && current.isActive("image")
       }
