@@ -13,17 +13,11 @@
 }
 
 /* Keep the template's fixed toolbar below Moment's sticky article header. */
-.moment-article-format.tiptap-toolbar[data-variant="fixed"] {
-  position: sticky;
-  top: var(--editor-toolbar-top, 3rem);
-  height: auto;
-}
-@media (max-width: 480px) {
-  .moment-article-format .tiptap-toolbar-group {
-    padding-inline-end: 1rem;
+@media (min-width: 481px) {
+  .moment-article-format.tiptap-toolbar[data-variant="fixed"] {
+    top: var(--editor-toolbar-top, 3rem);
   }
 }
-
 .moment-article-search {
   position: fixed;
   top: calc(

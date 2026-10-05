@@ -1,7 +1,14 @@
 import { Menu } from "@base-ui/react/menu";
 import type { EditorEvents } from "@tiptap/core";
 import { useEditor } from "@tiptap/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   PublicApi,
@@ -45,7 +52,8 @@ import styles from "./Editor.module.css";
 import { ArticleSheet } from "../../../components/content/ArticleSheet";
 import { RichContent } from "../../../components/content/RichContent";
 import { MentionProvider } from "../../../app/mentions";
-import { NotionSurface, NotionFormatToolbar } from "./NotionSurface";
+import { NotionSurface } from "./NotionSurface";
+import { ArticleFormatToolbar } from "./ArticleFormatToolbar";
 
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {
@@ -90,8 +98,6 @@ export function ArticleEditor({
   const [resolving, setResolving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
-  const [formatOpen, setFormatOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [drafts, setDrafts] = useState<readonly ArticleDraft[]>([]);
   const [railError, setRailError] = useState<string | null>(null);
   const [railLoading, setRailLoading] = useState(true);
@@ -296,20 +302,25 @@ export function ArticleEditor({
     void refreshDrafts();
   }, [refreshDrafts]);
 
+  // Apply editability before the native UI's effects inspect the editor.
   // Read mode uses the publication renderer; the editor retains its selection.
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Without the second argument setEditable emits an "update", and "update"
     // is what marks the draft dirty -- so merely opening the page, or looking
     // at the preview and coming back, would report unsaved changes nobody
     // made. Whether the sheet can be typed on is not a change to what it says.
-    editor?.setEditable(
+    if (!editor || editor.isDestroyed) return;
+    const editable =
       !previewing &&
-        !publishing &&
-        !discarding &&
-        phase === "ready" &&
-        loadError === null,
-      false,
-    );
+      !publishing &&
+      !discarding &&
+      phase === "ready" &&
+      loadError === null;
+    if (editor.isEditable === editable) return;
+    editor.setEditable(editable, false);
+    // Native UI subscriptions observe transactions, rather than setOptions.
+    // Refresh them without adding a document edit or an undo-history entry.
+    editor.commands.setMeta("addToHistory", false);
   }, [editor, previewing, publishing, discarding, phase, loadError]);
 
   /** The status line counts in minutes, so it has to be told the time. */
@@ -765,17 +776,6 @@ export function ArticleEditor({
             {statusLine}
           </p>
           <div className={styles.topActions}>
-            {!previewing && (
-              <button
-                aria-pressed={formatOpen}
-                aria-label="格式工具"
-                className={styles.toolButton}
-                onClick={() => setFormatOpen((value) => !value)}
-                type="button"
-              >
-                Aa
-              </button>
-            )}
             <span className={styles.audience}>
               <AudienceSelector
                 disabled={
@@ -868,15 +868,11 @@ export function ArticleEditor({
 
         {editor &&
         !previewing &&
-        formatOpen &&
         !publishing &&
         !discarding &&
         phase === "ready" &&
         !loadError ? (
-          <NotionFormatToolbar
-            editor={editor}
-            onSearch={() => setSearchOpen(true)}
-          />
+          <ArticleFormatToolbar editor={editor} />
         ) : null}
 
         <div className={styles.main}>
@@ -1024,8 +1020,6 @@ export function ArticleEditor({
                   {editor && (
                     <NotionSurface
                       editor={editor}
-                      searchOpen={searchOpen}
-                      onSearchOpenChange={setSearchOpen}
                       readOnly={
                         previewing ||
                         publishing ||

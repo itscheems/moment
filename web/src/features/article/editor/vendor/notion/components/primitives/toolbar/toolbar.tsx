@@ -17,6 +17,9 @@ const useToolbarNavigation = (
   toolbarRef: React.RefObject<HTMLDivElement | null>,
 ) => {
   const [items, setItems] = useState<HTMLElement[]>([]);
+  const initialContainerTabIndexRef = useRef<number | null | undefined>(
+    undefined,
+  );
 
   const collectItems = useCallback(() => {
     if (!toolbarRef.current) return [];
@@ -31,21 +34,34 @@ const useToolbarNavigation = (
     const toolbar = toolbarRef.current;
     if (!toolbar) return;
 
+    if (initialContainerTabIndexRef.current === undefined) {
+      initialContainerTabIndexRef.current =
+        toolbar.hasAttribute("tabindex") && toolbar.tabIndex >= 0
+          ? toolbar.tabIndex
+          : null;
+    }
+
     const updateItems = () => setItems(collectItems());
 
     updateItems();
     const observer = new MutationObserver(updateItems);
-    observer.observe(toolbar, { childList: true, subtree: true });
+    observer.observe(toolbar, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["disabled"],
+    });
 
     return () => observer.disconnect();
   }, [collectItems, toolbarRef]);
 
-  const { selectedIndex } = useMenuNavigation<HTMLElement>({
+  const { selectedIndex, setSelectedIndex } = useMenuNavigation<HTMLElement>({
     containerRef: toolbarRef,
     items,
     orientation: "horizontal",
     onSelect: (el) => el.click(),
     autoSelectFirstItem: false,
+    loopOnTab: false,
   });
 
   useEffect(() => {
@@ -54,14 +70,37 @@ const useToolbarNavigation = (
 
     const handleFocus = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
-      if (toolbar.contains(target))
+      if (toolbar.contains(target)) {
         target.setAttribute("data-focus-visible", "true");
+        const itemIndex = items.indexOf(target);
+        if (itemIndex >= 0) setSelectedIndex(itemIndex);
+      }
     };
 
     const handleBlur = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
       if (toolbar.contains(target))
         target.removeAttribute("data-focus-visible");
+
+      const nextTarget = e.relatedTarget;
+      const NodeConstructor = toolbar.ownerDocument.defaultView?.Node;
+      const leavesToolbar =
+        !nextTarget ||
+        !NodeConstructor ||
+        !(nextTarget instanceof NodeConstructor) ||
+        !toolbar.contains(nextTarget);
+
+      if (leavesToolbar && initialContainerTabIndexRef.current != null) {
+        queueMicrotask(() => {
+          if (
+            toolbar.isConnected &&
+            !toolbar.contains(toolbar.ownerDocument.activeElement)
+          ) {
+            toolbar.tabIndex = initialContainerTabIndexRef.current!;
+            setSelectedIndex(-1);
+          }
+        });
+      }
     };
 
     toolbar.addEventListener("focus", handleFocus, true);
@@ -71,13 +110,56 @@ const useToolbarNavigation = (
       toolbar.removeEventListener("focus", handleFocus, true);
       toolbar.removeEventListener("blur", handleBlur, true);
     };
-  }, [toolbarRef]);
+  }, [items, setSelectedIndex, toolbarRef]);
 
   useEffect(() => {
-    if (selectedIndex !== undefined && items[selectedIndex]) {
-      items[selectedIndex].focus();
+    if (!items.length) return;
+
+    const toolbar = toolbarRef.current;
+    if (!toolbar) return;
+
+    const initialContainerTabIndex = initialContainerTabIndexRef.current;
+    const currentIndex = selectedIndex ?? -1;
+
+    if (initialContainerTabIndex != null) {
+      items.forEach((item) => {
+        item.tabIndex = -1;
+      });
+
+      if (currentIndex >= 0 && items[currentIndex]) {
+        toolbar.tabIndex = -1;
+        if (toolbar.contains(toolbar.ownerDocument.activeElement)) {
+          items[currentIndex].focus();
+        }
+      } else {
+        toolbar.tabIndex = initialContainerTabIndex;
+      }
+      return;
     }
-  }, [selectedIndex, items]);
+
+    const existingTabStop = items.findIndex((item) => item.tabIndex === 0);
+    const activeIndex =
+      currentIndex >= 0 && items[currentIndex]
+        ? currentIndex
+        : existingTabStop >= 0
+          ? existingTabStop
+          : 0;
+
+    items.forEach((item, index) => {
+      item.tabIndex = index === activeIndex ? 0 : -1;
+    });
+
+    // Only restore focus while it is inside the toolbar. The item list also
+    // refreshes when focus legitimately lives elsewhere (e.g. a popover
+    // opened from the toolbar autofocused its input), and stealing focus
+    // back would dismiss such overlays.
+    if (
+      currentIndex >= 0 &&
+      toolbar.contains(toolbar.ownerDocument.activeElement)
+    ) {
+      items[activeIndex]?.focus();
+    }
+  }, [selectedIndex, items, toolbarRef]);
 };
 
 export const Toolbar = forwardRef<HTMLDivElement, ToolbarProps>(

@@ -40,6 +40,12 @@ interface MenuNavigationOptions<T> {
    * @default true
    */
   autoSelectFirstItem?: boolean;
+  /**
+   * Whether Tab/Shift+Tab should loop through the items.
+   * Disable this for ARIA toolbars, where Tab must leave the toolbar.
+   * @default true
+   */
+  loopOnTab?: boolean;
 }
 
 /**
@@ -60,6 +66,7 @@ export function useMenuNavigation<T>({
   onClose,
   orientation = "vertical",
   autoSelectFirstItem = true,
+  loopOnTab = true,
 }: MenuNavigationOptions<T>) {
   const [selectedIndex, setSelectedIndex] = useState<number>(
     autoSelectFirstItem ? 0 : -1,
@@ -68,6 +75,12 @@ export function useMenuNavigation<T>({
   useEffect(() => {
     const handleKeyboardNavigation = (event: KeyboardEvent) => {
       if (!items.length) return false;
+      // Embedded text fields own their caret movement and Enter handling.
+      if (
+        orientation === "horizontal" &&
+        event.target instanceof HTMLInputElement
+      )
+        return false;
 
       const moveNext = () =>
         setSelectedIndex((currentIndex) => {
@@ -111,6 +124,7 @@ export function useMenuNavigation<T>({
         }
 
         case "Tab": {
+          if (!loopOnTab) return false;
           event.preventDefault();
           if (event.shiftKey) {
             movePrev();
@@ -142,6 +156,7 @@ export function useMenuNavigation<T>({
         }
 
         case "Escape": {
+          if (!onClose) return false;
           event.preventDefault();
           onClose?.();
           return true;
@@ -181,6 +196,7 @@ export function useMenuNavigation<T>({
     onSelect,
     onClose,
     orientation,
+    loopOnTab,
   ]);
 
   useEffect(() => {

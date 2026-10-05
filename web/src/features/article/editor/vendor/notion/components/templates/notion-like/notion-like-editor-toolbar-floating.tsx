@@ -50,7 +50,7 @@ import { FloatingElement } from "@notion/components/utilities/floating-element";
 
 export function NotionToolbarFloating() {
   const { editor } = useTiptapEditor();
-  const isMobile = useIsBreakpoint("max", 480);
+  const isMobile = useIsBreakpoint("max", 481);
   const { lockDragHandle, aiGenerationActive, commentInputVisible } =
     useUiEditorState(editor);
 
@@ -66,7 +66,7 @@ export function NotionToolbarFloating() {
     <FloatingElement shouldShow={shouldShow}>
       <Toolbar variant="floating">
         <ToolbarGroup>
-          <TurnIntoDropdown hideWhenUnavailable={true} />
+          <TurnIntoDropdown hideWhenUnavailable={true} useCardLayout={false} />
         </ToolbarGroup>
 
         <ToolbarSeparator />

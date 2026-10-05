@@ -451,22 +451,25 @@ describe("what the toolbar writes into the document", () => {
   async function pressAndSave(label: string) {
     renderEditor(DRAFT_ID);
     await advance();
-    fireEvent.click(screen.getByRole("button", { name: "格式工具" }));
-    await act(async () => {
-      fireEvent.pointerDown(
-        screen.getByRole("button", { name: /^Turn into/ }),
-        {
-          button: 0,
-          ctrlKey: false,
-          pointerType: "mouse",
-        },
-      );
-    });
-    await act(async () => {
-      fireEvent.click(
-        screen.getByRole("menuitem", { name: new RegExp(`^${label}$`, "i") }),
-      );
-    });
+    expect(screen.getByRole("button", { name: "Bold" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Blockquote" })).toBeEnabled();
+    if (label === "Ordered List") {
+      await act(async () => {
+        fireEvent.pointerDown(
+          screen.getByRole("button", { name: "List options" }),
+          { button: 0, ctrlKey: false, pointerType: "mouse" },
+        );
+      });
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("menuitem", { name: new RegExp(`^${label}$`, "i") }),
+        );
+      });
+    } else {
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: label }));
+      });
+    }
     await advance(2_100);
     expect(putCalls()).toHaveLength(1);
     return putCalls()[0].body;
@@ -516,8 +519,9 @@ describe("what the toolbar writes into the document", () => {
     expect(serialised).toContain("上游的水是清的");
   });
 
-  it("keeps the one paragraph it started with", async () => {
+  it("saves a blockquote produced by the native toolbar", async () => {
     const saved = await pressAndSave("Blockquote");
+    expect(JSON.stringify(saved)).toContain('"blockquote"');
     expect(JSON.stringify(saved)).toContain("上游的水是清的");
   });
 });

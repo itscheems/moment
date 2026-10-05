@@ -19,10 +19,7 @@ import { useLinkPopover } from "@notion/components/ui/link-popover";
 
 // --- UI Primitives ---
 import type { ButtonProps } from "@notion/components/primitives/button";
-import {
-  Button,
-  ButtonGroup,
-} from "@notion/components/primitives/button";
+import { Button } from "@notion/components/primitives/button";
 import {
   Popover,
   PopoverContent,
@@ -34,10 +31,10 @@ import {
   CardBody,
   CardItemGroup,
 } from "@notion/components/primitives/card";
-import {
-  Input,
-  InputGroup,
-} from "@notion/components/primitives/input";
+import { Input } from "@notion/components/primitives/input";
+import { ButtonGroup } from "@notion/components/primitives/button-group";
+
+import "@content-notion/components/ui/link-popover/link-popover.scss";
 
 export interface LinkMainProps {
   /**
@@ -88,7 +85,7 @@ export const LinkButton = forwardRef<HTMLButtonElement, ButtonProps>(
       <Button
         type="button"
         className={className}
-        data-style="ghost"
+        variant="ghost"
         role="button"
         tabIndex={-1}
         aria-label="Link"
@@ -136,27 +133,26 @@ const LinkMain: React.FC<LinkMainProps> = ({
         }}
       >
         <CardItemGroup orientation="horizontal">
-          <InputGroup>
-            <Input
-              type="url"
-              placeholder="Paste a link..."
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={handleKeyDown}
-              autoFocus
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-            />
-          </InputGroup>
+          <Input
+            type="url"
+            placeholder="Paste a link..."
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            className="tiptap-link-input"
+          />
 
-          <ButtonGroup orientation="horizontal">
+          <ButtonGroup>
             <Button
               type="button"
               onClick={setLink}
               title="Apply link"
               disabled={!url && !isActive}
-              data-style="ghost"
+              variant="ghost"
             >
               <CornerDownLeftIcon className="tiptap-button-icon" />
             </Button>
@@ -164,26 +160,30 @@ const LinkMain: React.FC<LinkMainProps> = ({
 
           <Separator />
 
-          <ButtonGroup orientation="horizontal">
-            <Button
-              type="button"
-              onClick={openLink}
-              title="Open in new window"
-              disabled={!url && !isActive}
-              data-style="ghost"
-            >
-              <ExternalLinkIcon className="tiptap-button-icon" />
-            </Button>
+          <ButtonGroup>
+            <ButtonGroup>
+              <Button
+                type="button"
+                onClick={openLink}
+                title="Open in new window"
+                disabled={!url && !isActive}
+                variant="ghost"
+              >
+                <ExternalLinkIcon className="tiptap-button-icon" />
+              </Button>
+            </ButtonGroup>
 
-            <Button
-              type="button"
-              onClick={removeLink}
-              title="Remove link"
-              disabled={!url && !isActive}
-              data-style="ghost"
-            >
-              <TrashIcon className="tiptap-button-icon" />
-            </Button>
+            <ButtonGroup>
+              <Button
+                type="button"
+                onClick={removeLink}
+                title="Remove link"
+                disabled={!url && !isActive}
+                variant="ghost"
+              >
+                <TrashIcon className="tiptap-button-icon" />
+              </Button>
+            </ButtonGroup>
           </ButtonGroup>
         </CardItemGroup>
       </CardBody>
@@ -243,6 +243,9 @@ export const LinkPopover = forwardRef<HTMLButtonElement, LinkPopoverProps>(
       onSetLink,
     });
 
+    const shouldAutoOpen =
+      autoOpenOnLinkActive && !!editor?.isFocused && isActive;
+
     const handleOnOpenChange = useCallback(
       (nextIsOpen: boolean) => {
         setIsOpen(nextIsOpen);
@@ -266,10 +269,10 @@ export const LinkPopover = forwardRef<HTMLButtonElement, LinkPopoverProps>(
     );
 
     useEffect(() => {
-      if (autoOpenOnLinkActive && isActive) {
+      if (shouldAutoOpen) {
         setIsOpen(true);
       }
-    }, [autoOpenOnLinkActive, isActive]);
+    }, [shouldAutoOpen]);
 
     if (!isVisible) {
       return null;
@@ -292,7 +295,7 @@ export const LinkPopover = forwardRef<HTMLButtonElement, LinkPopoverProps>(
           </LinkButton>
         </PopoverTrigger>
 
-        <PopoverContent>
+        <PopoverContent collisionPadding={4}>
           <LinkMain
             url={url}
             setUrl={setUrl}

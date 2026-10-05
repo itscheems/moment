@@ -58,7 +58,11 @@ export function canSetLink(editor: Editor | null): boolean {
   // The third argument 'true' checks whether the current selection is inside an image caption, and prevents setting a link there
   // If the selection is inside an image caption, we can't set a link
   if (isNodeTypeSelected(editor, ["image"], true)) return false;
-  return editor.can().setMark("link");
+  try {
+    return editor.can().setMark("link");
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -78,13 +82,22 @@ export function shouldShowLinkButton(props: {
 }): boolean {
   const { editor, hideWhenUnavailable } = props;
 
+  if (!editor || !editor.isEditable) return false;
+
   const linkInSchema = isMarkInSchema("link", editor);
 
-  if (!linkInSchema || !editor) {
+  // If hideWhenUnavailable is false, always show the button (even if disabled)
+  if (!hideWhenUnavailable) {
+    return true;
+  }
+
+  // hideWhenUnavailable is true: hide if link is not in schema
+  if (!linkInSchema) {
     return false;
   }
 
-  if (hideWhenUnavailable && !editor.isActive("code")) {
+  // hideWhenUnavailable is true: hide if we can't set a link (unless in code block)
+  if (!editor.isActive("code")) {
     return canSetLink(editor);
   }
 

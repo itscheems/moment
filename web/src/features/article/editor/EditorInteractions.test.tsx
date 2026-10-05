@@ -16,6 +16,7 @@ import { TextAlignButton } from "@notion/components/ui/text-align-button";
 import { TableAddRowColumnButton } from "@notion/components/nodes/table-node/ui/table-add-row-column-button";
 import { CharacterCount } from "./components/CharacterCount";
 import { MentionDropdownMenu } from "@notion/components/ui/mention-dropdown-menu";
+import { Toolbar } from "@notion/components/primitives/toolbar";
 
 let editor: Editor;
 afterEach(() => {
@@ -33,6 +34,31 @@ function setup(content: string) {
     bottom: 40,
   });
 }
+
+it("keeps text-field keys in the input while retaining toolbar navigation", () => {
+  render(
+    <Toolbar tabIndex={0}>
+      <button type="button">Back</button>
+      <input aria-label="Link URL" autoFocus />
+      <button type="button">Apply</button>
+    </Toolbar>,
+  );
+  const input = screen.getByRole("textbox", { name: "Link URL" });
+  for (const key of ["ArrowLeft", "ArrowRight", "Home", "End", "Enter"]) {
+    const event = new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => input.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+    expect(input).toHaveFocus();
+  }
+  const back = screen.getByRole("button", { name: "Back" });
+  act(() => back.focus());
+  fireEvent.keyDown(back, { key: "ArrowRight" });
+  expect(screen.getByRole("button", { name: "Apply" })).toHaveFocus();
+});
 
 it("uses the source duplicate action and undo without losing block content", () => {
   setup("<p><strong>first</strong></p><p>last</p>");
