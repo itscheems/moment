@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { gitHubEmojis } from "@tiptap/extension-emoji";
 
 import {
   parseArticleDocument,
@@ -55,6 +56,12 @@ const NEEDS_CHILD: ReadonlySet<string> = new Set<ArticleNodeType>([
 
 const NODE_TYPES: readonly string[] = Object.keys(ARTICLE_NODE_ATTRS);
 const MARK_TYPES: readonly string[] = Object.keys(ARTICLE_MARK_ATTRS);
+const emojiText = new Map(
+  gitHubEmojis.map((emoji) => [
+    emoji.name,
+    emoji.emoji ?? `:${emoji.shortcodes[0]}:`,
+  ]),
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -201,9 +208,20 @@ function wireNodes(value: unknown): Record<string, unknown>[] {
 function wireNode(value: unknown): Record<string, unknown> | null {
   if (!isRecord(value)) return null;
   const type = value.type;
-  // A node the allowlist does not name cannot be saved and cannot be repaired
-  // here, so it is dropped and the rest of the article still saves. The
-  // extension set makes this unreachable; `schema.test.ts` is what keeps it so.
+  // Suggestions are native editor atoms; the shared content contract stores
+  // their visible Unicode/handle text, which also works in Markdown posts.
+  if (type === "emoji" || type === "mention") {
+    const attrs = isRecord(value.attrs) ? value.attrs : {};
+    const text =
+      type === "emoji"
+        ? emojiText.get(String(attrs.name))
+        : typeof attrs.id === "string"
+          ? `@${attrs.id}`
+          : undefined;
+    return text ? wireNode({ type: "text", text, marks: value.marks }) : null;
+  }
+  // Transient upload placeholders carry no persisted content until upload
+  // finishes. Any other unsupported node is outside the stored grammar.
   if (!isNodeType(type)) return null;
 
   if (type === "text") {

@@ -41,7 +41,9 @@ describe("MarkdownBody", () => {
         html={`<pre><code class="language-${language}">${source}</code></pre>`}
       />,
     );
-    expect(container.querySelector("code")).toHaveClass("hljs");
+    expect(container.querySelector("code")).toHaveTextContent(
+      source.replace(/\s+/g, " "),
+    );
     expect(container.querySelector("code .hljs-keyword")).toBeInTheDocument();
   });
 
@@ -61,11 +63,12 @@ describe("MarkdownBody", () => {
       </NavigationProvider>
     );
     const { container, rerender } = renderBare(tree(1));
-    expect(container.querySelector("code.hljs")).toBeInTheDocument();
+    const code = container.querySelector("pre code");
+    expect(code?.querySelector(".hljs-keyword")).toBeInTheDocument();
 
     rerender(tree(2));
 
-    expect(container.querySelector("code.hljs")).toBeInTheDocument();
+    expect(container.querySelector("pre code")).toBe(code);
     expect(container.querySelector("code .hljs-keyword")).toBeInTheDocument();
   });
 

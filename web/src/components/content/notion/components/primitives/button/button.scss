@@ -182,6 +182,82 @@
   &[data-size="small"] .tiptap-button-emoji {
     width: 0.875rem;
   }
+
+  /* Checkbox-style toggle button */
+  &[data-variant="check"] {
+    width: 100%;
+    justify-content: flex-start;
+    cursor: pointer;
+
+    .tiptap-button-text {
+      padding: 0;
+    }
+
+    .tiptap-button-check {
+      display: grid;
+      place-content: center;
+      flex-shrink: 0;
+      width: 1rem;
+      height: 1rem;
+      margin-left: auto;
+      border: 1px solid var(--tt-button-check-border-color);
+      border-radius: 0.25rem;
+      background-color: var(--tt-button-check-bg-color);
+      color: transparent;
+      transition-property: background-color, border-color, color;
+      transition-duration: var(--tt-transition-duration-default);
+      transition-timing-function: var(--tt-transition-easing-default);
+
+      > svg {
+        width: 0.875rem;
+        height: 0.875rem;
+      }
+    }
+
+    &:hover:not([disabled]):not([aria-checked="true"]):not(
+        [aria-checked="mixed"]
+      )
+      .tiptap-button-check {
+      border-color: var(--tt-button-check-hover-border-color);
+      background-color: var(--tt-button-check-hover-bg-color);
+    }
+
+    &[aria-checked="true"],
+    &[aria-checked="mixed"] {
+      color: var(--tt-button-check-checked-text-color);
+
+      .tiptap-button-check {
+        border-color: var(--tt-button-check-checked-border-color);
+        background-color: var(--tt-button-check-checked-bg-color);
+        color: var(--tt-button-check-checked-icon-color);
+      }
+    }
+
+    &[aria-checked="mixed"] {
+      .tiptap-button-check {
+        &::after {
+          width: 0.5rem;
+          height: 0.125rem;
+          border-radius: 999px;
+          background-color: currentColor;
+          content: "";
+        }
+
+        > svg {
+          display: none;
+        }
+      }
+    }
+
+    &:focus-visible {
+      box-shadow: 0 0 0 3px var(--tt-button-check-focus-ring-color);
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.5;
+    }
+  }
 }
 
 /* --------------------------------------------

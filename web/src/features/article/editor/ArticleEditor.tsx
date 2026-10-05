@@ -91,6 +91,7 @@ export function ArticleEditor({
   const [previewing, setPreviewing] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [drafts, setDrafts] = useState<readonly ArticleDraft[]>([]);
   const [railError, setRailError] = useState<string | null>(null);
   const [railLoading, setRailLoading] = useState(true);
@@ -872,7 +873,10 @@ export function ArticleEditor({
         !discarding &&
         phase === "ready" &&
         !loadError ? (
-          <NotionFormatToolbar editor={editor} />
+          <NotionFormatToolbar
+            editor={editor}
+            onSearch={() => setSearchOpen(true)}
+          />
         ) : null}
 
         <div className={styles.main}>
@@ -1020,6 +1024,8 @@ export function ArticleEditor({
                   {editor && (
                     <NotionSurface
                       editor={editor}
+                      searchOpen={searchOpen}
+                      onSearchOpenChange={setSearchOpen}
                       readOnly={
                         previewing ||
                         publishing ||

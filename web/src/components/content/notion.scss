@@ -21,6 +21,25 @@
     :where(p, h1, h2, h3, h4, h5, h6, figure, blockquote, ul, ol) {
     margin: 0;
   }
+  /* The template uses Tailwind preflight. Preserve its native control reset
+     without changing Moment's buttons outside the editor. */
+  :where(button, input, select, textarea):where(
+    [class^="tiptap-"],
+    [class*=" tiptap-"]
+  ) {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 solid;
+    font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    border-radius: 0;
+    background-color: transparent;
+    opacity: 1;
+  }
 }
 
 [data-article-sheet] {
@@ -28,13 +47,35 @@
 }
 [data-article-sheet] .toc-sidebar {
   position: absolute;
-  inset: 0 auto 0 100%;
-  width: 40px;
+  inset: 0 calc((44.25rem - 100vw) / 2 + 1rem) 0 auto;
+  width: 4rem;
+}
+
+/* Keep short Chinese headings as comfortable to target as long demo titles. */
+[data-article-sheet] .toc-sidebar-popover {
+  --padding: 1rem;
+  min-inline-size: 15rem;
+  max-inline-size: min(24rem, calc(100vw - 2rem));
+}
+[data-article-sheet] .toc-sidebar-item {
+  font-size: 1rem;
+  line-height: 1.25;
+  min-block-size: 2rem;
+}
+[data-article-sheet] .toc-sidebar-wrapper:focus-within .toc-sidebar-nav {
+  pointer-events: auto;
+  transform: translateX(0);
+  opacity: 1;
+}
+@media (hover: hover) and (min-width: 640px) and (max-width: 768px) {
+  [data-article-sheet] .toc-sidebar {
+    display: flex;
+  }
 }
 @media (max-width: 1024px) {
   [data-article-sheet] .toc-sidebar {
     left: auto;
-    right: 0;
+    right: 1rem;
   }
 }
 

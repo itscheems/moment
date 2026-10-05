@@ -86,10 +86,12 @@ function nodeWith(
 }
 
 describe("the editor's grammar against the server's allowlist", () => {
-  it("registers every node the allowlist names, and no other", () => {
+  it("registers the stored grammar plus explicit transient editor atoms", () => {
     const registered = Object.keys(schema.nodes)
       // `doc` is the document itself rather than something written inside it.
-      .filter((name) => !["doc", "imageUpload"].includes(name))
+      .filter(
+        (name) => !["doc", "imageUpload", "emoji", "mention"].includes(name),
+      )
       .sort();
     expect(registered).toEqual(Object.keys(ARTICLE_NODE_ATTRS).sort());
   });
@@ -104,7 +106,12 @@ describe("the editor's grammar against the server's allowlist", () => {
     "limits %s attributes to persisted fields and explicit navigation metadata",
     (name, allowed) => {
       const declared = Object.keys(schema.nodes[name].spec.attrs ?? {}).sort();
-      const transient = name === "image" ? ["src"] : [];
+      const transient =
+        name === "image"
+          ? ["src"]
+          : ["bulletList", "orderedList"].includes(name)
+            ? ["tight"]
+            : [];
       expect(declared).toEqual([...allowed, ...transient].sort());
     },
   );

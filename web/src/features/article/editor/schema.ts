@@ -8,7 +8,15 @@ import {
 } from "@tiptap/extensions";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { ListKeymap } from "@tiptap/extension-list";
-import { TableOfContents } from "@tiptap/extension-table-of-contents";
+import {
+  TableOfContents,
+  getHierarchicalIndexes,
+} from "@tiptap/extension-table-of-contents";
+import Emoji, { gitHubEmojis } from "@tiptap/extension-emoji";
+import Mention from "@tiptap/extension-mention";
+import { FindAndReplace } from "@tiptap/extension-find-and-replace";
+import Typography from "@tiptap/extension-typography";
+import { Markdown } from "tiptap-markdown";
 import Placeholder from "@tiptap/extension-placeholder";
 import { articleContentExtensions } from "../../../components/content/schema";
 import { TocNode } from "@notion/components/nodes/toc-node/extensions/toc-node-extension";
@@ -53,7 +61,7 @@ export function articleEditorExtensions(
             : extension,
       ),
     UndoRedo,
-    Dropcursor,
+    Dropcursor.configure({ width: 2 }),
     Gapcursor,
     ListKeymap,
     TableKit.configure({ table: { resizable: true, cellMinWidth: 120 } }),
@@ -68,7 +76,21 @@ export function articleEditorExtensions(
       maxSize: 20 * 1024 * 1024,
       limit: 3,
     }),
-    TableOfContents,
+    TableOfContents.configure({ getIndex: getHierarchicalIndexes }),
+    Emoji.configure({
+      emojis: gitHubEmojis.filter(
+        (emoji) => Boolean(emoji.emoji) && !emoji.name.includes("regional"),
+      ),
+      forceFallbackImages: false,
+    }),
+    Mention.configure({ suggestion: { char: "@" } }),
+    FindAndReplace.configure({ injectCSS: false }),
+    Typography,
+    Markdown.configure({
+      html: true,
+      transformPastedText: true,
+      transformCopiedText: true,
+    }),
     CharacterCount.configure({
       textCounter: (text) => Array.from(text.replace(/\s/gu, "")).length,
     }),

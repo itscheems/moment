@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { Editor } from "@tiptap/core";
-import { EditorContent } from "@tiptap/react";
+import { EditorContent, EditorContext } from "@tiptap/react";
 import {
   act,
   cleanup,
@@ -15,12 +15,14 @@ import { DuplicateButton } from "@notion/components/ui/duplicate-button";
 import { TextAlignButton } from "@notion/components/ui/text-align-button";
 import { TableAddRowColumnButton } from "@notion/components/nodes/table-node/ui/table-add-row-column-button";
 import { CharacterCount } from "./components/CharacterCount";
+import { MentionDropdownMenu } from "@notion/components/ui/mention-dropdown-menu";
 
 let editor: Editor;
 afterEach(() => {
   cleanup();
   editor?.destroy();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 function setup(content: string) {
   editor = new Editor({ extensions: articleEditorExtensions(), content });
@@ -112,5 +114,98 @@ it("uses native highlighting and character counting without saving presentation 
   );
   expect(editor.storage.characterCount.characters()).toBe(
     Array.from("constvalue=1;中文👋").length,
+  );
+});
+
+it("keeps native emoji and mention suggestions readable after saving and reopening", () => {
+  setup("<p></p>");
+  editor.commands.setEmoji("sparkles");
+  editor.commands.insertContent([
+    { type: "text", text: " " },
+    { type: "mention", attrs: { id: "xiaoman", label: "xiaoman" } },
+  ]);
+  const saved = toArticleDocument(editor.getJSON());
+  const text = saved.content[0].content
+    ?.map((node) => node.text ?? "")
+    .join("");
+  expect(text).toBe("✨ @xiaoman");
+  render(<CharacterCount editor={editor} />);
+  expect(screen.getByText("正文 9 字")).toBeInTheDocument();
+  editor.commands.setContent(toEditorContent(saved));
+  expect(editor.getText()).toBe("✨ @xiaoman");
+});
+
+it("replaces only a mention query in the middle of prose, preserving its suffix and next heading", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              owner_id: "00000000000000000000000000000000",
+              username: "xiaoman",
+              display_name: "小满",
+              avatar_media_id: null,
+              profile_url: "/xiaoman",
+            },
+          ],
+          meta: { request_id: "mention-test" },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+  setup("<p>before after</p><h1>Keep this heading</h1>");
+  render(
+    <EditorContext.Provider value={{ editor }}>
+      <EditorContent editor={editor} />
+      <MentionDropdownMenu />
+    </EditorContext.Provider>,
+  );
+  await act(async () => {
+    editor.commands.setTextSelection(8);
+    editor.commands.insertContent("@xiaoman");
+  });
+  fireEvent.click(
+    await screen.findByRole("button", { name: /小满 · @xiaoman/ }),
+  );
+  expect(
+    editor.state.doc
+      .child(0)
+      .textBetween(0, editor.state.doc.child(0).content.size, "", (node) =>
+        node.type.name === "mention" ? `@${node.attrs.id}` : "",
+      ),
+  ).toBe("before @xiaoman after");
+  expect(editor.state.doc.child(1).textContent).toBe("Keep this heading");
+});
+
+it("uses native search and replace without persisting result decorations", () => {
+  setup("<p>river River river</p>");
+  editor.commands.setSearchTerm("river");
+  editor.commands.setReplaceTerm("stream");
+  editor.commands.replaceAll();
+  expect(editor.getText()).toBe("stream stream stream");
+  const saved = toArticleDocument(editor.getJSON());
+  expect(JSON.stringify(saved)).not.toContain("find-and-replace");
+  editor.commands.undo();
+  expect(editor.getText()).toBe("river River river");
+});
+
+it("parses Markdown through the template extension and keeps its formatting on the wire", () => {
+  setup("## 河流\n\n**加粗** 和 [参考](https://example.com/river)");
+  const saved = toArticleDocument(editor.getJSON());
+  expect(saved.content[0]).toMatchObject({
+    type: "heading",
+    attrs: { level: 2 },
+  });
+  expect(saved.content[1].content).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ text: "加粗", marks: [{ type: "bold" }] }),
+      expect.objectContaining({
+        text: "参考",
+        marks: [{ type: "link", attrs: { href: "https://example.com/river" } }],
+      }),
+    ]),
   );
 });
