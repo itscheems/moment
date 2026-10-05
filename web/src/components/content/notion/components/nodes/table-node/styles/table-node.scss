@@ -1,6 +1,10 @@
 :root {
   --tt-table-border-color: var(--tt-gray-light-a-300);
-  --tt-table-selected-bg: rgba(195, 189, 255, 0.4);
+  --tt-table-selected-bg: color-mix(
+    in srgb,
+    var(--tt-brand-color-200) 40%,
+    transparent
+  );
   --tt-table-selected-stroke: var(--tt-brand-color-400);
   --tt-table-column-resize-handle-bg: var(--tt-brand-color-400);
 
@@ -15,7 +19,11 @@
 
 :is([data-theme="dim"], [data-theme="lights-out"]) {
   --tt-table-border-color: var(--tt-gray-dark-a-300);
-  --tt-table-selected-bg: rgba(195, 189, 255, 0.2);
+  --tt-table-selected-bg: color-mix(
+    in srgb,
+    var(--tt-brand-color-200) 20%,
+    transparent
+  );
   --tt-table-selected-stroke: var(--tt-brand-color-400);
   --tt-table-column-resize-handle-bg: var(--tt-brand-color-400);
 }
@@ -168,5 +176,5 @@
   right: 0;
   top: 0;
   bottom: 0;
-  background: rgba(200, 200, 255, 0.4);
+  background: var(--tt-table-selected-bg);
 }
