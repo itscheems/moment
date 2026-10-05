@@ -195,7 +195,7 @@ it("keeps the drag handle unlocked until the click completes", () => {
     content: "<p>first</p>",
   });
   render(<BlockActionsMenu editor={editor} position={0} />);
-  const handle = screen.getByRole("button", { name: "块操作", exact: true });
+  const handle = screen.getByRole("button", { name: "块操作" });
   fireEvent.mouseDown(handle, { button: 0 });
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   fireEvent.mouseUp(handle, { button: 0 });
