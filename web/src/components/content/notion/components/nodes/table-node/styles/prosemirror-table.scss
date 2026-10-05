@@ -27,7 +27,7 @@
   bottom: 0;
   width: 4px;
   z-index: 20;
-  background-color: #adf;
+  background-color: var(--tt-table-column-resize-handle-bg);
   pointer-events: none;
 }
 .ProseMirror.resize-cursor {
@@ -43,6 +43,6 @@
   right: 0;
   top: 0;
   bottom: 0;
-  background: rgba(200, 200, 255, 0.4);
+  background: var(--tt-table-selected-bg);
   pointer-events: none;
 }
