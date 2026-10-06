@@ -1,0 +1,43 @@
+.tiptap.ProseMirror {
+  .code-block {
+    position: relative;
+    min-inline-size: 0;
+    margin-block: 1.5em;
+    border: 1px solid var(--tt-codeblock-border);
+    border-radius: 0.375rem;
+    background: var(--tt-codeblock-bg);
+
+    pre {
+      margin: 0;
+      border: 0;
+      background: transparent;
+      overflow-x: auto;
+    }
+  }
+
+  .code-block-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-bottom: 1px solid var(--tt-codeblock-border);
+    color: var(--tt-codeblock-text);
+    font-size: 0.8125rem;
+
+    select {
+      max-inline-size: calc(100% - 5rem);
+      padding: 0.25rem;
+      border: 0;
+      border-radius: 0.25rem;
+      color: inherit;
+      background: var(--tt-codeblock-bg);
+      font: inherit;
+    }
+  }
+
+  a[data-moment-mention],
+  a[data-moment-mention] span {
+    text-decoration: none;
+  }
+}

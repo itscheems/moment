@@ -17,6 +17,10 @@ import { TableAddRowColumnButton } from "@notion/components/nodes/table-node/ui/
 import { CharacterCount } from "./components/CharacterCount";
 import { MentionDropdownMenu } from "@notion/components/ui/mention-dropdown-menu";
 import { Toolbar } from "@notion/components/primitives/toolbar";
+import { MentionProvider } from "../../../app/mentions";
+import { NavigationProvider } from "../../../app/navigation";
+import { ARTICLE_CODE_LANGUAGES } from "../../../components/content/articleContract";
+import { lowlight } from "./lowlight";
 
 let editor: Editor;
 afterEach(() => {
@@ -34,6 +38,109 @@ function setup(content: string) {
     bottom: 40,
   });
 }
+
+it("registers every persisted code language in the native highlighter", () => {
+  for (const language of ARTICLE_CODE_LANGUAGES) {
+    expect(lowlight.registered(language), language).toBe(true);
+  }
+});
+
+it("copies a native code node without changing its content, caret, or language", async () => {
+  setup(
+    '<pre><code class="language-javascript">const value = "&lt;&gt;&amp;";\n  console.log(value);\n</code></pre>',
+  );
+  editor.commands.setContent({
+    type: "doc",
+    content: [
+      {
+        type: "codeBlock",
+        attrs: { language: "javascript" },
+        content: [
+          {
+            type: "text",
+            text: 'const value = "<>&";\n  console.log(value);\n',
+          },
+        ],
+      },
+    ],
+  });
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", {
+    ...navigator,
+    platform: navigator.platform,
+    userAgent: navigator.userAgent,
+    clipboard: { writeText },
+  });
+  render(<EditorContent editor={editor} />);
+  const before = editor.getJSON();
+  const selection = {
+    from: editor.state.selection.from,
+    to: editor.state.selection.to,
+  };
+  fireEvent.click(await screen.findByRole("button", { name: "复制代码" }));
+  await vi.waitFor(() =>
+    expect(writeText).toHaveBeenCalledWith(
+      'const value = "<>&";\n  console.log(value);\n',
+    ),
+  );
+  expect(editor.getJSON()).toEqual(before);
+  expect({
+    from: editor.state.selection.from,
+    to: editor.state.selection.to,
+  }).toEqual(selection);
+  fireEvent.change(screen.getByRole("combobox", { name: "代码语言" }), {
+    target: { value: "plaintext" },
+  });
+  expect(editor.state.doc.firstChild?.attrs.language).toBe("plaintext");
+  expect(editor.view.dom.querySelector(".hljs-keyword")).toBeNull();
+  fireEvent.change(screen.getByRole("combobox", { name: "代码语言" }), {
+    target: { value: "javascript" },
+  });
+  expect(editor.view.dom.querySelector(".hljs-keyword")).toHaveTextContent(
+    "const",
+  );
+  fireEvent.change(screen.getByRole("combobox", { name: "代码语言" }), {
+    target: { value: "null" },
+  });
+  expect(editor.state.doc.firstChild?.attrs.language).toBeNull();
+  expect(() => toArticleDocument(editor.getJSON())).not.toThrow();
+});
+
+it("uses the shared profile card for a native mention atom", async () => {
+  setup(
+    '<p><span data-type="mention" data-id="linlin" data-label="linlin">@linlin</span></p>',
+  );
+  render(
+    <NavigationProvider>
+      <MentionProvider
+        identities={[
+          {
+            userId: "a".repeat(32),
+            username: "linlin",
+            displayName: "林林",
+            bio: "沿河散步",
+            avatarMediaId: null,
+            coverMediaId: null,
+            role: "member",
+            profileUrl: "/linlin",
+            status: null,
+            usernameChosen: null,
+          },
+        ]}
+      >
+        <EditorContent editor={editor} />
+      </MentionProvider>
+    </NavigationProvider>,
+  );
+  fireEvent.focus(await screen.findByRole("link", { name: "@linlin" }));
+  expect(
+    await screen.findByRole("heading", { name: "林林" }),
+  ).toBeInTheDocument();
+  expect(screen.getByText("沿河散步")).toBeInTheDocument();
+  expect(
+    toArticleDocument(editor.getJSON()).content[0].content?.[0],
+  ).toMatchObject({ type: "text", text: "@linlin" });
+});
 
 it("keeps text-field keys in the input while retaining toolbar navigation", () => {
   render(

@@ -1,11 +1,15 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NavigationProvider } from "../../app/navigation";
-import type { ArticleDocument } from "../../api/public";
+import { MentionProvider } from "../../app/mentions";
+import type { Account, ArticleDocument } from "../../api/public";
 import { RichContent } from "./RichContent";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 const picture = "01K2ABCDEF0123456789ABCDE7";
 const document: ArticleDocument = {
   schema_version: 1,
@@ -119,5 +123,87 @@ describe("shared Tiptap document rendering", () => {
       </NavigationProvider>,
     );
     expect(view.container.querySelector("pre code")).toBe(before);
+  });
+
+  it("copies only the clicked block's exact code without rendering controls into the source", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      clipboard: { writeText },
+    });
+    const source = 'const text = "<>&";\n  console.log(text);\n';
+    const doc: ArticleDocument = {
+      schema_version: 2,
+      type: "doc",
+      content: [
+        {
+          type: "codeBlock",
+          attrs: { language: "javascript" },
+          content: [{ type: "text", text: "first();" }],
+        },
+        {
+          type: "codeBlock",
+          attrs: { language: "javascript" },
+          content: [{ type: "text", text: source }],
+        },
+      ],
+    };
+    const view = render(
+      <NavigationProvider>
+        <RichContent document={doc} />
+      </NavigationProvider>,
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "复制代码" })[1]);
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith(source));
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(view.container.querySelectorAll("pre code")[1]?.textContent).toBe(
+      source,
+    );
+    expect(view.container.querySelector("[contenteditable]")).toBeNull();
+  });
+
+  it("opens the existing identity card for an article mention and unmounts it on navigation", async () => {
+    const identity: Account = {
+      userId: "a".repeat(32),
+      username: "linlin",
+      displayName: "林林",
+      bio: "沿河散步",
+      avatarMediaId: null,
+      coverMediaId: null,
+      role: "member",
+      profileUrl: "/linlin",
+      status: null,
+      usernameChosen: null,
+    };
+    const doc: ArticleDocument = {
+      schema_version: 2,
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "你好 @linlin" }],
+        },
+      ],
+    };
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    render(
+      <NavigationProvider>
+        <MentionProvider identities={[identity]}>
+          <RichContent document={doc} />
+        </MentionProvider>
+      </NavigationProvider>,
+    );
+    fireEvent.focus(screen.getByRole("link", { name: "@linlin" }));
+    const name = await screen.findByRole("heading", { name: "林林" });
+    expect(screen.getByText("沿河散步")).toBeInTheDocument();
+    expect(fetcher).not.toHaveBeenCalled();
+    fireEvent.click(name.querySelector("a")!);
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "林林" })).toBeNull(),
+    );
+    expect(window.location.pathname).toBe("/linlin");
   });
 });

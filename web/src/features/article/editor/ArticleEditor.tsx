@@ -744,7 +744,7 @@ export function ArticleEditor({
   }
 
   return (
-    <MentionProvider known={[site.username]}>
+    <MentionProvider identities={[site]}>
       <div className={styles.page}>
         <header className={styles.topBar} ref={topBar}>
           <button

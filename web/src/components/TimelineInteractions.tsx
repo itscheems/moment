@@ -8,11 +8,16 @@ import {
   type SyntheticEvent,
 } from "react";
 
-import type { SiteIdentity } from "../api/public";
 import { ShareCardDialog } from "../features/share/ShareCardDialog";
 import type { ShareCardInput } from "../features/share/shareCard";
 import { InternalLink } from "../app/navigation";
-import { SiteAvatar, SiteCover, siteProfileHref } from "./SiteIdentity";
+import {
+  SiteAvatar,
+  SiteCover,
+  siteProfileHref,
+  siteDisplayName,
+  type IdentityFace,
+} from "./SiteIdentity";
 import { notify } from "./Feedback";
 import { Icon } from "./icons";
 import styles from "./TimelineInteractions.module.css";
@@ -62,9 +67,9 @@ export function SiteIdentityPreview({
   site,
 }: {
   children: ReactElement;
-  site: SiteIdentity;
+  site: IdentityFace & { username: string; bio: string };
 }) {
-  const title = site.displayName.trim() || site.title.trim() || "Moment";
+  const title = siteDisplayName(site);
   const profileHref = siteProfileHref(site);
   const previewActionsRef = useRef<PreviewCard.Root.Actions>(null);
   const unmountBeforeNavigation = () => {

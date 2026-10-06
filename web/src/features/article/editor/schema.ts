@@ -1,4 +1,5 @@
 import type { Extensions } from "@tiptap/core";
+import { ReactNodeViewRenderer } from "@tiptap/react";
 import {
   CharacterCount,
   Dropcursor,
@@ -26,6 +27,8 @@ import { TableKit } from "@notion/components/nodes/table-node/extensions/table-n
 import { TableHandleExtension } from "@notion/components/nodes/table-node/extensions/table-handle";
 import { UiState } from "@notion/components/extensions/ui-state-extension";
 import { ManagedNotionImage } from "./ManagedNotionImage";
+import { CodeBlockView } from "./CodeBlockView";
+import { MentionView } from "./MentionView";
 import {
   ImageUploadNode,
   type UploadFunction,
@@ -52,7 +55,11 @@ export function articleEditorExtensions(
       )
       .map((extension) =>
         extension.name === "codeBlock"
-          ? CodeBlockLowlight.configure({
+          ? CodeBlockLowlight.extend({
+              addNodeView() {
+                return ReactNodeViewRenderer(CodeBlockView);
+              },
+            }).configure({
               lowlight,
               enableTabIndentation: true,
             })
@@ -83,7 +90,11 @@ export function articleEditorExtensions(
       ),
       forceFallbackImages: false,
     }),
-    Mention.configure({ suggestion: { char: "@" } }),
+    Mention.extend({
+      addNodeView() {
+        return ReactNodeViewRenderer(MentionView);
+      },
+    }).configure({ suggestion: { char: "@" } }),
     FindAndReplace.configure({ injectCSS: false }),
     Typography,
     Markdown.configure({

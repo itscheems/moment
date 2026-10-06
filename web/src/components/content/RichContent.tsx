@@ -18,6 +18,8 @@ import { highlightSource } from "../codeHighlight";
 import { matchedText, highlightedCode } from "./searchHighlight";
 import { contentExtensions, contentSchemas } from "./schema";
 import { collectHandles, HANDLE_MENTION, RESERVED_HANDLES } from "./mentions";
+import { MentionLink } from "./MentionLink";
+import { CodeBlockCopy } from "./CodeBlockCopy";
 import styles from "./Content.module.css";
 import "./notion.scss";
 import {
@@ -115,13 +117,9 @@ export function RichContent({
                   matchedText(value.slice(cursor, start), searchQuery),
                 );
                 parts.push(
-                  <a
-                    key={start}
-                    href={`/${handle}`}
-                    data-moment-mention={handle}
-                  >
+                  <MentionLink key={start} handle={handle}>
                     {matchedText(`@${match[2]}`, searchQuery)}
-                  </a>,
+                  </MentionLink>,
                 );
                 cursor = start + match[2].length + 1;
               }
@@ -135,22 +133,30 @@ export function RichContent({
                   : "";
               const highlighted = highlightSource(code.textContent, language);
               return (
-                <pre>
-                  <code
-                    className={language ? `language-${language}` : undefined}
-                    {...(searchQuery
-                      ? {
-                          children: highlightedCode(
-                            code.textContent,
-                            highlighted,
-                            searchQuery,
-                          ),
-                        }
-                      : highlighted
-                        ? { dangerouslySetInnerHTML: { __html: highlighted } }
-                        : { children: code.textContent })}
-                  />
-                </pre>
+                <div className="code-block" data-language={language}>
+                  <div className="code-block-controls">
+                    <span className="code-block-language">
+                      {language || "纯文本"}
+                    </span>
+                    <CodeBlockCopy source={code.textContent} />
+                  </div>
+                  <pre>
+                    <code
+                      className={language ? `language-${language}` : undefined}
+                      {...(searchQuery
+                        ? {
+                            children: highlightedCode(
+                              code.textContent,
+                              highlighted,
+                              searchQuery,
+                            ),
+                          }
+                        : highlighted
+                          ? { dangerouslySetInnerHTML: { __html: highlighted } }
+                          : { children: code.textContent })}
+                    />
+                  </pre>
+                </div>
               );
             },
           },

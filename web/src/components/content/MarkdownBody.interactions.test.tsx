@@ -272,17 +272,44 @@ describe("a mention that names nobody", () => {
   });
 
   it("becomes a link once the server says the handle resolves", async () => {
-    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
-      String(input) === "/api/v1/users/linlin"
-        ? new Response("{}", { status: 200 })
-        : new Response("{}", { status: 404 }),
-    );
+    const fetcher = vi.fn(async function (
+      this: Window,
+      input: RequestInfo | URL,
+    ) {
+      expect(this).toBe(window);
+      return String(input) === "/api/v1/users/linlin"
+        ? new Response(
+            JSON.stringify({
+              meta: { request_id: "r" },
+              data: {
+                user_id: "a".repeat(32),
+                username: "linlin",
+                display_name: "林林",
+                bio: "沿河散步",
+                avatar_media_id: null,
+                cover_media_id: null,
+                role: "member",
+                profile_url: "/linlin",
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          )
+        : new Response("{}", { status: 404 });
+    });
     vi.stubGlobal("fetch", fetcher);
     render(<MarkdownBody html="<p>@linlin 和 @owner</p>" />, []);
 
     expect(
       await screen.findByRole("link", { name: "@linlin" }),
     ).toHaveAttribute("href", "/linlin");
+    fireEvent.focus(screen.getByRole("link", { name: "@linlin" }));
+    expect(
+      await screen.findByRole("heading", { name: "林林" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("沿河散步")).toBeInTheDocument();
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).endsWith("/linlin")),
+    ).toHaveLength(1);
     // The one the server refused stays text, and is asked about exactly once.
     expect(screen.queryByRole("link", { name: "@owner" })).toBeNull();
     expect(

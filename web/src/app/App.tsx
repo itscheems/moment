@@ -454,7 +454,7 @@ function PublicApp() {
     // else a body mentions is resolved against the server before it becomes a
     // link, because a mention is text somebody typed and not a reference
     // anything checked.
-    <MentionProvider known={siteIdentityReady ? [site.username] : []}>
+    <MentionProvider identities={siteIdentityReady ? [site] : []}>
       <AppShell
         account={owner.account}
         onSignOut={() => void signOutFromRail()}

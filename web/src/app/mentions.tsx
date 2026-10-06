@@ -7,6 +7,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { PublicApi, type Account, type SiteIdentity } from "../api/public";
+
+type MentionIdentity = Account | SiteIdentity;
+const NO_IDENTITIES: readonly MentionIdentity[] = [];
 
 /**
  * Which handles written into content actually name somebody here.
@@ -27,6 +31,7 @@ interface MentionResolver {
   resolves: (handle: string) => boolean;
   /** Ask about handles not yet known. Safe to call with what is already known. */
   consider: (handles: readonly string[]) => void;
+  identity: (handle: string) => MentionIdentity | undefined;
 }
 
 const MentionContext = createContext<MentionResolver | null>(null);
@@ -43,12 +48,16 @@ const MAX_HANDLES_PER_BATCH = 16;
 export function MentionProvider({
   children,
   known = [],
+  identities = NO_IDENTITIES,
 }: {
   children: ReactNode;
   /** Handles the app already knows, such as the site owner's. */
   known?: readonly string[];
+  identities?: readonly MentionIdentity[];
 }) {
-  const [resolved, setResolved] = useState<ReadonlySet<string>>(new Set());
+  const [resolved, setResolved] = useState<ReadonlyMap<string, Account>>(
+    new Map(),
+  );
   // Asked-about handles, kept in a ref because they must not cause a render:
   // the answer does, the question does not.
   const asked = useRef(new Set<string>());
@@ -57,43 +66,64 @@ export function MentionProvider({
     () => new Set(known.map((handle) => handle.toLocaleLowerCase())),
     [known],
   );
+  const knownIdentities = useMemo(
+    () =>
+      new Map(
+        identities.map((identity) => [
+          identity.username.toLowerCase(),
+          identity,
+        ]),
+      ),
+    [identities],
+  );
 
-  const consider = useCallback((handles: readonly string[]) => {
-    const fresh = handles
-      .map((handle) => handle.toLocaleLowerCase())
-      .filter((handle) => !asked.current.has(handle))
-      .slice(0, MAX_HANDLES_PER_BATCH);
-    if (fresh.length === 0) return;
-    for (const handle of fresh) asked.current.add(handle);
-    for (const handle of fresh) {
-      void fetch(`/api/v1/users/${encodeURIComponent(handle)}`, {
-        headers: { Accept: "application/json" },
-      })
-        .then((response) => {
-          if (!response.ok) return;
-          setResolved((current) => {
-            const next = new Set(current);
-            next.add(handle);
-            return next;
+  const consider = useCallback(
+    (handles: readonly string[]) => {
+      const fresh = handles
+        .map((handle) => handle.toLocaleLowerCase())
+        .filter(
+          (handle) =>
+            !asked.current.has(handle) && !knownIdentities.has(handle),
+        )
+        .slice(0, MAX_HANDLES_PER_BATCH);
+      if (fresh.length === 0) return;
+      for (const handle of fresh) asked.current.add(handle);
+      for (const handle of fresh) {
+        void new PublicApi(fetch.bind(window))
+          .user(handle)
+          .then((identity) => {
+            setResolved((current) => {
+              const next = new Map(current);
+              next.set(handle, identity);
+              return next;
+            });
+          })
+          .catch(() => {
+            // An unanswered question is not a "no". The handle stays text, and
+            // stays asked: retrying on every render would turn one unreachable
+            // server into a request per paint.
           });
-        })
-        .catch(() => {
-          // An unanswered question is not a "no". The handle stays text, and
-          // stays asked: retrying on every render would turn one unreachable
-          // server into a request per paint.
-        });
-    }
-  }, []);
+      }
+    },
+    [knownIdentities],
+  );
 
   const value = useMemo<MentionResolver>(
     () => ({
       resolves: (handle) => {
         const normalized = handle.toLocaleLowerCase();
-        return knownSet.has(normalized) || resolved.has(normalized);
+        return (
+          knownSet.has(normalized) ||
+          knownIdentities.has(normalized) ||
+          resolved.has(normalized)
+        );
       },
       consider,
+      identity: (handle) =>
+        knownIdentities.get(handle.toLowerCase()) ??
+        resolved.get(handle.toLowerCase()),
     }),
-    [consider, knownSet, resolved],
+    [consider, knownSet, knownIdentities, resolved],
   );
 
   return (
@@ -115,4 +145,5 @@ export function useMentionResolver(): MentionResolver {
 const unresolved: MentionResolver = {
   resolves: () => false,
   consider: () => {},
+  identity: () => undefined,
 };
