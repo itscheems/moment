@@ -5,6 +5,8 @@ import {
   COMPOSE_PATH,
   articleDraftIdFromPath,
   articleDraftPath,
+  articleFocusPath,
+  articleFocusIdFromPath,
   isComposePath,
   movedComposePath,
   resolveRoute,
@@ -53,6 +55,38 @@ describe("route boundaries", () => {
   ])("keeps %s out of the root handle route (%s)", (pathname, id) => {
     expect(resolveRoute(pathname).id).toBe(id);
     expect(resolveRoute(pathname).id).not.toBe("profile");
+  });
+});
+
+describe("published article focus addresses", () => {
+  it("keeps the published id in a public author/article link and provides its detail fallback", () => {
+    const href = articleFocusPath("owner", "01K2ABC");
+    expect(href).toBe("/owner/article/01K2ABC");
+    expect(resolveRoute(href)).toMatchObject({
+      id: "article-focus",
+      title: "文章",
+      href: "/m/01K2ABC",
+    });
+    expect(resolveRoute(href).ownerOnly).not.toBe(true);
+    expect(articleFocusIdFromPath(`${href}/`)).toBe("01K2ABC");
+  });
+
+  it("decodes the id while rejecting adjacent routes and invalid handles", () => {
+    expect(articleFocusIdFromPath(articleFocusPath("owner", "id /"))).toBe(
+      "id /",
+    );
+    expect(articleFocusIdFromPath("/owner/article/%invalid")).toBe("%invalid");
+    for (const path of [
+      "/compose/article",
+      "/compose/article/draft-id",
+      "/Owner/article/id",
+      "/a/article/id",
+      "/owner/article/id/more",
+      "/owner/article/",
+    ]) {
+      expect(articleFocusIdFromPath(path)).toBeNull();
+      expect(resolveRoute(path).id).not.toBe("article-focus");
+    }
   });
 });
 

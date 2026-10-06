@@ -96,6 +96,21 @@ func TestShareMetadataShellEscapesCanonicalPostAndPreservesSPABoundaries(t *test
 		t.Fatalf("static metadata was not replaced exactly: %s", body)
 	}
 
+	for _, route := range []string{"/owner/article/" + shareHTTPPostID, "/owner/article/" + shareHTTPPostID + "/"} {
+		focused := performRequest(engine, httptest.NewRequest(http.MethodGet, route, nil))
+		if focused.Code != http.StatusOK || focused.Body.String() != body {
+			t.Fatalf("focus route did not retain the canonical post metadata: %d %s", focused.Code, focused.Body.String())
+		}
+	}
+	malformedFocus := performRequest(engine, httptest.NewRequest(http.MethodGet, "/owner/article/not-an-id", nil))
+	if malformedFocus.Code != http.StatusOK || !strings.Contains(malformedFocus.Body.String(), `name="robots" content="noindex"`) {
+		t.Fatalf("malformed focus shell = %d %s", malformedFocus.Code, malformedFocus.Body.String())
+	}
+	compose := performRequest(engine, httptest.NewRequest(http.MethodGet, "/compose/article/"+shareHTTPPostID, nil))
+	if compose.Code != http.StatusOK || !strings.Contains(compose.Body.String(), `name="robots" content="noindex"`) || strings.Contains(compose.Body.String(), "/m/"+shareHTTPPostID) {
+		t.Fatalf("compose shell was mistaken for a published article: %d %s", compose.Code, compose.Body.String())
+	}
+
 	missing := performRequest(engine, httptest.NewRequest(http.MethodGet, "/m/01K2ABCDEF0123456789ABCDE7", nil))
 	if missing.Code != http.StatusOK || strings.Contains(missing.Body.String(), "安全标题") || !strings.Contains(missing.Body.String(), `name="robots" content="noindex"`) || strings.Contains(missing.Body.String(), "/m/01K2ABCDEF0123456789ABCDE7") {
 		t.Fatalf("missing post shell = %d %s", missing.Code, missing.Body.String())

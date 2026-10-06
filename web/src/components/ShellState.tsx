@@ -24,6 +24,12 @@ const emptyCopy: Record<
     detail: "它可能已被删除，或者链接不完整。",
     action: { label: "回到时间流", href: "/" },
   },
+  "article-focus": {
+    marker: "未找到",
+    title: "这篇文章不在这里",
+    detail: "它可能已被删除，或者链接不完整。",
+    action: { label: "回到时间流", href: "/" },
+  },
   search: {
     marker: "搜索",
     title: "搜索 Moment",

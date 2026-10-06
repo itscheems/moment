@@ -47,6 +47,7 @@ import {
   COMPOSE_DRAFTS_PATH,
   COMPOSE_PATH,
   articleDraftIdFromPath,
+  articleFocusIdFromPath,
   isComposeDraftsPath,
   movedComposePath,
   resolveRoute,
@@ -403,6 +404,7 @@ function PublicApp() {
   const placeholderRoute =
     route.id !== "home" &&
     route.id !== "detail" &&
+    route.id !== "article-focus" &&
     route.id !== "login" &&
     route.id !== "owner-compose" &&
     route.id !== "owner-article" &&
@@ -495,14 +497,20 @@ function PublicApp() {
             />
           </div>
         ) : null}
-        {route.id === "detail" ? (
-          <DetailPage
-            api={api}
-            id={detailId(displayLocation.pathname)}
-            owner={siteIdentityReady && ownerSession}
-            onSiteChanged={setSite}
-            site={site}
-          />
+        {route.id === "detail" || route.id === "article-focus" ? (
+          <div data-detail-content>
+            <DetailPage
+              api={api}
+              id={
+                articleFocusIdFromPath(displayLocation.pathname) ??
+                detailId(displayLocation.pathname)
+              }
+              focusReading={route.id === "article-focus"}
+              owner={siteIdentityReady && ownerSession}
+              onSiteChanged={setSite}
+              site={site}
+            />
+          </div>
         ) : null}
         {route.id === "search" ? (
           <SearchPage

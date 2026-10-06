@@ -1,6 +1,7 @@
 export type RouteId =
   | "home"
   | "detail"
+  | "article-focus"
   | "search"
   | "archive"
   | "profile"
@@ -32,6 +33,23 @@ export const ARTICLE_COMPOSE_PATH = "/compose/article";
 /** Where one draft is edited. The id is the server's, so it is escaped. */
 export function articleDraftPath(id: string): string {
   return `${ARTICLE_COMPOSE_PATH}/${encodeURIComponent(id)}`;
+}
+
+const ARTICLE_FOCUS_PATTERN = /^\/[a-z][a-z0-9_]{2,29}\/article\/([^/]+)\/?$/;
+
+export function articleFocusPath(username: string, id: string): string {
+  return `/${encodeURIComponent(username)}/article/${encodeURIComponent(id)}`;
+}
+
+export function articleFocusIdFromPath(pathname: string): string | null {
+  if (isArticleComposePath(pathname)) return null;
+  const raw = ARTICLE_FOCUS_PATTERN.exec(pathname)?.[1];
+  if (raw === undefined) return null;
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
 }
 
 function matchesPath(pathname: string, path: string): boolean {
@@ -99,6 +117,13 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     eyebrow: "",
     href: "/",
     match: (pathname) => /^\/m\/[^/]+\/?$/.test(pathname),
+  },
+  {
+    id: "article-focus",
+    title: "文章",
+    eyebrow: "",
+    href: "/",
+    match: (pathname) => articleFocusIdFromPath(pathname) !== null,
   },
   {
     id: "search",
@@ -199,7 +224,10 @@ export function resolveRoute(pathname: string): AppRoute {
     id: route.id,
     title: route.title,
     eyebrow: route.eyebrow,
-    href: route.href,
+    href:
+      route.id === "article-focus"
+        ? `/m/${encodeURIComponent(articleFocusIdFromPath(pathname) ?? "")}`
+        : route.href,
     ownerOnly: route.ownerOnly,
   };
 }

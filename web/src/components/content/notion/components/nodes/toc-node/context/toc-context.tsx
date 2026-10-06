@@ -133,7 +133,8 @@ const doNavigateToHeading = (
   if (item.id) {
     const url = new URL(window.location.href);
     url.hash = item.id;
-    window.history.replaceState(null, "", url.toString());
+    // Keep the host router's entry so leaving the reader restores its origin.
+    window.history.replaceState(window.history.state, "", url.toString());
   }
 };
 

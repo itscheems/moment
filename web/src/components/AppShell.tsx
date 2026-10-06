@@ -14,6 +14,7 @@ import type { AppRoute, RouteId } from "../app/routes";
 import { SiteAvatar, siteDisplayName } from "./SiteIdentity";
 import { Icon, type IconName } from "./icons";
 import { RailSlotContext } from "./railSlot";
+import { HeaderActionsContext } from "./headerActions";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
 import { MOBILE_VIEWPORT_QUERY, useMediaQuery } from "./useMediaQuery";
@@ -481,88 +482,112 @@ export function AppShell({
   // State rather than a ref, so a page rendering into the slot re-renders
   // once the rail has mounted it.
   const [railSlot, setRailSlot] = useState<HTMLDivElement | null>(null);
+  const [headerSlot, setHeaderSlot] = useState<HTMLSpanElement | null>(null);
+  const focusReading = route.id === "article-focus";
   return (
     <RailSlotContext.Provider value={railSlot}>
-      <div className={styles.viewport}>
-        <a className={styles.skipLink} href="#main-content">
-          跳到主要内容
-        </a>
+      <HeaderActionsContext.Provider value={headerSlot}>
         <div
-          className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""}`}
+          className={`${styles.viewport} ${focusReading ? styles.focusViewport : ""}`}
         >
-          <LeftRail
-            account={account}
-            onSignOut={onSignOut}
-            ownerSettingsAvailable={ownerSettingsAvailable}
-            profileHref={profileHref}
-            route={route}
-            site={site}
-          />
-          <main className={styles.timeline} id="main-content" tabIndex={-1}>
-            <header
-              className={`${styles.timelineHeader} ${
-                route.id === "home" ? styles.homeHeader : ""
-              } ${route.id === "detail" ? styles.detailHeader : ""}`}
-            >
-              {route.id === "detail" ||
-              route.id === "profile" ||
-              route.id === "owner-edit" ||
-              route.id === "owner-compose" ? (
-                <InternalLink
-                  aria-label="返回时间流"
-                  className={styles.backLink}
-                  href="/"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    goBack("/");
-                  }}
-                >
-                  <Icon name="back" />
-                </InternalLink>
-              ) : (
-                <MobileAccountMenu
-                  ownerSettingsAvailable={ownerSettingsAvailable}
-                  profileHref={profileHref}
-                  site={site}
-                />
-              )}
-              {route.id === "home" ? (
-                <nav aria-label="首页时间流" className={styles.homeHeaderNav}>
+          <a className={styles.skipLink} href="#main-content">
+            跳到主要内容
+          </a>
+          <div
+            className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""} ${focusReading ? styles.focusShell : ""}`}
+          >
+            {!focusReading ? (
+              <LeftRail
+                account={account}
+                onSignOut={onSignOut}
+                ownerSettingsAvailable={ownerSettingsAvailable}
+                profileHref={profileHref}
+                route={route}
+                site={site}
+              />
+            ) : null}
+            <main className={styles.timeline} id="main-content" tabIndex={-1}>
+              <header
+                className={`${styles.timelineHeader} ${
+                  route.id === "home" ? styles.homeHeader : ""
+                } ${route.id === "detail" ? styles.detailHeader : ""}`}
+              >
+                {route.id === "detail" ||
+                focusReading ||
+                route.id === "profile" ||
+                route.id === "owner-edit" ||
+                route.id === "owner-compose" ? (
                   <InternalLink
-                    aria-current="page"
-                    className={styles.homeHeaderTab}
-                    href="/"
-                    onClick={scrollHomeToTop}
+                    aria-label={focusReading ? "退出全屏阅读" : "返回时间流"}
+                    className={styles.backLink}
+                    href={focusReading ? route.href : "/"}
+                    onClick={(event) => {
+                      if (
+                        event.button !== 0 ||
+                        event.metaKey ||
+                        event.ctrlKey ||
+                        event.shiftKey ||
+                        event.altKey
+                      )
+                        return;
+                      event.preventDefault();
+                      goBack(focusReading ? route.href : "/");
+                    }}
                   >
-                    <h1>{route.title}</h1>
-                    <span aria-hidden="true" />
+                    <Icon name="back" />
                   </InternalLink>
-                </nav>
-              ) : (
-                <div>
-                  <p>{route.eyebrow}</p>
-                  <h1>
-                    {route.id === "profile"
-                      ? siteDisplayName(site)
-                      : route.title}
-                  </h1>
-                </div>
-              )}
-              {route.id !== "detail" && route.id !== "owner-edit" ? (
-                <span className={styles.headerTheme}>
-                  <ThemeMenu site={site} />
-                </span>
-              ) : null}
-            </header>
-            {children ?? <ShellState route={route} state={state} />}
-          </main>
-          <MemoryRail route={route} slotRef={setRailSlot} />
+                ) : (
+                  <MobileAccountMenu
+                    ownerSettingsAvailable={ownerSettingsAvailable}
+                    profileHref={profileHref}
+                    site={site}
+                  />
+                )}
+                {route.id === "home" ? (
+                  <nav aria-label="首页时间流" className={styles.homeHeaderNav}>
+                    <InternalLink
+                      aria-current="page"
+                      className={styles.homeHeaderTab}
+                      href="/"
+                      onClick={scrollHomeToTop}
+                    >
+                      <h1>{route.title}</h1>
+                      <span aria-hidden="true" />
+                    </InternalLink>
+                  </nav>
+                ) : (
+                  <div>
+                    <p>{route.eyebrow}</p>
+                    <h1>
+                      {route.id === "profile"
+                        ? siteDisplayName(site)
+                        : route.title}
+                    </h1>
+                  </div>
+                )}
+                <span className={styles.headerActions} ref={setHeaderSlot} />
+                {route.id !== "detail" &&
+                route.id !== "owner-edit" &&
+                !focusReading ? (
+                  <span className={styles.headerTheme}>
+                    <ThemeMenu site={site} />
+                  </span>
+                ) : null}
+              </header>
+              {children ?? <ShellState route={route} state={state} />}
+            </main>
+            {!focusReading ? (
+              <MemoryRail route={route} slotRef={setRailSlot} />
+            ) : null}
+          </div>
+          {!focusReading ? (
+            <MobileNavigation
+              ownerSettingsAvailable={ownerSettingsAvailable}
+              route={route}
+            />
+          ) : null}
         </div>
-        <MobileNavigation
-          ownerSettingsAvailable={ownerSettingsAvailable}
-          route={route}
-        />
-      </div>
+      </HeaderActionsContext.Provider>
     </RailSlotContext.Provider>
   );
 }

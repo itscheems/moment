@@ -282,6 +282,7 @@
   border-radius: 50%;
   margin-inline-start: calc(var(--space-2) * -1);
   color: var(--text-primary);
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .backLink:focus-visible {
@@ -749,5 +750,40 @@
   }
   .shell.detailShell :global([data-article-sheet] .toc-sidebar) {
     inset-inline-end: 1rem;
+  }
+}
+
+.headerActions {
+  display: flex;
+  margin-inline-start: auto;
+}
+
+.focusViewport,
+.focusShell .timeline {
+  background: var(--surface);
+}
+
+.focusViewport {
+  padding-block-end: 0;
+}
+
+.shell.focusShell {
+  display: block;
+  inline-size: 100%;
+}
+
+.focusShell .timeline {
+  border-inline: 0;
+  min-block-size: 100dvh;
+}
+
+.focusShell [data-detail-content] {
+  inline-size: min(100%, 44.25rem);
+  margin-inline: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backLink {
+    transition: none;
   }
 }

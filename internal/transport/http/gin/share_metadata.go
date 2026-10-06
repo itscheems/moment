@@ -32,9 +32,11 @@ func shareMetadataForRequest(ctx *gin.Context, service *app.ShareMetadataService
 	case "/archive":
 		metadata, err = service.Page(ctx.Request.Context(), app.SharePageArchive)
 	default:
-		segments := strings.Split(strings.TrimPrefix(requestPath, "/"), "/")
-		if len(segments) == 2 && segments[0] == "m" {
-			if id, parseErr := domain.ParseID(segments[1]); parseErr == nil {
+		segments := strings.Split(strings.TrimSuffix(strings.TrimPrefix(requestPath, "/"), "/"), "/")
+		postPath := len(segments) == 2 && segments[0] == "m"
+		articlePath := len(segments) == 3 && segments[1] == "article" && segments[0] != "compose"
+		if postPath || articlePath {
+			if id, parseErr := domain.ParseID(segments[len(segments)-1]); parseErr == nil {
 				metadata, err = service.Post(ctx.Request.Context(), id)
 			} else {
 				metadata, err = service.Fallback(ctx.Request.Context())

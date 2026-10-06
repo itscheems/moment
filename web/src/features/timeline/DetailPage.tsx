@@ -14,6 +14,8 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { ArticlePage } from "../article/ArticlePage";
+import { ArticleFocusLink } from "../article/ArticleFocusLink";
+import { HeaderActions } from "../../components/headerActions";
 import { PostPresentation } from "../posts/PostPresentation";
 import { CommentThread } from "../comments/CommentThread";
 import { useNavigation } from "../../app/navigation";
@@ -34,12 +36,14 @@ export function DetailPage({
   site,
   owner = false,
   onSiteChanged,
+  focusReading = false,
 }: {
   api: PublicApi;
   id: string;
   site: SiteIdentity;
   owner?: boolean;
   onSiteChanged?: (site: SiteIdentity) => void;
+  focusReading?: boolean;
 }) {
   const { navigate } = useNavigation();
   const [post, setPost] = useState<PublicPost | null>(null);
@@ -89,6 +93,9 @@ export function DetailPage({
     return <PublicError kind={detailErrorKind(error)} onRetry={load} />;
   }
   if (!post) return null;
+  if (focusReading && !isReadArticlePost(post)) {
+    return <PublicError kind="missing" onRetry={load} />;
+  }
   const openReply = (event: MouseEvent<HTMLButtonElement>) => {
     replyTriggerRef.current = event.currentTarget;
     setReplyDialogOpen(true);
@@ -98,6 +105,11 @@ export function DetailPage({
   // where a moment leads with its prose.
   return (
     <>
+      {isReadArticlePost(post) && !focusReading ? (
+        <HeaderActions>
+          <ArticleFocusLink id={post.id} username={site.username} />
+        </HeaderActions>
+      ) : null}
       {isReadArticlePost(post) ? (
         <ArticlePage
           onDeleted={() => navigate("/")}

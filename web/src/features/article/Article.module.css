@@ -205,3 +205,31 @@
     text-decoration: underline;
   }
 }
+
+.focusLink {
+  display: grid;
+  place-items: center;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: 50%;
+  color: var(--text-primary);
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.focusLink svg {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+.focusLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+@media (hover: hover) {
+  .focusLink:hover {
+    background: var(--surface-hover);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .focusLink {
+    transition: none;
+  }
+}

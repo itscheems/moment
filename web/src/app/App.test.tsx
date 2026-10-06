@@ -1133,6 +1133,136 @@ describe("App shell and public routes", () => {
     });
   });
 
+  function installArticleApi() {
+    const id = "01K2ABCDEF0123456789ABCDE0";
+    const item = {
+      ...post(id, ""),
+      kind: "article",
+      content_md: null,
+      article: {
+        title: "专注阅读的文章",
+        excerpt: "同一份正文",
+        cover: null,
+        body_schema_version: 1,
+        body: {
+          schema_version: 1,
+          type: "doc",
+          content: [
+            {
+              type: "heading",
+              attrs: { level: 1 },
+              content: [{ type: "text", text: "文章章节" }],
+            },
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "同一份文章正文" }],
+            },
+          ],
+        },
+      },
+    };
+    const fetcher = installApi(async (url) => {
+      if (url === "/api/v1/site") return json(siteEnvelope);
+      if (url === `/api/v1/posts/${id}`)
+        return json({ data: item, meta: { request_id: "article" } });
+      return json(timelineEnvelope());
+    });
+    return { id, fetcher };
+  }
+
+  it("opens focus reading through a real header link and returns with the same document, position and focus", async () => {
+    const { id, fetcher } = installArticleApi();
+    window.history.replaceState({}, "", `/m/${id}`);
+    render(<App />);
+    const trigger = await screen.findByRole("link", { name: "全屏阅读" });
+    expect(trigger).toHaveAttribute("href", `/owner/article/${id}`);
+    expect(trigger.closest("header")).not.toBeNull();
+    const article = screen.getByRole("article");
+    trigger.focus();
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(860);
+    fireEvent.click(trigger);
+    expect(window.location.pathname).toBe(`/owner/article/${id}`);
+    expect(screen.getByRole("article")).toBe(article);
+    expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
+    expect(
+      screen.queryByRole("complementary", { name: "记忆导航" }),
+    ).toBeNull();
+    fireEvent.click(await screen.findByRole("link", { name: "文章章节" }));
+    expect(window.location.hash).toBe("#article-heading-1");
+    expect(window.history.state).toMatchObject({ momentInternal: true });
+    fireEvent.click(screen.getByRole("link", { name: "退出全屏阅读" }));
+    await waitFor(() => expect(window.location.pathname).toBe(`/m/${id}`));
+    expect(screen.getByRole("article")).toBe(article);
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "全屏阅读" })).toHaveFocus(),
+    );
+    expect(window.scrollTo).toHaveBeenCalledWith({
+      top: 860,
+      behavior: "auto",
+    });
+    expect(
+      fetcher.mock.calls.filter(
+        ([url]) => String(url) === `/api/v1/posts/${id}`,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("loads a focus address directly and exits to the corresponding detail without previous history", async () => {
+    const { id } = installArticleApi();
+    window.history.replaceState({}, "", `/owner/article/${id}`);
+    render(<App />);
+    expect(await screen.findByText("同一份文章正文")).toBeInTheDocument();
+    const back = screen.getByRole("link", { name: "退出全屏阅读" });
+    expect(back).toHaveAttribute("href", `/m/${id}`);
+    const modified = new MouseEvent("click", {
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: true,
+    });
+    back.dispatchEvent(modified);
+    expect(modified.defaultPrevented).toBe(false);
+    expect(window.location.pathname).toBe(`/owner/article/${id}`);
+    fireEvent.click(back);
+    expect(window.location.pathname).toBe(`/m/${id}`);
+    expect(
+      screen.getByRole("navigation", { name: "主要导航" }),
+    ).toBeInTheDocument();
+  });
+
+  it.each(["moment", "missing"])(
+    "does not present %s content as a focused article",
+    async (kind) => {
+      const id = "01K2ABCDEF0123456789ABCDE0";
+      window.history.replaceState({}, "", `/owner/article/${id}`);
+      installApi(async (url) => {
+        if (url === "/api/v1/site") return json(siteEnvelope);
+        return kind === "missing"
+          ? json(
+              {
+                error: {
+                  code: "POST_NOT_FOUND",
+                  message: "missing",
+                  details: {},
+                  request_id: "missing",
+                },
+              },
+              404,
+            )
+          : json({
+              data: post(id, "普通帖子正文"),
+              meta: { request_id: "moment" },
+            });
+      });
+      render(<App />);
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "这个 Moment 不在这里",
+      );
+      expect(screen.queryByText("普通帖子正文")).toBeNull();
+      expect(screen.queryByRole("link", { name: "全屏阅读" })).toBeNull();
+    },
+  );
+
   it("renders a tailored direct-detail 404", async () => {
     window.history.replaceState({}, "", "/m/01K2ABCDEF0123456789ABCDE0");
     installApi(async (url) => {
