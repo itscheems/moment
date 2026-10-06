@@ -553,12 +553,6 @@ async function main() {
     const loaded = devtools.once("Page.loadEventFired");
     await devtools.send("Page.navigate", { url: target });
     await loaded;
-    if (options.theme && options.url) {
-      await devtools.send("Runtime.evaluate", {
-        expression: `document.documentElement.dataset.theme = ${JSON.stringify(options.theme)}`,
-      });
-    }
-
     // What the caller named is the thing worth waiting for, so it is waited
     // for first; the network settling afterwards is what makes the shot stable.
     const deadline = Date.now() + options.settle;
@@ -578,6 +572,14 @@ async function main() {
     let quiet = true;
     if (options.settle > 0) {
       quiet = await waitForQuiet(network, Math.max(deadline - Date.now(), 500), 500);
+    }
+
+    // The app sets its saved theme after the site loads. Apply the probe's
+    // override once initialization has settled, so it reaches the screenshot.
+    if (options.theme && options.url) {
+      await devtools.send("Runtime.evaluate", {
+        expression: `document.documentElement.dataset.theme = ${JSON.stringify(options.theme)}`,
+      });
     }
 
     if (hoverSelector) {
