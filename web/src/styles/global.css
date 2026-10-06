@@ -91,6 +91,7 @@
   --accent-pressed: color-mix(in srgb, var(--accent) 82%, #000000);
   --accent-soft: #e8f5fd;
   --accent-contrast: #ffffff;
+  --selection-background: color-mix(in srgb, var(--accent) 20%, transparent);
   --button-primary: var(--accent);
   --button-primary-hover: var(--accent-hover);
   --button-primary-pressed: var(--accent-pressed);
@@ -434,8 +435,8 @@ a {
 }
 
 ::selection {
-  color: var(--accent-contrast);
-  background: var(--accent);
+  color: currentColor;
+  background: var(--selection-background);
 }
 
 @media (prefers-color-scheme: dark) {

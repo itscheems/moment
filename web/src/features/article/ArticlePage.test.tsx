@@ -205,7 +205,7 @@ describe("article detail page", () => {
     const updated = vi.fn();
     detail.on("update", updated);
     expect(detail.isEditable).toBe(false);
-    expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
     await act(async () => detail.commands.setTextSelection({ from: 5, to: 7 }));
     const toolbar = await screen.findByRole("toolbar", {
       name: "Reading annotations",
@@ -244,6 +244,7 @@ describe("article detail page", () => {
     await waitFor(() => expect(current()).not.toBe(detail));
     expect(detail.isDestroyed).toBe(true);
     const focus = current();
+    expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
     expect(focus.storage.readingAnnotations.ranges).toHaveLength(0);
     expect(focus.storage.findAndReplace.searchTerm).toBe("");
     await act(async () => focus.commands.setTextSelection({ from: 5, to: 7 }));

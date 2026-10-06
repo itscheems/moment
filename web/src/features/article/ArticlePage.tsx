@@ -155,6 +155,7 @@ export function ArticlePage({
         <ArticleReadingContent
           key={`${post.id}:${focusReading ? "focus" : "detail"}`}
           document={post.article.body}
+          searchSlot={focusReading ? undefined : null}
           enableSearch
           enableAnnotations
           showClearAllAnnotations={focusReading}
