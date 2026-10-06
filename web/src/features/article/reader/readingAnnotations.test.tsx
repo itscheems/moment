@@ -18,6 +18,7 @@ import { NavigationProvider } from "../../../app/navigation";
 import { MentionProvider } from "../../../app/mentions";
 import { ColorActionAdapterContext } from "@notion/hooks/use-color-action-adapter";
 import { TextStyleColorPanel } from "@notion/components/ui/color-text-popover";
+import { FloatingElement } from "@notion/components/utilities/floating-element";
 import { ArticleReadingContent } from "./ArticleReadingContent";
 import type { ArticleDocument } from "../../../api/public";
 import {
@@ -190,6 +191,42 @@ describe("temporary reading decorations", () => {
     expect(readingSelection(editor)).toBeNull();
   });
 
+  it("leaves ProseMirror's double- and triple-click selections intact", () => {
+    create("<p>one two three</p>");
+    render(
+      <FloatingElement editor={editor} getBoundingClientRect={() => null}>
+        tools
+      </FloatingElement>,
+    );
+    vi.spyOn(editor.view, "posAtCoords").mockReturnValue({ pos: 6, inside: 0 });
+    act(() => editor.commands.setTextSelection({ from: 5, to: 8 }));
+    fireEvent.mouseDown(editor.view.dom, {
+      button: 0,
+      detail: 2,
+      clientX: 20,
+      clientY: 20,
+    });
+    expect(readingSelectionText(editor, readingSelection(editor)!)).toBe("two");
+    fireEvent.mouseUp(editor.view.dom);
+    // These successive downs exercise the native ProseMirror click counter.
+    fireEvent.mouseDown(editor.view.dom, {
+      button: 0,
+      detail: 2,
+      clientX: 20,
+      clientY: 20,
+    });
+    fireEvent.mouseDown(editor.view.dom, {
+      button: 0,
+      detail: 3,
+      clientX: 20,
+      clientY: 20,
+    });
+    expect(readingSelectionText(editor, readingSelection(editor)!)).toBe(
+      "one two three",
+    );
+    fireEvent.mouseUp(editor.view.dom);
+  });
+
   it("reuses the native palette once per click, with memory-only recent colors", async () => {
     create();
     const write = vi.spyOn(Storage.prototype, "setItem");
@@ -254,6 +291,73 @@ describe("temporary reading decorations", () => {
     );
     expect(editor.storage.readingAnnotations.ranges).toHaveLength(0);
   });
+});
+
+it("defaults quick highlight to yellow and remembers the latest highlight independently of recent text colors", async () => {
+  const body: ArticleDocument = {
+    schema_version: 2,
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        attrs: { id: "reading-colors" },
+        content: [{ type: "text", text: "one two three" }],
+      },
+    ],
+  };
+  render(
+    <NavigationProvider>
+      <MentionProvider known={[]}>
+        <ArticleSheet title="title" byline="author">
+          <ArticleReadingContent document={body} enableAnnotations />
+        </ArticleSheet>
+      </MentionProvider>
+    </NavigationProvider>,
+  );
+  const reader = (
+    document.querySelector("[data-content-renderer]") as HTMLElement & {
+      editor: Editor;
+    }
+  ).editor;
+  const original = reader.getJSON();
+  const write = vi.spyOn(Storage.prototype, "setItem");
+  const select = async () => {
+    await act(async () => reader.commands.setTextSelection({ from: 1, to: 4 }));
+    return screen.findByRole("button", { name: "Highlight" });
+  };
+  expect(await select()).toHaveStyle({
+    "--highlight-color": "var(--tt-color-highlight-yellow)",
+  });
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "Highlight" })),
+  );
+  expect(activeReadingColor(reader, { from: 1, to: 4 }, "highlight")).toBe(
+    "var(--tt-color-highlight-yellow)",
+  );
+  const choose = async (name: string) => {
+    await select();
+    fireEvent.click(screen.getByRole("button", { name: "Text color" }));
+    await act(async () =>
+      fireEvent.click(await screen.findByRole("button", { name })),
+    );
+  };
+  await choose("Green background highlight color");
+  for (const color of ["Red", "Brown", "Purple"])
+    await choose(`${color} text text color`);
+  expect(await select()).toHaveStyle({
+    "--highlight-color": "var(--tt-color-highlight-green)",
+  });
+  await choose("Default background highlight color");
+  const quickHighlight = await select();
+  expect(quickHighlight).toHaveStyle({
+    "--highlight-color": "var(--tt-color-highlight-green)",
+  });
+  await act(async () => fireEvent.click(quickHighlight));
+  expect(activeReadingColor(reader, { from: 1, to: 4 }, "highlight")).toBe(
+    "var(--tt-color-highlight-green)",
+  );
+  expect(reader.getJSON()).toEqual(original);
+  expect(write).not.toHaveBeenCalled();
 });
 
 it("preserves the reading instance across equal-body rerenders and search, resetting only on actual body change", async () => {

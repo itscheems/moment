@@ -57,6 +57,9 @@ export function ReadingAnnotationTools({
   const selectionRef = useRef<ReadingRange | null>(null);
   const [visible, setVisible] = useState(false);
   const [recentColors, setRecentColors] = useState<ActionColor[]>([]);
+  const [highlightColor, setHighlightColor] = useState(
+    "var(--tt-color-highlight-yellow)",
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
     if (from !== undefined && to !== undefined)
@@ -69,7 +72,9 @@ export function ReadingAnnotationTools({
       editor.commands.setTextSelection(selectionRef.current.from);
     setVisible(false);
   };
-  const addRecentColor = (color: ActionColor) =>
+  const addRecentColor = (color: ActionColor) => {
+    if (color.type === "highlight" && color.value !== "var(--tt-bg-color)")
+      setHighlightColor(color.value);
     setRecentColors((previous) =>
       [
         color,
@@ -78,6 +83,7 @@ export function ReadingAnnotationTools({
         ),
       ].slice(0, 3),
     );
+  };
   const hasSelectedMarks = snapshot.ranges.some(
     (range) => selected && range.to > selected.from && range.from < selected.to,
   );
@@ -151,14 +157,14 @@ export function ReadingAnnotationTools({
                 onCopied={dismiss}
               />
               <ColorHighlightButton
-                highlightColor="var(--tt-color-highlight-blue)"
+                highlightColor={highlightColor}
                 aria-label="Highlight"
                 tooltip="Highlight"
-                onApplied={() => {
+                onApplied={({ color, label }) => {
                   addRecentColor({
                     type: "highlight",
-                    label: "Blue",
-                    value: "var(--tt-color-highlight-blue)",
+                    label,
+                    value: color,
                   });
                   dismiss();
                 }}

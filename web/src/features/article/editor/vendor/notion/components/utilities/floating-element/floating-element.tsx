@@ -277,6 +277,9 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
 
         preventShowRef.current = true;
 
+        // ProseMirror owns multi-click selection; do not collapse its result.
+        if (event.defaultPrevented || event.detail > 1) return;
+
         const { state, view } = editor;
         const posCoords = view.posAtCoords({
           left: event.clientX,
