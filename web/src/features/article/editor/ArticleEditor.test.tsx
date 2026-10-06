@@ -313,9 +313,11 @@ describe("opening a draft", () => {
         metaKey: true,
       }),
     ).toBe(false);
-    fireEvent.change(screen.getByRole("textbox", { name: "搜索内容" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Search" }), {
       target: { value: "章节" },
     });
+    expect(screen.queryByRole("textbox", { name: "Replace" })).toBeNull();
+    expect(screen.getByText("Match case")).toBeInTheDocument();
     await advance(300);
     expect(screen.getByText("1 / 1")).toBeInTheDocument();
     expect(document.querySelectorAll(".moment-article-search")).toHaveLength(1);
@@ -364,6 +366,40 @@ describe("opening a draft", () => {
 });
 
 describe("saving while the owner writes", () => {
+  it("retains the original search-and-replace panel in editing and saves its replacement", async () => {
+    renderEditor(DRAFT_ID);
+    await advance();
+    expect(
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      }),
+    ).toBe(false);
+    fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
+    fireEvent.change(screen.getByRole("textbox", { name: "Search" }), {
+      target: { value: "水" },
+    });
+    await advance(300);
+    fireEvent.change(screen.getByRole("textbox", { name: "Replace" }), {
+      target: { value: "河" },
+    });
+    await advance(300);
+    expect(
+      screen.getByRole("dialog", { name: "Search and replace" }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Replace all results" }),
+    );
+    expect(screen.getByText("上游的河是清的")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch"));
+    expect(screen.getByText("Try search and replace")).toBeVisible();
+    await act(async () => {
+      expect(pressSave()).toBe(false);
+    });
+    expect(JSON.stringify(putCalls()[0].body)).toContain("上游的河是清的");
+  });
+
   it.each(["metaKey", "ctrlKey"] as const)(
     "saves immediately from the title with %s+S and suppresses browser save",
     async (modifier) => {

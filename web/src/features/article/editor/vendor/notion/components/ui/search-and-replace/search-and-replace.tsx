@@ -35,6 +35,7 @@ import { ButtonGroup } from "@notion/components/primitives/button-group";
 import {
   Card,
   CardBody,
+  CardFooter,
   CardHeader,
 } from "@notion/components/primitives/card";
 import {
@@ -85,6 +86,8 @@ export interface SearchAndReplaceProps
    * @default true
    */
   autoFocusSearch?: boolean;
+  /** Keep the original panel but omit replacement controls for readers. */
+  showReplace?: boolean;
 }
 
 export type SearchAndReplaceContentProps = SearchAndReplaceProps;
@@ -97,9 +100,14 @@ const REGEX_DOCS_URL =
   "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions";
 
 const REGEX_SEARCH_EXAMPLES = [
-  { label: "任意中间字母：", pattern: "c.t" },
-  { label: "任一词语：", pattern: "cat|tiptap" },
-  { label: "大小写 C：", pattern: "[Cc]at" },
+  { label: "Any middle letter:", pattern: "c.t" },
+  { label: "Either term:", pattern: "cat|tiptap" },
+  { label: "Uppercase or lowercase C:", pattern: "[Cc]at" },
+];
+
+const REGEX_REPLACE_EXAMPLES = [
+  { pattern: "TipTap|tiptap|TIPTAP", replacement: "Tiptap" },
+  { pattern: "(cat|tiptap)", replacement: '"$1"' },
 ];
 
 /**
@@ -137,7 +145,7 @@ function RegexExampleButton({
 }
 
 /**
- * 搜索文章 trigger button for toolbars. Purely presentational —
+ * Search and replace trigger button for toolbars. Purely presentational —
  * wire `onClick` to show the `SearchAndReplace` panel wherever your layout
  * places it (the panel itself binds Mod+F via its `onOpen` prop).
  */
@@ -152,8 +160,8 @@ export const SearchAndReplaceButton = forwardRef<
       variant="ghost"
       role="button"
       tabIndex={-1}
-      aria-label="搜索文章"
-      tooltip="搜索文章"
+      aria-label="Search and replace"
+      tooltip="Search and replace"
       shortcutKeys={SEARCH_AND_REPLACE_SHORTCUT_KEY}
       ref={ref}
       {...props}
@@ -166,7 +174,7 @@ export const SearchAndReplaceButton = forwardRef<
 SearchAndReplaceButton.displayName = "SearchAndReplaceButton";
 
 /**
- * 搜索文章 panel for Tiptap editors.
+ * Search and replace panel for Tiptap editors.
  *
  * Deliberately unpositioned: render it inside a popover, docked in a corner
  * (Notion-style), inline in a collapsed mobile toolbar — the wrapper is up to
@@ -188,6 +196,7 @@ export const SearchAndReplace = forwardRef<
       onOpen,
       enableShortcut = true,
       autoFocusSearch = true,
+      showReplace = true,
       className,
       ...divProps
     },
@@ -203,17 +212,23 @@ export const SearchAndReplace = forwardRef<
       isVisible,
       resultCountLabel,
       searchTerm,
+      replaceTerm,
       caseSensitive,
       wholeWord,
       useRegex,
       canSearch,
       canNavigate,
+      canReplace,
+      canReplaceAll,
       setSearchTerm,
+      setReplaceTerm,
       toggleCaseSensitive,
       toggleWholeWord,
       toggleUseRegex,
       goToNext,
       goToPrevious,
+      replaceCurrent,
+      replaceAll,
       applySearch,
       suspendSearch,
     } = searchAndReplace;
@@ -232,11 +247,14 @@ export const SearchAndReplace = forwardRef<
     // Example buttons fill the inputs so the pattern can be tested right
     // away; the extension debounce then applies the search.
     const applyRegexExample = useCallback(
-      (pattern: string) => {
+      (pattern: string, replacement?: string) => {
         setSearchTerm(pattern);
+        if (replacement !== undefined) {
+          setReplaceTerm(replacement);
+        }
         focusSearchInput();
       },
-      [setSearchTerm, focusSearchInput],
+      [setSearchTerm, setReplaceTerm, focusSearchInput],
     );
 
     // Built-in Mod+F: with a custom search present, the browser's
@@ -396,6 +414,22 @@ export const SearchAndReplace = forwardRef<
       [canNavigate, goToNext],
     );
 
+    const handleReplaceKeyDown = useCallback(
+      (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (
+          event.key === "Enter" &&
+          !event.shiftKey &&
+          !isModKey(event) &&
+          !event.nativeEvent.isComposing &&
+          canReplace
+        ) {
+          event.preventDefault();
+          replaceCurrent();
+        }
+      },
+      [canReplace, replaceCurrent],
+    );
+
     if (!isVisible) {
       return null;
     }
@@ -405,7 +439,7 @@ export const SearchAndReplace = forwardRef<
         className={cn("tiptap-search-replace", className)}
         data-open={open ? "true" : "false"}
         role="dialog"
-        aria-label="搜索文章"
+        aria-label={showReplace ? "Search and replace" : "Search"}
         onKeyDown={handlePanelKeyDown}
         ref={composedPanelRef}
         {...divProps}
@@ -424,8 +458,8 @@ export const SearchAndReplace = forwardRef<
                   variant="ghost"
                   size="small"
                   disabled={!canNavigate}
-                  aria-label="上一处"
-                  tooltip="上一处"
+                  aria-label="Previous result"
+                  tooltip="Previous result"
                   shortcutKeys={PREVIOUS_RESULT_SHORTCUT_KEY}
                   onClick={goToPrevious}
                 >
@@ -439,8 +473,8 @@ export const SearchAndReplace = forwardRef<
                   variant="ghost"
                   size="small"
                   disabled={!canNavigate}
-                  aria-label="下一处"
-                  tooltip="下一处"
+                  aria-label="Next result"
+                  tooltip="Next result"
                   shortcutKeys={NEXT_RESULT_SHORTCUT_KEY}
                   onClick={goToNext}
                 >
@@ -455,8 +489,8 @@ export const SearchAndReplace = forwardRef<
                 data-search-replace-action="close"
                 variant="ghost"
                 size="small"
-                aria-label="关闭搜索"
-                tooltip="关闭搜索"
+                aria-label="Close"
+                tooltip="Close"
                 shortcutKeys="esc"
                 onClick={onClose}
               >
@@ -472,8 +506,8 @@ export const SearchAndReplace = forwardRef<
               <InputGroup className="tiptap-search-replace-input-group">
                 <InputGroupInput
                   data-field="search-query"
-                  placeholder="搜索文章"
-                  aria-label="搜索内容"
+                  placeholder="Search"
+                  aria-label="Search"
                   value={searchTerm}
                   autoFocus={open && autoFocusSearch}
                   autoComplete="off"
@@ -497,6 +531,35 @@ export const SearchAndReplace = forwardRef<
                   </kbd>
                 </InputGroupAddon>
               </InputGroup>
+
+              {showReplace && (
+                <InputGroup className="tiptap-search-replace-input-group">
+                  <InputGroupInput
+                    data-field="replace-query"
+                    placeholder="Replace"
+                    aria-label="Replace"
+                    value={replaceTerm}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    disabled={!canSearch}
+                    onChange={(event) => setReplaceTerm(event.target.value)}
+                    onKeyDown={handleReplaceKeyDown}
+                  />
+                  <InputGroupAddon
+                    align="inline-end"
+                    className="tiptap-search-replace-keyboard-hint-addon"
+                  >
+                    <kbd
+                      className="tiptap-search-replace-keyboard-hint"
+                      aria-hidden="true"
+                    >
+                      ↵
+                    </kbd>
+                  </InputGroupAddon>
+                </InputGroup>
+              )}
             </div>
 
             <div className="tiptap-search-replace-options">
@@ -512,7 +575,7 @@ export const SearchAndReplace = forwardRef<
                   className="tiptap-button-icon"
                   aria-hidden="true"
                 />
-                <span className="tiptap-button-text">区分大小写</span>
+                <span className="tiptap-button-text">Match case</span>
               </Button>
 
               <Button
@@ -527,7 +590,7 @@ export const SearchAndReplace = forwardRef<
                   className="tiptap-button-icon"
                   aria-hidden="true"
                 />
-                <span className="tiptap-button-text">全字匹配</span>
+                <span className="tiptap-button-text">Whole words</span>
               </Button>
             </div>
           </div>
@@ -540,7 +603,7 @@ export const SearchAndReplace = forwardRef<
               className="tiptap-search-replace-regex-toggle-row"
             >
               <span className="tiptap-search-replace-regex-toggle-label">
-                使用正则表达式
+                Use regular expression
               </span>
               <Switch
                 checked={useRegex}
@@ -553,7 +616,7 @@ export const SearchAndReplace = forwardRef<
               <div className="tiptap-search-replace-regex-help">
                 <div className="tiptap-search-replace-regex-help-section">
                   <span className="tiptap-search-replace-regex-help-label">
-                    试试搜索表达式
+                    Try a search pattern
                   </span>
 
                   <ButtonGroup
@@ -570,6 +633,43 @@ export const SearchAndReplace = forwardRef<
                       </RegexExampleButton>
                     ))}
                   </ButtonGroup>
+                </div>
+
+                {showReplace && (
+                  <Separator
+                    orientation="horizontal"
+                    className="tiptap-search-replace-regex-help-separator"
+                  />
+                )}
+
+                <div className="tiptap-search-replace-regex-help-section">
+                  {showReplace && (
+                    <>
+                      <span className="tiptap-search-replace-regex-help-label">
+                        Try search and replace
+                      </span>
+
+                      <ButtonGroup
+                        orientation="vertical"
+                        className="tiptap-search-replace-regex-example-list"
+                      >
+                        {REGEX_REPLACE_EXAMPLES.map(
+                          ({ pattern, replacement }) => (
+                            <RegexExampleButton
+                              key={pattern}
+                              pattern={pattern}
+                              onApply={() =>
+                                applyRegexExample(pattern, replacement)
+                              }
+                            >
+                              <code>{pattern}</code> to{" "}
+                              <code>{replacement}</code>
+                            </RegexExampleButton>
+                          ),
+                        )}
+                      </ButtonGroup>
+                    </>
+                  )}
 
                   <a
                     className="tiptap-search-replace-regex-docs-link"
@@ -578,7 +678,7 @@ export const SearchAndReplace = forwardRef<
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    了解正则表达式
+                    Learn about regular expressions
                     <ExternalLinkIcon
                       className="tiptap-search-replace-regex-docs-link-icon"
                       aria-hidden="true"
@@ -588,7 +688,38 @@ export const SearchAndReplace = forwardRef<
               </div>
             )}
           </div>
+
+          {showReplace && <Separator orientation="horizontal" />}
         </CardBody>
+
+        <CardFooter className="tiptap-search-replace-actions">
+          {showReplace && (
+            <ButtonGroup className="button-group" orientation="horizontal">
+              <ButtonGroup>
+                <Button
+                  type="button"
+                  data-search-replace-action="replace"
+                  disabled={!canReplace}
+                  aria-label="Replace current result"
+                  onClick={replaceCurrent}
+                >
+                  Replace
+                </Button>
+              </ButtonGroup>
+              <ButtonGroup>
+                <Button
+                  type="button"
+                  data-search-replace-action="replace-all"
+                  disabled={!canReplaceAll}
+                  aria-label="Replace all results"
+                  onClick={replaceAll}
+                >
+                  Replace all
+                </Button>
+              </ButtonGroup>
+            </ButtonGroup>
+          )}
+        </CardFooter>
       </Card>
     );
   },

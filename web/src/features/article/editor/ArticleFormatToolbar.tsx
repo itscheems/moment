@@ -5,11 +5,15 @@ import { Toolbar } from "@notion/components/primitives/toolbar";
 import { useIsBreakpoint } from "@notion/hooks/use-is-breakpoint";
 import { useWindowSize } from "@notion/hooks/use-window-size";
 import { useCursorVisibility } from "@notion/hooks/use-cursor-visibility";
-import { ArticleSearch } from "../ArticleSearch";
+import { SearchAndReplace } from "@notion/components/ui/search-and-replace";
 import {
   MainToolbarContent,
   MobileToolbarContent,
 } from "@notion/components/templates/simple/components/simple-toolbar-content";
+
+const SEARCH_AND_REPLACE_SCROLL_OPTIONS: ScrollIntoViewOptions = {
+  block: "center",
+};
 
 export function ArticleFormatToolbar({ editor }: { editor: Editor }) {
   const isMobile = useIsBreakpoint("max", 481);
@@ -17,8 +21,9 @@ export function ArticleFormatToolbar({ editor }: { editor: Editor }) {
   const [mobileView, setMobileView] = useState<"main" | "highlighter" | "link">(
     "main",
   );
+  const [isSearchAndReplaceOpen, setIsSearchAndReplaceOpen] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
-  const showMainToolbar = useCallback(() => setMobileView("main"), []);
+  const searchAndReplaceButtonRef = useRef<HTMLButtonElement>(null);
   const rect = useCursorVisibility({
     editor,
     overlayHeight: toolbarRef.current?.getBoundingClientRect().height ?? 0,
@@ -30,43 +35,62 @@ export function ArticleFormatToolbar({ editor }: { editor: Editor }) {
     }
   }, [isMobile, mobileView]);
 
+  const openSearchAndReplace = useCallback(() => {
+    setMobileView("main");
+    setIsSearchAndReplaceOpen(true);
+  }, []);
+
+  const closeSearchAndReplace = useCallback(() => {
+    setIsSearchAndReplaceOpen(false);
+    searchAndReplaceButtonRef.current?.focus();
+  }, []);
+
+  const toggleSearchAndReplace = useCallback(() => {
+    if (isSearchAndReplaceOpen) {
+      closeSearchAndReplace();
+      return;
+    }
+    openSearchAndReplace();
+  }, [closeSearchAndReplace, isSearchAndReplaceOpen, openSearchAndReplace]);
+
+  const toolbar = (
+    <Toolbar
+      ref={toolbarRef}
+      aria-label="文章格式"
+      tabIndex={0}
+      className="moment-article-format"
+      style={{
+        ...(isMobile ? { bottom: `calc(100% - ${height - rect.y}px)` } : {}),
+      }}
+    >
+      {mobileView === "main" ? (
+        <MainToolbarContent
+          onHighlighterClick={() => setMobileView("highlighter")}
+          onLinkClick={() => setMobileView("link")}
+          onSearchAndReplaceClick={toggleSearchAndReplace}
+          isSearchAndReplaceOpen={isSearchAndReplaceOpen}
+          searchAndReplaceButtonRef={searchAndReplaceButtonRef}
+          isMobile={isMobile}
+        />
+      ) : (
+        <MobileToolbarContent
+          type={mobileView === "highlighter" ? "highlighter" : "link"}
+          onBack={() => setMobileView("main")}
+        />
+      )}
+    </Toolbar>
+  );
+
   return (
     <EditorContext.Provider value={{ editor }}>
-      <ArticleSearch editor={editor} editing onOpen={showMainToolbar}>
-        {({ open, toggle, buttonRef }) => {
-          const toolbar = (
-            <Toolbar
-              ref={toolbarRef}
-              aria-label="文章格式"
-              tabIndex={0}
-              className="moment-article-format"
-              style={{
-                ...(isMobile
-                  ? { bottom: `calc(100% - ${height - rect.y}px)` }
-                  : {}),
-              }}
-            >
-              {mobileView === "main" ? (
-                <MainToolbarContent
-                  onHighlighterClick={() => setMobileView("highlighter")}
-                  onLinkClick={() => setMobileView("link")}
-                  onSearchAndReplaceClick={toggle}
-                  isSearchAndReplaceOpen={open}
-                  searchAndReplaceButtonRef={buttonRef}
-                  isMobile={isMobile}
-                />
-              ) : (
-                <MobileToolbarContent
-                  type={mobileView === "highlighter" ? "highlighter" : "link"}
-                  onBack={() => setMobileView("main")}
-                />
-              )}
-            </Toolbar>
-          );
-
-          return isMobile ? createPortal(toolbar, document.body) : toolbar;
-        }}
-      </ArticleSearch>
+      {isMobile ? createPortal(toolbar, document.body) : toolbar}
+      <SearchAndReplace
+        className="moment-article-search"
+        open={isSearchAndReplaceOpen}
+        onOpen={openSearchAndReplace}
+        onClose={closeSearchAndReplace}
+        scrollIntoViewOptions={SEARCH_AND_REPLACE_SCROLL_OPTIONS}
+      />
     </EditorContext.Provider>
   );
 }

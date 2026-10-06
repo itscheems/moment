@@ -1,5 +1,5 @@
-/* Position the upstream panel below the host header and, when present, toolbar. */
-.moment-article-search {
+/* Position the read-only upstream panel below the host header. */
+.moment-article-search.moment-article-search-readonly {
   position: fixed;
   top: calc(var(--editor-toolbar-top, 3rem) + 0.5rem);
   right: 1rem;
@@ -7,22 +7,10 @@
   max-inline-size: calc(100vw - 2rem);
   max-block-size: calc(100dvh - 5rem - env(safe-area-inset-bottom));
   overflow-y: auto;
-
-  &[data-editing] {
-    top: calc(
-      var(--editor-toolbar-top, 3rem) + var(--tt-toolbar-height) + 0.5rem
-    );
-  }
 }
 
 @media (max-width: 719px) {
-  .moment-article-search {
+  .moment-article-search.moment-article-search-readonly {
     max-block-size: calc(100dvh - 9rem - env(safe-area-inset-bottom));
-  }
-}
-
-@media (max-width: 480px) {
-  .moment-article-search[data-editing] {
-    top: calc(var(--editor-toolbar-top, 3rem) + 0.5rem);
   }
 }

@@ -196,6 +196,8 @@ export function ArticleReadingContent({
         {({ open, toggle, buttonRef }) => {
           const trigger = (
             <SearchAndReplaceButton
+              aria-label="Search"
+              tooltip="Search"
               ref={buttonRef}
               tabIndex={0}
               aria-expanded={open}

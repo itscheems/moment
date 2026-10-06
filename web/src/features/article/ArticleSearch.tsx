@@ -11,12 +11,10 @@ const SCROLL_OPTIONS: ScrollIntoViewOptions = { block: "center" };
 /** Placement and focus restoration belong to the host; search belongs to Tiptap. */
 export function ArticleSearch({
   editor,
-  editing = false,
   onOpen,
   children,
 }: {
   editor: Editor;
-  editing?: boolean;
   onOpen?: () => void;
   children?: (controls: {
     open: boolean;
@@ -50,6 +48,8 @@ export function ArticleSearch({
         children({ open, toggle, buttonRef })
       ) : (
         <SearchAndReplaceButton
+          aria-label="Search"
+          tooltip="Search"
           ref={buttonRef}
           tabIndex={0}
           aria-expanded={open}
@@ -59,8 +59,8 @@ export function ArticleSearch({
       )}
       <SearchAndReplace
         editor={editor}
-        className="moment-article-search"
-        data-editing={editing || undefined}
+        className="moment-article-search moment-article-search-readonly"
+        showReplace={false}
         open={open}
         onOpen={show}
         onClose={close}
