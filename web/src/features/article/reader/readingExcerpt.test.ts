@@ -5,6 +5,7 @@ import { articleContentExtensions } from "../../../components/content/schema";
 import {
   ReadingAnnotations,
   applyReadingColor,
+  clearReadingAnnotations,
   readingSelectionText,
 } from "./readingAnnotations";
 import { readingExcerptBlocks, readingExcerptCard } from "./readingExcerpt";
@@ -26,6 +27,106 @@ afterEach(() => {
 });
 
 describe("article excerpt snapshots", () => {
+  it("includes authored text colours and highlights at partial selection endpoints", () => {
+    create(
+      '<p><span style="color: blue">ab<mark data-color="pink" style="background-color: pink">cdef</mark>gh</span><span style="color: red">ij</span>kl<mark>mn</mark></p>',
+    );
+    expect(
+      readingExcerptBlocks(editor, { from: 2, to: 14 }, (colour) => colour),
+    ).toEqual([
+      {
+        kind: "text",
+        text: "bcdefghijklm",
+        runs: [
+          { text: "b", colour: "blue" },
+          { text: "cdef", colour: "blue", background: "pink" },
+          { text: "gh", colour: "blue" },
+          { text: "ij", colour: "red" },
+          { text: "kl" },
+          { text: "m", background: "yellow" },
+        ],
+      },
+    ]);
+  });
+
+  it("overlays temporary styles independently and restores authored styles when cleared", () => {
+    create(
+      '<p><span style="color: blue"><mark data-color="pink" style="background-color: pink">abcdefghij</mark></span></p>',
+    );
+    const before = editor.getJSON();
+    const updates = vi.fn();
+    editor.on("update", updates);
+    const storage = vi.spyOn(Storage.prototype, "setItem");
+    const range = { from: 2, to: 10 };
+    const snapshot = () =>
+      readingExcerptBlocks(editor, range, (colour) => colour);
+    const original = snapshot();
+    applyReadingColor(editor, { from: 3, to: 7 }, "highlight", "yellow");
+    applyReadingColor(editor, { from: 5, to: 9 }, "text", "red");
+    expect(snapshot()).toEqual([
+      {
+        kind: "text",
+        text: "bcdefghi",
+        runs: [
+          { text: "b", colour: "blue", background: "pink" },
+          { text: "cd", colour: "blue", background: "yellow" },
+          { text: "ef", colour: "red", background: "yellow" },
+          { text: "gh", colour: "red", background: "pink" },
+          { text: "i", colour: "blue", background: "pink" },
+        ],
+      },
+    ]);
+    clearReadingAnnotations(editor, { from: 4, to: 8 });
+    expect(snapshot()).toEqual([
+      {
+        kind: "text",
+        text: "bcdefghi",
+        runs: [
+          { text: "b", colour: "blue", background: "pink" },
+          { text: "c", colour: "blue", background: "yellow" },
+          { text: "defg", colour: "blue", background: "pink" },
+          { text: "h", colour: "red", background: "pink" },
+          { text: "i", colour: "blue", background: "pink" },
+        ],
+      },
+    ]);
+    clearReadingAnnotations(editor);
+    expect(snapshot()).toEqual(original);
+    expect(editor.getJSON()).toEqual(before);
+    expect(updates).not.toHaveBeenCalled();
+    expect(storage).not.toHaveBeenCalled();
+  });
+
+  it("inherits the nearest authored block background below inline and temporary highlights", () => {
+    create(
+      '<blockquote style="background-color: pink"><p>abc</p><p style="background-color: cyan">de<mark data-color="green" style="background-color: green">fg</mark>hi</p></blockquote>',
+    );
+    applyReadingColor(editor, { from: 10, to: 12 }, "highlight", "yellow");
+    expect(
+      readingExcerptBlocks(
+        editor,
+        { from: 2, to: editor.state.doc.content.size - 2 },
+        (colour) => colour,
+      ),
+    ).toEqual([
+      {
+        kind: "quote",
+        text: "abc",
+        runs: [{ text: "abc", background: "pink" }],
+      },
+      {
+        kind: "quote",
+        text: "defghi",
+        runs: [
+          { text: "de", background: "cyan" },
+          { text: "f", background: "green" },
+          { text: "gh", background: "yellow" },
+          { text: "i", background: "cyan" },
+        ],
+      },
+    ]);
+  });
+
   it("clips overlapping temporary colours to the exact selected characters", () => {
     create("<p>abcdefghij</p>");
     const before = editor.getJSON();

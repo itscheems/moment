@@ -31,12 +31,31 @@ export function readingExcerptBlocks(
   const blocks: ShareCardBlock[] = [];
   doc.nodesBetween(selection.from, selection.to, (node, pos) => {
     if (!node.isTextblock) return;
+    const position = doc.resolve(pos + 1);
+    let nodeBackground: string | undefined;
+    for (let depth = position.depth; depth > 0; depth--) {
+      const background = position.node(depth).attrs.backgroundColor;
+      if (background) {
+        nodeBackground = background;
+        break;
+      }
+    }
     const from = Math.max(selection.from, pos + 1);
     const to = Math.min(selection.to, pos + node.nodeSize - 1);
     const runs: ShareCardTextRun[] = [];
     if (from < to)
       node.nodesBetween(from - pos - 1, to - pos - 1, (child, offset) => {
         if (!child.isInline) return;
+        const authorColour = child.marks.find(
+          (mark) => mark.type.name === "textStyle",
+        )?.attrs.color;
+        const authorHighlight = child.marks.find(
+          (mark) => mark.type.name === "highlight",
+        );
+        // A colourless official Highlight mark renders <mark>'s default yellow.
+        const authorBackground = authorHighlight
+          ? authorHighlight.attrs.color || "yellow"
+          : nodeBackground;
         const start = Math.max(from, pos + 1 + offset);
         const end = Math.min(to, pos + 1 + offset + child.nodeSize);
         const boundaries = [
@@ -65,14 +84,17 @@ export function readingExcerptBlocks(
           const styles = annotations.filter(
             (range) => range.from <= a && range.to >= b,
           );
-          const colour = styles.find((range) => range.type === "text");
-          const background = styles.find((range) => range.type === "highlight");
+          // Reader decorations override only their own style and selected range.
+          const colour =
+            styles.find((range) => range.type === "text")?.color ||
+            authorColour;
+          const background =
+            styles.find((range) => range.type === "highlight")?.color ||
+            authorBackground;
           const run: ShareCardTextRun = {
             text,
-            ...(colour ? { colour: resolveColour(colour.color) } : {}),
-            ...(background
-              ? { background: resolveColour(background.color) }
-              : {}),
+            ...(colour ? { colour: resolveColour(colour) } : {}),
+            ...(background ? { background: resolveColour(background) } : {}),
           };
           const previous = runs.at(-1);
           if (
@@ -87,7 +109,6 @@ export function readingExcerptBlocks(
       });
     // No neighbouring block's text or marks are pulled into this selection.
     const text = runs.map((run) => run.text).join("");
-    const position = doc.resolve(pos + 1);
     let marker: string | undefined;
     let quote = false;
     for (let depth = position.depth; depth > 0; depth--) {
