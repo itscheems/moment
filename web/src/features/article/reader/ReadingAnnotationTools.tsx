@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditorState, type Editor } from "@tiptap/react";
+import { flip, offset, shift } from "@floating-ui/react";
 import {
   ColorActionAdapterContext,
   type ActionColor,
@@ -40,14 +41,20 @@ import {
   type ReadingRange,
 } from "./readingAnnotations";
 
+const READING_FLOATING_OPTIONS = {
+  middleware: [offset(4), flip({ padding: 8 }), shift({ padding: 8 })],
+};
+
 /** Read-only actions reuse the writing UI, with an explicit decoration adapter. */
 export function ReadingAnnotationTools({
   editor,
   actionsSlot,
+  showClearAllAnnotations = true,
   excerptSource,
 }: {
   editor: Editor;
   actionsSlot?: HTMLElement | null;
+  showClearAllAnnotations?: boolean;
   excerptSource?: ReadingExcerptSource;
 }) {
   const snapshot = useEditorState({
@@ -98,7 +105,7 @@ export function ReadingAnnotationTools({
     (range) => selected && range.to > selected.from && range.from < selected.to,
   );
   const tools =
-    snapshot.ranges.length > 0 ? (
+    showClearAllAnnotations && snapshot.ranges.length > 0 ? (
       <Popover open={menuOpen} onOpenChange={setMenuOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -154,6 +161,7 @@ export function ReadingAnnotationTools({
           editor={editor}
           shouldShow={visible && Boolean(selected) && !shareOpen}
           resetTextSelectionOnClose={false}
+          floatingOptions={READING_FLOATING_OPTIONS}
         >
           <Toolbar variant="floating" aria-label="Reading annotations">
             <ToolbarGroup>

@@ -153,24 +153,21 @@ export function ArticlePage({
         }
       >
         <ArticleReadingContent
-          key={post.id}
+          key={`${post.id}:${focusReading ? "focus" : "detail"}`}
           document={post.article.body}
-          enableSearch={focusReading}
-          enableAnnotations={focusReading}
+          enableSearch
+          enableAnnotations
+          showClearAllAnnotations={focusReading}
           media={post.article.bodyMedia}
-          excerptSource={
-            focusReading
-              ? {
-                  title,
-                  displayName: siteName,
-                  username: site.username,
-                  avatarUrl: site.avatarMediaId
-                    ? mediaPreviewUrl(site.avatarMediaId)
-                    : null,
-                  publishedLabel: `文章摘录 · ${published.absolute}`,
-                }
-              : undefined
-          }
+          excerptSource={{
+            title,
+            displayName: siteName,
+            username: site.username,
+            avatarUrl: site.avatarMediaId
+              ? mediaPreviewUrl(site.avatarMediaId)
+              : null,
+            publishedLabel: `文章摘录 · ${published.absolute}`,
+          }}
         />
       </ArticleSheet>
       {post.commentCount > 0 ? (

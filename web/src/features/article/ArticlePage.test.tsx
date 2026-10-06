@@ -1,5 +1,13 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -11,6 +19,7 @@ import { PublicApi } from "../../api/public";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
+import { HeaderActionsContext } from "../../components/headerActions";
 import { OwnerProvider } from "../owner/OwnerProvider";
 import { DetailPage } from "../timeline/DetailPage";
 import { ArticlePage } from "./ArticlePage";
@@ -169,6 +178,93 @@ function renderArticle(post = makeArticle()) {
 }
 
 describe("article detail page", () => {
+  it("enables only reading actions and find, with isolated detail and focus instances", async () => {
+    const show = (focusReading = false) => (
+      <FeedbackProvider>
+        <NavigationProvider>
+          <HeaderActionsContext.Provider value={document.body}>
+            <ArticlePage
+              post={makeArticle()}
+              site={site}
+              focusReading={focusReading}
+            />
+          </HeaderActionsContext.Provider>
+        </NavigationProvider>
+      </FeedbackProvider>
+    );
+    const mounted = render(show());
+    const current = () =>
+      (
+        document.querySelector("[data-content-renderer]") as HTMLElement & {
+          editor: Editor;
+        }
+      ).editor;
+    await waitFor(() => expect(current()).toBeDefined());
+    const detail = current();
+    const original = detail.getJSON();
+    const updated = vi.fn();
+    detail.on("update", updated);
+    expect(detail.isEditable).toBe(false);
+    expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
+    await act(async () => detail.commands.setTextSelection({ from: 5, to: 7 }));
+    const toolbar = await screen.findByRole("toolbar", {
+      name: "Reading annotations",
+    });
+    expect(toolbar.querySelectorAll("button")).toHaveLength(5);
+    for (const name of [
+      "Copy",
+      "Share excerpt",
+      "Highlight",
+      "Text color",
+      "Clear selection marks",
+    ])
+      expect(screen.getByRole("button", { name })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Highlight" }));
+    expect(detail.storage.readingAnnotations.ranges).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Reading tools" })).toBeNull();
+    expect(
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      }),
+    ).toBe(false);
+    const input = screen.getByRole("textbox", { name: "Search" });
+    fireEvent.change(input, { target: { value: "河" } });
+    await waitFor(() => expect(screen.getByText("1 / 1")).toBeInTheDocument());
+    expect(document.querySelector('[data-field="replace-query"]')).toBeNull();
+    expect(detail.storage.readingAnnotations.ranges).toHaveLength(1);
+    expect(detail.getJSON()).toEqual(original);
+    expect(updated).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Escape" });
+    mounted.rerender(show());
+    expect(current()).toBe(detail);
+    expect(detail.storage.readingAnnotations.ranges).toHaveLength(1);
+    mounted.rerender(show(true));
+    await waitFor(() => expect(current()).not.toBe(detail));
+    expect(detail.isDestroyed).toBe(true);
+    const focus = current();
+    expect(focus.storage.readingAnnotations.ranges).toHaveLength(0);
+    expect(focus.storage.findAndReplace.searchTerm).toBe("");
+    await act(async () => focus.commands.setTextSelection({ from: 5, to: 7 }));
+    fireEvent.click(await screen.findByRole("button", { name: "Highlight" }));
+    expect(
+      screen.getByRole("button", { name: "Reading tools" }),
+    ).toBeInTheDocument();
+    mounted.rerender(show());
+    await waitFor(() => expect(current()).not.toBe(focus));
+    expect(current().storage.readingAnnotations.ranges).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Reading tools" })).toBeNull();
+    mounted.unmount();
+    expect(
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      }),
+    ).toBe(true);
+  });
+
   it("shows the title and the identity on the shared article sheet", () => {
     renderArticle();
 
@@ -359,5 +455,16 @@ describe("the post detail route", () => {
       expect(screen.getByText("今天下了一场雨。")).toBeInTheDocument(),
     );
     expect(screen.queryByText("文章")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+    expect(
+      screen.queryByRole("toolbar", { name: "Reading annotations" }),
+    ).toBeNull();
+    expect(
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      }),
+    ).toBe(true);
   });
 });

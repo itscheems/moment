@@ -80,6 +80,7 @@ export function ArticleReadingContent({
   searchSlot,
   enableSearch = true,
   enableAnnotations = false,
+  showClearAllAnnotations = true,
   excerptSource,
 }: {
   document: ArticleDocument;
@@ -87,6 +88,7 @@ export function ArticleReadingContent({
   searchSlot?: HTMLElement | null;
   enableSearch?: boolean;
   enableAnnotations?: boolean;
+  showClearAllAnnotations?: boolean;
   excerptSource?: ReadingExcerptSource;
 }) {
   const { consider } = useMentionResolver();
@@ -231,6 +233,7 @@ export function ArticleReadingContent({
         <ReadingAnnotationTools
           editor={editor}
           actionsSlot={searchSlot}
+          showClearAllAnnotations={showClearAllAnnotations}
           excerptSource={excerptSource}
         />
       )}
