@@ -1000,6 +1000,31 @@ describe("App shell and public routes", () => {
     expect(screen.queryByText("私人的公开时间流")).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["/owner/all", "全部"],
+    ["/owner/posts", "帖子"],
+    ["/owner/articles", "文章"],
+  ])(
+    "opens %s as the site profile rather than an alias or member lookup",
+    async (path, label) => {
+      window.history.replaceState({}, "", path);
+      installApi(async (url) => {
+        if (url === "/api/v1/site") return json(siteEnvelope);
+        if (url.startsWith("/api/v1/posts?")) return json(timelineEnvelope([]));
+        return json({}, 404);
+      });
+      render(<App />);
+      expect(
+        await screen.findByRole("region", { name: "乔乔 的个人资料" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(window.location.pathname).toBe(path);
+    },
+  );
+
   it("returns to the timeline from the profile header", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "个人资料里的 Moment");
     window.history.replaceState({}, "", "/owner");

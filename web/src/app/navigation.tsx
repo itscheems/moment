@@ -22,7 +22,7 @@ interface NavigationLocation extends LocationSnapshot {
 }
 
 interface NavigationContextValue extends NavigationLocation {
-  navigate: (href: string) => void;
+  navigate: (href: string, options?: { preserveScroll?: boolean }) => void;
   /**
    * A redirect: the address corrected in place rather than a page the reader
    * chose. The entry keeps its standing in the history, so one reached from
@@ -137,7 +137,11 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   );
 
   const commitNavigation = useCallback(
-    (href: string, overlayFrom: LocationSnapshot | null = null) => {
+    (
+      href: string,
+      overlayFrom: LocationSnapshot | null = null,
+      preserveScroll = false,
+    ) => {
       const activeFocusKey =
         document.activeElement instanceof HTMLElement
           ? document.activeElement.closest<HTMLElement>("[data-focus-key]")
@@ -154,24 +158,25 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       );
       window.history.pushState(
         {
-          momentFresh: true,
+          momentFresh: !preserveScroll,
           momentInternal: true,
           momentOverlayFrom: overlayFrom ?? undefined,
-          momentScrollY: 0,
+          momentScrollY: preserveScroll ? window.scrollY : 0,
         },
         "",
         href,
       );
       setLocation(locationSnapshot(window.history.state));
-      if (!overlayFrom) window.scrollTo({ top: 0, behavior: "auto" });
+      if (!overlayFrom && !preserveScroll)
+        window.scrollTo({ top: 0, behavior: "auto" });
     },
     [],
   );
 
   const navigate = useCallback(
-    function navigateTo(href: string) {
-      if (!canLeave(() => navigateTo(href))) return;
-      commitNavigation(href);
+    function navigateTo(href: string, options?: { preserveScroll?: boolean }) {
+      if (!canLeave(() => navigateTo(href, options))) return;
+      commitNavigation(href, null, options?.preserveScroll);
     },
     [canLeave, commitNavigation],
   );

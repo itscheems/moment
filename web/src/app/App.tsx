@@ -50,6 +50,7 @@ import {
   articleFocusIdFromPath,
   isComposeDraftsPath,
   movedComposePath,
+  profileFromPath,
   resolveRoute,
 } from "./routes";
 import styles from "./App.module.css";
@@ -92,9 +93,7 @@ function editId(pathname: string): string {
 }
 
 function profileUsername(pathname: string): string | null {
-  // `/profile` is the owner's own handle-free entry point, not a handle lookup.
-  if (pathname === "/profile" || pathname === "/profile/") return null;
-  return pathname.match(/^\/([a-z][a-z0-9_]{2,29})\/?$/)?.[1] ?? null;
+  return profileFromPath(pathname)?.username ?? null;
 }
 
 function editableTarget(target: EventTarget | null): boolean {

@@ -534,6 +534,9 @@ describe("profile page", () => {
         behavior: "auto",
       }),
     );
+    fireEvent.click(screen.getByRole("tab", { name: "全部" }));
+    expect(window.location.pathname).toBe("/owner/all");
+    expect(window.location.search).toBe("?loaded_through=cursor-one");
   });
 
   /**
@@ -691,11 +694,14 @@ describe("profile page", () => {
         "true",
       ),
     );
+    expect(window.location.pathname).toBe("/owner/posts");
     fireEvent.click(screen.getByRole("tab", { name: "文章" }));
     expect(await screen.findByText("文章标题")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/owner/articles");
     published = true;
     fireEvent.click(screen.getByRole("tab", { name: "帖子" }));
     expect(await screen.findByText("新增帖子")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/owner/posts");
     expect(
       fetcher.mock.calls
         .map(
@@ -710,7 +716,71 @@ describe("profile page", () => {
         String(input).includes("cursor=head-moment"),
       ),
     ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "选择帖子类型" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "全部" }));
+    expect(window.location.pathname).toBe("/owner/all");
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "全部" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    act(() => window.history.back());
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "帖子" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    expect(window.location.pathname).toBe("/owner/posts");
   });
+
+  it.each([
+    ["/owner/posts", "moment", "帖子"],
+    ["/owner/articles", "article", "文章"],
+  ])(
+    "loads %s directly and restores its own history entry",
+    async (path, kind, label) => {
+      window.history.replaceState({ momentScrollY: 640 }, "", path);
+      const fetcher = vi.fn<typeof fetch>(async () => page([], null));
+      render(
+        <FeedbackProvider>
+          <OwnerProvider>
+            <NavigationProvider>
+              <ProfilePage
+                api={new PublicApi(fetcher as typeof fetch)}
+                onSiteSaved={vi.fn()}
+                site={{ ...site, pinnedPostId: null }}
+              />
+            </NavigationProvider>
+          </OwnerProvider>
+        </FeedbackProvider>,
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("tabpanel")).not.toHaveAttribute(
+          "aria-busy",
+          "true",
+        ),
+      );
+      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await waitFor(() =>
+        expect(window.scrollTo).toHaveBeenCalledWith({
+          top: 640,
+          behavior: "auto",
+        }),
+      );
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(
+        new URL(
+          String(fetcher.mock.calls[0]?.[0]),
+          "http://localhost",
+        ).searchParams.get("kind"),
+      ).toBe(kind);
+    },
+  );
 
   it("leaves the /profile alias alone when the handle changes", async () => {
     window.history.replaceState({}, "", "/profile");

@@ -52,6 +52,38 @@ export function articleFocusIdFromPath(pathname: string): string | null {
   }
 }
 
+export type ProfileRouteFilter = "all" | "moment" | "article";
+
+const PROFILE_PATTERN =
+  /^\/([a-z][a-z0-9_]{2,29})(?:\/(all|posts|articles))?\/?$/;
+
+export function profileFromPath(pathname: string): {
+  username: string | null;
+  filter: ProfileRouteFilter;
+} | null {
+  const match = PROFILE_PATTERN.exec(pathname);
+  if (!match || (match[1] === "profile" && match[2])) return null;
+  return {
+    // The existing handle-free entry redirects to the signed-in account.
+    username: match[1] === "profile" ? null : match[1]!,
+    filter:
+      match[2] === "articles"
+        ? "article"
+        : match[2] === "posts"
+          ? "moment"
+          : "all",
+  };
+}
+
+export function profileFeedPath(
+  username: string,
+  filter: ProfileRouteFilter,
+): string {
+  const segment =
+    filter === "article" ? "articles" : filter === "moment" ? "posts" : "all";
+  return `/${encodeURIComponent(username)}/${segment}`;
+}
+
 function matchesPath(pathname: string, path: string): boolean {
   return pathname === path || pathname === `${path}/`;
 }
@@ -202,10 +234,7 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
     title: "个人资料",
     eyebrow: "",
     href: "/profile",
-    match: (pathname) =>
-      pathname === "/profile" ||
-      pathname === "/profile/" ||
-      /^\/[a-z][a-z0-9_]{2,29}\/?$/.test(pathname),
+    match: (pathname) => profileFromPath(pathname) !== null,
   },
 ];
 

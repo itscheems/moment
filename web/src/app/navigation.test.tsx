@@ -51,6 +51,14 @@ function NavigationHarness({
         Replace
       </button>
       <button
+        onClick={() =>
+          navigation.navigate("/owner/articles", { preserveScroll: true })
+        }
+        type="button"
+      >
+        Filter
+      </button>
+      <button
         onClick={() => navigation.navigateOverlay("/overlay")}
         type="button"
       >
@@ -114,6 +122,37 @@ describe("guarded navigation history", () => {
     act(() => resume?.());
     expect(screen.getByTestId("location")).toHaveTextContent("/current");
     expect(blocker).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves scroll for an in-page filter, including deferred navigation", () => {
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(640);
+    let allowed = false;
+    let resume: (() => void) | undefined;
+    render(
+      <NavigationProvider>
+        <NavigationHarness
+          blockers={[
+            (next) => {
+              resume = next;
+              return allowed;
+            },
+          ]}
+        />
+      </NavigationProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    expect(window.location.pathname).toBe("/previous");
+    allowed = true;
+    act(() => resume?.());
+    expect(window.location.pathname).toBe("/owner/articles");
+    expect(window.history.state).toMatchObject({
+      momentScrollY: 640,
+      momentFresh: false,
+    });
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    // Ordinary navigation still opens at the top.
+    fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
   });
 
   it("tracks an internal overlay without treating a refreshed URL as layered", () => {

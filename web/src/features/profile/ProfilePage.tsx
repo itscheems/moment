@@ -11,6 +11,7 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
+import { profileFeedPath, profileFromPath } from "../../app/routes";
 import { Icon } from "../../components/icons";
 import {
   LoadMoreSentinel,
@@ -98,9 +99,29 @@ export function ProfilePage({
   // belong to them alone. A signed-in member reads it like anyone else.
   const ownerView = owner.state === "owner" && ownsSite(owner.account);
   const navigation = useNavigation();
-  const [filter, setFilter] = useState<ProfileFilter>("all");
-  const [leftFilter, setLeftFilter] = useState<"all" | "moment">("all");
-  const [direction, setDirection] = useState<"left" | "right">("right");
+  const filter = profileFromPath(navigation.pathname)?.filter ?? "all";
+  const [tabState, setTabState] = useState<{
+    filter: ProfileFilter;
+    leftFilter: "all" | "moment";
+    direction: "left" | "right";
+    slide: boolean;
+  }>(() => ({
+    filter,
+    leftFilter: filter === "moment" ? "moment" : "all",
+    direction: "right",
+    slide: false,
+  }));
+  // Derive the transition before rendering children, including history navigation.
+  // The two left-hand choices replace content in place; only crossing columns slides.
+  if (tabState.filter !== filter) {
+    setTabState({
+      filter,
+      leftFilter: filter === "article" ? tabState.leftFilter : filter,
+      direction: filter === "article" ? "right" : "left",
+      slide: filter === "article" || tabState.filter === "article",
+    });
+  }
+  const { leftFilter, direction, slide } = tabState;
   const { store, feeds, initialSearch } = useProfileTimeline(
     api,
     `${site.instanceId ?? site.ownerId}:${ownerView}`,
@@ -111,16 +132,13 @@ export function ProfilePage({
   const leftTabSlot = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
   const selectFilter = (next: ProfileFilter) => {
-    if (next === filter) {
-      void store.activate(next);
-      return;
+    if (next === filter) void store.activate(next);
+    const href = profileFeedPath(site.username, next);
+    if (navigation.pathname.replace(/\/+$/, "") !== href) {
+      navigation.navigate(href + (next === filter ? navigation.search : ""), {
+        preserveScroll: true,
+      });
     }
-    setDirection(
-      next === "article" || (filter === "all" && next === "moment")
-        ? "right"
-        : "left",
-    );
-    setFilter(next);
   };
   const title = siteDisplayName(site);
   const handle = siteHandle(site);
@@ -189,9 +207,13 @@ export function ProfilePage({
       const vacated = siteProfileHref(site);
       if (
         saved.username !== site.username &&
-        navigation.pathname.replace(/\/+$/, "") === vacated
+        profileFromPath(navigation.pathname)?.username === site.username
       ) {
-        navigation.navigate(siteProfileHref(saved));
+        navigation.navigate(
+          navigation.pathname.replace(vacated, siteProfileHref(saved)) +
+            navigation.search,
+          { preserveScroll: true },
+        );
       }
     },
     [applyAccount, navigation, onSiteSaved, site, viewerAccount],
@@ -238,11 +260,11 @@ export function ProfilePage({
   useEffect(() => listenForPublishedPosts(() => store.invalidate()), [store]);
   const activeFeed = feeds[filter];
   useEffect(() => {
-    if (!feeds.all.initialized || feeds.all.error || entryRestored.current)
+    if (!activeFeed.initialized || activeFeed.error || entryRestored.current)
       return;
     entryRestored.current = true;
     navigation.restoreCurrentEntry();
-  }, [feeds.all.initialized, feeds.all.error, navigation]);
+  }, [activeFeed.initialized, activeFeed.error, navigation]);
 
   const more = async (kind: ProfileFilter, source: LoadSource = "manual") => {
     const previousKeys = new Set(feeds[kind].items.map(timelineItemKey));
@@ -370,6 +392,7 @@ export function ProfilePage({
     width: selected ? "auto" : 0,
     opacity: selected ? 1 : 0,
     x: selected ? 0 : -8,
+    "--label-fade": selected ? "0px" : "16px",
   });
   const tabTransition = {
     duration: reducedMotion ? 0 : 0.24,
@@ -432,6 +455,7 @@ export function ProfilePage({
         value={filter}
         onValueChange={(value) => selectFilter(value as ProfileFilter)}
         data-feed-direction={direction}
+        data-feed-motion={slide ? "slide" : "none"}
         className={styles.contentTabs}
       >
         <Tabs.List
@@ -445,7 +469,7 @@ export function ProfilePage({
               aria-label={label}
               className={styles.typeTab}
               onClick={() => {
-                if (filter === leftFilter) void store.activate(leftFilter);
+                if (filter === leftFilter) selectFilter(leftFilter);
               }}
             />
             {/* Sibling controls share a full-column hit area without nested buttons. */}
@@ -497,7 +521,6 @@ export function ProfilePage({
                             key={kind}
                             className={interactionStyles.shareItem}
                             onClick={() => {
-                              setLeftFilter(kind);
                               selectFilter(kind);
                             }}
                           >
@@ -518,7 +541,7 @@ export function ProfilePage({
               aria-label="文章"
               className={styles.typeTab}
               onClick={() => {
-                if (filter === "article") void store.activate("article");
+                if (filter === "article") selectFilter("article");
               }}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
@@ -564,6 +587,8 @@ export function ProfilePage({
                 <motion.div
                   {...(props as HTMLMotionProps<"div">)}
                   initial={
+                    slide &&
+                    !reducedMotion &&
                     state.transitionStatus === "starting"
                       ? {
                           x: direction === "right" ? "100%" : "-100%",
@@ -572,13 +597,18 @@ export function ProfilePage({
                   }
                   animate={{
                     x:
+                      slide &&
+                      !reducedMotion &&
                       state.transitionStatus === "ending"
                         ? direction === "right"
                           ? "-100%"
                           : "100%"
                         : "0%",
                   }}
-                  transition={tabTransition}
+                  transition={{
+                    ...tabTransition,
+                    duration: slide ? tabTransition.duration : 0,
+                  }}
                 />
               )}
             >

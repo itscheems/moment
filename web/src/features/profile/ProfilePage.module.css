@@ -200,6 +200,11 @@
   font-size: var(--text-md);
   font-weight: 700;
   padding-block: 0.25rem;
+  mask-image: linear-gradient(
+    to right,
+    #000 calc(100% - var(--label-fade, 0px)),
+    transparent 100%
+  );
 }
 .tabLabel::before {
   content: "";
@@ -258,6 +263,9 @@
   position: absolute;
   inset-block-start: 0;
   opacity: 0.9999;
+}
+.contentTabs[data-feed-motion="none"] .feedPanel {
+  transition: none;
 }
 @media (prefers-reduced-motion: reduce) {
   .tabSlot,

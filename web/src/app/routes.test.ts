@@ -9,6 +9,8 @@ import {
   articleFocusIdFromPath,
   isComposePath,
   movedComposePath,
+  profileFeedPath,
+  profileFromPath,
   resolveRoute,
 } from "./routes";
 
@@ -28,12 +30,17 @@ describe("route boundaries", () => {
     ["/owner/settings", "owner-settings"],
     ["/profile", "profile"],
     ["/itscheems", "profile"],
+    ["/itscheems/all", "profile"],
+    ["/itscheems/posts/", "profile"],
+    ["/itscheems/articles", "profile"],
     ["/missing", "profile"],
     ["/ab", "not-found"],
     ["/Owner", "not-found"],
     ["/9lives", "not-found"],
     ["/has-dash", "not-found"],
     ["/nested/path", "not-found"],
+    ["/itscheems/unknown", "not-found"],
+    ["/itscheems/articles/more", "not-found"],
   ])("maps %s to %s", (pathname, id) => {
     expect(resolveRoute(pathname).id).toBe(id);
   });
@@ -55,6 +62,29 @@ describe("route boundaries", () => {
   ])("keeps %s out of the root handle route (%s)", (pathname, id) => {
     expect(resolveRoute(pathname).id).toBe(id);
     expect(resolveRoute(pathname).id).not.toBe("profile");
+  });
+});
+
+describe("profile feed addresses", () => {
+  it.each([
+    ["/owner", "all"],
+    ["/owner/", "all"],
+    ["/owner/all", "all"],
+    ["/owner/posts", "moment"],
+    ["/owner/articles/", "article"],
+  ])("reads the filter from %s", (pathname, filter) => {
+    expect(profileFromPath(pathname)).toEqual({ username: "owner", filter });
+  });
+
+  it("keeps the account alias and canonical feed addresses distinct", () => {
+    expect(profileFromPath("/profile")).toEqual({
+      username: null,
+      filter: "all",
+    });
+    expect(profileFeedPath("owner", "all")).toBe("/owner/all");
+    expect(profileFeedPath("owner", "moment")).toBe("/owner/posts");
+    expect(profileFeedPath("owner", "article")).toBe("/owner/articles");
+    expect(profileFromPath("/owner/article/id")).toBeNull();
   });
 });
 
