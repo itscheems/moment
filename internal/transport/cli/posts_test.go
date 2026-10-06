@@ -780,3 +780,29 @@ func postCLITableCount(t *testing.T, database *sqlitestore.Database, table strin
 	}
 	return count
 }
+
+func TestPostListRefreshCursorDirectAndAPIParity(t *testing.T) {
+	fixture := newPostCLIFixture(t)
+	application := momentTestApplication()
+	direct := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--json")
+	envelope := decodeOneDocument(t, direct.stdout)
+	cursor, ok := envelope["meta"].(map[string]any)["refresh_cursor"].(string)
+	if direct.exit != ExitSuccess || !ok || cursor == "" {
+		t.Fatalf("direct: %+v", direct)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/posts" || request.URL.Query().Get("cursor") != cursor {
+			t.Errorf("unexpected request: %s", request.URL)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(writer).Encode(map[string]any{"data": envelope["data"], "meta": map[string]any{"request_id": "req_refresh", "next_cursor": nil, "prev_cursor": nil, "refresh_cursor": cursor}}); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+	api := execute(application, "", "post", "list", "--url", server.URL, "--cursor", cursor, "--json")
+	actual := decodeOneDocument(t, api.stdout)
+	if api.exit != ExitSuccess || !reflect.DeepEqual(actual["data"], envelope["data"]) || actual["meta"].(map[string]any)["refresh_cursor"] != cursor {
+		t.Fatalf("API: %+v", api)
+	}
+}

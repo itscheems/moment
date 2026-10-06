@@ -744,3 +744,12 @@ func FromArticleDrafts(records []app.ArticleDraftRecord) []ArticleDraft {
 	}
 	return mapped
 }
+
+// RefreshCursor is the persistent newer watermark, distinct from pagination.
+func RefreshCursor(page app.PostPage) *string {
+	if page.RefreshCursor == "" {
+		return nil
+	}
+	cursor := page.RefreshCursor
+	return &cursor
+}

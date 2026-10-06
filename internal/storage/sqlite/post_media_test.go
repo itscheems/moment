@@ -23,7 +23,7 @@ func TestPostMediaLifecycleOrderingClockAndImmutableReplay(t *testing.T) {
 	insertReferenceMedia(t, database, mediaOne, "a", createdAt)
 	insertReferenceMedia(t, database, mediaTwo, "b", createdAt)
 	service := newTestPostService(t, database,
-		newSequenceClock(createdAt, reorderedAt, removedAt, clearedAt, deletedAt).Now,
+		newSequenceClock(createdAt, createdAt, reorderedAt, removedAt, clearedAt, deletedAt).Now,
 		sequenceIDs(entryOne),
 	)
 	one, _ := domain.ParseID(mediaOne)

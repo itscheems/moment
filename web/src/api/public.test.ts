@@ -427,11 +427,38 @@ describe("public API client", () => {
       ],
       nextCursor: "opaque+/=cursor",
       prevCursor: null,
+      refreshCursor: null,
     });
     expect(fetcher).toHaveBeenLastCalledWith(
       expect.stringContaining("cursor=opaque%2B%2F%3Dcursor"),
       expect.objectContaining({ headers: { Accept: "application/json" } }),
     );
+  });
+
+  it("preserves refresh watermarks and rejects malformed metadata", async () => {
+    const fetcher = vi.fn(async () =>
+      json({
+        data: { items: [] },
+        meta: {
+          next_cursor: null,
+          prev_cursor: null,
+          refresh_cursor: "opaque-refresh+/=",
+        },
+      }),
+    );
+    const api = new PublicApi(fetcher as typeof fetch);
+    await expect(api.timeline()).resolves.toMatchObject({
+      refreshCursor: "opaque-refresh+/=",
+    });
+    fetcher.mockResolvedValueOnce(
+      json({
+        data: { items: [] },
+        meta: { next_cursor: null, refresh_cursor: 12 },
+      }),
+    );
+    await expect(api.timeline()).rejects.toMatchObject({
+      code: "API_RESPONSE_INVALID",
+    });
   });
 
   it("maps search hits, complete year counts, and encoded cursor filters", async () => {

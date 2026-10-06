@@ -350,6 +350,8 @@ export interface TimelinePage {
   nextCursor: string | null;
   /** Continues newer from the first item; null once newer is exhausted. */
   prevCursor: string | null;
+  /** Persistent newer watermark; absent in older recorded responses. */
+  refreshCursor?: string | null;
 }
 
 export interface TimelineRequest {
@@ -2564,6 +2566,10 @@ export class PublicApi {
     if (prevCursor !== null && typeof prevCursor !== "string") {
       throw invalidResponse("prev_cursor must be a string or null");
     }
+    const refreshCursor = meta.refresh_cursor ?? null;
+    if (refreshCursor !== null && typeof refreshCursor !== "string") {
+      throw invalidResponse("refresh_cursor must be a string or null");
+    }
     const items = data.items.map(parsePost);
     const timelineKeys = new Set<string>();
     for (const item of items) {
@@ -2573,7 +2579,7 @@ export class PublicApi {
       }
       timelineKeys.add(key);
     }
-    return { items, nextCursor, prevCursor };
+    return { items, nextCursor, prevCursor, refreshCursor };
   }
 
   async search(request: SearchRequest): Promise<SearchPage> {

@@ -268,6 +268,8 @@ type PostPage struct {
 	Items      []Post
 	NextCursor string
 	PrevCursor string
+	// RefreshCursor remains usable after newer paging is exhausted.
+	RefreshCursor string
 }
 
 // PostClock is injected to keep time deterministic in tests and development
@@ -725,6 +727,11 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		direction = TimelineOlder
 	}
 
+	// Capture before establishing the read snapshot, including an empty head.
+	var headSnapshotMS int64
+	if position == nil {
+		headSnapshotMS = domain.TimeToMillis(service.clock())
+	}
 	var entries []TimelineEntry
 	mediaByEntry := make(map[domain.ID][]MediaUsageProjection)
 	locationByEntry := make(map[domain.ID]*domain.Location)
@@ -818,6 +825,26 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 		// Nothing on or before the anchored day. What appeared after it is
 		// still there, and the boundary is the only row-free way to name it.
 		page.PrevCursor = encodeTimelineCursor(*position, TimelineNewer, fromMS, toMS)
+	}
+	// Refresh from the entire newest millisecond, rather than one random ULID:
+	// a publication committed later in that millisecond may sort before it.
+	if len(entries) > 0 {
+		page.RefreshCursor = encodeTimelineCursor(TimelinePosition{
+			TimelineAtMS: domain.TimeToMillis(entries[0].TimelineAt()), Boundary: true,
+		}, TimelineNewer, fromMS, toMS)
+	} else if direction == TimelineNewer {
+		page.RefreshCursor = input.Cursor
+		if position != nil && !position.Boundary {
+			// An exhausted continuation may name a row that has disappeared.
+			// Keep its whole millisecond refreshable, including later commits.
+			page.RefreshCursor = encodeTimelineCursor(TimelinePosition{
+				TimelineAtMS: position.TimelineAtMS, Boundary: true,
+			}, TimelineNewer, fromMS, toMS)
+		}
+	} else if position == nil {
+		page.RefreshCursor = encodeTimelineCursor(TimelinePosition{
+			TimelineAtMS: headSnapshotMS, Boundary: true,
+		}, TimelineNewer, fromMS, toMS)
 	}
 	return page, nil
 }

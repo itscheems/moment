@@ -106,7 +106,7 @@ func listPosts(posts *app.PostService, site *app.SiteService, gate *Gate) gin.Ha
 			writePostError(ctx, err)
 			return
 		}
-		Success(ctx, http.StatusOK, postdto.FromPage(page), map[string]any{"next_cursor": postdto.NextCursor(page), "prev_cursor": postdto.PrevCursor(page)})
+		Success(ctx, http.StatusOK, postdto.FromPage(page), map[string]any{"next_cursor": postdto.NextCursor(page), "prev_cursor": postdto.PrevCursor(page), "refresh_cursor": postdto.RefreshCursor(page)})
 	}
 }
 

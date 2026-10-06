@@ -664,3 +664,25 @@ func assertHTTPTableCount(t *testing.T, database *sqlitestore.Database, table st
 		t.Fatalf("%s count = %d, want %d", table, count, expected)
 	}
 }
+
+func TestPostHTTPRefreshCursorKeepsAnEmptyTimelineRefreshable(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	head := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts?limit=20&kind=article", ""))
+	var envelope struct {
+		Meta map[string]any `json:"meta"`
+	}
+	if err := json.Unmarshal(head.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	cursor, ok := envelope.Meta["refresh_cursor"].(string)
+	if head.Code != http.StatusOK || !ok || cursor == "" {
+		t.Fatalf("head: %s", head.Body.String())
+	}
+	newer := performRequest(fixture.engine, ownerRequest(http.MethodGet, "/api/v1/posts?limit=20&kind=article&cursor="+cursor, ""))
+	if err := json.Unmarshal(newer.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if newer.Code != http.StatusOK || envelope.Meta["refresh_cursor"] != cursor || envelope.Meta["prev_cursor"] != nil {
+		t.Fatalf("refresh: %s", newer.Body.String())
+	}
+}

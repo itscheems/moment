@@ -27,6 +27,11 @@ var requiredCatalogObjects = []expectedCatalogObject{
 	{name: "idempotency_keys", kind: "table", table: "idempotency_keys"},
 	{name: "search_index_state", kind: "table", table: "search_index_state"},
 	{name: "entries_timeline_idx", kind: "index", table: "entries"},
+	{name: "entries_published_seek_idx", kind: "index", table: "entries"},
+	{name: "entries_kind_published_seek_idx", kind: "index", table: "entries"},
+	{name: "entries_reposted_seek_idx", kind: "index", table: "entries"},
+	{name: "entries_kind_reposted_seek_idx", kind: "index", table: "entries"},
+
 	{name: "entry_media_media_idx", kind: "index", table: "entry_media"},
 	{name: "comment_media_media_idx", kind: "index", table: "comment_media"},
 	{name: "entry_link_card_media_idx", kind: "index", table: "entry_link_card"},

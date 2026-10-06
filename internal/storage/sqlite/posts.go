@@ -164,74 +164,7 @@ WHERE id = ?`, id.String()))
 }
 
 func (store postStore) ListEntries(ctx context.Context, query app.TimelineQuery, limit int) ([]app.TimelineEntry, error) {
-	// Both projections of an entry answer to the same visibility: a repost of
-	// a hidden post is just as hidden.
-	visible, visibleArguments := visibilityPredicate(query.Viewer, "visibility")
-	statement := `
-WITH timeline_entries AS (
-  SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
-         published_at_ms AS timeline_at_ms, 0 AS timeline_kind
-  FROM entries
-  WHERE (? = '' OR kind = ?) AND ` + visible + `
-  UNION ALL
-  SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
-         reposted_at_ms AS timeline_at_ms, 1 AS timeline_kind
-  FROM entries
-  WHERE (? = '' OR kind = ?) AND reposted_at_ms IS NOT NULL AND ` + visible + `
-)
-SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms,
-       timeline_at_ms, timeline_kind
-FROM timeline_entries
-WHERE 1 = 1`
-	// An article is a post on the same timeline, so the default reads both and
-	// only an explicit narrowing picks one.
-	kind := string(query.Kind)
-	arguments := []any{kind, kind}
-	arguments = append(arguments, visibleArguments...)
-	arguments = append(arguments, kind, kind)
-	arguments = append(arguments, visibleArguments...)
-	if query.FromMS != nil {
-		statement += "\n  AND published_at_ms >= ?"
-		arguments = append(arguments, *query.FromMS)
-	}
-	if query.ToMS != nil {
-		statement += "\n  AND published_at_ms < ?"
-		arguments = append(arguments, *query.ToMS)
-	}
-	newer := query.Direction == app.TimelineNewer
-	if query.Position != nil {
-		switch {
-		case query.Position.Boundary && newer:
-			statement += "\n  AND timeline_at_ms >= ?"
-			arguments = append(arguments, query.Position.TimelineAtMS)
-		case query.Position.Boundary:
-			statement += "\n  AND timeline_at_ms < ?"
-			arguments = append(arguments, query.Position.TimelineAtMS)
-		default:
-			// The triple the ORDER BY sorts on, compared the way the page reads:
-			// strictly past the row the cursor names, in either direction.
-			compare := "<"
-			if newer {
-				compare = ">"
-			}
-			kind := timelineKindRank(query.Position.Kind)
-			statement += fmt.Sprintf(`
-  AND (timeline_at_ms %[1]s ? OR (
-    timeline_at_ms = ? AND (
-      timeline_kind %[1]s ? OR (timeline_kind = ? AND id %[1]s ?)
-    )
-  ))`, compare)
-			arguments = append(arguments, query.Position.TimelineAtMS, query.Position.TimelineAtMS, kind, kind, query.Position.ID.String())
-		}
-	}
-	// Ascending for a newer read, so LIMIT keeps the rows nearest the position
-	// rather than the newest on the site; the service turns the page around.
-	order := "DESC"
-	if newer {
-		order = "ASC"
-	}
-	statement += fmt.Sprintf("\nORDER BY timeline_at_ms %[1]s, timeline_kind %[1]s, id %[1]s\nLIMIT ?", order)
-	arguments = append(arguments, limit)
+	statement, arguments := timelineEntriesQuery(query, limit)
 	rows, err := store.queries.QueryContext(ctx, statement, arguments...)
 	if err != nil {
 		return nil, fmt.Errorf("query timeline entries: %w", err)
@@ -250,6 +183,67 @@ WHERE 1 = 1`
 		return nil, fmt.Errorf("iterate timeline entries: %w", err)
 	}
 	return entries, nil
+}
+
+// Each projection seeks and reads at most limit rows before the bounded merge.
+// A kind equality is present only when requested so SQLite can use that prefix.
+func timelineEntriesQuery(query app.TimelineQuery, limit int) (string, []any) {
+	visible, visibleArguments := visibilityPredicate(query.Viewer, "visibility")
+	order, compare := "DESC", "<"
+	newer := query.Direction == app.TimelineNewer
+	if newer {
+		order, compare = "ASC", ">"
+	}
+	var branches []string
+	var arguments []any
+	for rank, column := range []string{"published_at_ms", "reposted_at_ms"} {
+		branch := fmt.Sprintf(`SELECT id, kind, content_md, visibility, created_at_ms, updated_at_ms,
+ published_at_ms, reposted_at_ms, edited_at_ms, %s AS timeline_at_ms, %d AS timeline_kind
+ FROM entries WHERE %s`, column, rank, visible)
+		arguments = append(arguments, visibleArguments...)
+		if rank == 1 {
+			branch += " AND reposted_at_ms IS NOT NULL"
+		}
+		if query.Kind != "" {
+			branch += " AND kind = ?"
+			arguments = append(arguments, string(query.Kind))
+		}
+		if query.FromMS != nil {
+			branch += " AND published_at_ms >= ?"
+			arguments = append(arguments, *query.FromMS)
+		}
+		if query.ToMS != nil {
+			branch += " AND published_at_ms < ?"
+			arguments = append(arguments, *query.ToMS)
+		}
+		if pos := query.Position; pos != nil {
+			if pos.Boundary {
+				op := "<"
+				if newer {
+					op = ">="
+				}
+				branch += fmt.Sprintf(" AND %s %s ?", column, op)
+				arguments = append(arguments, pos.TimelineAtMS)
+			} else if rank == timelineKindRank(pos.Kind) {
+				branch += fmt.Sprintf(" AND (%s, id) %s (?, ?)", column, compare)
+				arguments = append(arguments, pos.TimelineAtMS, pos.ID.String())
+			} else {
+				op := compare
+				if (newer && rank > timelineKindRank(pos.Kind)) || (!newer && rank < timelineKindRank(pos.Kind)) {
+					op += "="
+				}
+				branch += fmt.Sprintf(" AND %s %s ?", column, op)
+				arguments = append(arguments, pos.TimelineAtMS)
+			}
+		}
+		branch += fmt.Sprintf(" ORDER BY %s %s, id %s LIMIT ?", column, order, order)
+		arguments = append(arguments, limit)
+		branches = append(branches, branch)
+	}
+	statement := "WITH originals AS (" + branches[0] + "), reposts AS (" + branches[1] + `), timeline_entries AS (
+ SELECT * FROM originals UNION ALL SELECT * FROM reposts)
+ SELECT * FROM timeline_entries ORDER BY timeline_at_ms ` + order + ", timeline_kind " + order + ", id " + order + " LIMIT ?"
+	return statement, append(arguments, limit)
 }
 
 func timelineKindRank(kind app.TimelineItemKind) int {
