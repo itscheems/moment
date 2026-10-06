@@ -2,6 +2,7 @@ import { Toast } from "@base-ui/react/toast";
 import type { ReactNode } from "react";
 
 import { Icon } from "./icons";
+import { CodeCopyFeedback } from "./content/CodeCopyFeedback";
 import styles from "./Feedback.module.css";
 
 export const feedback = Toast.createToastManager();
@@ -78,6 +79,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   return (
     <Toast.Provider limit={3} timeout={SUCCESS_TIMEOUT} toastManager={feedback}>
       {children}
+      <CodeCopyFeedback />
       <Toast.Portal>
         <Toast.Viewport className={styles.viewport}>
           <FeedbackList />

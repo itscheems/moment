@@ -23,6 +23,49 @@
     z-index: 1;
     border: 1px solid var(--tt-codeblock-border);
     border-radius: 0.25rem;
+
+    .code-block-copy-icons {
+      position: relative;
+      display: block;
+      inline-size: 1rem;
+      block-size: 1rem;
+    }
+
+    .tiptap-button-icon {
+      position: absolute;
+      inset: 0;
+      transition:
+        opacity 200ms cubic-bezier(0, 0, 0.2, 1),
+        transform 200ms cubic-bezier(0, 0, 0.2, 1);
+    }
+
+    .code-block-copy-glyph {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+
+    .code-block-check-glyph {
+      opacity: 0;
+      transform: scale(0.75) rotate(12deg);
+    }
+
+    &[data-copied] {
+      .code-block-copy-glyph {
+        opacity: 0;
+        transform: scale(0.75) rotate(-12deg);
+      }
+
+      .code-block-check-glyph {
+        opacity: 1;
+        transform: scale(1) rotate(0deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .tiptap-button-icon {
+        transition: none;
+      }
+    }
   }
 
   a[data-moment-mention],

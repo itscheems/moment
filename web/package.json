@@ -20,6 +20,7 @@
     "@ariakit/react": "0.4.21",
     "@base-ui/react": "1.6.0",
     "@floating-ui/react": "0.27.17",
+    "@mantine/hooks": "9.7.0",
     "@noble/hashes": "2.3.0",
     "@radix-ui/react-dropdown-menu": "2.1.16",
     "@radix-ui/react-popover": "1.1.15",
@@ -70,6 +71,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-hotkeys-hook": "5.2.4",
+    "sonner": "2.0.8",
     "tiptap-markdown": "0.9.0"
   },
   "devDependencies": {
