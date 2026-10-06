@@ -147,10 +147,21 @@
   border-block-end: 1px solid var(--border-subtle);
 }
 .tabSlot {
+  position: relative;
   flex: 1 1 0;
-  display: flex;
+  min-inline-size: 0;
+  display: grid;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.tabContent {
+  grid-area: 1 / 1;
+  justify-self: center;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  color: var(--text-secondary);
+  pointer-events: none;
+  transition: color var(--motion-content) var(--ease-out);
 }
 .typeTab,
 .filterTrigger {
@@ -170,7 +181,15 @@
 .typeTab[data-active] {
   color: var(--text-primary);
 }
-.typeTab svg {
+.typeTab {
+  grid-area: 1 / 1;
+  inline-size: 100%;
+}
+.tabContent[data-active] {
+  color: var(--text-primary);
+}
+.typeTab svg,
+.tabContent > svg {
   inline-size: 1.5rem;
   block-size: 1.5rem;
   flex: none;
@@ -187,10 +206,15 @@
   display: inline-block;
   inline-size: 0.45rem;
 }
+.filterSlot {
+  overflow: hidden;
+  pointer-events: auto;
+}
 .filterTrigger {
-  inline-size: 2.75rem;
-  padding: 0;
-  color: var(--text-primary);
+  inline-size: 2rem;
+  padding: 0 0 0 0.25rem;
+  justify-content: flex-start;
+  color: inherit;
 }
 .filterTrigger svg {
   inline-size: 1rem;
@@ -202,23 +226,19 @@
   outline-offset: -3px;
 }
 @media (hover: hover) {
-  .typeTab:hover,
-  .filterTrigger:hover {
-    background: var(--surface-hover);
+  .tabSlot:hover {
+    background: var(--surface-hover-strong);
   }
 }
 .tabIndicator {
   position: absolute;
   pointer-events: none;
   inset-block-end: 0;
-  inset-inline-start: calc(var(--active-tab-left) + var(--space-4));
-  inline-size: calc(var(--active-tab-width) - var(--space-4) * 2);
+  inset-inline-start: 15%;
+  inline-size: 20%;
   block-size: 4px;
   border-radius: 999px;
   background: var(--text-primary);
-  transition:
-    inset-inline-start var(--motion-content) var(--ease-out),
-    inline-size var(--motion-content) var(--ease-out);
 }
 .feedViewport {
   position: relative;
@@ -227,8 +247,9 @@
 }
 .feedPanel {
   inline-size: 100%;
-  transform: translateX(0);
-  transition: transform var(--motion-content) var(--ease-out);
+  opacity: 1;
+  /* Base UI observes this native transition while Motion translates both panels. */
+  transition: opacity var(--motion-content) var(--ease-out);
 }
 .feedPanel[hidden] {
   display: none;
@@ -236,29 +257,16 @@
 .feedPanel[data-ending-style] {
   position: absolute;
   inset-block-start: 0;
-}
-.contentTabs[data-feed-direction="right"] .feedPanel[data-starting-style] {
-  transform: translateX(100%);
-}
-.contentTabs[data-feed-direction="right"] .feedPanel[data-ending-style] {
-  transform: translateX(-100%);
-}
-.contentTabs[data-feed-direction="left"] .feedPanel[data-starting-style] {
-  transform: translateX(-100%);
-}
-.contentTabs[data-feed-direction="left"] .feedPanel[data-ending-style] {
-  transform: translateX(100%);
+  opacity: 0.9999;
 }
 @media (prefers-reduced-motion: reduce) {
+  .tabSlot,
+  .tabContent,
   .typeTab,
   .filterTrigger,
   .tabIndicator,
   .feedPanel {
     transition: none;
-  }
-  .feedPanel[data-starting-style],
-  .feedPanel[data-ending-style] {
-    transform: none !important;
   }
 }
 
