@@ -81,6 +81,7 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
     if (!editor || !showCaption) return;
 
     const handleSelectionUpdate = () => {
+      if (!editor.isEditable) return;
       const pos = getPos();
       if (!isValidPosition(pos) || !nodeSize) return;
 
@@ -106,7 +107,7 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
   // We treat the image-node-extension.ts as content: "inline*"
   const handleImageClick = useCallback(
     (event: React.MouseEvent) => {
-      if (!editor || !getPos || resizeParams) return;
+      if (!editor?.isEditable || !getPos || resizeParams) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -333,11 +334,11 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
           )}
         </div>
 
-        {editor?.isEditable && shouldShowCaption && (
+        {shouldShowCaption && (
           <NodeViewContent
             as="div"
             className="tiptap-image-caption"
-            data-placeholder="Add a caption..."
+            data-placeholder={editor?.isEditable ? "Add a caption..." : undefined}
           />
         )}
       </div>

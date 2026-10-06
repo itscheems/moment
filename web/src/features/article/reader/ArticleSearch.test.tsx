@@ -142,7 +142,7 @@ describe("native article find", () => {
     },
   );
 
-  it("searches read-only code and mentions while retaining their existing controls and directory", async () => {
+  it("searches read-only captions, code and mentions while retaining their controls and directory", async () => {
     const body: ArticleDocument = {
       schema_version: 2,
       type: "doc",
@@ -161,6 +161,16 @@ describe("native article find", () => {
           type: "codeBlock",
           attrs: { language: "javascript" },
           content: [{ type: "text", text: 'const name = "xiaoman";' }],
+        },
+        {
+          type: "image",
+          attrs: {
+            media_id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
+            alt: "带图注的图片",
+            width: 200,
+            showCaption: true,
+          },
+          content: [{ type: "text", text: "xiaoman 的图注" }],
         },
       ],
     };
@@ -192,6 +202,20 @@ describe("native article find", () => {
         "[data-content-renderer] .tiptap-table-of-contents-item",
       ),
     ).toHaveAttribute("href", "#chapter");
+    expect(screen.getByText("xiaoman 的图注")).toBeVisible();
+    const nativeEditor = (
+      document.querySelector("[data-content-renderer]") as HTMLElement & {
+        editor: Editor;
+      }
+    ).editor;
+    const nativeDocument = nativeEditor.getJSON();
+    const selection = nativeEditor.state.selection.toJSON();
+    const picture = screen.getByRole("img", { name: "带图注的图片" });
+    fireEvent.mouseEnter(picture.closest(".tiptap-image")!);
+    expect(document.querySelector(".tiptap-image-handle")).toBeNull();
+    fireEvent.click(picture);
+    expect(nativeEditor.state.selection.toJSON()).toEqual(selection);
+    expect(nativeEditor.getJSON()).toEqual(nativeDocument);
     expect(
       fireEvent.keyDown(document.body, {
         key: "f",
@@ -202,9 +226,12 @@ describe("native article find", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "搜索内容" }), {
       target: { value: "xiaoman" },
     });
-    await waitFor(() => expect(screen.getByText("1 / 2")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("1 / 3")).toBeInTheDocument());
     expect(
       document.querySelector("pre code .find-and-replace-result"),
+    ).not.toBeNull();
+    expect(
+      document.querySelector(".tiptap-image-caption .find-and-replace-result"),
     ).not.toBeNull();
     expect(JSON.stringify(body)).toBe(before);
   });

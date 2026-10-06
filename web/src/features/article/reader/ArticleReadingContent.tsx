@@ -15,6 +15,7 @@ import { FindAndReplace } from "@tiptap/extension-find-and-replace";
 import { SearchAndReplaceButton } from "@notion/components/ui/search-and-replace";
 import { TocNode } from "@notion/components/nodes/toc-node/extensions/toc-node-extension";
 import { CodeBlockView } from "../editor/CodeBlockView";
+import { ManagedNotionImage } from "../editor/ManagedNotionImage";
 import { lowlight } from "../editor/lowlight";
 import type { ArticleDocument, PublicArticleCover } from "../../../api/public";
 import { mediaPreviewUrl } from "../../../api/mediaUrls";
@@ -54,6 +55,7 @@ const ReadingMentionMark = Mark.create({
 
 const readingExtensions = articleContentExtensions()
   .map((extension) => {
+    if (extension.name === "image") return ManagedNotionImage;
     if (extension.name === "codeBlock") {
       return CodeBlockLowlight.extend({
         addNodeView() {

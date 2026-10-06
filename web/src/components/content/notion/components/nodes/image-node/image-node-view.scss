@@ -68,8 +68,10 @@
     }
   }
 
-  .tiptap-image-caption {
+  .tiptap-image-caption,
+  figure > figcaption {
     cursor: text;
+    user-select: text;
     text-align: center;
     font-size: 15px;
     max-width: 100%;
