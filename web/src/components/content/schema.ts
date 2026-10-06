@@ -98,7 +98,6 @@ export function articleContentExtensions(): Extensions {
       autolink: true,
       linkOnPaste: true,
       defaultProtocol: "https",
-      protocols: ["http", "https", "mailto"],
       // Rendered, not stored: the document carries only `href`.
       HTMLAttributes: { rel: "nofollow noopener noreferrer", target: null },
       isAllowedUri: (url) => isAllowedArticleHref(url),

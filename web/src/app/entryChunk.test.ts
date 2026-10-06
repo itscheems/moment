@@ -111,6 +111,14 @@ describe("what the first page has to download", () => {
     expect(specifiersIn(sources[EDITOR_BARREL])).toEqual(["react"]);
   });
 
+  it("loads the searchable article view behind its own lazy entry", () => {
+    expect(
+      [...graph].filter((file) =>
+        file.startsWith("/src/features/article/reader/"),
+      ),
+    ).toEqual(["/src/features/article/reader/index.tsx"]);
+  });
+
   it("only reaches Tiptap through the shared content module", () => {
     const offenders = [...graph].filter(
       (file) =>

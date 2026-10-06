@@ -22,12 +22,3 @@
     top: var(--editor-toolbar-top, 3rem);
   }
 }
-.moment-article-search {
-  position: fixed;
-  top: calc(
-    var(--editor-toolbar-top, 3rem) + var(--tt-toolbar-height) + 0.5rem
-  );
-  right: 1rem;
-  z-index: 90;
-  max-inline-size: calc(100vw - 2rem);
-}

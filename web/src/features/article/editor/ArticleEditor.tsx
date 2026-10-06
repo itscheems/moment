@@ -50,7 +50,7 @@ import {
 import { articleEditorExtensions } from "./schema";
 import styles from "./Editor.module.css";
 import { ArticleSheet } from "../../../components/content/ArticleSheet";
-import { RichContent } from "../../../components/content/RichContent";
+import { ArticleReadingContent } from "../reader";
 import { MentionProvider } from "../../../app/mentions";
 import { NotionSurface } from "./NotionSurface";
 import { ArticleFormatToolbar } from "./ArticleFormatToolbar";
@@ -98,6 +98,8 @@ export function ArticleEditor({
   const [discarding, setDiscarding] = useState(false);
   const [resolving, setResolving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
+  const [previewSearchSlot, setPreviewSearchSlot] =
+    useState<HTMLSpanElement | null>(null);
   const [railOpen, setRailOpen] = useState(false);
   const [drafts, setDrafts] = useState<readonly ArticleDraft[]>([]);
   const [railError, setRailError] = useState<string | null>(null);
@@ -778,6 +780,7 @@ export function ArticleEditor({
           </p>
           <div className={styles.topActions}>
             <ThemeToggle />
+            {previewing ? <span ref={setPreviewSearchSlot} /> : null}
             <span className={styles.audience}>
               <AudienceSelector
                 disabled={
@@ -1033,7 +1036,10 @@ export function ArticleEditor({
                   )}
                 </div>
                 {previewing && previewDocument ? (
-                  <RichContent document={previewDocument} />
+                  <ArticleReadingContent
+                    document={previewDocument}
+                    searchSlot={previewSearchSlot}
+                  />
                 ) : null}
                 {editor && !previewing ? (
                   <CharacterCount editor={editor} />

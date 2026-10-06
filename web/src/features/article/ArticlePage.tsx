@@ -7,7 +7,7 @@ import type {
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
 import { Icon } from "../../components/icons";
-import { RichContent } from "../../components/content/RichContent";
+import { ArticleReadingContent } from "./reader";
 import {
   SiteAvatar,
   siteDisplayName,
@@ -150,7 +150,7 @@ export function ArticlePage({
           </div>
         }
       >
-        <RichContent
+        <ArticleReadingContent
           document={post.article.body}
           media={post.article.bodyMedia}
         />

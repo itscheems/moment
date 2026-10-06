@@ -285,7 +285,7 @@ describe("opening a draft", () => {
     renderEditor(DRAFT_ID);
     await advance();
     fireEvent.click(screen.getByRole("button", { name: "预览" }));
-    await advance();
+    await advance(1);
     expect(
       document.querySelectorAll(
         "[data-content-renderer] .tiptap-table-of-contents-item",
@@ -296,6 +296,19 @@ describe("opening a draft", () => {
         "[data-content-renderer] .tiptap-table-of-contents-item",
       )[0],
     ).toHaveAttribute("href", "#chapter");
+    expect(
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      }),
+    ).toBe(false);
+    fireEvent.change(screen.getByRole("textbox", { name: "搜索内容" }), {
+      target: { value: "章节" },
+    });
+    await advance(300);
+    expect(screen.getByText("1 / 1")).toBeInTheDocument();
+    expect(document.querySelectorAll(".moment-article-search")).toHaveLength(1);
     expect(putCalls()).toHaveLength(0);
   });
 

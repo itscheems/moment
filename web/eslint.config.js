@@ -88,7 +88,11 @@ export default tseslint.config(
   // interaction plugins live behind the lazy editor entry.
   {
     files: ["src/**/*.{ts,tsx}"],
-    ignores: ["src/features/article/editor/**", "src/components/content/**"],
+    ignores: [
+      "src/features/article/editor/**",
+      "src/features/article/reader/**",
+      "src/components/content/**",
+    ],
     plugins: { moment: { rules: { "lazy-editor": lazyBoundary } } },
     rules: {
       "moment/lazy-editor": "error",
