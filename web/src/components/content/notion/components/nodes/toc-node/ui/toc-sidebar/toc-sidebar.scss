@@ -156,6 +156,7 @@
     box-shadow: var(--tt-shadow-elevated-md);
     margin-right: -0.625rem;
     width: 100%;
+    padding: var(--padding);
     overflow: hidden;
     flex-grow: 1;
   }
@@ -167,11 +168,10 @@
     --toc-fade-bottom: #000;
 
     max-height: min(
-      calc(24rem - 2 * var(--border-width)),
-      calc(100dvh - var(--toc-sticky-top) - 0.75rem)
+      calc(24rem - 2 * var(--border-width) - 2 * var(--padding)),
+      calc(100dvh - var(--toc-sticky-top) - 0.75rem - 2 * var(--padding))
     );
     overflow: auto;
-    padding: var(--padding);
     scroll-margin: 0.25rem;
     scroll-padding-block: var(--padding);
     overscroll-behavior-y: contain;
