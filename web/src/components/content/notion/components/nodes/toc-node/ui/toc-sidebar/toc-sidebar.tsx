@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useEffect, useRef, useState } from "react";
+import { useMergedRef, useResizeObserver } from "@mantine/hooks";
 
 import { cn } from "@content-notion/lib/editor-utils";
 import { useToc } from "@content-notion/components/nodes/toc-node/context/toc-context";
@@ -50,6 +51,32 @@ export function TocSidebar({
     () => headingList.slice(0, maxShowCount),
     [headingList, maxShowCount],
   );
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [observeViewport, viewportRect] = useResizeObserver<HTMLDivElement>();
+  const [observeContent, contentRect] = useResizeObserver<HTMLDivElement>();
+  const viewportRef = useMergedRef(scrollRef, observeViewport);
+  const [scrollEdges, setScrollEdges] = useState({ top: false, bottom: false });
+  const updateScrollEdges = useCallback(() => {
+    const viewport = scrollRef.current;
+    if (!viewport) return;
+    // One pixel tolerates fractional scroll positions and rounded dimensions.
+    const top = viewport.scrollTop > 1;
+    const bottom =
+      viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop > 1;
+    setScrollEdges((previous) =>
+      previous.top === top && previous.bottom === bottom
+        ? previous
+        : { top, bottom },
+    );
+  }, []);
+  useEffect(updateScrollEdges, [
+    updateScrollEdges,
+    viewportRect.width,
+    viewportRect.height,
+    contentRect.width,
+    contentRect.height,
+  ]);
 
   const normalizedDepths = useMemo(
     () => normalizeHeadingDepths(visibleHeadings),
@@ -198,28 +225,38 @@ export function TocSidebar({
             aria-label="Table of contents"
           >
             <div className="toc-sidebar-popover">
-              {visibleHeadings.map((item) => {
-                const depth = depthById.get(item.id) ?? 1;
-                const isActive = activeContentId === item.id;
+              <div
+                ref={viewportRef}
+                className="toc-sidebar-scroll"
+                data-scroll-top={scrollEdges.top}
+                data-scroll-bottom={scrollEdges.bottom}
+                onScroll={updateScrollEdges}
+              >
+                <div ref={observeContent}>
+                  {visibleHeadings.map((item) => {
+                    const depth = depthById.get(item.id) ?? 1;
+                    const isActive = activeContentId === item.id;
 
-                return (
-                  <a
-                    key={item.id}
-                    href={`#${item.id}`}
-                    rel="noopener noreferrer"
-                    className={cn(
-                      "toc-sidebar-item notranslate",
-                      isActive && "toc-sidebar-item--active",
-                    )}
-                    data-depth={depth}
-                    style={{ "--toc-depth": depth } as React.CSSProperties}
-                    onClick={(e) => handleContentClick(e, item)}
-                    aria-current={isActive ? "location" : undefined}
-                  >
-                    {item.textContent}
-                  </a>
-                );
-              })}
+                    return (
+                      <a
+                        key={item.id}
+                        href={`#${item.id}`}
+                        rel="noopener noreferrer"
+                        className={cn(
+                          "toc-sidebar-item notranslate",
+                          isActive && "toc-sidebar-item--active",
+                        )}
+                        data-depth={depth}
+                        style={{ "--toc-depth": depth } as React.CSSProperties}
+                        onClick={(e) => handleContentClick(e, item)}
+                        aria-current={isActive ? "location" : undefined}
+                      >
+                        {item.textContent}
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </nav>
         </div>

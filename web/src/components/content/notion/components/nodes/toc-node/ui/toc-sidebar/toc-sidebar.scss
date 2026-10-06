@@ -14,6 +14,7 @@
   --toc-progress-indent: 0.25rem; // Base indent for progress lines (4px)
   --toc-progress-width-base: 1rem; // Base width for progress lines (16px)
   --toc-progress-width-min: 0.25rem; // Minimum width for progress lines (4px)
+  --toc-sticky-top: 130px;
 
   :is([data-theme="dim"], [data-theme="lights-out"]) & {
     --tt-toc-sidebar-line-bg: var(--tt-gray-dark-200);
@@ -47,7 +48,7 @@
     display: flex;
     flex-direction: row;
     position: sticky;
-    top: 130px;
+    top: var(--toc-sticky-top);
     margin-left: auto;
     opacity: 1;
     pointer-events: auto;
@@ -154,12 +155,41 @@
     border: 1px solid var(--tt-toc-sidebar-border-color);
     box-shadow: var(--tt-shadow-elevated-md);
     margin-right: -0.625rem;
-    max-height: 24rem;
     width: 100%;
+    overflow: hidden;
+    flex-grow: 1;
+  }
+
+  // Mask the scroll viewport, leaving the card's surface and border intact.
+  &-scroll {
+    --toc-fade-size: 18px;
+    --toc-fade-top: #000;
+    --toc-fade-bottom: #000;
+
+    max-height: min(
+      calc(24rem - 2 * var(--border-width)),
+      calc(100dvh - var(--toc-sticky-top) - 0.75rem)
+    );
     overflow: auto;
     padding: var(--padding);
     scroll-margin: 0.25rem;
-    flex-grow: 1;
+    scroll-padding-block: var(--padding);
+    overscroll-behavior-y: contain;
+    mask-image: linear-gradient(
+      to bottom,
+      var(--toc-fade-top),
+      #000 var(--toc-fade-size),
+      #000 calc(100% - var(--toc-fade-size)),
+      var(--toc-fade-bottom)
+    );
+
+    &[data-scroll-top="true"] {
+      --toc-fade-top: transparent;
+    }
+
+    &[data-scroll-bottom="true"] {
+      --toc-fade-bottom: transparent;
+    }
   }
 
   /* =========================

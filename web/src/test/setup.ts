@@ -58,3 +58,14 @@ Object.defineProperty(window, "matchMedia", {
 // command/persistence tests run; they cannot establish layout or appearance.
 Range.prototype.getBoundingClientRect = () => new DOMRect();
 Range.prototype.getClientRects = () => Object.assign([], { item: () => null });
+
+// jsdom does not observe layout. Resize-dependent geometry is checked in a browser.
+Object.defineProperty(globalThis, "ResizeObserver", {
+  configurable: true,
+  writable: true,
+  value: class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
+});
