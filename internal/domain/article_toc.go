@@ -60,12 +60,12 @@ func articlePlainText(output *strings.Builder, nodes []ArticleNode) {
 }
 
 func renderArticleToc(output *strings.Builder, node ArticleNode, entries []articleTocEntry) {
-	max := 20
+	maxEntries := 20
 	if value, ok := node.Presentation["maxShowCount"].(int); ok {
-		max = value
+		maxEntries = value
 	}
-	if len(entries) > max {
-		entries = entries[:max]
+	if len(entries) > maxEntries {
+		entries = entries[:maxEntries]
 	}
 	output.WriteString(`<div data-type="toc-node" class="tiptap-table-of-contents-node"`)
 	renderArticlePresentation(output, node)
