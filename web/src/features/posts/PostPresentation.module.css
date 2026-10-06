@@ -27,6 +27,11 @@
   .post:not(.detail):hover {
     background: #f7f7f7;
   }
+
+  :global(:root[data-theme="dim"]) .post:not(.detail):hover,
+  :global(:root[data-theme="lights-out"]) .post:not(.detail):hover {
+    background: var(--surface-hover);
+  }
 }
 
 .post.timelineDensity {
