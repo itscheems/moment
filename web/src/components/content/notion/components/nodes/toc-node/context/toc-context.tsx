@@ -3,8 +3,11 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
+  useRef,
   type ReactNode,
 } from "react";
+import { useTimeout } from "@mantine/hooks";
 import type { TableOfContentDataItem as NativeTocItem } from "@tiptap/extension-table-of-contents";
 export type TableOfContentDataItem = Omit<
   NativeTocItem,
@@ -140,14 +143,31 @@ const doNavigateToHeading = (
 
 export const TocProvider = ({ children }: { children: ReactNode }) => {
   const [tocContent, setTocContent] = useState<TableOfContentData | null>(null);
+  const highlightedHeading = useRef<HTMLElement | null>(null);
+  const clearHeadingHighlight = useCallback(() => {
+    highlightedHeading.current?.classList.remove("ProseMirror-selectednode");
+    highlightedHeading.current = null;
+  }, []);
+  const { start, clear } = useTimeout(clearHeadingHighlight, 2_000);
+  useEffect(() => clearHeadingHighlight, [clearHeadingHighlight]);
 
   const navigateToHeading = useCallback<TocState["navigateToHeading"]>(
     (item, options) => {
+      clear();
+      clearHeadingHighlight();
       const topOffset = options?.topOffset ?? 0;
       const behavior = options?.behavior ?? "smooth";
       doNavigateToHeading(item, topOffset, behavior);
+
+      // Static readers have no editor selection. Briefly reuse the template's
+      // selected-node treatment without changing the document or text selection.
+      if (item.dom && !item.editor) {
+        highlightedHeading.current = item.dom;
+        item.dom.classList.add("ProseMirror-selectednode");
+        start();
+      }
     },
-    [],
+    [clear, clearHeadingHighlight, start],
   );
 
   return (
