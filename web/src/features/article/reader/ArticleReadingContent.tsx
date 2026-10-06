@@ -68,21 +68,19 @@ const readingExtensions = articleContentExtensions()
     if (extension.name === "tocNode") return TocNode;
     return extension;
   })
-  .concat(
-    ReadingMentionMark,
-    TableOfContents,
-    FindAndReplace.configure({ injectCSS: false }),
-  );
+  .concat(ReadingMentionMark, TableOfContents);
 
 /** Native, read-only document view: the same search decorations as writing. */
 export function ArticleReadingContent({
   document,
   media = NO_MEDIA,
   searchSlot,
+  enableSearch = true,
 }: {
   document: ArticleDocument;
   media?: readonly PublicArticleCover[];
   searchSlot?: HTMLElement | null;
+  enableSearch?: boolean;
 }) {
   const { consider } = useMentionResolver();
   const { navigate } = useNavigation();
@@ -148,7 +146,9 @@ export function ArticleReadingContent({
 
   const editor = useEditor(
     {
-      extensions: readingExtensions,
+      extensions: enableSearch
+        ? [...readingExtensions, FindAndReplace.configure({ injectCSS: false })]
+        : readingExtensions,
       content: content.json,
       editable: false,
       immediatelyRender: true,
@@ -186,32 +186,34 @@ export function ArticleReadingContent({
         },
       },
     },
-    [content],
+    [content, enableSearch],
   );
 
   if (!editor || editor.isDestroyed) return null;
   return (
     <EditorContext.Provider value={{ editor }}>
-      <ArticleSearch editor={editor}>
-        {({ open, toggle, buttonRef }) => {
-          const trigger = (
-            <SearchAndReplaceButton
-              aria-label="Search"
-              tooltip="Search"
-              ref={buttonRef}
-              tabIndex={0}
-              aria-expanded={open}
-              data-active-state={open ? "on" : "off"}
-              onClick={toggle}
-            />
-          );
-          return searchSlot === undefined ? (
-            <HeaderActions>{trigger}</HeaderActions>
-          ) : searchSlot ? (
-            createPortal(trigger, searchSlot)
-          ) : null;
-        }}
-      </ArticleSearch>
+      {enableSearch && (
+        <ArticleSearch editor={editor}>
+          {({ open, toggle, buttonRef }) => {
+            const trigger = (
+              <SearchAndReplaceButton
+                aria-label="Search"
+                tooltip="Search"
+                ref={buttonRef}
+                tabIndex={0}
+                aria-expanded={open}
+                data-active-state={open ? "on" : "off"}
+                onClick={toggle}
+              />
+            );
+            return searchSlot === undefined ? (
+              <HeaderActions>{trigger}</HeaderActions>
+            ) : searchSlot ? (
+              createPortal(trigger, searchSlot)
+            ) : null;
+          }}
+        </ArticleSearch>
+      )}
       <EditorContent editor={editor} />
     </EditorContext.Provider>
   );

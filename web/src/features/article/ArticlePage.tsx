@@ -37,6 +37,7 @@ export function ArticlePage({
   site,
   now,
   owner = false,
+  focusReading = false,
   onDeleted,
   onReposted,
   onSiteChanged,
@@ -46,6 +47,7 @@ export function ArticlePage({
   site: SiteIdentity;
   now?: Date;
   owner?: boolean;
+  focusReading?: boolean;
   onDeleted?: (post: PublicPost) => void;
   onReposted?: (post: PublicPost) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
@@ -152,6 +154,7 @@ export function ArticlePage({
       >
         <ArticleReadingContent
           document={post.article.body}
+          enableSearch={focusReading}
           media={post.article.bodyMedia}
         />
       </ArticleSheet>

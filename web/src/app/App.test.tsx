@@ -1177,6 +1177,21 @@ describe("App shell and public routes", () => {
     const trigger = await screen.findByRole("link", { name: "全屏阅读" });
     expect(trigger).toHaveAttribute("href", `/owner/article/${id}`);
     expect(trigger.closest("header")).not.toBeNull();
+    await waitFor(() =>
+      expect(document.querySelector("[data-content-renderer]")).toHaveAttribute(
+        "contenteditable",
+        "false",
+      ),
+    );
+    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+    expect(
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      }),
+    ).toBe(true);
+    fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
     const article = screen.getByRole("article");
     trigger.focus();
     vi.spyOn(window, "scrollY", "get").mockReturnValue(860);
@@ -1188,12 +1203,32 @@ describe("App shell and public routes", () => {
     expect(
       screen.queryByRole("complementary", { name: "记忆导航" }),
     ).toBeNull();
+    expect(await screen.findByRole("button", { name: "Search" })).toBeVisible();
+    expect(
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      }),
+    ).toBe(false);
+    fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
+    expect(screen.getByRole("dialog", { name: "Search" })).toBeVisible();
     fireEvent.click(await screen.findByRole("link", { name: "文章章节" }));
     expect(window.location.hash).toBe("#article-heading-1");
     expect(window.history.state).toMatchObject({ momentInternal: true });
     fireEvent.click(screen.getByRole("link", { name: "退出全屏阅读" }));
     await waitFor(() => expect(window.location.pathname).toBe(`/m/${id}`));
     expect(screen.getByRole("article")).toBe(article);
+    expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
+    expect(
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      }),
+    ).toBe(true);
+    fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
     await waitFor(() =>
       expect(screen.getByRole("link", { name: "全屏阅读" })).toHaveFocus(),
     );
@@ -1212,7 +1247,14 @@ describe("App shell and public routes", () => {
     const { id } = installArticleApi();
     window.history.replaceState({}, "", `/owner/article/${id}`);
     render(<App />);
-    expect(await screen.findByText("同一份文章正文")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.querySelector("[data-content-renderer]")).toHaveAttribute(
+        "contenteditable",
+        "false",
+      );
+      expect(screen.getByText("同一份文章正文")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Search" })).toBeVisible();
+    });
     const back = screen.getByRole("link", { name: "退出全屏阅读" });
     expect(back).toHaveAttribute("href", `/m/${id}`);
     const modified = new MouseEvent("click", {
