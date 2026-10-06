@@ -67,11 +67,6 @@ export function ReadingAnnotationTools({
     setVisible(from !== undefined && to !== undefined);
     // Decoration transactions must not reopen a toolbar that was dismissed.
   }, [editor, from, to]);
-  const dismiss = () => {
-    if (selectionRef.current)
-      editor.commands.setTextSelection(selectionRef.current.from);
-    setVisible(false);
-  };
   const addRecentColor = (color: ActionColor) => {
     if (color.type === "highlight" && color.value !== "var(--tt-bg-color)")
       setHighlightColor(color.value);
@@ -107,7 +102,6 @@ export function ReadingAnnotationTools({
                 onClick={() => {
                   clearReadingAnnotations(editor);
                   setMenuOpen(false);
-                  dismiss();
                 }}
               >
                 <BanIcon className="tiptap-button-icon" />
@@ -154,7 +148,6 @@ export function ReadingAnnotationTools({
                   return range ? readingSelectionText(editor, range) : "";
                 }}
                 tooltip="Copy"
-                onCopied={dismiss}
               />
               <ColorHighlightButton
                 highlightColor={highlightColor}
@@ -166,10 +159,9 @@ export function ReadingAnnotationTools({
                     label,
                     value: color,
                   });
-                  dismiss();
                 }}
               />
-              <ColorTextPopover closeOnColorChanged onColorChanged={dismiss} />
+              <ColorTextPopover closeOnColorChanged />
             </ToolbarGroup>
             <ToolbarSeparator />
             <ToolbarGroup>
@@ -181,7 +173,6 @@ export function ReadingAnnotationTools({
                 onClick={() => {
                   if (selectionRef.current)
                     clearReadingAnnotations(editor, selectionRef.current);
-                  dismiss();
                 }}
               >
                 <BanIcon className="tiptap-button-icon" />

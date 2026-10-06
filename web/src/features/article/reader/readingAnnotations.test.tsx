@@ -20,6 +20,7 @@ import { ColorActionAdapterContext } from "@notion/hooks/use-color-action-adapte
 import { TextStyleColorPanel } from "@notion/components/ui/color-text-popover";
 import { FloatingElement } from "@notion/components/utilities/floating-element";
 import { ArticleReadingContent } from "./ArticleReadingContent";
+import * as clipboard from "@content-notion/lib/clipboard";
 import type { ArticleDocument } from "../../../api/public";
 import {
   ReadingAnnotations,
@@ -293,7 +294,7 @@ describe("temporary reading decorations", () => {
   });
 });
 
-it("defaults quick highlight to yellow and remembers the latest highlight independently of recent text colors", async () => {
+it("keeps the reading selection and toolbar after actions, with yellow default and the latest highlight color", async () => {
   const body: ArticleDocument = {
     schema_version: 2,
     type: "doc",
@@ -321,6 +322,13 @@ it("defaults quick highlight to yellow and remembers the latest highlight indepe
   ).editor;
   const original = reader.getJSON();
   const write = vi.spyOn(Storage.prototype, "setItem");
+  const copy = vi.spyOn(clipboard, "writeToClipboard").mockResolvedValue();
+  const expectSelectionRetained = () => {
+    expect(readingSelection(reader)).toEqual({ from: 1, to: 4 });
+    expect(
+      screen.getByRole("toolbar", { name: "Reading annotations" }),
+    ).toBeInTheDocument();
+  };
   const select = async () => {
     await act(async () => reader.commands.setTextSelection({ from: 1, to: 4 }));
     return screen.findByRole("button", { name: "Highlight" });
@@ -334,12 +342,17 @@ it("defaults quick highlight to yellow and remembers the latest highlight indepe
   expect(activeReadingColor(reader, { from: 1, to: 4 }, "highlight")).toBe(
     "var(--tt-color-highlight-yellow)",
   );
+  expectSelectionRetained();
+  fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+  await screen.findByRole("button", { name: "已复制" });
+  expect(copy).toHaveBeenCalledWith("one");
+  expectSelectionRetained();
   const choose = async (name: string) => {
-    await select();
     fireEvent.click(screen.getByRole("button", { name: "Text color" }));
     await act(async () =>
       fireEvent.click(await screen.findByRole("button", { name })),
     );
+    expectSelectionRetained();
   };
   await choose("Green background highlight color");
   for (const color of ["Red", "Brown", "Purple"])
@@ -356,6 +369,17 @@ it("defaults quick highlight to yellow and remembers the latest highlight indepe
   expect(activeReadingColor(reader, { from: 1, to: 4 }, "highlight")).toBe(
     "var(--tt-color-highlight-green)",
   );
+  expectSelectionRetained();
+  await act(async () =>
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear selection marks" }),
+    ),
+  );
+  expect(reader.storage.readingAnnotations.ranges).toHaveLength(0);
+  expectSelectionRetained();
+  expect(
+    screen.getByRole("button", { name: "Clear selection marks" }),
+  ).toBeDisabled();
   expect(reader.getJSON()).toEqual(original);
   expect(write).not.toHaveBeenCalled();
 });
