@@ -203,8 +203,9 @@
   font-weight: 700;
   mask-image: linear-gradient(
     to right,
-    #000 calc(100% - var(--label-fade, 0px)),
-    transparent 100%
+    transparent 0,
+    #000 var(--label-fade, 0px),
+    #000 100%
   );
 }
 .tabLabelContent {
@@ -216,7 +217,7 @@
 .tabLabelContent::before {
   content: "";
   display: inline-block;
-  inline-size: 0.45rem;
+  inline-size: var(--space-1);
 }
 .filterSlot {
   overflow: hidden;
