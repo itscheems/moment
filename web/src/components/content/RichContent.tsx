@@ -134,12 +134,7 @@ export function RichContent({
               const highlighted = highlightSource(code.textContent, language);
               return (
                 <div className="code-block" data-language={language}>
-                  <div className="code-block-controls">
-                    <span className="code-block-language">
-                      {language || "纯文本"}
-                    </span>
-                    <CodeBlockCopy source={code.textContent} />
-                  </div>
+                  <CodeBlockCopy source={code.textContent} />
                   <pre>
                     <code
                       className={language ? `language-${language}` : undefined}

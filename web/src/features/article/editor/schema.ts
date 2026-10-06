@@ -57,7 +57,9 @@ export function articleEditorExtensions(
         extension.name === "codeBlock"
           ? CodeBlockLowlight.extend({
               addNodeView() {
-                return ReactNodeViewRenderer(CodeBlockView);
+                return ReactNodeViewRenderer(CodeBlockView, {
+                  contentDOMElementTag: "code",
+                });
               },
             }).configure({
               lowlight,

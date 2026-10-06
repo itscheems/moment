@@ -12,28 +12,17 @@
       border: 0;
       background: transparent;
       overflow-x: auto;
+      margin-inline-end: 3.5rem;
     }
   }
 
-  .code-block-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.25rem 0.5rem;
-    border-bottom: 1px solid var(--tt-codeblock-border);
-    color: var(--tt-codeblock-text);
-    font-size: 0.8125rem;
-
-    select {
-      max-inline-size: calc(100% - 5rem);
-      padding: 0.25rem;
-      border: 0;
-      border-radius: 0.25rem;
-      color: inherit;
-      background: var(--tt-codeblock-bg);
-      font: inherit;
-    }
+  .code-block-copy {
+    position: absolute;
+    inset-block-start: 0.75rem;
+    inset-inline-end: 0.75rem;
+    z-index: 1;
+    border: 1px solid var(--tt-codeblock-border);
+    border-radius: 0.25rem;
   }
 
   a[data-moment-mention],

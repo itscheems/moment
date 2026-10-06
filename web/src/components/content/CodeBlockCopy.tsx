@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@content-notion/components/primitives/button/button";
-import { ClipboardIcon } from "@content-notion/components/icons/clipboard-icon";
+import { CopyIcon } from "@content-notion/components/icons/copy-icon";
 import { writeToClipboard } from "@content-notion/lib/clipboard";
 import { notify } from "../Feedback";
 
@@ -22,14 +22,14 @@ export function CodeBlockCopy({ source }: { source: string }) {
     <Button
       type="button"
       variant="ghost"
+      className="code-block-copy"
       aria-label="复制代码"
       tooltip="复制代码"
       disabled={copying || !source}
       aria-busy={copying}
       onClick={() => void copy()}
     >
-      <ClipboardIcon className="tiptap-button-icon" />
-      <span className="tiptap-button-text">复制</span>
+      <CopyIcon className="tiptap-button-icon" />
     </Button>
   );
 }

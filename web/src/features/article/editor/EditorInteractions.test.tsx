@@ -88,21 +88,15 @@ it("copies a native code node without changing its content, caret, or language",
     from: editor.state.selection.from,
     to: editor.state.selection.to,
   }).toEqual(selection);
-  fireEvent.change(screen.getByRole("combobox", { name: "代码语言" }), {
-    target: { value: "plaintext" },
-  });
-  expect(editor.state.doc.firstChild?.attrs.language).toBe("plaintext");
-  expect(editor.view.dom.querySelector(".hljs-keyword")).toBeNull();
-  fireEvent.change(screen.getByRole("combobox", { name: "代码语言" }), {
-    target: { value: "javascript" },
-  });
+  expect(editor.state.doc.firstChild?.attrs.language).toBe("javascript");
+  expect(editor.view.dom.querySelector("pre > code > div")).toBeNull();
+  expect(editor.view.dom.querySelector("pre > code")).toHaveTextContent(
+    'const value = "<>&";',
+  );
+  expect(screen.queryByRole("combobox", { name: "代码语言" })).toBeNull();
   expect(editor.view.dom.querySelector(".hljs-keyword")).toHaveTextContent(
     "const",
   );
-  fireEvent.change(screen.getByRole("combobox", { name: "代码语言" }), {
-    target: { value: "null" },
-  });
-  expect(editor.state.doc.firstChild?.attrs.language).toBeNull();
   expect(() => toArticleDocument(editor.getJSON())).not.toThrow();
 });
 
