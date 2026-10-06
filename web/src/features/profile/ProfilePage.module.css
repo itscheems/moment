@@ -195,18 +195,25 @@
   flex: none;
 }
 .tabLabel {
+  display: flex;
+  align-items: center;
   overflow: hidden;
   white-space: nowrap;
   font-size: var(--text-md);
   font-weight: 700;
-  padding-block: 0.25rem;
   mask-image: linear-gradient(
     to right,
     #000 calc(100% - var(--label-fade, 0px)),
     transparent 100%
   );
 }
-.tabLabel::before {
+.tabLabelContent {
+  display: inline-flex;
+  align-items: center;
+  inline-size: max-content;
+  flex: none;
+}
+.tabLabelContent::before {
   content: "";
   display: inline-block;
   inline-size: 0.45rem;

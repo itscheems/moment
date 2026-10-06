@@ -399,9 +399,11 @@ export function ProfilePage({
   };
   const labelTransition = {
     ...tabTransition,
-    // Keep the reveal anchored to the icon while its visible text fades in.
     opacity: { duration: tabTransition.duration, ease: "linear" as const },
   };
+  const labelContentAnimation = (selected: boolean) => ({
+    x: selected ? "0%" : "-100%",
+  });
 
   return (
     <section aria-label={`${title} 的个人资料`} className={styles.profile}>
@@ -483,59 +485,62 @@ export function ProfilePage({
             >
               <Icon name="archive" variant="navigation" />
               <motion.span
-                aria-hidden="true"
                 className={styles.tabLabel}
-                initial={false}
-                animate={labelAnimation(filter !== "article")}
-                transition={labelTransition}
-              >
-                {label}
-              </motion.span>
-              <motion.span
-                className={styles.filterSlot}
                 initial={false}
                 animate={labelAnimation(filter !== "article")}
                 transition={labelTransition}
                 aria-hidden={filter === "article"}
                 inert={filter === "article"}
               >
-                <Menu.Root>
-                  <Menu.Trigger
-                    aria-label="选择帖子类型"
-                    className={styles.filterTrigger}
-                    disabled={filter === "article"}
-                  >
-                    <Icon name="chevron-down" />
-                  </Menu.Trigger>
-                  <Menu.Portal>
-                    <Menu.Positioner
-                      anchor={leftTabSlot}
-                      side="bottom"
-                      align="center"
-                      sideOffset={4}
-                      collisionPadding={8}
-                      className={interactionStyles.sharePositioner}
-                    >
-                      <Menu.Popup
-                        aria-label="帖子类型筛选"
-                        className={interactionStyles.sharePopup}
+                <motion.span
+                  className={styles.tabLabelContent}
+                  initial={false}
+                  animate={labelContentAnimation(filter !== "article")}
+                  transition={tabTransition}
+                >
+                  <span aria-hidden="true">{label}</span>
+                  <span className={styles.filterSlot}>
+                    <Menu.Root>
+                      <Menu.Trigger
+                        aria-label="选择帖子类型"
+                        className={styles.filterTrigger}
+                        disabled={filter === "article"}
                       >
-                        {(["all", "moment"] as const).map((kind) => (
-                          <Menu.Item
-                            key={kind}
-                            className={interactionStyles.shareItem}
-                            onClick={() => {
-                              selectFilter(kind);
-                            }}
+                        <Icon name="chevron-down" />
+                      </Menu.Trigger>
+                      <Menu.Portal>
+                        <Menu.Positioner
+                          anchor={leftTabSlot}
+                          side="bottom"
+                          align="center"
+                          sideOffset={4}
+                          collisionPadding={8}
+                          className={interactionStyles.sharePositioner}
+                        >
+                          <Menu.Popup
+                            aria-label="帖子类型筛选"
+                            className={interactionStyles.sharePopup}
                           >
-                            <span>{kind === "all" ? "全部" : "帖子"}</span>
-                            {leftFilter === kind ? <Icon name="check" /> : null}
-                          </Menu.Item>
-                        ))}
-                      </Menu.Popup>
-                    </Menu.Positioner>
-                  </Menu.Portal>
-                </Menu.Root>
+                            {(["all", "moment"] as const).map((kind) => (
+                              <Menu.Item
+                                key={kind}
+                                className={interactionStyles.shareItem}
+                                onClick={() => {
+                                  selectFilter(kind);
+                                }}
+                              >
+                                <span>{kind === "all" ? "全部" : "帖子"}</span>
+                                {leftFilter === kind ? (
+                                  <Icon name="check" />
+                                ) : null}
+                              </Menu.Item>
+                            ))}
+                          </Menu.Popup>
+                        </Menu.Positioner>
+                      </Menu.Portal>
+                    </Menu.Root>
+                  </span>
+                </motion.span>
               </motion.span>
             </div>
           </div>
@@ -566,7 +571,14 @@ export function ProfilePage({
                 animate={labelAnimation(filter === "article")}
                 transition={labelTransition}
               >
-                文章
+                <motion.span
+                  className={styles.tabLabelContent}
+                  initial={false}
+                  animate={labelContentAnimation(filter === "article")}
+                  transition={tabTransition}
+                >
+                  文章
+                </motion.span>
               </motion.span>
             </Tabs.Tab>
           </div>
