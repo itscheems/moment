@@ -391,12 +391,16 @@ export function ProfilePage({
   const labelAnimation = (selected: boolean) => ({
     width: selected ? "auto" : 0,
     opacity: selected ? 1 : 0,
-    x: selected ? 0 : -8,
     "--label-fade": selected ? "0px" : "16px",
   });
   const tabTransition = {
     duration: reducedMotion ? 0 : 0.24,
     ease: [0.22, 1, 0.36, 1] as const,
+  };
+  const labelTransition = {
+    ...tabTransition,
+    // Keep the reveal anchored to the icon while its visible text fades in.
+    opacity: { duration: tabTransition.duration, ease: "linear" as const },
   };
 
   return (
@@ -483,7 +487,7 @@ export function ProfilePage({
                 className={styles.tabLabel}
                 initial={false}
                 animate={labelAnimation(filter !== "article")}
-                transition={tabTransition}
+                transition={labelTransition}
               >
                 {label}
               </motion.span>
@@ -491,7 +495,7 @@ export function ProfilePage({
                 className={styles.filterSlot}
                 initial={false}
                 animate={labelAnimation(filter !== "article")}
-                transition={tabTransition}
+                transition={labelTransition}
                 aria-hidden={filter === "article"}
                 inert={filter === "article"}
               >
@@ -560,7 +564,7 @@ export function ProfilePage({
                 className={styles.tabLabel}
                 initial={false}
                 animate={labelAnimation(filter === "article")}
-                transition={tabTransition}
+                transition={labelTransition}
               >
                 文章
               </motion.span>
