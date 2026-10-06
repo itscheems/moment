@@ -212,6 +212,16 @@ async function advance(ms = 0) {
 
 const putCalls = () => calls.filter((call) => call.method === "PUT");
 
+function pressSave(
+  target: HTMLElement = document.body,
+  modifier: "metaKey" | "ctrlKey" = "metaKey",
+) {
+  const key = { key: "s", code: "KeyS", [modifier]: true };
+  const allowed = fireEvent.keyDown(target, key);
+  fireEvent.keyUp(target, key);
+  return allowed;
+}
+
 beforeEach(() => {
   calls = [];
   onPut = null;
@@ -354,6 +364,124 @@ describe("opening a draft", () => {
 });
 
 describe("saving while the owner writes", () => {
+  it.each(["metaKey", "ctrlKey"] as const)(
+    "saves immediately from the title with %s+S and suppresses browser save",
+    async (modifier) => {
+      renderEditor(DRAFT_ID);
+      await advance();
+      await typeTitle("快捷键保存的标题");
+      await act(async () => {
+        expect(pressSave(titleField(), modifier)).toBe(false);
+      });
+      expect(putCalls()).toHaveLength(1);
+      expect(putCalls()[0].body).toMatchObject({
+        title: "快捷键保存的标题",
+        expected_updated_at: "2026-09-25T02:00:00.000Z",
+      });
+      await act(async () => {
+        expect(pressSave(titleField(), modifier)).toBe(false);
+      });
+      await advance(2_100);
+      expect(putCalls()).toHaveLength(1);
+      expect(titleField()).toHaveValue("快捷键保存的标题");
+    },
+  );
+
+  it("saves from the native document and releases the shortcut in preview and after leaving", async () => {
+    const view = renderEditor(DRAFT_ID);
+    await advance();
+    const documentField = screen.getByRole("textbox", { name: "文章正文" });
+    await typeTitle("正文里按保存");
+    await act(async () => {
+      expect(pressSave(documentField)).toBe(false);
+    });
+    expect(putCalls()).toHaveLength(1);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "预览" }));
+    });
+    expect(pressSave()).toBe(true);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "继续编辑" }));
+      fireEvent.keyDown(document.body, { key: "s", code: "KeyS" });
+      fireEvent.keyUp(document.body, { key: "s", code: "KeyS" });
+    });
+    expect(putCalls()).toHaveLength(1);
+    await typeTitle("菜单里按保存");
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "更多" }));
+    });
+    await act(async () => {
+      expect(
+        pressSave(screen.getByRole("menuitem", { name: "立即保存" })),
+      ).toBe(false);
+    });
+    expect(putCalls()).toHaveLength(2);
+    expect(putCalls()[1].body).toMatchObject({ title: "菜单里按保存" });
+    view.unmount();
+    expect(pressSave()).toBe(true);
+  });
+
+  it("waits for autosave and then saves the latest revision without repeated writes", async () => {
+    let finish!: (response: Response) => void;
+    onPut = () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      });
+    renderEditor(DRAFT_ID);
+    await advance();
+    await typeTitle("自动保存中的标题");
+    await advance(2_000);
+    await typeTitle("快捷键要保存的新标题");
+    await act(async () => {
+      expect(pressSave(titleField())).toBe(false);
+      expect(
+        fireEvent.keyDown(titleField(), {
+          key: "s",
+          code: "KeyS",
+          metaKey: true,
+          repeat: true,
+        }),
+      ).toBe(false);
+      fireEvent.keyUp(titleField(), { key: "s", code: "KeyS", metaKey: true });
+    });
+    expect(putCalls()).toHaveLength(1);
+    onPut = null;
+    await act(async () => {
+      finish(success(draftRow({ updated_at: "2026-09-25T02:04:00.000Z" })));
+    });
+    await advance();
+    expect(putCalls()).toHaveLength(2);
+    expect(putCalls()[1].body).toMatchObject({
+      title: "快捷键要保存的新标题",
+      expected_updated_at: "2026-09-25T02:04:00.000Z",
+    });
+    await advance(2_100);
+    expect(putCalls()).toHaveLength(2);
+  });
+
+  it("keeps failed work and retries with the save shortcut", async () => {
+    onPut = () => Promise.reject(new TypeError("offline"));
+    renderEditor(DRAFT_ID);
+    await advance();
+    await typeTitle("断网时的文字");
+    await act(async () => {
+      expect(pressSave(titleField())).toBe(false);
+    });
+    expect(titleField()).toHaveValue("断网时的文字");
+    expect(putCalls()).toHaveLength(1);
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+    onPut = null;
+    await act(async () => {
+      expect(pressSave(titleField())).toBe(false);
+    });
+    expect(putCalls()).toHaveLength(2);
+    const savedUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(savedUnload);
+    expect(savedUnload.defaultPrevented).toBe(false);
+  });
+
   it("waits for the typing to stop instead of saving per keystroke", async () => {
     renderEditor(DRAFT_ID);
     await advance();
@@ -436,6 +564,9 @@ describe("when the same draft was written from somewhere else", () => {
     // Typing continues; the autosave does not resume until the owner answers.
     await typeTitle("还在写");
     await advance(30_000);
+    await act(async () => {
+      expect(pressSave(titleField())).toBe(false);
+    });
     expect(putCalls()).toHaveLength(1);
     expect(screen.getByRole("status")).toHaveTextContent("别处改过了");
   });

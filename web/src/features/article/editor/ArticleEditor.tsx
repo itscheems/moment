@@ -1,6 +1,7 @@
 import { Menu } from "@base-ui/react/menu";
 import type { EditorEvents } from "@tiptap/core";
 import { useEditor } from "@tiptap/react";
+import { useHotkeys } from "react-hotkeys-hook";
 import {
   useCallback,
   useEffect,
@@ -433,6 +434,29 @@ export function ArticleEditor({
   useEffect(() => {
     saveLatest.current = save;
   }, [save]);
+
+  useHotkeys(
+    "mod+s",
+    (event) => {
+      if (
+        event.repeat ||
+        phase !== "ready" ||
+        loadError !== null ||
+        publishing ||
+        discarding ||
+        resolving
+      )
+        return;
+      void save("force");
+    },
+    {
+      enabled: !previewing,
+      preventDefault: true,
+      enableOnContentEditable: true,
+      enableOnFormTags: true,
+    },
+    [save, phase, loadError, publishing, discarding, resolving],
+  );
 
   // Internal navigation saves first. Failed/conflicted saves keep the page open.
   useEffect(() => {
