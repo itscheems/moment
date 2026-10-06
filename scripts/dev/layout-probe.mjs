@@ -550,6 +550,14 @@ async function main() {
       }
     }
 
+    // Set the isolated browser's preference before React reads it. Changing
+    // only the DOM attribute would leave theme controls in the opposite mode.
+    if (options.theme && options.url) {
+      await devtools.send("Page.addScriptToEvaluateOnNewDocument", {
+        source: `localStorage.setItem("moment.theme.v1", ${JSON.stringify(options.theme)})`,
+      });
+    }
+
     const loaded = devtools.once("Page.loadEventFired");
     await devtools.send("Page.navigate", { url: target });
     await loaded;
