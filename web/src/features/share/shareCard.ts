@@ -50,10 +50,37 @@ const CARD_RADIUS = 24;
  * still reads, where a list without bullets does not.
  */
 export type ShareCardBlock =
-  | { kind: "text"; text: string; heading?: 1 | 2 | 3 }
-  | { kind: "item"; marker: string; text: string }
-  | { kind: "quote"; text: string }
+  | {
+      kind: "text";
+      text: string;
+      heading?: 1 | 2 | 3;
+      runs?: ShareCardTextRun[];
+    }
+  | { kind: "item"; marker: string; text: string; runs?: ShareCardTextRun[] }
+  | { kind: "quote"; text: string; runs?: ShareCardTextRun[] }
   | { kind: "code"; lines: CodeSpan[][] };
+
+/** Display-only reading colours, resolved before the card opens. */
+export interface ShareCardTextRun {
+  text: string;
+  colour?: string;
+  background?: string;
+}
+
+export interface ShareCardPalette {
+  background: string;
+  text: string;
+  muted: string;
+  border: string;
+  accent: string;
+}
+
+export class ShareCardTooLongError extends Error {
+  constructor() {
+    super("摘录超过分享卡片的 60 行上限，请关闭弹窗并缩短选区后重试。");
+    this.name = "ShareCardTooLongError";
+  }
+}
 
 /** One run of one colour inside a fenced line. */
 export interface CodeSpan {
@@ -142,6 +169,10 @@ export interface ShareCardInput {
   location: string | null;
   /** The link preview the post carries, if it carries one. */
   link: ShareCardLink | null;
+  /** Present only for an exact article excerpt; never silently truncate it. */
+  articleTitle?: string;
+  /** Omitted by existing post cards, which retain their original palette. */
+  palette?: ShareCardPalette;
 }
 
 const INK = "#0f1419";
@@ -234,12 +265,25 @@ const CJK =
 const CLOSING =
   /[\u3002\uff0c\u3001\uff0e,.!?\uff01\uff1f;\uff1b:\uff1a\uff09)\]\u3011\u300b\u300d\u300f\u3009\u201d\u2019%\u2026]/;
 
-function breakPieces(text: string): string[] {
+function breakPieces(text: string, keepClosing = false): string[] {
   const pieces: string[] = [];
   let current = "";
   for (const character of text) {
+    if (
+      keepClosing &&
+      current === "" &&
+      CLOSING.test(character) &&
+      pieces.length
+    ) {
+      pieces[pieces.length - 1] += character;
+      continue;
+    }
     if (current !== "" && CLOSING.test(character)) {
       current += character;
+      if (keepClosing) {
+        pieces.push(current);
+        current = "";
+      }
       continue;
     }
     if (character === " ") {
@@ -264,19 +308,63 @@ function wrap(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
+  preserveWhitespace = false,
 ): string[] {
   const lines: string[] = [];
   let line = "";
-  for (const piece of breakPieces(text)) {
+  const pieces = breakPieces(text, preserveWhitespace).flatMap((piece) =>
+    preserveWhitespace && ctx.measureText(piece).width > maxWidth
+      ? Array.from(
+          new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
+            piece,
+          ),
+          ({ segment }) => segment,
+        )
+      : [piece],
+  );
+  for (const piece of pieces) {
     const candidate = line + piece;
-    if (line !== "" && ctx.measureText(candidate.trimEnd()).width > maxWidth) {
-      lines.push(line.trimEnd());
-      line = piece.trimStart();
+    const measured = preserveWhitespace ? candidate : candidate.trimEnd();
+    if (line !== "" && ctx.measureText(measured).width > maxWidth) {
+      lines.push(preserveWhitespace ? line : line.trimEnd());
+      line = preserveWhitespace ? piece : piece.trimStart();
       continue;
     }
     line = candidate;
   }
-  if (line.trim() !== "") lines.push(line.trimEnd());
+  if (preserveWhitespace || line.trim() !== "")
+    lines.push(preserveWhitespace ? line : line.trimEnd());
+  return lines;
+}
+
+/** Project the same measured lines onto their original colour runs. */
+function wrapRuns(
+  ctx: CanvasRenderingContext2D,
+  runs: ShareCardTextRun[],
+  width: number,
+): ShareCardTextRun[][] {
+  const text = runs.map((run) => run.text).join("");
+  const lines: ShareCardTextRun[][] = [];
+  let cursor = 0;
+  for (const authoredLine of text.split("\n")) {
+    for (const line of wrap(ctx, authoredLine, width, true)) {
+      let start = 0;
+      const end = cursor + line.length;
+      lines.push(
+        runs.flatMap((run) => {
+          const runStart = start;
+          start += run.text.length;
+          const from = Math.max(cursor, runStart);
+          const to = Math.min(end, start);
+          return from < to
+            ? [{ ...run, text: run.text.slice(from - runStart, to - runStart) }]
+            : [];
+        }),
+      );
+      cursor = end;
+    }
+    cursor += 1;
+  }
   return lines;
 }
 
@@ -667,6 +755,7 @@ type LaidBlock =
       indent: number;
       marker?: string;
       quote?: boolean;
+      runs?: ShareCardTextRun[][];
     }
   | { kind: "code"; lines: CodeSpan[][] };
 
@@ -686,6 +775,7 @@ function layOutBody(
   ruler: CanvasRenderingContext2D,
   blocks: ShareCardBlock[],
   contentWidth: number,
+  exactExcerpt = false,
 ): LaidBlock[] {
   const laid: LaidBlock[] = [];
   let used = 0;
@@ -694,6 +784,8 @@ function layOutBody(
   for (const block of blocks) {
     if (clipped) break;
     if (block.kind === "code") {
+      if (exactExcerpt && used + block.lines.length > MAX_BODY_LINES)
+        throw new ShareCardTooLongError();
       const shown = block.lines.slice(0, Math.max(MAX_BODY_LINES - used, 0));
       if (shown.length < block.lines.length) clipped = true;
       if (shown.length === 0) break;
@@ -719,7 +811,14 @@ function layOutBody(
           ? QUOTE_INDENT
           : 0;
     ruler.font = font(weight, size);
-    const wrapped = wrap(ruler, block.text, contentWidth - indent);
+    const runs = block.runs
+      ? wrapRuns(ruler, block.runs, contentWidth - indent)
+      : undefined;
+    const wrapped = runs
+      ? runs.map((line) => line.map((run) => run.text).join(""))
+      : wrap(ruler, block.text, contentWidth - indent);
+    if (exactExcerpt && used + wrapped.length > MAX_BODY_LINES)
+      throw new ShareCardTooLongError();
     const shown = wrapped.slice(0, Math.max(MAX_BODY_LINES - used, 0));
     if (shown.length < wrapped.length) clipped = true;
     if (shown.length === 0) break;
@@ -740,6 +839,7 @@ function layOutBody(
       marker: block.kind === "item" ? block.marker : undefined,
       item: block.kind === "item",
       quote: block.kind === "quote",
+      ...(runs ? { runs: runs.slice(0, shown.length) } : {}),
     });
     used += shown.length;
   }
@@ -749,6 +849,20 @@ function layOutBody(
 /** Render the card and hand back the bytes. */
 export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   await readyFonts();
+
+  const {
+    background: ground,
+    text: ink,
+    muted,
+    border: hairline,
+    accent,
+  } = input.palette ?? {
+    background: GROUND,
+    text: INK,
+    muted: MUTED,
+    border: HAIRLINE,
+    accent: ACCENT,
+  };
 
   const contentWidth = WIDTH - PAD * 2;
   const media = input.media.slice(0, 4);
@@ -774,7 +888,21 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   const ruler = document.createElement("canvas").getContext("2d");
   if (!ruler) throw new Error("this browser has no 2d canvas");
 
-  const laid = layOutBody(ruler, input.blocks, contentWidth);
+  const laid = layOutBody(
+    ruler,
+    input.blocks,
+    contentWidth,
+    input.articleTitle !== undefined,
+  );
+  const titleSize = HEADING_SIZES[1];
+  const titleLine = Math.round(titleSize * 1.35);
+  ruler.font = font(700, titleSize);
+  const titleLines =
+    input.articleTitle === undefined
+      ? []
+      : wrap(ruler, input.articleTitle, contentWidth, true);
+  const titleHeight =
+    titleLines.length > 0 ? 24 + titleLines.length * titleLine : 0;
   /** The air before a block, which a list closes up within itself. */
   const gapBefore = (index: number) => {
     if (index === 0) return 0;
@@ -801,6 +929,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   const height =
     headerHeight +
     AVATAR +
+    titleHeight +
     (bodyHeight > 0 ? 24 + bodyHeight : 0) +
     (linkShape ? 18 + linkShape.height : 0) +
     (shape ? 22 + shape.height : 0) +
@@ -819,7 +948,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   // The canvas starts transparent; only the rounded card is painted, so the
   // corners stay clear and whatever the card lands on shows through them.
-  ctx.fillStyle = GROUND;
+  ctx.fillStyle = ground;
   ctx.beginPath();
   ctx.roundRect(0, 0, WIDTH, height, CARD_RADIUS);
   ctx.fill();
@@ -849,11 +978,11 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     ctx.drawImage(avatar, PAD, y, AVATAR, AVATAR);
     ctx.restore();
   } else {
-    ctx.fillStyle = HAIRLINE;
+    ctx.fillStyle = hairline;
     ctx.beginPath();
     ctx.arc(PAD + AVATAR / 2, y + AVATAR / 2, AVATAR / 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = MUTED;
+    ctx.fillStyle = muted;
     ctx.font = font(700, 22);
     ctx.textAlign = "center";
     ctx.fillText(
@@ -866,10 +995,10 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   const textLeft = PAD + AVATAR + 14;
   const nameWidth = WIDTH - PAD - textLeft;
-  ctx.fillStyle = INK;
+  ctx.fillStyle = ink;
   ctx.font = font(700, NAME_SIZE);
   ctx.fillText(truncate(ctx, input.displayName, nameWidth), textLeft, y + 22);
-  ctx.fillStyle = MUTED;
+  ctx.fillStyle = muted;
   ctx.font = font(400, HANDLE_SIZE);
   ctx.fillText(
     truncate(ctx, `@${input.username}`, nameWidth),
@@ -878,12 +1007,22 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   );
   y += AVATAR;
 
+  if (titleLines.length > 0) {
+    y += 24;
+    ctx.fillStyle = ink;
+    ctx.font = font(700, titleSize);
+    titleLines.forEach((line, row) =>
+      ctx.fillText(line, PAD, y + row * titleLine + titleSize),
+    );
+    y += titleLines.length * titleLine;
+  }
+
   if (bodyHeight > 0) {
     y += 24;
     laid.forEach((piece, index) => {
       y += gapBefore(index);
       if (piece.kind === "code") {
-        ctx.fillStyle = HAIRLINE;
+        ctx.fillStyle = hairline;
         ctx.beginPath();
         ctx.roundRect(PAD, y, contentWidth, blockHeight(piece), 10);
         ctx.fill();
@@ -901,22 +1040,45 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
         return;
       }
       if (piece.quote) {
-        ctx.fillStyle = HAIRLINE;
+        ctx.fillStyle = hairline;
         ctx.fillRect(PAD, y + 2, 3, blockHeight(piece) - 4);
       }
       if (piece.marker !== undefined) {
-        ctx.fillStyle = MUTED;
+        ctx.fillStyle = muted;
         ctx.font = font(400, BODY_SIZE);
         ctx.fillText(piece.marker, PAD, y + piece.size);
       }
-      ctx.fillStyle = piece.quote ? MUTED : INK;
+      const defaultColour = piece.quote ? muted : ink;
+      ctx.fillStyle = defaultColour;
       ctx.font = font(piece.weight, piece.size);
       piece.lines.forEach((line, row) => {
-        ctx.fillText(
-          line,
-          PAD + piece.indent,
-          y + row * piece.leading + piece.size,
-        );
+        const x = PAD + piece.indent;
+        const baseline = y + row * piece.leading + piece.size;
+        const runs = piece.runs?.[row];
+        if (!runs) {
+          ctx.fillText(line, x, baseline);
+          return;
+        }
+        let prefix = "";
+        const positions = runs.map((run) => {
+          const left = ctx.measureText(prefix).width;
+          prefix += run.text;
+          return { run, left, width: ctx.measureText(prefix).width - left };
+        });
+        for (const { run, left, width } of positions) {
+          if (!run.background) continue;
+          ctx.fillStyle = run.background;
+          ctx.fillRect(
+            x + left,
+            baseline - piece.size,
+            width,
+            piece.size * 1.25,
+          );
+        }
+        for (const { run, left } of positions) {
+          ctx.fillStyle = run.colour ?? defaultColour;
+          ctx.fillText(run.text, x + left, baseline);
+        }
       });
       y += blockHeight(piece);
     });
@@ -951,7 +1113,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   if (input.location) {
     y += 14;
-    ctx.fillStyle = ACCENT;
+    ctx.fillStyle = accent;
     // A pin drawn rather than an icon font: one glyph is cheaper than loading a
     // sprite the card uses once.
     const pinX = PAD + 5;
@@ -961,11 +1123,11 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     ctx.lineTo(pinX, pinY + 7);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = GROUND;
+    ctx.fillStyle = ground;
     ctx.beginPath();
     ctx.arc(pinX, pinY - 3, 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = MUTED;
+    ctx.fillStyle = muted;
     ctx.font = font(400, PLACE_SIZE);
     ctx.fillText(
       truncate(ctx, input.location, contentWidth - 22),
@@ -980,7 +1142,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   // line drawn to separate what whitespace already separates is decoration
   // wearing the costume of structure.
   y += 30;
-  ctx.fillStyle = MUTED;
+  ctx.fillStyle = muted;
   ctx.font = font(400, FOOT_SIZE);
   ctx.fillText(input.publishedLabel, PAD, y + FOOT_SIZE);
 

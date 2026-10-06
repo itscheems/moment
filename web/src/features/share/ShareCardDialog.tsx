@@ -1,15 +1,19 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
 
 import { notify } from "../../components/Feedback";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
-import { renderShareCard, type ShareCardInput } from "./shareCard";
+import {
+  renderShareCard,
+  ShareCardTooLongError,
+  type ShareCardInput,
+} from "./shareCard";
 import styles from "./ShareCard.module.css";
 
 type Stage =
   | { kind: "drawing" }
   | { kind: "ready"; url: string; blob: Blob }
-  | { kind: "failed" };
+  | { kind: "failed"; message: string };
 
 /** What the file is called once it leaves the browser. */
 function fileName(input: ShareCardInput): string {
@@ -32,10 +36,14 @@ export function ShareCardDialog({
   input,
   onOpenChange,
   open,
+  finalFocus,
+  onOpenChangeComplete,
 }: {
   input: ShareCardInput;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  finalFocus?: ComponentProps<typeof Dialog.Popup>["finalFocus"];
+  onOpenChangeComplete?: (open: boolean) => void;
 }) {
   const [stage, setStage] = useState<Stage>({ kind: "drawing" });
   const [busy, setBusy] = useState(false);
@@ -55,8 +63,15 @@ export function ShareCardDialog({
         objectUrl.current = URL.createObjectURL(blob);
         setStage({ kind: "ready", url: objectUrl.current, blob });
       })
-      .catch(() => {
-        if (live) setStage({ kind: "failed" });
+      .catch((error: unknown) => {
+        if (live)
+          setStage({
+            kind: "failed",
+            message:
+              error instanceof ShareCardTooLongError
+                ? error.message
+                : "没能生成图片。可以关掉重试。",
+          });
       });
     return () => {
       live = false;
@@ -101,11 +116,15 @@ export function ShareCardDialog({
   };
 
   return (
-    <Dialog.Root onOpenChange={onOpenChange} open={open}>
+    <Dialog.Root
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={onOpenChangeComplete}
+      open={open}
+    >
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.backdrop} />
         <Dialog.Viewport className={styles.viewport}>
-          <Dialog.Popup className={styles.popup}>
+          <Dialog.Popup className={styles.popup} finalFocus={finalFocus}>
             <Dialog.Title className={styles.title}>分享图片</Dialog.Title>
             <div className={styles.stage}>
               {stage.kind === "ready" ? (
@@ -116,7 +135,7 @@ export function ShareCardDialog({
                 />
               ) : stage.kind === "failed" ? (
                 <p className={styles.state} role="alert">
-                  没能生成图片。可以关掉重试。
+                  {stage.message}
                 </p>
               ) : (
                 <p aria-busy="true" className={styles.state}>

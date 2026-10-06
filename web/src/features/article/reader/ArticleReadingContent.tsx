@@ -26,6 +26,7 @@ import { MentionLink } from "../../../components/content/MentionLink";
 import { ArticleSearch } from "../ArticleSearch";
 import { ReadingAnnotations } from "./readingAnnotations";
 import { ReadingAnnotationTools } from "./ReadingAnnotationTools";
+import type { ReadingExcerptSource } from "./readingExcerpt";
 import { articleContentExtensions } from "../../../components/content/schema";
 import { articleWithOutline } from "../../../components/content/outlineDocument";
 import {
@@ -79,12 +80,14 @@ export function ArticleReadingContent({
   searchSlot,
   enableSearch = true,
   enableAnnotations = false,
+  excerptSource,
 }: {
   document: ArticleDocument;
   media?: readonly PublicArticleCover[];
   searchSlot?: HTMLElement | null;
   enableSearch?: boolean;
   enableAnnotations?: boolean;
+  excerptSource?: ReadingExcerptSource;
 }) {
   const { consider } = useMentionResolver();
   const { navigate } = useNavigation();
@@ -225,7 +228,11 @@ export function ArticleReadingContent({
       )}
       <EditorContent editor={editor} />
       {enableAnnotations && editor.storage.readingAnnotations && (
-        <ReadingAnnotationTools editor={editor} actionsSlot={searchSlot} />
+        <ReadingAnnotationTools
+          editor={editor}
+          actionsSlot={searchSlot}
+          excerptSource={excerptSource}
+        />
       )}
     </EditorContext.Provider>
   );

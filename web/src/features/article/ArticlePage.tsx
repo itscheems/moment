@@ -158,6 +158,19 @@ export function ArticlePage({
           enableSearch={focusReading}
           enableAnnotations={focusReading}
           media={post.article.bodyMedia}
+          excerptSource={
+            focusReading
+              ? {
+                  title,
+                  displayName: siteName,
+                  username: site.username,
+                  avatarUrl: site.avatarMediaId
+                    ? mediaPreviewUrl(site.avatarMediaId)
+                    : null,
+                  publishedLabel: `文章摘录 · ${published.absolute}`,
+                }
+              : undefined
+          }
         />
       </ArticleSheet>
       {post.commentCount > 0 ? (

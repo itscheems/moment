@@ -1070,6 +1070,15 @@ export function ArticleEditor({
                     document={previewDocument}
                     searchSlot={previewSearchSlot}
                     enableAnnotations
+                    excerptSource={{
+                      title,
+                      displayName: siteDisplayName(site),
+                      username: site.username,
+                      avatarUrl: site.avatarMediaId
+                        ? mediaPreviewUrl(site.avatarMediaId)
+                        : null,
+                      publishedLabel: "草稿摘录",
+                    }}
                   />
                 ) : null}
                 {editor && !previewing ? (

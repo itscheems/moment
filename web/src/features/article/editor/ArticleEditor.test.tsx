@@ -201,7 +201,7 @@ it("keeps preview annotations out of draft content, save status and persistence"
   await act(async () =>
     fireEvent.click(screen.getByRole("button", { name: "预览" })),
   );
-  await advance(0);
+  await advance(20);
   const reader = (
     document.querySelector("[data-content-renderer]") as HTMLElement & {
       editor: Editor;
@@ -212,7 +212,11 @@ it("keeps preview annotations out of draft content, save status and persistence"
   await act(async () => {
     applyReadingColor(reader, { from: 1, to: 5 }, "highlight", "blue");
     applyReadingColor(reader, { from: 2, to: 4 }, "text", "red");
+    reader.commands.setTextSelection({ from: 1, to: 5 });
   });
+  expect(
+    screen.getByRole("button", { name: "Share excerpt" }),
+  ).toBeInTheDocument();
   await advance(20_000);
   expect(reader.getJSON()).toEqual(before);
   expect(screen.getByRole("status")).toHaveTextContent(status!);
@@ -223,6 +227,7 @@ it("keeps preview annotations out of draft content, save status and persistence"
   );
   await advance(20_000);
   expect(document.querySelector("[data-reading-annotation]")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Share excerpt" })).toBeNull();
   expect(screen.getByRole("status")).toHaveTextContent(status!);
   expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
 });

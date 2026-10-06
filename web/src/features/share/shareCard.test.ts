@@ -8,6 +8,7 @@ import {
 
 import {
   renderShareCard,
+  ShareCardTooLongError,
   shareCardBlocks,
   shareCardLink,
   shareCardMediaUrl,
@@ -282,6 +283,161 @@ describe("drawing the card", () => {
     expect(recording.text()).toContain("只有标题");
     expect(recording.text()).toContain("example.com");
     expect(badges()).toBe(0);
+  });
+
+  it("adds the article title and resolves the excerpt palette without altering default cards", async () => {
+    await renderShareCard(
+      input({
+        articleTitle: "来源文章",
+        palette: {
+          background: "#101010",
+          text: "#eeeeee",
+          muted: "#aaaaaa",
+          border: "#333333",
+          accent: "#1d9bf0",
+        },
+      }),
+    );
+    expect(recording.text()).toContain("来源文章");
+    expect(recording.of("fill").some((call) => call.fill === "#101010")).toBe(
+      true,
+    );
+    expect(
+      recording.of("fillText").find((call) => call.args[0] === "在场")?.fill,
+    ).toBe("#eeeeee");
+    const previousFills = recording.of("fill").length;
+    await renderShareCard(input());
+    expect(recording.of("fill")[previousFills]?.fill).toBe("#ffffff");
+  });
+
+  it("exports an excerpt with the existing avatar fallback when its image fails to load", async () => {
+    Object.defineProperty(HTMLImageElement.prototype, "src", {
+      configurable: true,
+      set(this: HTMLImageElement) {
+        queueMicrotask(() => this.dispatchEvent(new Event("error")));
+      },
+    });
+    await expect(
+      renderShareCard(
+        input({ articleTitle: "来源", avatarUrl: "/missing.png" }),
+      ),
+    ).resolves.toBeInstanceOf(Blob);
+    expect(recording.of("drawImage")).toHaveLength(0);
+    expect(recording.text()).toContain("CCheems@itscheems来源在场");
+  });
+
+  it("wraps a long article title completely rather than truncating it", async () => {
+    const articleTitle = "一个很长的来源文章标题".repeat(8);
+    await renderShareCard(input({ articleTitle }));
+    const titleLines = recording
+      .of("fillText")
+      .filter((call) => call.font.startsWith("700 24px"));
+    expect(titleLines.length).toBeGreaterThan(1);
+    expect(titleLines.map((call) => call.args[0]).join("")).toBe(articleTitle);
+  });
+
+  it("keeps styled runs, whitespace and hard breaks through wrapping", async () => {
+    await renderShareCard(
+      input({
+        articleTitle: "来源",
+        blocks: [
+          {
+            kind: "text",
+            text: "前  标记\n后",
+            runs: [
+              { text: "前  " },
+              { text: "标记", colour: "#cc0000", background: "#ffff00" },
+              { text: "\n后" },
+            ],
+          },
+        ],
+      }),
+    );
+    const marked = recording
+      .of("fillText")
+      .find((call) => call.args[0] === "标记");
+    expect(marked?.fill).toBe("#cc0000");
+    expect(
+      recording.of("fillRect").some((call) => call.fill === "#ffff00"),
+    ).toBe(true);
+    expect(
+      recording.of("fillText").some((call) => call.args[0] === "前  "),
+    ).toBe(true);
+    expect(recording.of("fillText").some((call) => call.args[0] === "后")).toBe(
+      true,
+    );
+    expect(
+      recording
+        .of("fillText")
+        .some((call) => String(call.args[0]).includes("\n")),
+    ).toBe(false);
+  });
+
+  it("accepts exactly 60 excerpt lines and rejects overflow without emitting a partial image", async () => {
+    const excerpt = (count: number) =>
+      input({
+        articleTitle: "标题",
+        blocks: [
+          {
+            kind: "text",
+            text: "行\n".repeat(count - 1) + "行",
+            runs: [{ text: "行\n".repeat(count - 1) + "行" }],
+          },
+        ],
+      });
+    await expect(renderShareCard(excerpt(60))).resolves.toBeInstanceOf(Blob);
+    await expect(renderShareCard(excerpt(61))).rejects.toBeInstanceOf(
+      ShareCardTooLongError,
+    );
+    // A legacy card still uses its established truncation rather than failing.
+    await expect(
+      renderShareCard(
+        input({ blocks: [{ kind: "text", text: "甲".repeat(3000) }] }),
+      ),
+    ).resolves.toBeInstanceOf(Blob);
+  });
+
+  it("wraps long excerpt words without splitting an emoji grapheme or changing text", async () => {
+    const text = "word".repeat(35) + "👨‍👩‍👧‍👦".repeat(10);
+    await renderShareCard(
+      input({
+        articleTitle: "来源",
+        blocks: [
+          { kind: "text", text, runs: [{ text, background: "#ffff00" }] },
+        ],
+      }),
+    );
+    const excerpt = recording
+      .of("fillText")
+      .filter(
+        (call) =>
+          call.fill !== "#536471" &&
+          call.args[0] !== "Cheems" &&
+          call.args[0] !== "来源" &&
+          call.args[0] !== "C",
+      );
+    expect(excerpt.map((call) => call.args[0]).join("")).toBe(text);
+    for (const call of excerpt)
+      expect(String(call.args[0]).replace(/👨‍👩‍👧‍👦/g, "")).not.toMatch(
+        /[\u200d👨👩👧👦]/u,
+      );
+  });
+
+  it("keeps excerpt closing punctuation with the preceding character at a wrap boundary", async () => {
+    const text = "甲".repeat(26) + "。乙";
+    await renderShareCard(
+      input({
+        articleTitle: "来源",
+        blocks: [{ kind: "text", text, runs: [{ text }] }],
+      }),
+    );
+    const lines = recording
+      .of("fillText")
+      .filter((call) => call.font.startsWith("400 18px"));
+    expect(lines.map((call) => call.args[0]).join("")).toBe(text);
+    expect(lines.every((call) => !String(call.args[0]).startsWith("。"))).toBe(
+      true,
+    );
   });
 });
 

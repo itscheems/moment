@@ -21,6 +21,7 @@ import { TextStyleColorPanel } from "@notion/components/ui/color-text-popover";
 import { FloatingElement } from "@notion/components/utilities/floating-element";
 import { ArticleReadingContent } from "./ArticleReadingContent";
 import * as clipboard from "@content-notion/lib/clipboard";
+import * as shareCard from "../../share/shareCard";
 import type { ArticleDocument } from "../../../api/public";
 import {
   ReadingAnnotations,
@@ -451,4 +452,85 @@ it("preserves the reading instance across equal-body rerenders and search, reset
   await waitFor(() =>
     expect(current().storage.readingAnnotations.ranges).toHaveLength(0),
   );
+});
+
+it("freezes a shared excerpt across metadata rerenders and restores its memory-only selection after closing", async () => {
+  const draw = vi
+    .spyOn(shareCard, "renderShareCard")
+    .mockResolvedValue(new Blob(["png"], { type: "image/png" }));
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = vi.fn(() => "blob:excerpt");
+      static revokeObjectURL = vi.fn();
+    },
+  );
+  const body: ArticleDocument = {
+    schema_version: 2,
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        attrs: { id: "excerpt-snapshot" },
+        content: [{ type: "text", text: "prefix 摘录 suffix" }],
+      },
+    ],
+  };
+  const show = (title: string) => (
+    <NavigationProvider>
+      <MentionProvider known={[]}>
+        <ArticleSheet title={title} byline="author">
+          <ArticleReadingContent
+            document={structuredClone(body)}
+            enableAnnotations
+            excerptSource={{
+              title,
+              displayName: "作者",
+              username: "author",
+              avatarUrl: null,
+              publishedLabel: "草稿摘录",
+            }}
+          />
+        </ArticleSheet>
+      </MentionProvider>
+    </NavigationProvider>
+  );
+  const mounted = render(show("原始标题"));
+  const content = document.querySelector(
+    "[data-content-renderer]",
+  ) as HTMLElement & { editor: Editor };
+  const reader = content.editor;
+  const before = reader.getJSON();
+  const write = vi.spyOn(Storage.prototype, "setItem");
+  const update = vi.fn();
+  reader.on("update", update);
+  await act(async () => {
+    applyReadingColor(reader, { from: 6, to: 12 }, "highlight", "yellow");
+    reader.commands.setTextSelection({ from: 8, to: 10 });
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Share excerpt" }));
+  await screen.findByRole("img", { name: "分享图片预览" });
+  expect(
+    screen.queryByRole("toolbar", { name: "Reading annotations" }),
+  ).toBeNull();
+  expect(draw).toHaveBeenCalledOnce();
+  const snapshot = draw.mock.calls[0][0];
+  expect(snapshot.articleTitle).toBe("原始标题");
+  expect(snapshot.blocks).toEqual([
+    {
+      kind: "text",
+      text: "摘录",
+      runs: [{ text: "摘录", background: expect.any(String) }],
+    },
+  ]);
+  mounted.rerender(show("新的保存状态对应的标题"));
+  expect(content.editor).toBe(reader);
+  expect(draw).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+  await screen.findByRole("toolbar", { name: "Reading annotations" });
+  expect(readingSelection(reader)).toEqual({ from: 8, to: 10 });
+  expect(reader.storage.readingAnnotations.ranges).toHaveLength(1);
+  expect(reader.getJSON()).toEqual(before);
+  expect(update).not.toHaveBeenCalled();
+  expect(write).not.toHaveBeenCalled();
 });

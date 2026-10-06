@@ -24,6 +24,13 @@ import { ColorTextPopover } from "@notion/components/ui/color-text-popover";
 import { ColorHighlightButton } from "@notion/components/ui/color-highlight-button";
 import { HeaderActions } from "../../../components/headerActions";
 import { ClipboardCopyButton } from "../../../components/content/ClipboardCopyButton";
+import { Icon } from "../../../components/icons";
+import { ShareCardDialog } from "../../share/ShareCardDialog";
+import type { ShareCardInput } from "../../share/shareCard";
+import {
+  readingExcerptCard,
+  type ReadingExcerptSource,
+} from "./readingExcerpt";
 import {
   activeReadingColor,
   applyReadingColor,
@@ -37,9 +44,11 @@ import {
 export function ReadingAnnotationTools({
   editor,
   actionsSlot,
+  excerptSource,
 }: {
   editor: Editor;
   actionsSlot?: HTMLElement | null;
+  excerptSource?: ReadingExcerptSource;
 }) {
   const snapshot = useEditorState({
     editor,
@@ -61,6 +70,12 @@ export function ReadingAnnotationTools({
     "var(--tt-color-highlight-yellow)",
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareInput, setShareInput] = useState<ShareCardInput | null>(null);
+  useEffect(() => {
+    // Mount the native dialog closed first so its opening transition runs.
+    if (shareInput) setShareOpen(true);
+  }, [shareInput]);
   useEffect(() => {
     if (from !== undefined && to !== undefined)
       selectionRef.current = { from, to };
@@ -137,7 +152,7 @@ export function ReadingAnnotationTools({
       >
         <FloatingElement
           editor={editor}
-          shouldShow={visible && Boolean(selected)}
+          shouldShow={visible && Boolean(selected) && !shareOpen}
           resetTextSelectionOnClose={false}
         >
           <Toolbar variant="floating" aria-label="Reading annotations">
@@ -149,6 +164,25 @@ export function ReadingAnnotationTools({
                 }}
                 tooltip="Copy"
               />
+              {excerptSource && (
+                <Button
+                  variant="ghost"
+                  aria-label="Share excerpt"
+                  tooltip="Share excerpt"
+                  onClick={() => {
+                    if (!selectionRef.current) return;
+                    setShareInput(
+                      readingExcerptCard(
+                        editor,
+                        selectionRef.current,
+                        excerptSource,
+                      ),
+                    );
+                  }}
+                >
+                  <Icon name="share" className="tiptap-button-icon" />
+                </Button>
+              )}
               <ColorHighlightButton
                 highlightColor={highlightColor}
                 aria-label="Highlight"
@@ -181,6 +215,25 @@ export function ReadingAnnotationTools({
           </Toolbar>
         </FloatingElement>
       </ColorActionAdapterContext.Provider>
+      {shareInput && (
+        <ShareCardDialog
+          input={shareInput}
+          open={shareOpen}
+          onOpenChange={setShareOpen}
+          finalFocus={() => {
+            if (!editor.isDestroyed) {
+              // A read-only view is not tabbable. Returning its element lets
+              // the dialog pick a link inside it instead of the text selection.
+              editor.view.dom.focus({ preventScroll: true });
+              editor.view.focus();
+            }
+            return false;
+          }}
+          onOpenChangeComplete={(open) => {
+            if (!open) setShareInput(null);
+          }}
+        />
+      )}
     </>
   );
 }
