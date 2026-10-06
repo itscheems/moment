@@ -21,6 +21,7 @@ import { MentionProvider } from "../../../app/mentions";
 import { NavigationProvider } from "../../../app/navigation";
 import { ARTICLE_CODE_LANGUAGES } from "../../../components/content/articleContract";
 import { lowlight } from "./lowlight";
+import { EmojiMenuItem } from "@notion/components/ui/emoji-menu/emoji-menu";
 
 let editor: Editor;
 afterEach(() => {
@@ -38,6 +39,40 @@ function setup(content: string) {
     bottom: 40,
   });
 }
+
+it("uses native Unicode emoji in the menu and persists their text with marks", () => {
+  setup("<p>emoji:</p>");
+  const smile = editor.storage.emoji.emojis.find(
+    (emoji) => emoji.name === "smile",
+  )!;
+  expect(smile.emoji).toBe("😄");
+  const onSelect = (emoji: typeof smile) => {
+    editor.commands.setTextSelection(7);
+    editor.chain().setEmoji(emoji.name).run();
+  };
+  render(
+    <EmojiMenuItem
+      emoji={smile}
+      index={0}
+      isSelected={false}
+      onSelect={onSelect}
+      selector=".emoji-menu-list"
+    />,
+  );
+  const button = screen.getByRole("button", { name: "😄 :smile:" });
+  expect(button.querySelector("img")).toBeNull();
+  fireEvent.click(button);
+  editor.chain().setTextSelection({ from: 1, to: 8 }).setItalic().run();
+  const saved = toArticleDocument(editor.getJSON());
+  expect(saved.content[0].content?.at(-1)).toMatchObject({
+    type: "text",
+    text: "😄",
+    marks: [{ type: "italic" }],
+  });
+  editor.commands.setContent(toEditorContent(saved));
+  expect(editor.getText()).toBe("emoji:😄");
+  expect(editor.getHTML()).toContain("<em>");
+});
 
 it("registers every persisted code language in the native highlighter", () => {
   for (const language of ARTICLE_CODE_LANGUAGES) {

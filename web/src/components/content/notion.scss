@@ -84,3 +84,9 @@
 .tiptap.ProseMirror ::selection {
   color: var(--tt-theme-text);
 }
+
+/* CJK fallback fonts have no italic face. Restore the template's browser
+   synthesis for native italic marks across editing, preview, and reading. */
+.tiptap.ProseMirror {
+  font-synthesis: style;
+}

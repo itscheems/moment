@@ -1,13 +1,17 @@
 @use "../../../components/content/notion";
 /* Moment supplies the page shell; document and control styling comes from the template. */
 .notion-like-editor-content {
-  width: 100%;
+  /* As in the template, the gutter belongs inside ProseMirror so native
+     dragover/drop handlers receive pointer events beside the text too. */
+  width: calc(100% + 2 * var(--article-inset));
+  margin-inline: calc(-1 * var(--article-inset));
   min-width: 0;
 }
 .notion-like-editor {
   font-size: 1rem;
   line-height: 1.5;
   min-height: 50vh;
+  padding-inline: var(--article-inset);
   padding-bottom: 30vh;
   color: var(--text-primary);
 }

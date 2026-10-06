@@ -1,4 +1,5 @@
 import { useScrollToHash } from "@notion/components/ui/copy-anchor-link-button";
+import { useUiEditorState } from "@notion/hooks/use-ui-editor-state";
 import { useEffect } from "react";
 import { EditorContent, EditorContext, type Editor } from "@tiptap/react";
 import { DragContextMenu } from "@notion/components/ui/drag-context-menu";
@@ -37,6 +38,7 @@ interface SurfaceProps {
 }
 
 function Surface({ editor, readOnly }: SurfaceProps) {
+  const { isDragging } = useUiEditorState(editor);
   useScrollToHash({
     editor: readOnly ? null : editor,
     onTargetFound: ignoreHashResult,
@@ -53,11 +55,15 @@ function Surface({ editor, readOnly }: SurfaceProps) {
   }, [editor, setTocContent]);
   return (
     <EditorContext.Provider value={{ editor }}>
-      <EditorContent editor={editor} className="notion-like-editor-content" />
+      <EditorContent
+        editor={editor}
+        className="notion-like-editor-content"
+        style={{ cursor: isDragging ? "grabbing" : "auto" }}
+      />
       <TocSidebar topOffset={92} maxShowCount={100} />
       {!readOnly && (
         <>
-          <DragContextMenu mobileBreakpoint={480} />
+          <DragContextMenu />
           <SlashDropdownMenu />
           <EmojiDropdownMenu />
           <MentionDropdownMenu />

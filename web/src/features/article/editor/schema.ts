@@ -87,9 +87,13 @@ export function articleEditorExtensions(
     }),
     TableOfContents.configure({ getIndex: getHierarchicalIndexes }),
     Emoji.configure({
-      emojis: gitHubEmojis.filter(
-        (emoji) => Boolean(emoji.emoji) && !emoji.name.includes("regional"),
-      ),
+      // Use the upstream menu's Unicode branch. External fallback images are
+      // blocked by the host CSP; all persisted emoji here have Unicode text.
+      emojis: gitHubEmojis
+        .filter(
+          (emoji) => Boolean(emoji.emoji) && !emoji.name.includes("regional"),
+        )
+        .map((emoji) => ({ ...emoji, fallbackImage: undefined })),
       forceFallbackImages: false,
     }),
     Mention.extend({
