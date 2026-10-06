@@ -8,6 +8,7 @@ import {
 } from "react";
 import { TocContent } from "@content-notion/components/nodes/toc-node/toc-content";
 import type { JSONContent } from "@tiptap/core";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { renderToReactElement } from "@tiptap/static-renderer/pm/react";
 
 import type { ArticleDocument, PublicArticleCover } from "../../api/public";
@@ -29,6 +30,41 @@ import {
 
 const NO_MEDIA: readonly PublicArticleCover[] = [];
 
+// Resolve mentions inside text components. Rebuilding the static renderer's
+// component map for an account response would remount the whole document.
+function MentionText({
+  node,
+  searchQuery,
+}: {
+  node: ProseMirrorNode;
+  searchQuery: string;
+}) {
+  const { resolves } = useMentionResolver();
+  const value = node.text ?? "";
+  if (
+    node.marks.some(
+      (mark) => mark.type.name === "link" || mark.type.name === "code",
+    )
+  )
+    return matchedText(value, searchQuery);
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  for (const match of value.matchAll(HANDLE_MENTION)) {
+    const handle = match[2].toLowerCase();
+    if (RESERVED_HANDLES.has(handle) || !resolves(handle)) continue;
+    const start = (match.index ?? 0) + match[1].length;
+    parts.push(matchedText(value.slice(cursor, start), searchQuery));
+    parts.push(
+      <MentionLink key={start} handle={handle}>
+        {matchedText(`@${match[2]}`, searchQuery)}
+      </MentionLink>,
+    );
+    cursor = start + match[2].length + 1;
+  }
+  parts.push(matchedText(value.slice(cursor), searchQuery));
+  return parts;
+}
+
 /** A renderer has no selection, transactions, plugins, or Editor instance. */
 export function RichContent({
   document,
@@ -49,7 +85,7 @@ export function RichContent({
   const schema = contentSchemas[format];
   const extensions =
     format === "article" ? articleOutlineExtensions : contentExtensions[format];
-  const { resolves, consider } = useMentionResolver();
+  const { consider } = useMentionResolver();
   const node = useMemo(
     () =>
       format === "article"
@@ -98,34 +134,9 @@ export function RichContent({
                 {Children.count(children) ? children : <br />}
               </p>
             ),
-            text: ({ node: text }) => {
-              const value = text.text ?? "";
-              if (
-                text.marks.some(
-                  (mark) =>
-                    mark.type.name === "link" || mark.type.name === "code",
-                )
-              )
-                return matchedText(value, searchQuery);
-              const parts: ReactNode[] = [];
-              let cursor = 0;
-              for (const match of value.matchAll(HANDLE_MENTION)) {
-                const handle = match[2].toLowerCase();
-                if (RESERVED_HANDLES.has(handle) || !resolves(handle)) continue;
-                const start = (match.index ?? 0) + match[1].length;
-                parts.push(
-                  matchedText(value.slice(cursor, start), searchQuery),
-                );
-                parts.push(
-                  <MentionLink key={start} handle={handle}>
-                    {matchedText(`@${match[2]}`, searchQuery)}
-                  </MentionLink>,
-                );
-                cursor = start + match[2].length + 1;
-              }
-              parts.push(matchedText(value.slice(cursor), searchQuery));
-              return parts;
-            },
+            text: ({ node }) => (
+              <MentionText node={node} searchQuery={searchQuery} />
+            ),
             codeBlock: ({ node: code }) => {
               const language =
                 typeof code.attrs.language === "string"
@@ -157,7 +168,7 @@ export function RichContent({
           },
         },
       }),
-    [renderedNode, resolves, extensions, searchQuery],
+    [renderedNode, extensions, searchQuery],
   );
 
   const followInternalLink = useCallback(

@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NavigationProvider } from "../../app/navigation";
+import { MentionProvider } from "../../app/mentions";
 import type { ArticleDocument } from "../../api/public";
 import { ArticleSheet } from "./ArticleSheet";
 import { RichContent } from "./RichContent";
@@ -38,6 +39,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -93,4 +95,61 @@ it("clears destination feedback when leaving the reader", () => {
   view.unmount();
   expect(heading).not.toHaveClass("ProseMirror-selectednode");
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("keeps the destination mounted and emphasized while a mention finishes loading", async () => {
+  let complete!: (response: Response) => void;
+  const fetcher = vi.fn(
+    () => new Promise<Response>((resolve) => (complete = resolve)),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  const withMention: ArticleDocument = {
+    ...document,
+    content: [
+      ...document.content!,
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "你好 @linlin" }],
+      },
+    ],
+  };
+  render(
+    <NavigationProvider>
+      <MentionProvider>
+        <ArticleSheet title="测试文章" byline="作者">
+          <RichContent document={withMention} />
+        </ArticleSheet>
+      </MentionProvider>
+    </NavigationProvider>,
+  );
+  const heading = screen.getByRole("heading", { name: "第二章" });
+  fireEvent.click(screen.getAllByRole("link", { name: "第二章" })[0]);
+  expect(heading).toHaveClass("ProseMirror-selectednode");
+  await act(async () => {
+    complete(
+      new Response(
+        JSON.stringify({
+          data: {
+            user_id: "a".repeat(32),
+            username: "linlin",
+            display_name: "林林",
+            bio: "沿河散步",
+            avatar_media_id: null,
+            cover_media_id: null,
+            role: "member",
+            profile_url: "/linlin",
+          },
+          meta: {},
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      ),
+    );
+  });
+  expect(screen.getByRole("link", { name: "@linlin" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "第二章" })).toBe(heading);
+  expect(heading).toHaveClass("ProseMirror-selectednode");
+  act(() => vi.advanceTimersByTime(1_999));
+  expect(heading).toHaveClass("ProseMirror-selectednode");
+  act(() => vi.advanceTimersByTime(1));
+  expect(heading).not.toHaveClass("ProseMirror-selectednode");
 });
