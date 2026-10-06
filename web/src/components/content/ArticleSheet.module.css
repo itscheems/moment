@@ -4,7 +4,7 @@
   min-inline-size: 0;
   margin-inline: auto;
   padding: 3rem var(--article-inset) 4rem;
-  color: var(--text-primary);
+  color: var(--tt-theme-text);
   font-feature-settings: normal;
   letter-spacing: normal;
   text-rendering: auto;

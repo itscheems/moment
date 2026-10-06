@@ -12,8 +12,38 @@
 @use "./notion/components/nodes/table-node/styles/prosemirror-table";
 @use "./notion/components/nodes/table-node/styles/table-node";
 :root {
-  --tt-theme-text: var(--text-primary);
+  --tt-theme-text: var(--tt-gray-light-900);
   --tt-toolbar-height: 44px;
+}
+:is([data-theme="dim"], [data-theme="lights-out"]) {
+  --tt-theme-text: var(--tt-gray-dark-900);
+}
+
+/* Connect the page shell and its portals to the document's native palette.
+   Outside article reading/writing the site's theme keeps its own palette. */
+:root[data-theme]:has([data-article-theme]) {
+  --canvas: var(--tt-bg-color);
+  --surface: var(--tt-bg-color);
+  --surface-elevated: var(--tt-card-bg-color);
+  --surface-muted: var(--tt-gray-light-100);
+  --surface-hover: var(--tt-gray-light-a-50);
+  --surface-hover-strong: var(--tt-gray-light-a-100);
+  --text-primary: var(--tt-theme-text);
+  --text-secondary: var(--tt-gray-light-600);
+  --text-tertiary: var(--tt-gray-light-500);
+  --border-subtle: var(--tt-border-color);
+  --border-strong: var(--tt-gray-light-a-300);
+  --shadow-popover: var(--tt-shadow-elevated-md);
+}
+:root:is([data-theme="dim"], [data-theme="lights-out"]):has(
+    [data-article-theme]
+  ) {
+  --surface-muted: var(--tt-gray-dark-100);
+  --surface-hover: var(--tt-gray-dark-a-50);
+  --surface-hover-strong: var(--tt-gray-dark-a-100);
+  --text-secondary: var(--tt-gray-dark-600);
+  --text-tertiary: var(--tt-gray-dark-500);
+  --border-strong: var(--tt-gray-dark-a-300);
 }
 
 @layer notion-foundation {

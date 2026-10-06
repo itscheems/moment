@@ -61,6 +61,7 @@ export function ArticlePage({
       aria-label={`${siteName}发布的文章：${title}`}
       className={`${postStyles.post} ${postStyles.detail} ${styles.page}`}
       data-post-id={post.id}
+      data-article-theme
       tabIndex={-1}
     >
       {post.timelineItemKind === "repost" ? (
@@ -136,12 +137,15 @@ export function ArticlePage({
               </p>
             </div>
             {owner ? (
-              <OwnerPostActions
-                onDeleted={onDeleted}
-                onSiteChanged={onSiteChanged}
-                post={post}
-                site={site}
-              />
+              <div className={styles.bylineActions}>
+                <OwnerPostActions
+                  showArticleEdit
+                  onDeleted={onDeleted}
+                  onSiteChanged={onSiteChanged}
+                  post={post}
+                  site={site}
+                />
+              </div>
             ) : null}
           </div>
         }

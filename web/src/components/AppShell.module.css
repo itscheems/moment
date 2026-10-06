@@ -763,6 +763,11 @@
   background: var(--surface);
 }
 
+.focusShell .timelineHeader {
+  background: var(--tt-bg-color);
+  border-block-end-color: var(--tt-border-color);
+}
+
 .focusViewport {
   padding-block-end: 0;
 }

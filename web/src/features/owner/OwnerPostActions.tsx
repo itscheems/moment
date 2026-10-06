@@ -6,6 +6,7 @@ import type { PublicPost, SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
+import { Button } from "../../components/content/notion/components/primitives/button/button";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { useOwner } from "./OwnerProvider";
 import { articleDraftPath } from "../../app/routes";
@@ -21,11 +22,13 @@ export function OwnerPostActions({
   site,
   onDeleted,
   onSiteChanged,
+  showArticleEdit = false,
 }: {
   post: PublicPost;
   site: SiteIdentity;
   onDeleted?: (post: PublicPost) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
+  showArticleEdit?: boolean;
 }) {
   const { navigate } = useNavigation();
   const { api, session, expireIfInvalidSession } = useOwner();
@@ -130,9 +133,22 @@ export function OwnerPostActions({
 
   return (
     <div
-      className={styles.ownerPostMenu}
+      className={`${styles.ownerPostMenu} ${showArticleEdit ? styles.articleActions : ""}`}
       onClick={(event) => event.stopPropagation()}
     >
+      {showArticleEdit && post.kind === "article" ? (
+        <Button
+          data-style="ghost"
+          disabled={pending}
+          onClick={() => void editArticle()}
+          type="button"
+        >
+          <Icon name="edit" className="tiptap-button-icon" />
+          <span className="tiptap-button-text">
+            {pending ? "正在打开…" : "编辑文章"}
+          </span>
+        </Button>
+      ) : null}
       <Menu.Root onOpenChange={setMenuOpen} open={menuOpen}>
         <Menu.Trigger
           aria-label="更多操作"
@@ -154,6 +170,7 @@ export function OwnerPostActions({
             >
               <Menu.Item
                 className={styles.ownerMenuItem}
+                disabled={pending}
                 onClick={() => {
                   setMenuOpen(false);
                   if (post.kind === "article") {

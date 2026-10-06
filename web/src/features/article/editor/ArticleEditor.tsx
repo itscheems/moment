@@ -54,6 +54,7 @@ import { RichContent } from "../../../components/content/RichContent";
 import { MentionProvider } from "../../../app/mentions";
 import { NotionSurface } from "./NotionSurface";
 import { ArticleFormatToolbar } from "./ArticleFormatToolbar";
+import { ThemeToggle } from "../../../components/content/notion/components/templates/notion-like/notion-like-editor-theme-toggle";
 
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {
@@ -728,7 +729,7 @@ export function ArticleEditor({
 
   if (phase === "gone") {
     return (
-      <div className={styles.page}>
+      <div className={styles.page} data-article-theme>
         <div className={styles.pageError} role="alert">
           <p>这份草稿已经不在了。</p>
           <button
@@ -745,7 +746,7 @@ export function ArticleEditor({
 
   return (
     <MentionProvider identities={[site]}>
-      <div className={styles.page}>
+      <div className={styles.page} data-article-theme>
         <header className={styles.topBar} ref={topBar}>
           <button
             aria-label="返回时间流"
@@ -776,6 +777,7 @@ export function ArticleEditor({
             {statusLine}
           </p>
           <div className={styles.topActions}>
+            <ThemeToggle />
             <span className={styles.audience}>
               <AudienceSelector
                 disabled={

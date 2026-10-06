@@ -690,6 +690,12 @@
   margin-inline-start: auto;
 }
 
+.articleActions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .ownerMenuTrigger {
   inline-size: var(--post-edge-action-size, 2.75rem);
   block-size: var(--post-edge-action-size, 2.75rem);

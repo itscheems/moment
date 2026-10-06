@@ -85,11 +85,15 @@ function moment(): PublicPost {
   };
 }
 
-function show(post: PublicPost) {
+function show(post: PublicPost, showArticleEdit = false) {
   return render(
     <FeedbackProvider>
       <NavigationProvider>
-        <OwnerPostActions post={post} site={site} />
+        <OwnerPostActions
+          post={post}
+          site={site}
+          showArticleEdit={showArticleEdit}
+        />
       </NavigationProvider>
     </FeedbackProvider>,
   );
@@ -160,4 +164,67 @@ it("still sends a Moment to the page that edits Markdown", async () => {
   expect(window.location.pathname).toBe(
     "/owner/m/01K2ABCDEF0123456789ABCDE1/edit",
   );
+});
+
+it("opens the visible article edit button through the existing working-copy endpoint", async () => {
+  let resolve!: (value: Response) => void;
+  const fetcher = vi.fn(
+    () =>
+      new Promise<Response>((finish) => {
+        resolve = finish;
+      }),
+  );
+  vi.stubGlobal("fetch", fetcher);
+  show(article(), true);
+  const edit = screen.getByRole("button", { name: "编辑文章" });
+  fireEvent.click(edit);
+  expect(screen.getByRole("button", { name: "正在打开…" })).toBeDisabled();
+  fireEvent.click(edit);
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher).toHaveBeenCalledWith(
+    `/api/v1/owner/articles/${ARTICLE_ID}/draft`,
+    expect.objectContaining({ method: "POST" }),
+  );
+  await act(async () =>
+    resolve(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: DRAFT_ID,
+            title: "一条河流的十年",
+            body: { schema_version: 1, type: "doc", content: [] },
+            body_schema_version: 1,
+            cover_media_id: null,
+            published_entry_id: ARTICLE_ID,
+            created_at: "2026-08-10T01:00:00Z",
+            updated_at: "2026-08-10T01:00:00.000Z",
+          },
+          meta: { request_id: "r" },
+        }),
+        { status: 200 },
+      ),
+    ),
+  );
+  expect(window.location.pathname).toBe(`/compose/article/${DRAFT_ID}`);
+});
+
+it("keeps an unsuccessful edit opening on the article and allows retry", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response("{}", { status: 500 })),
+  );
+  show(article(), true);
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "编辑文章" })),
+  );
+  expect(window.location.pathname).toBe(`/m/${ARTICLE_ID}`);
+  expect(screen.getByRole("alert")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "编辑文章" })).toBeEnabled();
+});
+
+it("does not expose the article button on ordinary Moments", () => {
+  show(moment(), true);
+  expect(
+    screen.queryByRole("button", { name: "编辑文章" }),
+  ).not.toBeInTheDocument();
 });

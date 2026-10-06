@@ -10,8 +10,7 @@
 .topBar {
   position: sticky;
   z-index: var(--layer-header);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  backdrop-filter: blur(12px);
+  background: var(--tt-bg-color);
 }
 .topBar {
   inset-block-start: 0;

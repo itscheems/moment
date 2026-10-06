@@ -138,6 +138,20 @@
   min-inline-size: 0;
 }
 
+.bylineActions {
+  justify-self: end;
+}
+
+@media (max-width: 480px) {
+  .byline {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+  }
+  .bylineActions {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
 .bylineMeta {
   display: flex;
   flex-wrap: wrap;

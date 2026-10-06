@@ -17,6 +17,7 @@ import { RailSlotContext } from "./railSlot";
 import { HeaderActionsContext } from "./headerActions";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
+import { ThemeToggle } from "./content/notion/components/templates/notion-like/notion-like-editor-theme-toggle";
 import { MOBILE_VIEWPORT_QUERY, useMediaQuery } from "./useMediaQuery";
 import styles from "./AppShell.module.css";
 
@@ -489,6 +490,7 @@ export function AppShell({
       <HeaderActionsContext.Provider value={headerSlot}>
         <div
           className={`${styles.viewport} ${focusReading ? styles.focusViewport : ""}`}
+          data-article-theme={focusReading || undefined}
         >
           <a className={styles.skipLink} href="#main-content">
             跳到主要内容
@@ -566,6 +568,7 @@ export function AppShell({
                   </div>
                 )}
                 <span className={styles.headerActions} ref={setHeaderSlot} />
+                {focusReading ? <ThemeToggle /> : null}
                 {route.id !== "detail" &&
                 route.id !== "owner-edit" &&
                 !focusReading ? (

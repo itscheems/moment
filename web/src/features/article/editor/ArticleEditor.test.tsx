@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { ThemeProvider } from "../../../theme/ThemeProvider";
 import {
   act,
   cleanup,
@@ -137,9 +138,11 @@ function stubFetch() {
 function renderEditor(draftId: string | null) {
   return render(
     <FeedbackProvider>
-      <NavigationProvider>
-        <ArticleEditor draftId={draftId} site={site} />
-      </NavigationProvider>
+      <ThemeProvider>
+        <NavigationProvider>
+          <ArticleEditor draftId={draftId} site={site} />
+        </NavigationProvider>
+      </ThemeProvider>
     </FeedbackProvider>,
   );
 }
@@ -570,9 +573,11 @@ function renderRouted(draftId: string | null) {
   );
   return render(
     <FeedbackProvider>
-      <NavigationProvider>
-        <RoutedEditor />
-      </NavigationProvider>
+      <ThemeProvider>
+        <NavigationProvider>
+          <RoutedEditor />
+        </NavigationProvider>
+      </ThemeProvider>
     </FeedbackProvider>,
   );
 }
