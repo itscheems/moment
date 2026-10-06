@@ -196,7 +196,7 @@ describe("article detail page", () => {
     );
   });
 
-  it("renders the structured document with Tiptap, tables and pictures included", () => {
+  it("renders the structured document with Tiptap, tables and pictures included", async () => {
     const { container } = renderArticle();
 
     expect(
@@ -207,7 +207,7 @@ describe("article detail page", () => {
       "colspan",
       "2",
     );
-    expect(screen.getByRole("img", { name: "入海口" })).toHaveAttribute(
+    expect(await screen.findByRole("img", { name: "入海口" })).toHaveAttribute(
       "loading",
       "lazy",
     );

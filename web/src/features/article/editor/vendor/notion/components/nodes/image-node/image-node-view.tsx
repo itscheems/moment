@@ -15,6 +15,10 @@ export interface ResizeParams {
 
 export interface ResizableImageProps extends React.HTMLAttributes<HTMLDivElement> {
   src: string;
+  imageAttributes?: Pick<
+    React.ImgHTMLAttributes<HTMLImageElement>,
+    "loading" | "decoding"
+  >;
   alt?: string;
   editor?: Editor;
   minWidth?: number;
@@ -30,12 +34,15 @@ export interface ResizableImageProps extends React.HTMLAttributes<HTMLDivElement
   nodeSize?: number;
 }
 
-export function ImageNodeView(props: NodeViewProps) {
+export function ImageNodeView(
+  props: NodeViewProps & Pick<ResizableImageProps, "imageAttributes">,
+) {
   const { editor, node, updateAttributes, getPos } = props;
   const hasContent = node.content.size > 0;
 
   return (
     <ResizableImage
+      imageAttributes={props.imageAttributes}
       src={node.attrs.src}
       alt={node.attrs.alt || ""}
       editor={editor}
@@ -53,6 +60,7 @@ export function ImageNodeView(props: NodeViewProps) {
 
 export const ResizableImage: React.FC<ResizableImageProps> = ({
   src,
+  imageAttributes,
   alt = "",
   editor,
   minWidth = 96,
@@ -306,6 +314,7 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
       >
         <div className="tiptap-image-content">
           <img
+            {...imageAttributes}
             ref={imageRef}
             src={src}
             alt={alt}
@@ -338,7 +347,9 @@ export const ResizableImage: React.FC<ResizableImageProps> = ({
           <NodeViewContent
             as="div"
             className="tiptap-image-caption"
-            data-placeholder={editor?.isEditable ? "Add a caption..." : undefined}
+            data-placeholder={
+              editor?.isEditable ? "Add a caption..." : undefined
+            }
           />
         )}
       </div>
