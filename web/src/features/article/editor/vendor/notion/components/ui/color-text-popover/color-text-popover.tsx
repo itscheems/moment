@@ -301,14 +301,6 @@ export const TextStyleColorPanel: React.FC<TextStyleColorPanelProps> = ({
     }) => {
       if (!containerRef.current) return false;
 
-      const highlightedElement = containerRef.current.querySelector(
-        '[data-highlighted="true"]',
-      ) as HTMLElement;
-
-      if (highlightedElement) {
-        highlightedElement.click();
-      }
-
       addRecentColor({ type, label, value });
       onColorChanged?.({ type, label, value });
     },
@@ -320,11 +312,9 @@ export const TextStyleColorPanel: React.FC<TextStyleColorPanelProps> = ({
     items: menuItems,
     onSelect: (item) => {
       if (item) {
-        handleColorSelected({
-          type: item.type,
-          label: item.label,
-          value: item.value,
-        });
+        containerRef.current
+          ?.querySelector<HTMLButtonElement>('[data-highlighted="true"]')
+          ?.click();
       }
     },
     orientation: "both",
@@ -369,7 +359,9 @@ export const TextStyleColorPanel: React.FC<TextStyleColorPanelProps> = ({
 };
 
 export interface ColorTextPopoverProps
-  extends Omit<ButtonProps, "type">, UseColorTextPopoverConfig {}
+  extends Omit<ButtonProps, "type">, UseColorTextPopoverConfig {
+  closeOnColorChanged?: boolean;
+}
 
 /**
  * Color text popover component for Tiptap editors.
@@ -385,6 +377,7 @@ export const ColorTextPopover = forwardRef<
       editor: providedEditor,
       hideWhenUnavailable = false,
       onColorChanged,
+      closeOnColorChanged = false,
       onClick,
       children,
       ...buttonProps
@@ -404,7 +397,10 @@ export const ColorTextPopover = forwardRef<
     } = useColorTextPopover({
       editor,
       hideWhenUnavailable,
-      onColorChanged,
+      onColorChanged: (color) => {
+        onColorChanged?.(color);
+        if (closeOnColorChanged) setIsOpen(false);
+      },
     });
 
     const handleClick = useCallback(

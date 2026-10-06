@@ -175,7 +175,7 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
     );
 
     const updateSelectionState = useCallback(() => {
-      if (!editor) return;
+      if (!editor || editor.isDestroyed) return;
 
       const newRect = getBoundingClientRect(editor);
 
@@ -201,7 +201,7 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
     }, [editor, getBoundingClientRect, handleOpenChange, shouldShow]);
 
     useEffect(() => {
-      if (!editor || !closeOnEscape) return;
+      if (!editor || editor.isDestroyed || !closeOnEscape) return;
 
       const handleKeyDown = (event: KeyboardEvent) => {
         if (event.key === "Escape" && open) {
@@ -211,14 +211,15 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
         return false;
       };
 
-      editor.view.dom.addEventListener("keydown", handleKeyDown);
+      const element = editor.view.dom;
+      element.addEventListener("keydown", handleKeyDown);
       return () => {
-        editor.view.dom.removeEventListener("keydown", handleKeyDown);
+        element.removeEventListener("keydown", handleKeyDown);
       };
     }, [editor, open, closeOnEscape, handleOpenChange]);
 
     useEffect(() => {
-      if (!editor) return;
+      if (!editor || editor.isDestroyed) return;
 
       const handleBlur = (event: FocusEvent) => {
         if (preventHideRef.current) {
@@ -242,14 +243,15 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
         }
       };
 
-      editor.view.dom.addEventListener("blur", handleBlur);
+      const element = editor.view.dom;
+      element.addEventListener("blur", handleBlur);
       return () => {
-        editor.view.dom.removeEventListener("blur", handleBlur);
+        element.removeEventListener("blur", handleBlur);
       };
     }, [editor, handleOpenChange, open]);
 
     useEffect(() => {
-      if (!editor) return;
+      if (!editor || editor.isDestroyed) return;
 
       const handleDrag = () => {
         if (open) {
@@ -257,17 +259,18 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
         }
       };
 
-      editor.view.dom.addEventListener("dragstart", handleDrag);
-      editor.view.dom.addEventListener("dragover", handleDrag);
+      const element = editor.view.dom;
+      element.addEventListener("dragstart", handleDrag);
+      element.addEventListener("dragover", handleDrag);
 
       return () => {
-        editor.view.dom.removeEventListener("dragstart", handleDrag);
-        editor.view.dom.removeEventListener("dragover", handleDrag);
+        element.removeEventListener("dragstart", handleDrag);
+        element.removeEventListener("dragover", handleDrag);
       };
     }, [editor, open, handleOpenChange]);
 
     useEffect(() => {
-      if (!editor) return;
+      if (!editor || editor.isDestroyed) return;
 
       const handleMouseDown = (event: MouseEvent) => {
         if (event.button !== 0) return;
@@ -300,17 +303,19 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
         }
       };
 
-      editor.view.dom.addEventListener("mousedown", handleMouseDown);
-      editor.view.root.addEventListener("mouseup", handleMouseUp);
+      const element = editor.view.dom;
+      const root = editor.view.root;
+      element.addEventListener("mousedown", handleMouseDown);
+      root.addEventListener("mouseup", handleMouseUp);
 
       return () => {
-        editor.view.dom.removeEventListener("mousedown", handleMouseDown);
-        editor.view.root.removeEventListener("mouseup", handleMouseUp);
+        element.removeEventListener("mousedown", handleMouseDown);
+        root.removeEventListener("mouseup", handleMouseUp);
       };
     }, [editor, updateSelectionState]);
 
     useEffect(() => {
-      if (!editor) return;
+      if (!editor || editor.isDestroyed) return;
 
       editor.on("selectionUpdate", updateSelectionState);
 
@@ -320,7 +325,7 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
     }, [editor, updateSelectionState]);
 
     useEffect(() => {
-      if (!editor) return;
+      if (!editor || editor.isDestroyed) return;
       updateSelectionState();
     }, [editor, updateSelectionState]);
 
@@ -331,7 +336,7 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
     );
     const mergedRef = useMergeRefs([ref, forwardedRef, floatingElementRef]);
 
-    if (!editor || !isMounted || !open) return null;
+    if (!editor || !isMounted) return null;
 
     return (
       <div

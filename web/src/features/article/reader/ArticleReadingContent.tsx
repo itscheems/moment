@@ -24,6 +24,8 @@ import { useNavigation } from "../../../app/navigation";
 import { HeaderActions } from "../../../components/headerActions";
 import { MentionLink } from "../../../components/content/MentionLink";
 import { ArticleSearch } from "../ArticleSearch";
+import { ReadingAnnotations } from "./readingAnnotations";
+import { ReadingAnnotationTools } from "./ReadingAnnotationTools";
 import { articleContentExtensions } from "../../../components/content/schema";
 import { articleWithOutline } from "../../../components/content/outlineDocument";
 import {
@@ -76,11 +78,13 @@ export function ArticleReadingContent({
   media = NO_MEDIA,
   searchSlot,
   enableSearch = true,
+  enableAnnotations = false,
 }: {
   document: ArticleDocument;
   media?: readonly PublicArticleCover[];
   searchSlot?: HTMLElement | null;
   enableSearch?: boolean;
+  enableAnnotations?: boolean;
 }) {
   const { consider } = useMentionResolver();
   const { navigate } = useNavigation();
@@ -143,12 +147,17 @@ export function ArticleReadingContent({
     };
   }, [document, media]);
   useEffect(() => consider(content.handles), [consider, content]);
+  const contentKey = JSON.stringify(content.json);
 
   const editor = useEditor(
     {
-      extensions: enableSearch
-        ? [...readingExtensions, FindAndReplace.configure({ injectCSS: false })]
-        : readingExtensions,
+      extensions: [
+        ...readingExtensions,
+        ...(enableSearch
+          ? [FindAndReplace.configure({ injectCSS: false })]
+          : []),
+        ...(enableAnnotations ? [ReadingAnnotations] : []),
+      ],
       content: content.json,
       editable: false,
       immediatelyRender: true,
@@ -186,13 +195,13 @@ export function ArticleReadingContent({
         },
       },
     },
-    [content, enableSearch],
+    [contentKey, enableSearch, enableAnnotations],
   );
 
   if (!editor || editor.isDestroyed) return null;
   return (
-    <EditorContext.Provider value={{ editor }}>
-      {enableSearch && (
+    <EditorContext.Provider key={editor.instanceId} value={{ editor }}>
+      {enableSearch && editor.storage.findAndReplace && (
         <ArticleSearch editor={editor}>
           {({ open, toggle, buttonRef }) => {
             const trigger = (
@@ -215,6 +224,9 @@ export function ArticleReadingContent({
         </ArticleSearch>
       )}
       <EditorContent editor={editor} />
+      {enableAnnotations && editor.storage.readingAnnotations && (
+        <ReadingAnnotationTools editor={editor} actionsSlot={searchSlot} />
+      )}
     </EditorContext.Provider>
   );
 }

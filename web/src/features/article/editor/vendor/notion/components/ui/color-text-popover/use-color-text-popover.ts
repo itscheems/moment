@@ -5,6 +5,7 @@ import type { Editor } from "@tiptap/react";
 
 // --- Hooks ---
 import { useTiptapEditor } from "@notion/hooks/use-tiptap-editor";
+import { useColorActionAdapter } from "@notion/hooks/use-color-action-adapter";
 
 // --- Icons ---
 import { TextColorSmallIcon } from "@notion/components/icons/text-color-small-icon";
@@ -94,10 +95,12 @@ export function shouldShowColorTextPopover(params: {
  * Hook to manage recently used colors
  */
 export function useRecentColors(maxColors: number = 3) {
+  const adapter = useColorActionAdapter();
   const [recentColors, setRecentColors] = useState<RecentColor[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
+    if (adapter) return;
     try {
       const storedColors = localStorage.getItem("tiptapRecentlyUsedColors");
       if (storedColors) {
@@ -109,7 +112,7 @@ export function useRecentColors(maxColors: number = 3) {
     } finally {
       setIsInitialized(true);
     }
-  }, [maxColors]);
+  }, [maxColors, adapter]);
 
   const addRecentColor = useCallback(
     ({
@@ -121,6 +124,10 @@ export function useRecentColors(maxColors: number = 3) {
       label: string;
       value: string;
     }) => {
+      if (adapter) {
+        adapter.addRecentColor({ type, label, value });
+        return;
+      }
       setRecentColors((prevColors) => {
         const filtered = prevColors.filter(
           (c) => !(c.type === type && c.value === value),
@@ -142,10 +149,16 @@ export function useRecentColors(maxColors: number = 3) {
         return updated;
       });
     },
-    [maxColors],
+    [maxColors, adapter],
   );
 
-  return { recentColors, addRecentColor, isInitialized };
+  return adapter
+    ? {
+        recentColors: adapter.recentColors.slice(0, maxColors),
+        addRecentColor,
+        isInitialized: true,
+      }
+    : { recentColors, addRecentColor, isInitialized };
 }
 
 /**
@@ -214,25 +227,34 @@ export function useColorTextPopover(config?: UseColorTextPopoverConfig) {
   } = config || {};
 
   const { editor } = useTiptapEditor(providedEditor);
+  const adapter = useColorActionAdapter(editor);
   const [isVisible, setIsVisible] = useState(true);
 
   const textStyleInSchema = isMarkInSchema("textStyle", editor);
   const highlightInSchema = isMarkInSchema("highlight", editor);
 
-  const activeTextStyle = getActiveMarkAttrs(editor, "textStyle") || {};
-  const activeHighlight = getActiveMarkAttrs(editor, "highlight") || {};
+  const activeTextStyle = adapter
+    ? { color: adapter.activeColor("text") }
+    : getActiveMarkAttrs(editor, "textStyle") || {};
+  const activeHighlight = adapter
+    ? { color: adapter.activeColor("highlight") }
+    : getActiveMarkAttrs(editor, "highlight") || {};
 
-  const canToggle = canColorText(editor) || canColorHighlight(editor);
+  const canToggle = adapter
+    ? adapter.canApply
+    : canColorText(editor) || canColorHighlight(editor);
 
   useEffect(() => {
     if (!editor) return;
 
     const updateVisibility = () => {
       setIsVisible(
-        shouldShowColorTextPopover({
-          editor,
-          hideWhenUnavailable,
-        }),
+        adapter
+          ? adapter.canApply
+          : shouldShowColorTextPopover({
+              editor,
+              hideWhenUnavailable,
+            }),
       );
     };
 
@@ -243,7 +265,13 @@ export function useColorTextPopover(config?: UseColorTextPopoverConfig) {
     return () => {
       editor.off("selectionUpdate", updateVisibility);
     };
-  }, [editor, hideWhenUnavailable, highlightInSchema, textStyleInSchema]);
+  }, [
+    editor,
+    hideWhenUnavailable,
+    highlightInSchema,
+    textStyleInSchema,
+    adapter,
+  ]);
 
   const handleColorChanged = useCallback(
     ({

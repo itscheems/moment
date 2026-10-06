@@ -6,6 +6,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 
 // --- Hooks ---
 import { useTiptapEditor } from "@notion/hooks/use-tiptap-editor";
+import { useColorActionAdapter } from "@notion/hooks/use-color-action-adapter";
 import { useIsBreakpoint } from "@notion/hooks/use-is-breakpoint";
 
 // --- Lib ---
@@ -242,16 +243,25 @@ export function useColorHighlight(config: UseColorHighlightConfig) {
   } = config;
 
   const { editor } = useTiptapEditor(providedEditor);
+  const adapter = useColorActionAdapter(editor);
   const isMobile = useIsBreakpoint();
   const [isVisible, setIsVisible] = useState<boolean>(true);
-  const canColorHighlightState = canColorHighlight(editor, mode);
-  const isActive = isColorHighlightActive(editor, highlightColor, mode);
+  const canColorHighlightState = adapter
+    ? adapter.canApply && mode === "mark"
+    : canColorHighlight(editor, mode);
+  const isActive = adapter
+    ? adapter.activeColor("highlight") === highlightColor
+    : isColorHighlightActive(editor, highlightColor, mode);
 
   useEffect(() => {
     if (!editor) return;
 
     const handleSelectionUpdate = () => {
-      setIsVisible(shouldShowButton({ editor, hideWhenUnavailable, mode }));
+      setIsVisible(
+        adapter
+          ? adapter.canApply && mode === "mark"
+          : shouldShowButton({ editor, hideWhenUnavailable, mode }),
+      );
     };
 
     handleSelectionUpdate();
@@ -261,11 +271,16 @@ export function useColorHighlight(config: UseColorHighlightConfig) {
     return () => {
       editor.off("selectionUpdate", handleSelectionUpdate);
     };
-  }, [editor, hideWhenUnavailable, mode]);
+  }, [editor, hideWhenUnavailable, mode, adapter]);
 
   const handleColorHighlight = useCallback(() => {
     if (!editor || !canColorHighlightState || !highlightColor || !label)
       return false;
+    if (adapter) {
+      const success = adapter.applyColor("highlight", highlightColor);
+      if (success) onApplied?.({ color: highlightColor, label, mode });
+      return success;
+    }
 
     if (mode === "mark") {
       if (editor.state.storedMarks) {
@@ -302,15 +317,25 @@ export function useColorHighlight(config: UseColorHighlightConfig) {
       }
       return success;
     }
-  }, [canColorHighlightState, highlightColor, editor, label, onApplied, mode]);
+  }, [
+    canColorHighlightState,
+    highlightColor,
+    editor,
+    label,
+    onApplied,
+    mode,
+    adapter,
+  ]);
 
   const handleRemoveHighlight = useCallback(() => {
-    const success = removeHighlight(editor, mode);
+    const success = adapter
+      ? adapter.applyColor("highlight", "var(--tt-bg-color)")
+      : removeHighlight(editor, mode);
     if (success) {
       onApplied?.({ color: "", label: "Remove highlight", mode });
     }
     return success;
-  }, [editor, onApplied, mode]);
+  }, [editor, onApplied, mode, adapter]);
 
   useHotkeys(
     COLOR_HIGHLIGHT_SHORTCUT_KEY,
@@ -319,7 +344,7 @@ export function useColorHighlight(config: UseColorHighlightConfig) {
       handleColorHighlight();
     },
     {
-      enabled: isVisible && canColorHighlightState,
+      enabled: !adapter && isVisible && canColorHighlightState,
       enableOnContentEditable: !isMobile,
       enableOnFormTags: true,
     },

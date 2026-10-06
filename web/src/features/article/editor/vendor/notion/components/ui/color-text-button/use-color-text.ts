@@ -6,6 +6,7 @@ import { useHotkeys } from "react-hotkeys-hook";
 
 // --- Hooks ---
 import { useTiptapEditor } from "@notion/hooks/use-tiptap-editor";
+import { useColorActionAdapter } from "@notion/hooks/use-color-action-adapter";
 import { useIsBreakpoint } from "@notion/hooks/use-is-breakpoint";
 
 // --- Lib ---
@@ -206,16 +207,23 @@ export function useColorText(config: UseColorTextConfig) {
   } = config;
 
   const { editor } = useTiptapEditor(providedEditor);
+  const adapter = useColorActionAdapter(editor);
   const isMobile = useIsBreakpoint();
   const [isVisible, setIsVisible] = useState<boolean>(true);
-  const canColorTextState = canColorText(editor);
-  const isActive = isColorTextActive(editor, textColor);
+  const canColorTextState = adapter ? adapter.canApply : canColorText(editor);
+  const isActive = adapter
+    ? adapter.activeColor("text") === textColor
+    : isColorTextActive(editor, textColor);
 
   useEffect(() => {
     if (!editor) return;
 
     const handleSelectionUpdate = () => {
-      setIsVisible(shouldShowButton({ editor, hideWhenUnavailable }));
+      setIsVisible(
+        adapter
+          ? adapter.canApply
+          : shouldShowButton({ editor, hideWhenUnavailable }),
+      );
     };
 
     handleSelectionUpdate();
@@ -225,10 +233,15 @@ export function useColorText(config: UseColorTextConfig) {
     return () => {
       editor.off("selectionUpdate", handleSelectionUpdate);
     };
-  }, [editor, hideWhenUnavailable]);
+  }, [editor, hideWhenUnavailable, adapter]);
 
   const handleColorText = useCallback(() => {
     if (!editor || !canColorTextState) return false;
+    if (adapter) {
+      const success = adapter.applyColor("text", textColor);
+      if (success) onApplied?.({ color: textColor, label });
+      return success;
+    }
 
     if (editor.state.storedMarks) {
       const textStyleMarkType = editor.schema.marks.textStyle;
@@ -252,7 +265,7 @@ export function useColorText(config: UseColorTextConfig) {
       }
       return success;
     }, 0);
-  }, [editor, canColorTextState, textColor, onApplied, label]);
+  }, [editor, canColorTextState, textColor, onApplied, label, adapter]);
 
   useHotkeys(
     COLOR_TEXT_SHORTCUT_KEY,
@@ -261,7 +274,7 @@ export function useColorText(config: UseColorTextConfig) {
       handleColorText();
     },
     {
-      enabled: isVisible && canColorTextState,
+      enabled: !adapter && isVisible && canColorTextState,
       enableOnContentEditable: !isMobile,
       enableOnFormTags: true,
     },

@@ -56,6 +56,7 @@ import { MentionProvider } from "../../../app/mentions";
 import { NotionSurface } from "./NotionSurface";
 import { ArticleFormatToolbar } from "./ArticleFormatToolbar";
 import { ThemeToggle } from "../../../components/content/notion/components/templates/notion-like/notion-like-editor-theme-toggle";
+import { ButtonGroup } from "@notion/components/primitives/button";
 
 function createIdempotencyKey(): string {
   if (typeof crypto.randomUUID === "function") {
@@ -100,7 +101,7 @@ export function ArticleEditor({
   const [resolving, setResolving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [previewSearchSlot, setPreviewSearchSlot] =
-    useState<HTMLSpanElement | null>(null);
+    useState<HTMLDivElement | null>(null);
   const [railOpen, setRailOpen] = useState(false);
   const [drafts, setDrafts] = useState<readonly ArticleDraft[]>([]);
   const [railError, setRailError] = useState<string | null>(null);
@@ -804,7 +805,12 @@ export function ArticleEditor({
           </p>
           <div className={styles.topActions}>
             <ThemeToggle />
-            {previewing ? <span ref={setPreviewSearchSlot} /> : null}
+            {previewing ? (
+              <ButtonGroup
+                ref={setPreviewSearchSlot}
+                orientation="horizontal"
+              />
+            ) : null}
             <span className={styles.audience}>
               <AudienceSelector
                 disabled={
@@ -1063,6 +1069,7 @@ export function ArticleEditor({
                   <ArticleReadingContent
                     document={previewDocument}
                     searchSlot={previewSearchSlot}
+                    enableAnnotations
                   />
                 ) : null}
                 {editor && !previewing ? (

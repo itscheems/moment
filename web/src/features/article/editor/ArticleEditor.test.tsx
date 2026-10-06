@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SiteIdentity } from "../../../api/public";
 import { NavigationProvider, useNavigation } from "../../../app/navigation";
 import { FeedbackProvider } from "../../../components/Feedback";
+import { applyReadingColor } from "../reader/readingAnnotations";
+import type { Editor } from "@tiptap/core";
 
 const uploadMedia = vi.fn();
 const expireIfInvalidSession = vi.fn().mockReturnValue(false);
@@ -188,6 +190,40 @@ it("opens a new article idle rather than claiming unsaved changes", async () => 
   });
   await advance(20_000);
   expect(screen.getByRole("status")).not.toHaveTextContent("有改动未保存");
+  expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+});
+
+it("keeps preview annotations out of draft content, save status and persistence", async () => {
+  stubFetch();
+  renderEditor(DRAFT_ID);
+  await advance(0);
+  const status = screen.getByRole("status").textContent;
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "预览" })),
+  );
+  await advance(0);
+  const reader = (
+    document.querySelector("[data-content-renderer]") as HTMLElement & {
+      editor: Editor;
+    }
+  ).editor;
+  const before = reader.getJSON();
+  const stored = vi.spyOn(Storage.prototype, "setItem");
+  await act(async () => {
+    applyReadingColor(reader, { from: 1, to: 5 }, "highlight", "blue");
+    applyReadingColor(reader, { from: 2, to: 4 }, "text", "red");
+  });
+  await advance(20_000);
+  expect(reader.getJSON()).toEqual(before);
+  expect(screen.getByRole("status")).toHaveTextContent(status!);
+  expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+  expect(stored).not.toHaveBeenCalled();
+  await act(async () =>
+    fireEvent.click(screen.getByRole("button", { name: "继续编辑" })),
+  );
+  await advance(20_000);
+  expect(document.querySelector("[data-reading-annotation]")).toBeNull();
+  expect(screen.getByRole("status")).toHaveTextContent(status!);
   expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
 });
 

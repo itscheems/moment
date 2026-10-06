@@ -75,15 +75,29 @@ it("restarts native copied feedback on a second click without disabling the butt
   expect(button).toHaveAccessibleName("复制代码");
 });
 
-it("replaces the copy notice with an error when the clipboard rejects the write", async () => {
+it("shows only an error when the clipboard rejects the write", async () => {
   setup(vi.fn().mockRejectedValue(new Error("Clipboard denied")));
   const button = screen.getByRole("button", { name: "复制代码" });
   await act(async () => fireEvent.click(button));
   await act(async () => vi.advanceTimersByTimeAsync(50));
   expect(button).not.toHaveAttribute("data-copied");
   expect(screen.getByText("暂时无法复制代码")).toBeVisible();
-  const success = screen
-    .getByText("已复制到剪贴板")
-    .closest("[data-sonner-toast]");
-  expect(success).toHaveAttribute("data-removed", "true");
+  expect(screen.queryByText("已复制到剪贴板")).toBeNull();
+});
+
+it("waits for the clipboard write before reporting success", async () => {
+  let resolve: () => void = () => {};
+  setup(
+    vi.fn().mockImplementation(
+      () =>
+        new Promise<void>((done) => {
+          resolve = done;
+        }),
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "复制代码" }));
+  expect(screen.queryByText("已复制到剪贴板")).toBeNull();
+  expect(screen.queryByRole("button", { name: "已复制" })).toBeNull();
+  await act(async () => resolve());
+  expect(screen.getByRole("button", { name: "已复制" })).toBeInTheDocument();
 });

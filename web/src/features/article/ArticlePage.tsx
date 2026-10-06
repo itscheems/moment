@@ -153,8 +153,10 @@ export function ArticlePage({
         }
       >
         <ArticleReadingContent
+          key={post.id}
           document={post.article.body}
           enableSearch={focusReading}
+          enableAnnotations={focusReading}
           media={post.article.bodyMedia}
         />
       </ArticleSheet>
