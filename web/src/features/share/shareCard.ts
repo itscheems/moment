@@ -67,14 +67,6 @@ export interface ShareCardTextRun {
   background?: string;
 }
 
-export interface ShareCardPalette {
-  background: string;
-  text: string;
-  muted: string;
-  border: string;
-  accent: string;
-}
-
 export class ShareCardTooLongError extends Error {
   constructor() {
     super("摘录超过分享卡片的 60 行上限，请关闭弹窗并缩短选区后重试。");
@@ -171,8 +163,6 @@ export interface ShareCardInput {
   link: ShareCardLink | null;
   /** Present only for an exact article excerpt; never silently truncate it. */
   articleTitle?: string;
-  /** Omitted by existing post cards, which retain their original palette. */
-  palette?: ShareCardPalette;
 }
 
 const INK = "#0f1419";
@@ -850,20 +840,6 @@ function layOutBody(
 export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   await readyFonts();
 
-  const {
-    background: ground,
-    text: ink,
-    muted,
-    border: hairline,
-    accent,
-  } = input.palette ?? {
-    background: GROUND,
-    text: INK,
-    muted: MUTED,
-    border: HAIRLINE,
-    accent: ACCENT,
-  };
-
   const contentWidth = WIDTH - PAD * 2;
   const media = input.media.slice(0, 4);
   const stills = await Promise.all(
@@ -919,6 +895,8 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     (total, piece, index) => total + blockHeight(piece) + gapBefore(index),
     0,
   );
+  // A one-pixel rule with 16px of air on either side separates the source title.
+  const bodyGap = titleLines.length > 0 ? 33 : 24;
 
   const linkShape = input.link
     ? linkLayout(ruler, input.link, thumbnail, contentWidth)
@@ -930,7 +908,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     headerHeight +
     AVATAR +
     titleHeight +
-    (bodyHeight > 0 ? 24 + bodyHeight : 0) +
+    (bodyHeight > 0 ? bodyGap + bodyHeight : 0) +
     (linkShape ? 18 + linkShape.height : 0) +
     (shape ? 22 + shape.height : 0) +
     (input.location ? 14 + 26 : 0) +
@@ -948,7 +926,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   // The canvas starts transparent; only the rounded card is painted, so the
   // corners stay clear and whatever the card lands on shows through them.
-  ctx.fillStyle = ground;
+  ctx.fillStyle = GROUND;
   ctx.beginPath();
   ctx.roundRect(0, 0, WIDTH, height, CARD_RADIUS);
   ctx.fill();
@@ -978,11 +956,11 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     ctx.drawImage(avatar, PAD, y, AVATAR, AVATAR);
     ctx.restore();
   } else {
-    ctx.fillStyle = hairline;
+    ctx.fillStyle = HAIRLINE;
     ctx.beginPath();
     ctx.arc(PAD + AVATAR / 2, y + AVATAR / 2, AVATAR / 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = muted;
+    ctx.fillStyle = MUTED;
     ctx.font = font(700, 22);
     ctx.textAlign = "center";
     ctx.fillText(
@@ -995,10 +973,10 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   const textLeft = PAD + AVATAR + 14;
   const nameWidth = WIDTH - PAD - textLeft;
-  ctx.fillStyle = ink;
+  ctx.fillStyle = INK;
   ctx.font = font(700, NAME_SIZE);
   ctx.fillText(truncate(ctx, input.displayName, nameWidth), textLeft, y + 22);
-  ctx.fillStyle = muted;
+  ctx.fillStyle = MUTED;
   ctx.font = font(400, HANDLE_SIZE);
   ctx.fillText(
     truncate(ctx, `@${input.username}`, nameWidth),
@@ -1009,7 +987,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   if (titleLines.length > 0) {
     y += 24;
-    ctx.fillStyle = ink;
+    ctx.fillStyle = INK;
     ctx.font = font(700, titleSize);
     titleLines.forEach((line, row) =>
       ctx.fillText(line, PAD, y + row * titleLine + titleSize),
@@ -1018,11 +996,19 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   }
 
   if (bodyHeight > 0) {
-    y += 24;
+    if (titleLines.length > 0) {
+      ctx.strokeStyle = LINK_BORDER;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(PAD, y + 16.5);
+      ctx.lineTo(PAD + contentWidth, y + 16.5);
+      ctx.stroke();
+    }
+    y += bodyGap;
     laid.forEach((piece, index) => {
       y += gapBefore(index);
       if (piece.kind === "code") {
-        ctx.fillStyle = hairline;
+        ctx.fillStyle = HAIRLINE;
         ctx.beginPath();
         ctx.roundRect(PAD, y, contentWidth, blockHeight(piece), 10);
         ctx.fill();
@@ -1040,15 +1026,15 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
         return;
       }
       if (piece.quote) {
-        ctx.fillStyle = hairline;
+        ctx.fillStyle = HAIRLINE;
         ctx.fillRect(PAD, y + 2, 3, blockHeight(piece) - 4);
       }
       if (piece.marker !== undefined) {
-        ctx.fillStyle = muted;
+        ctx.fillStyle = MUTED;
         ctx.font = font(400, BODY_SIZE);
         ctx.fillText(piece.marker, PAD, y + piece.size);
       }
-      const defaultColour = piece.quote ? muted : ink;
+      const defaultColour = piece.quote ? MUTED : INK;
       ctx.fillStyle = defaultColour;
       ctx.font = font(piece.weight, piece.size);
       piece.lines.forEach((line, row) => {
@@ -1113,7 +1099,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
 
   if (input.location) {
     y += 14;
-    ctx.fillStyle = accent;
+    ctx.fillStyle = ACCENT;
     // A pin drawn rather than an icon font: one glyph is cheaper than loading a
     // sprite the card uses once.
     const pinX = PAD + 5;
@@ -1123,11 +1109,11 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
     ctx.lineTo(pinX, pinY + 7);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = ground;
+    ctx.fillStyle = GROUND;
     ctx.beginPath();
     ctx.arc(pinX, pinY - 3, 2, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = muted;
+    ctx.fillStyle = MUTED;
     ctx.font = font(400, PLACE_SIZE);
     ctx.fillText(
       truncate(ctx, input.location, contentWidth - 22),
@@ -1142,7 +1128,7 @@ export async function renderShareCard(input: ShareCardInput): Promise<Blob> {
   // line drawn to separate what whitespace already separates is decoration
   // wearing the costume of structure.
   y += 30;
-  ctx.fillStyle = muted;
+  ctx.fillStyle = MUTED;
   ctx.font = font(400, FOOT_SIZE);
   ctx.fillText(input.publishedLabel, PAD, y + FOOT_SIZE);
 

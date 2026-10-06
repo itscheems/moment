@@ -285,29 +285,28 @@ describe("drawing the card", () => {
     expect(badges()).toBe(0);
   });
 
-  it("adds the article title and resolves the excerpt palette without altering default cards", async () => {
+  it("separates the article title from its excerpt without altering default cards", async () => {
     await renderShareCard(
       input({
         articleTitle: "来源文章",
-        palette: {
-          background: "#101010",
-          text: "#eeeeee",
-          muted: "#aaaaaa",
-          border: "#333333",
-          accent: "#1d9bf0",
-        },
       }),
     );
     expect(recording.text()).toContain("来源文章");
-    expect(recording.of("fill").some((call) => call.fill === "#101010")).toBe(
+    expect(recording.of("fill").some((call) => call.fill === "#ffffff")).toBe(
       true,
     );
     expect(
       recording.of("fillText").find((call) => call.args[0] === "在场")?.fill,
-    ).toBe("#eeeeee");
+    ).toBe("#0f1419");
+    expect(recording.of("stroke")).toHaveLength(1);
+    expect(recording.of("stroke")[0].stroke).toBe("#cfd9de");
+    const before = recording.calls.length;
     const previousFills = recording.of("fill").length;
     await renderShareCard(input());
     expect(recording.of("fill")[previousFills]?.fill).toBe("#ffffff");
+    expect(
+      recording.calls.slice(before).some((call) => call.op === "stroke"),
+    ).toBe(false);
   });
 
   it("exports an excerpt with the existing avatar fallback when its image fails to load", async () => {

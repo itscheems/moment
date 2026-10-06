@@ -139,6 +139,7 @@ describe("article excerpt snapshots", () => {
     applyReadingColor(editor, { from: 1, to: 3 }, "highlight", "green");
     expect(input).toEqual(frozen);
     expect(input.articleTitle).toBe("文章标题");
+    expect(input).not.toHaveProperty("palette");
     expect(input.media).toEqual([]);
     expect(input.link).toBeNull();
     expect(editor.getJSON()).toEqual(before);

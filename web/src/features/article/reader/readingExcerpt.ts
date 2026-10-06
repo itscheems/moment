@@ -121,7 +121,7 @@ export function readingExcerptBlocks(
   return blocks;
 }
 
-/** Freeze the colours in the reader's actual cascade, not a second palette. */
+/** Freeze the existing light colour tokens for the white share card. */
 export function readingExcerptCard(
   editor: Editor,
   selection: ReadingRange,
@@ -131,6 +131,21 @@ export function readingExcerptCard(
   probe.hidden = true;
   // A sibling avoids changing ProseMirror's managed content or document.
   editor.view.dom.parentElement!.append(probe);
+  // Reuse the loaded template's light defaults without changing the page theme.
+  for (const stylesheet of document.styleSheets) {
+    if (stylesheet.href && new URL(stylesheet.href).origin !== location.origin)
+      continue;
+    for (const rule of stylesheet.cssRules) {
+      if (!(rule instanceof CSSStyleRule) || rule.selectorText !== ":root")
+        continue;
+      for (const property of Array.from(rule.style))
+        if (property.startsWith("--tt-color-"))
+          probe.style.setProperty(
+            property,
+            rule.style.getPropertyValue(property),
+          );
+    }
+  }
   const colours = new Map<string, string>();
   const resolveColour = (value: string) => {
     const cached = colours.get(value);
@@ -148,13 +163,6 @@ export function readingExcerptCard(
       publishedLabel: source.publishedLabel,
       articleTitle: source.title.trim() || "无标题",
       blocks: readingExcerptBlocks(editor, selection, resolveColour),
-      palette: {
-        background: resolveColour("var(--tt-bg-color)"),
-        text: resolveColour("var(--tt-theme-text)"),
-        muted: resolveColour("var(--text-secondary)"),
-        border: resolveColour("var(--tt-border-color)"),
-        accent: resolveColour("var(--accent)"),
-      },
       media: [],
       location: null,
       link: null,
