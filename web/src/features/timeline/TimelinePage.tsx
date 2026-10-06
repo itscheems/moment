@@ -36,6 +36,7 @@ import {
 } from "./cursorContinuity";
 import { reconcileTimelineEvent, timelineItemKey } from "./timelineItems";
 import styles from "./TimelinePage.module.css";
+import { rowElement, withRowsRendered } from "./scrollAnchor";
 
 const MAX_REPLAY_PAGES = 1_000;
 
@@ -76,39 +77,6 @@ function errorKind(error: unknown): "timeline" | "malformed" {
     error.code === "API_RESPONSE_INVALID"
     ? "malformed"
     : "timeline";
-}
-
-function rowElements(): HTMLElement[] {
-  return Array.from(
-    document.querySelectorAll<HTMLElement>("[data-timeline-item-key]"),
-  );
-}
-
-function rowElement(key: string): HTMLElement | undefined {
-  return rowElements().find(
-    (element) => element.dataset.timelineItemKey === key,
-  );
-}
-
-/**
- * Rows off screen skip their layout (`content-visibility: auto`) and stand at
- * a placeholder height until they come near, so a position computed across
- * them is wrong by the difference -- measured: an anchored row placed under
- * the header at 53px was 380px above it a frame later, once the twenty rows
- * over it had taken their real height. Rendering every row once fixes its
- * real height in the browser's memory (`contain-intrinsic-size: auto`), so
- * whatever is measured against them afterwards holds; the override is lifted
- * on the next frame and the rows go back to skipping.
- */
-function withRowsRendered(measureAndScroll: () => void) {
-  const rows = rowElements();
-  for (const row of rows) {
-    row.style.setProperty("content-visibility", "visible");
-  }
-  measureAndScroll();
-  window.requestAnimationFrame(() => {
-    for (const row of rows) row.style.removeProperty("content-visibility");
-  });
 }
 
 /**

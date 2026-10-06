@@ -9,6 +9,26 @@ const listeners = new Set<(event: OwnerPostEvent) => void>();
 let pending: OwnerPostEvent[] = [];
 
 export function announceOwnerPost(detail: OwnerPostEvent): void {
+  if (
+    detail.kind === "created" &&
+    typeof window.BroadcastChannel === "function"
+  ) {
+    try {
+      const channel = new window.BroadcastChannel("moment.posts.v1");
+      try {
+        channel.postMessage({
+          scope: window.location.origin,
+          id: detail.post.id,
+          kind: detail.post.kind,
+        });
+      } finally {
+        channel.close();
+      }
+    } catch {
+      // Optional cross-tab delivery must not turn a successful publish into
+      // a failure. Focus and filter changes still check the server watermark.
+    }
+  }
   if (listeners.size === 0) {
     pending.push(detail);
     return;
@@ -26,4 +46,27 @@ export function listenForOwnerPosts(
     for (const event of queued) listener(event);
   }
   return () => listeners.delete(listener);
+}
+
+/** Cross-tab invalidation contains no body or credentials; receivers fetch as themselves. */
+export function listenForPublishedPosts(listener: () => void): () => void {
+  if (typeof window.BroadcastChannel !== "function") return () => {};
+  let channel: BroadcastChannel;
+  try {
+    channel = new window.BroadcastChannel("moment.posts.v1");
+  } catch {
+    return () => {};
+  }
+  channel.onmessage = (event: MessageEvent<unknown>) => {
+    const data = event.data;
+    if (typeof data !== "object" || data === null) return;
+    const message = data as Record<string, unknown>;
+    if (
+      message.scope === window.location.origin &&
+      typeof message.id === "string" &&
+      (message.kind === "moment" || message.kind === "article")
+    )
+      listener();
+  };
+  return () => channel.close();
 }

@@ -1190,8 +1190,12 @@ describe("App shell and public routes", () => {
         code: "KeyF",
         metaKey: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
     fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
+    expect(
+      await screen.findByRole("textbox", { name: "Search" }),
+    ).toBeVisible();
+    fireEvent.keyDown(document.body, { key: "Escape" });
     const article = screen.getByRole("article");
     trigger.focus();
     vi.spyOn(window, "scrollY", "get").mockReturnValue(860);
@@ -1221,14 +1225,6 @@ describe("App shell and public routes", () => {
     expect(screen.getByRole("article")).toBe(article);
     expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
     expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
-    expect(
-      fireEvent.keyDown(document.body, {
-        key: "f",
-        code: "KeyF",
-        metaKey: true,
-      }),
-    ).toBe(true);
-    fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
     await waitFor(() =>
       expect(screen.getByRole("link", { name: "全屏阅读" })).toHaveFocus(),
     );
@@ -1236,6 +1232,18 @@ describe("App shell and public routes", () => {
       top: 860,
       behavior: "auto",
     });
+    expect(
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      }),
+    ).toBe(false);
+    fireEvent.keyUp(document.body, { key: "f", code: "KeyF", metaKey: true });
+    expect(
+      await screen.findByRole("textbox", { name: "Search" }),
+    ).toBeVisible();
+    fireEvent.keyDown(document.body, { key: "Escape" });
     expect(
       fetcher.mock.calls.filter(
         ([url]) => String(url) === `/api/v1/posts/${id}`,

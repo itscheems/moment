@@ -355,12 +355,15 @@ describe("profile page", () => {
       expect(screen.getAllByText("置顶内容")).toHaveLength(1),
     );
     expect(
-      screen.getByRole("heading", { level: 3, name: "Moment" }),
+      screen.getByRole("tablist", { name: "帖子类型" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("navigation", { name: "个人资料内容" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByText("按发布时间排列")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "全部" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(screen.queryByText("媒体与归档")).not.toBeInTheDocument();
     expect(screen.getByText("@owner", { selector: "p" })).toBeInTheDocument();
     expect(screen.getByText("2026年8月加入")).toHaveAttribute(
@@ -629,6 +632,84 @@ describe("profile page", () => {
         "/cheems2",
       ),
     );
+  });
+
+  it("filters posts and articles, remembers the left filter, and refreshes cached feeds incrementally", async () => {
+    const article = {
+      ...post(pinnedId, ""),
+      kind: "article",
+      content_md: null,
+      content_html: "",
+      article: {
+        title: "文章标题",
+        excerpt: "文章摘要",
+        cover: null,
+        body: null,
+        body_schema_version: null,
+      },
+    };
+    let published = false;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const query = new URL(String(input), "http://localhost").searchParams;
+      const kind = query.get("kind");
+      const items =
+        kind === "article"
+          ? [article]
+          : kind === "moment"
+            ? [post(otherId, "普通帖子")]
+            : [article, post(otherId, "普通帖子")];
+      if (published && kind !== "article")
+        items.unshift(post("01K2ABCDEF0123456789ABCDE2", "新增帖子"));
+      return json({
+        data: { items },
+        meta: {
+          next_cursor: null,
+          prev_cursor: null,
+          refresh_cursor: `head-${kind ?? "all"}`,
+        },
+      });
+    });
+    render(
+      <FeedbackProvider>
+        <OwnerProvider>
+          <NavigationProvider>
+            <ProfilePage
+              api={new PublicApi(fetcher as typeof fetch)}
+              onSiteSaved={vi.fn()}
+              site={{ ...site, pinnedPostId: null }}
+            />
+          </NavigationProvider>
+        </OwnerProvider>
+      </FeedbackProvider>,
+    );
+    expect(await screen.findByText("普通帖子")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选择帖子类型" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "帖子" }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: "帖子" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "文章" }));
+    expect(await screen.findByText("文章标题")).toBeInTheDocument();
+    published = true;
+    fireEvent.click(screen.getByRole("tab", { name: "帖子" }));
+    expect(await screen.findByText("新增帖子")).toBeInTheDocument();
+    expect(
+      fetcher.mock.calls
+        .map(
+          ([input]) => new URL(String(input), "http://localhost").searchParams,
+        )
+        .filter(
+          (query) => query.get("kind") === "moment" && !query.has("cursor"),
+        ),
+    ).toHaveLength(1);
+    expect(
+      fetcher.mock.calls.some(([input]) =>
+        String(input).includes("cursor=head-moment"),
+      ),
+    ).toBe(true);
   });
 
   it("leaves the /profile alias alone when the handle changes", async () => {

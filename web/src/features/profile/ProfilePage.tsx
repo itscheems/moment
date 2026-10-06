@@ -1,3 +1,6 @@
+import { Menu } from "@base-ui/react/menu";
+import { Tabs } from "@base-ui/react/tabs";
+import { motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -21,12 +24,17 @@ import {
   siteProfileHref,
 } from "../../components/SiteIdentity";
 import {
+  ActionTooltip,
   ExactTimeTooltip,
   ShareMenu,
 } from "../../components/TimelineInteractions";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
 import { ownsSite, useOwner } from "../owner/OwnerProvider";
-import { listenForOwnerPosts, type OwnerPostEvent } from "../owner/postEvents";
+import {
+  listenForOwnerPosts,
+  listenForPublishedPosts,
+  type OwnerPostEvent,
+} from "../owner/postEvents";
 import { PostPresentation } from "../posts/PostPresentation";
 import { formatMomentDate } from "../posts/dates";
 import {
@@ -34,21 +42,17 @@ import {
   PublicError,
   TimelineLoading,
 } from "../timeline/PublicStates";
+import { withoutLoadedProgress } from "../timeline/cursorContinuity";
+import { timelineItemKey } from "../timeline/timelineItems";
 import {
-  appendUnique,
-  invalidCursorProgress,
-  loadedThroughFromSearch,
-  validateCursorPage,
-  withoutLoadedProgress,
-} from "../timeline/cursorContinuity";
-import {
-  reconcileTimelineEvent,
-  timelineItemKey,
-} from "../timeline/timelineItems";
+  matchesFilter,
+  profileFilters,
+  type ProfileFilter,
+} from "./profileTimeline";
+import { useProfileTimeline } from "./useProfileTimeline";
+import interactionStyles from "../../components/TimelineInteractions.module.css";
 import styles from "./ProfilePage.module.css";
 import { ProfileEditor } from "./ProfileEditor";
-
-const MAX_REPLAY_PAGES = 1_000;
 
 function timezoneLabel(timeZone: string, date: Date): string {
   const part = (style: "longGeneric" | "longOffset") =>
@@ -95,19 +99,29 @@ export function ProfilePage({
   // belong to them alone. A signed-in member reads it like anyone else.
   const ownerView = owner.state === "owner" && ownsSite(owner.account);
   const navigation = useNavigation();
-  const [posts, setPosts] = useState<PublicPost[]>([]);
+  const [filter, setFilter] = useState<ProfileFilter>("all");
+  const [leftFilter, setLeftFilter] = useState<"all" | "moment">("all");
+  const [direction, setDirection] = useState<"left" | "right">("right");
+  const { store, feeds, initialSearch } = useProfileTimeline(
+    api,
+    `${site.instanceId ?? site.ownerId}:${ownerView}`,
+    filter,
+  );
   const [pinnedPost, setPinnedPost] = useState<PublicPost | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loadingInitial, setLoadingInitial] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [initialError, setInitialError] = useState<unknown>(null);
-  const [moreError, setMoreError] = useState<unknown>(null);
-  const activeInitial = useRef<AbortController | null>(null);
-  const activeMore = useRef<AbortController | null>(null);
-  const loadingMoreRef = useRef(false);
-  const initialSearch = useRef(window.location.search);
   const entryRestored = useRef(false);
-  const visitedCursors = useRef(new Set<string>());
+  const reducedMotion = useReducedMotion();
+  const selectFilter = (next: ProfileFilter) => {
+    if (next === filter) {
+      void store.activate(next);
+      return;
+    }
+    setDirection(
+      next === "article" || (filter === "all" && next === "moment")
+        ? "right"
+        : "left",
+    );
+    setFilter(next);
+  };
   const title = siteDisplayName(site);
   const handle = siteHandle(site);
   const initialized = site.instanceInitializedAt
@@ -124,14 +138,17 @@ export function ProfilePage({
     site.timezone,
     new Date(site.instanceInitializedAt ?? Date.now()),
   );
-  const createdFromProfile = useCallback((comment: PublicComment) => {
-    const increment = (post: PublicPost) =>
-      post.id === comment.postId
-        ? { ...post, commentCount: post.commentCount + 1 }
-        : post;
-    setPosts((current) => current.map(increment));
-    setPinnedPost((current) => (current ? increment(current) : current));
-  }, []);
+  const createdFromProfile = useCallback(
+    (comment: PublicComment) => {
+      const increment = (post: PublicPost) =>
+        post.id === comment.postId
+          ? { ...post, commentCount: post.commentCount + 1 }
+          : post;
+      store.updateComments(comment.postId);
+      setPinnedPost((current) => (current ? increment(current) : current));
+    },
+    [store],
+  );
   const { openReply, replyDialog } = usePostReplyDialog({
     api,
     onCreated: createdFromProfile,
@@ -180,169 +197,183 @@ export function ProfilePage({
     [applyAccount, navigation, onSiteSaved, site, viewerAccount],
   );
 
-  const handleOwnerPostEvent = useCallback((event: OwnerPostEvent) => {
-    setPosts((current) => reconcileTimelineEvent(current, event));
-    setPinnedPost((current) =>
-      current?.id === event.post.id
-        ? event.kind === "deleted"
-          ? null
-          : event.post
-        : current,
-    );
-  }, []);
+  const handleOwnerPostEvent = useCallback(
+    (event: OwnerPostEvent) => {
+      store.apply(event);
+      if (event.kind === "created") store.invalidate();
+      setPinnedPost((current) =>
+        current?.id === event.post.id
+          ? event.kind === "deleted"
+            ? null
+            : event.post
+          : current,
+      );
+    },
+    [store],
+  );
 
   const handleReposted = useCallback(
     (post: PublicPost) => handleOwnerPostEvent({ kind: "reordered", post }),
     [handleOwnerPostEvent],
   );
 
-  const load = useCallback(async () => {
-    activeInitial.current?.abort();
-    activeMore.current?.abort();
-    const controller = new AbortController();
-    activeInitial.current = controller;
-    setLoadingInitial(true);
-    setInitialError(null);
-    setMoreError(null);
-    try {
-      const loadedThrough = loadedThroughFromSearch(initialSearch.current);
-      const [initialPage, pinned] = await Promise.all([
-        api.timeline({ signal: controller.signal }),
-        site.pinnedPostId
-          ? api
-              .post(site.pinnedPostId, controller.signal)
-              .catch((nextError) => {
-                if (
-                  nextError instanceof PublicApiError &&
-                  nextError.code === "POST_NOT_FOUND"
-                ) {
-                  return null;
-                }
-                throw nextError;
-              })
-          : Promise.resolve(null),
-      ]);
-      if (controller.signal.aborted) return;
-      let page = initialPage;
-      let combined = page.items;
-      let requestedCursor: string | null = null;
-      const visited = new Set<string>();
-      validateCursorPage(page, requestedCursor, visited, "profile");
-
-      for (
-        let replayed = 0;
-        loadedThrough !== null && requestedCursor !== loadedThrough;
-        replayed += 1
-      ) {
-        if (replayed >= MAX_REPLAY_PAGES) {
-          throw invalidCursorProgress("saved profile position is too deep");
-        }
-        const continuation = page.nextCursor;
-        if (!continuation || visited.has(continuation)) {
-          throw invalidCursorProgress("saved profile position is unreachable");
-        }
-        visited.add(continuation);
-        requestedCursor = continuation;
-        page = await api.timeline({
-          cursor: continuation,
-          signal: controller.signal,
-        });
-        if (controller.signal.aborted) return;
-        validateCursorPage(page, requestedCursor, visited, "profile");
-        combined = appendUnique(
-          combined,
-          page.items,
-          timelineItemKey,
-          "profile",
-        );
-      }
-      visitedCursors.current = visited;
-      setPosts(combined);
-      setPinnedPost(pinned);
-      setNextCursor(page.nextCursor);
-    } catch (nextError) {
-      if (!controller.signal.aborted) setInitialError(nextError);
-    } finally {
-      if (!controller.signal.aborted) setLoadingInitial(false);
-    }
-  }, [api, site.pinnedPostId]);
-
   useEffect(() => {
-    void load();
-    return () => {
-      activeInitial.current?.abort();
-      activeMore.current?.abort();
-    };
-  }, [load]);
-
+    const controller = new AbortController();
+    if (site.pinnedPostId) {
+      void api
+        .post(site.pinnedPostId, controller.signal)
+        .then((post) => {
+          if (!controller.signal.aborted) setPinnedPost(post);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setPinnedPost(null);
+        });
+    } else setPinnedPost(null);
+    return () => controller.abort();
+  }, [api, site.pinnedPostId]);
   useEffect(
     () => listenForOwnerPosts(handleOwnerPostEvent),
     [handleOwnerPostEvent],
   );
-
+  useEffect(() => listenForPublishedPosts(() => store.invalidate()), [store]);
+  const activeFeed = feeds[filter];
   useEffect(() => {
-    if (loadingInitial || initialError || entryRestored.current) return;
+    if (!feeds.all.initialized || feeds.all.error || entryRestored.current)
+      return;
     entryRestored.current = true;
     navigation.restoreCurrentEntry();
-  }, [initialError, loadingInitial, navigation]);
+  }, [feeds.all.initialized, feeds.all.error, navigation]);
 
-  const more = async (source: LoadSource = "manual") => {
-    if (!nextCursor || loadingMoreRef.current) return;
-    const controller = new AbortController();
-    activeMore.current = controller;
-    loadingMoreRef.current = true;
-    setLoadingMore(true);
-    setMoreError(null);
-    const requestedCursor = nextCursor;
-    try {
-      if (visitedCursors.current.has(requestedCursor)) {
-        throw invalidCursorProgress("profile cursor cycle detected");
-      }
-      const page = await api.timeline({
-        cursor: requestedCursor,
-        signal: controller.signal,
+  const more = async (kind: ProfileFilter, source: LoadSource = "manual") => {
+    const previousKeys = new Set(feeds[kind].items.map(timelineItemKey));
+    const cursor = await store.more(kind);
+    if (cursor && kind === "all") navigation.replaceTimelineProgress(cursor);
+    if (cursor && source === "manual" && store.active === kind)
+      window.requestAnimationFrame(() => {
+        if (store.active !== kind) return;
+        const items = document.querySelectorAll<HTMLElement>(
+          '[role="tabpanel"]:not([inert]) [data-timeline-item-key]',
+        );
+        Array.from(items)
+          .find((row) => !previousKeys.has(row.dataset.timelineItemKey!))
+          ?.focus({ preventScroll: true });
       });
-      if (controller.signal.aborted) return;
-      const visited = new Set(visitedCursors.current);
-      visited.add(requestedCursor);
-      validateCursorPage(page, requestedCursor, visited, "profile");
-      const firstNew = page.items[0]
-        ? timelineItemKey(page.items[0])
-        : undefined;
-      const combined = appendUnique(
-        posts,
-        page.items,
-        timelineItemKey,
-        "profile",
-      );
-      visitedCursors.current = visited;
-      setPosts(combined);
-      setNextCursor(page.nextCursor);
-      navigation.replaceTimelineProgress(requestedCursor);
-      if (source === "manual" && firstNew) {
-        window.requestAnimationFrame(() => {
-          Array.from(
-            document.querySelectorAll<HTMLElement>("[data-timeline-item-key]"),
-          )
-            .find((element) => element.dataset.timelineItemKey === firstNew)
-            ?.focus({ preventScroll: true });
-        });
-      }
-    } catch (nextError) {
-      if (!controller.signal.aborted) setMoreError(nextError);
-    } finally {
-      if (!controller.signal.aborted) setLoadingMore(false);
-      loadingMoreRef.current = false;
+  };
+  const resetFromFirstPage = (kind: ProfileFilter) => {
+    if (kind === "all") {
+      const search = withoutLoadedProgress(initialSearch.current);
+      initialSearch.current = search;
+      navigation.navigate(`${navigation.pathname}${search}`);
     }
+    void store.load(kind, true);
   };
 
-  const resetFromFirstPage = () => {
-    const search = withoutLoadedProgress(initialSearch.current);
-    initialSearch.current = search;
-    visitedCursors.current = new Set();
-    setMoreError(null);
-    navigation.navigate(`${navigation.pathname}${search}`);
-    void load();
+  const renderFeed = (kind: ProfileFilter) => {
+    const feed = feeds[kind];
+    const pinned =
+      pinnedPost && matchesFilter(pinnedPost, kind) ? pinnedPost : null;
+    return (
+      <>
+        {feed.loading || (!feed.initialized && !feed.error) ? (
+          <TimelineLoading />
+        ) : null}
+        {feed.error ? (
+          <PublicError
+            kind={errorKind(feed.error)}
+            onRetry={() => void store.load(kind)}
+            onResetProgress={
+              recoverableCursorError(feed.error)
+                ? () => resetFromFirstPage(kind)
+                : undefined
+            }
+          />
+        ) : null}
+        {feed.initialized && !feed.error ? (
+          <>
+            {feed.refreshError ? (
+              <div className={styles.moreError} role="alert">
+                <span>新内容没有加载完成，已保留当前 Moment。</span>
+                <button type="button" onClick={() => void store.refresh(kind)}>
+                  重试更新
+                </button>
+              </div>
+            ) : null}
+            {pinned ? (
+              <PostPresentation
+                onDeleted={() => setPinnedPost(null)}
+                onReply={(event) => openReply(pinned, event)}
+                onReposted={handleReposted}
+                onSiteChanged={onSiteSaved}
+                owner={ownerView}
+                pinned
+                post={pinned}
+                site={site}
+                timelineDensity
+              />
+            ) : null}
+            {feed.items
+              .filter(
+                (post) =>
+                  post.id !== pinned?.id || post.timelineItemKind === "repost",
+              )
+              .map((post) => (
+                <PostPresentation
+                  key={timelineItemKey(post)}
+                  onReply={(event) => openReply(post, event)}
+                  onReposted={handleReposted}
+                  onSiteChanged={onSiteSaved}
+                  owner={ownerView}
+                  post={post}
+                  site={site}
+                  timelineDensity
+                />
+              ))}
+            {feed.items.length === 0 && !pinned ? (
+              <PublicEmpty context="profile" owner={ownerView} />
+            ) : null}
+            {feed.moreError ? (
+              <div className={styles.moreError} role="alert">
+                <span>
+                  {errorKind(feed.moreError) === "malformed"
+                    ? "下一页数据不完整，已保留当前 Moment。"
+                    : "下一页没有加载完成，已保留当前 Moment。"}
+                </span>
+                {recoverableCursorError(feed.moreError) ? (
+                  <button
+                    onClick={() => resetFromFirstPage(kind)}
+                    type="button"
+                  >
+                    从第一页重新加载
+                  </button>
+                ) : (
+                  <button onClick={() => void more(kind)} type="button">
+                    重试加载
+                  </button>
+                )}
+              </div>
+            ) : feed.nextCursor && kind === filter ? (
+              <LoadMoreSentinel
+                className={styles.moreRow}
+                cursor={feed.nextCursor}
+                label="加载更早的 Moment"
+                loading={feed.loadingMore}
+                onLoad={(source) => void more(kind, source)}
+              />
+            ) : null}
+          </>
+        ) : null}
+      </>
+    );
+  };
+  const label = leftFilter === "all" ? "全部" : "帖子";
+  const labelAnimation = (selected: boolean) => ({
+    width: selected ? "auto" : 0,
+    opacity: selected ? 1 : 0,
+    x: selected ? 0 : -8,
+  });
+  const labelTransition = {
+    duration: reducedMotion ? 0 : 0.24,
+    ease: [0.22, 1, 0.36, 1] as const,
   };
 
   return (
@@ -396,90 +427,122 @@ export function ProfilePage({
             {publicTimezone}
           </span>
         </div>
-        <header className={styles.contentHeading}>
-          <h3>Moment</h3>
-          <span>按发布时间排列</span>
-        </header>
       </div>
-
-      {loadingInitial ? <TimelineLoading /> : null}
-      {initialError ? (
-        <PublicError
-          kind={errorKind(initialError)}
-          onResetProgress={
-            new URLSearchParams(initialSearch.current).has("loaded_through") &&
-            recoverableCursorError(initialError)
-              ? resetFromFirstPage
-              : undefined
-          }
-          onRetry={load}
-        />
-      ) : null}
-      {!loadingInitial && !initialError ? (
-        posts.length > 0 || pinnedPost ? (
-          <div>
-            {pinnedPost ? (
-              <PostPresentation
-                onDeleted={() => setPinnedPost(null)}
-                onReply={(event) => openReply(pinnedPost, event)}
-                onReposted={handleReposted}
-                onSiteChanged={onSiteSaved}
-                owner={ownerView}
-                pinned
-                post={pinnedPost}
-                site={site}
-                timelineDensity
-              />
-            ) : null}
-            {posts
-              .filter(
-                (post) =>
-                  post.id !== pinnedPost?.id ||
-                  post.timelineItemKind === "repost",
-              )
-              .map((post) => (
-                <PostPresentation
-                  key={timelineItemKey(post)}
-                  onReply={(event) => openReply(post, event)}
-                  onReposted={handleReposted}
-                  onSiteChanged={onSiteSaved}
-                  owner={ownerView}
-                  post={post}
-                  site={site}
-                  timelineDensity
-                />
-              ))}
-            {moreError ? (
-              <div className={styles.moreError} role="alert">
-                <span>
-                  {errorKind(moreError) === "malformed"
-                    ? "下一页数据不完整，已保留当前 Moment。"
-                    : "下一页没有加载完成，已保留当前 Moment。"}
-                </span>
-                {recoverableCursorError(moreError) ? (
-                  <button onClick={resetFromFirstPage} type="button">
-                    从第一页重新加载
-                  </button>
-                ) : (
-                  <button onClick={() => void more("manual")} type="button">
-                    重试加载
-                  </button>
-                )}
-              </div>
-            ) : nextCursor ? (
-              <LoadMoreSentinel
-                className={styles.moreRow}
-                cursor={nextCursor}
-                label="加载更早的 Moment"
-                loading={loadingMore}
-                onLoad={(source) => void more(source)}
-              />
+      <Tabs.Root
+        value={filter}
+        onValueChange={(value) => selectFilter(value as ProfileFilter)}
+        data-feed-direction={direction}
+        className={styles.contentTabs}
+      >
+        <Tabs.List
+          aria-label="帖子类型"
+          className={styles.tabList}
+          activateOnFocus={false}
+        >
+          <div className={styles.tabSlot}>
+            <ActionTooltip label={label}>
+              <Tabs.Tab
+                value={leftFilter}
+                aria-label={label}
+                className={styles.typeTab}
+                onClick={() => {
+                  if (filter === leftFilter) void store.activate(leftFilter);
+                }}
+              >
+                <Icon name="archive" variant="navigation" />
+                <motion.span
+                  aria-hidden="true"
+                  className={styles.tabLabel}
+                  initial={false}
+                  animate={labelAnimation(filter !== "article")}
+                  transition={labelTransition}
+                >
+                  {label}
+                </motion.span>
+              </Tabs.Tab>
+            </ActionTooltip>
+            {filter !== "article" ? (
+              <Menu.Root>
+                <Menu.Trigger
+                  aria-label="选择帖子类型"
+                  className={styles.filterTrigger}
+                >
+                  <Icon name="chevron-down" />
+                </Menu.Trigger>
+                <Menu.Portal>
+                  <Menu.Positioner
+                    side="bottom"
+                    align="start"
+                    sideOffset={4}
+                    collisionPadding={8}
+                    className={interactionStyles.sharePositioner}
+                  >
+                    <Menu.Popup
+                      aria-label="帖子类型筛选"
+                      className={interactionStyles.sharePopup}
+                    >
+                      {(["all", "moment"] as const).map((kind) => (
+                        <Menu.Item
+                          key={kind}
+                          className={interactionStyles.shareItem}
+                          onClick={() => {
+                            setLeftFilter(kind);
+                            selectFilter(kind);
+                          }}
+                        >
+                          <span>{kind === "all" ? "全部" : "帖子"}</span>
+                          {leftFilter === kind ? <Icon name="check" /> : null}
+                        </Menu.Item>
+                      ))}
+                    </Menu.Popup>
+                  </Menu.Positioner>
+                </Menu.Portal>
+              </Menu.Root>
             ) : null}
           </div>
-        ) : (
-          <PublicEmpty context="profile" owner={ownerView} />
-        )
-      ) : null}
+          <div className={styles.tabSlot}>
+            <ActionTooltip label="文章">
+              <Tabs.Tab
+                value="article"
+                aria-label="文章"
+                className={styles.typeTab}
+                onClick={() => {
+                  if (filter === "article") void store.activate("article");
+                }}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+                  <g>
+                    <path
+                      clipRule="evenodd"
+                      fillRule="evenodd"
+                      d="M18.067 12.701c1.169-1.168 3.063-1.168 4.232 0 1.168 1.169 1.168 3.063 0 4.232L17.83 21.4c-.827.827-1.918 1.339-3.083 1.445l-2.851.259.258-2.852c.106-1.165.618-2.256 1.445-3.083l4.468-4.469zm2.818 1.414c-.388-.387-1.016-.387-1.404 0l-4.468 4.469c-.497.496-.803 1.152-.867 1.85l-.042.46.461-.04c.7-.064 1.354-.37 1.85-.867l4.47-4.468c.387-.388.387-1.016 0-1.404z"
+                    />
+                    <path d="M16 2c.684 0 1.257-.001 1.724.037.478.04.933.125 1.365.345.658.335 1.194.87 1.53 1.53.22.43.305.886.344 1.364C21 5.743 21 6.316 21 7v2h-2V7c0-.717 0-1.194-.03-1.56-.03-.355-.08-.518-.133-.62-.144-.283-.374-.513-.656-.657-.103-.052-.266-.104-.62-.133C17.194 4 16.716 4 16 4H8c-.717 0-1.194 0-1.56.03-.355.03-.518.08-.62.133-.283.144-.513.374-.657.656-.052.103-.104.266-.133.62C5 5.806 5 6.283 5 7v10c0 .716 0 1.194.03 1.56.03.355.08.518.133.62.144.283.374.513.656.657.103.052.266.104.62.133.367.03.844.03 1.561.03h1v2H8c-.684 0-1.257.001-1.724-.037-.478-.04-.933-.125-1.365-.345-.658-.335-1.194-.87-1.53-1.53-.22-.43-.305-.886-.344-1.364C3 18.257 3 17.684 3 17V7c0-.684-.001-1.257.037-1.724.04-.478.125-.933.345-1.365.335-.658.87-1.194 1.53-1.53.43-.22.886-.305 1.364-.344C6.743 2 7.316 2 8 2h8z" />
+                    <path d="M13 13H8v-2h5v2zm3-4H8V7h8v2z" />
+                  </g>
+                </svg>
+                <motion.span
+                  aria-hidden="true"
+                  className={styles.tabLabel}
+                  initial={false}
+                  animate={labelAnimation(filter === "article")}
+                  transition={labelTransition}
+                >
+                  文章
+                </motion.span>
+              </Tabs.Tab>
+            </ActionTooltip>
+          </div>
+          <Tabs.Indicator className={styles.tabIndicator} />
+        </Tabs.List>
+        <div className={styles.feedViewport} aria-busy={activeFeed.loading}>
+          {profileFilters.map((kind) => (
+            <Tabs.Panel key={kind} value={kind} className={styles.feedPanel}>
+              {renderFeed(kind)}
+            </Tabs.Panel>
+          ))}
+        </div>
+      </Tabs.Root>
       {replyDialog}
     </section>
   );

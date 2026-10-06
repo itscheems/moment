@@ -194,6 +194,7 @@ it("opens a new article idle rather than claiming unsaved changes", async () => 
 });
 
 it("keeps preview annotations out of draft content, save status and persistence", async () => {
+  await import("../reader/ArticleReadingContent");
   stubFetch();
   renderEditor(DRAFT_ID);
   await advance(0);
@@ -201,12 +202,14 @@ it("keeps preview annotations out of draft content, save status and persistence"
   await act(async () =>
     fireEvent.click(screen.getByRole("button", { name: "预览" })),
   );
-  await advance(20);
-  const reader = (
-    document.querySelector("[data-content-renderer]") as HTMLElement & {
-      editor: Editor;
-    }
-  ).editor;
+  await advance(400);
+  const reader = Array.from(
+    document.querySelectorAll<HTMLElement & { editor?: Editor }>(
+      "[data-content-renderer]",
+    ),
+  ).find((element) => !element.closest("[hidden]") && element.editor)?.editor;
+  expect(reader).toBeDefined();
+  if (!reader) throw new Error("Preview editor did not mount");
   const before = reader.getJSON();
   const stored = vi.spyOn(Storage.prototype, "setItem");
   await act(async () => {

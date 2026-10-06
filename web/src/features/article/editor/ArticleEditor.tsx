@@ -25,6 +25,7 @@ import { mediaPreviewUrl } from "../../../api/mediaUrls";
 import { SiteAvatar, siteDisplayName } from "../../../components/SiteIdentity";
 import { AudienceSelector } from "../../owner/AudienceSelector";
 import { useOwner } from "../../owner/OwnerProvider";
+import { announceOwnerPost } from "../../owner/postEvents";
 import { ConfirmDialog } from "../../owner/ConfirmDialog";
 import {
   ArticleDraftApi,
@@ -641,6 +642,10 @@ export function ArticleEditor({
         publishKey.current,
         visibility,
       );
+      announceOwnerPost({
+        kind: stored.publishedEntryId ? "updated" : "created",
+        post,
+      });
       notify("文章已发布。");
       allowLeave.current = true;
       location.replace(`/m/${encodeURIComponent(post.id)}`);
