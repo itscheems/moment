@@ -573,8 +573,9 @@ export function AppShell({
                     </h1>
                   </div>
                 )}
-                <span className={styles.headerActions} ref={setHeaderSlot} />
-                {focusReading ? <ThemeToggle /> : null}
+                <span className={styles.headerActions} ref={setHeaderSlot}>
+                  {focusReading ? <ThemeToggle headerAction /> : null}
+                </span>
                 {route.id !== "detail" &&
                 route.id !== "owner-edit" &&
                 !focusReading ? (

@@ -6,7 +6,11 @@ import { MoonStarIcon } from "@content-notion/components/icons/moon-star-icon";
 import { useTheme } from "../../../../../../theme/ThemeProvider";
 
 /** The template control uses the site's existing persisted theme preference. */
-export function ThemeToggle() {
+export function ThemeToggle({
+  headerAction = false,
+}: {
+  headerAction?: boolean;
+}) {
   const { resolvedTheme, setPreference } = useTheme();
   const isDarkMode = resolvedTheme !== "light";
 
@@ -17,6 +21,8 @@ export function ThemeToggle() {
       tooltip={`切换到${isDarkMode ? "浅色" : "暗色"}模式`}
       data-style="ghost"
       type="button"
+      data-article-header-action={headerAction || undefined}
+      data-article-header-theme={headerAction || undefined}
     >
       {isDarkMode ? (
         <MoonStarIcon className="tiptap-button-icon" />

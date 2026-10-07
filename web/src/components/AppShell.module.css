@@ -757,6 +757,9 @@
   display: flex;
   margin-inline-start: auto;
 }
+.headerActions > :global([data-article-header-theme]) {
+  order: 1;
+}
 
 .focusViewport,
 .focusShell .timeline {

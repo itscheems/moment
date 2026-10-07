@@ -809,13 +809,13 @@ export function ArticleEditor({
             {statusLine}
           </p>
           <div className={styles.topActions}>
-            <ThemeToggle />
             {previewing ? (
-              <ButtonGroup
-                ref={setPreviewSearchSlot}
-                orientation="horizontal"
-              />
-            ) : null}
+              <ButtonGroup ref={setPreviewSearchSlot} orientation="horizontal">
+                <ThemeToggle headerAction />
+              </ButtonGroup>
+            ) : (
+              <ThemeToggle />
+            )}
             <span className={styles.audience}>
               <AudienceSelector
                 disabled={

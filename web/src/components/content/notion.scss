@@ -19,6 +19,18 @@
   --tt-theme-text: var(--tt-gray-dark-900);
 }
 
+// Header actions share the native icon-button measure, including the Aa label.
+.tiptap-button[data-article-header-action] {
+  inline-size: 2rem;
+  min-inline-size: 2rem;
+  flex: 0 0 2rem;
+  padding-inline: 0.25rem;
+
+  .tiptap-button-text {
+    text-align: center;
+  }
+}
+
 /* Connect the page shell and its portals to the document's native palette.
    Outside article reading/writing the site's theme keeps its own palette. */
 :root[data-theme]:has([data-article-theme]) {

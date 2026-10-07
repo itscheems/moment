@@ -225,6 +225,7 @@ export function ArticleReadingContent({
             const trigger = (
               <SearchAndReplaceButton
                 aria-label="Search"
+                data-article-header-action
                 tooltip="Search"
                 ref={buttonRef}
                 tabIndex={0}

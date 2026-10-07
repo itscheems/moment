@@ -82,6 +82,7 @@ export function ReadingLayoutSettings() {
         <Button
           variant="ghost"
           aria-label="阅读排版"
+          data-article-header-action
           tooltip="阅读排版"
           data-active-state={open ? "on" : "off"}
         >
