@@ -227,6 +227,11 @@ describe("App shell and public routes", () => {
     const publish = screen.getByRole("link", { name: "发布" });
     expect(desktopNavigation).toContainElement(more);
     expect(
+      Array.from(desktopNavigation.querySelectorAll("a"), (link) =>
+        link.getAttribute("aria-label"),
+      ),
+    ).toEqual(["首页", "搜索", "归档", "个人资料", "文章"]);
+    expect(
       more.compareDocumentPosition(publish) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
@@ -380,32 +385,43 @@ describe("App shell and public routes", () => {
     expect(timelineRequests).toBe(1);
   });
 
-  it("keeps Owner access in the mobile account menu and restores trigger focus", async () => {
-    render(<App />);
-    const trigger = document.querySelector<HTMLButtonElement>(
-      'button[aria-label="打开账户菜单"]',
-    );
-    expect(trigger).not.toBeNull();
+  it.each(["所有者登录", "文章"])(
+    "keeps %s access in the mobile account menu and restores trigger focus",
+    async (destination) => {
+      render(<App />);
+      const trigger = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="打开账户菜单"]',
+      );
+      expect(trigger).not.toBeNull();
 
-    trigger!.focus();
-    fireEvent.click(trigger!);
-    const menu = await screen.findByRole("menu", { hidden: true });
-    expect(
-      screen.getByRole("menuitem", { name: "个人资料" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("menuitem", { name: "所有者登录" }),
-    ).toBeInTheDocument();
+      trigger!.focus();
+      fireEvent.click(trigger!);
+      const menu = await screen.findByRole("menu", { hidden: true });
+      expect(
+        screen.getByRole("menuitem", { name: "个人资料" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("menuitem", { name: "所有者登录" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("menuitem", { name: "文章" }),
+      ).toBeInTheDocument();
 
-    fireEvent.keyDown(menu, { key: "Escape" });
-    await waitFor(() => expect(trigger).toHaveFocus());
+      fireEvent.keyDown(menu, { key: "Escape" });
+      await waitFor(() => expect(trigger).toHaveFocus());
 
-    fireEvent.click(trigger!);
-    fireEvent.click(
-      await screen.findByRole("menuitem", { name: "所有者登录" }),
-    );
-    await waitFor(() => expect(window.location.pathname).toBe("/login"));
-  });
+      fireEvent.click(trigger!);
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: destination }),
+      );
+      await waitFor(() => expect(window.location.pathname).toBe("/login"));
+      if (destination === "文章") {
+        expect(new URLSearchParams(window.location.search).get("return")).toBe(
+          "/compose/articles",
+        );
+      }
+    },
+  );
 
   it("uses five distinct mobile destinations and omits the inline owner composer", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "手机首屏的第一条");
@@ -558,26 +574,32 @@ describe("App shell and public routes", () => {
 
   // Posting needs a session, and the place to get one is the sign-in page --
   // not a login form folded into the compose dialog.
-  it("sends a visitor from Publish to sign-in rather than a dialog", async () => {
-    vi.mocked(window.matchMedia).mockImplementation((query) => ({
-      matches: query === "(min-width: 720px)",
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    }));
-    render(<App />);
+  it.each([
+    ["发布", "/compose"],
+    ["文章", "/compose/articles"],
+  ])(
+    "sends a visitor from %s to sign-in rather than a dialog",
+    async (label, destination) => {
+      vi.mocked(window.matchMedia).mockImplementation((query) => ({
+        matches: query === "(min-width: 720px)",
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }));
+      render(<App />);
 
-    fireEvent.click(screen.getByRole("link", { name: "发布" }));
-    await waitFor(() => expect(window.location.pathname).toBe("/login"));
-    expect(new URLSearchParams(window.location.search).get("return")).toBe(
-      "/compose",
-    );
-    expect(screen.queryByRole("dialog", { name: "发布 Moment" })).toBeNull();
-  });
+      fireEvent.click(screen.getByRole("link", { name: label }));
+      await waitFor(() => expect(window.location.pathname).toBe("/login"));
+      expect(new URLSearchParams(window.location.search).get("return")).toBe(
+        destination,
+      );
+      expect(screen.queryByRole("dialog", { name: "发布 Moment" })).toBeNull();
+    },
+  );
 
   it("replaces discovery placeholders with recoverable URL-state errors", async () => {
     window.history.replaceState({}, "", "/search?state=loading");

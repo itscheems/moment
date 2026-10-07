@@ -39,10 +39,7 @@ interface NavItem {
 // `/profile` remains the fallback for a visitor who has not signed in.
 const DEFAULT_PROFILE_HREF = "/profile";
 
-function primaryNavFor(
-  profileHref: string,
-  articlesAvailable = false,
-): NavItem[] {
+function primaryNavFor(profileHref: string): NavItem[] {
   return [
     { label: "首页", href: "/", icon: "home", active: ["home", "detail"] },
     { label: "搜索", href: "/search", icon: "search", active: ["search"] },
@@ -53,16 +50,12 @@ function primaryNavFor(
       icon: "owner",
       active: ["profile"],
     },
-    ...(articlesAvailable
-      ? [
-          {
-            label: "文章",
-            href: "/compose/articles",
-            icon: "article" as IconName,
-            active: ["article-workspace"] as RouteId[],
-          },
-        ]
-      : []),
+    {
+      label: "文章",
+      href: "/compose/articles",
+      icon: "article",
+      active: ["article-workspace"],
+    },
   ];
 }
 
@@ -209,15 +202,13 @@ function AccountRail({
           <Menu.Popup aria-label="账户" className={styles.mobileAccountPopup}>
             {/* No profile entry: the rail already carries one, and a menu that
                 repeats the row above it is a longer way to the same page. */}
-            {account.status === "active" ? (
-              <Menu.Item
-                className={styles.mobileAccountItem}
-                onClick={() => navigate("/compose/articles")}
-              >
-                <Icon name="article" />
-                <span>文章</span>
-              </Menu.Item>
-            ) : null}
+            <Menu.Item
+              className={styles.mobileAccountItem}
+              onClick={() => navigate("/compose/articles")}
+            >
+              <Icon name="article" />
+              <span>文章</span>
+            </Menu.Item>
             <Menu.Item
               className={styles.mobileAccountItem}
               onClick={() => navigate("/owner/settings")}
@@ -348,11 +339,9 @@ function LeftRail({
     <aside aria-label="站点导航" className={styles.leftRail}>
       <Brand site={site} />
       <nav aria-label="主要导航" className={styles.desktopNav}>
-        {primaryNavFor(profileHref, account?.status === "active").map(
-          (item) => (
-            <NavLink item={item} key={item.href} route={route} />
-          ),
-        )}
+        {primaryNavFor(profileHref).map((item) => (
+          <NavLink item={item} key={item.href} route={route} />
+        ))}
         <ThemeMenu navigation site={site} />
       </nav>
       <InternalLink
@@ -411,12 +400,10 @@ function MemoryRail({
 }
 
 function MobileAccountMenu({
-  articlesAvailable = false,
   ownerSettingsAvailable,
   site,
   profileHref,
 }: {
-  articlesAvailable?: boolean;
   ownerSettingsAvailable: boolean;
   site: SiteIdentity;
   profileHref: string;
@@ -446,15 +433,13 @@ function MobileAccountMenu({
               <Icon name="owner" />
               <span>个人资料</span>
             </Menu.Item>
-            {articlesAvailable ? (
-              <Menu.Item
-                className={styles.mobileAccountItem}
-                onClick={() => navigate("/compose/articles")}
-              >
-                <Icon name="article" />
-                <span>文章</span>
-              </Menu.Item>
-            ) : null}
+            <Menu.Item
+              className={styles.mobileAccountItem}
+              onClick={() => navigate("/compose/articles")}
+            >
+              <Icon name="article" />
+              <span>文章</span>
+            </Menu.Item>
             <Menu.Item
               className={styles.mobileAccountItem}
               onClick={() => navigate(ownerItem.href)}
@@ -584,7 +569,6 @@ export function AppShell({
                   </InternalLink>
                 ) : (
                   <MobileAccountMenu
-                    articlesAvailable={account?.status === "active"}
                     ownerSettingsAvailable={ownerSettingsAvailable}
                     profileHref={profileHref}
                     site={site}
