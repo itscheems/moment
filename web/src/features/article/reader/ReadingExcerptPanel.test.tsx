@@ -60,7 +60,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-function show(enabled = true) {
+function show(enabled = true, content = body) {
   const ui = (document: ArticleDocument) => (
     <HeaderActionsContext.Provider value={slot}>
       <NavigationProvider>
@@ -83,7 +83,7 @@ function show(enabled = true) {
       </NavigationProvider>
     </HeaderActionsContext.Provider>
   );
-  const mounted = render(ui(body));
+  const mounted = render(ui(content));
   const element = document.querySelector(
     "[data-content-renderer]",
   ) as HTMLElement & { editor: Editor };
@@ -341,4 +341,85 @@ it("keeps annotations and restores the panel when an excerpt exceeds the share l
   fireEvent.click(screen.getByRole("button", { name: "关闭" }));
   await screen.findByRole("dialog", { name: "本次摘录面板" });
   expect(readingExcerptRanges(editor)).toEqual([{ from: 2, to: 6 }]);
+});
+
+it("shows plain text with original line breaks and literal symbols while keeping author and reader formats in the document", async () => {
+  const doc: ArticleDocument = {
+    schema_version: 2,
+    type: "doc",
+    content: [
+      {
+        type: "heading",
+        attrs: { id: "plain-heading", level: 2 },
+        content: [{ type: "text", text: "标题" }],
+      },
+      {
+        type: "paragraph",
+        attrs: { id: "plain-text" },
+        content: [
+          {
+            type: "text",
+            text: "**原文符号**",
+            marks: [
+              { type: "bold" },
+              { type: "italic" },
+              { type: "underline" },
+              { type: "strike" },
+              { type: "textStyle", attrs: { color: "red" } },
+              { type: "highlight", attrs: { color: "yellow" } },
+            ],
+          },
+        ],
+      },
+      {
+        type: "bulletList",
+        content: [
+          {
+            type: "listItem",
+            content: [
+              {
+                type: "paragraph",
+                attrs: { id: "plain-item-1" },
+                content: [{ type: "text", text: "第一项" }],
+              },
+            ],
+          },
+          {
+            type: "listItem",
+            content: [
+              {
+                type: "paragraph",
+                attrs: { id: "plain-item-2" },
+                content: [{ type: "text", text: "3. 原文编号" }],
+              },
+            ],
+          },
+        ],
+      },
+      {
+        type: "blockquote",
+        attrs: { id: "plain-quote" },
+        content: [
+          {
+            type: "paragraph",
+            attrs: { id: "plain-quote-text" },
+            content: [{ type: "text", text: "引用句" }],
+          },
+        ],
+      },
+    ],
+  };
+  const { editor, element } = show(true, doc);
+  mark(editor, 1, editor.state.doc.content.size - 1);
+  await openPanel();
+  const item = screen.getByRole("button", { name: "跳转到摘录 1" });
+  expect(item.textContent).toBe(
+    "标题\n**原文符号**\n第一项\n3. 原文编号\n引用句",
+  );
+  expect(
+    item.querySelector("[style],mark,strong,em,blockquote,ul,ol"),
+  ).toBeNull();
+  expect(element.querySelector("mark")).not.toBeNull();
+  expect(element.querySelector("strong em")).not.toBeNull();
+  expect(element.querySelector("[data-reading-annotation]")).not.toBeNull();
 });

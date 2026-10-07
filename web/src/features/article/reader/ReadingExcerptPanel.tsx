@@ -153,11 +153,15 @@ export function ReadingExcerptPanel({
                 <ol className={styles.excerptList}>
                   {ranges.map((range, index) => {
                     const key = `${range.from}:${range.to}`;
-                    const blocks = readingExcerptBlocks(
+                    const text = readingExcerptBlocks(
                       editor,
                       range,
                       (value) => value,
-                    );
+                    )
+                      .flatMap((block) =>
+                        block.kind === "code" ? [] : [block.text],
+                      )
+                      .join("\n");
                     return (
                       <li key={key} className={styles.excerptItem}>
                         <Button
@@ -166,7 +170,7 @@ export function ReadingExcerptPanel({
                           className={styles.excerptText}
                           data-excerpt-nav={range.from}
                           aria-label={`跳转到摘录 ${index + 1}`}
-                          aria-description={readingSelectionText(editor, range)}
+                          aria-description={text}
                           onClick={() => {
                             navigateToReadingBlocks(
                               readingRangeBlocks(editor, range),
@@ -174,36 +178,7 @@ export function ReadingExcerptPanel({
                             if (mobile) onOpenChange(false);
                           }}
                         >
-                          {blocks.map(
-                            (block, blockIndex) =>
-                              block.kind !== "code" && (
-                                <span
-                                  key={blockIndex}
-                                  className={styles.excerptBlock}
-                                  data-kind={block.kind}
-                                  data-heading={
-                                    block.kind === "text" && block.heading
-                                      ? ""
-                                      : undefined
-                                  }
-                                >
-                                  {block.kind === "item" && (
-                                    <span>{block.marker} </span>
-                                  )}
-                                  {block.runs?.map((run, runIndex) => (
-                                    <span
-                                      key={runIndex}
-                                      style={{
-                                        color: run.colour,
-                                        backgroundColor: run.background,
-                                      }}
-                                    >
-                                      {run.text}
-                                    </span>
-                                  )) ?? block.text}
-                                </span>
-                              ),
-                          )}
+                          {text}
                         </Button>
                         <div
                           className={styles.excerptActions}

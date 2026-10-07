@@ -252,13 +252,13 @@
 .excerptPopup {
   inline-size: min(360px, calc(100vw - 32px));
 }
-.excerptCard {
+.excerptCard.excerptCard {
   align-items: stretch;
   overflow: hidden;
   max-block-size: var(--radix-popover-content-available-height);
 }
-.excerptHeader {
-  padding: var(--space-2) var(--space-4);
+.excerptHeader.excerptHeader {
+  padding: var(--space-2) 16px;
 }
 .excerptHeader strong {
   font-size: var(--text-sm);
@@ -296,26 +296,14 @@
   block-size: auto;
   min-block-size: 44px;
   display: block;
-  padding: var(--space-2);
+  padding: var(--space-2) 0;
   text-align: start;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: var(--text-sm);
+  font-weight: 400;
   line-height: 1.6;
   color: var(--text-primary);
-}
-.excerptBlock {
-  display: block;
-}
-.excerptBlock + .excerptBlock {
-  margin-block-start: var(--space-2);
-}
-.excerptBlock[data-heading] {
-  font-weight: 700;
-}
-.excerptBlock[data-kind="quote"] {
-  padding-inline-start: var(--space-2);
-  border-inline-start: 2px solid var(--border-strong);
 }
 .excerptActions {
   display: flex;
