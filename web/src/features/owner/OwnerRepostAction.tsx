@@ -9,7 +9,7 @@ import { useNavigation } from "../../app/navigation";
 import { COMPOSE_PATH } from "../../app/routes";
 import postStyles from "../posts/PostPresentation.module.css";
 import styles from "./Owner.module.css";
-import { useOwner } from "./OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import { announceOwnerPost } from "./postEvents";
 
 export function OwnerRepostAction({
@@ -20,7 +20,7 @@ export function OwnerRepostAction({
   post: PublicPost;
 }) {
   const { navigateOverlay } = useNavigation();
-  const { api, session, expireIfInvalidSession } = useOwner();
+  const { api, session, expireIfInvalidSession } = useSession();
   const [current, setCurrent] = useState(post);
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);

@@ -12,7 +12,7 @@ import { PublicApiError } from "../../api/public";
 import { Icon } from "../../components/icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { formatInstant } from "./instants";
-import { useOwner } from "./OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import { oauthStartUrl, PROVIDER_ICONS, providerLabel } from "./providers";
 import styles from "./Settings.module.css";
 
@@ -108,7 +108,7 @@ export function AccountAccess({
   onSignedOut: () => void;
 }) {
   const { api, session, expireIfInvalidSession, forgetSession, logout } =
-    useOwner();
+    useSession();
   const [identities, setIdentities] = useState<AccountIdentity[]>([]);
   const [identitiesState, setIdentitiesState] = useState<PanelState>("loading");
   const [identityAttempt, setIdentityAttempt] = useState(0);

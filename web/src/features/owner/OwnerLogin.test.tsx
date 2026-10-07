@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { OwnerLogin } from "./OwnerLogin";
-import { OwnerProvider } from "./OwnerProvider";
+import { SessionProvider } from "../auth/SessionProvider";
 
 const site: SiteIdentity = {
   ownerId: "00000000000000000000000000000000",
@@ -128,9 +128,9 @@ function captureRedirect() {
 function renderLogin() {
   return render(
     <NavigationProvider>
-      <OwnerProvider>
+      <SessionProvider>
         <OwnerLogin site={site} />
-      </OwnerProvider>
+      </SessionProvider>
     </NavigationProvider>,
   );
 }

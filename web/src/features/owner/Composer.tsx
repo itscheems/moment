@@ -79,7 +79,7 @@ import {
   keepDraft,
   listKeptDrafts,
 } from "./drafts";
-import { useOwner } from "./OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import { OwnerLogin } from "./OwnerLogin";
 import { announceOwnerPost } from "./postEvents";
 import styles from "./Owner.module.css";
@@ -191,7 +191,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     ref,
   ) {
     const { navigate, goBack, setNavigationBlocker } = useNavigation();
-    const { api, session, expireIfInvalidSession } = useOwner();
+    const { api, session, expireIfInvalidSession } = useSession();
     const publicApi = useMemo(() => new PublicApi(), []);
     const initialContent = post?.contentMd ?? "";
     const initialVisibility: PostVisibility = post?.visibility ?? "everyone";

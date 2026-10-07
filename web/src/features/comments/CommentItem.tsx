@@ -29,7 +29,7 @@ import { MarkdownBody } from "../../components/content/MarkdownBody";
 import { formatMomentDate } from "../posts/dates";
 import { PostLocation } from "../posts/PostPresentation";
 import { ImageGrid } from "../media/ImageGrid";
-import { useOwner } from "../owner/OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import { Reauthenticate, type ReplyBlock } from "./CommentComposer";
 import styles from "./Comments.module.css";
 import ownerStyles from "../owner/Owner.module.css";
@@ -53,7 +53,7 @@ function DeleteCommentDialog({
   triggerRef: RefObject<HTMLButtonElement | null>;
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
 }) {
-  const owner = useOwner();
+  const owner = useSession();
   const { api, session, expireIfInvalidSession } = owner;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +194,7 @@ function CommentOwnerMenu({
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
   onPinChange: (pinnedCommentId: string | null) => void;
 }) {
-  const owner = useOwner();
+  const owner = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);

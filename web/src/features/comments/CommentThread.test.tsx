@@ -19,7 +19,7 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
-import { OwnerProvider, useOwner } from "../owner/OwnerProvider";
+import { SessionProvider, useSession } from "../auth/SessionProvider";
 import { CommentThread } from "./CommentThread";
 import commentsCss from "./Comments.module.css?inline";
 import { makeAccountLimits } from "../../test/accountFixtures";
@@ -330,7 +330,7 @@ function installApi(
           : json(signedOutEnvelope(), 401);
       }
       if (url === "/api/v1/owner/status") {
-        // OwnerProvider throws away a stored session the moment status answers
+        // SessionProvider throws away a stored session the moment status answers
         // 401, so a preauthenticated test has to be answered as signed in
         // unless it deliberately handles this route itself.
         return window.sessionStorage.getItem(sessionKey)
@@ -345,7 +345,7 @@ function installApi(
 }
 
 function ExpireOwnerControl() {
-  const owner = useOwner();
+  const owner = useSession();
   return (
     <button
       onClick={() =>
@@ -370,7 +370,7 @@ function renderThread(
 ) {
   return render(
     <NavigationProvider>
-      <OwnerProvider>
+      <SessionProvider>
         {withExpireControl ? <ExpireOwnerControl /> : null}
         <CommentThread
           api={new PublicApi()}
@@ -378,7 +378,7 @@ function renderThread(
           postId={postId}
           site={currentSite}
         />
-      </OwnerProvider>
+      </SessionProvider>
     </NavigationProvider>,
   );
 }
@@ -1007,9 +1007,9 @@ describe("public comment thread", () => {
     });
     render(
       <NavigationProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <ReplyDialogHarness />
-        </OwnerProvider>
+        </SessionProvider>
       </NavigationProvider>,
     );
 
@@ -1047,7 +1047,7 @@ describe("public comment thread", () => {
     });
     render(
       <NavigationProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <CommentThread
             api={new PublicApi()}
             onReplyDialogOpenChange={vi.fn()}
@@ -1056,7 +1056,7 @@ describe("public comment thread", () => {
             replyDialogOpen
             site={site}
           />
-        </OwnerProvider>
+        </SessionProvider>
       </NavigationProvider>,
     );
 
@@ -1105,9 +1105,9 @@ describe("public comment thread", () => {
     });
     render(
       <NavigationProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <ReplyDialogHarness />
-        </OwnerProvider>
+        </SessionProvider>
       </NavigationProvider>,
     );
 
@@ -1191,9 +1191,9 @@ describe("public comment thread", () => {
     vi.spyOn(window, "scrollY", "get").mockReturnValue(420);
     render(
       <NavigationProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <ReplyDialogHarness />
-        </OwnerProvider>
+        </SessionProvider>
       </NavigationProvider>,
     );
 

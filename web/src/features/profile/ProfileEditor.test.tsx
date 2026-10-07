@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import type { Account, SiteIdentity } from "../../api/public";
 import { FeedbackProvider } from "../../components/Feedback";
-import { OwnerProvider } from "../owner/OwnerProvider";
+import { SessionProvider } from "../auth/SessionProvider";
 import { ProfileEditor } from "./ProfileEditor";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
@@ -138,9 +138,9 @@ describe("profile editor", () => {
     const onSaved = vi.fn();
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <ProfileEditor onSaved={onSaved} site={site} />
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -206,9 +206,9 @@ describe("profile editor", () => {
     );
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <ProfileEditor onSaved={vi.fn()} site={site} />
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -400,9 +400,9 @@ describe("profile editor for a member", () => {
   async function openEditor(account: Account, onSaved = vi.fn()) {
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <ProfileEditor account={account} onSaved={onSaved} />
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
     await waitFor(() =>

@@ -24,7 +24,7 @@ import { Icon } from "../../../components/icons";
 import { mediaPreviewUrl } from "../../../api/mediaUrls";
 import { SiteAvatar, siteDisplayName } from "../../../components/SiteIdentity";
 import { AudienceSelector } from "../../owner/AudienceSelector";
-import { useOwner } from "../../owner/OwnerProvider";
+import { useSession } from "../../auth/SessionProvider";
 import { announceOwnerPost } from "../../owner/postEvents";
 import { ConfirmDialog } from "../../owner/ConfirmDialog";
 import {
@@ -80,7 +80,7 @@ export function ArticleEditor({
   site: SiteIdentity;
   draftId: string | null;
 }) {
-  const owner = useOwner();
+  const owner = useSession();
   const location = useNavigation();
   const api = useMemo(() => new ArticleDraftApi(), []);
   const publicApi = useMemo(() => new PublicApi(), []);

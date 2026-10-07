@@ -4,7 +4,7 @@ import type { OAuthLoginProvider, SignInMethod } from "../../api/owner";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
 import { useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
-import { ownsSite, useOwner } from "./OwnerProvider";
+import { ownsSite, useSession } from "../auth/SessionProvider";
 import { oauthStartUrl, PROVIDER_ICONS } from "./providers";
 import styles from "./Owner.module.css";
 
@@ -144,7 +144,7 @@ export function OwnerLogin({
   heading?: boolean;
 }) {
   const { navigate, replace } = useNavigation();
-  const { account, api, state, login, logout, retryStatus } = useOwner();
+  const { account, api, state, login, logout, retryStatus } = useSession();
   // This panel stands in for pages only the site owner may open, so a member
   // reaching it is signed in and simply in the wrong place. Telling them they
   // hold an owner session would be a plain lie.
@@ -324,7 +324,7 @@ export function OwnerLogin({
         {title}
       </section>
     );
-  if (state === "owner")
+  if (state === "signed-in")
     return (
       <section className={styles.loginGate}>
         <p className={styles.eyebrow}>{siteOwner ? "所有者会话" : "已登录"}</p>

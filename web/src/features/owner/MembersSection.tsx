@@ -9,7 +9,7 @@ import {
 
 import type { RegistrationMode } from "../../api/owner";
 import type { Account, AccountStatus } from "../../api/public";
-import { useOwner } from "./OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import styles from "./Settings.module.css";
 
 const statusLabels: Record<AccountStatus, string> = {
@@ -90,7 +90,7 @@ export function MembersSection({
    */
   onWaitingChange?: (waiting: number) => void;
 } = {}) {
-  const { api, session, account, expireIfInvalidSession } = useOwner();
+  const { api, session, account, expireIfInvalidSession } = useSession();
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [registrationMode, setRegistrationMode] =
     useState<RegistrationMode | null>(null);

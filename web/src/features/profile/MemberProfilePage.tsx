@@ -9,7 +9,7 @@ import {
   siteDisplayName,
   siteHandle,
 } from "../../components/SiteIdentity";
-import { useOwner } from "../owner/OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import { PublicError, TimelineLoading } from "../timeline/PublicStates";
 import { ProfileEditor } from "./ProfileEditor";
 import styles from "./ProfilePage.module.css";
@@ -41,7 +41,7 @@ export function MemberProfilePage({
   api: PublicApi;
   username: string;
 }) {
-  const { account: viewer } = useOwner();
+  const { account: viewer } = useSession();
   const navigation = useNavigation();
   const [account, setAccount] = useState<Account | null>(null);
   const [state, setState] = useState<

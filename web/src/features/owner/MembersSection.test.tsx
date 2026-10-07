@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { makeAccountLimits } from "../../test/accountFixtures";
 import { MembersSection } from "./MembersSection";
-import { OwnerProvider } from "./OwnerProvider";
+import { SessionProvider } from "../auth/SessionProvider";
 
 const ownerID = "00000000000000000000000000000000";
 const memberID = "11111111111111111111111111111111";
@@ -94,9 +94,9 @@ function install(
 
 function renderMembers(strict = false) {
   const tree = (
-    <OwnerProvider>
+    <SessionProvider>
       <MembersSection />
-    </OwnerProvider>
+    </SessionProvider>
   );
   return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
 }

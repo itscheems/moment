@@ -14,7 +14,7 @@ import { Icon } from "../../components/icons";
 import { SiteAvatar } from "../../components/SiteIdentity";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { fileValidation } from "../media/mediaState";
-import { useOwner } from "../owner/OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import styles from "./ProfileEditor.module.css";
 
 type AssetKind = "avatar" | "cover";
@@ -119,7 +119,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
     session,
     applyAccount,
     expireIfInvalidSession,
-  } = useOwner();
+  } = useSession();
   const pictureCeiling = limits?.profilePictureBytes ?? null;
   // Falling back to the previous literals only for as long as the server has
   // not answered. These bound an input that has to render either way, unlike

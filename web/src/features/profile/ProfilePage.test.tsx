@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicApi, type SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
-import { OwnerProvider, useOwner } from "../owner/OwnerProvider";
+import { SessionProvider, useSession } from "../auth/SessionProvider";
 import { announceOwnerPost } from "../owner/postEvents";
 import { ProfilePage } from "./ProfilePage";
 import { makeAccountLimits } from "../../test/accountFixtures";
@@ -87,7 +87,7 @@ function accountSessionEnvelope() {
  * a rename reached the account the viewer is signed in as.
  */
 function AccountProbe() {
-  const owner = useOwner();
+  const owner = useSession();
   return (
     <p data-testid="viewer-profile-url">{owner.account?.profileUrl ?? ""}</p>
   );
@@ -127,7 +127,7 @@ describe("profile page", () => {
 
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={api}
@@ -135,7 +135,7 @@ describe("profile page", () => {
               site={{ ...site, pinnedPostId: null }}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -214,7 +214,7 @@ describe("profile page", () => {
 
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={
@@ -226,7 +226,7 @@ describe("profile page", () => {
               site={{ ...site, pinnedPostId: null }}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -275,7 +275,7 @@ describe("profile page", () => {
     );
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={
@@ -287,7 +287,7 @@ describe("profile page", () => {
               site={{ ...site, pinnedPostId: null }}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -343,11 +343,11 @@ describe("profile page", () => {
 
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage api={api} onSiteSaved={vi.fn()} site={site} />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -390,7 +390,7 @@ describe("profile page", () => {
   it("explains an empty public profile without presenting a fake tab", async () => {
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={
@@ -400,7 +400,7 @@ describe("profile page", () => {
               site={{ ...site, pinnedPostId: null }}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -438,7 +438,7 @@ describe("profile page", () => {
     );
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={
@@ -448,7 +448,7 @@ describe("profile page", () => {
               site={{ ...site, pinnedPostId: null }}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -472,7 +472,7 @@ describe("profile page", () => {
 
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={new PublicApi(fetcher as typeof fetch)}
@@ -480,7 +480,7 @@ describe("profile page", () => {
               site={{ ...site, pinnedPostId: null }}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -513,7 +513,7 @@ describe("profile page", () => {
 
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={new PublicApi(fetcher as typeof fetch)}
@@ -521,7 +521,7 @@ describe("profile page", () => {
               site={{ ...site, pinnedPostId: null }}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -600,7 +600,7 @@ describe("profile page", () => {
     const onSiteSaved = vi.fn();
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={
@@ -611,7 +611,7 @@ describe("profile page", () => {
             />
             <AccountProbe />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -674,7 +674,7 @@ describe("profile page", () => {
     });
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={new PublicApi(fetcher as typeof fetch)}
@@ -682,7 +682,7 @@ describe("profile page", () => {
               site={{ ...site, pinnedPostId: null }}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
     expect(await screen.findByText("普通帖子")).toBeInTheDocument();
@@ -745,7 +745,7 @@ describe("profile page", () => {
       const fetcher = vi.fn<typeof fetch>(async () => page([], null));
       render(
         <FeedbackProvider>
-          <OwnerProvider>
+          <SessionProvider>
             <NavigationProvider>
               <ProfilePage
                 api={new PublicApi(fetcher as typeof fetch)}
@@ -753,7 +753,7 @@ describe("profile page", () => {
                 site={{ ...site, pinnedPostId: null }}
               />
             </NavigationProvider>
-          </OwnerProvider>
+          </SessionProvider>
         </FeedbackProvider>,
       );
       await waitFor(() =>
@@ -833,7 +833,7 @@ describe("profile page", () => {
     const onSiteSaved = vi.fn();
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <ProfilePage
               api={
@@ -843,7 +843,7 @@ describe("profile page", () => {
               site={{ ...site, pinnedPostId: null }}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 

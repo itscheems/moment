@@ -12,7 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
-import { OwnerProvider } from "../owner/OwnerProvider";
+import { SessionProvider } from "../auth/SessionProvider";
 import ownerCss from "../owner/Owner.module.css?inline";
 import { PostPresentation } from "./PostPresentation";
 import contentCss from "../../components/content/notion.scss?inline";
@@ -507,7 +507,7 @@ describe("shared post presentation", () => {
 
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <PostPresentation
               detail
@@ -519,7 +519,7 @@ describe("shared post presentation", () => {
               site={site}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -895,7 +895,7 @@ describe("shared post presentation", () => {
     const onSiteChanged = vi.fn();
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <PostPresentation
               onSiteChanged={onSiteChanged}
@@ -904,7 +904,7 @@ describe("shared post presentation", () => {
               site={site}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -993,7 +993,7 @@ describe("shared post presentation", () => {
 
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <PostPresentation
               owner
@@ -1001,7 +1001,7 @@ describe("shared post presentation", () => {
               site={site}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 

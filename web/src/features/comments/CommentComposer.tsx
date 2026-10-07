@@ -33,7 +33,7 @@ import {
   uploadMessage,
   type ComposerMediaItem,
 } from "../media/mediaState";
-import { useOwner } from "../owner/OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import { LocationPicker, SelectedLocationChip } from "../owner/LocationPicker";
 import { MentionSuggestions } from "../owner/MentionSuggestions";
 import { activeMention, type ActiveMention } from "../owner/mentions";
@@ -195,7 +195,7 @@ function messageFor(error: unknown, replying: boolean): string {
  * answers no. The server refuses its comments, and finding that out after
  * typing one is the worst possible moment to learn it.
  *
- * Note that `OwnerState`'s `"guest"` means "no owner session in this browser".
+ * Note that `SessionState`'s `"guest"` means "no owner session in this browser".
  * It is a session state and it survives the retirement of guest commenting —
  * it has nothing to do with `PublicComment.authorKind === "guest"`.
  */
@@ -213,9 +213,9 @@ export type ReplyBlock = "signed-out" | "pending";
  * be handed a login link.
  */
 export function useReplyBlock(): ReplyBlock | null {
-  const owner = useOwner();
+  const owner = useSession();
   if (owner.account?.status === "pending") return "pending";
-  return owner.state === "owner" ||
+  return owner.state === "signed-in" ||
     owner.state === "expired" ||
     owner.session !== null
     ? null
@@ -258,7 +258,7 @@ export function Reauthenticate({
   inputId: string;
   onReady: () => void;
 }) {
-  const { login } = useOwner();
+  const { login } = useSession();
   const [token, setToken] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -349,7 +349,7 @@ export function CommentForm({
   textareaRef?: RefObject<HTMLTextAreaElement | null>;
   topLevelTargetUsername?: string;
 }) {
-  const owner = useOwner();
+  const owner = useSession();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authExpired, setAuthExpired] = useState(false);

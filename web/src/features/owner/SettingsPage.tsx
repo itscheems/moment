@@ -22,7 +22,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { formatInstant } from "./instants";
 import { MembersSection } from "./MembersSection";
 import { OwnerLogin } from "./OwnerLogin";
-import { useOwner } from "./OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import styles from "./Settings.module.css";
 
 const commonTimezones = [
@@ -235,7 +235,7 @@ export function SettingsPage({
     session,
     expireIfInvalidSession,
     expireAfterTokenRotation,
-  } = useOwner();
+  } = useSession();
   // Every section but one acts on the site, which only its owner may change.
   const siteOwner = account?.role === "owner";
   const [baseline, setBaseline] = useState(site);

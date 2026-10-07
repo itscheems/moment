@@ -8,7 +8,7 @@ import { notify } from "../../components/Feedback";
 import { Icon } from "../../components/icons";
 import { Button } from "../../components/content/notion/components/primitives/button/button";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
-import { useOwner } from "./OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import { articleDraftPath } from "../../app/routes";
 import {
   ArticleDraftApi,
@@ -31,7 +31,7 @@ export function OwnerPostActions({
   showArticleEdit?: boolean;
 }) {
   const { navigate } = useNavigation();
-  const { api, session, expireIfInvalidSession } = useOwner();
+  const { api, session, expireIfInvalidSession } = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);

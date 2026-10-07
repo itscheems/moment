@@ -16,16 +16,16 @@ import {
 } from "../../api/owner";
 import { PublicApiError, type Account } from "../../api/public";
 import { notify } from "../../components/Feedback";
-import { clearComposeDraft } from "./draft";
-import { clearKeptDrafts } from "./drafts";
-import { providerLabel, PROVIDER_NAME_PATTERN } from "./providers";
+import { clearComposeDraft } from "../owner/draft";
+import { clearKeptDrafts } from "../owner/drafts";
+import { providerLabel, PROVIDER_NAME_PATTERN } from "../owner/providers";
 
 const SESSION_KEY = "moment.owner.session.v1";
 const SESSION_CHANNEL = "moment.owner.session.sync.v1";
 const VERSION_PATTERN = /^[a-z0-9-]{8,80}$/;
 const REQUEST_PATTERN = /^[a-z0-9-]{8,80}$/;
 
-export interface BrowserOwnerSession extends OwnerSession {
+export interface BrowserSession extends OwnerSession {
   issuedAt: number;
   version: string;
 }
@@ -40,30 +40,23 @@ type SyncMessage =
   | {
       type: "offer-session";
       requestId: string | null;
-      session: BrowserOwnerSession;
+      session: BrowserSession;
     }
   | { type: "clear-session"; marker: SessionMarker };
 
-/**
- * What this browser's session is, never who it belongs to.
- *
- * `"owner"` is a name from the single-owner era that now means exactly
- * "signed in": a member holds the very same state. Whether the signed-in
- * account owns this site is a fact about the account -- `account.role` --
- * so anything that gates on ownership has to read that and not this.
- */
-export type OwnerState =
-  "checking" | "guest" | "owner" | "expired" | "unavailable";
+/** Authentication state is independent of account roles and resource ownership. */
+export type SessionState =
+  "checking" | "guest" | "signed-in" | "expired" | "unavailable";
 
 interface AuthOutcome {
   kind: "ok" | "linked";
   provider: string | null;
 }
 
-interface OwnerContextValue {
+interface SessionContextValue {
   api: OwnerApi;
-  state: OwnerState;
-  session: BrowserOwnerSession | null;
+  state: SessionState;
+  session: BrowserSession | null;
   /**
    * Who this browser is signed in as, once the server has said so. Null while
    * signed out, and also on an instance that cannot answer for accounts -- so
@@ -96,7 +89,7 @@ interface OwnerContextValue {
   retryStatus: () => void;
 }
 
-const OwnerContext = createContext<OwnerContextValue | null>(null);
+const SessionContext = createContext<SessionContextValue | null>(null);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -114,7 +107,7 @@ function hasExactKeys(
   );
 }
 
-function markerOf(session: BrowserOwnerSession | null): SessionMarker {
+function markerOf(session: BrowserSession | null): SessionMarker {
   return session
     ? { issuedAt: session.issuedAt, version: session.version }
     : { issuedAt: 0, version: "legacy" };
@@ -130,7 +123,7 @@ function isValidExpiry(value: string): boolean {
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
 }
 
-function parseSession(value: unknown): BrowserOwnerSession | null {
+function parseSession(value: unknown): BrowserSession | null {
   if (!isRecord(value)) return null;
   const keys = Object.keys(value);
   const legacy = !keys.includes("issued_at") && !keys.includes("version");
@@ -217,7 +210,7 @@ function parseSyncMessage(value: unknown): SyncMessage | null {
   return null;
 }
 
-function sessionWire(session: BrowserOwnerSession): Record<string, unknown> {
+function sessionWire(session: BrowserSession): Record<string, unknown> {
   return {
     csrf_token: session.csrfToken,
     expires_at: session.expiresAt,
@@ -246,12 +239,12 @@ function messageWire(message: SyncMessage): Record<string, unknown> {
   };
 }
 
-function readSession(): BrowserOwnerSession | null {
+function readSession(): BrowserSession | null {
   try {
     const raw = window.sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const session = parseSession(JSON.parse(raw));
-    if (!session) throw new Error("invalid owner session");
+    if (!session) throw new Error("invalid session");
     return session;
   } catch {
     try {
@@ -263,7 +256,7 @@ function readSession(): BrowserOwnerSession | null {
   }
 }
 
-function writeSession(session: BrowserOwnerSession | null): void {
+function writeSession(session: BrowserSession | null): void {
   try {
     if (!session) {
       window.sessionStorage.removeItem(SESSION_KEY);
@@ -335,12 +328,10 @@ function isInvalidSessionError(error: unknown): boolean {
   );
 }
 
-export function OwnerProvider({ children }: { children: ReactNode }) {
+export function SessionProvider({ children }: { children: ReactNode }) {
   const api = useMemo(() => new OwnerApi(), []);
-  const [session, setSession] = useState<BrowserOwnerSession | null>(
-    readSession,
-  );
-  const [state, setState] = useState<OwnerState>("checking");
+  const [session, setSession] = useState<BrowserSession | null>(readSession);
+  const [state, setState] = useState<SessionState>("checking");
   const [account, setAccount] = useState<Account | null>(null);
   const [limits, setLimits] = useState<AccountLimits | null>(null);
   const [statusAttempt, setStatusAttempt] = useState(0);
@@ -350,14 +341,14 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
   const markerRef = useRef(markerOf(session));
   const channelRef = useRef<BroadcastChannel | null>(null);
 
-  const acceptSession = useCallback((next: BrowserOwnerSession) => {
+  const acceptSession = useCallback((next: BrowserSession) => {
     const marker = markerOf(next);
     if (compareMarker(marker, markerRef.current) <= 0) return false;
     markerRef.current = marker;
     sessionRef.current = next;
     writeSession(next);
     setSession(next);
-    setState("owner");
+    setState("signed-in");
     return true;
   }, []);
 
@@ -465,7 +456,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
       sessionRef.current !== null &&
       compareMarker(markerRef.current, markerAtStart) > 0;
     const signedOut = () => {
-      if (overtaken()) setState("owner");
+      if (overtaken()) setState("signed-in");
       else clearSession("guest");
     };
     setState("checking");
@@ -478,7 +469,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
         // A session this tab already holds is kept as it is: its CSRF token
         // came from the same cookie, and taking a new marker for it would make
         // an ordinary reload look like a fresh login to every other tab.
-        if (sessionRef.current) setState("owner");
+        if (sessionRef.current) setState("signed-in");
         else adoptSession(restored);
       })
       .catch((error: unknown) => {
@@ -504,7 +495,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
    * rather than a browser rendering around an unknown role.
    */
   useEffect(() => {
-    if (state !== "owner" || account !== null || session === null) return;
+    if (state !== "signed-in" || account !== null || session === null) return;
     const controller = new AbortController();
     void api
       .accountSession(controller.signal)
@@ -626,7 +617,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const value = useMemo<OwnerContextValue>(
+  const value = useMemo<SessionContextValue>(
     () => ({
       api,
       state,
@@ -658,7 +649,7 @@ export function OwnerProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <OwnerContext.Provider value={value}>{children}</OwnerContext.Provider>
+    <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
   );
 }
 
@@ -675,8 +666,8 @@ export function ownsSite(account: Account | null): boolean {
   return account?.role === "owner";
 }
 
-export function useOwner(): OwnerContextValue {
-  const value = useContext(OwnerContext);
-  if (!value) throw new Error("useOwner must be used within OwnerProvider");
+export function useSession(): SessionContextValue {
+  const value = useContext(SessionContext);
+  if (!value) throw new Error("./SessionProvider");
   return value;
 }

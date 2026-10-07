@@ -22,7 +22,7 @@ import { PublicApiError } from "../../api/public";
 import { Icon } from "../../components/icons";
 import { ActionTooltip } from "../../components/TimelineInteractions";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
-import { useOwner } from "./OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import { providerLabel } from "./providers";
 import styles from "./Settings.module.css";
 
@@ -227,7 +227,7 @@ function ReviewMediaPreview({
   inspection: MergeInspection;
   media: MergeReviewMedia;
 }) {
-  const { api, session } = useOwner();
+  const { api, session } = useSession();
   const [url, setURL] = useState<string | null>(null);
   useEffect(() => {
     if (!session) return;
@@ -569,7 +569,7 @@ export function BackupRestore({
   settingsBlocked: boolean;
   onRestoreBusyChange: (busy: boolean) => void;
 }) {
-  const { api, session, expireIfInvalidSession } = useOwner();
+  const { api, session, expireIfInvalidSession } = useSession();
   const mountedRef = useRef(true);
   const fileRevisionRef = useRef(0);
   const mergeControllerRef = useRef<AbortController | null>(null);

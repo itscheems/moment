@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NavigationProvider } from "../../app/navigation";
 import { makeAccountLimits } from "../../test/accountFixtures";
 import { AccountAccess } from "./AccountAccess";
-import { OwnerProvider } from "./OwnerProvider";
+import { SessionProvider } from "../auth/SessionProvider";
 import { keepDraft, listKeptDrafts } from "./drafts";
 
 const instance = "0123456789abcdef0123456789abcdef";
@@ -113,13 +113,13 @@ function renderAccess(onSignedOut = vi.fn()) {
   );
   render(
     <NavigationProvider>
-      <OwnerProvider>
+      <SessionProvider>
         <AccountAccess
           instanceId={instance}
           onSignedOut={onSignedOut}
           timezone="Asia/Shanghai"
         />
-      </OwnerProvider>
+      </SessionProvider>
     </NavigationProvider>,
   );
   return onSignedOut;

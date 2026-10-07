@@ -29,7 +29,7 @@ import {
   ShareMenu,
 } from "../../components/TimelineInteractions";
 import { usePostReplyDialog } from "../comments/usePostReplyDialog";
-import { ownsSite, useOwner } from "../owner/OwnerProvider";
+import { ownsSite, useSession } from "../auth/SessionProvider";
 import {
   listenForOwnerPosts,
   listenForPublishedPosts,
@@ -93,11 +93,11 @@ export function ProfilePage({
   site: SiteIdentity;
   onSiteSaved: (site: SiteIdentity) => void;
 }) {
-  const owner = useOwner();
+  const owner = useSession();
   const { account: viewerAccount, applyAccount } = owner;
   // This is the site owner's own page, so the editor and the per-post actions
   // belong to them alone. A signed-in member reads it like anyone else.
-  const ownerView = owner.state === "owner" && ownsSite(owner.account);
+  const ownerView = owner.state === "signed-in" && ownsSite(owner.account);
   const navigation = useNavigation();
   const filter = profileFromPath(navigation.pathname)?.filter ?? "all";
   const [tabState, setTabState] = useState<{

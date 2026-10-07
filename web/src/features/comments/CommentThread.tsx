@@ -15,7 +15,7 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { ownsSite, useOwner } from "../owner/OwnerProvider";
+import { ownsSite, useSession } from "../auth/SessionProvider";
 import { CommentForm, SignInToReply, useReplyBlock } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import { PostReplyDialog } from "./PostReplyDialog";
@@ -123,11 +123,11 @@ export function CommentThread({
   onReplyDialogOpenChange?: (open: boolean) => void;
   replyDialogTriggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
-  const owner = useOwner();
+  const owner = useSession();
   // Pinning and deleting a comment are the site owner's, and the server agrees;
   // a signed-in member gets the reply action and nothing beyond it.
   const ownerModerator =
-    (owner.state === "owner" || owner.state === "expired") &&
+    (owner.state === "signed-in" || owner.state === "expired") &&
     ownsSite(owner.account);
   const [items, setItems] = useState<PublicComment[] | null>(null);
   const [pinnedCommentId, setPinnedCommentId] = useState<string | null>(null);

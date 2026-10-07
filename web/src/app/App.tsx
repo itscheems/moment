@@ -23,10 +23,10 @@ import { LoginPage } from "../features/owner/LoginPage";
 import { MentionProvider } from "./mentions";
 import { OwnerLogin } from "../features/owner/OwnerLogin";
 import {
-  OwnerProvider,
+  SessionProvider,
   ownsSite,
-  useOwner,
-} from "../features/owner/OwnerProvider";
+  useSession,
+} from "../features/auth/SessionProvider";
 import { SettingsPage } from "../features/owner/SettingsPage";
 import { UsernameSetup } from "../features/owner/UsernameSetup";
 import { ArchivePage } from "../features/memory/ArchivePage";
@@ -138,7 +138,7 @@ function PublicApp() {
       ? null
       : new URLSearchParams(displayLocation.search).get("state");
   const api = useMemo(() => new PublicApi(), []);
-  const owner = useOwner();
+  const owner = useSession();
   const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
   const [site, setSite] = useState(fallbackSite);
   const [siteLoading, setSiteLoading] = useState(true);
@@ -165,10 +165,10 @@ function PublicApp() {
   // accounts, or a lookup that failed -- keeps the pre-accounts answer, so the
   // single owner such an instance has is never locked out of it.
   const siteOwner = ownsSite(owner.account);
-  const ownerSession = owner.state === "owner" && siteOwner;
+  const ownerSession = owner.state === "signed-in" && siteOwner;
   // An expired session still renders the pages behind it; they carry their own
   // inline re-login rather than throwing the reader back to a login screen.
-  const signedIn = owner.state === "owner" || owner.state === "expired";
+  const signedIn = owner.state === "signed-in" || owner.state === "expired";
   const ownerCapable = signedIn && siteOwner;
 
   useDocumentScrollLock(
@@ -779,9 +779,9 @@ export function App() {
       <ReadingLayoutProvider>
         <FeedbackProvider>
           <NavigationProvider>
-            <OwnerProvider>
+            <SessionProvider>
               <PublicApp />
-            </OwnerProvider>
+            </SessionProvider>
           </NavigationProvider>
         </FeedbackProvider>
       </ReadingLayoutProvider>

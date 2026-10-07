@@ -18,11 +18,11 @@ import type { Editor } from "@tiptap/core";
 const uploadMedia = vi.fn();
 const expireIfInvalidSession = vi.fn().mockReturnValue(false);
 
-vi.mock("../../owner/OwnerProvider", () => ({
-  useOwner: () => ({
+vi.mock("../../auth/SessionProvider", () => ({
+  useSession: () => ({
     api: { uploadMedia },
     session: { csrfToken: "csrf", expiresAt: "", issuedAt: 0, version: "1" },
-    state: "owner",
+    state: "signed-in",
     account: null,
     limits: null,
     expireIfInvalidSession,

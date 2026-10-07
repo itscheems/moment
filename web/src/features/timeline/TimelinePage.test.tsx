@@ -14,7 +14,7 @@ import { PublicApi, type SiteIdentity } from "../../api/public";
 import { mediaPosterUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
-import { OwnerProvider } from "../owner/OwnerProvider";
+import { SessionProvider } from "../auth/SessionProvider";
 import { TimelinePage } from "./TimelinePage";
 
 const site: SiteIdentity = {
@@ -177,7 +177,7 @@ describe("public timeline", () => {
 
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <TimelinePage
               api={
@@ -190,7 +190,7 @@ describe("public timeline", () => {
               site={site}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
 
@@ -401,13 +401,13 @@ describe("public timeline", () => {
     vi.spyOn(window, "scrollY", "get").mockReturnValue(360);
     render(
       <NavigationProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <TimelinePage
             api={new PublicApi(fetcher as typeof fetch)}
             initialSearch=""
             site={site}
           />
-        </OwnerProvider>
+        </SessionProvider>
       </NavigationProvider>,
     );
 

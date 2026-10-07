@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { OwnerProvider, useOwner } from "./OwnerProvider";
+import { SessionProvider, useSession } from "./SessionProvider";
 
 const channelName = "moment.owner.session.sync.v1";
 const sessionKey = "moment.owner.session.v1";
@@ -78,7 +78,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 function Probe({ name }: { name: string }) {
-  const owner = useOwner();
+  const owner = useSession();
   return (
     <section aria-label={name}>
       <output data-testid={`${name}-state`}>{owner.state}</output>
@@ -92,7 +92,7 @@ function Probe({ name }: { name: string }) {
   );
 }
 
-describe("owner session cross-tab repair", () => {
+describe("account session cross-tab repair", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     FakeBroadcastChannel.reset();
@@ -134,9 +134,9 @@ describe("owner session cross-tab repair", () => {
 
   it("answers a new tab handshake without storing or broadcasting the bearer", async () => {
     const view = render(
-      <OwnerProvider>
+      <SessionProvider>
         <Probe name="first" />
-      </OwnerProvider>,
+      </SessionProvider>,
     );
     fireEvent.click(await screen.findByRole("button", { name: "login first" }));
     await waitFor(() =>
@@ -146,12 +146,12 @@ describe("owner session cross-tab repair", () => {
     window.sessionStorage.removeItem(sessionKey);
     view.rerender(
       <>
-        <OwnerProvider>
+        <SessionProvider>
           <Probe name="first" />
-        </OwnerProvider>
-        <OwnerProvider>
+        </SessionProvider>
+        <SessionProvider>
           <Probe name="new-tab" />
-        </OwnerProvider>
+        </SessionProvider>
       </>,
     );
 
@@ -170,9 +170,9 @@ describe("owner session cross-tab repair", () => {
 
   it("keeps the newest CSRF when two responder tabs answer out of order", async () => {
     render(
-      <OwnerProvider>
+      <SessionProvider>
         <Probe name="requester" />
-      </OwnerProvider>,
+      </SessionProvider>,
     );
     const newerTab = new FakeBroadcastChannel(channelName);
     const staleTab = new FakeBroadcastChannel(channelName);
@@ -227,9 +227,9 @@ describe("owner session cross-tab repair", () => {
 
   it("closes its origin-scoped channel when the provider unmounts", async () => {
     const view = render(
-      <OwnerProvider>
+      <SessionProvider>
         <Probe name="closing" />
-      </OwnerProvider>,
+      </SessionProvider>,
     );
     await waitFor(() =>
       expect(FakeBroadcastChannel.channels.get(channelName)?.size).toBe(1),

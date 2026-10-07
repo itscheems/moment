@@ -18,11 +18,11 @@ import { FeedbackProvider } from "../../components/Feedback";
 
 const expireIfInvalidSession = vi.fn().mockReturnValue(false);
 
-vi.mock("./OwnerProvider", () => ({
-  useOwner: () => ({
+vi.mock("../auth/SessionProvider", () => ({
+  useSession: () => ({
     api: {},
     session: { csrfToken: "csrf", expiresAt: "", issuedAt: 0, version: "1" },
-    state: "owner",
+    state: "signed-in",
     account: null,
     limits: null,
     expireIfInvalidSession,

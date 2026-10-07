@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicApi } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
-import { OwnerProvider } from "../owner/OwnerProvider";
+import { SessionProvider } from "../auth/SessionProvider";
 import { MemberProfilePage } from "./MemberProfilePage";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
@@ -94,9 +94,9 @@ function mount(api: PublicApi, username: string) {
   return render(
     <FeedbackProvider>
       <NavigationProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <MemberProfilePage api={api} username={username} />
-        </OwnerProvider>
+        </SessionProvider>
       </NavigationProvider>
     </FeedbackProvider>,
   );

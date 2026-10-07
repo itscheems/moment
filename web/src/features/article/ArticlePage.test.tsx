@@ -20,7 +20,7 @@ import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { HeaderActionsContext } from "../../components/headerActions";
-import { OwnerProvider } from "../owner/OwnerProvider";
+import { SessionProvider } from "../auth/SessionProvider";
 import { DetailPage } from "../timeline/DetailPage";
 import { ArticlePage } from "./ArticlePage";
 import sheetCss from "../../components/content/ArticleSheet.module.css?inline";
@@ -423,7 +423,7 @@ describe("the post detail route", () => {
     );
     render(
       <FeedbackProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <NavigationProvider>
             <DetailPage
               api={new PublicApi(fetcher as typeof fetch)}
@@ -431,7 +431,7 @@ describe("the post detail route", () => {
               site={site}
             />
           </NavigationProvider>
-        </OwnerProvider>
+        </SessionProvider>
       </FeedbackProvider>,
     );
   }

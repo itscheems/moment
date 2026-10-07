@@ -17,7 +17,7 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
-import { OwnerProvider } from "../owner/OwnerProvider";
+import { SessionProvider } from "../auth/SessionProvider";
 import { CommentForm } from "./CommentComposer";
 import { CommentItem } from "./CommentItem";
 import styles from "./Comments.module.css";
@@ -585,7 +585,7 @@ describe("the composer's reply target", () => {
 
     render(
       <NavigationProvider>
-        <OwnerProvider>
+        <SessionProvider>
           <CommentForm
             api={new PublicApi()}
             commentsEnabled
@@ -599,7 +599,7 @@ describe("the composer's reply target", () => {
             setContent={() => {}}
             site={site}
           />
-        </OwnerProvider>
+        </SessionProvider>
       </NavigationProvider>,
     );
     return posted;

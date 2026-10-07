@@ -8,7 +8,7 @@ import {
   type SiteIdentity,
 } from "../../api/public";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
-import { useOwner } from "./OwnerProvider";
+import { useSession } from "../auth/SessionProvider";
 import styles from "./Owner.module.css";
 
 const USERNAME_PATTERN = /^[a-z][a-z0-9_]{2,29}$/;
@@ -60,7 +60,7 @@ export function UsernameSetup({
   api: PublicApi;
   onSiteChanged: (site: SiteIdentity) => void;
 }) {
-  const { api, session, applyAccount, expireIfInvalidSession } = useOwner();
+  const { api, session, applyAccount, expireIfInvalidSession } = useSession();
   const [open, setOpen] = useState(true);
   const [username, setUsername] = useState(account.username);
   const [error, setError] = useState<string | null>(null);
