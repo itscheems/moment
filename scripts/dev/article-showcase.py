@@ -2,12 +2,13 @@
 """Add named article cases to the running, disposable site-showcase instance."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-PLAYGROUND = ROOT / ".moment-local/playground"
+PLAYGROUND = Path(os.environ.get("PLAYGROUND_DIR", ROOT / ".moment-local/playground")).resolve()
 ORIGIN = "http://127.0.0.1:18080"
 
 
@@ -47,13 +48,23 @@ def main():
     if manifest_path.exists():
         cached = json.loads(manifest_path.read_text())
         if cached["instance_id"] == instance["instance_id"]:
+            retained = []
             for case in cached["cases"]:
-                if case["kind"] == "draft":
-                    cli("article", "draft", case["id"])
-                else:
-                    cli("post", "get", case["id"])
+                try:
+                    if case["kind"] == "draft":
+                        cli("article", "draft", case["id"])
+                    else:
+                        cli("post", "get", case["id"])
+                except SystemExit as failure:
+                    # A case may have been consumed through the editor. Recreate
+                    # only that missing case; never discard the existing site.
+                    if "ARTICLE_DRAFT_NOT_FOUND" not in str(failure) and "POST_NOT_FOUND" not in str(failure):
+                        raise
+                    continue
+                retained.append(case)
+            cached["cases"] = retained
             manifest = cached
-            if len(cached["cases"]) == 4:
+            if {"article.cover", "article.no-cover", "article.private", "article.draft", "article.empty-draft", "article.withdrawn"} <= {case["key"] for case in cached["cases"]}:
                 print(json.dumps(cached, ensure_ascii=False, indent=2))
                 return
 
@@ -95,13 +106,24 @@ def main():
         args = ["article", "new", "--title", title, "--body", "-"]
         if cover:
             args += ["--cover", media_id]
-        draft = next((d for d in existing_drafts if d["title"] == title and d["body"] == body), None)
+        draft = next((d for d in existing_drafts if d["title"] == title and cli("article", "draft", d["id"])["body"] == body), None)
         if draft is None:
             draft = cli(*args, body=body)
         item = draft if visibility is None else cli("article", "publish", draft["id"], "--visibility", visibility, "--idempotency-key", key)
         kind = "draft" if visibility is None else "article"
-        path = ("/compose/article/" if kind == "draft" else "/m/") + item["id"]
+        path = ("/compose/articles/drafts/" if kind == "draft" else "/m/") + item["id"]
         manifest["cases"].append({"key": key, "id": item["id"], "kind": kind, "path": path})
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    if not any(case["key"] == "article.empty-draft" for case in manifest["cases"]):
+        empty = {"schema_version": 1, "type": "doc", "content": []}
+        draft = cli("article", "new", "--body", "-", "--idempotency-key", "article.empty-draft", body=empty)
+        manifest["cases"].append({"key": "article.empty-draft", "id": draft["id"], "kind": "draft", "path": "/compose/articles/drafts/" + draft["id"]})
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    if not any(case["key"] == "article.withdrawn" for case in manifest["cases"]):
+        draft = cli("article", "new", "--title", "取消发布后继续写的文章", "--body", "-", "--idempotency-key", "article.withdrawn.draft", body=body)
+        post = cli("article", "publish", draft["id"], "--idempotency-key", "article.withdrawn.publish")
+        withdrawn = cli("article", "unpublish", post["id"], "--yes")
+        manifest["cases"].append({"key": "article.withdrawn", "id": withdrawn["id"], "article_id": post["id"], "kind": "draft", "path": "/compose/articles/drafts/" + withdrawn["id"]})
         manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
 

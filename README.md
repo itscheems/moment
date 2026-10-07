@@ -78,6 +78,10 @@ mise exec -- task playground:articles     # add article reader/editor cases to t
 mise exec -- task playground -- reset     # seed again from the current time
 ```
 
+The additive article showcase also honors `PLAYGROUND_DIR` and verifies that
+the running instance is the matching development playground. It includes empty
+and withdrawn drafts without resetting existing content.
+
 Its posts are dated from the clock at seed time, so the newest read as
 minutes ago; reseed when they have aged. `moment dev scenario --help` lists
 the other, frozen fixture scenarios the same command can build.

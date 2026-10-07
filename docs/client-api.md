@@ -205,3 +205,53 @@ this read projection is neither stored document attributes nor the `media`
 attachment grid. List and quoted article cards omit it alongside the full body.
 The same projection is returned by HTTP and CLI detail reads. Clients accept
 its absence from older servers, and must never infer body media from a cover.
+
+
+## Author article management
+
+An active authenticated account may manage its own articles and drafts. Article
+management uses `/api/v1/articles`; existing `/api/v1/owner/articles` addresses
+are compatibility aliases with identical author checks. An administrator has
+no override for another account's draft, private article, edit, withdrawal or
+deletion. Actor identity comes from the verified credential, never a request
+body author field. Existing ordinary-post publication permissions are unchanged.
+
+- `GET /articles/drafts` returns body-free summaries, ordered by last save.
+  `GET /articles/drafts/:id` returns the selected document. Summaries and details
+  include `author_user_id`, `source_state` (`draft`, `working_copy`, `withdrawn`)
+  and `source_visibility`. Empty document roots serialize `content` as `[]`.
+- `POST /articles/drafts` creates a draft, including an untitled empty draft.
+  `Idempotency-Key` retries one create without duplicating it. Each author has
+  a limit of 50 drafts including working copies; other authors have independent
+  limits. Replacing a draft retains the existing optimistic revision contract.
+- `GET /articles` returns the current author's original published article cards,
+  without bodies or repost projections, with the existing opaque cursor metadata.
+  `GET /articles/:id` is an author-only management detail read. Public reading
+  continues through `/api/v1/posts/:id`.
+- `POST /articles/:id/draft` creates or reuses a working copy; saving that copy
+  does not change the public version. `POST /articles/drafts/:id/publish` publishes
+  or replaces the canonical article.
+- `POST /articles/:id/unpublish` atomically removes public visibility and returns
+  the existing working copy or a new draft. Existing unpublished edits take
+  precedence over the public body. A quota failure leaves the publication visible.
+  Repeating withdrawal returns the same draft. Republish keeps the article ID,
+  original publication time, comments and link. Withdrawn content is absent from
+  public detail, lists, search, archive, quotes and comment threads; exclusive
+  media is also private.
+- `DELETE /articles/:id` removes the article, linked draft and comments. Discarding
+  a published working copy keeps the public article; discarding a withdrawn
+  article's draft also removes the retained article and comments.
+
+Post DTOs carry their actual public `author` identity; private visibility is
+scoped to this author rather than an administrator role. Backups and personal
+account exports preserve authorship and publication state. Legacy backups
+without authorship use their original site account; omitted publication state
+means published.
+
+The equivalent CLI commands are `article drafts`, `article draft`, `article new`,
+`article save`, `article list`, `article get`, `article edit`, `article publish`,
+`article unpublish` and `article delete`. New draft creation accepts
+`--idempotency-key`. Withdrawal and deletion support `--dry-run` and require
+confirmation (`--yes` in noninteractive use). Direct mode attributes content
+to the original local account; API mode resolves the supplied account credential.
+Unattributed recovery authority cannot publish or manage another author's work.
