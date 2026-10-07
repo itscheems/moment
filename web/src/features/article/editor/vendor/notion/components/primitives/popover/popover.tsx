@@ -20,14 +20,16 @@ function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  fade = false,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & { fade?: boolean }) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
         align={align}
         sideOffset={sideOffset}
         className={cn("tiptap-popover", className)}
+        data-fade={fade || undefined}
         {...props}
       />
     </PopoverPrimitive.Portal>

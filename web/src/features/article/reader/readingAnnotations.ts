@@ -65,6 +65,37 @@ export function readingSelectionText(editor: Editor, range: ReadingRange) {
   });
 }
 
+/** Derive excerpts from the current decoration ranges, never from author marks. */
+export function readingExcerptRanges(editor: Editor): ReadingRange[] {
+  const sorted = editor.storage.readingAnnotations.ranges
+    .filter((range) => range.from < range.to)
+    .map(({ from, to }) => ({ from, to }))
+    .sort((a, b) => a.from - b.from || a.to - b.to);
+  const merged: ReadingRange[] = [];
+  for (const range of sorted) {
+    const previous = merged.at(-1);
+    if (previous && range.from <= previous.to)
+      previous.to = Math.max(previous.to, range.to);
+    else merged.push(range);
+  }
+  return merged.filter((range) => readingSelectionText(editor, range).trim());
+}
+
+/** Resolve intersecting text blocks without changing the reading selection. */
+export function readingRangeBlocks(
+  editor: Editor,
+  range: ReadingRange,
+): HTMLElement[] {
+  const blocks: HTMLElement[] = [];
+  editor.state.doc.nodesBetween(range.from, range.to, (node, pos) => {
+    if (!node.isTextblock) return;
+    const element = editor.view.nodeDOM(pos);
+    if (element instanceof HTMLElement) blocks.push(element);
+    return false;
+  });
+  return blocks;
+}
+
 function subtract(
   ranges: ReadingColorRange[],
   selection: ReadingRange,

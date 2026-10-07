@@ -34,6 +34,9 @@ type TocState = {
   >(
     headingList: T[],
   ) => number[];
+
+  navigateToReadingBlocks: (blocks: HTMLElement[], topOffset?: number) => void;
+  clearReadingEmphasis: () => void;
 };
 
 const TocContext = createContext<TocState | undefined>(undefined);
@@ -111,6 +114,28 @@ const isElementVisible = (element: HTMLElement, topOffset: number): boolean => {
   );
 };
 
+const scrollToReadingBlock = (
+  element: HTMLElement,
+  topOffset: number,
+  behavior: ScrollBehavior,
+  fullyVisible = false,
+) => {
+  if (
+    !isElementVisible(element, topOffset) ||
+    (fullyVisible &&
+      element.getBoundingClientRect().bottom > window.innerHeight - 16)
+  ) {
+    const top =
+      element.getBoundingClientRect().top + window.scrollY - topOffset;
+    window.scrollTo({
+      top,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : behavior,
+    });
+  }
+};
+
 /**
  * Low-level navigate helper (not exported in context directly)
  */
@@ -121,13 +146,7 @@ const doNavigateToHeading = (
 ) => {
   if (!item.dom || typeof window === "undefined") return;
 
-  // Only scroll if element is not already visible
-  if (!isElementVisible(item.dom, topOffset)) {
-    const rect = item.dom.getBoundingClientRect();
-    const top = rect.top + window.scrollY - topOffset;
-
-    window.scrollTo({ top, behavior });
-  }
+  scrollToReadingBlock(item.dom, topOffset, behavior);
 
   if (item.editor && typeof item.pos === "number") {
     selectNodeAndHideFloating(item.editor, item.pos);
@@ -143,13 +162,44 @@ const doNavigateToHeading = (
 
 export const TocProvider = ({ children }: { children: ReactNode }) => {
   const [tocContent, setTocContent] = useState<TableOfContentData | null>(null);
-  const highlightedHeading = useRef<HTMLElement | null>(null);
+  const highlightedBlocks = useRef<HTMLElement[]>([]);
   const clearHeadingHighlight = useCallback(() => {
-    highlightedHeading.current?.classList.remove("ProseMirror-selectednode");
-    highlightedHeading.current = null;
+    highlightedBlocks.current.forEach((element) =>
+      element.classList.remove("ProseMirror-selectednode"),
+    );
+    highlightedBlocks.current = [];
   }, []);
   const { start, clear } = useTimeout(clearHeadingHighlight, 2_000);
   useEffect(() => clearHeadingHighlight, [clearHeadingHighlight]);
+  const clearReadingEmphasis = useCallback(() => {
+    clear();
+    clearHeadingHighlight();
+  }, [clear, clearHeadingHighlight]);
+
+  const emphasizeReadingBlocks = useCallback(
+    (blocks: HTMLElement[]) => {
+      clear();
+      clearHeadingHighlight();
+      // Only remove classes introduced by this read-only feedback controller.
+      highlightedBlocks.current = blocks.filter(
+        (element) => !element.classList.contains("ProseMirror-selectednode"),
+      );
+      highlightedBlocks.current.forEach((element) =>
+        element.classList.add("ProseMirror-selectednode"),
+      );
+      start();
+    },
+    [clear, clearHeadingHighlight, start],
+  );
+
+  const navigateToReadingBlocks = useCallback(
+    (blocks: HTMLElement[], topOffset = 92) => {
+      if (!blocks.length) return;
+      scrollToReadingBlock(blocks[0], topOffset, "smooth", true);
+      emphasizeReadingBlocks(blocks);
+    },
+    [emphasizeReadingBlocks],
+  );
 
   const navigateToHeading = useCallback<TocState["navigateToHeading"]>(
     (item, options) => {
@@ -162,12 +212,10 @@ export const TocProvider = ({ children }: { children: ReactNode }) => {
       // Static readers have no editor selection. Briefly reuse the template's
       // selected-node treatment without changing the document or text selection.
       if (item.dom && !item.editor) {
-        highlightedHeading.current = item.dom;
-        item.dom.classList.add("ProseMirror-selectednode");
-        start();
+        emphasizeReadingBlocks([item.dom]);
       }
     },
-    [clear, clearHeadingHighlight, start],
+    [clear, clearHeadingHighlight, emphasizeReadingBlocks],
   );
 
   return (
@@ -176,6 +224,8 @@ export const TocProvider = ({ children }: { children: ReactNode }) => {
         tocContent,
         setTocContent,
         navigateToHeading,
+        navigateToReadingBlocks,
+        clearReadingEmphasis,
         normalizeHeadingDepths,
       }}
     >

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useEffect, useRef, useState } from "react";
-import { useMergedRef, useResizeObserver } from "@mantine/hooks";
+import { useScrollEdges } from "../../../../../../useScrollEdges";
 
 import { cn } from "@content-notion/lib/editor-utils";
 import { useToc } from "@content-notion/components/nodes/toc-node/context/toc-context";
@@ -52,31 +52,8 @@ export function TocSidebar({
     [headingList, maxShowCount],
   );
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [observeViewport, viewportRect] = useResizeObserver<HTMLDivElement>();
-  const [observeContent, contentRect] = useResizeObserver<HTMLDivElement>();
-  const viewportRef = useMergedRef(scrollRef, observeViewport);
-  const [scrollEdges, setScrollEdges] = useState({ top: false, bottom: false });
-  const updateScrollEdges = useCallback(() => {
-    const viewport = scrollRef.current;
-    if (!viewport) return;
-    // One pixel tolerates fractional scroll positions and rounded dimensions.
-    const top = viewport.scrollTop > 1;
-    const bottom =
-      viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop > 1;
-    setScrollEdges((previous) =>
-      previous.top === top && previous.bottom === bottom
-        ? previous
-        : { top, bottom },
-    );
-  }, []);
-  useEffect(updateScrollEdges, [
-    updateScrollEdges,
-    viewportRect.width,
-    viewportRect.height,
-    contentRect.width,
-    contentRect.height,
-  ]);
+  const { viewportRef, contentRef, scrollEdges, updateScrollEdges } =
+    useScrollEdges();
 
   const normalizedDepths = useMemo(
     () => normalizeHeadingDepths(visibleHeadings),
@@ -227,12 +204,12 @@ export function TocSidebar({
             <div className="toc-sidebar-popover">
               <div
                 ref={viewportRef}
-                className="toc-sidebar-scroll"
+                className="toc-sidebar-scroll tiptap-scroll-fade"
                 data-scroll-top={scrollEdges.top}
                 data-scroll-bottom={scrollEdges.bottom}
                 onScroll={updateScrollEdges}
               >
-                <div ref={observeContent}>
+                <div ref={contentRef}>
                   {visibleHeadings.map((item) => {
                     const depth = depthById.get(item.id) ?? 1;
                     const isActive = activeContentId === item.id;

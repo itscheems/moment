@@ -80,6 +80,7 @@ export function ArticleReadingContent({
   searchSlot,
   enableSearch = true,
   enableAnnotations = false,
+  enableExcerptPanel = false,
   showClearAllAnnotations = true,
   excerptSource,
 }: {
@@ -88,6 +89,7 @@ export function ArticleReadingContent({
   searchSlot?: HTMLElement | null;
   enableSearch?: boolean;
   enableAnnotations?: boolean;
+  enableExcerptPanel?: boolean;
   showClearAllAnnotations?: boolean;
   excerptSource?: ReadingExcerptSource;
 }) {
@@ -232,6 +234,7 @@ export function ArticleReadingContent({
       {enableAnnotations && editor.storage.readingAnnotations && (
         <ReadingAnnotationTools
           editor={editor}
+          enableExcerptPanel={enableExcerptPanel}
           actionsSlot={searchSlot}
           showClearAllAnnotations={showClearAllAnnotations}
           excerptSource={excerptSource}

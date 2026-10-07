@@ -158,6 +158,7 @@ export function ArticlePage({
           searchSlot={focusReading ? undefined : null}
           enableSearch
           enableAnnotations
+          enableExcerptPanel={focusReading}
           showClearAllAnnotations={focusReading}
           media={post.article.bodyMedia}
           excerptSource={{

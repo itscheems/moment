@@ -26,6 +26,7 @@ import { ColorHighlightButton } from "@notion/components/ui/color-highlight-butt
 import { HeaderActions } from "../../../components/headerActions";
 import { ClipboardCopyButton } from "../../../components/content/ClipboardCopyButton";
 import { Icon } from "../../../components/icons";
+import { ReadingExcerptPanel } from "./ReadingExcerptPanel";
 import { ShareCardDialog } from "../../share/ShareCardDialog";
 import type { ShareCardInput } from "../../share/shareCard";
 import {
@@ -36,6 +37,7 @@ import {
   activeReadingColor,
   applyReadingColor,
   clearReadingAnnotations,
+  readingExcerptRanges,
   readingSelection,
   readingSelectionText,
   type ReadingRange,
@@ -50,11 +52,13 @@ export function ReadingAnnotationTools({
   editor,
   actionsSlot,
   showClearAllAnnotations = true,
+  enableExcerptPanel = false,
   excerptSource,
 }: {
   editor: Editor;
   actionsSlot?: HTMLElement | null;
   showClearAllAnnotations?: boolean;
+  enableExcerptPanel?: boolean;
   excerptSource?: ReadingExcerptSource;
 }) {
   const snapshot = useEditorState({
@@ -77,6 +81,8 @@ export function ReadingAnnotationTools({
     "var(--tt-color-highlight-yellow)",
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [excerptOpen, setExcerptOpen] = useState(false);
+  const shareFromPanel = useRef(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [shareInput, setShareInput] = useState<ShareCardInput | null>(null);
   useEffect(() => {
@@ -104,7 +110,13 @@ export function ReadingAnnotationTools({
   const hasSelectedMarks = snapshot.ranges.some(
     (range) => selected && range.to > selected.from && range.from < selected.to,
   );
-  const tools =
+  const excerpts = enableExcerptPanel ? readingExcerptRanges(editor) : [];
+  const shareRange = (range: ReadingRange, fromPanel = false) => {
+    if (!excerptSource) return;
+    shareFromPanel.current = fromPanel;
+    setShareInput(readingExcerptCard(editor, range, excerptSource));
+  };
+  const clearAllTools =
     showClearAllAnnotations && snapshot.ranges.length > 0 ? (
       <Popover open={menuOpen} onOpenChange={setMenuOpen}>
         <PopoverTrigger asChild>
@@ -135,6 +147,24 @@ export function ReadingAnnotationTools({
       </Popover>
     ) : null;
 
+  const tools = (
+    <>
+      {enableExcerptPanel && (
+        <ReadingExcerptPanel
+          editor={editor}
+          ranges={excerpts}
+          open={excerptOpen}
+          onOpenChange={setExcerptOpen}
+          suspended={Boolean(shareInput)}
+          onShare={
+            excerptSource ? (range) => shareRange(range, true) : undefined
+          }
+        />
+      )}
+      {clearAllTools}
+    </>
+  );
+
   return (
     <>
       {actionsSlot === undefined ? (
@@ -159,7 +189,9 @@ export function ReadingAnnotationTools({
       >
         <FloatingElement
           editor={editor}
-          shouldShow={visible && Boolean(selected) && !shareOpen}
+          shouldShow={
+            visible && Boolean(selected) && !shareInput && !excerptOpen
+          }
           resetTextSelectionOnClose={false}
           floatingOptions={READING_FLOATING_OPTIONS}
         >
@@ -179,13 +211,7 @@ export function ReadingAnnotationTools({
                   tooltip="Share excerpt"
                   onClick={() => {
                     if (!selectionRef.current) return;
-                    setShareInput(
-                      readingExcerptCard(
-                        editor,
-                        selectionRef.current,
-                        excerptSource,
-                      ),
-                    );
+                    shareRange(selectionRef.current);
                   }}
                 >
                   <Icon name="share" className="tiptap-button-icon" />
@@ -229,6 +255,7 @@ export function ReadingAnnotationTools({
           open={shareOpen}
           onOpenChange={setShareOpen}
           finalFocus={() => {
+            if (shareFromPanel.current) return false;
             if (!editor.isDestroyed) {
               // A read-only view is not tabbable. Returning its element lets
               // the dialog pick a link inside it instead of the text selection.

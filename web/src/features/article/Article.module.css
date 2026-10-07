@@ -247,3 +247,99 @@
     transition: none;
   }
 }
+
+/* Excerpts borrow the reading popover/card surface and animation lifecycle. */
+.excerptPopup {
+  inline-size: min(360px, calc(100vw - 32px));
+}
+.excerptCard {
+  align-items: stretch;
+  overflow: hidden;
+  max-block-size: var(--radix-popover-content-available-height);
+}
+.excerptHeader {
+  padding: var(--space-2) var(--space-4);
+}
+.excerptHeader strong {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+.excerptHeader strong span {
+  color: var(--text-secondary);
+}
+.excerptBody {
+  padding: 16px;
+  min-block-size: 0;
+  display: flex;
+}
+.excerptScroll {
+  inline-size: 100%;
+  max-block-size: min(
+    60dvh,
+    calc(var(--radix-popover-content-available-height) - 88px)
+  );
+  overflow-y: auto;
+  scroll-padding-block: 18px;
+}
+.excerptList {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.excerptItem + .excerptItem {
+  border-block-start: 1px solid var(--border-subtle);
+  padding-block-start: var(--space-2);
+  margin-block-start: var(--space-2);
+}
+.excerptText.excerptText {
+  inline-size: 100%;
+  block-size: auto;
+  min-block-size: 44px;
+  display: block;
+  padding: var(--space-2);
+  text-align: start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+.excerptBlock {
+  display: block;
+}
+.excerptBlock + .excerptBlock {
+  margin-block-start: var(--space-2);
+}
+.excerptBlock[data-heading] {
+  font-weight: 700;
+}
+.excerptBlock[data-kind="quote"] {
+  padding-inline-start: var(--space-2);
+  border-inline-start: 2px solid var(--border-strong);
+}
+.excerptActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+@media (max-width: 719px) {
+  .excerptCard {
+    max-block-size: calc(
+      var(--radix-popover-content-available-height) - 3.5rem -
+        env(safe-area-inset-bottom)
+    );
+  }
+  .excerptScroll {
+    max-block-size: min(
+      60dvh,
+      calc(
+        var(--radix-popover-content-available-height) - 88px - 3.5rem -
+          env(safe-area-inset-bottom)
+      )
+    );
+  }
+  .excerptActions button {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+}

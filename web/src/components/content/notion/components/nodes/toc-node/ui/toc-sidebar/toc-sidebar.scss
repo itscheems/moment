@@ -163,10 +163,6 @@
 
   // Mask the scroll viewport, leaving the card's surface and border intact.
   &-scroll {
-    --toc-fade-size: 18px;
-    --toc-fade-top: #000;
-    --toc-fade-bottom: #000;
-
     max-height: min(
       calc(24rem - 2 * var(--border-width) - 2 * var(--padding)),
       calc(100dvh - var(--toc-sticky-top) - 0.75rem - 2 * var(--padding))
@@ -175,21 +171,6 @@
     scroll-margin: 0.25rem;
     scroll-padding-block: var(--padding);
     overscroll-behavior-y: contain;
-    mask-image: linear-gradient(
-      to bottom,
-      var(--toc-fade-top),
-      #000 var(--toc-fade-size),
-      #000 calc(100% - var(--toc-fade-size)),
-      var(--toc-fade-bottom)
-    );
-
-    &[data-scroll-top="true"] {
-      --toc-fade-top: transparent;
-    }
-
-    &[data-scroll-bottom="true"] {
-      --toc-fade-bottom: transparent;
-    }
   }
 
   /* =========================

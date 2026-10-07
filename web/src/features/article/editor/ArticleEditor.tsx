@@ -1075,6 +1075,7 @@ export function ArticleEditor({
                     document={previewDocument}
                     searchSlot={previewSearchSlot}
                     enableAnnotations
+                    enableExcerptPanel
                     excerptSource={{
                       title,
                       displayName: siteDisplayName(site),

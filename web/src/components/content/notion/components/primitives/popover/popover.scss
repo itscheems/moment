@@ -60,4 +60,26 @@
   &[data-side="left-end"] {
     animation: slideFromRight 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
+
+  /* Opt in to combining the existing fade and placement keyframes. */
+  &[data-fade] {
+    &[data-state="open"] {
+      animation-name: fadeIn, zoomIn;
+      &[data-side="top"] {
+        animation-name: fadeIn, slideFromBottom;
+      }
+      &[data-side="bottom"] {
+        animation-name: fadeIn, slideFromTop;
+      }
+      &[data-side="left"] {
+        animation-name: fadeIn, slideFromRight;
+      }
+      &[data-side="right"] {
+        animation-name: fadeIn, slideFromLeft;
+      }
+    }
+    &[data-state="closed"] {
+      animation-name: fadeOut, zoomOut;
+    }
+  }
 }

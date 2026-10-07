@@ -12,6 +12,10 @@ import { MentionProvider } from "../../app/mentions";
 import type { ArticleDocument } from "../../api/public";
 import { ArticleSheet } from "./ArticleSheet";
 import { RichContent } from "./RichContent";
+import {
+  TocProvider,
+  useToc,
+} from "@content-notion/components/nodes/toc-node/context/toc-context";
 
 const document: ArticleDocument = {
   schema_version: 2,
@@ -152,4 +156,66 @@ it("keeps the destination mounted and emphasized while a mention finishes loadin
   expect(heading).toHaveClass("ProseMirror-selectednode");
   act(() => vi.advanceTimersByTime(1));
   expect(heading).not.toHaveClass("ProseMirror-selectednode");
+});
+
+it("shares timed reading feedback across paragraph jumps without changing URL or selection", () => {
+  function ReadingJump() {
+    const { navigateToReadingBlocks } = useToc();
+    return (
+      <>
+        <p data-test-reading="first">第一段</p>
+        <p data-test-reading="second">第二段</p>
+        <button
+          onClick={() =>
+            navigateToReadingBlocks([
+              window.document.querySelector(
+                '[data-test-reading="first"]',
+              ) as HTMLElement,
+            ])
+          }
+        >
+          第一条摘录
+        </button>
+        <button
+          onClick={() =>
+            navigateToReadingBlocks([
+              window.document.querySelector(
+                '[data-test-reading="second"]',
+              ) as HTMLElement,
+            ])
+          }
+        >
+          第二条摘录
+        </button>
+      </>
+    );
+  }
+  const view = render(
+    <TocProvider>
+      <ReadingJump />
+    </TocProvider>,
+  );
+  const first = screen.getByText("第一段"),
+    second = screen.getByText("第二段");
+  const selection = window.getSelection()?.toString();
+  fireEvent.click(screen.getByRole("button", { name: "第一条摘录" }));
+  expect(first).toHaveClass("ProseMirror-selectednode");
+  act(() => vi.advanceTimersByTime(1_000));
+  fireEvent.click(screen.getByRole("button", { name: "第二条摘录" }));
+  expect(first).not.toHaveClass("ProseMirror-selectednode");
+  expect(second).toHaveClass("ProseMirror-selectednode");
+  act(() => vi.advanceTimersByTime(1_999));
+  expect(second).toHaveClass("ProseMirror-selectednode");
+  fireEvent.click(screen.getByRole("button", { name: "第二条摘录" }));
+  act(() => vi.advanceTimersByTime(1_999));
+  expect(second).toHaveClass("ProseMirror-selectednode");
+  act(() => vi.advanceTimersByTime(1));
+  expect(second).not.toHaveClass("ProseMirror-selectednode");
+  expect(window.location.hash).toBe("");
+  expect(window.history.state).toEqual({ index: 7 });
+  expect(window.getSelection()?.toString()).toBe(selection);
+  fireEvent.click(screen.getByRole("button", { name: "第一条摘录" }));
+  view.unmount();
+  expect(first).not.toHaveClass("ProseMirror-selectednode");
+  expect(vi.getTimerCount()).toBe(0);
 });

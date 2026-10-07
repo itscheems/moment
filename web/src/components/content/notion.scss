@@ -115,3 +115,24 @@
 .tiptap.ProseMirror {
   font-synthesis: style;
 }
+
+/* The outline and excerpts share the same short, state-aware scroll mask. */
+.tiptap-scroll-fade {
+  --scroll-fade-size: 18px;
+  --scroll-fade-top: #000;
+  --scroll-fade-bottom: #000;
+  overscroll-behavior-y: contain;
+  mask-image: linear-gradient(
+    to bottom,
+    var(--scroll-fade-top),
+    #000 var(--scroll-fade-size),
+    #000 calc(100% - var(--scroll-fade-size)),
+    var(--scroll-fade-bottom)
+  );
+  &[data-scroll-top="true"] {
+    --scroll-fade-top: transparent;
+  }
+  &[data-scroll-bottom="true"] {
+    --scroll-fade-bottom: transparent;
+  }
+}
