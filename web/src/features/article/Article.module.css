@@ -258,7 +258,7 @@
   max-block-size: var(--radix-popover-content-available-height);
 }
 .excerptHeader.excerptHeader {
-  padding: var(--space-2) 16px;
+  padding: var(--space-2) 16px var(--space-2) 24px;
 }
 .excerptHeader strong {
   font-size: var(--text-sm);
@@ -287,16 +287,25 @@
   list-style: none;
 }
 .excerptItem + .excerptItem {
-  border-block-start: 1px solid var(--border-subtle);
+  position: relative;
   padding-block-start: var(--space-2);
   margin-block-start: var(--space-2);
+}
+.excerptItem + .excerptItem::before {
+  content: "";
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: var(--space-2);
+  block-size: 1px;
+  background: var(--border-subtle);
 }
 .excerptText.excerptText {
   inline-size: 100%;
   block-size: auto;
   min-block-size: 44px;
   display: block;
-  padding: var(--space-2) 0;
+  padding: var(--space-2);
+  appearance: none;
   text-align: start;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -304,6 +313,14 @@
   font-weight: 400;
   line-height: 1.6;
   color: var(--text-primary);
+  /* Keep the mask's background paint opaque; reuse the button's timing/curve. */
+  background-color: var(--tiptap-card-bg-color);
+  transition-property: background-color, color;
+}
+.excerptText.excerptText:focus-visible {
+  background-color: var(--tt-button-hover-bg-color);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 .excerptActions {
   display: flex;
@@ -311,7 +328,11 @@
   justify-content: flex-end;
 }
 @media (max-width: 719px) {
-  .excerptCard {
+  .excerptHeader button {
+    min-inline-size: 44px;
+    min-block-size: 44px;
+  }
+  .excerptCard.excerptCard {
     max-block-size: calc(
       var(--radix-popover-content-available-height) - 3.5rem -
         env(safe-area-inset-bottom)
@@ -321,7 +342,7 @@
     max-block-size: min(
       60dvh,
       calc(
-        var(--radix-popover-content-available-height) - 88px - 3.5rem -
+        var(--radix-popover-content-available-height) - 100px - 3.5rem -
           env(safe-area-inset-bottom)
       )
     );
