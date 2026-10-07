@@ -1,5 +1,6 @@
 .tiptap.ProseMirror {
-  :is(h1, h2, h3, h4, h5, h6) {
+  :is(h1, h2, h3, h4, h5, h6),
+  &[data-content-renderer][contenteditable="false"] p {
     border-radius: var(--tt-radius-md);
     transition: background-color var(--tt-transition-duration-default)
       var(--tt-transition-easing-default);
