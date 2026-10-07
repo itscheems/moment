@@ -989,6 +989,7 @@ export function ArticleEditor({
             ) : null}
 
             <ArticleSheet
+              enableReadingLayout={previewing}
               outline={previewing ? undefined : <></>}
               cover={
                 <CoverField
@@ -1076,6 +1077,7 @@ export function ArticleEditor({
                     searchSlot={previewSearchSlot}
                     enableAnnotations
                     enableExcerptPanel
+                    enableReadingLayout
                     excerptSource={{
                       title,
                       displayName: siteDisplayName(site),

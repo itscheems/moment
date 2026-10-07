@@ -73,6 +73,7 @@ export function ArticlePage({
         </div>
       ) : null}
       <ArticleSheet
+        enableReadingLayout={focusReading}
         cover={
           cover ? (
             <ArticleCover
@@ -159,6 +160,7 @@ export function ArticlePage({
           enableSearch
           enableAnnotations
           enableExcerptPanel={focusReading}
+          enableReadingLayout={focusReading}
           showClearAllAnnotations={focusReading}
           media={post.article.bodyMedia}
           excerptSource={{

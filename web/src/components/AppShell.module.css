@@ -769,6 +769,7 @@
 }
 
 .focusViewport {
+  --reading-sheet-width: var(--reading-preferred-width, 44.25rem);
   padding-block-end: 0;
 }
 
@@ -783,8 +784,14 @@
 }
 
 .focusShell [data-detail-content] {
-  inline-size: min(100%, 44.25rem);
+  inline-size: min(100%, var(--reading-sheet-width));
   margin-inline: auto;
+}
+
+@media (max-width: 719px) {
+  .focusViewport {
+    --reading-sheet-width: 44.25rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

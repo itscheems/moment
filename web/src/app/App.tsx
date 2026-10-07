@@ -35,6 +35,7 @@ import { SearchPage } from "../features/memory/SearchPage";
 import { MemberProfilePage } from "../features/profile/MemberProfilePage";
 import { ProfilePage } from "../features/profile/ProfilePage";
 import { ThemeProvider } from "../theme/ThemeProvider";
+import { ReadingLayoutProvider } from "../features/article/ReadingLayout";
 import { FeedbackProvider } from "../components/Feedback";
 import { useDocumentScrollLock } from "../components/useDocumentScrollLock";
 import {
@@ -775,13 +776,15 @@ function PublicApp() {
 export function App() {
   return (
     <ThemeProvider>
-      <FeedbackProvider>
-        <NavigationProvider>
-          <OwnerProvider>
-            <PublicApp />
-          </OwnerProvider>
-        </NavigationProvider>
-      </FeedbackProvider>
+      <ReadingLayoutProvider>
+        <FeedbackProvider>
+          <NavigationProvider>
+            <OwnerProvider>
+              <PublicApp />
+            </OwnerProvider>
+          </NavigationProvider>
+        </FeedbackProvider>
+      </ReadingLayoutProvider>
     </ThemeProvider>
   );
 }

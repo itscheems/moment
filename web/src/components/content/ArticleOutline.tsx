@@ -46,9 +46,13 @@ function StaticCatalog({
       subtree: true,
       characterData: true,
     });
+    const resize =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    resize?.observe(body);
     window.addEventListener("scroll", update, { passive: true });
     return () => {
       observer.disconnect();
+      resize?.disconnect();
       window.removeEventListener("scroll", update);
     };
   }, [container, setTocContent]);

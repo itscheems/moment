@@ -26,6 +26,7 @@ import { MentionLink } from "../../../components/content/MentionLink";
 import { ArticleSearch } from "../ArticleSearch";
 import { ReadingAnnotations } from "./readingAnnotations";
 import { ReadingAnnotationTools } from "./ReadingAnnotationTools";
+import { ReadingLayoutSettings } from "./ReadingLayoutSettings";
 import type { ReadingExcerptSource } from "./readingExcerpt";
 import { articleContentExtensions } from "../../../components/content/schema";
 import { articleWithOutline } from "../../../components/content/outlineDocument";
@@ -81,6 +82,7 @@ export function ArticleReadingContent({
   enableSearch = true,
   enableAnnotations = false,
   enableExcerptPanel = false,
+  enableReadingLayout = false,
   showClearAllAnnotations = true,
   excerptSource,
 }: {
@@ -90,6 +92,7 @@ export function ArticleReadingContent({
   enableSearch?: boolean;
   enableAnnotations?: boolean;
   enableExcerptPanel?: boolean;
+  enableReadingLayout?: boolean;
   showClearAllAnnotations?: boolean;
   excerptSource?: ReadingExcerptSource;
 }) {
@@ -208,6 +211,14 @@ export function ArticleReadingContent({
   if (!editor || editor.isDestroyed) return null;
   return (
     <EditorContext.Provider key={editor.instanceId} value={{ editor }}>
+      {enableReadingLayout &&
+        (searchSlot === undefined ? (
+          <HeaderActions>
+            <ReadingLayoutSettings />
+          </HeaderActions>
+        ) : searchSlot ? (
+          createPortal(<ReadingLayoutSettings />, searchSlot)
+        ) : null)}
       {enableSearch && editor.storage.findAndReplace && (
         <ArticleSearch editor={editor}>
           {({ open, toggle, buttonRef }) => {

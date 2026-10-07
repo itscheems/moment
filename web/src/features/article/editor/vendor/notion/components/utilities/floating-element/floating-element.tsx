@@ -16,6 +16,7 @@ import {
   shift,
   useMergeRefs,
   type UseFloatingOptions,
+  type AutoUpdateOptions,
 } from "@floating-ui/react";
 import { Selection } from "@tiptap/pm/state";
 
@@ -46,6 +47,8 @@ export interface FloatingElementProps extends HTMLAttributes<HTMLDivElement> {
    * Additional options to pass to the floating UI.
    */
   floatingOptions?: Partial<UseFloatingOptions>;
+  /** Supported Floating UI observation configuration; writing keeps its defaults. */
+  autoUpdateOptions?: AutoUpdateOptions;
   /**
    * Z-index for the floating element.
    * @default 50
@@ -88,6 +91,7 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
       editor: providedEditor,
       shouldShow = undefined,
       floatingOptions,
+      autoUpdateOptions,
       zIndex = 50,
       onOpenChange,
       referenceElement,
@@ -172,6 +176,7 @@ export const FloatingElement = forwardRef<HTMLDivElement, FloatingElementProps>(
         },
         ...floatingOptions,
       },
+      autoUpdateOptions,
     );
 
     const updateSelectionState = useCallback(() => {

@@ -82,6 +82,16 @@
   width: 4rem;
 }
 
+[data-article-sheet][data-reading-layout] .toc-sidebar {
+  right: calc(
+    (
+        min(100vw, var(--reading-sheet-width, var(--reading-preferred-width))) -
+          100vw
+      ) /
+      2 + 1rem
+  );
+}
+
 /* Keep short Chinese headings as comfortable to target as long demo titles. */
 [data-article-sheet] .toc-sidebar-popover {
   --padding: 1rem;
@@ -104,7 +114,8 @@
   }
 }
 @media (max-width: 1024px) {
-  [data-article-sheet] .toc-sidebar {
+  [data-article-sheet] .toc-sidebar,
+  [data-article-sheet][data-reading-layout] .toc-sidebar {
     left: auto;
     right: 1rem;
   }

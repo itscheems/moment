@@ -46,6 +46,7 @@ import {
 const READING_FLOATING_OPTIONS = {
   middleware: [offset(4), flip({ padding: 8 }), shift({ padding: 8 })],
 };
+const READING_AUTO_UPDATE_OPTIONS = { animationFrame: true };
 
 /** Read-only actions reuse the writing UI, with an explicit decoration adapter. */
 export function ReadingAnnotationTools({
@@ -194,6 +195,7 @@ export function ReadingAnnotationTools({
           }
           resetTextSelectionOnClose={false}
           floatingOptions={READING_FLOATING_OPTIONS}
+          autoUpdateOptions={READING_AUTO_UPDATE_OPTIONS}
         >
           <Toolbar variant="floating" aria-label="Reading annotations">
             <ToolbarGroup>

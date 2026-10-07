@@ -498,7 +498,32 @@
     transition: none;
   }
 }
+@media (max-width: 389px) {
+  .topBar.topBar:has([aria-label="阅读排版"]) .topActions {
+    min-inline-size: 0;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
 @media (max-width: 719px) {
+  .topBar.topBar:has([aria-label="阅读排版"]) {
+    .toolButton {
+      padding-inline: 0.125rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .topActions {
+      gap: 0;
+    }
+    .topActions :global(.tiptap-button-group) {
+      gap: 0;
+    }
+    .topActions :is(.primaryAction, .secondaryAction) {
+      padding-inline: 0.375rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+  }
   /* Keep preview actions on one line when the excerpts entrance is present. */
   .topBar:has([aria-label="本次摘录"]) {
     .toolButton {

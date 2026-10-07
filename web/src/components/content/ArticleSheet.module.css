@@ -41,6 +41,39 @@
 .body {
   min-inline-size: 0;
 }
+.sheet[data-reading-layout] {
+  inline-size: min(
+    100%,
+    var(--reading-sheet-width, var(--reading-preferred-width))
+  );
+}
+.sheet[data-reading-layout]
+  :global(.tiptap.ProseMirror[data-content-renderer]) {
+  font-size: var(--reading-font-size);
+}
+.sheet[data-reading-layout]
+  :global(.tiptap.ProseMirror[data-content-renderer])
+  :global(p) {
+  font-size: inherit;
+}
+.sheet[data-reading-layout]
+  :global(.tiptap.ProseMirror[data-content-renderer])
+  :global(pre) {
+  font-size: var(--reading-font-size);
+}
+.sheet[data-reading-layout]
+  :global(.tiptap.ProseMirror[data-content-renderer])
+  :global(figcaption),
+.sheet[data-reading-layout]
+  :global(.tiptap.ProseMirror[data-content-renderer])
+  :global(.tiptap-image-caption) {
+  font-size: calc(var(--reading-font-size) * 0.9375);
+}
+.sheet[data-reading-layout]:not([data-reading-line-height="normal"])
+  :global(.tiptap.ProseMirror[data-content-renderer])
+  :global(:is(p, li, figcaption, .tiptap-image-caption)) {
+  line-height: var(--reading-line-height);
+}
 .cover {
   position: relative;
   inline-size: calc(100% + 2 * var(--article-inset));
@@ -56,6 +89,9 @@
   object-fit: cover;
 }
 @media (max-width: 719px) {
+  .sheet[data-reading-layout] {
+    --reading-sheet-width: 44.25rem;
+  }
   .sheet {
     --article-inset: 2rem;
     padding-block-start: 2rem;

@@ -3,6 +3,10 @@ import { TocProvider } from "@content-notion/components/nodes/toc-node/context/t
 import { StaticArticleOutline } from "./ArticleOutline";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
 import styles from "./ArticleSheet.module.css";
+import {
+  readingLayoutStyle,
+  useReadingLayout,
+} from "../../features/article/ReadingLayout";
 
 /** The same paper surrounds an editable document, its preview, and a publication. */
 export function ArticleSheet({
@@ -12,6 +16,7 @@ export function ArticleSheet({
   children,
   className = "",
   outline,
+  enableReadingLayout = false,
 }: {
   cover?: ReactNode;
   title: ReactNode;
@@ -19,11 +24,21 @@ export function ArticleSheet({
   children: ReactNode;
   className?: string;
   outline?: ReactNode;
+  enableReadingLayout?: boolean;
 }) {
   const body = useRef<HTMLDivElement>(null);
+  const { preference } = useReadingLayout();
   return (
     <TocProvider>
-      <div className={`${styles.sheet} ${className}`} data-article-sheet>
+      <div
+        className={`${styles.sheet} ${className}`}
+        data-article-sheet
+        data-reading-layout={enableReadingLayout || undefined}
+        data-reading-line-height={
+          enableReadingLayout ? preference.lineHeight : undefined
+        }
+        style={enableReadingLayout ? readingLayoutStyle(preference) : undefined}
+      >
         {cover}
         <div className={styles.heading}>{title}</div>
         <div className={styles.byline}>{byline}</div>

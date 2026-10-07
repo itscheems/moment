@@ -20,6 +20,10 @@ import { ThemeMenu } from "./ThemeMenu";
 import { ThemeToggle } from "./content/notion/components/templates/notion-like/notion-like-editor-theme-toggle";
 import { MOBILE_VIEWPORT_QUERY, useMediaQuery } from "./useMediaQuery";
 import styles from "./AppShell.module.css";
+import {
+  readingLayoutStyle,
+  useReadingLayout,
+} from "../features/article/ReadingLayout";
 
 interface NavItem {
   label: string;
@@ -485,12 +489,14 @@ export function AppShell({
   const [railSlot, setRailSlot] = useState<HTMLDivElement | null>(null);
   const [headerSlot, setHeaderSlot] = useState<HTMLSpanElement | null>(null);
   const focusReading = route.id === "article-focus";
+  const { preference: readingLayout } = useReadingLayout();
   return (
     <RailSlotContext.Provider value={railSlot}>
       <HeaderActionsContext.Provider value={headerSlot}>
         <div
           className={`${styles.viewport} ${focusReading ? styles.focusViewport : ""}`}
           data-article-theme={focusReading || undefined}
+          style={focusReading ? readingLayoutStyle(readingLayout) : undefined}
         >
           <a className={styles.skipLink} href="#main-content">
             跳到主要内容
