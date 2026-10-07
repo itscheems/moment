@@ -621,3 +621,8 @@ func (store *Store) removePreviewArtifacts(sha string) {
 func mediaNotFound(id domain.ID) error {
 	return domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", id), map[string]any{"media_id": id.String()})
 }
+
+// CanRead applies the same account audience as content and comment reads.
+func (store *Store) CanRead(ctx context.Context, id domain.ID, viewer app.Viewer) (bool, error) {
+	return store.references.CanRead(ctx, id, viewer)
+}

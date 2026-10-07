@@ -428,9 +428,9 @@ func (importer *PortableImporter) insertEntry(ctx context.Context, value Archive
 	}
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO entries (
-    id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms, content_text
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		value.ID, value.Kind, value.ContentMD, string(entry.Visibility), value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, value.RepostedAtMS, value.EditedAtMS, contentText); err != nil {
+    author_user_id, id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms, content_text
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		optionalAuthorID(value.AuthorUserID), value.ID, value.Kind, value.ContentMD, string(entry.Visibility), value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, value.RepostedAtMS, value.EditedAtMS, contentText); err != nil {
 		return fmt.Errorf("insert portable entry %s: %w", value.ID, err)
 	}
 	if isArticle {
@@ -583,10 +583,10 @@ func (importer *PortableImporter) InsertArticleDraft(ctx context.Context, value 
 	}
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO article_drafts (
-    id, title, body_json, body_schema_version, cover_media_id,
+    author_user_id, id, title, body_json, body_schema_version, cover_media_id,
     published_entry_id, created_at_ms, updated_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		id.String(), draft.Title, string(serialized), draft.Body.SchemaVersion,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		optionalAuthorID(value.AuthorUserID), id.String(), draft.Title, string(serialized), draft.Body.SchemaVersion,
 		value.CoverMediaID, value.PublishedEntryID, value.CreatedAtMS, value.UpdatedAtMS); err != nil {
 		return fmt.Errorf("insert portable article draft %s: %w", value.ID, err)
 	}

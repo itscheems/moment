@@ -36,6 +36,7 @@ type ArticleCover struct {
 // copy of one: editing a published article must not change what readers see
 // with every keystroke.
 type ArticleDraftRecord struct {
+	AuthorUserID     string
 	ID               domain.ID
 	Draft            domain.ArticleDraft
 	PublishedEntryID *domain.ID
@@ -182,7 +183,11 @@ func (service *PostService) SaveArticleDraft(ctx context.Context, input SaveArti
 			if idErr != nil {
 				return idErr
 			}
-			saved = ArticleDraftRecord{ID: id, Draft: draft, CreatedAt: now, UpdatedAt: now}
+			authorID, authorErr := contentActorID(ctx, store)
+			if authorErr != nil {
+				return authorErr
+			}
+			saved = ArticleDraftRecord{AuthorUserID: authorID, ID: id, Draft: draft, CreatedAt: now, UpdatedAt: now}
 			if insertErr := store.InsertArticleDraft(ctx, saved); insertErr != nil {
 				return insertErr
 			}
@@ -208,7 +213,7 @@ func (service *PostService) SaveArticleDraft(ctx context.Context, input SaveArti
 			next = existing.UpdatedAt.Add(time.Millisecond)
 		}
 		saved = ArticleDraftRecord{
-			ID: existing.ID, Draft: draft, PublishedEntryID: existing.PublishedEntryID,
+			AuthorUserID: existing.AuthorUserID, ID: existing.ID, Draft: draft, PublishedEntryID: existing.PublishedEntryID,
 			CreatedAt: existing.CreatedAt, UpdatedAt: next,
 		}
 		applied, writeErr := store.UpdateArticleDraft(ctx, saved, *input.ExpectedUpdatedAt)
@@ -274,8 +279,15 @@ func (service *PostService) EditArticle(ctx context.Context, entryID domain.ID) 
 		if idErr != nil {
 			return idErr
 		}
+		entry, entryFound, entryErr := store.EntryByID(ctx, entryID)
+		if entryErr != nil {
+			return entryErr
+		}
+		if !entryFound {
+			return postNotFound(entryID)
+		}
 		target := entryID
-		record = ArticleDraftRecord{ID: id, Draft: draft, PublishedEntryID: &target, CreatedAt: now, UpdatedAt: now}
+		record = ArticleDraftRecord{AuthorUserID: entry.AuthorUserID, ID: id, Draft: draft, PublishedEntryID: &target, CreatedAt: now, UpdatedAt: now}
 		if insertErr := store.InsertArticleDraft(ctx, record); insertErr != nil {
 			return insertErr
 		}
@@ -469,6 +481,10 @@ func (service *PostService) insertArticleEntry(ctx context.Context, store PostSt
 		return "", err
 	}
 	entry.Visibility = visibility
+	entry.AuthorUserID, err = contentActorID(ctx, store)
+	if err != nil {
+		return "", err
+	}
 	if err := entry.Validate(); err != nil {
 		return "", err
 	}
@@ -539,6 +555,9 @@ func loadArticlePost(ctx context.Context, store PostStore, entryID domain.ID) (P
 		return Post{}, err
 	}
 	post.TimelineKind = TimelineItemOriginal
+	if err := attachContentAuthor(ctx, store, &post); err != nil {
+		return Post{}, err
+	}
 	return post, nil
 }
 

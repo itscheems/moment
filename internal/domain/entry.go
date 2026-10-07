@@ -66,8 +66,9 @@ func (visibility Visibility) Valid() bool {
 
 // Entry is the authoritative transport-independent timeline item.
 type Entry struct {
-	ID   ID
-	Kind EntryKind
+	AuthorUserID string
+	ID           ID
+	Kind         EntryKind
 	// ContentMD is the Markdown body of a moment. It is nil exactly when Kind
 	// is KindArticle, whose body is structured and lives in its own aggregate.
 	// The pointer is deliberate: a reader that forgets which kind it holds
@@ -140,6 +141,11 @@ func (entry Entry) Markdown() (string, bool) {
 
 // Validate checks an Entry loaded from storage or archive input.
 func (entry Entry) Validate() error {
+	if entry.AuthorUserID != "" {
+		if err := ValidateUserID(entry.AuthorUserID); err != nil {
+			return err
+		}
+	}
 	if !entry.Kind.Valid() {
 		return NewError(CodeInvalidArgument, "entry kind is not supported", map[string]any{"field": "kind"})
 	}

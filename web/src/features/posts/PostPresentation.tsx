@@ -1,3 +1,4 @@
+import { postAuthorSite } from "../../components/SiteIdentity";
 import { Popover } from "@base-ui/react/popover";
 import { type MouseEvent, type MouseEventHandler } from "react";
 
@@ -151,6 +152,7 @@ export function PostPresentation({
   timelineDensity?: boolean;
 }) {
   const { navigate } = useNavigation();
+  site = postAuthorSite(post, site);
   const title = siteDisplayName(site);
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
   const collapsed = !detail && longInTimeline(post);

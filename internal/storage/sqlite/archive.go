@@ -104,8 +104,9 @@ type ArchiveUsage struct {
 
 // ArchiveEntry excludes derived content_text and embeds ordered media uses.
 type ArchiveEntry struct {
-	ID   string
-	Kind string
+	AuthorUserID string
+	ID           string
+	Kind         string
 	// ContentMD is nil for an article, whose body is carried separately.
 	ContentMD        *string
 	Visibility       domain.Visibility
@@ -150,6 +151,7 @@ type ArchiveEntryArticle struct {
 // the article_draft_media projection rather than something re-derived on read,
 // so the archive states what the database states.
 type ArchiveArticleDraft struct {
+	AuthorUserID  string
 	ID            string
 	Title         string
 	BodyJSON      string
@@ -523,7 +525,7 @@ func (snapshot *ArchiveSnapshot) Entries(ctx context.Context, yield func(Archive
 		return errors.New("archive entry callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT e.id, e.kind, e.content_md, e.visibility, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, quote.entry_id, quote.quoted_entry_id,
+SELECT e.author_user_id, e.id, e.kind, e.content_md, e.visibility, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, quote.entry_id, quote.quoted_entry_id,
        usage.media_id, usage.position, usage.alt_text,
        location.name, location.display_name, location.country_code, location.country,
        location.region, location.city, location.district, location.category,
@@ -549,7 +551,7 @@ ORDER BY e.id, usage.position`)
 		var latitude, longitude sql.NullInt64
 		var visibility string
 		if err := rows.Scan(
-			&entry.ID, &entry.Kind, &entry.ContentMD, &visibility, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt, &editedAt, &quoteEntryID, &quotedEntryID,
+			&entry.AuthorUserID, &entry.ID, &entry.Kind, &entry.ContentMD, &visibility, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt, &editedAt, &quoteEntryID, &quotedEntryID,
 			&mediaID, &position, &alt, &name, &displayName, &countryCode, &country, &region, &city,
 			&district, &category, &provider, &providerID, &latitude, &longitude, &coordinateSystem,
 		); err != nil {
@@ -665,7 +667,7 @@ func (snapshot *ArchiveSnapshot) ArticleDrafts(ctx context.Context, yield func(A
 		return errors.New("archive article draft callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT draft.id, draft.title, draft.body_json, draft.body_schema_version,
+SELECT draft.author_user_id, draft.id, draft.title, draft.body_json, draft.body_schema_version,
        draft.cover_media_id, draft.published_entry_id,
        draft.created_at_ms, draft.updated_at_ms,
        usage.media_id, usage.position, usage.alt_text
@@ -682,7 +684,7 @@ ORDER BY draft.id, usage.position`)
 		var cover, published, mediaID, alt sql.NullString
 		var position sql.NullInt64
 		if err := rows.Scan(
-			&draft.ID, &draft.Title, &draft.BodyJSON, &draft.SchemaVersion,
+			&draft.AuthorUserID, &draft.ID, &draft.Title, &draft.BodyJSON, &draft.SchemaVersion,
 			&cover, &published, &draft.CreatedAtMS, &draft.UpdatedAtMS,
 			&mediaID, &position, &alt,
 		); err != nil {

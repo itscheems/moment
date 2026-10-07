@@ -414,6 +414,24 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 		}
 	}
 	sort.Slice(members, func(i, j int) bool { return members[i].Name < members[j].Name })
+	originalAuthor := ""
+	for _, member := range members {
+		if member.Name == "data/site.json" {
+			f, err := member.Open()
+			if err != nil {
+				return "", err
+			}
+			var site struct {
+				ID string `json:"owner_id"`
+			}
+			err = json.NewDecoder(f).Decode(&site)
+			closeErr := f.Close()
+			if err != nil || closeErr != nil {
+				return "", errors.Join(err, closeErr)
+			}
+			originalAuthor = site.ID
+		}
+	}
 	digest := sha256.New()
 	for _, member := range members {
 		opened, err := member.Open()
@@ -440,6 +458,38 @@ func portableSemanticDigestReader(reader *zip.Reader) (string, error) {
 					contents, copyErr = json.Marshal(site)
 					if copyErr == nil {
 						_, copyErr = digest.Write(contents)
+					}
+				}
+			}
+		case "data/entries.jsonl", "data/article_drafts.jsonl":
+			contents, readErr := io.ReadAll(opened)
+			if readErr != nil {
+				copyErr = readErr
+			} else {
+				for _, line := range bytes.Split(contents, []byte("\n")) {
+					if len(bytes.TrimSpace(line)) == 0 {
+						continue
+					}
+					var record map[string]any
+					if err := json.Unmarshal(line, &record); err != nil {
+						copyErr = err
+						break
+					}
+					if record["author_user_id"] == originalAuthor {
+						record["author_user_id"] = "original-account"
+					}
+					normalized, err := json.Marshal(record)
+					if err != nil {
+						copyErr = err
+						break
+					}
+					if _, err := digest.Write(normalized); err != nil {
+						copyErr = err
+						break
+					}
+					_, copyErr = io.WriteString(digest, "\n")
+					if copyErr != nil {
+						break
 					}
 				}
 			}

@@ -1,5 +1,6 @@
 import { mediaPreviewUrl } from "../api/mediaUrls";
 
+import type { PublicPost, SiteIdentity } from "../api/public";
 import styles from "./SiteIdentity.module.css";
 
 /**
@@ -76,4 +77,22 @@ export function SiteCover({
       src={mediaPreviewUrl(site.coverMediaId)}
     />
   );
+}
+
+/** Adapt a post's actual account identity to existing presentation components. */
+export function postAuthorSite(
+  post: Pick<PublicPost, "author">,
+  site: SiteIdentity,
+): SiteIdentity {
+  const author = post.author;
+  if (!author?.userId || !author.username) return site;
+  return {
+    ...site,
+    ownerId: author.userId,
+    username: author.username,
+    displayName: author.displayName,
+    avatarMediaId: author.avatarMediaId,
+    bio: "",
+    coverMediaId: null,
+  };
 }

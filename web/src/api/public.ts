@@ -193,6 +193,7 @@ export interface PublicArticle {
 }
 
 export interface PublicPost {
+  author?: PublicCommentAuthor;
   id: string;
   kind: PostKind;
   /** The Markdown source of a moment; null on an article, which has none. */
@@ -1679,6 +1680,7 @@ export function parsePost(value: unknown): PublicPost {
   ];
   if ("edited_at" in value && !postKeys.includes("edited_at"))
     postKeys.push("edited_at");
+  if ("author" in value) postKeys.push("author");
   // mirrors postdto.Post (internal/transport/postdto/dto.go)
   if (
     !hasExactKeys(value, postKeys) &&
@@ -1810,6 +1812,9 @@ export function parsePost(value: unknown): PublicPost {
   }
   const contentHtml = stringField(value, "content_html");
   return {
+    ...(value.author !== undefined
+      ? { author: parseCommentAuthor(value.author) }
+      : {}),
     id: stringField(value, "id"),
     kind: body.kind,
     contentMd: body.contentMd,

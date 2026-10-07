@@ -98,6 +98,7 @@ func (gate *Gate) admit(check func(domain.User) error) gin.HandlerFunc {
 			writeAccountError(ctx, failure)
 			return
 		}
+		ctx.Request = ctx.Request.WithContext(app.WithContentActor(ctx.Request.Context(), user))
 		ctx.Next()
 	}
 }

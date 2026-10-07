@@ -1,3 +1,4 @@
+import { postAuthorSite } from "../../components/SiteIdentity";
 import type { MouseEventHandler } from "react";
 
 import type {
@@ -53,6 +54,7 @@ export function ArticlePage({
   onSiteChanged?: (site: SiteIdentity) => void;
   onReply?: MouseEventHandler<HTMLButtonElement>;
 }) {
+  site = postAuthorSite(post, site);
   const { title, cover } = post.article;
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
   const hidden = post.visibility === "only_me";

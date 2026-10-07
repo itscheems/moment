@@ -624,6 +624,9 @@ func nonNilRefs(values []MergeRef) []MergeRef {
 
 func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, incomingSHA map[string]string) []string {
 	fields := []string{}
+	if local.AuthorUserID != incoming.AuthorUserID {
+		fields = append(fields, "author_user_id")
+	}
 	if local.Kind != incoming.Kind {
 		fields = append(fields, "kind")
 	}

@@ -129,6 +129,7 @@
   ],
   "postdto.Post": [
     "article",
+    "author",
     "comment_count",
     "content_html",
     "content_md",

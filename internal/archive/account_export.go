@@ -111,11 +111,13 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	if err != nil {
 		return Summary{}, err
 	}
+	selectedEntries := make(map[string]bool)
 	entries, err := protocol.jsonLines("data/entries.jsonl", func(write func(any) error) error {
-		if account.Role != string(domain.UserRoleOwner) {
-			return nil
-		}
 		return snapshot.Entries(ctx, func(value sqlitestore.ArchiveEntry) error {
+			if value.AuthorUserID != accountID {
+				return nil
+			}
+			selectedEntries[value.ID] = true
 			if err := validateArchiveEntry(value); err != nil {
 				return err
 			}
@@ -141,10 +143,10 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 	// Drafts come too: unfinished writing exists nowhere else, which makes it
 	// the part of a personal export a person is most likely to actually want.
 	articles, err := protocol.jsonLines("data/entry_articles.jsonl", func(write func(any) error) error {
-		if account.Role != string(domain.UserRoleOwner) {
-			return nil
-		}
 		return snapshot.EntryArticles(ctx, func(value sqlitestore.ArchiveEntryArticle) error {
+			if !selectedEntries[value.EntryID] {
+				return nil
+			}
 			if _, err := validateArchiveEntryArticle(value); err != nil {
 				return err
 			}
@@ -162,10 +164,10 @@ func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writ
 		return Summary{}, err
 	}
 	drafts, err := protocol.jsonLines("data/article_drafts.jsonl", func(write func(any) error) error {
-		if account.Role != string(domain.UserRoleOwner) {
-			return nil
-		}
 		return snapshot.ArticleDrafts(ctx, func(value sqlitestore.ArchiveArticleDraft) error {
+			if value.AuthorUserID != accountID {
+				return nil
+			}
 			if err := validateArchiveArticleDraft(value); err != nil {
 				return err
 			}

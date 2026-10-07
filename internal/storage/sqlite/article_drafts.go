@@ -11,7 +11,7 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-const articleDraftColumns = `id, title, body_json, body_schema_version, cover_media_id,
+const articleDraftColumns = `author_user_id, id, title, body_json, body_schema_version, cover_media_id,
        published_entry_id, created_at_ms, updated_at_ms`
 
 func (store postStore) InsertArticleDraft(ctx context.Context, record app.ArticleDraftRecord) error {
@@ -24,8 +24,8 @@ func (store postStore) InsertArticleDraft(ctx context.Context, record app.Articl
 	}
 	if _, err := store.queries.ExecContext(ctx, `
 INSERT INTO article_drafts (`+articleDraftColumns+`)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		record.ID.String(), record.Draft.Title, string(body), record.Draft.Body.SchemaVersion,
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		optionalAuthorID(record.AuthorUserID), record.ID.String(), record.Draft.Title, string(body), record.Draft.Body.SchemaVersion,
 		optionalMediaID(record.Draft.CoverID), optionalEntryID(record.PublishedEntryID),
 		domain.TimeToMillis(record.CreatedAt), domain.TimeToMillis(record.UpdatedAt),
 	); err != nil {
@@ -156,6 +156,7 @@ VALUES (?, ?, ?, ?)`, draftID.String(), usage.MediaID.String(), usage.Position, 
 
 func (store postStore) scanArticleDraft(scanner entryScanner) (app.ArticleDraftRecord, bool, error) {
 	var (
+		author    sql.NullString
 		idString  string
 		title     string
 		bodyJSON  string
@@ -165,7 +166,7 @@ func (store postStore) scanArticleDraft(scanner entryScanner) (app.ArticleDraftR
 		createdAt int64
 		updatedAt int64
 	)
-	if err := scanner.Scan(&idString, &title, &bodyJSON, &version, &cover, &published, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&author, &idString, &title, &bodyJSON, &version, &cover, &published, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return app.ArticleDraftRecord{}, false, nil
 		}
@@ -196,7 +197,7 @@ func (store postStore) scanArticleDraft(scanner entryScanner) (app.ArticleDraftR
 			"stored article draft is not valid", map[string]any{"id": idString})
 	}
 	record := app.ArticleDraftRecord{
-		ID:        id,
+		AuthorUserID: author.String, ID: id,
 		Draft:     draft,
 		CreatedAt: domain.TimeFromMillis(createdAt),
 		UpdatedAt: domain.TimeFromMillis(updatedAt),

@@ -129,6 +129,9 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 			return ResolvedMerge{}, domain.NewError(domain.CodeInvalidArgument, "selected post has no resolved identity", map[string]any{"post_id": value.ID})
 		}
 		resolved := cloneArchiveEntry(value)
+		if resolved.AuthorUserID == "" {
+			resolved.AuthorUserID = incoming.Site.OwnerID
+		}
 		resolved.ID = resolvedID
 		if value.QuotedEntryID != nil {
 			quotedID, retained := result.EntryRemap[*value.QuotedEntryID]

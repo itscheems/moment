@@ -1327,7 +1327,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 			return err
 		}
 		entry := sqlitestore.ArchiveEntry{
-			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
+			AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
 			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
 		}
 		if domain.EntryKind(value.Kind) != domain.KindArticle {

@@ -17,7 +17,8 @@ import "github.com/moment/moment/internal/domain"
 // -- membership is about writing comments, not about reading more than a
 // visitor can.
 type Viewer struct {
-	owner bool
+	owner  bool
+	userID string
 }
 
 // PublicViewer is a reader with no standing: a visitor, a crawler, a member.
@@ -34,8 +35,8 @@ func OwnerViewer() Viewer { return Viewer{owner: true} }
 // ignored. An owner credential whose account row could not be read still
 // carries the owner role, so it reads as the owner.
 func ViewerFor(user domain.User, signedIn bool) Viewer {
-	if signedIn && user.IsOwner() {
-		return OwnerViewer()
+	if signedIn {
+		return Viewer{owner: user.IsOwner(), userID: user.ID}
 	}
 	return PublicViewer()
 }
@@ -75,4 +76,20 @@ func (viewer Viewer) Visibilities() []domain.Visibility {
 // is not something a reader without standing gets to learn.
 func postHiddenFrom(id domain.ID) error {
 	return postNotFound(id)
+}
+
+// UserID identifies the reader; it never grants authority over another author.
+func (viewer Viewer) UserID() string { return viewer.userID }
+
+func (viewer Viewer) CanReadEntry(entry domain.Entry) bool {
+	if entry.Visibility == domain.VisibilityEveryone {
+		return true
+	}
+	if entry.Visibility != domain.VisibilityOnlyMe {
+		return false
+	}
+	if viewer.userID != "" {
+		return viewer.userID == entry.AuthorUserID
+	}
+	return viewer.owner && entry.AuthorUserID == ""
 }

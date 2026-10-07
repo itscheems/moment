@@ -1276,6 +1276,18 @@ func corruptComment(id domain.ID) error {
 // requireReadableEntry is the one gate between a comment operation and the
 // post it names. Missing and unreadable are the same answer on purpose.
 func requireReadableEntry(ctx context.Context, store CommentStore, viewer Viewer, entryID domain.ID) error {
+	if readable, ok := store.(interface {
+		ReadableEntry(context.Context, string, Viewer) (bool, error)
+	}); ok {
+		allowed, err := readable.ReadableEntry(ctx, entryID.String(), viewer)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return postHiddenFrom(entryID)
+		}
+		return nil
+	}
 	visibility, found, err := store.EntryVisibility(ctx, entryID)
 	if err != nil {
 		return err

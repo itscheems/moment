@@ -1,26 +1,19 @@
 package sqlite
 
 import (
-	"strings"
-
 	"github.com/moment/moment/internal/app"
+	"strings"
 )
 
-// visibilityPredicate translates a viewer into SQL. The policy stays in
-// app.Viewer; this only spells out the values it allows, so a query can never
-// name a visibility the viewer was not granted.
-//
-// The predicate always binds at least one value: a viewer with nothing to see
-// would produce `column IN ()`, which SQLite rejects, so it becomes a
-// contradiction instead.
+// A private row belongs to its author, never to an administrator role.
 func visibilityPredicate(viewer app.Viewer, column string) (string, []any) {
-	visible := viewer.Visibilities()
-	if len(visible) == 0 {
-		return "0 = 1", nil
+	prefix := strings.TrimSuffix(column, "visibility")
+	author := prefix + "author_user_id"
+	if viewer.UserID() != "" {
+		return "(" + column + " = ? OR (" + column + " = ? AND " + author + " = ?))", []any{"everyone", "only_me", viewer.UserID()}
 	}
-	arguments := make([]any, 0, len(visible))
-	for _, visibility := range visible {
-		arguments = append(arguments, string(visibility))
+	if viewer.IsOwner() {
+		return "(" + column + " = ? OR (" + column + " = ? AND " + author + " = (SELECT owner_id FROM site_settings WHERE id = 1)))", []any{"everyone", "only_me"}
 	}
-	return column + " IN (" + strings.TrimSuffix(strings.Repeat("?, ", len(visible)), ", ") + ")", arguments
+	return column + " = ?", []any{"everyone"}
 }

@@ -300,8 +300,8 @@ func (store mediaReferenceStore) DeleteMediaIfUnreferenced(ctx context.Context, 
 //
 // Only a file every reference of which sits under a hidden post is narrowed
 // to the owner.
-func (repository *MediaReferenceRepository) Visibility(ctx context.Context, id domain.ID) (domain.Visibility, error) {
-	public, publicArguments := visibilityPredicate(app.PublicViewer(), "entry.visibility")
+func (repository *MediaReferenceRepository) audience(ctx context.Context, id domain.ID, viewer app.Viewer) (bool, bool, error) {
+	public, publicArguments := visibilityPredicate(viewer, "entry.visibility")
 	var referenced, exposed int
 	err := repository.transactions.ReadTx(ctx, func(queries Queries) error {
 		arguments := []any{id.String()}
@@ -312,10 +312,19 @@ func (repository *MediaReferenceRepository) Visibility(ctx context.Context, id d
 			arguments = append(arguments, id.String())
 			arguments = append(arguments, publicArguments...)
 		}
-		arguments = append(arguments, id.String(), id.String())
+		arguments = append(arguments, id.String(), id.String(), id.String())
+		account := viewer.UserID()
+		draftAuthor := "0 = 1"
+		if account != "" {
+			draftAuthor = "draft.author_user_id = ?"
+			arguments = append(arguments, account)
+		} else if viewer.IsOwner() {
+			draftAuthor = "draft.author_user_id = (SELECT owner_id FROM site_settings WHERE id = 1)"
+		}
 		return queries.QueryRowContext(ctx, `
+WITH media_id_value(id) AS (VALUES (?))
 SELECT
-  EXISTS (SELECT 1 FROM media WHERE media.id = ? AND `+mediaReferencedSQL+`),
+  EXISTS (SELECT 1 FROM media WHERE media.id = media_id_value.id AND `+mediaReferencedSQL+`),
   (
     EXISTS (
       SELECT 1 FROM entry_media AS usage
@@ -345,13 +354,27 @@ SELECT
     )
     OR EXISTS (SELECT 1 FROM users AS account WHERE account.avatar_media_id = ?)
     OR EXISTS (SELECT 1 FROM users AS account WHERE account.cover_media_id = ?)
-  )`, arguments...).Scan(&referenced, &exposed)
+    OR EXISTS (SELECT 1 FROM article_drafts AS draft WHERE (draft.cover_media_id = ? OR EXISTS (SELECT 1 FROM article_draft_media AS usage WHERE usage.draft_id = draft.id AND usage.media_id = media_id_value.id)) AND `+draftAuthor+`)
+  ) FROM media_id_value`, arguments...).Scan(&referenced, &exposed)
 	})
 	if err != nil {
-		return "", fmt.Errorf("resolve media visibility: %w", err)
+		return false, false, fmt.Errorf("resolve media visibility: %w", err)
 	}
-	if referenced == 1 && exposed == 0 {
+	return referenced == 1, exposed == 1, nil
+}
+
+func (repository *MediaReferenceRepository) Visibility(ctx context.Context, id domain.ID) (domain.Visibility, error) {
+	referenced, exposed, err := repository.audience(ctx, id, app.PublicViewer())
+	if err != nil {
+		return "", err
+	}
+	if referenced && !exposed {
 		return domain.VisibilityOnlyMe, nil
 	}
 	return domain.VisibilityEveryone, nil
+}
+
+func (repository *MediaReferenceRepository) CanRead(ctx context.Context, id domain.ID, viewer app.Viewer) (bool, error) {
+	referenced, exposed, err := repository.audience(ctx, id, viewer)
+	return !referenced || exposed, err
 }

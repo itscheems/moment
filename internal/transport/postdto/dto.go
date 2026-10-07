@@ -23,7 +23,8 @@ import (
 // ever receives posts they may read, so for anyone but the owner it is always
 // "everyone".
 type Post struct {
-	ID string `json:"id"`
+	AuthorInfo *Author `json:"author,omitempty"`
+	ID         string  `json:"id"`
 	// Kind says which body shape this post has: "moment" or "article". It is
 	// on the wire because a reader has to be able to tell them apart, and
 	// because ContentMD being absent is a consequence of it rather than a
@@ -407,6 +408,7 @@ func FromPost(post app.Post) Post {
 		timelineKind = app.TimelineItemOriginal
 	}
 	mapped := Post{
+		AuthorInfo:   fromAuthor(post.Author),
 		ID:           post.Entry.ID.String(),
 		Kind:         string(post.Entry.Kind),
 		ContentMD:    cloneOptionalText(post.Entry.ContentMD),
@@ -752,4 +754,19 @@ func RefreshCursor(page app.PostPage) *string {
 	}
 	cursor := page.RefreshCursor
 	return &cursor
+}
+
+type Author struct {
+	UserID        string  `json:"user_id"`
+	Username      string  `json:"username"`
+	DisplayName   string  `json:"display_name"`
+	AvatarMediaID *string `json:"avatar_media_id"`
+	ProfileURL    string  `json:"profile_url"`
+}
+
+func fromAuthor(author *app.CommentAuthor) *Author {
+	if author == nil {
+		return nil
+	}
+	return &Author{UserID: author.UserID, Username: author.Username, DisplayName: author.DisplayName, AvatarMediaID: author.AvatarMediaID, ProfileURL: author.ProfileURL}
 }

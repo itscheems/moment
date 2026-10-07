@@ -630,8 +630,9 @@ type usageRecord struct {
 }
 
 type entryRecord struct {
-	ID   string `json:"id"`
-	Kind string `json:"kind"`
+	AuthorUserID string `json:"author_user_id,omitempty"`
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
 	// ContentMD is null for an article, whose body travels in its own member.
 	ContentMD   *string `json:"content_md"`
 	CreatedAt   string  `json:"created_at"`
@@ -686,9 +687,10 @@ type entryArticleRecord struct {
 // outside the timeline precisely so an unfinished article cannot be published
 // by a query that forgot to filter.
 type articleDraftRecord struct {
-	ID    string          `json:"id"`
-	Title string          `json:"title"`
-	Body  json.RawMessage `json:"body"`
+	AuthorUserID string          `json:"author_user_id,omitempty"`
+	ID           string          `json:"id"`
+	Title        string          `json:"title"`
+	Body         json.RawMessage `json:"body"`
 	// CoverMediaID and PublishedEntryID are both optional: a draft may have no
 	// cover, and it names an entry only when it is the working copy of an
 	// already published article.
@@ -886,7 +888,7 @@ func portableUsageRecords(values []sqlitestore.ArchiveUsage) []usageRecord {
 
 func portableEntryRecord(value sqlitestore.ArchiveEntry) entryRecord {
 	return entryRecord{
-		ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
+		AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
 		CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
 		PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), EditedAt: portableOptionalTime(value.EditedAtMS),
 		Visibility:    portableVisibility(value.Visibility),
@@ -940,7 +942,7 @@ func portableArticleDraftRecord(value sqlitestore.ArchiveArticleDraft) (articleD
 		return articleDraftRecord{}, err
 	}
 	return articleDraftRecord{
-		ID: value.ID, Title: value.Title, Body: json.RawMessage(serialized),
+		AuthorUserID: value.AuthorUserID, ID: value.ID, Title: value.Title, Body: json.RawMessage(serialized),
 		CoverMediaID: value.CoverMediaID, PublishedEntryID: value.PublishedEntryID,
 		Media:     portableUsageRecords(value.Media),
 		CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
@@ -965,7 +967,7 @@ func archiveArticleDraftOf(value articleDraftRecord) (sqlitestore.ArchiveArticle
 		usages[index] = sqlitestore.ArchiveUsage{MediaID: usage.MediaID, Position: usage.Position, AltText: usage.AltText}
 	}
 	return sqlitestore.ArchiveArticleDraft{
-		ID: value.ID, Title: value.Title, BodyJSON: string(value.Body),
+		AuthorUserID: value.AuthorUserID, ID: value.ID, Title: value.Title, BodyJSON: string(value.Body),
 		SchemaVersion: body.SchemaVersion, CoverMediaID: value.CoverMediaID,
 		PublishedEntryID: value.PublishedEntryID, Media: usages,
 		CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(),
@@ -1179,7 +1181,8 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 		return err
 	}
 	entry := domain.Entry{
-		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
+		AuthorUserID: value.AuthorUserID,
+		ID:           id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
 		CreatedAt:   time.UnixMilli(value.CreatedAtMS).UTC(),
 		UpdatedAt:   time.UnixMilli(value.UpdatedAtMS).UTC(),
 		PublishedAt: time.UnixMilli(value.PublishedAtMS).UTC(),
@@ -1267,6 +1270,11 @@ func validateArchiveEntryArticle(value sqlitestore.ArchiveEntryArticle) (domain.
 // validateArchiveArticleDraft applies the same rules a draft is actually held
 // to, which are fewer: it may have no title and it may say nothing yet.
 func validateArchiveArticleDraft(value sqlitestore.ArchiveArticleDraft) error {
+	if value.AuthorUserID != "" {
+		if err := domain.ValidateUserID(value.AuthorUserID); err != nil {
+			return err
+		}
+	}
 	if _, err := domain.ParseID(value.ID); err != nil {
 		return err
 	}
@@ -2241,7 +2249,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			}
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
-			ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
+			AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
 			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
 		}); err != nil {
 			return err

@@ -204,7 +204,12 @@ func getMediaAsset(store *media.Store, kind string, gate *Gate) gin.HandlerFunc 
 			writeMediaError(ctx, err)
 			return
 		}
-		if !gate.Viewer(ctx).CanRead(visibility) {
+		readable, err := store.CanRead(ctx.Request.Context(), id, gate.Viewer(ctx))
+		if err != nil {
+			writeMediaError(ctx, err)
+			return
+		}
+		if !readable {
 			writeMediaError(ctx, domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", id), map[string]any{"media_id": id.String()}))
 			return
 		}
