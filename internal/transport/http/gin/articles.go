@@ -16,17 +16,21 @@ import (
 // RegisterArticleRoutes exposes the owner's unfinished articles and the act of
 // publishing one. Nothing here is public: a draft is by definition not.
 func RegisterArticleRoutes(engine *gin.Engine, posts *app.PostService, gate *Gate) {
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireOwner())
-	owner.GET("/articles/drafts", listArticleDrafts(posts))
-	owner.POST("/articles/drafts", createArticleDraft(posts))
-	owner.GET("/articles/drafts/:id", getArticleDraft(posts))
-	owner.PUT("/articles/drafts/:id", replaceArticleDraft(posts))
-	owner.DELETE("/articles/drafts/:id", deleteArticleDraft(posts))
-	owner.POST("/articles/drafts/:id/publish", publishArticleDraft(posts))
-	// Editing a published article opens a working copy rather than touching
-	// the article, so a save while typing changes nothing a reader can see.
-	owner.POST("/articles/:id/draft", editArticle(posts))
+	for _, prefix := range []string{"/api/v1", "/api/v1/owner"} {
+		routes := engine.Group(prefix)
+		routes.Use(gate.RequireActiveAccount())
+		routes.GET("/articles/drafts", listArticleDrafts(posts))
+		routes.POST("/articles/drafts", createArticleDraft(posts))
+		routes.GET("/articles/drafts/:id", getArticleDraft(posts))
+		routes.PUT("/articles/drafts/:id", replaceArticleDraft(posts))
+		routes.DELETE("/articles/drafts/:id", deleteArticleDraft(posts))
+		routes.POST("/articles/drafts/:id/publish", publishArticleDraft(posts))
+		routes.POST("/articles/:id/draft", editArticle(posts))
+		routes.GET("/articles", listManagedArticles(posts))
+		routes.GET("/articles/:id", getManagedArticle(posts))
+		routes.POST("/articles/:id/unpublish", withdrawArticle(posts))
+		routes.DELETE("/articles/:id", deletePost(posts))
+	}
 }
 
 // articleDraftBody is the write shape. body is the document itself rather than
@@ -41,12 +45,12 @@ type articleDraftBody struct {
 
 func listArticleDrafts(posts *app.PostService) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		records, err := posts.ArticleDrafts(ctx.Request.Context())
+		records, err := posts.ArticleDraftSummaries(ctx.Request.Context())
 		if err != nil {
 			writeArticleError(ctx, err)
 			return
 		}
-		Success(ctx, http.StatusOK, postdto.FromArticleDrafts(records), nil)
+		Success(ctx, http.StatusOK, postdto.FromArticleDraftSummaries(records), nil)
 	}
 }
 
@@ -73,6 +77,7 @@ func createArticleDraft(posts *app.PostService) gin.HandlerFunc {
 			writeArticleError(ctx, err)
 			return
 		}
+		input.IdempotencyKey = ctx.GetHeader("Idempotency-Key")
 		record, err := posts.SaveArticleDraft(ctx.Request.Context(), input)
 		if err != nil {
 			writeArticleError(ctx, err)
@@ -200,5 +205,46 @@ func writeArticleError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusUnprocessableEntity, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	default:
 		writePostError(ctx, err)
+	}
+}
+
+func listManagedArticles(posts *app.PostService) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		page, err := posts.PublishedArticles(ctx.Request.Context(), app.ListPostsInput{Cursor: ctx.Query("cursor"), Limit: 20})
+		if err != nil {
+			writeArticleError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, postdto.FromPage(page), map[string]any{"next_cursor": postdto.NextCursor(page), "prev_cursor": postdto.PrevCursor(page), "refresh_cursor": postdto.RefreshCursor(page)})
+	}
+}
+func getManagedArticle(posts *app.PostService) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		id, err := domain.ParseID(ctx.Param("id"))
+		if err != nil {
+			writeArticleError(ctx, err)
+			return
+		}
+		post, err := posts.ManagedArticle(ctx.Request.Context(), id)
+		if err != nil {
+			writeArticleError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, postdto.FromPost(post), nil)
+	}
+}
+func withdrawArticle(posts *app.PostService) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		id, err := domain.ParseID(ctx.Param("id"))
+		if err != nil {
+			writeArticleError(ctx, err)
+			return
+		}
+		record, err := posts.WithdrawArticle(ctx.Request.Context(), id)
+		if err != nil {
+			writeArticleError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, postdto.FromArticleDraft(record), nil)
 	}
 }

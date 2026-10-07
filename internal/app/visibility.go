@@ -82,6 +82,9 @@ func postHiddenFrom(id domain.ID) error {
 func (viewer Viewer) UserID() string { return viewer.userID }
 
 func (viewer Viewer) CanReadEntry(entry domain.Entry) bool {
+	if entry.PublicationState == "unpublished" {
+		return false
+	}
 	if entry.Visibility == domain.VisibilityEveryone {
 		return true
 	}

@@ -26,12 +26,13 @@ import (
 const maxArticleBodyInputBytes = domain.MaxArticleBodyBytes
 
 func registerArticles(application *Application) {
+	registerArticleManagementCommands(application)
 	application.MustRegisterLeaf(LeafSpec{
 		Path:       []string{"article", "drafts"},
 		Short:      "List unfinished articles",
-		Long:       "Read every article draft this site keeps, newest first, through the selected local instance or the authenticated owner HTTP API.",
+		Long:       "Read summaries of the current author's drafts, newest first, through the selected local instance or authenticated article API.",
 		Inputs:     "None.",
-		Output:     "data is an array of drafts, each with its body and the revision a later save must name.",
+		Output:     "data is an array of summaries without bodies; article draft reads the selected document.",
 		Errors:     "Authentication failures use stable machine codes.",
 		Example:    "moment article drafts --data-dir ./moment-data --json",
 		Capability: CapabilityBoth,
@@ -41,7 +42,7 @@ func registerArticles(application *Application) {
 		Path:       []string{"article", "draft"},
 		ArgsUsage:  "<draft-id>",
 		Short:      "Read one article draft",
-		Long:       "Read one article draft, body included, through the selected local instance or the authenticated owner HTTP API.",
+		Long:       "Read one article draft, body included, through the selected local instance or the authenticated article API.",
 		Inputs:     "Provide one canonical draft ULID.",
 		Output:     "The canonical draft DTO in direct and API modes.",
 		Errors:     "Absent drafts return ARTICLE_DRAFT_NOT_FOUND.",
@@ -61,6 +62,7 @@ func registerArticles(application *Application) {
 			"echo '{\"schema_version\":1,\"type\":\"doc\",\"content\":[]}' | moment article new --data-dir ./moment-data --body - --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
+			flags.String("idempotency-key", "", "retry key for creating one draft")
 			flags.String("title", "", "article title, which may be empty while it is a draft")
 			flags.String("body", "", "canonical article document path, or - for stdin")
 			flags.String("cover", "", "managed media ULID to lead the article with")
@@ -157,14 +159,14 @@ func runArticleDraftList(ctx context.Context, invocation Invocation, _ CommandIn
 			return Result{}, err
 		}
 		defer func() { _ = database.Close() }()
-		records, err := service.ArticleDrafts(ctx)
+		records, err := service.ArticleDraftSummaries(ctx)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
-		return articleDraftListResult(postdto.FromArticleDrafts(records), nil), nil
+		return articleDraftListResult(postdto.FromArticleDraftSummaries(records), nil), nil
 	case ModeAPI:
-		var drafts []postdto.ArticleDraft
-		meta, status, err := postAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/owner/articles/drafts", nil, nil, "", true, &drafts)
+		var drafts []postdto.ArticleDraftSummary
+		meta, status, err := postAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/articles/drafts", nil, nil, "", true, &drafts)
 		if err != nil {
 			return Result{}, err
 		}
@@ -196,7 +198,7 @@ func runArticleDraftGet(ctx context.Context, invocation Invocation, input Comman
 		return articleDraftResult("Draft", postdto.FromArticleDraft(record), nil), nil
 	case ModeAPI:
 		var draft postdto.ArticleDraft
-		meta, status, err := postAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/owner/articles/drafts/"+id.String(), nil, nil, "", true, &draft)
+		meta, status, err := postAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/articles/drafts/"+id.String(), nil, nil, "", true, &draft)
 		if err != nil {
 			return Result{}, err
 		}
@@ -210,6 +212,10 @@ func runArticleDraftGet(ctx context.Context, invocation Invocation, input Comman
 }
 
 func runArticleDraftCreate(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
+	key, err := input.String("idempotency-key")
+	if err != nil {
+		return Result{}, err
+	}
 	payload, err := articleDraftPayload(ctx, input)
 	if err != nil {
 		return Result{}, err
@@ -225,6 +231,7 @@ func runArticleDraftCreate(ctx context.Context, invocation Invocation, input Com
 		if err != nil {
 			return Result{}, err
 		}
+		saveInput.IdempotencyKey = key
 		record, err := runtime.service.SaveArticleDraft(ctx, saveInput)
 		if err != nil {
 			return Result{}, postCLIError(err)
@@ -232,7 +239,7 @@ func runArticleDraftCreate(ctx context.Context, invocation Invocation, input Com
 		return articleDraftResult("Created draft", postdto.FromArticleDraft(record), nil), nil
 	case ModeAPI:
 		var draft postdto.ArticleDraft
-		meta, status, err := postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/articles/drafts", nil, payload.wire(), "", true, &draft)
+		meta, status, err := postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/articles/drafts", nil, payload.wire(), key, true, &draft)
 		if err != nil {
 			return Result{}, err
 		}
@@ -285,7 +292,7 @@ func runArticleDraftUpdate(ctx context.Context, invocation Invocation, input Com
 		return articleDraftResult("Updated draft", postdto.FromArticleDraft(record), nil), nil
 	case ModeAPI:
 		var draft postdto.ArticleDraft
-		meta, status, err := postAPIRequest(ctx, invocation, http.MethodPut, "/api/v1/owner/articles/drafts/"+id.String(), nil, payload.wire(), "", true, &draft)
+		meta, status, err := postAPIRequest(ctx, invocation, http.MethodPut, "/api/v1/articles/drafts/"+id.String(), nil, payload.wire(), "", true, &draft)
 		if err != nil {
 			return Result{}, err
 		}
@@ -316,7 +323,7 @@ func runArticleDraftDelete(ctx context.Context, invocation Invocation, input Com
 		return articleDiscardResult(id, nil), nil
 	case ModeAPI:
 		var discarded articleDiscardResponse
-		meta, status, err := postAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/owner/articles/drafts/"+id.String(), nil, nil, "", true, &discarded)
+		meta, status, err := postAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/articles/drafts/"+id.String(), nil, nil, "", true, &discarded)
 		if err != nil {
 			return Result{}, err
 		}
@@ -367,7 +374,7 @@ func runArticlePublish(ctx context.Context, invocation Invocation, input Command
 			payload["visibility"] = string(visibility)
 		}
 		meta, status, err := postAPIRequest(ctx, invocation, http.MethodPost,
-			"/api/v1/owner/articles/drafts/"+id.String()+"/publish", nil, payload, key, true, &post)
+			"/api/v1/articles/drafts/"+id.String()+"/publish", nil, payload, key, true, &post)
 		if err != nil {
 			return Result{}, err
 		}
@@ -399,7 +406,7 @@ func runArticleEdit(ctx context.Context, invocation Invocation, input CommandInp
 		return articleDraftResult("Working copy", postdto.FromArticleDraft(record), nil), nil
 	case ModeAPI:
 		var draft postdto.ArticleDraft
-		meta, status, err := postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/articles/"+id.String()+"/draft", nil, nil, "", true, &draft)
+		meta, status, err := postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/articles/"+id.String()+"/draft", nil, nil, "", true, &draft)
 		if err != nil {
 			return Result{}, err
 		}
@@ -563,7 +570,7 @@ func articleDraftResult(action string, draft postdto.ArticleDraft, meta map[stri
 	}
 }
 
-func articleDraftListResult(drafts []postdto.ArticleDraft, meta map[string]any) Result {
+func articleDraftListResult(drafts []postdto.ArticleDraftSummary, meta map[string]any) Result {
 	if len(drafts) == 0 {
 		return Result{Data: drafts, Text: "No article drafts found", Meta: meta}
 	}

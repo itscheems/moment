@@ -630,9 +630,10 @@ type usageRecord struct {
 }
 
 type entryRecord struct {
-	AuthorUserID string `json:"author_user_id,omitempty"`
-	ID           string `json:"id"`
-	Kind         string `json:"kind"`
+	PublicationState string `json:"publication_state,omitempty"`
+	AuthorUserID     string `json:"author_user_id,omitempty"`
+	ID               string `json:"id"`
+	Kind             string `json:"kind"`
 	// ContentMD is null for an article, whose body travels in its own member.
 	ContentMD   *string `json:"content_md"`
 	CreatedAt   string  `json:"created_at"`
@@ -888,7 +889,7 @@ func portableUsageRecords(values []sqlitestore.ArchiveUsage) []usageRecord {
 
 func portableEntryRecord(value sqlitestore.ArchiveEntry) entryRecord {
 	return entryRecord{
-		AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
+		PublicationState: portablePublicationState(value.PublicationState), AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD,
 		CreatedAt: portableTime(value.CreatedAtMS), UpdatedAt: portableTime(value.UpdatedAtMS),
 		PublishedAt: portableTime(value.PublishedAtMS), RepostedAt: portableOptionalTime(value.RepostedAtMS), EditedAt: portableOptionalTime(value.EditedAtMS),
 		Visibility:    portableVisibility(value.Visibility),
@@ -1181,8 +1182,8 @@ func validateArchiveEntry(value sqlitestore.ArchiveEntry) error {
 		return err
 	}
 	entry := domain.Entry{
-		AuthorUserID: value.AuthorUserID,
-		ID:           id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
+		PublicationState: value.PublicationState, AuthorUserID: value.AuthorUserID,
+		ID: id, Kind: domain.EntryKind(value.Kind), ContentMD: value.ContentMD, Visibility: value.Visibility,
 		CreatedAt:   time.UnixMilli(value.CreatedAtMS).UTC(),
 		UpdatedAt:   time.UnixMilli(value.UpdatedAtMS).UTC(),
 		PublishedAt: time.UnixMilli(value.PublishedAtMS).UTC(),
@@ -2249,7 +2250,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			}
 		}
 		if err := validateArchiveEntry(sqlitestore.ArchiveEntry{
-			AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
+			PublicationState: portablePublicationState(value.PublicationState), AuthorUserID: value.AuthorUserID, ID: value.ID, Kind: value.Kind, ContentMD: value.ContentMD, Visibility: visibility,
 			CreatedAtMS: created.UnixMilli(), UpdatedAtMS: updated.UnixMilli(), PublishedAtMS: published.UnixMilli(), RepostedAtMS: repostedAtMS, EditedAtMS: editedAtMS, QuotedEntryID: value.QuotedEntryID, QuoteUnavailable: value.QuoteUnavailable, Media: usages, Location: location, LinkCards: linkCards,
 		}); err != nil {
 			return err
@@ -3062,4 +3063,11 @@ func (writer *digestWriter) Write(data []byte) (int, error) {
 	written, err := writer.writer.Write(data)
 	writer.size += int64(written)
 	return written, err
+}
+
+func portablePublicationState(state string) string {
+	if state == "published" {
+		return ""
+	}
+	return state
 }

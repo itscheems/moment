@@ -2,7 +2,7 @@ import { Icon } from "../../../../components/icons";
 import { Tabs } from "@base-ui/react/tabs";
 import { ConfirmDialog } from "../../../owner/ConfirmDialog";
 import { formatMomentDate } from "../../../posts/dates";
-import type { ArticleDraft } from "../../articleDrafts";
+import type { ArticleDraftSummary } from "../../articleDrafts";
 import { MAX_ARTICLE_DRAFTS } from "../../articleDrafts";
 import styles from "../Editor.module.css";
 import { PublishedArticles } from "./PublishedArticles";
@@ -28,13 +28,13 @@ export function DraftRail({
   onOpenPublished,
   disabled,
 }: {
-  drafts: readonly ArticleDraft[];
+  drafts: readonly ArticleDraftSummary[];
   currentId: string | null;
   loading: boolean;
   error: string | null;
   timezone: string;
-  onOpen: (draft: ArticleDraft) => void;
-  onDiscard: (draft: ArticleDraft) => void;
+  onOpen: (draft: ArticleDraftSummary) => void;
+  onDiscard: (draft: ArticleDraftSummary) => void;
   onNew: () => void;
   onOpenPublished: (id: string) => Promise<void>;
   disabled: boolean;

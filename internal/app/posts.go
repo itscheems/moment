@@ -227,10 +227,12 @@ type UpdatePostInput struct {
 // ListPostsInput requests one reverse-chronological timeline page. A zero
 // limit selects DefaultPostPageSize.
 type ListPostsInput struct {
-	Cursor   string
-	Limit    int
-	FromDate string
-	ToDate   string
+	AuthorUserID  string
+	OriginalsOnly bool
+	Cursor        string
+	Limit         int
+	FromDate      string
+	ToDate        string
 	// Anchor is a site-calendar day the page reads back from: what appeared
 	// on or before it, newest first, with PrevCursor continuing into what
 	// appeared after it. It is a position on the timeline's own axis -- the
@@ -250,7 +252,9 @@ type ListPostsInput struct {
 // Adapters pass calendar strings to PostService and never calculate day
 // boundaries themselves.
 type TimelineQuery struct {
-	Position *TimelinePosition
+	AuthorUserID  string
+	OriginalsOnly bool
+	Position      *TimelinePosition
 	// Direction is which way to read from Position; the zero value reads
 	// older. A newer read returns rows ascending, oldest first.
 	Direction TimelineDirection
@@ -674,6 +678,11 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if !found {
 			return postNotFound(id)
 		}
+		if entry.Kind == domain.KindArticle {
+			if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
+				return err
+			}
+		}
 		alreadyActive := entry.RepostedAt != nil
 		if alreadyActive != active {
 			entry.SetReposted(active, service.clock())
@@ -766,7 +775,7 @@ func (service *PostService) List(ctx context.Context, input ListPostsInput) (Pos
 	quotedByEntry := make(map[domain.ID]*QuotedPost)
 	err = service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
-		entries, storeErr = store.ListEntries(ctx, TimelineQuery{Position: position, Direction: direction, FromMS: fromMS, ToMS: toMS, Kind: input.Kind, Viewer: input.Viewer}, limit+1)
+		entries, storeErr = store.ListEntries(ctx, TimelineQuery{AuthorUserID: input.AuthorUserID, OriginalsOnly: input.OriginalsOnly, Position: position, Direction: direction, FromMS: fromMS, ToMS: toMS, Kind: input.Kind, Viewer: input.Viewer}, limit+1)
 		if storeErr != nil {
 			return storeErr
 		}
@@ -982,6 +991,11 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if !found {
 			return postNotFound(input.ID)
 		}
+		if entry.Kind == domain.KindArticle {
+			if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
+				return err
+			}
+		}
 		currentMedia, mediaErr := store.EntryMediaUsages(ctx, input.ID)
 		if mediaErr != nil {
 			return mediaErr
@@ -1147,6 +1161,11 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if !found {
 			return postNotFound(id)
 		}
+		if entry.Kind == domain.KindArticle {
+			if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
+				return err
+			}
+		}
 		if view, storeErr = loadArticleView(ctx, store, entry); storeErr != nil {
 			return storeErr
 		}
@@ -1177,6 +1196,18 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		// Cascade removes the card rows, so its thumbnails must be reconciled
 		// alongside the entry's own media once the delete has committed.
 		affectedMedia = append(affectedMedia, linkCardMediaIDs(LinkCardsOf(linkCards))...)
+		if entry.Kind == domain.KindArticle {
+			copy, found, err := store.ArticleDraftForEntry(ctx, id)
+			if err != nil {
+				return err
+			}
+			if found {
+				affectedMedia = append(affectedMedia, copy.Draft.CoverAndInlineMedia()...)
+				if _, err := store.DeleteArticleDraft(ctx, copy.ID); err != nil {
+					return err
+				}
+			}
+		}
 		changed, deleteErr := store.DeleteEntry(ctx, id)
 		if deleteErr != nil {
 			return deleteErr

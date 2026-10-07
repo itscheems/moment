@@ -705,6 +705,9 @@ func wireInstant(value time.Time) bool {
 // based on a revision somebody else has already replaced is refused rather than
 // applied. PublishedEntryID names the article this draft is a working copy of.
 type ArticleDraft struct {
+	AuthorUserID      string          `json:"author_user_id"`
+	SourceState       string          `json:"source_state"`
+	SourceVisibility  string          `json:"source_visibility"`
 	ID                string          `json:"id"`
 	Title             string          `json:"title"`
 	Body              json.RawMessage `json:"body"`
@@ -717,7 +720,19 @@ type ArticleDraft struct {
 
 // FromArticleDraft maps one stored draft onto the stable public shape.
 func FromArticleDraft(record app.ArticleDraftRecord) ArticleDraft {
+	state := record.SourceState
+	if state == "" {
+		state = "draft"
+		if record.PublishedEntryID != nil {
+			state = "working_copy"
+		}
+	}
+	visibility := record.SourceVisibility
+	if visibility == "" {
+		visibility = domain.VisibilityEveryone
+	}
 	mapped := ArticleDraft{
+		AuthorUserID: record.AuthorUserID, SourceState: state, SourceVisibility: string(visibility),
 		ID:                record.ID.String(),
 		Title:             record.Draft.Title,
 		BodySchemaVersion: record.Draft.Body.SchemaVersion,
@@ -769,4 +784,28 @@ func fromAuthor(author *app.CommentAuthor) *Author {
 		return nil
 	}
 	return &Author{UserID: author.UserID, Username: author.Username, DisplayName: author.DisplayName, AvatarMediaID: author.AvatarMediaID, ProfileURL: author.ProfileURL}
+}
+
+type ArticleDraftSummary struct {
+	ID               string    `json:"id"`
+	AuthorUserID     string    `json:"author_user_id"`
+	Title            string    `json:"title"`
+	PublishedEntryID *string   `json:"published_entry_id"`
+	SourceState      string    `json:"source_state"`
+	SourceVisibility string    `json:"source_visibility"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+func FromArticleDraftSummaries(records []app.ArticleDraftSummary) []ArticleDraftSummary {
+	result := make([]ArticleDraftSummary, 0, len(records))
+	for _, record := range records {
+		var target *string
+		if record.PublishedEntryID != nil {
+			v := record.PublishedEntryID.String()
+			target = &v
+		}
+		result = append(result, ArticleDraftSummary{ID: record.ID.String(), AuthorUserID: record.AuthorUserID, Title: record.Title, PublishedEntryID: target, SourceState: record.SourceState, SourceVisibility: string(record.SourceVisibility), CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt})
+	}
+	return result
 }

@@ -66,9 +66,10 @@ func (visibility Visibility) Valid() bool {
 
 // Entry is the authoritative transport-independent timeline item.
 type Entry struct {
-	AuthorUserID string
-	ID           ID
-	Kind         EntryKind
+	AuthorUserID     string
+	PublicationState string
+	ID               ID
+	Kind             EntryKind
 	// ContentMD is the Markdown body of a moment. It is nil exactly when Kind
 	// is KindArticle, whose body is structured and lives in its own aggregate.
 	// The pointer is deliberate: a reader that forgets which kind it holds
@@ -93,13 +94,14 @@ func NewEntry(id ID, content string, now time.Time) (Entry, error) {
 	instant := NormalizeTime(now)
 	body := content
 	return Entry{
-		ID:          id,
-		Kind:        KindMoment,
-		ContentMD:   &body,
-		Visibility:  VisibilityEveryone,
-		CreatedAt:   instant,
-		UpdatedAt:   instant,
-		PublishedAt: instant,
+		PublicationState: "published",
+		ID:               id,
+		Kind:             KindMoment,
+		ContentMD:        &body,
+		Visibility:       VisibilityEveryone,
+		CreatedAt:        instant,
+		UpdatedAt:        instant,
+		PublishedAt:      instant,
 	}, nil
 }
 
@@ -119,13 +121,14 @@ func NewArticleEntry(id ID, now time.Time) (Entry, error) {
 	}
 	instant := NormalizeTime(now)
 	return Entry{
-		ID:          id,
-		Kind:        KindArticle,
-		ContentMD:   nil,
-		Visibility:  VisibilityEveryone,
-		CreatedAt:   instant,
-		UpdatedAt:   instant,
-		PublishedAt: instant,
+		PublicationState: "published",
+		ID:               id,
+		Kind:             KindArticle,
+		ContentMD:        nil,
+		Visibility:       VisibilityEveryone,
+		CreatedAt:        instant,
+		UpdatedAt:        instant,
+		PublishedAt:      instant,
 	}, nil
 }
 
@@ -141,6 +144,12 @@ func (entry Entry) Markdown() (string, bool) {
 
 // Validate checks an Entry loaded from storage or archive input.
 func (entry Entry) Validate() error {
+	if entry.PublicationState != "" && entry.PublicationState != "published" && entry.PublicationState != "unpublished" {
+		return NewError(CodeInvalidArgument, "invalid publication state", nil)
+	}
+	if entry.Kind != KindArticle && entry.PublicationState == "unpublished" {
+		return NewError(CodeInvalidArgument, "only articles may be withdrawn", nil)
+	}
 	if entry.AuthorUserID != "" {
 		if err := ValidateUserID(entry.AuthorUserID); err != nil {
 			return err

@@ -151,7 +151,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 
 func (store postStore) EntryByID(ctx context.Context, id domain.ID) (domain.Entry, bool, error) {
 	entry, err := scanEntry(store.queries.QueryRowContext(ctx, `
-SELECT author_user_id, id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms
+SELECT publication_state, author_user_id, id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms
 FROM entries
 WHERE id = ?`, id.String()))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -197,10 +197,17 @@ func timelineEntriesQuery(query app.TimelineQuery, limit int) (string, []any) {
 	var branches []string
 	var arguments []any
 	for rank, column := range []string{"published_at_ms", "reposted_at_ms"} {
-		branch := fmt.Sprintf(`SELECT author_user_id, id, kind, content_md, visibility, created_at_ms, updated_at_ms,
+		branch := fmt.Sprintf(`SELECT publication_state, author_user_id, id, kind, content_md, visibility, created_at_ms, updated_at_ms,
  published_at_ms, reposted_at_ms, edited_at_ms, %s AS timeline_at_ms, %d AS timeline_kind
  FROM entries WHERE %s`, column, rank, visible)
 		arguments = append(arguments, visibleArguments...)
+		if query.AuthorUserID != "" {
+			branch += " AND author_user_id = ?"
+			arguments = append(arguments, query.AuthorUserID)
+		}
+		if rank == 1 && query.OriginalsOnly {
+			branch += " AND 0 = 1"
+		}
 		if rank == 1 {
 			branch += " AND reposted_at_ms IS NOT NULL"
 		}
@@ -758,6 +765,7 @@ type entryScanner interface {
 
 func scanEntry(scanner entryScanner) (domain.Entry, error) {
 	var (
+		state                             string
 		author                            sql.NullString
 		idString                          string
 		kind                              string
@@ -767,7 +775,7 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 		repostedAt                        sql.NullInt64
 		editedAt                          sql.NullInt64
 	)
-	if err := scanner.Scan(&author, &idString, &kind, &content, &visibility, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt); err != nil {
+	if err := scanner.Scan(&state, &author, &idString, &kind, &content, &visibility, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt); err != nil {
 		return domain.Entry{}, err
 	}
 	id, err := domain.ParseID(idString)
@@ -775,14 +783,14 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 		return domain.Entry{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry has an invalid ID", nil)
 	}
 	entry := domain.Entry{
-		AuthorUserID: author.String,
-		ID:           id,
-		Kind:         domain.EntryKind(kind),
-		ContentMD:    nullableText(content),
-		Visibility:   domain.Visibility(visibility),
-		CreatedAt:    domain.TimeFromMillis(createdAt),
-		UpdatedAt:    domain.TimeFromMillis(updatedAt),
-		PublishedAt:  domain.TimeFromMillis(publishedAt),
+		PublicationState: state, AuthorUserID: author.String,
+		ID:          id,
+		Kind:        domain.EntryKind(kind),
+		ContentMD:   nullableText(content),
+		Visibility:  domain.Visibility(visibility),
+		CreatedAt:   domain.TimeFromMillis(createdAt),
+		UpdatedAt:   domain.TimeFromMillis(updatedAt),
+		PublishedAt: domain.TimeFromMillis(publishedAt),
 	}
 	if editedAt.Valid {
 		value := domain.TimeFromMillis(editedAt.Int64)
@@ -800,6 +808,7 @@ func scanEntry(scanner entryScanner) (domain.Entry, error) {
 
 func scanTimelineEntry(scanner entryScanner) (app.TimelineEntry, error) {
 	var (
+		state                             string
 		author                            sql.NullString
 		idString                          string
 		kind                              string
@@ -811,7 +820,7 @@ func scanTimelineEntry(scanner entryScanner) (app.TimelineEntry, error) {
 		timelineAt                        int64
 		timelineKind                      int
 	)
-	if err := scanner.Scan(&author, &idString, &kind, &content, &visibility, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt, &timelineAt, &timelineKind); err != nil {
+	if err := scanner.Scan(&state, &author, &idString, &kind, &content, &visibility, &createdAt, &updatedAt, &publishedAt, &repostedAt, &editedAt, &timelineAt, &timelineKind); err != nil {
 		return app.TimelineEntry{}, err
 	}
 	id, err := domain.ParseID(idString)
@@ -819,14 +828,14 @@ func scanTimelineEntry(scanner entryScanner) (app.TimelineEntry, error) {
 		return app.TimelineEntry{}, domain.NewError(domain.CodeDataIntegrityFailed, "stored entry has an invalid ID", nil)
 	}
 	entry := domain.Entry{
-		AuthorUserID: author.String,
-		ID:           id,
-		Kind:         domain.EntryKind(kind),
-		ContentMD:    nullableText(content),
-		Visibility:   domain.Visibility(visibility),
-		CreatedAt:    domain.TimeFromMillis(createdAt),
-		UpdatedAt:    domain.TimeFromMillis(updatedAt),
-		PublishedAt:  domain.TimeFromMillis(publishedAt),
+		PublicationState: state, AuthorUserID: author.String,
+		ID:          id,
+		Kind:        domain.EntryKind(kind),
+		ContentMD:   nullableText(content),
+		Visibility:  domain.Visibility(visibility),
+		CreatedAt:   domain.TimeFromMillis(createdAt),
+		UpdatedAt:   domain.TimeFromMillis(updatedAt),
+		PublishedAt: domain.TimeFromMillis(publishedAt),
 	}
 	if editedAt.Valid {
 		value := domain.TimeFromMillis(editedAt.Int64)

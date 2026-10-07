@@ -93,3 +93,9 @@ func attachContentAuthor(ctx context.Context, store any, post *Post) error {
 	}
 	return err
 }
+
+// ResolveContentActorID lets transaction-bound repositories constrain their
+// collection queries to the verified actor, including trusted direct calls.
+func ResolveContentActorID(ctx context.Context, store ContentAuthorStore) (string, error) {
+	return contentActorID(ctx, store)
+}

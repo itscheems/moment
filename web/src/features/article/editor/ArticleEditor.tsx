@@ -34,6 +34,7 @@ import {
   isDraftMissingError,
   isStaleDraftError,
   type ArticleDraft,
+  type ArticleDraftSummary,
   type ArticleDraftInput,
 } from "../articleDrafts";
 import { ARTICLE_COMPOSE_PATH, articleDraftPath } from "../../../app/routes";
@@ -104,7 +105,7 @@ export function ArticleEditor({
   const [previewSearchSlot, setPreviewSearchSlot] =
     useState<HTMLDivElement | null>(null);
   const [railOpen, setRailOpen] = useState(false);
-  const [drafts, setDrafts] = useState<readonly ArticleDraft[]>([]);
+  const [drafts, setDrafts] = useState<readonly ArticleDraftSummary[]>([]);
   const [railError, setRailError] = useState<string | null>(null);
   const [railLoading, setRailLoading] = useState(true);
   const [now, setNow] = useState(() => new Date());
@@ -250,7 +251,9 @@ export function ArticleEditor({
       try {
         const loaded = await api.read(draftId, controller.signal);
         if (abandoned) return;
-        if (loaded.publishedEntryId !== null) {
+        if (loaded.sourceVisibility) {
+          setVisibility(loaded.sourceVisibility);
+        } else if (loaded.publishedEntryId !== null) {
           const published = await publicApi.post(
             loaded.publishedEntryId,
             controller.signal,
@@ -879,7 +882,11 @@ export function ArticleEditor({
                     </Menu.Item>
                     <ConfirmDialog
                       title="删除这份草稿？"
-                      description="删除后无法找回。已发布的文章不受影响。"
+                      description={
+                        draft?.sourceState === "withdrawn"
+                          ? "这篇文章已取消发布。删除将同时移除原文章和评论，无法找回。"
+                          : "删除后无法找回。已发布的文章不受影响。"
+                      }
                       confirmLabel="删除草稿"
                       danger
                       onConfirm={discardCurrent}

@@ -475,3 +475,52 @@ func TestAPersonalExportOfTheOwnerCarriesTheirArticlesAndDrafts(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestWithdrawnArticleStateAndAuthorsSurviveBackupRestore(t *testing.T) {
+	fixture := newExportFixture(t, true)
+	seedArticleFixture(t, fixture)
+	ctx := context.Background()
+	var originalAuthor string
+	if err := fixture.database.WriteTx(ctx, func(q sqlitestore.Queries) error {
+		if err := q.QueryRowContext(ctx, `SELECT author_user_id FROM entries WHERE id=?`, articleEntryID).Scan(&originalAuthor); err != nil {
+			return err
+		}
+		_, err := q.ExecContext(ctx, `UPDATE entries SET publication_state='unpublished' WHERE id=?`, articleEntryID)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	archiveBytes := exportFixtureBytes(t, fixture)
+	name := filepath.Join(t.TempDir(), "withdrawn.zip")
+	if err := os.WriteFile(name, archiveBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateFile(name); err != nil {
+		t.Fatal(err)
+	}
+	target := newExportFixture(t, false)
+	snapshot := stagedSnapshot(t, stageArchive(t, target, name))
+	found := false
+	if err := snapshot.Entries(ctx, func(entry sqlitestore.ArchiveEntry) error {
+		if entry.ID == articleEntryID {
+			found = true
+			if entry.PublicationState != "unpublished" || entry.AuthorUserID != originalAuthor {
+				t.Fatalf("restored article metadata=%+v", entry)
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !found {
+		t.Fatal("withdrawn article lost from archive")
+	}
+	if err := snapshot.ArticleDrafts(ctx, func(draft sqlitestore.ArchiveArticleDraft) error {
+		if draft.ID == articleDraftID && draft.AuthorUserID != originalAuthor {
+			t.Fatal("draft author changed")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

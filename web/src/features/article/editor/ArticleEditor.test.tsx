@@ -117,10 +117,10 @@ function stubFetch() {
       });
       if (url.endsWith("/publish") || url.startsWith("/api/v1/posts/"))
         return Promise.resolve(success(publishedRow()));
-      if (url === "/api/v1/owner/articles/drafts" && method === "GET") {
+      if (url === "/api/v1/articles/drafts" && method === "GET") {
         return Promise.resolve(success([draftRow()]));
       }
-      if (url === "/api/v1/owner/articles/drafts" && method === "POST") {
+      if (url === "/api/v1/articles/drafts" && method === "POST") {
         return Promise.resolve(onPost ? onPost() : success(draftRow(), 201));
       }
       if (method === "PUT") {
@@ -403,7 +403,7 @@ describe("opening a draft", () => {
     expect(
       calls.some(
         (call) =>
-          call.method === "GET" && call.url === "/api/v1/owner/articles/drafts",
+          call.method === "GET" && call.url === "/api/v1/articles/drafts",
       ),
     ).toBe(true);
   });

@@ -302,6 +302,12 @@ func (store mediaReferenceStore) DeleteMediaIfUnreferenced(ctx context.Context, 
 // to the owner.
 func (repository *MediaReferenceRepository) audience(ctx context.Context, id domain.ID, viewer app.Viewer) (bool, bool, error) {
 	public, publicArguments := visibilityPredicate(viewer, "entry.visibility")
+	if viewer.UserID() != "" {
+		public = "((" + public + ") OR (entry.kind = 'article' AND entry.publication_state = 'unpublished' AND entry.author_user_id = ?))"
+		publicArguments = append(publicArguments, viewer.UserID())
+	} else if viewer.IsOwner() {
+		public = "((" + public + ") OR (entry.kind = 'article' AND entry.publication_state = 'unpublished' AND entry.author_user_id = (SELECT owner_id FROM site_settings WHERE id=1)))"
+	}
 	var referenced, exposed int
 	err := repository.transactions.ReadTx(ctx, func(queries Queries) error {
 		arguments := []any{id.String()}

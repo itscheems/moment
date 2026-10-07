@@ -1477,6 +1477,21 @@ func validPostAPIRawData(data json.RawMessage, destination any) bool {
 	switch typed := destination.(type) {
 	case *postdto.ArticleDraft:
 		return typed != nil && validRawAPIArticleDraft(data, *typed)
+	case *[]postdto.ArticleDraftSummary:
+		if typed == nil {
+			return false
+		}
+		items, ok := apiRawArray(data)
+		if !ok || len(items) != len(*typed) {
+			return false
+		}
+		for i, item := range items {
+			summary := (*typed)[i]
+			if !hasRequiredAPIDataFields(item, "id", "title", "author_user_id", "published_entry_id", "source_state", "source_visibility", "created_at", "updated_at") || !validArticleResponseID(summary.ID) || domain.ValidateUserID(summary.AuthorUserID) != nil || summary.CreatedAt.IsZero() || summary.UpdatedAt.Before(summary.CreatedAt) {
+				return false
+			}
+		}
+		return true
 	case *[]postdto.ArticleDraft:
 		if typed == nil {
 			return false

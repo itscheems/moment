@@ -428,9 +428,9 @@ func (importer *PortableImporter) insertEntry(ctx context.Context, value Archive
 	}
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO entries (
-    author_user_id, id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms, content_text
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		optionalAuthorID(value.AuthorUserID), value.ID, value.Kind, value.ContentMD, string(entry.Visibility), value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, value.RepostedAtMS, value.EditedAtMS, contentText); err != nil {
+    publication_state, author_user_id, id, kind, content_md, visibility, created_at_ms, updated_at_ms, published_at_ms, reposted_at_ms, edited_at_ms, content_text
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		storedPublicationState(value.PublicationState), optionalAuthorID(value.AuthorUserID), value.ID, value.Kind, value.ContentMD, string(entry.Visibility), value.CreatedAtMS, value.UpdatedAtMS, value.PublishedAtMS, value.RepostedAtMS, value.EditedAtMS, contentText); err != nil {
 		return fmt.Errorf("insert portable entry %s: %w", value.ID, err)
 	}
 	if isArticle {
@@ -1066,4 +1066,11 @@ ORDER BY e.id`)
 		return fmt.Errorf("iterate staged normalized content: %w", err)
 	}
 	return probe(ctx)
+}
+
+func storedPublicationState(state string) string {
+	if state == "" {
+		return "published"
+	}
+	return state
 }

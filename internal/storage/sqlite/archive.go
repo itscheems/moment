@@ -104,9 +104,10 @@ type ArchiveUsage struct {
 
 // ArchiveEntry excludes derived content_text and embeds ordered media uses.
 type ArchiveEntry struct {
-	AuthorUserID string
-	ID           string
-	Kind         string
+	PublicationState string
+	AuthorUserID     string
+	ID               string
+	Kind             string
 	// ContentMD is nil for an article, whose body is carried separately.
 	ContentMD        *string
 	Visibility       domain.Visibility
@@ -525,7 +526,7 @@ func (snapshot *ArchiveSnapshot) Entries(ctx context.Context, yield func(Archive
 		return errors.New("archive entry callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT e.author_user_id, e.id, e.kind, e.content_md, e.visibility, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, quote.entry_id, quote.quoted_entry_id,
+SELECT e.publication_state, e.author_user_id, e.id, e.kind, e.content_md, e.visibility, e.created_at_ms, e.updated_at_ms, e.published_at_ms, e.reposted_at_ms, e.edited_at_ms, quote.entry_id, quote.quoted_entry_id,
        usage.media_id, usage.position, usage.alt_text,
        location.name, location.display_name, location.country_code, location.country,
        location.region, location.city, location.district, location.category,
@@ -551,7 +552,7 @@ ORDER BY e.id, usage.position`)
 		var latitude, longitude sql.NullInt64
 		var visibility string
 		if err := rows.Scan(
-			&entry.AuthorUserID, &entry.ID, &entry.Kind, &entry.ContentMD, &visibility, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt, &editedAt, &quoteEntryID, &quotedEntryID,
+			&entry.PublicationState, &entry.AuthorUserID, &entry.ID, &entry.Kind, &entry.ContentMD, &visibility, &entry.CreatedAtMS, &entry.UpdatedAtMS, &entry.PublishedAtMS, &repostedAt, &editedAt, &quoteEntryID, &quotedEntryID,
 			&mediaID, &position, &alt, &name, &displayName, &countryCode, &country, &region, &city,
 			&district, &category, &provider, &providerID, &latitude, &longitude, &coordinateSystem,
 		); err != nil {

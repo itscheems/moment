@@ -83,11 +83,12 @@ describe("the draft endpoints", () => {
     const fetcher = vi.fn().mockResolvedValue(success([wire]));
     const drafts = await new ArticleDraftApi(fetcher).list();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/owner/articles/drafts",
+      "/api/v1/articles/drafts",
       expect.objectContaining({ method: "GET" }),
     );
     expect(drafts).toHaveLength(1);
-    expect(drafts[0].coverMediaId).toBe("01K2ABCDEF0123456789ABCDE7");
+    expect(drafts[0]).not.toHaveProperty("body");
+    expect(drafts[0]).not.toHaveProperty("coverMediaId");
   });
 
   it("creates without a revision, because there is nothing to be stale against", async () => {
@@ -116,7 +117,7 @@ describe("the draft endpoints", () => {
       "2026-09-25T02:00:00.123Z",
     );
     const [url, init] = fetcher.mock.calls[0];
-    expect(url).toBe(`/api/v1/owner/articles/drafts/${wire.id}`);
+    expect(url).toBe(`/api/v1/articles/drafts/${wire.id}`);
     expect(init.method).toBe("PUT");
     expect(JSON.parse(init.body).expected_updated_at).toBe(
       "2026-09-25T02:00:00.123Z",
@@ -155,7 +156,7 @@ describe("the draft endpoints", () => {
       "only_me",
     );
     const [url, init] = fetcher.mock.calls[0];
-    expect(url).toBe(`/api/v1/owner/articles/drafts/${wire.id}/publish`);
+    expect(url).toBe(`/api/v1/articles/drafts/${wire.id}/publish`);
     expect(new Headers(init.headers).get("Idempotency-Key")).toBe(
       "web-article-1",
     );

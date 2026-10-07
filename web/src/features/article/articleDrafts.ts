@@ -19,6 +19,9 @@ import {
  * Mirrors internal/transport/http/gin/articles.go and postdto.ArticleDraft.
  */
 export interface ArticleDraft {
+  authorUserId?: string;
+  sourceState?: "draft" | "working_copy" | "withdrawn";
+  sourceVisibility?: PostVisibility;
   id: string;
   title: string;
   body: ArticleDocument;
@@ -115,6 +118,9 @@ export function parseArticleDraft(value: unknown): ArticleDraft {
   if (
     !isRecord(value) ||
     !hasExactKeys(value, [
+      ...["author_user_id", "source_state", "source_visibility"].filter(
+        (key) => key in value,
+      ),
       "id",
       "title",
       "body",
@@ -127,11 +133,42 @@ export function parseArticleDraft(value: unknown): ArticleDraft {
   ) {
     throw invalidResponse("draft contains an unsupported or missing field");
   }
+  if (
+    "author_user_id" in value &&
+    (typeof value.author_user_id !== "string" ||
+      !/^[0-9a-f]{32}$/.test(value.author_user_id))
+  )
+    throw invalidResponse("draft author identity is invalid");
+  if (
+    "source_state" in value &&
+    value.source_state !== "draft" &&
+    value.source_state !== "working_copy" &&
+    value.source_state !== "withdrawn"
+  )
+    throw invalidResponse("draft source state is invalid");
+  if (
+    "source_visibility" in value &&
+    value.source_visibility !== "everyone" &&
+    value.source_visibility !== "only_me"
+  )
+    throw invalidResponse("draft source visibility is invalid");
   const schemaVersion = value.body_schema_version;
   if (!Number.isSafeInteger(schemaVersion) || Number(schemaVersion) < 1) {
     throw invalidResponse("draft body_schema_version must be a version");
   }
   return {
+    ...(typeof value.author_user_id === "string"
+      ? { authorUserId: value.author_user_id }
+      : {}),
+    ...(value.source_state === "draft" ||
+    value.source_state === "working_copy" ||
+    value.source_state === "withdrawn"
+      ? { sourceState: value.source_state }
+      : {}),
+    ...(value.source_visibility === "everyone" ||
+    value.source_visibility === "only_me"
+      ? { sourceVisibility: value.source_visibility }
+      : {}),
     id: stringField(value, "id"),
     title: stringField(value, "title"),
     body: parseArticleDocument(value.body),
@@ -168,7 +205,7 @@ function draftPayload(input: ArticleDraftInput): Record<string, unknown> {
 }
 
 function draftPath(id: string): string {
-  return `/api/v1/owner/articles/drafts/${encodeURIComponent(id)}`;
+  return `/api/v1/articles/drafts/${encodeURIComponent(id)}`;
 }
 
 export class ArticleDraftApi {
@@ -178,8 +215,8 @@ export class ArticleDraftApi {
     this.fetcher = fetcher;
   }
 
-  async list(signal?: AbortSignal): Promise<ArticleDraft[]> {
-    const response = await this.fetcher("/api/v1/owner/articles/drafts", {
+  async list(signal?: AbortSignal): Promise<ArticleDraftSummary[]> {
+    const response = await this.fetcher("/api/v1/articles/drafts", {
       ...requestInit("GET"),
       signal,
     });
@@ -187,7 +224,24 @@ export class ArticleDraftApi {
     if (!Array.isArray(data)) {
       throw invalidResponse("the draft list must be an array");
     }
-    return data.map(parseArticleDraft);
+    return data.map(parseArticleDraftSummary);
+  }
+
+  async unpublish(csrfToken: string, id: string): Promise<ArticleDraft> {
+    const response = await this.fetcher(
+      `/api/v1/articles/${encodeURIComponent(id)}/unpublish`,
+      requestInit("POST", csrfToken),
+    );
+    const { data } = await decodeResponse(response);
+    return parseArticleDraft(data);
+  }
+  async removeArticle(csrfToken: string, id: string): Promise<void> {
+    await decodeResponse(
+      await this.fetcher(
+        `/api/v1/articles/${encodeURIComponent(id)}`,
+        requestInit("DELETE", csrfToken),
+      ),
+    );
   }
 
   async read(id: string, signal?: AbortSignal): Promise<ArticleDraft> {
@@ -202,11 +256,17 @@ export class ArticleDraftApi {
   async create(
     csrfToken: string,
     input: ArticleDraftInput,
+    idempotencyKey?: string,
   ): Promise<ArticleDraft> {
-    const response = await this.fetcher(
-      "/api/v1/owner/articles/drafts",
-      requestInit("POST", csrfToken, draftPayload(input)),
-    );
+    const response = await this.fetcher("/api/v1/articles/drafts", {
+      ...requestInit("POST", csrfToken, draftPayload(input)),
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrfToken,
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
+    });
     const { data } = await decodeResponse(response);
     return parseArticleDraft(data);
   }
@@ -281,7 +341,7 @@ export class ArticleDraftApi {
     articleId: string,
   ): Promise<ArticleDraft> {
     const response = await this.fetcher(
-      `/api/v1/owner/articles/${encodeURIComponent(articleId)}/draft`,
+      `/api/v1/articles/${encodeURIComponent(articleId)}/draft`,
       requestInit("POST", csrfToken),
     );
     const { data } = await decodeResponse(response);
@@ -354,4 +414,61 @@ export function staleDraftUpdatedAt(error: unknown): string | null {
   }
   const updatedAt = error.details.updated_at;
   return typeof updatedAt === "string" ? updatedAt : null;
+}
+
+export type ArticleDraftSummary = Omit<
+  ArticleDraft,
+  "body" | "bodySchemaVersion" | "coverMediaId"
+>;
+function parseArticleDraftSummary(value: unknown): ArticleDraftSummary {
+  if (!isRecord(value))
+    throw invalidResponse("draft summary must be an object");
+  const keys = [
+    "id",
+    "title",
+    "published_entry_id",
+    "created_at",
+    "updated_at",
+    "author_user_id",
+    "source_state",
+    "source_visibility",
+  ];
+  if ("body" in value) {
+    const {
+      body: _body,
+      bodySchemaVersion: _version,
+      coverMediaId: _cover,
+      ...summary
+    } = parseArticleDraft(value);
+    void _body;
+    void _version;
+    void _cover;
+    return summary;
+  }
+  if (!hasExactKeys(value, keys))
+    throw invalidResponse(
+      "draft summary contains unsupported or missing fields",
+    );
+  if (
+    typeof value.author_user_id !== "string" ||
+    !/^[0-9a-f]{32}$/.test(value.author_user_id)
+  )
+    throw invalidResponse("summary author identity is invalid");
+  const state = value.source_state;
+  const visibility = value.source_visibility;
+  if (
+    (state !== "draft" && state !== "working_copy" && state !== "withdrawn") ||
+    (visibility !== "everyone" && visibility !== "only_me")
+  )
+    throw invalidResponse("draft summary state is invalid");
+  return {
+    id: stringField(value, "id"),
+    title: stringField(value, "title"),
+    publishedEntryId: nullableStringField(value, "published_entry_id"),
+    createdAt: instantField(value, "created_at"),
+    updatedAt: instantField(value, "updated_at"),
+    authorUserId: stringField(value, "author_user_id"),
+    sourceState: state,
+    sourceVisibility: visibility,
+  };
 }

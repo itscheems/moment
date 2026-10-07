@@ -70,14 +70,16 @@ WHERE id = ? AND updated_at_ms = ?`,
 
 func (store postStore) ArticleDraftByID(ctx context.Context, id domain.ID) (app.ArticleDraftRecord, bool, error) {
 	return store.scanArticleDraft(store.queries.QueryRowContext(ctx, `
-SELECT `+articleDraftColumns+`
+SELECT `+articleDraftColumns+`,
+ COALESCE((SELECT publication_state FROM entries WHERE id = published_entry_id),'draft'), COALESCE((SELECT visibility FROM entries WHERE id = published_entry_id),'everyone')
 FROM article_drafts
 WHERE id = ?`, id.String()))
 }
 
 func (store postStore) ArticleDraftForEntry(ctx context.Context, entryID domain.ID) (app.ArticleDraftRecord, bool, error) {
 	return store.scanArticleDraft(store.queries.QueryRowContext(ctx, `
-SELECT `+articleDraftColumns+`
+SELECT `+articleDraftColumns+`,
+ COALESCE((SELECT publication_state FROM entries WHERE id = published_entry_id),'draft'), COALESCE((SELECT visibility FROM entries WHERE id = published_entry_id),'everyone')
 FROM article_drafts
 WHERE published_entry_id = ?`, entryID.String()))
 }
@@ -86,11 +88,17 @@ func (store postStore) ListArticleDrafts(ctx context.Context, limit int) ([]app.
 	if limit <= 0 {
 		limit = app.MaxArticleDrafts
 	}
+	author, authorErr := app.ResolveContentActorID(ctx, store)
+	if authorErr != nil {
+		return nil, authorErr
+	}
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT `+articleDraftColumns+`
+SELECT `+articleDraftColumns+`,
+ COALESCE((SELECT publication_state FROM entries WHERE id = published_entry_id),'draft'), COALESCE((SELECT visibility FROM entries WHERE id = published_entry_id),'everyone')
 FROM article_drafts
+WHERE author_user_id = ?
 ORDER BY updated_at_ms DESC, id DESC
-LIMIT ?`, limit)
+LIMIT ?`, author, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list article drafts: %w", err)
 	}
@@ -110,8 +118,12 @@ LIMIT ?`, limit)
 }
 
 func (store postStore) CountArticleDrafts(ctx context.Context) (int, error) {
+	author, err := app.ResolveContentActorID(ctx, store)
+	if err != nil {
+		return 0, err
+	}
 	var count int
-	if err := store.queries.QueryRowContext(ctx, `SELECT count(*) FROM article_drafts`).Scan(&count); err != nil {
+	if err := store.queries.QueryRowContext(ctx, `SELECT count(*) FROM article_drafts WHERE author_user_id = ?`, author).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count article drafts: %w", err)
 	}
 	return count, nil
@@ -156,17 +168,19 @@ VALUES (?, ?, ?, ?)`, draftID.String(), usage.MediaID.String(), usage.Position, 
 
 func (store postStore) scanArticleDraft(scanner entryScanner) (app.ArticleDraftRecord, bool, error) {
 	var (
-		author    sql.NullString
-		idString  string
-		title     string
-		bodyJSON  string
-		version   int
-		cover     sql.NullString
-		published sql.NullString
-		createdAt int64
-		updatedAt int64
+		author     sql.NullString
+		idString   string
+		title      string
+		bodyJSON   string
+		version    int
+		cover      sql.NullString
+		published  sql.NullString
+		createdAt  int64
+		updatedAt  int64
+		state      string
+		visibility domain.Visibility
 	)
-	if err := scanner.Scan(&author, &idString, &title, &bodyJSON, &version, &cover, &published, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&author, &idString, &title, &bodyJSON, &version, &cover, &published, &createdAt, &updatedAt, &state, &visibility); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return app.ArticleDraftRecord{}, false, nil
 		}
@@ -197,12 +211,17 @@ func (store postStore) scanArticleDraft(scanner entryScanner) (app.ArticleDraftR
 			"stored article draft is not valid", map[string]any{"id": idString})
 	}
 	record := app.ArticleDraftRecord{
-		AuthorUserID: author.String, ID: id,
+		AuthorUserID: author.String, ID: id, SourceVisibility: visibility, SourceState: state,
 		Draft:     draft,
 		CreatedAt: domain.TimeFromMillis(createdAt),
 		UpdatedAt: domain.TimeFromMillis(updatedAt),
 	}
 	if published.Valid {
+		if state == "unpublished" {
+			record.SourceState = "withdrawn"
+		} else {
+			record.SourceState = "working_copy"
+		}
 		entryID, parseErr := domain.ParseID(published.String)
 		if parseErr != nil {
 			return app.ArticleDraftRecord{}, false, domain.NewError(domain.CodeDataIntegrityFailed, "stored draft names an invalid entry", nil)

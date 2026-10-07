@@ -37,6 +37,8 @@ type ArticleCover struct {
 // with every keystroke.
 type ArticleDraftRecord struct {
 	AuthorUserID     string
+	SourceState      string
+	SourceVisibility domain.Visibility
 	ID               domain.ID
 	Draft            domain.ArticleDraft
 	PublishedEntryID *domain.ID
@@ -119,6 +121,7 @@ const articlePublishIdempotencyScope = "articles.publish.v1"
 // otherwise. A replacement must say which revision it was based on, so that
 // two tabs editing the same draft cannot silently overwrite each other.
 type SaveArticleDraftInput struct {
+	IdempotencyKey    string
 	ID                *domain.ID
 	Title             string
 	BodyJSON          []byte
@@ -170,6 +173,32 @@ func (service *PostService) SaveArticleDraft(ctx context.Context, input SaveArti
 	var saved ArticleDraftRecord
 	err = service.transactions.Write(ctx, func(store PostStore) error {
 		if input.ID == nil {
+			author, err := contentActorID(ctx, store)
+			if err != nil {
+				return err
+			}
+			scope := "articles.drafts.create.v1." + author
+			digest := sha256.Sum256(append([]byte(input.Title+"\x00"+optionalDraftCover(input.CoverMediaID)+"\x00"), input.BodyJSON...))
+			requestHash := hex.EncodeToString(digest[:])
+			if input.IdempotencyKey != "" {
+				key, found, err := store.IdempotencyRecord(ctx, scope, input.IdempotencyKey)
+				if err != nil {
+					return err
+				}
+				if found {
+					if key.RequestHash != requestHash {
+						return domain.NewError(domain.CodeIdempotencyKeyReused, "draft create key reused", nil)
+					}
+					saved, found, err = store.ArticleDraftByID(ctx, key.ResponseResourceID)
+					if err != nil {
+						return err
+					}
+					if !found {
+						return articleDraftNotFound(key.ResponseResourceID)
+					}
+					return requireContentAuthor(ctx, store, saved.AuthorUserID)
+				}
+			}
 			count, countErr := store.CountArticleDrafts(ctx)
 			if countErr != nil {
 				return countErr
@@ -191,6 +220,11 @@ func (service *PostService) SaveArticleDraft(ctx context.Context, input SaveArti
 			if insertErr := store.InsertArticleDraft(ctx, saved); insertErr != nil {
 				return insertErr
 			}
+			if input.IdempotencyKey != "" {
+				if err := store.InsertIdempotencyRecord(ctx, IdempotencyRecord{AuthorUserID: author, Scope: scope, Key: input.IdempotencyKey, RequestHash: requestHash, ResponseResourceID: id, CreatedAt: now}); err != nil {
+					return err
+				}
+			}
 			return reconcileArticleMedia(ctx, store, now, draft.CoverAndInlineMedia())
 		}
 
@@ -200,6 +234,9 @@ func (service *PostService) SaveArticleDraft(ctx context.Context, input SaveArti
 		}
 		if !found {
 			return articleDraftNotFound(*input.ID)
+		}
+		if err := requireContentAuthor(ctx, store, existing.AuthorUserID); err != nil {
+			return err
 		}
 		if input.ExpectedUpdatedAt == nil {
 			return domain.NewError(domain.CodeInvalidArgument,
@@ -213,7 +250,7 @@ func (service *PostService) SaveArticleDraft(ctx context.Context, input SaveArti
 			next = existing.UpdatedAt.Add(time.Millisecond)
 		}
 		saved = ArticleDraftRecord{
-			AuthorUserID: existing.AuthorUserID, ID: existing.ID, Draft: draft, PublishedEntryID: existing.PublishedEntryID,
+			AuthorUserID: existing.AuthorUserID, SourceState: existing.SourceState, SourceVisibility: existing.SourceVisibility, ID: existing.ID, Draft: draft, PublishedEntryID: existing.PublishedEntryID,
 			CreatedAt: existing.CreatedAt, UpdatedAt: next,
 		}
 		applied, writeErr := store.UpdateArticleDraft(ctx, saved, *input.ExpectedUpdatedAt)
@@ -240,63 +277,22 @@ func (service *PostService) SaveArticleDraft(ctx context.Context, input SaveArti
 // that already exists. Editing must not change what readers see with every
 // keystroke, which is the whole reason the copy exists.
 func (service *PostService) EditArticle(ctx context.Context, entryID domain.ID) (ArticleDraftRecord, error) {
-	now := domain.NormalizeTime(service.clock())
 	var record ArticleDraftRecord
 	err := service.transactions.Write(ctx, func(store PostStore) error {
-		existing, found, readErr := store.ArticleDraftForEntry(ctx, entryID)
-		if readErr != nil {
-			return readErr
+		entry, found, err := store.EntryByID(ctx, entryID)
+		if err != nil {
+			return err
 		}
-		if found {
-			record = existing
-			return nil
-		}
-		article, found, readErr := store.ArticleByEntryID(ctx, entryID)
-		if readErr != nil {
-			return readErr
-		}
-		if !found {
+		if !found || entry.Kind != domain.KindArticle {
 			return postNotFound(entryID)
 		}
-		// A working copy is a draft like any other, so it answers to the same
-		// ceiling. Enforcing it only where a draft is written from scratch
-		// would let opening one published article after another walk straight
-		// past a limit the other door refuses at.
-		count, countErr := store.CountArticleDrafts(ctx)
-		if countErr != nil {
-			return countErr
+		if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
+			return err
 		}
-		if count >= MaxArticleDrafts {
-			return domain.NewError(domain.CodeArticleDraftLimit,
-				"this site already keeps the maximum number of drafts",
-				map[string]any{"limit": MaxArticleDrafts})
-		}
-		draft, draftErr := domain.NewArticleDraft(article.Title, article.Body, article.CoverID)
-		if draftErr != nil {
-			return draftErr
-		}
-		id, idErr := service.ids(now)
-		if idErr != nil {
-			return idErr
-		}
-		entry, entryFound, entryErr := store.EntryByID(ctx, entryID)
-		if entryErr != nil {
-			return entryErr
-		}
-		if !entryFound {
-			return postNotFound(entryID)
-		}
-		target := entryID
-		record = ArticleDraftRecord{AuthorUserID: entry.AuthorUserID, ID: id, Draft: draft, PublishedEntryID: &target, CreatedAt: now, UpdatedAt: now}
-		if insertErr := store.InsertArticleDraft(ctx, record); insertErr != nil {
-			return insertErr
-		}
-		return reconcileArticleMedia(ctx, store, now, draft.CoverAndInlineMedia())
+		record, err = service.articleWorkingCopy(ctx, store, entry, domain.NormalizeTime(service.clock()))
+		return err
 	})
-	if err != nil {
-		return ArticleDraftRecord{}, normalizePostRepositoryError(err)
-	}
-	return record, nil
+	return record, normalizePostRepositoryError(err)
 }
 
 // ArticleDrafts lists what is unfinished, newest first.
@@ -326,6 +322,9 @@ func (service *PostService) ArticleDraft(ctx context.Context, id domain.ID) (Art
 		if !found {
 			return articleDraftNotFound(id)
 		}
+		if err := requireContentAuthor(ctx, store, record.AuthorUserID); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -348,6 +347,25 @@ func (service *PostService) DiscardArticleDraft(ctx context.Context, id domain.I
 		if !found {
 			return articleDraftNotFound(id)
 		}
+		if err := requireContentAuthor(ctx, store, existing.AuthorUserID); err != nil {
+			return err
+		}
+		var withdrawnMedia []domain.ID
+		if existing.PublishedEntryID != nil {
+			entry, found, err := store.EntryByID(ctx, *existing.PublishedEntryID)
+			if err != nil {
+				return err
+			}
+			if found && entry.PublicationState == "unpublished" {
+				withdrawnMedia, err = store.EntryMediaIDs(ctx, entry.ID)
+				if err != nil {
+					return err
+				}
+				if _, err := store.DeleteEntry(ctx, entry.ID); err != nil {
+					return err
+				}
+			}
+		}
 		deleted, writeErr := store.DeleteArticleDraft(ctx, id)
 		if writeErr != nil {
 			return writeErr
@@ -355,7 +373,7 @@ func (service *PostService) DiscardArticleDraft(ctx context.Context, id domain.I
 		if !deleted {
 			return articleDraftNotFound(id)
 		}
-		return reconcileArticleMedia(ctx, store, now, existing.Draft.CoverAndInlineMedia())
+		return reconcileArticleMedia(ctx, store, now, existing.Draft.CoverAndInlineMedia(), withdrawnMedia)
 	})
 	if err != nil {
 		return normalizePostRepositoryError(err)
@@ -378,8 +396,13 @@ func (service *PostService) PublishArticleDraft(ctx context.Context, input Publi
 	requestHash := hashPublishArticle(input.DraftID, visibility)
 	var published Post
 	err = service.transactions.Write(ctx, func(store PostStore) error {
+		author, err := contentActorID(ctx, store)
+		if err != nil {
+			return err
+		}
+		scope := articlePublishIdempotencyScope + "." + author
 		if input.IdempotencyKey != "" {
-			record, found, storeErr := store.IdempotencyRecord(ctx, articlePublishIdempotencyScope, input.IdempotencyKey)
+			record, found, storeErr := store.IdempotencyRecord(ctx, scope, input.IdempotencyKey)
 			if storeErr != nil {
 				return storeErr
 			}
@@ -398,6 +421,9 @@ func (service *PostService) PublishArticleDraft(ctx context.Context, input Publi
 				if replayErr != nil {
 					return replayErr
 				}
+				if err := requireContentAuthor(ctx, store, replayed.Entry.AuthorUserID); err != nil {
+					return err
+				}
 				published = replayed
 				return nil
 			}
@@ -409,6 +435,9 @@ func (service *PostService) PublishArticleDraft(ctx context.Context, input Publi
 		}
 		if !found {
 			return articleDraftNotFound(input.DraftID)
+		}
+		if err := requireContentAuthor(ctx, store, draft.AuthorUserID); err != nil {
+			return err
 		}
 		article, publishErr := draft.Draft.Publish()
 		if publishErr != nil {
@@ -452,7 +481,7 @@ func (service *PostService) PublishArticleDraft(ctx context.Context, input Publi
 		}
 		if input.IdempotencyKey != "" {
 			if recordErr := store.InsertIdempotencyRecord(ctx, IdempotencyRecord{
-				Scope: articlePublishIdempotencyScope, Key: input.IdempotencyKey,
+				AuthorUserID: author, Scope: scope, Key: input.IdempotencyKey,
 				RequestHash: requestHash, ResponseResourceID: *entryID, CreatedAt: now,
 			}); recordErr != nil {
 				return recordErr
@@ -508,6 +537,9 @@ func (service *PostService) replaceArticleEntry(ctx context.Context, store PostS
 	if entry.Kind != domain.KindArticle {
 		return domain.NewError(domain.CodeInvalidArgument, "that post is not an article", map[string]any{"id": entryID.String()})
 	}
+	if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
+		return err
+	}
 	if err := store.ReplaceArticle(ctx, entryID, article); err != nil {
 		return err
 	}
@@ -519,6 +551,11 @@ func (service *PostService) replaceArticleEntry(ctx context.Context, store PostS
 	edited := updated
 	entry.UpdatedAt = updated
 	entry.EditedAt = &edited
+	if management, ok := store.(ArticleManagementStore); ok {
+		if err := management.SetArticlePublication(ctx, entryID, "published"); err != nil {
+			return err
+		}
+	}
 	changed, err := store.UpdateArticleEntry(ctx, entry, contentText)
 	if err != nil {
 		return err
@@ -578,4 +615,11 @@ func hashPublishArticle(draftID domain.ID, visibility domain.Visibility) string 
 
 func articleDraftNotFound(id domain.ID) error {
 	return domain.NewError(domain.CodeArticleDraftNotFound, "article draft does not exist", map[string]any{"id": id.String()})
+}
+
+func optionalDraftCover(id *domain.ID) string {
+	if id == nil {
+		return ""
+	}
+	return id.String()
 }

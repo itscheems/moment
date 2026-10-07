@@ -7,6 +7,42 @@
   ],
   "commands": [
     {
+      "command": "article delete",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared_or_exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
+      },
+      "output_schema": "post_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
       "command": "article discard",
       "direct": {
         "availability": "supported",
@@ -147,6 +183,74 @@
       ]
     },
     {
+      "command": "article get",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "post_v1",
+      "parity_strategy": "byte_identical_data_and_error",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "command": "article list",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "posts_page_v1",
+      "parity_strategy": "byte_identical_data_and_error",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
       "command": "article new",
       "direct": {
         "availability": "supported",
@@ -269,6 +373,42 @@
       "destructive": {
         "requires_yes": false,
         "supports_dry_run": false
+      },
+      "output_schema": "article_draft_v1",
+      "parity_strategy": "canonical_application_result",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ]
+    },
+    {
+      "command": "article unpublish",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared_or_exclusive"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "owner_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": true,
+        "supports_dry_run": true
       },
       "output_schema": "article_draft_v1",
       "parity_strategy": "canonical_application_result",
