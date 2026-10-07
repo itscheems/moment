@@ -668,6 +668,11 @@ export function ownsSite(account: Account | null): boolean {
 
 export function useSession(): SessionContextValue {
   const value = useContext(SessionContext);
-  if (!value) throw new Error("./SessionProvider");
+  if (!value) throw new Error("useSession must be used within SessionProvider");
   return value;
+}
+
+/** Presentation may render without authentication while never granting author controls. */
+export function useOptionalSession(): SessionContextValue | null {
+  return useContext(SessionContext);
 }

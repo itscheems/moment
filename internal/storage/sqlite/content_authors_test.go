@@ -2,10 +2,11 @@ package sqlite
 
 import (
 	"context"
-	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/domain"
 	"testing"
 	"time"
+
+	"github.com/moment/moment/internal/app"
+	"github.com/moment/moment/internal/domain"
 )
 
 func addContentTestAccount(t *testing.T, db *Database, id, username string) domain.User {

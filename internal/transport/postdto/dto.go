@@ -771,6 +771,7 @@ func RefreshCursor(page app.PostPage) *string {
 	return &cursor
 }
 
+// Author is the public identity of the account that authored a post.
 type Author struct {
 	UserID        string  `json:"user_id"`
 	Username      string  `json:"username"`
@@ -786,6 +787,7 @@ func fromAuthor(author *app.CommentAuthor) *Author {
 	return &Author{UserID: author.UserID, Username: author.Username, DisplayName: author.DisplayName, AvatarMediaID: author.AvatarMediaID, ProfileURL: author.ProfileURL}
 }
 
+// ArticleDraftSummary is the body-free management list shape.
 type ArticleDraftSummary struct {
 	ID               string    `json:"id"`
 	AuthorUserID     string    `json:"author_user_id"`
@@ -797,6 +799,7 @@ type ArticleDraftSummary struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
+// FromArticleDraftSummaries maps the current author's list metadata.
 func FromArticleDraftSummaries(records []app.ArticleDraftSummary) []ArticleDraftSummary {
 	result := make([]ArticleDraftSummary, 0, len(records))
 	for _, record := range records {

@@ -1,4 +1,5 @@
 import {
+  PublicApi,
   PublicApiError,
   parseArticleDocument,
   parsePost,
@@ -225,6 +226,24 @@ export class ArticleDraftApi {
       throw invalidResponse("the draft list must be an array");
     }
     return data.map(parseArticleDraftSummary);
+  }
+
+  async published(cursor?: string, signal?: AbortSignal) {
+    return new PublicApi((path, init) =>
+      this.fetcher(
+        String(path).replace("/api/v1/posts", "/api/v1/articles"),
+        init,
+      ),
+    ).timeline({ cursor, limit: 20, signal });
+  }
+  async readManaged(id: string, signal?: AbortSignal): Promise<PublicPost> {
+    const { data } = await decodeResponse(
+      await this.fetcher(`/api/v1/articles/${encodeURIComponent(id)}`, {
+        ...requestInit("GET"),
+        signal,
+      }),
+    );
+    return parsePost(data);
   }
 
   async unpublish(csrfToken: string, id: string): Promise<ArticleDraft> {

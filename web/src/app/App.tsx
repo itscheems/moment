@@ -12,7 +12,7 @@ import { PublicApi, type SiteIdentity } from "../api/public";
 import { AppShell } from "../components/AppShell";
 import { Icon } from "../components/icons";
 import { ShellState } from "../components/ShellState";
-import { ArticleEditorPage } from "../features/article/editor";
+import { ArticleWorkspacePage } from "../features/article/editor";
 import { DetailPage } from "../features/timeline/DetailPage";
 import { TimelinePage } from "../features/timeline/TimelinePage";
 import { Composer, type ComposerHandle } from "../features/owner/Composer";
@@ -47,7 +47,7 @@ import { NavigationProvider, useNavigation } from "./navigation";
 import {
   COMPOSE_DRAFTS_PATH,
   COMPOSE_PATH,
-  articleDraftIdFromPath,
+  movedArticleComposePath,
   articleFocusIdFromPath,
   isComposeDraftsPath,
   movedComposePath,
@@ -286,7 +286,9 @@ function PublicApp() {
   // history renders as it did and has its address corrected in place, rather
   // than turning into a not-found page.
   useEffect(() => {
-    const moved = movedComposePath(location.pathname);
+    const moved =
+      movedArticleComposePath(location.pathname) ??
+      movedComposePath(location.pathname);
     if (moved) location.replace(`${moved}${location.search}`);
   }, [location]);
 
@@ -296,7 +298,7 @@ function PublicApp() {
   useEffect(() => {
     const composing =
       requestedRoute.id === "owner-compose" ||
-      requestedRoute.id === "owner-article";
+      requestedRoute.id === "article-workspace";
     if (!composing || ownerCapable) return;
     // Still resolving, or unable to say. Neither is an answer to act on.
     if (owner.state === "checking" || owner.state === "unavailable") return;
@@ -407,7 +409,7 @@ function PublicApp() {
     route.id !== "article-focus" &&
     route.id !== "login" &&
     route.id !== "owner-compose" &&
-    route.id !== "owner-article" &&
+    route.id !== "article-workspace" &&
     route.id !== "owner-edit" &&
     route.id !== "owner-settings" &&
     route.id !== "search" &&
@@ -432,24 +434,6 @@ function PublicApp() {
   // has already run, so returning here changes what is rendered without
   // changing what is evaluated.
   if (route.id === "login") return <LoginPage site={site} />;
-
-  // Writing gets a full-window workspace; the editor bundle loads on demand.
-  if (siteIdentityReady && route.id === "owner-article" && ownerCapable) {
-    return (
-      <Suspense
-        fallback={
-          <p className={styles.editorLoading} role="status">
-            正在打开编辑器…
-          </p>
-        }
-      >
-        <ArticleEditorPage
-          draftId={articleDraftIdFromPath(displayLocation.pathname)}
-          site={site}
-        />
-      </Suspense>
-    );
-  }
 
   return (
     // The owner's handle is the one this app knows without asking. Anything
@@ -558,10 +542,24 @@ function PublicApp() {
             <OwnerLogin embedded site={site} />
           )
         ) : null}
-        {/* Only reached by somebody who cannot open the editor: the owner
-            returned above, before the shell was drawn at all. */}
-        {siteIdentityReady && route.id === "owner-article" ? (
-          <OwnerLogin embedded site={site} />
+        {siteIdentityReady && route.id === "article-workspace" ? (
+          owner.account?.status === "active" && owner.state === "signed-in" ? (
+            <Suspense
+              fallback={
+                <p className={styles.editorLoading} role="status">
+                  正在打开文章…
+                </p>
+              }
+            >
+              <ArticleWorkspacePage key={owner.account.userId} site={site} />
+            </Suspense>
+          ) : (
+            <p role="status">
+              {owner.account
+                ? "账号获准发布后即可管理文章。"
+                : "请先登录以管理自己的文章。"}
+            </p>
+          )
         ) : null}
         {siteIdentityReady && route.id === "owner-edit" ? (
           ownerCapable ? (

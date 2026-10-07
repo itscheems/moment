@@ -1197,13 +1197,13 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		// alongside the entry's own media once the delete has committed.
 		affectedMedia = append(affectedMedia, linkCardMediaIDs(LinkCardsOf(linkCards))...)
 		if entry.Kind == domain.KindArticle {
-			copy, found, err := store.ArticleDraftForEntry(ctx, id)
+			workingCopy, found, err := store.ArticleDraftForEntry(ctx, id)
 			if err != nil {
 				return err
 			}
 			if found {
-				affectedMedia = append(affectedMedia, copy.Draft.CoverAndInlineMedia()...)
-				if _, err := store.DeleteArticleDraft(ctx, copy.ID); err != nil {
+				affectedMedia = append(affectedMedia, workingCopy.Draft.CoverAndInlineMedia()...)
+				if _, err := store.DeleteArticleDraft(ctx, workingCopy.ID); err != nil {
 					return err
 				}
 			}

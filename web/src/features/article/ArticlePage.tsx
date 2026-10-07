@@ -1,3 +1,4 @@
+import { useOptionalSession } from "../auth/SessionProvider";
 import { postAuthorSite } from "../../components/SiteIdentity";
 import type { MouseEventHandler } from "react";
 
@@ -39,6 +40,7 @@ export function ArticlePage({
   now,
   owner = false,
   focusReading = false,
+  showActions = true,
   onDeleted,
   onReposted,
   onSiteChanged,
@@ -49,11 +51,17 @@ export function ArticlePage({
   now?: Date;
   owner?: boolean;
   focusReading?: boolean;
+  showActions?: boolean;
   onDeleted?: (post: PublicPost) => void;
   onReposted?: (post: PublicPost) => void;
   onSiteChanged?: (site: SiteIdentity) => void;
   onReply?: MouseEventHandler<HTMLButtonElement>;
 }) {
+  const session = useOptionalSession();
+  owner = post.author?.userId
+    ? session?.account?.userId === post.author.userId &&
+      session?.account?.status === "active"
+    : owner;
   site = postAuthorSite(post, site);
   const { title, cover } = post.article;
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
@@ -141,7 +149,7 @@ export function ArticlePage({
                 ) : null}
               </p>
             </div>
-            {owner ? (
+            {owner && showActions ? (
               <div className={styles.bylineActions}>
                 <OwnerPostActions
                   showArticleEdit
@@ -176,7 +184,7 @@ export function ArticlePage({
           }}
         />
       </ArticleSheet>
-      {post.commentCount > 0 ? (
+      {showActions && post.commentCount > 0 ? (
         <a
           className={`${postStyles.detailStats} ${styles.column}`}
           href="#comments"
@@ -185,57 +193,59 @@ export function ArticlePage({
           <span>条回复</span>
         </a>
       ) : null}
-      <div className={`${postStyles.postActions} ${styles.column}`}>
-        <ActionTooltip label="回复">
-          <button
-            aria-label={`回复这篇文章${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
-            className={`${postStyles.postAction} ${postStyles.replyAction}`}
-            onClick={onReply}
-            type="button"
-          >
-            <Icon name="reply" />
-            {post.commentCount > 0 ? (
-              <span className={postStyles.actionCount}>
-                {post.commentCount}
-              </span>
-            ) : null}
-          </button>
-        </ActionTooltip>
-        {owner ? (
-          <OwnerRepostAction onChanged={onReposted} post={post} />
-        ) : null}
-        <ShareMenu
-          align="start"
-          baseUrl={site.publicBaseUrl}
-          card={{
-            displayName: site.displayName,
-            username: site.username,
-            avatarUrl: site.avatarMediaId
-              ? mediaPreviewUrl(site.avatarMediaId)
-              : null,
-            publishedLabel: published.absolute,
-            blocks: shareCardBlocks(post.contentHtml),
-            // An article places its pictures inside its body, where the blocks
-            // above already carry them in reading order. The grid a moment
-            // shares is for pictures attached to a post, and an article has
-            // none of those.
-            media: [],
-            location: null,
-            link: null,
-          }}
-          href={`/m/${encodeURIComponent(post.id)}`}
-          title={title}
-          trigger={
+      {showActions ? (
+        <div className={`${postStyles.postActions} ${styles.column}`}>
+          <ActionTooltip label="回复">
             <button
-              aria-label="分享这篇文章"
-              className={`${postStyles.postAction} ${postStyles.shareAction}`}
+              aria-label={`回复这篇文章${post.commentCount > 0 ? `，${post.commentCount} 条回复` : ""}`}
+              className={`${postStyles.postAction} ${postStyles.replyAction}`}
+              onClick={onReply}
               type="button"
             >
-              <Icon name="share" />
+              <Icon name="reply" />
+              {post.commentCount > 0 ? (
+                <span className={postStyles.actionCount}>
+                  {post.commentCount}
+                </span>
+              ) : null}
             </button>
-          }
-        />
-      </div>
+          </ActionTooltip>
+          {owner && showActions ? (
+            <OwnerRepostAction onChanged={onReposted} post={post} />
+          ) : null}
+          <ShareMenu
+            align="start"
+            baseUrl={site.publicBaseUrl}
+            card={{
+              displayName: site.displayName,
+              username: site.username,
+              avatarUrl: site.avatarMediaId
+                ? mediaPreviewUrl(site.avatarMediaId)
+                : null,
+              publishedLabel: published.absolute,
+              blocks: shareCardBlocks(post.contentHtml),
+              // An article places its pictures inside its body, where the blocks
+              // above already carry them in reading order. The grid a moment
+              // shares is for pictures attached to a post, and an article has
+              // none of those.
+              media: [],
+              location: null,
+              link: null,
+            }}
+            href={`/m/${encodeURIComponent(post.id)}`}
+            title={title}
+            trigger={
+              <button
+                aria-label="分享这篇文章"
+                className={`${postStyles.postAction} ${postStyles.shareAction}`}
+                type="button"
+              >
+                <Icon name="share" />
+              </button>
+            }
+          />
+        </div>
+      ) : null}
     </article>
   );
 }

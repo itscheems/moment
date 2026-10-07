@@ -81,6 +81,7 @@ func postHiddenFrom(id domain.ID) error {
 // UserID identifies the reader; it never grants authority over another author.
 func (viewer Viewer) UserID() string { return viewer.userID }
 
+// CanReadEntry applies publication state and author ownership to one entry.
 func (viewer Viewer) CanReadEntry(entry domain.Entry) bool {
 	if entry.PublicationState == "unpublished" {
 		return false

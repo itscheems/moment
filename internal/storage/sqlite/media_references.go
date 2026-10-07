@@ -369,6 +369,7 @@ SELECT
 	return referenced == 1, exposed == 1, nil
 }
 
+// Visibility projects the public audience for HTTP cache policy.
 func (repository *MediaReferenceRepository) Visibility(ctx context.Context, id domain.ID) (domain.Visibility, error) {
 	referenced, exposed, err := repository.audience(ctx, id, app.PublicViewer())
 	if err != nil {
@@ -380,6 +381,7 @@ func (repository *MediaReferenceRepository) Visibility(ctx context.Context, id d
 	return domain.VisibilityEveryone, nil
 }
 
+// CanRead checks references against the actual account, including private drafts.
 func (repository *MediaReferenceRepository) CanRead(ctx context.Context, id domain.ID, viewer app.Viewer) (bool, error) {
 	referenced, exposed, err := repository.audience(ctx, id, viewer)
 	return !referenced || exposed, err

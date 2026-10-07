@@ -2,11 +2,12 @@ package sqlite
 
 import (
 	"context"
-	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/domain"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/moment/moment/internal/app"
+	"github.com/moment/moment/internal/domain"
 )
 
 func TestArticleManagementSeparatesAuthorsAndPreservesWithdrawnWork(t *testing.T) {
@@ -179,5 +180,28 @@ func TestWithdrawnArticleKeepsCommentsAndPrivateMedia(t *testing.T) {
 	restored, err := service.PublishArticleDraft(a, app.PublishArticleDraftInput{DraftID: withdrawn.ID})
 	if err != nil || restored.CommentCount != 1 {
 		t.Fatalf("comments lost=%+v,%v", restored, err)
+	}
+}
+
+func TestEmptyDraftDocumentWireAlwaysUsesAnArray(t *testing.T) {
+	_, service := articleServiceFixture(t, time.UnixMilli(1000))
+	draft, err := service.SaveArticleDraft(context.Background(), app.SaveArticleDraftInput{BodyJSON: []byte(`{"schema_version":1,"type":"doc","content":[]}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := domain.MarshalArticleDocument(draft.Draft.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"content":[]`) {
+		t.Fatalf("empty draft wire=%s", encoded)
+	}
+	read, err := service.ArticleDraft(context.Background(), draft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err = domain.MarshalArticleDocument(read.Draft.Body)
+	if err != nil || !strings.Contains(string(encoded), `"content":[]`) {
+		t.Fatalf("empty stored draft wire=%s,%v", encoded, err)
 	}
 }

@@ -11,6 +11,7 @@ export function ConfirmDialog({
   confirmLabel,
   danger = false,
   pending = false,
+  menuItem = false,
   onConfirm,
 }: {
   trigger: ReactElement;
@@ -19,6 +20,7 @@ export function ConfirmDialog({
   confirmLabel: string;
   danger?: boolean;
   pending?: boolean;
+  menuItem?: boolean;
   onConfirm: () => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -27,7 +29,11 @@ export function ConfirmDialog({
 
   return (
     <Dialog.Root onOpenChange={setOpen} open={open}>
-      <Dialog.Trigger className={styles.dialogTrigger} render={trigger} />
+      <Dialog.Trigger
+        className={styles.dialogTrigger}
+        tabIndex={menuItem ? -1 : undefined}
+        render={trigger}
+      />
       <Dialog.Portal>
         <Dialog.Backdrop className={styles.dialogBackdrop} />
         <Dialog.Viewport className={styles.dialogViewport}>

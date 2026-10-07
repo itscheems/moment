@@ -2,13 +2,14 @@ package cli
 
 import (
 	"context"
+	"net/http"
+	"net/url"
+
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/postdto"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"net/http"
-	"net/url"
 )
 
 func registerArticleManagementCommands(application *Application) {

@@ -236,3 +236,32 @@ describe("what a refusal is read as", () => {
     );
   });
 });
+
+describe("empty server draft contract", () => {
+  it("accepts the canonical empty array returned by the service without any typing", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      success(
+        {
+          ...wire,
+          title: "",
+          body: { schema_version: 1, type: "doc", content: [] },
+          author_user_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          source_state: "draft",
+          source_visibility: "everyone",
+        },
+        201,
+      ),
+    );
+    const created = await new ArticleDraftApi(fetcher).create(
+      "csrf",
+      {
+        title: "",
+        body: { schema_version: 1, type: "doc", content: [] },
+        coverMediaId: null,
+      },
+      "create-once",
+    );
+    expect(created.body.content).toEqual([]);
+    expect(created.title).toBe("");
+  });
+});

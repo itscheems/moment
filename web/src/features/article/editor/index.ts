@@ -17,3 +17,5 @@ import { lazy } from "react";
  * (src/app/entryChunk.test.ts).
  */
 export const ArticleEditorPage = lazy(() => import("./ArticleEditor"));
+
+export const ArticleWorkspacePage = lazy(() => import("./ArticleWorkspace"));

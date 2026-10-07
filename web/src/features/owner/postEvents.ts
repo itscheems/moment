@@ -49,7 +49,15 @@ export function listenForOwnerPosts(
 }
 
 /** Cross-tab invalidation contains no body or credentials; receivers fetch as themselves. */
-export function listenForPublishedPosts(listener: () => void): () => void {
+export interface PublishedPostNotice {
+  id: string;
+  kind: "moment" | "article";
+  authorId?: string;
+  action?: "draft" | "published" | "unpublished" | "deleted";
+}
+export function listenForPublishedPosts(
+  listener: (notice?: PublishedPostNotice) => void,
+): () => void {
   if (typeof window.BroadcastChannel !== "function") return () => {};
   let channel: BroadcastChannel;
   try {
@@ -66,7 +74,7 @@ export function listenForPublishedPosts(listener: () => void): () => void {
       typeof message.id === "string" &&
       (message.kind === "moment" || message.kind === "article")
     )
-      listener();
+      listener(message as unknown as PublishedPostNotice);
   };
   return () => channel.close();
 }

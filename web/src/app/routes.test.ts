@@ -162,13 +162,15 @@ describe("the retired owner sign-in address", () => {
 
 describe("where an article is written", () => {
   it("answers under compose rather than under /owner", () => {
-    expect(ARTICLE_COMPOSE_PATH).toBe("/compose/article");
-    expect(resolveRoute(ARTICLE_COMPOSE_PATH).id).toBe("owner-article");
-    expect(resolveRoute("/compose/article/").id).toBe("owner-article");
+    expect(ARTICLE_COMPOSE_PATH).toBe("/compose/articles");
+    expect(resolveRoute(ARTICLE_COMPOSE_PATH).id).toBe("article-workspace");
+    expect(resolveRoute("/compose/article/").id).toBe("article-workspace");
   });
 
   it("carries the draft being edited in the address", () => {
-    expect(resolveRoute("/compose/article/01K2ABC").id).toBe("owner-article");
+    expect(resolveRoute("/compose/article/01K2ABC").id).toBe(
+      "article-workspace",
+    );
     expect(articleDraftIdFromPath("/compose/article/01K2ABC")).toBe("01K2ABC");
     expect(articleDraftIdFromPath("/compose/article/01K2ABC/")).toBe("01K2ABC");
   });
@@ -179,7 +181,9 @@ describe("where an article is written", () => {
   });
 
   it("builds the address for a draft with the id escaped", () => {
-    expect(articleDraftPath("01K2/ABC")).toBe("/compose/article/01K2%2FABC");
+    expect(articleDraftPath("01K2/ABC")).toBe(
+      "/compose/articles/drafts/01K2%2FABC",
+    );
   });
 
   it("does not take the moment composer's addresses with it", () => {
@@ -188,7 +192,25 @@ describe("where an article is written", () => {
     expect(isComposePath(ARTICLE_COMPOSE_PATH)).toBe(false);
   });
 
-  it("is the owner's, the way every other composing address is", () => {
-    expect(resolveRoute(ARTICLE_COMPOSE_PATH).ownerOnly).toBe(true);
+  it("uses account permissions rather than an owner-only route", () => {
+    expect(resolveRoute(ARTICLE_COMPOSE_PATH).ownerOnly).toBeUndefined();
+  });
+});
+
+describe("article workspace resource boundaries", () => {
+  it.each([
+    "/compose/articles",
+    "/compose/articles/published",
+    "/compose/articles/published/01K2ABC",
+    "/compose/articles/drafts/01K2ABC",
+    "/compose/articles/drafts/01K2ABC/focus",
+  ])("resolves %s independently of site ownership", (path) => {
+    expect(resolveRoute(path).id).toBe("article-workspace");
+    expect(resolveRoute(path).ownerOnly).toBeUndefined();
+  });
+  it("keeps the draft identity when entering focus", () => {
+    expect(
+      articleDraftIdFromPath("/compose/articles/drafts/01K2ABC/focus"),
+    ).toBe("01K2ABC");
   });
 });

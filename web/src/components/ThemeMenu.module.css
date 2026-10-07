@@ -476,3 +476,13 @@
     transition: none;
   }
 }
+
+.trigger[data-navigation]:focus-visible,
+.trigger[data-navigation][data-popup-open] {
+  background: var(--surface-hover-strong);
+}
+@media (hover: hover) {
+  .trigger[data-navigation]:hover {
+    background: var(--surface-hover-strong);
+  }
+}

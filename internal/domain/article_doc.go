@@ -623,10 +623,14 @@ func articleError(path, message string) error {
 //
 // Parsing the result returns an equal document, and a test holds it to that.
 func MarshalArticleDocument(document ArticleDocument) ([]byte, error) {
+	content := marshalArticleNodes(document.Content)
+	if content == nil {
+		content = []marshalledArticleNode{}
+	}
 	encoded, err := json.Marshal(marshalledArticleDocument{
 		SchemaVersion: document.SchemaVersion,
 		Type:          "doc",
-		Content:       marshalArticleNodes(document.Content),
+		Content:       content,
 	})
 	if err != nil {
 		return nil, NewError(CodeInternal, "could not serialize the article body", nil)

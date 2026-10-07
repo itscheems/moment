@@ -53,6 +53,7 @@ export function ThemeMenu({
         <Menu.Trigger
           aria-label="更多"
           className={styles.trigger}
+          data-navigation={navigation || undefined}
           data-compact-label="更多"
         >
           <Icon

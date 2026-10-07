@@ -802,3 +802,31 @@
     transition: none;
   }
 }
+
+.shell.workspaceShell {
+  inline-size: min(100%, 90rem);
+  grid-template-columns: 15.5rem minmax(0, 1fr);
+}
+.workspaceHiddenHeader {
+  display: none;
+}
+.shell.workspaceFocusShell {
+  inline-size: 100%;
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspaceFocusShell .timeline {
+  border-inline: 0;
+}
+@media (min-width: 720px) and (max-width: 1279px) {
+  .shell.workspaceShell {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+  }
+  .shell.workspaceFocusShell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 719px) {
+  .shell.workspaceShell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

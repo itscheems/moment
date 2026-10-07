@@ -7,7 +7,7 @@ export type RouteId =
   | "profile"
   | "login"
   | "owner-compose"
-  | "owner-article"
+  | "article-workspace"
   | "owner-edit"
   | "owner-settings"
   | "not-found";
@@ -28,11 +28,11 @@ export const COMPOSE_DRAFTS_PATH = "/compose/drafts";
 // Writing an article is composing, so it lives under the same top-level
 // address rather than under /owner: what a page is for decides where it sits,
 // and who may open it is the server's answer and not the URL's.
-export const ARTICLE_COMPOSE_PATH = "/compose/article";
+export const ARTICLE_COMPOSE_PATH = "/compose/articles";
 
 /** Where one draft is edited. The id is the server's, so it is escaped. */
 export function articleDraftPath(id: string): string {
-  return `${ARTICLE_COMPOSE_PATH}/${encodeURIComponent(id)}`;
+  return `${ARTICLE_COMPOSE_PATH}/drafts/${encodeURIComponent(id)}`;
 }
 
 const ARTICLE_FOCUS_PATTERN = /^\/[a-z][a-z0-9_]{2,29}\/article\/([^/]+)\/?$/;
@@ -92,11 +92,16 @@ export function isComposePath(pathname: string): boolean {
   return matchesPath(pathname, COMPOSE_PATH) || isComposeDraftsPath(pathname);
 }
 
-const ARTICLE_DRAFT_PATTERN = /^\/compose\/article\/([^/]+)\/?$/;
+const ARTICLE_DRAFT_PATTERN =
+  /^\/compose\/(?:article\/|articles\/drafts\/)([^/]+)(?:\/focus)?\/?$/;
 
 export function isArticleComposePath(pathname: string): boolean {
   return (
     matchesPath(pathname, ARTICLE_COMPOSE_PATH) ||
+    matchesPath(pathname, "/compose/article") ||
+    /^\/compose\/articles\/(?:drafts|published)(?:\/[^/]+(?:\/focus)?)?\/?$/.test(
+      pathname,
+    ) ||
     ARTICLE_DRAFT_PATTERN.test(pathname)
   );
 }
@@ -186,11 +191,10 @@ const routes: Array<AppRoute & { match: (pathname: string) => boolean }> = [
   // Ahead of the compose route so the reading of "/compose/article" is never
   // decided by how loosely that one happens to match today.
   {
-    id: "owner-article",
-    title: "写文章",
+    id: "article-workspace",
+    title: "文章",
     eyebrow: "",
     href: ARTICLE_COMPOSE_PATH,
-    ownerOnly: true,
     match: isArticleComposePath,
   },
   {
@@ -259,4 +263,39 @@ export function resolveRoute(pathname: string): AppRoute {
         : route.href,
     ownerOnly: route.ownerOnly,
   };
+}
+
+export function articlePublishedPath(id?: string): string {
+  return `${ARTICLE_COMPOSE_PATH}/published${id ? `/${encodeURIComponent(id)}` : ""}`;
+}
+export function articleWorkspaceFromPath(pathname: string): {
+  section: "drafts" | "published";
+  id: string | null;
+  focus: boolean;
+} {
+  const published = /^\/compose\/articles\/published(?:\/([^/]+))?\/?$/.exec(
+    pathname,
+  );
+  if (published) {
+    let id: string | null;
+    try {
+      id = published[1] ? decodeURIComponent(published[1]) : null;
+    } catch {
+      id = published[1] ?? null;
+    }
+    return { section: "published", id, focus: false };
+  }
+  return {
+    section: "drafts",
+    id: articleDraftIdFromPath(pathname),
+    focus: pathname.replace(/\/$/, "").endsWith("/focus"),
+  };
+}
+export function movedArticleComposePath(pathname: string): string | null {
+  if (matchesPath(pathname, "/compose/article")) return ARTICLE_COMPOSE_PATH;
+  if (/^\/compose\/article\/[^/]+\/?$/.test(pathname)) {
+    const id = articleDraftIdFromPath(pathname);
+    return id ? articleDraftPath(id) : ARTICLE_COMPOSE_PATH;
+  }
+  return null;
 }

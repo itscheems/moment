@@ -147,10 +147,10 @@ it("edits an article through a working copy rather than the Markdown page", asyn
   await openMenuAndEdit("编辑文章");
 
   expect(fetcher).toHaveBeenCalledWith(
-    `/api/v1/owner/articles/${ARTICLE_ID}/draft`,
+    `/api/v1/articles/${ARTICLE_ID}/draft`,
     expect.objectContaining({ method: "POST" }),
   );
-  expect(window.location.pathname).toBe(`/compose/article/${DRAFT_ID}`);
+  expect(window.location.pathname).toBe(`/compose/articles/drafts/${DRAFT_ID}`);
 });
 
 it("still sends a Moment to the page that edits Markdown", async () => {
@@ -182,7 +182,7 @@ it("opens the visible article edit button through the existing working-copy endp
   fireEvent.click(edit);
   expect(fetcher).toHaveBeenCalledTimes(1);
   expect(fetcher).toHaveBeenCalledWith(
-    `/api/v1/owner/articles/${ARTICLE_ID}/draft`,
+    `/api/v1/articles/${ARTICLE_ID}/draft`,
     expect.objectContaining({ method: "POST" }),
   );
   await act(async () =>
@@ -205,7 +205,7 @@ it("opens the visible article edit button through the existing working-copy endp
       ),
     ),
   );
-  expect(window.location.pathname).toBe(`/compose/article/${DRAFT_ID}`);
+  expect(window.location.pathname).toBe(`/compose/articles/drafts/${DRAFT_ID}`);
 });
 
 it("keeps an unsuccessful edit opening on the article and allows retry", async () => {

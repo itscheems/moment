@@ -14,6 +14,7 @@ func WithContentActor(ctx context.Context, user domain.User) context.Context {
 	return context.WithValue(ctx, contentActorKey{}, user)
 }
 
+// ContentActor reports the identity verified by the current transport.
 func ContentActor(ctx context.Context) (domain.User, bool) {
 	user, ok := ctx.Value(contentActorKey{}).(domain.User)
 	return user, ok

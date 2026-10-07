@@ -466,7 +466,7 @@ describe("App shell and public routes", () => {
     render(<App />);
     expect(await screen.findByRole("link", { name: "写文章" })).toHaveAttribute(
       "href",
-      "/compose/article",
+      "/compose/articles",
     );
   });
 
@@ -689,6 +689,7 @@ describe("App shell and public routes", () => {
       fireEvent.click(
         await screen.findByRole("button", { name: "乔乔 的账户菜单" }),
       );
+      await screen.findByRole("menu", { hidden: true });
       fireEvent.click(
         await screen.findByRole("menuitem", { name: "退出 @cheemschen" }),
       );

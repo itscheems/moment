@@ -17,6 +17,7 @@ import {
   type ArticleDocument,
   type PostVisibility,
   type SiteIdentity,
+  type PublicPost,
 } from "../../../api/public";
 import { useNavigation } from "../../../app/navigation";
 import { notify } from "../../../components/Feedback";
@@ -77,9 +78,21 @@ function codePoints(value: string): number {
 export function ArticleEditor({
   site,
   draftId,
+  embedded = false,
+  focused = false,
+  onSaved,
+  onPublished,
+  onBack,
+  onToggleFocus,
 }: {
   site: SiteIdentity;
   draftId: string | null;
+  embedded?: boolean;
+  focused?: boolean;
+  onSaved?: (draft: ArticleDraft) => void;
+  onPublished?: (post: PublicPost) => void;
+  onBack?: () => void;
+  onToggleFocus?: () => void;
 }) {
   const owner = useSession();
   const location = useNavigation();
@@ -308,8 +321,8 @@ export function ArticleEditor({
   }, [api]);
 
   useEffect(() => {
-    void refreshDrafts();
-  }, [refreshDrafts]);
+    if (!embedded) void refreshDrafts();
+  }, [refreshDrafts, embedded]);
 
   // Apply editability before the native UI's effects inspect the editor.
   // Read mode uses the publication renderer; the editor retains its selection.
@@ -385,6 +398,7 @@ export function ArticleEditor({
                 );
           draftRef.current = stored;
           setDraft(stored);
+          onSaved?.(stored);
           setSaveState({ kind: "saved", at: stored.updatedAt });
           // Only the work that went into this request is saved. Anything typed
           // while it was in flight is still unsaved, and the ceiling restarts
@@ -403,7 +417,7 @@ export function ArticleEditor({
             createdDraftId.current = stored.id;
             location.replace(articleDraftPath(stored.id));
           }
-          void refreshDrafts();
+          if (!embedded) void refreshDrafts();
           return stored;
         } catch (error) {
           if (isStaleDraftError(error)) {
@@ -433,7 +447,7 @@ export function ArticleEditor({
         saving.current = null;
       }
     },
-    [api, csrfToken, currentInput, location, refreshDrafts],
+    [api, csrfToken, currentInput, location, refreshDrafts, onSaved],
   );
 
   useEffect(() => {
@@ -651,7 +665,8 @@ export function ArticleEditor({
       });
       notify("文章已发布。");
       allowLeave.current = true;
-      location.replace(`/m/${encodeURIComponent(post.id)}`);
+      if (onPublished) onPublished(post);
+      else location.replace(`/m/${encodeURIComponent(post.id)}`);
     } catch (error) {
       owner.expireIfInvalidSession(error);
       notify(articleDraftErrorMessage(error), { type: "error" });
@@ -682,7 +697,8 @@ export function ArticleEditor({
       editor?.commands.setContent(toEditorContent(emptyArticleDocument()), {
         emitUpdate: false,
       });
-      location.replace(ARTICLE_COMPOSE_PATH);
+      if (onBack) onBack();
+      else location.replace(ARTICLE_COMPOSE_PATH);
       return;
     }
     if (csrfToken === "") return;
@@ -694,8 +710,9 @@ export function ArticleEditor({
     try {
       await api.discard(csrfToken, draft.id);
       notify("草稿已删除。");
-      void refreshDrafts();
-      location.replace(ARTICLE_COMPOSE_PATH);
+      if (!embedded) void refreshDrafts();
+      if (onBack) onBack();
+      else location.replace(ARTICLE_COMPOSE_PATH);
     } catch (error) {
       firstChangeAt.current = unsavedSince;
       setSaveState(saveState);
@@ -764,7 +781,10 @@ export function ArticleEditor({
 
   if (phase === "gone") {
     return (
-      <div className={styles.page} data-article-theme>
+      <div
+        className={`${styles.page} ${embedded ? styles.embeddedEditor : ""}`}
+        data-article-theme
+      >
         <div className={styles.pageError} role="alert">
           <p>这份草稿已经不在了。</p>
           <button
@@ -781,26 +801,31 @@ export function ArticleEditor({
 
   return (
     <MentionProvider identities={[site]}>
-      <div className={styles.page} data-article-theme>
+      <div
+        className={`${styles.page} ${embedded ? styles.embeddedEditor : ""}`}
+        data-article-theme
+      >
         <header className={styles.topBar} ref={topBar}>
           <button
-            aria-label="返回时间流"
+            aria-label={embedded ? "返回文章列表" : "返回时间流"}
             className={styles.toolButton}
-            onClick={() => location.goBack("/")}
+            onClick={() => (onBack ? onBack() : location.goBack("/"))}
             type="button"
           >
             <Icon name="back" />
           </button>
-          <button
-            aria-expanded={railOpen}
-            ref={libraryButton}
-            aria-controls="article-library"
-            className={styles.toolButton}
-            onClick={() => setRailOpen((value) => !value)}
-            type="button"
-          >
-            文章
-          </button>
+          {!embedded ? (
+            <button
+              aria-expanded={railOpen}
+              ref={libraryButton}
+              aria-controls="article-library"
+              className={styles.toolButton}
+              onClick={() => setRailOpen((value) => !value)}
+              type="button"
+            >
+              文章
+            </button>
+          ) : null}
           <p
             className={`${styles.status} ${
               saveState.kind === "failed" || saveState.kind === "conflict"
@@ -856,6 +881,16 @@ export function ArticleEditor({
             >
               {publishing ? "正在发布…" : "发布"}
             </button>
+            {onToggleFocus ? (
+              <button
+                className={styles.toolButton}
+                aria-label={focused ? "退出全屏编辑" : "全屏编辑"}
+                onClick={onToggleFocus}
+                type="button"
+              >
+                <Icon name={focused ? "collapse" : "expand"} />
+              </button>
+            ) : null}
             <Menu.Root>
               <Menu.Trigger aria-label="更多" className={styles.toolButton}>
                 <Icon name="more" />
@@ -881,6 +916,7 @@ export function ArticleEditor({
                       立即保存
                     </Menu.Item>
                     <ConfirmDialog
+                      menuItem
                       title="删除这份草稿？"
                       description={
                         draft?.sourceState === "withdrawn"
@@ -927,7 +963,7 @@ export function ArticleEditor({
             className={styles.railPanel}
             id="article-library"
             ref={libraryPanel}
-            hidden={!railOpen || previewing}
+            hidden={embedded || !railOpen || previewing}
           >
             <button
               className={styles.railClose}
@@ -966,7 +1002,7 @@ export function ArticleEditor({
                 try {
                   // The navigation guard saves any current work before loading the copy.
                   const workingCopy = await api.openPublished(csrfToken, id);
-                  void refreshDrafts();
+                  if (!embedded) void refreshDrafts();
                   setRailOpen(false);
                   location.navigate(articleDraftPath(workingCopy.id));
                 } catch (error) {

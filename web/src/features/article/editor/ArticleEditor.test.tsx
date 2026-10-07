@@ -1,3 +1,4 @@
+import { articleDraftIdFromPath } from "../../../app/routes";
 import "@testing-library/jest-dom/vitest";
 import { ThemeProvider } from "../../../theme/ThemeProvider";
 import {
@@ -659,7 +660,9 @@ describe("a draft that has never been saved", () => {
     await typeTitle("新的一篇");
     await advance(2_100);
     expect(calls.some((call) => call.method === "POST")).toBe(true);
-    expect(window.location.pathname).toBe(`/compose/article/${DRAFT_ID}`);
+    expect(window.location.pathname).toBe(
+      `/compose/articles/drafts/${DRAFT_ID}`,
+    );
   });
 
   it("says what the limit is when the site is already holding it", async () => {
@@ -784,7 +787,7 @@ function RoutedEditor() {
     return <p>已离开编辑器</p>;
   return (
     <ArticleEditor
-      draftId={navigation.pathname.split("/")[3] ?? null}
+      draftId={articleDraftIdFromPath(navigation.pathname)}
       site={site}
     />
   );
@@ -935,4 +938,42 @@ describe("keeping work through asynchronous saves and navigation", () => {
       visibility: "only_me",
     });
   });
+});
+
+it("keeps the editor DOM and pending text across host focus changes", async () => {
+  window.history.replaceState({}, "", `/compose/articles/drafts/${DRAFT_ID}`);
+  const host = (focused: boolean) => (
+    <FeedbackProvider>
+      <ThemeProvider>
+        <NavigationProvider>
+          <ArticleEditor
+            draftId={DRAFT_ID}
+            site={site}
+            embedded
+            focused={focused}
+          />
+        </NavigationProvider>
+      </ThemeProvider>
+    </FeedbackProvider>
+  );
+  const rendered = render(host(false));
+  await advance();
+  const content = document.querySelector('[contenteditable="true"]');
+  expect(content).not.toBeNull();
+  await typeTitle("切换全屏前未保存的标题");
+  const reads = calls.filter(
+    (call) => call.method === "GET" && call.url.endsWith(DRAFT_ID),
+  ).length;
+  rendered.rerender(host(true));
+  await advance();
+  expect(document.querySelector('[contenteditable="true"]')).toBe(content);
+  expect(titleField().value).toBe("切换全屏前未保存的标题");
+  rendered.rerender(host(false));
+  await advance();
+  expect(document.querySelector('[contenteditable="true"]')).toBe(content);
+  expect(
+    calls.filter(
+      (call) => call.method === "GET" && call.url.endsWith(DRAFT_ID),
+    ),
+  ).toHaveLength(reads);
 });

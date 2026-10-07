@@ -39,7 +39,10 @@ interface NavItem {
 // `/profile` remains the fallback for a visitor who has not signed in.
 const DEFAULT_PROFILE_HREF = "/profile";
 
-function primaryNavFor(profileHref: string): NavItem[] {
+function primaryNavFor(
+  profileHref: string,
+  articlesAvailable = false,
+): NavItem[] {
   return [
     { label: "首页", href: "/", icon: "home", active: ["home", "detail"] },
     { label: "搜索", href: "/search", icon: "search", active: ["search"] },
@@ -50,6 +53,16 @@ function primaryNavFor(profileHref: string): NavItem[] {
       icon: "owner",
       active: ["profile"],
     },
+    ...(articlesAvailable
+      ? [
+          {
+            label: "文章",
+            href: "/compose/articles",
+            icon: "article" as IconName,
+            active: ["article-workspace"] as RouteId[],
+          },
+        ]
+      : []),
   ];
 }
 
@@ -59,7 +72,7 @@ const publishNav: NavItem = {
   icon: "compose",
   // Writing an article is composing, so the nav says so rather than going
   // blank while the owner is in the middle of one.
-  active: ["owner-compose", "owner-article"],
+  active: ["owner-compose", "article-workspace"],
 };
 
 const HOME_SCROLL_DURATION_MS = 260;
@@ -196,6 +209,15 @@ function AccountRail({
           <Menu.Popup aria-label="账户" className={styles.mobileAccountPopup}>
             {/* No profile entry: the rail already carries one, and a menu that
                 repeats the row above it is a longer way to the same page. */}
+            {account.status === "active" ? (
+              <Menu.Item
+                className={styles.mobileAccountItem}
+                onClick={() => navigate("/compose/articles")}
+              >
+                <Icon name="article" />
+                <span>文章</span>
+              </Menu.Item>
+            ) : null}
             <Menu.Item
               className={styles.mobileAccountItem}
               onClick={() => navigate("/owner/settings")}
@@ -326,9 +348,11 @@ function LeftRail({
     <aside aria-label="站点导航" className={styles.leftRail}>
       <Brand site={site} />
       <nav aria-label="主要导航" className={styles.desktopNav}>
-        {primaryNavFor(profileHref).map((item) => (
-          <NavLink item={item} key={item.href} route={route} />
-        ))}
+        {primaryNavFor(profileHref, account?.status === "active").map(
+          (item) => (
+            <NavLink item={item} key={item.href} route={route} />
+          ),
+        )}
         <ThemeMenu navigation site={site} />
       </nav>
       <InternalLink
@@ -387,10 +411,12 @@ function MemoryRail({
 }
 
 function MobileAccountMenu({
+  articlesAvailable = false,
   ownerSettingsAvailable,
   site,
   profileHref,
 }: {
+  articlesAvailable?: boolean;
   ownerSettingsAvailable: boolean;
   site: SiteIdentity;
   profileHref: string;
@@ -420,6 +446,15 @@ function MobileAccountMenu({
               <Icon name="owner" />
               <span>个人资料</span>
             </Menu.Item>
+            {articlesAvailable ? (
+              <Menu.Item
+                className={styles.mobileAccountItem}
+                onClick={() => navigate("/compose/articles")}
+              >
+                <Icon name="article" />
+                <span>文章</span>
+              </Menu.Item>
+            ) : null}
             <Menu.Item
               className={styles.mobileAccountItem}
               onClick={() => navigate(ownerItem.href)}
@@ -482,7 +517,10 @@ export function AppShell({
   account?: Account | null;
   onSignOut?: () => void;
 }) {
-  const { goBack } = useNavigation();
+  const { goBack, pathname } = useNavigation();
+  const workspace = route.id === "article-workspace";
+  const focusWriting =
+    workspace && pathname.replace(/\/$/, "").endsWith("/focus");
   const scrollHomeToTop = useHomeScrollToTop();
   // State rather than a ref, so a page rendering into the slot re-renders
   // once the rail has mounted it.
@@ -502,9 +540,9 @@ export function AppShell({
             跳到主要内容
           </a>
           <div
-            className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""} ${focusReading ? styles.focusShell : ""}`}
+            className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""} ${focusReading ? styles.focusShell : ""} ${workspace ? styles.workspaceShell : ""} ${focusWriting ? styles.workspaceFocusShell : ""}`}
           >
-            {!focusReading ? (
+            {!focusReading && !focusWriting ? (
               <LeftRail
                 account={account}
                 onSignOut={onSignOut}
@@ -518,7 +556,7 @@ export function AppShell({
               <header
                 className={`${styles.timelineHeader} ${
                   route.id === "home" ? styles.homeHeader : ""
-                } ${route.id === "detail" ? styles.detailHeader : ""}`}
+                } ${route.id === "detail" ? styles.detailHeader : ""} ${workspace ? styles.workspaceHiddenHeader : ""}`}
               >
                 {route.id === "detail" ||
                 focusReading ||
@@ -546,6 +584,7 @@ export function AppShell({
                   </InternalLink>
                 ) : (
                   <MobileAccountMenu
+                    articlesAvailable={account?.status === "active"}
                     ownerSettingsAvailable={ownerSettingsAvailable}
                     profileHref={profileHref}
                     site={site}
@@ -586,11 +625,11 @@ export function AppShell({
               </header>
               {children ?? <ShellState route={route} state={state} />}
             </main>
-            {!focusReading ? (
+            {!focusReading && !workspace ? (
               <MemoryRail route={route} slotRef={setRailSlot} />
             ) : null}
           </div>
-          {!focusReading ? (
+          {!focusReading && !focusWriting ? (
             <MobileNavigation
               ownerSettingsAvailable={ownerSettingsAvailable}
               route={route}

@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
-	"github.com/moment/moment/internal/domain"
 	"time"
+
+	"github.com/moment/moment/internal/domain"
 )
 
+// ArticleDraftSummary projects list metadata without loading a document body.
 type ArticleDraftSummary struct {
 	ID               domain.ID
 	AuthorUserID     string
@@ -17,11 +19,13 @@ type ArticleDraftSummary struct {
 	UpdatedAt        time.Time
 }
 
+// ArticleManagementStore owns the management-only projections and publication transition.
 type ArticleManagementStore interface {
 	ArticleDraftSummaries(context.Context, string) ([]ArticleDraftSummary, error)
 	SetArticlePublication(context.Context, domain.ID, string) error
 }
 
+// ArticleDraftSummaries returns only the current author's unfinished metadata.
 func (service *PostService) ArticleDraftSummaries(ctx context.Context) ([]ArticleDraftSummary, error) {
 	var summaries []ArticleDraftSummary
 	err := service.transactions.Read(ctx, func(store PostStore) error {
@@ -39,6 +43,7 @@ func (service *PostService) ArticleDraftSummaries(ctx context.Context) ([]Articl
 	return summaries, normalizePostRepositoryError(err)
 }
 
+// ManagedArticle permits its author to inspect either publication state.
 func (service *PostService) ManagedArticle(ctx context.Context, id domain.ID) (Post, error) {
 	var post Post
 	err := service.transactions.Read(ctx, func(store PostStore) error {
@@ -58,6 +63,7 @@ func (service *PostService) ManagedArticle(ctx context.Context, id domain.ID) (P
 	return post, normalizePostRepositoryError(err)
 }
 
+// PublishedArticles lists canonical publications owned by the current actor.
 func (service *PostService) PublishedArticles(ctx context.Context, input ListPostsInput) (PostPage, error) {
 	var author string
 	err := service.transactions.Read(ctx, func(store PostStore) error { var err error; author, err = contentActorID(ctx, store); return err })
@@ -71,7 +77,7 @@ func (service *PostService) PublishedArticles(ctx context.Context, input ListPos
 	return service.List(ctx, input)
 }
 
-// Withdraw keeps the entry, publication position and comments. A working copy
+// WithdrawArticle keeps the entry, publication position and comments. A working copy
 // takes precedence over the public body, so unpublished edits cannot be lost.
 func (service *PostService) WithdrawArticle(ctx context.Context, id domain.ID) (ArticleDraftRecord, error) {
 	var record ArticleDraftRecord
