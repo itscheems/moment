@@ -52,6 +52,14 @@ const wire = {
 };
 
 describe("reading a draft off the wire", () => {
+  it("accepts a cached excerpt without deriving or changing the document", () => {
+    const parsed = parseArticleDraft({ ...wire, excerpt: "上游" });
+    expect(parsed.excerpt).toBe("上游");
+    expect(parsed.body).toEqual(body);
+    expect(() => parseArticleDraft({ ...wire, excerpt: 42 })).toThrow(
+      PublicApiError,
+    );
+  });
   it("refuses a row with a field the server does not send", () => {
     expect(() => parseArticleDraft({ ...wire, extra: 1 })).toThrow(
       PublicApiError,

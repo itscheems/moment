@@ -584,10 +584,10 @@ func (importer *PortableImporter) InsertArticleDraft(ctx context.Context, value 
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO article_drafts (
     author_user_id, id, title, body_json, body_schema_version, cover_media_id,
-    published_entry_id, created_at_ms, updated_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    published_entry_id, created_at_ms, updated_at_ms, excerpt
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		optionalAuthorID(value.AuthorUserID), id.String(), draft.Title, string(serialized), draft.Body.SchemaVersion,
-		value.CoverMediaID, value.PublishedEntryID, value.CreatedAtMS, value.UpdatedAtMS); err != nil {
+		value.CoverMediaID, value.PublishedEntryID, value.CreatedAtMS, value.UpdatedAtMS, domain.ArticleExcerpt(draft.Body)); err != nil {
 		return fmt.Errorf("insert portable article draft %s: %w", value.ID, err)
 	}
 	var aggregateBytes int64

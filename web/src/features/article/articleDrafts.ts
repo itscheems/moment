@@ -20,6 +20,7 @@ import {
  * Mirrors internal/transport/http/gin/articles.go and postdto.ArticleDraft.
  */
 export interface ArticleDraft {
+  excerpt?: string;
   authorUserId?: string;
   sourceState?: "draft" | "working_copy" | "withdrawn";
   sourceVisibility?: PostVisibility;
@@ -122,6 +123,7 @@ export function parseArticleDraft(value: unknown): ArticleDraft {
       ...["author_user_id", "source_state", "source_visibility"].filter(
         (key) => key in value,
       ),
+      ...("excerpt" in value ? ["excerpt"] : []),
       "id",
       "title",
       "body",
@@ -158,6 +160,7 @@ export function parseArticleDraft(value: unknown): ArticleDraft {
     throw invalidResponse("draft body_schema_version must be a version");
   }
   return {
+    ...("excerpt" in value ? { excerpt: stringField(value, "excerpt") } : {}),
     ...(typeof value.author_user_id === "string"
       ? { authorUserId: value.author_user_id }
       : {}),
@@ -443,6 +446,7 @@ function parseArticleDraftSummary(value: unknown): ArticleDraftSummary {
   if (!isRecord(value))
     throw invalidResponse("draft summary must be an object");
   const keys = [
+    ...("excerpt" in value ? ["excerpt"] : []),
     "id",
     "title",
     "published_entry_id",
@@ -481,6 +485,7 @@ function parseArticleDraftSummary(value: unknown): ArticleDraftSummary {
   )
     throw invalidResponse("draft summary state is invalid");
   return {
+    ...("excerpt" in value ? { excerpt: stringField(value, "excerpt") } : {}),
     id: stringField(value, "id"),
     title: stringField(value, "title"),
     publishedEntryId: nullableStringField(value, "published_entry_id"),

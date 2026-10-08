@@ -51,6 +51,9 @@ func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T)
 		if _, present := envelope.Data[0]["body"]; present {
 			t.Fatal("summary shipped the full body")
 		}
+		if _, present := envelope.Data[0]["excerpt"]; !present {
+			t.Fatal("summary omitted its cached text preview")
+		}
 	}
 	publish := performRequest(fixture.engine, memberCommentRequest(member, http.MethodPost, "/api/v1/articles/drafts/"+id+"/publish", ""))
 	if publish.Code != http.StatusCreated {

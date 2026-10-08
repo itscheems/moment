@@ -12,6 +12,7 @@ type ArticleDraftSummary struct {
 	ID               domain.ID
 	AuthorUserID     string
 	Title            string
+	Excerpt          string
 	PublishedEntryID *domain.ID
 	SourceState      string
 	SourceVisibility domain.Visibility

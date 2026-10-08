@@ -171,6 +171,11 @@ func runMigrationTransaction(ctx context.Context, conn *sql.Conn, migrations []m
 		if _, err := tx.ExecContext(ctx, item.sql); err != nil {
 			return fmt.Errorf("apply migration %04d_%s: %w", item.version, item.name, err)
 		}
+		if item.version == 29 {
+			if err := backfillArticleDraftExcerpts(ctx, tx); err != nil {
+				return fmt.Errorf("backfill article draft excerpts: %w", err)
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO schema_migrations (version, name, applied_at_ms, checksum)
 VALUES (?, ?, ?, ?)`, item.version, item.name, now.UTC().UnixMilli(), item.checksum); err != nil {

@@ -710,6 +710,7 @@ type ArticleDraft struct {
 	SourceVisibility  string          `json:"source_visibility"`
 	ID                string          `json:"id"`
 	Title             string          `json:"title"`
+	Excerpt           string          `json:"excerpt"`
 	Body              json.RawMessage `json:"body"`
 	BodySchemaVersion int             `json:"body_schema_version"`
 	CoverMediaID      *string         `json:"cover_media_id"`
@@ -735,6 +736,7 @@ func FromArticleDraft(record app.ArticleDraftRecord) ArticleDraft {
 		AuthorUserID: record.AuthorUserID, SourceState: state, SourceVisibility: string(visibility),
 		ID:                record.ID.String(),
 		Title:             record.Draft.Title,
+		Excerpt:           domain.ArticleExcerpt(record.Draft.Body),
 		BodySchemaVersion: record.Draft.Body.SchemaVersion,
 		CreatedAt:         record.CreatedAt.UTC(),
 		UpdatedAt:         record.UpdatedAt.UTC(),
@@ -792,6 +794,7 @@ type ArticleDraftSummary struct {
 	ID               string    `json:"id"`
 	AuthorUserID     string    `json:"author_user_id"`
 	Title            string    `json:"title"`
+	Excerpt          string    `json:"excerpt"`
 	PublishedEntryID *string   `json:"published_entry_id"`
 	SourceState      string    `json:"source_state"`
 	SourceVisibility string    `json:"source_visibility"`
@@ -808,7 +811,7 @@ func FromArticleDraftSummaries(records []app.ArticleDraftSummary) []ArticleDraft
 			v := record.PublishedEntryID.String()
 			target = &v
 		}
-		result = append(result, ArticleDraftSummary{ID: record.ID.String(), AuthorUserID: record.AuthorUserID, Title: record.Title, PublishedEntryID: target, SourceState: record.SourceState, SourceVisibility: string(record.SourceVisibility), CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt})
+		result = append(result, ArticleDraftSummary{ID: record.ID.String(), AuthorUserID: record.AuthorUserID, Title: record.Title, Excerpt: record.Excerpt, PublishedEntryID: target, SourceState: record.SourceState, SourceVisibility: string(record.SourceVisibility), CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt})
 	}
 	return result
 }

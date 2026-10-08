@@ -216,7 +216,8 @@ no override for another account's draft, private article, edit, withdrawal or
 deletion. Actor identity comes from the verified credential, never a request
 body author field. Existing ordinary-post publication permissions are unchanged.
 
-- `GET /articles/drafts` returns body-free summaries, ordered by last save.
+- `GET /articles/drafts` returns body-free summaries with a cached plain-text
+  `excerpt`, ordered by last save. Draft details also include the same excerpt.
   `GET /articles/drafts/:id` returns the selected document. Summaries and details
   include `author_user_id`, `source_state` (`draft`, `working_copy`, `withdrawn`)
   and `source_visibility`. Empty document roots serialize `content` as `[]`.
