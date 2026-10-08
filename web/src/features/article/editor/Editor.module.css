@@ -671,7 +671,7 @@
   padding: var(--space-3);
   font: inherit;
   font-size: 0.9375rem;
-  font-weight: 700;
+  font-weight: 500;
   line-height: 1.25rem;
   color: var(--article-list-muted);
   background: transparent;
@@ -681,6 +681,7 @@
     color var(--motion-fast) var(--ease-out);
 }
 .workspaceTab[data-active] {
+  font-weight: 700;
   color: var(--article-list-ink);
 }
 .workspaceTab:focus-visible {
