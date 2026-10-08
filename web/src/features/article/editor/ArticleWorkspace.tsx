@@ -478,6 +478,16 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
       </Menu.Portal>
     </Menu.Root>
   );
+  const writeAction = (
+    <button
+      className={styles.primaryAction}
+      disabled={busy}
+      onClick={() => void newArticle()}
+      type="button"
+    >
+      {busy ? "正在创建…" : "写文章"}
+    </button>
+  );
   return (
     <section
       className={`${styles.workspace} ${route.focus ? styles.workspaceFocused : ""}`}
@@ -490,15 +500,6 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
       >
         <header className={styles.workspaceListHeader}>
           <h1>文章</h1>
-          <button
-            className={styles.toolButton}
-            aria-label="写文章"
-            type="button"
-            disabled={busy}
-            onClick={() => void newArticle()}
-          >
-            <Icon name="compose" />
-          </button>
         </header>
         <Tabs.Root value={route.section} onValueChange={changeTab}>
           <Tabs.List className={styles.workspaceTabs} aria-label="文章列表">
@@ -631,6 +632,9 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
             </button>
           ) : null}
         </div>
+        {narrow ? (
+          <div className={styles.workspaceMobileWrite}>{writeAction}</div>
+        ) : null}
       </aside>
       <div
         className={styles.workspaceDetail}
@@ -716,14 +720,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
           <div className={styles.workspaceWelcome}>
             <h2>在这里写文章</h2>
             <p>继续一份草稿，或者开始写一篇新文章。</p>
-            <button
-              className={styles.primaryAction}
-              disabled={busy}
-              onClick={() => void newArticle()}
-              type="button"
-            >
-              {busy ? "正在创建…" : "写文章"}
-            </button>
+            {writeAction}
           </div>
         )}
       </div>
