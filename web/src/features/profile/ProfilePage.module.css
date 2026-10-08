@@ -220,6 +220,9 @@
   inline-size: var(--space-1);
 }
 .filterSlot {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
   overflow: hidden;
   pointer-events: auto;
 }

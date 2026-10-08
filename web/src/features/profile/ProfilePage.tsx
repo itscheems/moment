@@ -493,54 +493,64 @@ export function ProfilePage({
                 inert={filter === "article"}
               >
                 <motion.span
+                  aria-hidden="true"
                   className={styles.tabLabelContent}
                   initial={false}
                   animate={labelContentAnimation(filter !== "article")}
                   transition={tabTransition}
                 >
-                  <span aria-hidden="true">{label}</span>
-                  <span className={styles.filterSlot}>
-                    <Menu.Root>
-                      <Menu.Trigger
-                        aria-label="选择帖子类型"
-                        className={styles.filterTrigger}
-                        disabled={filter === "article"}
-                      >
-                        <Icon name="chevron-down" />
-                      </Menu.Trigger>
-                      <Menu.Portal>
-                        <Menu.Positioner
-                          anchor={leftTabSlot}
-                          side="bottom"
-                          align="center"
-                          sideOffset={4}
-                          collisionPadding={8}
-                          className={interactionStyles.sharePositioner}
-                        >
-                          <Menu.Popup
-                            aria-label="帖子类型筛选"
-                            className={interactionStyles.sharePopup}
-                          >
-                            {(["all", "moment"] as const).map((kind) => (
-                              <Menu.Item
-                                key={kind}
-                                className={interactionStyles.shareItem}
-                                onClick={() => {
-                                  selectFilter(kind);
-                                }}
-                              >
-                                <span>{kind === "all" ? "全部" : "帖子"}</span>
-                                {leftFilter === kind ? (
-                                  <Icon name="check" />
-                                ) : null}
-                              </Menu.Item>
-                            ))}
-                          </Menu.Popup>
-                        </Menu.Positioner>
-                      </Menu.Portal>
-                    </Menu.Root>
-                  </span>
+                  {label}
                 </motion.span>
+              </motion.span>
+              {/* The dropdown must not lengthen the text's percentage-based slide. */}
+              <motion.span
+                className={styles.filterSlot}
+                initial={false}
+                animate={{
+                  width: filter !== "article" ? "auto" : 0,
+                  opacity: filter !== "article" ? 1 : 0,
+                }}
+                transition={labelTransition}
+                aria-hidden={filter === "article"}
+                inert={filter === "article"}
+              >
+                <Menu.Root>
+                  <Menu.Trigger
+                    aria-label="选择帖子类型"
+                    className={styles.filterTrigger}
+                    disabled={filter === "article"}
+                  >
+                    <Icon name="chevron-down" />
+                  </Menu.Trigger>
+                  <Menu.Portal>
+                    <Menu.Positioner
+                      anchor={leftTabSlot}
+                      side="bottom"
+                      align="center"
+                      sideOffset={4}
+                      collisionPadding={8}
+                      className={interactionStyles.sharePositioner}
+                    >
+                      <Menu.Popup
+                        aria-label="帖子类型筛选"
+                        className={interactionStyles.sharePopup}
+                      >
+                        {(["all", "moment"] as const).map((kind) => (
+                          <Menu.Item
+                            key={kind}
+                            className={interactionStyles.shareItem}
+                            onClick={() => {
+                              selectFilter(kind);
+                            }}
+                          >
+                            <span>{kind === "all" ? "全部" : "帖子"}</span>
+                            {leftFilter === kind ? <Icon name="check" /> : null}
+                          </Menu.Item>
+                        ))}
+                      </Menu.Popup>
+                    </Menu.Positioner>
+                  </Menu.Portal>
+                </Menu.Root>
               </motion.span>
             </div>
           </div>
