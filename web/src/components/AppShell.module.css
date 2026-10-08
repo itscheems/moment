@@ -21,16 +21,13 @@
 }
 
 .shell {
-  inline-size: min(100%, 75.5rem);
+  --shell-rail-width: clamp(17.1875rem, calc(100vw - 65.625rem), 20.9375rem);
+  inline-size: min(100%, 86.5625rem);
   min-block-size: 100dvh;
   display: grid;
-  grid-template-columns: 15.5rem 40rem 20rem;
+  grid-template-columns: var(--shell-rail-width) 37.5rem minmax(0, 1fr);
   justify-content: center;
   margin-inline: auto;
-}
-
-.shell.detailShell {
-  grid-template-columns: 15.5rem 37.5rem 22.5rem;
 }
 
 .leftRail,
@@ -43,10 +40,18 @@
 
 .leftRail {
   z-index: var(--layer-navigation);
+}
+
+.leftRailInner {
+  inline-size: 17.1875rem;
+  max-inline-size: 100%;
+  block-size: 100%;
+  margin-inline-start: auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 0 var(--space-4) var(--space-3) 0;
+  padding: 0 var(--space-2) var(--space-3);
+  font-family: var(--font-timeline);
 }
 
 .brand {
@@ -104,11 +109,12 @@
   min-block-size: 3.25rem;
   display: flex;
   align-items: center;
-  gap: 1.15rem;
+  gap: 1.25rem;
   border-radius: 999px;
   padding-inline: var(--space-3) var(--space-5);
   color: var(--text-primary);
   font-size: 1.25rem;
+  line-height: 1.5rem;
   font-weight: 400;
   text-decoration: none;
   transition:
@@ -349,7 +355,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: 0 0 var(--space-4) 1.25rem;
+  inline-size: min(21.875rem, calc(100% - 1.875rem));
+  margin-inline-start: 1.875rem;
+  padding: 0 0 var(--space-4);
 }
 
 .searchPrompt {
@@ -397,21 +405,22 @@
 
 @media (min-width: 720px) and (max-width: 1279px) {
   .shell {
-    inline-size: min(100%, 45.5rem);
-    grid-template-columns: 5.5rem minmax(0, 40rem);
+    --shell-rail-width: 5.5rem;
+    inline-size: min(100%, 71.125rem);
+    grid-template-columns: var(--shell-rail-width) minmax(0, 1fr);
   }
 
-  .shell.detailShell {
-    grid-template-columns: 5.5rem minmax(0, 37.5rem) 2.5rem;
+  .timeline {
+    max-inline-size: 37.5rem;
   }
 
   .rightRail {
     display: none;
   }
 
-  .leftRail {
+  .leftRailInner {
     align-items: center;
-    padding-inline-end: 0;
+    padding-inline: 0;
   }
 
   .navLink span,
@@ -478,6 +487,12 @@
       opacity: 1;
       transform: translate(0, -50%);
     }
+  }
+}
+
+@media (min-width: 720px) and (max-width: 1023px) {
+  .shell {
+    inline-size: min(100%, 43rem);
   }
 }
 
@@ -740,13 +755,15 @@
 /* A document needs the same paper width it has while being written. */
 @media (min-width: 1280px) {
   .shell.detailShell:has([data-article-sheet]) {
-    grid-template-columns: 15.5rem 44.375rem 15.625rem;
+    grid-template-columns: var(--shell-rail-width) 44.375rem minmax(0, 1fr);
   }
 }
 @media (min-width: 720px) and (max-width: 1279px) {
   .shell.detailShell:has([data-article-sheet]) {
-    inline-size: min(100%, 49.875rem);
-    grid-template-columns: 5.5rem minmax(0, 44.375rem);
+    grid-template-columns: var(--shell-rail-width) minmax(0, 44.375rem);
+  }
+  .shell.detailShell:has([data-article-sheet]) .timeline {
+    max-inline-size: 44.375rem;
   }
   .shell.detailShell :global([data-article-sheet] .toc-sidebar) {
     inset-inline-end: 1rem;
@@ -783,6 +800,7 @@
 
 .focusShell .timeline {
   border-inline: 0;
+  max-inline-size: none;
   min-block-size: 100dvh;
 }
 
@@ -804,8 +822,10 @@
 }
 
 .shell.workspaceShell {
-  inline-size: min(100%, 90rem);
-  grid-template-columns: 15.5rem minmax(0, 1fr);
+  grid-template-columns: var(--shell-rail-width) minmax(0, 1fr);
+}
+.workspaceShell .timeline {
+  max-inline-size: none;
 }
 .workspaceHiddenHeader {
   display: none;
@@ -819,7 +839,7 @@
 }
 @media (min-width: 720px) and (max-width: 1279px) {
   .shell.workspaceShell {
-    grid-template-columns: 5.5rem minmax(0, 1fr);
+    grid-template-columns: var(--shell-rail-width) minmax(0, 1fr);
   }
   .shell.workspaceFocusShell {
     grid-template-columns: minmax(0, 1fr);

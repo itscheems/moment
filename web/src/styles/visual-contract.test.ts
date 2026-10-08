@@ -68,16 +68,18 @@ describe("visual foundation contract", () => {
   });
 
   it("locks the wide, tablet, and mobile shell boundaries", () => {
-    expect(shellCss).toContain("grid-template-columns: 15.5rem 40rem 20rem");
-    expect(shellCss).toContain("inline-size: min(100%, 75.5rem)");
+    expect(shellCss).toContain(
+      "grid-template-columns: var(--shell-rail-width) 37.5rem minmax(0, 1fr)",
+    );
+    expect(shellCss).toContain("inline-size: min(100%, 86.5625rem)");
     expect(shellCss).toMatch(
-      /\._shell_[\w-]+\._detailShell_[\w-]+\s*\{[^}]*grid-template-columns:\s*15\.5rem 37\.5rem 22\.5rem;/s,
+      /\._leftRailInner_[\w-]+\s*\{[^}]*inline-size: 17\.1875rem;[^}]*margin-inline-start: auto;/s,
     );
     expect(shellCss).toContain(
-      "grid-template-columns: 5.5rem minmax(0, 40rem)",
+      "grid-template-columns: var(--shell-rail-width) minmax(0, 1fr)",
     );
     expect(shellCss).toMatch(
-      /\._shell_[\w-]+\._detailShell_[\w-]+\s*\{[^}]*grid-template-columns:\s*5\.5rem minmax\(0, 37\.5rem\) 2\.5rem;/s,
+      /\._shell_[\w-]+\._workspaceShell_[\w-]+\s*\{[^}]*grid-template-columns: var\(--shell-rail-width\) minmax\(0, 1fr\);[^}]*\}/s,
     );
     expect(shellCss).toContain(
       "@media (min-width: 720px) and (max-width: 1279px)",

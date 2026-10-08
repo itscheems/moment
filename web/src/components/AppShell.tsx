@@ -337,35 +337,37 @@ function LeftRail({
   const { navigateOverlay } = useNavigation();
   return (
     <aside aria-label="站点导航" className={styles.leftRail}>
-      <Brand site={site} />
-      <nav aria-label="主要导航" className={styles.desktopNav}>
-        {primaryNavFor(profileHref).map((item) => (
-          <NavLink item={item} key={item.href} route={route} />
-        ))}
-        <ThemeMenu navigation site={site} />
-      </nav>
-      <InternalLink
-        aria-label="发布"
-        className={styles.publishAction}
-        data-compact-label="发布"
-        data-focus-key="shell:compose"
-        href="/compose"
-        onClick={(event) => {
-          if (!window.matchMedia("(min-width: 720px)").matches) return;
-          event.preventDefault();
-          navigateOverlay("/compose");
-        }}
-      >
-        <Icon name="compose" />
-        <span>发布</span>
-      </InternalLink>
-      <div className={styles.railBottom}>
-        <AccountRail
-          account={account}
-          onSignOut={onSignOut}
-          route={route}
-          settingsAvailable={ownerSettingsAvailable}
-        />
+      <div className={styles.leftRailInner}>
+        <Brand site={site} />
+        <nav aria-label="主要导航" className={styles.desktopNav}>
+          {primaryNavFor(profileHref).map((item) => (
+            <NavLink item={item} key={item.href} route={route} />
+          ))}
+          <ThemeMenu navigation site={site} />
+        </nav>
+        <InternalLink
+          aria-label="发布"
+          className={styles.publishAction}
+          data-compact-label="发布"
+          data-focus-key="shell:compose"
+          href="/compose"
+          onClick={(event) => {
+            if (!window.matchMedia("(min-width: 720px)").matches) return;
+            event.preventDefault();
+            navigateOverlay("/compose");
+          }}
+        >
+          <Icon name="compose" />
+          <span>发布</span>
+        </InternalLink>
+        <div className={styles.railBottom}>
+          <AccountRail
+            account={account}
+            onSignOut={onSignOut}
+            route={route}
+            settingsAvailable={ownerSettingsAvailable}
+          />
+        </div>
       </div>
     </aside>
   );

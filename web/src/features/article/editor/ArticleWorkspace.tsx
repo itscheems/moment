@@ -559,17 +559,24 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                             ? "工作副本"
                             : "草稿"}
                         </span>
-                        <span>
+                        <span aria-hidden="true">·</span>
+                        <time dateTime={draft.updatedAt}>
                           {
                             formatMomentDate(draft.updatedAt, site.timezone)
                               .relative
                           }
                           保存
-                        </span>
+                        </time>
                       </span>
-                      <strong>{draft.title.trim() || "无标题"}</strong>
+                      <span className={styles.workspaceRowContent}>
+                        <strong className={styles.workspaceRowTitle}>
+                          {draft.title.trim() || "无标题"}
+                        </strong>
+                      </span>
                     </button>
-                    {menu(draft, false)}
+                    <div className={styles.workspaceRowMenu}>
+                      {menu(draft, false)}
+                    </div>
                   </li>
                 ))
               : published.map((post) => (
@@ -589,19 +596,28 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                     >
                       <span className={styles.workspaceRowMeta}>
                         <span className={styles.publishedBadge}>已发布</span>
-                        <span>
+                        <span aria-hidden="true">·</span>
+                        <time dateTime={post.publishedAt}>
                           {
                             formatMomentDate(post.publishedAt, site.timezone)
                               .relative
                           }
-                        </span>
+                        </time>
                       </span>
-                      <strong>{post.article?.title}</strong>
-                      <span className={styles.workspaceExcerpt}>
-                        {post.article?.excerpt}
+                      <span className={styles.workspaceRowContent}>
+                        <strong className={styles.workspaceRowTitle}>
+                          {post.article?.title}
+                        </strong>
+                        {post.article?.excerpt ? (
+                          <span className={styles.workspaceExcerpt}>
+                            {post.article.excerpt}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
-                    {menu(post, true)}
+                    <div className={styles.workspaceRowMenu}>
+                      {menu(post, true)}
+                    </div>
                   </li>
                 ))}
           </ol>
