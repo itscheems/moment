@@ -38,7 +38,7 @@ import {
   type ArticleDraftSummary,
 } from "../articleDrafts";
 import { ArticlePage } from "../ArticlePage";
-import { formatMomentDate } from "../../posts/dates";
+import { ArticleTime } from "../ArticleTime";
 import { ArticleEditor } from "./ArticleEditor";
 import { emptyArticleDocument } from "./document";
 import styles from "./Editor.module.css";
@@ -47,6 +47,7 @@ function asSummary(draft: ArticleDraft): ArticleDraftSummary {
   return {
     id: draft.id,
     title: draft.title,
+    excerpt: draft.excerpt ?? "",
     publishedEntryId: draft.publishedEntryId,
     createdAt: draft.createdAt,
     updatedAt: draft.updatedAt,
@@ -499,15 +500,19 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
         hidden={route.focus || (narrow && route.id !== null)}
       >
         <header className={styles.workspaceListHeader}>
-          <h1>文章</h1>
+          <h1>Articles</h1>
         </header>
         <Tabs.Root value={route.section} onValueChange={changeTab}>
-          <Tabs.List className={styles.workspaceTabs} aria-label="文章列表">
+          <Tabs.List
+            className={styles.workspaceTabs}
+            aria-label="文章列表"
+            data-section={route.section}
+          >
             <Tabs.Tab className={styles.workspaceTab} value="drafts">
-              草稿
+              Drafts
             </Tabs.Tab>
             <Tabs.Tab className={styles.workspaceTab} value="published">
-              已发布
+              Published
             </Tabs.Tab>
             <Tabs.Indicator className={styles.workspaceIndicator} />
           </Tabs.List>
@@ -554,24 +559,26 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                       }
                     >
                       <span className={styles.workspaceRowMeta}>
-                        <span className={styles.draftBadge}>
-                          {draft.sourceState === "working_copy"
-                            ? "工作副本"
-                            : "草稿"}
-                        </span>
+                        <span className={styles.draftBadge}>Draft</span>
                         <span aria-hidden="true">·</span>
-                        <time dateTime={draft.updatedAt}>
-                          {
-                            formatMomentDate(draft.updatedAt, site.timezone)
-                              .relative
-                          }
-                          保存
-                        </time>
+                        <ArticleTime
+                          value={draft.updatedAt}
+                          timezone={site.timezone}
+                          draft
+                        />
                       </span>
                       <span className={styles.workspaceRowContent}>
-                        <strong className={styles.workspaceRowTitle}>
-                          {draft.title.trim() || "无标题"}
+                        <strong
+                          className={styles.workspaceRowTitle}
+                          data-empty={!draft.title.trim() || undefined}
+                        >
+                          {draft.title.trim() || "(Needs title)"}
                         </strong>
+                        {draft.excerpt ? (
+                          <span className={styles.workspaceExcerpt}>
+                            {draft.excerpt}
+                          </span>
+                        ) : null}
                       </span>
                     </button>
                     <div className={styles.workspaceRowMenu}>
@@ -595,14 +602,12 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
                       }
                     >
                       <span className={styles.workspaceRowMeta}>
-                        <span className={styles.publishedBadge}>已发布</span>
+                        <span className={styles.publishedBadge}>Published</span>
                         <span aria-hidden="true">·</span>
-                        <time dateTime={post.publishedAt}>
-                          {
-                            formatMomentDate(post.publishedAt, site.timezone)
-                              .relative
-                          }
-                        </time>
+                        <ArticleTime
+                          value={post.publishedAt}
+                          timezone={site.timezone}
+                        />
                       </span>
                       <span className={styles.workspaceRowContent}>
                         <strong className={styles.workspaceRowTitle}>
@@ -704,7 +709,16 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
               >
                 <Icon name="back" />
               </button>
-              <span className={styles.publishedBadge}>已发布</span>
+              <span className={styles.publishedBadge}>Published</span>
+              {reading ? (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <ArticleTime
+                    value={reading.publishedAt}
+                    timezone={site.timezone}
+                  />
+                </>
+              ) : null}
               <span className={styles.workspaceSpacer} />
               {reading ? (
                 <>

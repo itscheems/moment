@@ -40,6 +40,7 @@ import {
 } from "../articleDrafts";
 import { ARTICLE_COMPOSE_PATH, articleDraftPath } from "../../../app/routes";
 import { autosaveDelay, saveStatusLabel, type SaveState } from "./autosave";
+import { ArticleTime } from "../ArticleTime";
 import { ConflictNotice } from "./components/ConflictNotice";
 import { CoverField } from "./components/CoverField";
 import { DraftRail } from "./components/DraftRail";
@@ -347,9 +348,10 @@ export function ArticleEditor({
 
   /** The status line counts in minutes, so it has to be told the time. */
   useEffect(() => {
+    if (embedded) return;
     const timer = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [embedded]);
 
   const currentInput = useCallback((): ArticleDraftInput | null => {
     if (!editor || editor.isDestroyed) return null;
@@ -827,14 +829,40 @@ export function ArticleEditor({
             </button>
           ) : null}
           <p
-            className={`${styles.status} ${
+            className={`${styles.status} ${embedded ? styles.workspaceStatus : ""} ${
               saveState.kind === "failed" || saveState.kind === "conflict"
                 ? styles.statusAlert
                 : ""
             }`}
             role="status"
           >
-            {statusLine}
+            {embedded ? (
+              <>
+                <span className={styles.draftBadge}>Draft</span>
+                <span aria-hidden="true">·</span>
+                {saveState.kind === "saved" ? (
+                  <ArticleTime
+                    value={saveState.at}
+                    timezone={site.timezone}
+                    draft
+                  />
+                ) : (
+                  <span>
+                    {saveState.kind === "saving"
+                      ? "Saving…"
+                      : saveState.kind === "dirty"
+                        ? "Unsaved changes"
+                        : saveState.kind === "failed"
+                          ? "Save failed"
+                          : saveState.kind === "conflict"
+                            ? "Changed elsewhere"
+                            : "Not saved yet"}
+                  </span>
+                )}
+              </>
+            ) : (
+              statusLine
+            )}
           </p>
           <div className={styles.topActions}>
             {previewing ? (
