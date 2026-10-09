@@ -12,10 +12,7 @@ import { useUiEditorState } from "@notion/hooks/use-ui-editor-state";
 import { selectNodeAndHideFloating } from "@notion/hooks/use-floating-toolbar-visibility";
 
 // Primitive UI Components
-import {
-  Button,
-  ButtonGroup,
-} from "@notion/components/primitives/button";
+import { Button, ButtonGroup } from "@notion/components/primitives/button";
 import { Spacer } from "@notion/components/primitives/spacer";
 import {
   Menu,
@@ -25,10 +22,7 @@ import {
   MenuGroupLabel,
   MenuButton,
 } from "@notion/components/primitives/menu";
-import {
-  Combobox,
-  ComboboxList,
-} from "@notion/components/primitives/combobox";
+import { Combobox, ComboboxList } from "@notion/components/primitives/combobox";
 import { Separator } from "@notion/components/primitives/separator";
 
 // Tiptap UI

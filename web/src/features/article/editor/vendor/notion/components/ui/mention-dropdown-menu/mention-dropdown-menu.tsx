@@ -22,10 +22,7 @@ import {
   AvatarImage,
   AvatarFallback,
 } from "@notion/components/primitives/avatar";
-import {
-  Button,
-  ButtonGroup,
-} from "@notion/components/primitives/button";
+import { Button, ButtonGroup } from "@notion/components/primitives/button";
 import { Card, CardBody } from "@notion/components/primitives/card";
 
 interface User {

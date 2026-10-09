@@ -10,10 +10,7 @@ import { useTiptapEditor } from "@notion/hooks/use-tiptap-editor";
 import { ChevronDownIcon } from "@notion/components/icons/chevron-down-icon";
 
 // --- Tiptap UI ---
-import {
-  ListButton,
-  type ListType,
-} from "@notion/components/ui/list-button";
+import { ListButton, type ListType } from "@notion/components/ui/list-button";
 
 import { useListDropdownMenu } from "@notion/components/ui/list-dropdown-menu/use-list-dropdown-menu";
 

@@ -21,10 +21,7 @@ import { CodeBlockButton } from "@notion/components/ui/code-block-button";
 
 // --- UI Primitives ---
 import type { ButtonProps } from "@notion/components/primitives/button";
-import {
-  Button,
-  ButtonGroup,
-} from "@notion/components/primitives/button";
+import { Button, ButtonGroup } from "@notion/components/primitives/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,

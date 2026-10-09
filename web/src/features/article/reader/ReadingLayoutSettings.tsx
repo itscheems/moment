@@ -6,15 +6,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@notion/components/primitives/popover";
-import {
-  Card,
-  CardBody,
-  CardHeader,
-} from "@notion/components/primitives/card";
-import {
-  Button,
-  ButtonGroup,
-} from "@notion/components/primitives/button";
+import { Card, CardBody, CardHeader } from "@notion/components/primitives/card";
+import { Button, ButtonGroup } from "@notion/components/primitives/button";
 import { Icon } from "../../../components/icons";
 import {
   MOBILE_VIEWPORT_QUERY,

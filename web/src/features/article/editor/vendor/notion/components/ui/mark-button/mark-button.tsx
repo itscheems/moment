@@ -9,14 +9,8 @@ import { parseShortcutKeys } from "@notion/lib/editor-utils";
 import { useTiptapEditor } from "@notion/hooks/use-tiptap-editor";
 
 // --- Tiptap UI ---
-import type {
-  Mark,
-  UseMarkConfig,
-} from "@notion/components/ui/mark-button";
-import {
-  MARK_SHORTCUT_KEYS,
-  useMark,
-} from "@notion/components/ui/mark-button";
+import type { Mark, UseMarkConfig } from "@notion/components/ui/mark-button";
+import { MARK_SHORTCUT_KEYS, useMark } from "@notion/components/ui/mark-button";
 
 // --- UI Primitives ---
 import type { ButtonProps } from "@notion/components/primitives/button";

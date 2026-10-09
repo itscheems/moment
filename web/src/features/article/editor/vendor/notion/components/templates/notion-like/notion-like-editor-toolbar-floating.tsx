@@ -17,10 +17,7 @@ import { MoreVerticalIcon } from "@notion/components/icons/more-vertical-icon";
 import { ColorTextPopover } from "@notion/components/ui/color-text-popover";
 import { LinkPopover } from "@notion/components/ui/link-popover";
 import type { Mark } from "@notion/components/ui/mark-button";
-import {
-  canToggleMark,
-  MarkButton,
-} from "@notion/components/ui/mark-button";
+import { canToggleMark, MarkButton } from "@notion/components/ui/mark-button";
 import type { TextAlign } from "@notion/components/ui/text-align-button";
 import {
   canSetTextAlign,

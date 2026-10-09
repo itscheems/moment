@@ -10,16 +10,9 @@ import { useMenuNavigation } from "@notion/hooks/use-menu-navigation";
 import { getElementOverflowPosition } from "@notion/lib/editor-collab-utils";
 
 // --- UI Primitives ---
-import {
-  Button,
-  ButtonGroup,
-} from "@notion/components/primitives/button";
+import { Button, ButtonGroup } from "@notion/components/primitives/button";
 import { Input } from "@notion/components/primitives/input";
-import {
-  Card,
-  CardBody,
-  CardHeader,
-} from "@notion/components/primitives/card";
+import { Card, CardBody, CardHeader } from "@notion/components/primitives/card";
 
 import { getFilteredEmojis } from "@notion/components/ui/emoji-menu/emoji-menu-utils";
 

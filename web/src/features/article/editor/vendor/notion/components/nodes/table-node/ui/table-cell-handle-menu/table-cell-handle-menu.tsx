@@ -17,10 +17,7 @@ import { useTableMergeSplitCell } from "@notion/components/nodes/table-node/ui/t
 
 // --- UI Primitives ---
 import { Button } from "@notion/components/primitives/button";
-import {
-  Combobox,
-  ComboboxList,
-} from "@notion/components/primitives/combobox";
+import { Combobox, ComboboxList } from "@notion/components/primitives/combobox";
 import {
   Menu,
   MenuButton,

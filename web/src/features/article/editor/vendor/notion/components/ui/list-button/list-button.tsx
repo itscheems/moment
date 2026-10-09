@@ -18,10 +18,7 @@ import type {
   ListType,
   UseListConfig,
 } from "@notion/components/ui/list-button";
-import {
-  LIST_SHORTCUT_KEYS,
-  useList,
-} from "@notion/components/ui/list-button";
+import { LIST_SHORTCUT_KEYS, useList } from "@notion/components/ui/list-button";
 
 export interface ListButtonProps
   extends Omit<ButtonProps, "type">, UseListConfig {

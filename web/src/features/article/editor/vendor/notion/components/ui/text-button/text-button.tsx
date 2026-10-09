@@ -10,10 +10,7 @@ import { useTiptapEditor } from "@notion/hooks/use-tiptap-editor";
 
 // --- Tiptap UI ---
 import type { UseTextConfig } from "@notion/components/ui/text-button";
-import {
-  TEXT_SHORTCUT_KEY,
-  useText,
-} from "@notion/components/ui/text-button";
+import { TEXT_SHORTCUT_KEY, useText } from "@notion/components/ui/text-button";
 
 // --- UI Primitives ---
 import type { ButtonProps } from "@notion/components/primitives/button";

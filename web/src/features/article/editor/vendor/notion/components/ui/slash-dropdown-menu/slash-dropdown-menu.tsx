@@ -19,10 +19,7 @@ import type { SlashMenuConfig } from "@notion/components/ui/slash-dropdown-menu/
 import { useSlashDropdownMenu } from "@notion/components/ui/slash-dropdown-menu/use-slash-dropdown-menu";
 
 // --- UI Primitives ---
-import {
-  Button,
-  ButtonGroup,
-} from "@notion/components/primitives/button";
+import { Button, ButtonGroup } from "@notion/components/primitives/button";
 import { Separator } from "@notion/components/primitives/separator";
 import {
   Card,

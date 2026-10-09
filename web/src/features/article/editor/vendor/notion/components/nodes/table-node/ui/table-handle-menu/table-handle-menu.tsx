@@ -22,10 +22,7 @@ import { MoreVerticalIcon } from "@notion/components/icons/more-vertical-icon";
 
 // --- UI Primitives ---
 import { Button } from "@notion/components/primitives/button";
-import {
-  Combobox,
-  ComboboxList,
-} from "@notion/components/primitives/combobox";
+import { Combobox, ComboboxList } from "@notion/components/primitives/combobox";
 import {
   Menu,
   MenuButton,
