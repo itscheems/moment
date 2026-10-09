@@ -1,4 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
+import { Tooltip } from "@base-ui/react/tooltip";
 import type { EditorEvents } from "@tiptap/core";
 import { useEditor } from "@tiptap/react";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -910,14 +911,40 @@ export function ArticleEditor({
               {publishing ? "正在发布…" : "发布"}
             </button>
             {onToggleFocus ? (
-              <button
-                className={styles.toolButton}
-                aria-label={focused ? "退出全屏编辑" : "全屏编辑"}
-                onClick={onToggleFocus}
-                type="button"
-              >
-                <Icon name={focused ? "collapse" : "expand"} />
-              </button>
+              <Tooltip.Root>
+                <Tooltip.Trigger
+                  delay={350}
+                  closeDelay={80}
+                  render={
+                    <button
+                      className={styles.focusModeButton}
+                      aria-label={focused ? "退出全屏编辑" : "全屏编辑"}
+                      aria-pressed={focused}
+                      onClick={onToggleFocus}
+                      type="button"
+                    >
+                      <Icon name={focused ? "collapse" : "expand"} />
+                    </button>
+                  }
+                />
+                <Tooltip.Portal>
+                  <Tooltip.Positioner
+                    align="end"
+                    side="bottom"
+                    sideOffset={10}
+                    className={styles.focusTooltipPositioner}
+                  >
+                    <Tooltip.Popup
+                      className={styles.focusTooltip}
+                      role="tooltip"
+                    >
+                      {focused
+                        ? "退出全屏模式，返回常规编辑器。"
+                        : "开启全屏模式，专注于文章写作。"}
+                    </Tooltip.Popup>
+                  </Tooltip.Positioner>
+                </Tooltip.Portal>
+              </Tooltip.Root>
             ) : null}
             <Menu.Root>
               <Menu.Trigger aria-label="更多" className={styles.toolButton}>

@@ -942,6 +942,7 @@ describe("keeping work through asynchronous saves and navigation", () => {
 
 it("keeps the editor DOM and pending text across host focus changes", async () => {
   window.history.replaceState({}, "", `/compose/articles/drafts/${DRAFT_ID}`);
+  const toggleFocus = vi.fn();
   const host = (focused: boolean) => (
     <FeedbackProvider>
       <ThemeProvider>
@@ -951,6 +952,7 @@ it("keeps the editor DOM and pending text across host focus changes", async () =
             site={site}
             embedded
             focused={focused}
+            onToggleFocus={toggleFocus}
           />
         </NavigationProvider>
       </ThemeProvider>
@@ -960,12 +962,20 @@ it("keeps the editor DOM and pending text across host focus changes", async () =
   await advance();
   const content = document.querySelector('[contenteditable="true"]');
   expect(content).not.toBeNull();
+  const expand = screen.getByRole("button", { name: "全屏编辑" });
+  expect(expand).toHaveAttribute("aria-pressed", "false");
+  fireEvent.click(expand);
+  expect(toggleFocus).toHaveBeenCalledTimes(1);
   await typeTitle("切换全屏前未保存的标题");
   const reads = calls.filter(
     (call) => call.method === "GET" && call.url.endsWith(DRAFT_ID),
   ).length;
   rendered.rerender(host(true));
   await advance();
+  const collapse = screen.getByRole("button", { name: "退出全屏编辑" });
+  expect(collapse).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(collapse);
+  expect(toggleFocus).toHaveBeenCalledTimes(2);
   expect(document.querySelector('[contenteditable="true"]')).toBe(content);
   expect(titleField().value).toBe("切换全屏前未保存的标题");
   rendered.rerender(host(false));
