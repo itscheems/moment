@@ -1,4 +1,5 @@
 import { Menu } from "@base-ui/react/menu";
+import { Tooltip } from "@base-ui/react/tooltip";
 import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -17,6 +18,7 @@ import { RailSlotContext } from "./railSlot";
 import { HeaderActionsContext } from "./headerActions";
 import { ShellState } from "./ShellState";
 import { ThemeMenu } from "./ThemeMenu";
+import { SidebarTooltip } from "./SidebarTooltip";
 import { ThemeToggle } from "./content/notion/components/templates/notion-like/notion-like-editor-theme-toggle";
 import { MOBILE_VIEWPORT_QUERY, useMediaQuery } from "./useMediaQuery";
 import styles from "./AppShell.module.css";
@@ -177,29 +179,38 @@ function AccountRail({
   };
   return (
     <Menu.Root>
-      <Menu.Trigger
-        aria-label={`${account.displayName} 的账户菜单`}
-        className={styles.accountRail}
-      >
-        <span className={styles.accountRailAvatar}>
-          <SiteAvatar site={face} />
-        </span>
-        <span className={styles.accountRailIdentity}>
-          <span className={styles.accountRailName}>{account.displayName}</span>
-          <span className={styles.accountRailHandle}>@{account.username}</span>
-        </span>
-        <Icon name="more" />
-      </Menu.Trigger>
+      <SidebarTooltip label="账户">
+        <Menu.Trigger
+          aria-label={`${account.displayName} 的账户菜单`}
+          className={styles.accountRail}
+        >
+          <span className={styles.accountRailAvatar}>
+            <SiteAvatar site={face} />
+          </span>
+          <span className={styles.accountRailIdentity}>
+            <span className={styles.accountRailName}>
+              {account.displayName}
+            </span>
+            <span className={styles.accountRailHandle}>
+              @{account.username}
+            </span>
+          </span>
+          <Icon name="ellipsis" />
+        </Menu.Trigger>
+      </SidebarTooltip>
       <Menu.Portal>
         <Menu.Positioner
-          align="start"
+          align="center"
           className={styles.mobileAccountPositioner}
           collisionAvoidance={{ side: "flip", align: "shift" }}
           collisionPadding={8}
           side="top"
-          sideOffset={6}
+          sideOffset={10}
         >
-          <Menu.Popup aria-label="账户" className={styles.mobileAccountPopup}>
+          <Menu.Popup
+            aria-label="账户"
+            className={`${styles.mobileAccountPopup} ${styles.accountRailPopup}`}
+          >
             {/* No profile entry: the rail already carries one, and a menu that
                 repeats the row above it is a longer way to the same page. */}
             <Menu.Item
@@ -290,11 +301,16 @@ function useMobileNavigationObscured(mobileViewport: boolean): boolean {
 
 function Brand({ site }: { site: SiteIdentity }) {
   const title = site.title.trim() || "Moment";
+  const { pathname } = useNavigation();
+  const scrollHomeToTop = useHomeScrollToTop();
   return (
-    <InternalLink aria-label={`${title}首页`} className={styles.brand} href="/">
-      <svg aria-hidden="true" className={styles.brandMark} viewBox="0 0 40 40">
-        <path d="M7 30V10l13 14 13-14v20" />
-      </svg>
+    <InternalLink
+      aria-label={`${title}首页`}
+      className={styles.brand}
+      href="/"
+      onClick={pathname === "/" ? scrollHomeToTop : undefined}
+    >
+      <span aria-hidden="true" className={styles.brandMark} />
       <span className={styles.brandLabel}>{title}</span>
     </InternalLink>
   );
@@ -303,19 +319,23 @@ function Brand({ site }: { site: SiteIdentity }) {
 function NavLink({ item, route }: { item: NavItem; route: AppRoute }) {
   const current = item.active.includes(route.id);
   return (
-    <InternalLink
-      aria-current={current ? "page" : undefined}
-      aria-label={item.label}
-      className={styles.navLink}
-      data-compact-label={item.label}
-      href={item.href}
-    >
-      <Icon
-        name={item.icon}
-        variant={current ? "navigation-active" : "navigation"}
-      />
-      <span>{item.label}</span>
-    </InternalLink>
+    <SidebarTooltip label={item.label}>
+      <InternalLink
+        aria-current={current ? "page" : undefined}
+        aria-label={item.label}
+        className={styles.navLink}
+        data-compact-label={item.label}
+        href={item.href}
+      >
+        <span className={styles.navPill}>
+          <Icon
+            name={item.icon}
+            variant={current ? "navigation-active" : "navigation"}
+          />
+          <span className={styles.navLabel}>{item.label}</span>
+        </span>
+      </InternalLink>
+    </SidebarTooltip>
   );
 }
 
@@ -336,40 +356,52 @@ function LeftRail({
 }) {
   const { navigateOverlay } = useNavigation();
   return (
-    <aside aria-label="站点导航" className={styles.leftRail}>
-      <div className={styles.leftRailInner}>
-        <Brand site={site} />
-        <nav aria-label="主要导航" className={styles.desktopNav}>
-          {primaryNavFor(profileHref).map((item) => (
-            <NavLink item={item} key={item.href} route={route} />
-          ))}
-          <ThemeMenu navigation site={site} />
-        </nav>
-        <InternalLink
-          aria-label="发布"
-          className={styles.publishAction}
-          data-compact-label="发布"
-          data-focus-key="shell:compose"
-          href="/compose"
-          onClick={(event) => {
-            if (!window.matchMedia("(min-width: 720px)").matches) return;
-            event.preventDefault();
-            navigateOverlay("/compose");
-          }}
-        >
-          <Icon name="compose" />
-          <span>发布</span>
-        </InternalLink>
-        <div className={styles.railBottom}>
-          <AccountRail
-            account={account}
-            onSignOut={onSignOut}
-            route={route}
-            settingsAvailable={ownerSettingsAvailable}
-          />
+    <Tooltip.Provider delay={400}>
+      <aside aria-label="站点导航" className={styles.leftRail}>
+        <div className={styles.leftRailInner}>
+          <Brand site={site} />
+          <nav aria-label="主要导航" className={styles.desktopNav}>
+            {primaryNavFor(profileHref).map((item) => (
+              <NavLink item={item} key={item.href} route={route} />
+            ))}
+            <ThemeMenu navigation site={site} />
+          </nav>
+          <SidebarTooltip label="发布">
+            <InternalLink
+              aria-label="发布"
+              className={styles.publishAction}
+              data-compact-label="发布"
+              data-focus-key="shell:compose"
+              href="/compose"
+              onClick={(event) => {
+                if (
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                if (!window.matchMedia("(min-width: 720px)").matches) return;
+                event.preventDefault();
+                navigateOverlay("/compose");
+              }}
+            >
+              <Icon name="sidebar-publish" />
+              <span>发布</span>
+            </InternalLink>
+          </SidebarTooltip>
+          <div className={styles.railBottom}>
+            <AccountRail
+              account={account}
+              onSignOut={onSignOut}
+              route={route}
+              settingsAvailable={ownerSettingsAvailable}
+            />
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </Tooltip.Provider>
   );
 }
 

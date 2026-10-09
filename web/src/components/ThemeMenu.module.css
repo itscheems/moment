@@ -20,6 +20,39 @@
   background: var(--surface-hover);
 }
 
+.trigger[data-navigation] {
+  min-block-size: var(--rail-item-size);
+  align-items: flex-start;
+  padding: 0;
+  padding-block: var(--rail-row-gutter);
+  border-radius: 0;
+  line-height: 1.5rem;
+  font-family: inherit;
+  letter-spacing: inherit;
+  background: transparent;
+}
+
+.trigger[data-navigation] .triggerPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.25rem;
+  border-radius: 999px;
+  padding: var(--rail-item-padding);
+  transition:
+    background-color var(--motion-brand) ease,
+    box-shadow var(--motion-brand) ease;
+}
+
+.trigger[data-navigation] .triggerPill > svg {
+  flex-shrink: 0;
+  inline-size: var(--rail-icon-size);
+  block-size: var(--rail-icon-size);
+}
+
+.trigger[data-navigation] .triggerLabel {
+  margin-inline-end: var(--space-4);
+}
+
 @media (hover: hover) {
   .trigger:hover {
     background: var(--surface-hover);
@@ -44,6 +77,26 @@
   transition:
     transform var(--motion-menu) var(--ease-out),
     opacity var(--motion-menu) var(--ease-out);
+}
+
+.popup[data-navigation] {
+  inline-size: 20rem;
+  max-inline-size: calc(100vw - 1rem);
+  border: 1px solid transparent;
+  border-radius: 0.75rem;
+  font-family: var(--font-sidebar);
+  font-feature-settings: normal;
+  font-synthesis: weight style small-caps;
+  letter-spacing: normal;
+}
+
+.popup[data-navigation] .menuItem {
+  min-block-size: 3.5rem;
+  gap: var(--space-6);
+  padding: var(--space-4);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.5rem;
 }
 
 .popup[data-starting-style],
@@ -380,46 +433,15 @@
   clip-path: inset(50%);
 }
 
-@media (min-width: 720px) and (max-width: 1279px) {
+@media (min-width: 720px) and (max-width: 1264px) {
   .trigger {
     position: relative;
     justify-content: center;
     padding: 0;
   }
 
-  .trigger[data-compact-label]::after {
-    content: attr(data-compact-label);
-    position: absolute;
-    z-index: var(--layer-popover);
-    inset-block-start: 50%;
-    inset-inline-start: calc(100% + 0.45rem);
-    border-radius: 0.3rem;
-    padding: 0.35rem 0.55rem;
-    color: #ffffff;
-    background: rgb(83 100 113 / 96%);
-    box-shadow: 0 0.1rem 0.4rem rgb(15 20 25 / 15%);
-    font-size: 0.72rem;
-    font-weight: 600;
-    line-height: 1;
-    opacity: 0;
-    pointer-events: none;
-    transform: translate(0.2rem, -50%);
-    transition:
-      opacity var(--motion-fast) var(--ease-out),
-      transform var(--motion-fast) var(--ease-out);
-    white-space: nowrap;
-  }
-
-  .trigger[data-compact-label]:focus-visible::after {
-    opacity: 1;
-    transform: translate(0, -50%);
-  }
-
-  @media (hover: hover) {
-    .trigger[data-compact-label]:hover::after {
-      opacity: 1;
-      transform: translate(0, -50%);
-    }
+  .trigger[data-navigation] {
+    inline-size: 100%;
   }
 
   .triggerLabel {
@@ -428,6 +450,10 @@
     block-size: 1px;
     overflow: hidden;
     clip-path: inset(50%);
+  }
+
+  .trigger[data-navigation] .triggerLabel {
+    margin-inline-end: 0;
   }
 }
 
@@ -472,17 +498,32 @@
     transition: none;
   }
 
-  .trigger[data-compact-label]::after {
+  .trigger[data-navigation] .triggerPill {
     transition: none;
   }
 }
 
-.trigger[data-navigation]:focus-visible,
-.trigger[data-navigation][data-popup-open] {
-  background: var(--surface-hover-strong);
+.trigger[data-navigation]:focus-visible {
+  outline: none;
+}
+
+.trigger[data-navigation]:focus-visible .triggerPill {
+  box-shadow: 0 0 0 2px var(--navigation-focus);
+}
+
+.trigger[data-navigation]:active .triggerPill {
+  background: var(--navigation-hover);
 }
 @media (hover: hover) {
   .trigger[data-navigation]:hover {
-    background: var(--surface-hover-strong);
+    background: transparent;
   }
+
+  .trigger[data-navigation]:hover .triggerPill {
+    background: var(--navigation-hover);
+  }
+}
+
+.trigger[data-navigation][aria-expanded="true"] .triggerPill {
+  background: transparent;
 }

@@ -21,7 +21,7 @@
 }
 
 .shell {
-  --shell-rail-width: clamp(17.1875rem, calc(100vw - 65.625rem), 20.9375rem);
+  --shell-rail-width: clamp(17.1875rem, calc(50vw - 22.34375rem), 20.9375rem);
   inline-size: min(100%, 86.5625rem);
   min-block-size: 100dvh;
   display: grid;
@@ -35,39 +35,65 @@
   position: sticky;
   inset-block-start: 0;
   block-size: 100dvh;
-  min-block-size: 34rem;
 }
 
 .leftRail {
   z-index: var(--layer-navigation);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.rightRail {
+  min-block-size: 34rem;
 }
 
 .leftRailInner {
+  --rail-icon-size: 1.640625rem;
+  --rail-item-padding: 0.75rem;
+  --rail-item-size: calc(var(--rail-icon-size) + 2 * var(--rail-item-padding));
+  --rail-row-gutter: 0;
   inline-size: 17.1875rem;
   max-inline-size: 100%;
-  block-size: 100%;
+  min-block-size: 100%;
   margin-inline-start: auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   padding: 0 var(--space-2) var(--space-3);
-  font-family: var(--font-timeline);
+  font-family: var(--font-sidebar);
+  font-feature-settings: normal;
+  font-synthesis: weight style small-caps;
+  letter-spacing: normal;
+  text-rendering: auto;
 }
 
 .brand {
   inline-size: 3.25rem;
   block-size: 3.25rem;
+  flex-shrink: 0;
+  margin-block: 0.125rem;
   display: grid;
   place-items: center;
   border-radius: 50%;
   color: var(--text-primary);
   text-decoration: none;
-  transition: background var(--motion-fast) var(--ease-out);
+  transition: background-color var(--motion-brand) ease;
+}
+
+.brand:focus-visible,
+.brand:active {
+  background: var(--brand-hover);
+}
+
+.brand:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--navigation-focus);
 }
 
 @media (hover: hover) {
   .brand:hover {
-    background: var(--surface-hover-strong);
+    background: var(--brand-hover);
   }
 }
 
@@ -80,58 +106,113 @@
 }
 
 .brandMark {
-  inline-size: 2rem;
-  block-size: 2rem;
-  overflow: visible;
-  color: var(--text-primary);
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2.3;
-}
-
-.brand > img,
-.brand > span:first-child {
-  inline-size: 2rem;
-  block-size: 2rem;
+  inline-size: 1.875rem;
+  block-size: 1.875rem;
+  background: currentColor;
+  mask: url("../assets/logo.svg") center / contain no-repeat;
 }
 
 .desktopNav {
+  flex-shrink: 0;
   display: grid;
-  gap: 0.2rem;
-  margin-block-start: var(--space-3);
+  inline-size: 100%;
+  gap: 0;
+  margin-block: 0.125rem 0.25rem;
 }
 
-.navLink,
-.publishAction {
+.navLink {
   position: relative;
-  min-block-size: 3.25rem;
+  min-block-size: var(--rail-item-size);
   display: flex;
-  align-items: center;
-  gap: 1.25rem;
-  border-radius: 999px;
-  padding-inline: var(--space-3) var(--space-5);
+  align-items: flex-start;
+  padding-block: var(--rail-row-gutter, 0);
   color: var(--text-primary);
   font-size: 1.25rem;
   line-height: 1.5rem;
   font-weight: 400;
   text-decoration: none;
-  transition:
-    color var(--motion-fast) var(--ease-out),
-    background var(--motion-fast) var(--ease-out);
 }
 
-/* One wash for every pill in this rail, the account row included. Two values
-   made the account row look like a different kind of control sitting under the
-   navigation rather than the last item of it. */
+.navPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.25rem;
+  border-radius: 999px;
+  padding: var(--rail-item-padding);
+  transition:
+    background-color var(--motion-brand) ease,
+    box-shadow var(--motion-brand) ease;
+}
+
+.navPill > svg {
+  flex-shrink: 0;
+  inline-size: var(--rail-icon-size);
+  block-size: var(--rail-icon-size);
+}
+
+.navLabel {
+  margin-inline-end: var(--space-4);
+}
+
+.sidebarTooltipPositioner {
+  z-index: calc(var(--layer-popover) + 1);
+  pointer-events: none;
+}
+
+.sidebarTooltipPopup {
+  border-radius: 1rem;
+  padding: 0.25rem 0.5rem;
+  color: #ffffff;
+  background: rgb(0 0 0 / 80%);
+  font-family: var(--font-sidebar);
+  font-feature-settings: normal;
+  font-synthesis: weight style small-caps;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 0.75rem;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+
+.publishAction {
+  position: relative;
+  min-block-size: 3.25rem;
+  flex-shrink: 0;
+  inline-size: 90%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  margin-block: 0.25rem;
+  padding-inline: var(--space-8);
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
+  font-size: 1.0625rem;
+  line-height: 1.25rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background-color var(--motion-brand) ease,
+    box-shadow var(--motion-brand) ease;
+}
+
 .navLink:focus-visible {
-  background: var(--surface-hover-strong);
+  outline: none;
+}
+
+.navLink:focus-visible .navPill {
+  box-shadow: 0 0 0 2px var(--navigation-focus);
+}
+
+.navLink:active .navPill {
+  background: var(--navigation-hover);
 }
 
 @media (hover: hover) {
-  .navLink:hover {
-    background: var(--surface-hover-strong);
+  .navLink:hover .navPill {
+    background: var(--navigation-hover);
   }
 }
 
@@ -139,19 +220,10 @@
   font-weight: 700;
 }
 
-.publishAction {
-  inline-size: min(100%, 14.5rem);
-  justify-content: center;
-  margin-block-start: var(--space-4);
-  padding-inline: var(--space-4);
-  color: var(--button-primary-contrast);
-  background: var(--button-primary);
-  font-size: 1.05rem;
-  font-weight: 700;
-}
-
 .publishAction:focus-visible {
+  outline: none;
   background: var(--button-primary-hover);
+  box-shadow: 0 0 0 2px var(--navigation-focus);
 }
 
 @media (hover: hover) {
@@ -160,11 +232,16 @@
   }
 }
 
+.publishAction:active {
+  background: var(--button-primary-pressed);
+}
+
 .publishAction svg {
   display: none;
 }
 
 .railBottom {
+  flex-shrink: 0;
   inline-size: 100%;
   display: grid;
   gap: var(--space-1);
@@ -403,10 +480,10 @@
   display: none;
 }
 
-@media (min-width: 720px) and (max-width: 1279px) {
+@media (min-width: 720px) and (max-width: 1264px) {
   .shell {
     --shell-rail-width: 5.5rem;
-    inline-size: min(100%, 71.125rem);
+    inline-size: min(100%, 67.375rem);
     grid-template-columns: var(--shell-rail-width) minmax(0, 1fr);
   }
 
@@ -420,16 +497,20 @@
 
   .leftRailInner {
     align-items: center;
-    padding-inline: 0;
+    padding-inline: var(--space-2);
   }
 
-  .navLink span,
+  .navLabel,
   .publishAction span {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
     overflow: hidden;
     clip-path: inset(50%);
+  }
+
+  .navLabel {
+    margin-inline-end: 0;
   }
 
   .desktopNav,
@@ -447,52 +528,37 @@
     padding: 0;
   }
 
+  .navLink {
+    inline-size: 100%;
+    padding-block: var(--rail-row-gutter, 0);
+  }
+
   .publishAction svg {
     display: block;
   }
+}
 
-  .navLink[data-compact-label]::after,
-  .publishAction[data-compact-label]::after {
-    content: attr(data-compact-label);
-    position: absolute;
-    z-index: var(--layer-popover);
-    inset-block-start: 50%;
-    inset-inline-start: calc(100% + 0.45rem);
-    border-radius: 0.3rem;
-    padding: 0.35rem 0.55rem;
-    color: #ffffff;
-    background: rgb(83 100 113 / 96%);
-    box-shadow: 0 0.1rem 0.4rem rgb(15 20 25 / 15%);
-    font-size: 0.72rem;
-    font-weight: 600;
-    line-height: 1;
-    opacity: 0;
-    pointer-events: none;
-    transform: translate(0.2rem, -50%);
-    transition:
-      opacity var(--motion-fast) var(--ease-out),
-      transform var(--motion-fast) var(--ease-out);
-    white-space: nowrap;
-  }
-
-  .navLink[data-compact-label]:focus-visible::after,
-  .publishAction[data-compact-label]:focus-visible::after {
-    opacity: 1;
-    transform: translate(0, -50%);
-  }
-
-  @media (hover: hover) {
-    .navLink[data-compact-label]:hover::after,
-    .publishAction[data-compact-label]:hover::after {
-      opacity: 1;
-      transform: translate(0, -50%);
-    }
+@media (min-width: 1024px) and (max-width: 1077px) {
+  .shell {
+    inline-size: min(100%, 63rem);
   }
 }
 
-@media (min-width: 720px) and (max-width: 1023px) {
+@media (min-width: 988px) and (max-width: 1023px) {
   .shell {
-    inline-size: min(100%, 43rem);
+    --shell-rail-width: 4.25rem;
+    inline-size: min(100%, 61.75rem);
+  }
+}
+
+@media (min-width: 720px) and (max-width: 987px) {
+  .shell {
+    --shell-rail-width: calc(5.5rem + (100vw - 43rem) / 3);
+    inline-size: 100%;
+  }
+
+  .leftRailInner {
+    inline-size: 5.5rem;
   }
 }
 
@@ -606,17 +672,27 @@
 
   .mobileNav .navLink {
     min-block-size: 3.5rem;
+    align-items: center;
     justify-content: center;
     border-radius: 0;
     padding: 0;
   }
 
-  .mobileNav .navLink span {
+  .mobileNav .navLabel {
     position: absolute;
     inline-size: 1px;
     block-size: 1px;
     overflow: hidden;
     clip-path: inset(50%);
+    margin-inline-end: 0;
+  }
+
+  .mobileNav .navPill {
+    inline-size: 100%;
+    block-size: 3.5rem;
+    justify-content: center;
+    border-radius: 0;
+    padding: 0;
   }
 
   .mobileNav .navLink svg {
@@ -625,9 +701,16 @@
   }
 }
 
+@media (min-width: 720px) and (min-height: 855px) {
+  .leftRailInner {
+    --rail-row-gutter: 0.25rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skipLink,
   .brand,
+  .navPill,
   .navLink,
   .publishAction,
   .searchPrompt {
@@ -666,23 +749,50 @@
   text-align: start;
   cursor: pointer;
   transition:
-    background var(--motion-fast) var(--ease-out),
+    background-color var(--motion-brand) ease,
     box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .accountRail[data-popup-open] {
-  background: var(--surface-hover-strong);
+  background: var(--navigation-hover);
 }
 
 @media (hover: hover) {
   .accountRail:hover {
-    background: var(--surface-hover-strong);
+    background: var(--navigation-hover);
   }
 }
 
 .accountRail:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
+  outline: none;
+  background: var(--navigation-hover);
+  box-shadow: 0 0 0 2px var(--navigation-focus);
+}
+
+.accountRailPopup {
+  inline-size: 18.75rem;
+  max-inline-size: calc(100vw - 1rem);
+  border: 0;
+  border-radius: 1rem;
+  padding-block: var(--space-3);
+  font-family: var(--font-sidebar);
+  font-size: var(--text-md);
+  font-synthesis: weight style small-caps;
+  font-feature-settings: normal;
+  letter-spacing: normal;
+  line-height: 1.25rem;
+}
+
+.accountRailPopup .mobileAccountItem {
+  min-block-size: var(--target-size);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-md);
+  font-weight: 700;
+  line-height: 1.25rem;
+}
+
+.accountRailPopup .mobileAccountItem > svg {
+  display: none;
 }
 
 .accountRailAvatar {
@@ -695,6 +805,7 @@
 .accountRailAvatar > span {
   inline-size: 100%;
   block-size: 100%;
+  border: 0;
 }
 
 /* min-inline-size: 0 is what lets the two lines below actually ellipsise: a
@@ -705,7 +816,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  line-height: 1.3;
+  line-height: 1.25rem;
 }
 
 .accountRailName,
@@ -723,12 +834,13 @@
 .accountRailHandle {
   color: var(--text-secondary);
   font-size: var(--text-md);
+  font-feature-settings: "ss01";
 }
 
 .accountRail svg {
   flex: none;
-  inline-size: 1.15rem;
-  block-size: 1.15rem;
+  inline-size: 1.171875rem;
+  block-size: 1.171875rem;
   color: var(--text-primary);
 }
 
@@ -738,12 +850,12 @@
    content-width pill sat against the start edge while every nav row above it
    was a centred square, so the one row that was not a nav row was the one row
    out of line. */
-@media (max-width: 1279px) {
+@media (max-width: 1264px) {
   .accountRail {
-    inline-size: 3.25rem;
+    inline-size: 4rem;
     justify-content: center;
     margin-inline: auto;
-    padding: 0;
+    padding: var(--space-3);
   }
 
   .accountRailIdentity,
@@ -753,12 +865,12 @@
 }
 
 /* A document needs the same paper width it has while being written. */
-@media (min-width: 1280px) {
+@media (min-width: 1265px) {
   .shell.detailShell:has([data-article-sheet]) {
     grid-template-columns: var(--shell-rail-width) 44.375rem minmax(0, 1fr);
   }
 }
-@media (min-width: 720px) and (max-width: 1279px) {
+@media (min-width: 720px) and (max-width: 1264px) {
   .shell.detailShell:has([data-article-sheet]) {
     grid-template-columns: var(--shell-rail-width) minmax(0, 44.375rem);
   }
@@ -837,7 +949,7 @@
 .workspaceFocusShell .timeline {
   border-inline: 0;
 }
-@media (min-width: 720px) and (max-width: 1279px) {
+@media (min-width: 720px) and (max-width: 1264px) {
   .shell.workspaceShell {
     grid-template-columns: var(--shell-rail-width) minmax(0, 1fr);
   }

@@ -11,6 +11,7 @@ import {
 import { Icon } from "./icons";
 import { SiteAvatar, siteHandle } from "./SiteIdentity";
 import { useDocumentScrollLock } from "./useDocumentScrollLock";
+import { SidebarTooltip } from "./SidebarTooltip";
 import styles from "./ThemeMenu.module.css";
 
 const backgrounds: Array<{
@@ -41,33 +42,35 @@ export function ThemeMenu({
 }) {
   const { accent, preference, setAccent, setPreference } = useTheme();
   const [appearanceOpen, setAppearanceOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const title = site.title.trim() || "Moment";
   const previewHandle = siteHandle(site);
 
   useDocumentScrollLock(appearanceOpen);
 
+  const triggerContent = (
+    <>
+      <Icon name="more" variant={navigation ? "navigation" : "default"} />
+      <span className={styles.triggerLabel}>更多</span>
+    </>
+  );
+
   return (
     <>
-      <Menu.Root onOpenChange={setMenuOpen}>
-        <Menu.Trigger
-          aria-label="更多"
-          className={styles.trigger}
-          data-navigation={navigation || undefined}
-          data-compact-label="更多"
-        >
-          <Icon
-            name="more"
-            variant={
-              navigation
-                ? menuOpen || appearanceOpen
-                  ? "navigation-active"
-                  : "navigation"
-                : "default"
-            }
-          />
-          <span className={styles.triggerLabel}>更多</span>
-        </Menu.Trigger>
+      <Menu.Root>
+        <SidebarTooltip label="更多">
+          <Menu.Trigger
+            aria-label="更多"
+            className={styles.trigger}
+            data-navigation={navigation || undefined}
+            data-compact-label="更多"
+          >
+            {navigation ? (
+              <span className={styles.triggerPill}>{triggerContent}</span>
+            ) : (
+              triggerContent
+            )}
+          </Menu.Trigger>
+        </SidebarTooltip>
         <Menu.Portal>
           <Menu.Positioner
             align="start"
@@ -75,7 +78,11 @@ export function ThemeMenu({
             side="top"
             sideOffset={8}
           >
-            <Menu.Popup aria-label="更多选项" className={styles.popup}>
+            <Menu.Popup
+              aria-label="更多选项"
+              className={styles.popup}
+              data-navigation={navigation || undefined}
+            >
               <Menu.Item
                 className={styles.menuItem}
                 onClick={() => setAppearanceOpen(true)}
@@ -83,7 +90,7 @@ export function ThemeMenu({
                 <Icon name="theme" />
                 <span>
                   <strong>显示</strong>
-                  <small>背景与颜色</small>
+                  {!navigation ? <small>背景与颜色</small> : null}
                 </span>
               </Menu.Item>
             </Menu.Popup>

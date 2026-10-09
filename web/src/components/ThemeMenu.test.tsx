@@ -42,7 +42,7 @@ describe("ThemeMenu", () => {
     vi.stubGlobal("scrollTo", vi.fn());
   });
 
-  it("uses a heavier More icon while the navigation menu is active", async () => {
+  it("keeps the navigation More icon outlined while its menu is open", async () => {
     render(
       <ThemeProvider>
         <ThemeMenu navigation site={site} />
@@ -57,10 +57,11 @@ describe("ThemeMenu", () => {
     );
 
     fireEvent.click(trigger);
+    await screen.findByRole("menuitem", { name: "显示" });
     await waitFor(() =>
       expect(iconUse).toHaveAttribute(
         "href",
-        "/icons/ui-symbols-v3.svg#nav-more-active",
+        "/icons/ui-symbols-v3.svg#nav-more",
       ),
     );
   });

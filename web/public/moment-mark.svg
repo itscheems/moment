@@ -1,5 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
-  <title id="title">Moment</title>
-  <rect width="512" height="512" rx="112" fill="#fff"/>
-  <path d="M128 370V146l128 132 128-132v224" fill="none" stroke="#0f1419" stroke-linecap="round" stroke-linejoin="round" stroke-width="30"/>
-</svg>

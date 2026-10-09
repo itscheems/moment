@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -218,7 +219,7 @@ describe("App shell and public routes", () => {
     expect(
       screen
         .getByRole("link", { name: "发布" })
-        .querySelector('svg[data-icon="compose"]'),
+        .querySelector('svg[data-icon="sidebar-publish"]'),
     ).toBeInTheDocument();
     const desktopNavigation = screen.getByRole("navigation", {
       name: "主要导航",
@@ -240,6 +241,22 @@ describe("App shell and public routes", () => {
     expect(screen.getAllByText("乔乔的 Moment").length).toBeGreaterThan(0);
     await waitFor(() => expect(document.title).toBe("乔乔的 Moment"));
   });
+
+  it.each([{ ctrlKey: true }, { metaKey: true }])(
+    "leaves modified publish clicks to the browser (%j)",
+    async (modifier) => {
+      render(<App />);
+      await screen.findByRole("heading", { name: "还没有 Moment" });
+      const pushState = vi.spyOn(window.history, "pushState");
+      const publish = within(
+        screen.getByRole("complementary", { name: "站点导航" }),
+      ).getByRole("link", { name: "发布" });
+      expect(fireEvent.click(publish, modifier)).toBe(true);
+      expect(pushState).not.toHaveBeenCalled();
+      expect(window.location.pathname).toBe("/");
+      expect(screen.queryByRole("dialog", { name: "发布 Moment" })).toBeNull();
+    },
+  );
 
   it("starts the timeline while site identity is still pending and does not refetch after identity arrives", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "身份之前已经可读");
@@ -288,53 +305,56 @@ describe("App shell and public routes", () => {
     expect(timelineRequests).toBe(1);
   });
 
-  it("animates the active timeline tab to the top without navigating", async () => {
-    const frames = new Map<number, FrameRequestCallback>();
-    let nextFrame = 0;
-    vi.stubGlobal(
-      "requestAnimationFrame",
-      vi.fn((callback: FrameRequestCallback) => {
-        const id = ++nextFrame;
-        frames.set(id, callback);
-        return id;
-      }),
-    );
-    vi.stubGlobal(
-      "cancelAnimationFrame",
-      vi.fn((id: number) => frames.delete(id)),
-    );
-    vi.spyOn(window, "scrollY", "get").mockReturnValue(800);
+  it.each(["时间流", "乔乔的 Moment首页"])(
+    "animates %s to the top without navigating",
+    async (name) => {
+      const frames = new Map<number, FrameRequestCallback>();
+      let nextFrame = 0;
+      vi.stubGlobal(
+        "requestAnimationFrame",
+        vi.fn((callback: FrameRequestCallback) => {
+          const id = ++nextFrame;
+          frames.set(id, callback);
+          return id;
+        }),
+      );
+      vi.stubGlobal(
+        "cancelAnimationFrame",
+        vi.fn((id: number) => frames.delete(id)),
+      );
+      vi.spyOn(window, "scrollY", "get").mockReturnValue(800);
 
-    render(<App />);
-    await screen.findByRole("heading", { name: "还没有 Moment" });
-    frames.clear();
-    nextFrame = 0;
-    vi.mocked(window.scrollTo).mockClear();
-    const pushState = vi.spyOn(window.history, "pushState");
+      render(<App />);
+      await screen.findByRole("heading", { name: "还没有 Moment" });
+      frames.clear();
+      nextFrame = 0;
+      vi.mocked(window.scrollTo).mockClear();
+      const pushState = vi.spyOn(window.history, "pushState");
 
-    fireEvent.click(screen.getByRole("link", { name: "时间流" }));
-    expect(pushState).not.toHaveBeenCalled();
-    expect(window.location.pathname).toBe("/");
+      fireEvent.click(screen.getByRole("link", { name }));
+      expect(pushState).not.toHaveBeenCalled();
+      expect(window.location.pathname).toBe("/");
 
-    act(() => frames.get(1)?.(1_000));
-    expect(window.scrollTo).toHaveBeenLastCalledWith({
-      top: 800,
-      behavior: "auto",
-    });
+      act(() => frames.get(1)?.(1_000));
+      expect(window.scrollTo).toHaveBeenLastCalledWith({
+        top: 800,
+        behavior: "auto",
+      });
 
-    act(() => frames.get(2)?.(1_130));
-    expect(window.scrollTo).toHaveBeenLastCalledWith({
-      top: 400,
-      behavior: "auto",
-    });
+      act(() => frames.get(2)?.(1_130));
+      expect(window.scrollTo).toHaveBeenLastCalledWith({
+        top: 400,
+        behavior: "auto",
+      });
 
-    act(() => frames.get(3)?.(1_260));
-    expect(window.scrollTo).toHaveBeenLastCalledWith({
-      top: 0,
-      behavior: "auto",
-    });
-    expect(frames.has(4)).toBe(false);
-  });
+      act(() => frames.get(3)?.(1_260));
+      expect(window.scrollTo).toHaveBeenLastCalledWith({
+        top: 0,
+        behavior: "auto",
+      });
+      expect(frames.has(4)).toBe(false);
+    },
+  );
 
   it("keeps independently loaded content readable while identity retry repairs the shell", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "资料失败也能阅读");

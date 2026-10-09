@@ -17,7 +17,9 @@ import postCss from "../features/posts/PostPresentation.module.css?inline";
 import profileEditorCss from "../features/profile/ProfileEditor.module.css?inline";
 import profileCss from "../features/profile/ProfilePage.module.css?inline";
 import manifestSource from "../../public/manifest.webmanifest?raw";
-import markSource from "../../public/moment-mark.svg?raw";
+import markSource from "../../public/icons/favicon-v2.svg?raw";
+import appIconSource from "../../public/icons/app-icon-v2.svg?raw";
+import logoSource from "../assets/logo.svg?raw";
 import globalCss from "./global.css?inline";
 
 function channel(value: number): number {
@@ -61,10 +63,20 @@ describe("visual foundation contract", () => {
       theme_color: "#ffffff",
     });
     expect(manifest.icons).toContainEqual(
-      expect.objectContaining({ sizes: "any", purpose: "any maskable" }),
+      expect.objectContaining({ sizes: "any", purpose: "maskable" }),
     );
-    expect(markSource).toContain('stroke="#0f1419"');
-    expect(markSource).not.toContain("#2e6b4d");
+    const logoPath = new DOMParser()
+      .parseFromString(logoSource, "image/svg+xml")
+      .querySelector("path")!
+      .getAttribute("d");
+    for (const source of [markSource, appIconSource]) {
+      expect(
+        new DOMParser()
+          .parseFromString(source, "image/svg+xml")
+          .querySelector("path")!
+          .getAttribute("d"),
+      ).toBe(logoPath);
+    }
   });
 
   it("locks the wide, tablet, and mobile shell boundaries", () => {
@@ -82,7 +94,7 @@ describe("visual foundation contract", () => {
       /\._shell_[\w-]+\._workspaceShell_[\w-]+\s*\{[^}]*grid-template-columns: var\(--shell-rail-width\) minmax\(0, 1fr\);[^}]*\}/s,
     );
     expect(shellCss).toContain(
-      "@media (min-width: 720px) and (max-width: 1279px)",
+      "@media (min-width: 720px) and (max-width: 1264px)",
     );
     expect(shellCss).toContain("@media (max-width: 719px)");
     expect(shellCss).toContain("env(safe-area-inset-bottom)");
@@ -178,7 +190,8 @@ describe("visual foundation contract", () => {
     // Four Chirp weights plus the extended-heavy cut the sign-in display line
     // uses. It is its own family rather than a fifth weight, so that asking for
     // 800 anywhere else still gets the normal-width face.
-    expect(globalCss.match(/font-display: swap/g)).toHaveLength(5);
+    expect(globalCss.match(/font-display: swap/g)).toHaveLength(7);
+    expect(globalCss).toContain('font-family: "MomentSidebar"');
     expect(globalCss).toContain('font-family: "TwitterChirpExtendedHeavy"');
     expect(globalCss).toContain("font-optical-sizing: auto");
     expect(globalCss).toContain('"calt" 1');
@@ -542,14 +555,11 @@ describe("visual foundation contract", () => {
   // The account pill at the foot of the rail is asked for by its hover: a
   // target that big with no response to the pointer reads as a label rather
   // than a control. Losing either rule looks wrong and tests green.
-  // One wash for every pill in the rail. Two values made the account row read
-  // as a different kind of control sitting under the navigation rather than
-  // the last item of it.
-  it("hovers every rail pill with the same wash", () => {
-    for (const pill of ["brand", "navLink", "accountRail"]) {
+  it("keeps the navigation and account rail on the same hover wash", () => {
+    for (const pill of ["navLink", "accountRail"]) {
       expect(shellCss).toMatch(
         new RegExp(
-          `\\._${pill}_[\\w-]+:hover[^{]*\\{[^}]*background: var\\(--surface-hover-strong\\)`,
+          `\\._${pill}_[\\w-]+:hover[^{]*\\{[^}]*background: var\\(--navigation-hover\\)`,
           "s",
         ),
       );
@@ -558,10 +568,10 @@ describe("visual foundation contract", () => {
 
   it("gives the account rail a hover that fades rather than snaps", () => {
     expect(shellCss).toMatch(
-      /\._accountRail_[\w-]+\s*\{[^}]*transition:[^;]*background var\(--motion-fast\)/s,
+      /\._accountRail_[\w-]+\s*\{[^}]*transition:[^;]*background-color var\(--motion-brand\)/s,
     );
     expect(shellCss).toMatch(
-      /\._accountRail_[\w-]+:hover[^{]*\{[^}]*background: var\(--surface-hover-strong\)/s,
+      /\._accountRail_[\w-]+:hover[^{]*\{[^}]*background: var\(--navigation-hover\)/s,
     );
     // A pill this size needs more than the nav rows' wash to read as pressed
     // rather than merely tinted, and the value has to exist in every theme --

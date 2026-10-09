@@ -1,4 +1,20 @@
 @font-face {
+  font-family: "MomentSidebar";
+  src: url("../assets/fonts/sidebar-regular.woff") format("woff");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "MomentSidebar";
+  src: url("../assets/fonts/sidebar-bold.woff") format("woff");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
   font-family: "TwitterChirp";
   src: url("/fonts/twitter-chirp-regular.woff") format("woff");
   font-style: normal;
@@ -67,6 +83,9 @@
   --font-timeline:
     "TwitterChirp", -apple-system, "system-ui", "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
+  --font-sidebar:
+    "MomentSidebar", -apple-system, "system-ui", "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
   --font-signin-display:
     "TwitterChirpExtendedHeavy", "TwitterChirp", -apple-system, "system-ui",
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -108,6 +127,13 @@
      Dark themes derive the same 10% / 20% tint from their own ink below. */
   --icon-button-hover: #e7e7e7;
   --icon-button-pressed: #cfd0d1;
+  --navigation-hover: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  --navigation-focus: color-mix(
+    in srgb,
+    var(--text-primary) 50%,
+    var(--surface)
+  );
+  --brand-hover: var(--navigation-hover);
   /* The compose dialog's scrim. The reference reads #d9d9da over a white
      page, which is this app's own ink at 16%; the dark themes lift the page
      with the blue-grey instead, where a black scrim would be invisible. */
@@ -149,6 +175,7 @@
   --radius-panel: 1rem;
   --target-size: 2.75rem;
   --motion-fast: 140ms;
+  --motion-brand: 200ms;
   --motion-menu: 120ms;
   --motion-popover: 140ms;
   --motion-dialog: 160ms;
