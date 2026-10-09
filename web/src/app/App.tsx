@@ -116,7 +116,24 @@ function routeSearchKey(search: string): string {
 
 function PublicApp() {
   const location = useNavigation();
-  const requestedRoute = resolveRoute(location.pathname);
+  const loginRoute = resolveRoute(location.pathname).id === "login";
+  // Reauthentication changes the address, not the work in progress. Keep the
+  // original reading/editing surface mounted while the standalone login page
+  // is visible, so a successful login returns to the same buffers and media.
+  const [reauthLocation, setReauthLocation] = useState<{
+    pathname: string;
+    search: string;
+    overlayFrom: { pathname: string; search: string } | null;
+  } | null>(null);
+  const expiryRedirected = useRef(false);
+  const contentLocation =
+    reauthLocation &&
+    (loginRoute ||
+      (location.pathname === reauthLocation.pathname &&
+        location.search === reauthLocation.search))
+      ? reauthLocation
+      : location;
+  const requestedRoute = resolveRoute(contentLocation.pathname);
   // Composing is a dialog wherever the page has room for one, whether it was
   // opened from the timeline or the address was loaded cold. Reloading it used
   // to drop to a bare compose screen with nothing behind it; the reference
@@ -125,10 +142,10 @@ function PublicApp() {
   const overlayCompose =
     requestedRoute.id === "owner-compose" && composeDialogViewport;
   const displayLocation = overlayCompose
-    ? (location.overlayFrom ?? HOME_LOCATION)
-    : location;
-  const quotedPostId = hasValidRawQueryEncoding(location.search)
-    ? (new URLSearchParams(location.search).get("quote") ?? undefined)
+    ? (contentLocation.overlayFrom ?? HOME_LOCATION)
+    : contentLocation;
+  const quotedPostId = hasValidRawQueryEncoding(contentLocation.search)
+    ? (new URLSearchParams(contentLocation.search).get("quote") ?? undefined)
     : undefined;
   const route = resolveRoute(displayLocation.pathname);
   const state =
@@ -149,7 +166,8 @@ function PublicApp() {
     route.id === "home" ? displayLocation.search : "",
   );
   // The drafts list lives in the address, so a reload comes back to it.
-  const draftsOpen = overlayCompose && isComposeDraftsPath(location.pathname);
+  const draftsOpen =
+    overlayCompose && isComposeDraftsPath(contentLocation.pathname);
   const overlayComposer = useRef<ComposerHandle>(null);
   const composeDialogRef = useRef<HTMLDivElement>(null);
   const draftsBackRef = useRef<HTMLButtonElement>(null);
@@ -166,14 +184,55 @@ function PublicApp() {
   // single owner such an instance has is never locked out of it.
   const siteOwner = ownsSite(owner.account);
   const ownerSession = owner.state === "signed-in" && siteOwner;
-  // An expired session still renders the pages behind it; they carry their own
-  // inline re-login rather than throwing the reader back to a login screen.
+  // Retain the expired account's editing surfaces behind reauthentication so
+  // the new session can resume the same buffers.
   const signedIn = owner.state === "signed-in" || owner.state === "expired";
   const ownerCapable = signedIn && siteOwner;
 
   useDocumentScrollLock(
-    (overlayCompose && siteIdentityReady) || composeExitOpen,
+    !loginRoute && ((overlayCompose && siteIdentityReady) || composeExitOpen),
   );
+
+  useEffect(() => {
+    if (owner.state !== "expired") {
+      expiryRedirected.current = false;
+      return;
+    }
+    if (
+      loginRoute ||
+      expiryRedirected.current ||
+      owner.expiryReason === "credential-rotation"
+    )
+      return;
+    expiryRedirected.current = true;
+    setReauthLocation({
+      pathname: location.pathname,
+      search: location.search,
+      overlayFrom: location.overlayFrom,
+    });
+    location.replace(
+      `/login?return=${encodeURIComponent(`${location.pathname}${location.search}`)}`,
+    );
+  }, [location, loginRoute, owner.expiryReason, owner.state]);
+
+  useEffect(() => {
+    if (!reauthLocation || loginRoute) return;
+    if (owner.state === "expired") {
+      if (
+        location.pathname !== reauthLocation.pathname ||
+        location.search !== reauthLocation.search
+      )
+        setReauthLocation(null);
+      return;
+    }
+    if (location.pathname === reauthLocation.pathname) {
+      location.replace(
+        `${reauthLocation.pathname}${reauthLocation.search}`,
+        reauthLocation.overlayFrom,
+      );
+    }
+    setReauthLocation(null);
+  }, [location, loginRoute, owner.state, reauthLocation]);
 
   const closeOverlayComposer = () => {
     location.goBack(`${displayLocation.pathname}${displayLocation.search}`);
@@ -266,6 +325,7 @@ function PublicApp() {
   // they were actually asking for. It used to render the site owner's profile
   // to whoever opened it, so a signed-in member met somebody else's page.
   useEffect(() => {
+    if (loginRoute) return;
     const pathname = displayLocation.pathname;
     if (pathname !== "/profile" && pathname !== "/profile/") return;
     // Still resolving, or unable to say. Neither is an answer to act on.
@@ -280,7 +340,13 @@ function PublicApp() {
     // pushed sign-in again: the arrow on that page went nowhere, and the
     // shell flashed on each bounce.
     location.replace(own ?? "/login?return=%2Fprofile");
-  }, [displayLocation.pathname, location, owner.account, owner.state]);
+  }, [
+    displayLocation.pathname,
+    location,
+    loginRoute,
+    owner.account,
+    owner.state,
+  ]);
 
   // Composing moved out from under /owner. An entry already in somebody's
   // history renders as it did and has its address corrected in place, rather
@@ -296,6 +362,7 @@ function PublicApp() {
   // not a login form folded into the compose dialog, which asked a visitor to
   // sign in inside a surface they had no business seeing yet.
   useEffect(() => {
+    if (loginRoute || owner.state === "expired") return;
     const composing =
       requestedRoute.id === "owner-compose" ||
       requestedRoute.id === "article-workspace";
@@ -308,16 +375,34 @@ function PublicApp() {
     // the page they had just signed in on.
     if (owner.session !== null) return;
     location.replace(`/login?return=${encodeURIComponent(location.pathname)}`);
-  }, [location, owner.account, owner.state, ownerCapable, requestedRoute.id]);
+  }, [
+    location,
+    loginRoute,
+    owner.account,
+    owner.state,
+    ownerCapable,
+    requestedRoute.id,
+  ]);
 
   useEffect(() => {
     const siteTitle = site.title.trim() || "Moment";
-    const titleRoute = overlayCompose ? requestedRoute : route;
+    const titleRoute = loginRoute
+      ? resolveRoute(location.pathname)
+      : overlayCompose
+        ? requestedRoute
+        : route;
     document.title =
       titleRoute.id === "home"
         ? siteTitle
         : `${titleRoute.title} · ${siteTitle}`;
-  }, [overlayCompose, requestedRoute, route, site.title]);
+  }, [
+    location.pathname,
+    loginRoute,
+    overlayCompose,
+    requestedRoute,
+    route,
+    site.title,
+  ]);
 
   useEffect(() => {
     let composing = false;
@@ -433,13 +518,9 @@ function PublicApp() {
   // Sign-in is the whole page, not a panel inside the shell. Every hook above
   // has already run, so returning here changes what is rendered without
   // changing what is evaluated.
-  if (route.id === "login") return <LoginPage site={site} />;
+  if (loginRoute && !reauthLocation) return <LoginPage site={site} />;
 
-  return (
-    // The owner's handle is the one this app knows without asking. Anything
-    // else a body mentions is resolved against the server before it becomes a
-    // link, because a mention is text somebody typed and not a reference
-    // anything checked.
+  const readingSurface = (
     <MentionProvider identities={siteIdentityReady ? [site] : []}>
       <AppShell
         account={owner.account}
@@ -543,7 +624,7 @@ function PublicApp() {
           )
         ) : null}
         {siteIdentityReady && route.id === "article-workspace" ? (
-          owner.account?.status === "active" && owner.state === "signed-in" ? (
+          owner.account?.status === "active" && signedIn ? (
             <Suspense
               fallback={
                 <p className={styles.editorLoading} role="status">
@@ -598,11 +679,17 @@ function PublicApp() {
             }
             requestOverlayComposerClose();
           }}
-          open
+          open={!loginRoute}
         >
-          <Dialog.Portal>
-            <Dialog.Backdrop className={styles.composeBackdrop} />
-            <Dialog.Viewport className={styles.composeViewport}>
+          <Dialog.Portal keepMounted>
+            <Dialog.Backdrop
+              className={styles.composeBackdrop}
+              style={loginRoute ? { display: "none" } : undefined}
+            />
+            <Dialog.Viewport
+              className={styles.composeViewport}
+              style={loginRoute ? { display: "none" } : undefined}
+            >
               <Dialog.Popup
                 className={styles.composeDialog}
                 // Focus the textarea so the owner can write immediately.
@@ -768,6 +855,19 @@ function PublicApp() {
         </Dialog.Portal>
       </Dialog.Root>
     </MentionProvider>
+  );
+
+  return (
+    <>
+      {loginRoute ? <LoginPage site={site} /> : null}
+      <div
+        hidden={loginRoute}
+        inert={loginRoute}
+        style={loginRoute ? undefined : { display: "contents" }}
+      >
+        {readingSurface}
+      </div>
+    </>
   );
 }
 

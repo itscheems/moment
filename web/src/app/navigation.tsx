@@ -28,7 +28,7 @@ interface NavigationContextValue extends NavigationLocation {
    * chose. The entry keeps its standing in the history, so one reached from
    * inside the app still goes back inside the app.
    */
-  replace: (href: string) => void;
+  replace: (href: string, overlayFrom?: LocationSnapshot | null) => void;
   /**
    * Opens `href` over what is on screen now, or over `from` when the caller
    * knows better -- a second face of the same overlay keeps the first one's
@@ -187,19 +187,23 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   // /profile, which pushed sign-in again, with the shell flashing in
   // between -- so the entry that asked for the redirect is overwritten and
   // back goes to wherever the reader was before it.
-  const replace = useCallback((href: string) => {
-    window.history.replaceState(
-      {
-        momentFresh: true,
-        momentInternal: historyState().momentInternal,
-        momentScrollY: 0,
-      },
-      "",
-      href,
-    );
-    setLocation(locationSnapshot(window.history.state));
-    window.scrollTo({ top: 0, behavior: "auto" });
-  }, []);
+  const replace = useCallback(
+    (href: string, overlayFrom?: LocationSnapshot | null) => {
+      window.history.replaceState(
+        {
+          momentFresh: true,
+          momentInternal: historyState().momentInternal,
+          momentScrollY: 0,
+          ...(overlayFrom ? { momentOverlayFrom: overlayFrom } : {}),
+        },
+        "",
+        href,
+      );
+      setLocation(locationSnapshot(window.history.state));
+      window.scrollTo({ top: 0, behavior: "auto" });
+    },
+    [],
+  );
 
   const navigateOverlay = useCallback(
     function navigateToOverlay(href: string, from?: LocationSnapshot | null) {

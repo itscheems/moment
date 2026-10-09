@@ -429,7 +429,8 @@ export function ProfilePage({
               </button>
             }
           />
-          {ownerView ? (
+          {ownsSite(owner.account) &&
+          (owner.state === "signed-in" || owner.state === "expired") ? (
             <div className={styles.profileEditorSlot}>
               <ProfileEditor onSaved={adoptSite} site={site} />
             </div>

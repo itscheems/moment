@@ -21,6 +21,7 @@ export function LoginPage({ site }: { site: SiteIdentity }) {
   const { goBack } = useNavigation();
   return (
     <div className={styles.loginScreen}>
+      <div aria-hidden="true" className={styles.brandPanel} />
       {/* The way out is where the reader came from, in the corner of the
           page, where every other page keeps its arrow -- not a strip under
           the form, which read as a third panel and sat below the fold on a
@@ -32,6 +33,15 @@ export function LoginPage({ site }: { site: SiteIdentity }) {
         className={styles.loginBack}
         href="/"
         onClick={(event) => {
+          if (
+            event.defaultPrevented ||
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.altKey ||
+            event.shiftKey
+          )
+            return;
           event.preventDefault();
           goBack("/");
         }}
@@ -39,7 +49,6 @@ export function LoginPage({ site }: { site: SiteIdentity }) {
         <Icon name="back" />
       </InternalLink>
       <div className={styles.loginSplit}>
-        <div aria-hidden="true" className={styles.brandPanel} />
         <main className={styles.actionPanel}>
           <div className={styles.headlineBlock}>
             {/* The site's own name is not the headline. A visitor arrives here

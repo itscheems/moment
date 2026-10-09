@@ -466,7 +466,7 @@ describe("profile editor for a member", () => {
     expect(upload.init?.method).toBe("POST");
     expect(upload.init?.credentials).toBe("same-origin");
     expect(new Headers(upload.init?.headers).get("X-CSRF-Token")).toBe(
-      "csrf-member",
+      "csrf-from-cookie",
     );
     // The browser has to write the multipart boundary, so naming the type here
     // would make the body unreadable.

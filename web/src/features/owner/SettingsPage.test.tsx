@@ -678,9 +678,10 @@ describe("owner site settings", () => {
       await screen.findByText(/会话已过期。更改仍保留/),
     ).toBeInTheDocument();
     expect(screen.getByLabelText(/^时区/)).toHaveValue("Asia/Tokyo");
-    expect(
-      screen.getByRole("heading", { name: "重新登录" }),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(new URLSearchParams(window.location.search).get("return")).toBe(
+      "/owner/settings",
+    );
   });
 
   it("restores dialog focus and reveals, copies, then forgets a rotated token", async () => {

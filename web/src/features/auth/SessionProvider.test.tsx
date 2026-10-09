@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -9,6 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionProvider, useSession } from "./SessionProvider";
+import { makeAccountLimits } from "../../test/accountFixtures";
 
 const channelName = "moment.owner.session.sync.v1";
 const sessionKey = "moment.owner.session.v1";
@@ -77,6 +79,29 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+function accountSession(csrfToken: string) {
+  return json({
+    data: {
+      csrf_token: csrfToken,
+      expires_at: "2999-08-11T01:00:00.000Z",
+      account: {
+        user_id: "00000000000000000000000000000000",
+        username: "owner",
+        display_name: "Owner",
+        bio: "",
+        avatar_media_id: null,
+        cover_media_id: null,
+        role: "owner",
+        status: "active",
+        username_chosen: true,
+        profile_url: "/owner",
+      },
+      limits: makeAccountLimits(),
+    },
+    meta: {},
+  });
+}
+
 function Probe({ name }: { name: string }) {
   const owner = useSession();
   return (
@@ -85,8 +110,14 @@ function Probe({ name }: { name: string }) {
       <output data-testid={`${name}-csrf`}>
         {owner.session?.csrfToken ?? "none"}
       </output>
+      <output data-testid={`${name}-account`}>
+        {owner.account?.username ?? "none"}
+      </output>
       <button onClick={() => void owner.login("bearer-secret")} type="button">
         login {name}
+      </button>
+      <button onClick={() => owner.forgetSession(null)} type="button">
+        forget {name}
       </button>
     </section>
   );
@@ -130,6 +161,95 @@ describe("account session cross-tab repair", () => {
     FakeBroadcastChannel.reset();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("replaces stored CSRF with the session actually carried by the cookie", async () => {
+    window.sessionStorage.setItem(
+      sessionKey,
+      JSON.stringify({
+        csrf_token: "csrf-before-another-tab-signed-in",
+        expires_at: "2999-08-11T01:00:00.000Z",
+        issued_at: Date.now() - 1000,
+        version: "stored-session-0001",
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => accountSession("csrf-current-cookie")),
+    );
+    render(
+      <SessionProvider>
+        <Probe name="restored" />
+      </SessionProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("restored-state")).toHaveTextContent(
+        "signed-in",
+      ),
+    );
+    expect(screen.getByTestId("restored-csrf")).toHaveTextContent(
+      "csrf-current-cookie",
+    );
+    expect(window.sessionStorage.getItem(sessionKey)).toContain(
+      "csrf-current-cookie",
+    );
+  });
+
+  it("keeps the marker when stored credentials already match the cookie", async () => {
+    const stored = {
+      csrf_token: "csrf-current-cookie",
+      expires_at: "2999-08-11T01:00:00.000Z",
+      issued_at: Date.now() - 1000,
+      version: "stored-session-0001",
+    };
+    window.sessionStorage.setItem(sessionKey, JSON.stringify(stored));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => accountSession(stored.csrf_token)),
+    );
+    render(
+      <SessionProvider>
+        <Probe name="unchanged" />
+      </SessionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("unchanged-state")).toHaveTextContent(
+        "signed-in",
+      ),
+    );
+    expect(JSON.parse(window.sessionStorage.getItem(sessionKey)!)).toEqual(
+      stored,
+    );
+    expect(FakeBroadcastChannel.posted).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "offer-session" }),
+      ]),
+    );
+  });
+
+  it("does not restore a session from a response started before signing out", async () => {
+    let resolveStatus!: (response: Response) => void;
+    const status = new Promise<Response>((resolve) => {
+      resolveStatus = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => status),
+    );
+    render(
+      <SessionProvider>
+        <Probe name="signed-out" />
+      </SessionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "forget signed-out" }));
+    await act(async () => {
+      resolveStatus(accountSession("csrf-ended"));
+    });
+
+    expect(screen.getByTestId("signed-out-state")).toHaveTextContent("guest");
+    expect(screen.getByTestId("signed-out-csrf")).toHaveTextContent("none");
+    expect(screen.getByTestId("signed-out-account")).toHaveTextContent("none");
   });
 
   it("answers a new tab handshake without storing or broadcasting the bearer", async () => {

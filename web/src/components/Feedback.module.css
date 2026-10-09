@@ -42,6 +42,7 @@
 }
 
 .title {
+  margin: 0;
   font-size: var(--text-sm);
   font-weight: 600;
   line-height: 1.35;
@@ -89,8 +90,8 @@
 
 /* Dismissal keeps a full 44px target while the glyph itself stays quiet. */
 .close {
-  inline-size: 2.5rem;
-  block-size: 2.5rem;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -145,5 +146,205 @@
   .action,
   .close {
     transition: none;
+  }
+}
+
+/* Login has no bottom navigation. Its feedback stays in the visible top
+   corner, clear of the return button and above the on-screen keyboard. */
+.loginViewport {
+  inset-block-start: calc(
+    var(--feedback-visual-top, 0px) +
+      max(var(--space-3), env(safe-area-inset-top))
+  );
+  inset-block-end: auto;
+  inset-inline-start: auto;
+  inset-inline-end: calc(
+    var(--feedback-visual-right, 0px) +
+      max(var(--space-4), env(safe-area-inset-right))
+  );
+  inline-size: min(24rem, calc(var(--feedback-visual-width, 100vw) - 5.5rem));
+  margin-inline: 0;
+}
+
+/* The material and motion belong to login feedback only. Ordinary toast
+   tokens, placement, timings, and transitions retain their defaults. */
+.loginToast {
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  border-radius: 1.75rem;
+  color: #0f1419;
+  background: transparent;
+  box-shadow: 0 6px 20px rgb(15 20 25 / 12%);
+  transform-origin: top right;
+  transition:
+    transform 360ms cubic-bezier(0.22, 1.35, 0.36, 1),
+    opacity 180ms ease-out,
+    filter 260ms ease-out;
+}
+
+.lensDefinitions {
+  position: absolute;
+  inline-size: 0;
+  block-size: 0;
+  pointer-events: none;
+}
+
+.loginGlass {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(
+    145deg,
+    rgb(255 255 255 / 25%),
+    rgb(240 247 255 / 10%)
+  );
+  -webkit-backdrop-filter: var(--login-glass-filter, blur(8px) saturate(135%));
+  backdrop-filter: var(--login-glass-filter, blur(8px) saturate(135%));
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 95%),
+    inset 0 -1px 1px rgb(86 107 128 / 24%);
+}
+
+.loginGlass::before,
+.loginGlass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.loginGlass::before {
+  background:
+    radial-gradient(
+      ellipse 70% 24px at 15% -8px,
+      rgb(255 255 255 / 95%),
+      transparent
+    ),
+    radial-gradient(
+      ellipse 55% 16px at 90% calc(100% + 6px),
+      rgb(179 206 230 / 45%),
+      transparent
+    );
+}
+
+.loginGlass::after {
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgb(255 255 255 / 28%) 48%,
+    transparent 75%
+  );
+  transform: translateX(-115%);
+  animation: loginGlassSheen 650ms ease-out forwards;
+}
+
+@keyframes loginGlassSheen {
+  to {
+    transform: translateX(115%);
+  }
+}
+
+.loginToast .content {
+  position: relative;
+  z-index: 1;
+}
+
+.loginToast[data-starting-style] {
+  opacity: 0;
+  transform: translateY(-22px) scale(0.94, 0.88);
+  filter: blur(3px);
+}
+
+.loginToast[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-14px) scale(0.98, 0.94);
+  filter: blur(2px);
+  transition-duration: 180ms, 140ms, 180ms;
+}
+
+.loginToast .close {
+  color: inherit;
+  opacity: 0.65;
+}
+
+.loginToast .close:hover,
+.loginToast .close:focus-visible {
+  color: inherit;
+  opacity: 1;
+  background: rgb(127 145 163 / 16%);
+}
+
+.loginToast .close:focus-visible,
+.loginToast .action:focus-visible {
+  outline-color: currentColor;
+}
+
+.loginToast .description {
+  color: inherit;
+  opacity: 0.8;
+}
+
+:root[data-theme="dim"] .loginToast,
+:root[data-theme="lights-out"] .loginToast {
+  color: #f7f9f9;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 25%);
+}
+
+:root[data-theme="dim"] .loginGlass,
+:root[data-theme="lights-out"] .loginGlass {
+  background: linear-gradient(145deg, rgb(40 52 67 / 38%), rgb(15 20 25 / 24%));
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 45%),
+    inset 0 -1px 1px rgb(255 255 255 / 15%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loginToast {
+    transition: opacity 100ms linear;
+  }
+  .loginToast[data-starting-style],
+  .loginToast[data-ending-style] {
+    transform: none;
+    filter: none;
+  }
+  .loginGlass::after {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .loginGlass {
+    background: #f7f9f9;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  :root[data-theme="dim"] .loginGlass,
+  :root[data-theme="lights-out"] .loginGlass {
+    background: #1e2732;
+  }
+  .loginGlass::before,
+  .loginGlass::after {
+    display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .loginToast {
+    color: CanvasText;
+    border: 1px solid CanvasText;
+  }
+  .loginGlass {
+    background: Canvas;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .loginGlass::before,
+  .loginGlass::after {
+    display: none;
   }
 }

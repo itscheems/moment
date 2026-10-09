@@ -1,9 +1,10 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 
 import type { OAuthLoginProvider, SignInMethod } from "../../api/owner";
 import { PublicApiError, type SiteIdentity } from "../../api/public";
-import { useNavigation } from "../../app/navigation";
+import { InternalLink, useNavigation } from "../../app/navigation";
 import { Icon } from "../../components/icons";
+import { feedback, notify } from "../../components/Feedback";
 import { ownsSite, useSession } from "../auth/SessionProvider";
 import { oauthStartUrl, PROVIDER_ICONS } from "./providers";
 import styles from "./Owner.module.css";
@@ -97,7 +98,7 @@ function credentialErrorMessage(
   method: "password" | "token",
 ): string {
   if (!(error instanceof PublicApiError)) {
-    return "登录没有完成。输入内容仍只留在当前输入框中，可以安全重试。";
+    return "登录没有完成，请重试。输入内容已保留。";
   }
   if (error.code === "ACCOUNT_NOT_FOUND") return "本站没有这个用户名。";
   if (error.code === "CREDENTIAL_UNAVAILABLE") {
@@ -108,12 +109,21 @@ function credentialErrorMessage(
       ? "密码不正确，请重试。"
       : "这个所有者令牌无效，请检查后重试。";
   }
-  return "登录没有完成。输入内容仍只留在当前输入框中，可以安全重试。";
+  return "登录没有完成，请重试。输入内容已保留。";
 }
 
 function authErrorMessage(code: string | null): string | null {
   if (code === null) return null;
   return AUTH_ERROR_MESSAGES[code] ?? "第三方登录没有完成，请重试。";
+}
+
+function invalidCredentialField(
+  error: unknown,
+): "username" | "credential" | null {
+  if (!(error instanceof PublicApiError)) return null;
+  if (error.code === "ACCOUNT_NOT_FOUND") return "username";
+  if (error.code === "CREDENTIAL_UNAVAILABLE") return null;
+  return error.status === 401 ? "credential" : null;
 }
 
 // The failure code is a one-shot message. Leaving it on the URL would replay
@@ -143,7 +153,8 @@ export function OwnerLogin({
    */
   heading?: boolean;
 }) {
-  const { navigate, replace } = useNavigation();
+  const { navigate, replace, pathname, search } = useNavigation();
+  const returnPath = safeReturnPath(new URLSearchParams(search).get("return"));
   const { account, api, state, login, logout, retryStatus } = useSession();
   // This panel stands in for pages only the site owner may open, so a member
   // reaching it is signed in and simply in the wrong place. Telling them they
@@ -158,6 +169,9 @@ export function OwnerLogin({
   const [pending, setPending] = useState(false);
   const [optionsPending, setOptionsPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [invalidField, setInvalidField] = useState<
+    "username" | "credential" | null
+  >(null);
   const [providers, setProviders] = useState<OAuthLoginProvider[]>([]);
   const [providersPending, setProvidersPending] = useState(true);
   // How long the form may be held back for its answers. Past this it is
@@ -171,8 +185,66 @@ export function OwnerLogin({
     ),
   );
   const pendingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const errorId = useId();
+  const toastId = `login-error-${errorId}`;
+  const authAnnouncedRef = useRef(false);
+
+  const clearError = () => {
+    setError(null);
+    setInvalidField(null);
+    feedback.close(toastId);
+  };
+
+  const showError = (
+    message: string,
+    field: "username" | "credential" | null = null,
+  ) => {
+    setError(message);
+    setInvalidField(field);
+    notify(message, {
+      id: toastId,
+      type: "error",
+      placement: embedded ? undefined : "login",
+    });
+  };
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      feedback.close(toastId);
+    };
+  }, [toastId]);
 
   useEffect(() => stripAuthError(), []);
+
+  useEffect(() => {
+    if (
+      !authError ||
+      authAnnouncedRef.current ||
+      (embedded && pathname === "/login")
+    )
+      return;
+    authAnnouncedRef.current = true;
+    // The toast provider subscribes after this child's effects mount.
+    queueMicrotask(() => {
+      if (mountedRef.current)
+        notify(authError, {
+          id: toastId,
+          type: "error",
+          placement: embedded ? undefined : "login",
+        });
+    });
+  }, [authError, embedded, pathname, toastId]);
+
+  useEffect(() => {
+    // A cookie restore or another tab can complete sign-in without submitting
+    // this form. The standalone page resumes its return path in either case.
+    if (!embedded && state === "signed-in" && account !== null) {
+      replace(returnPath);
+    }
+  }, [account, embedded, replace, returnPath, state]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setHoldExpired(true), 2000);
@@ -243,33 +315,31 @@ export function OwnerLogin({
     if (!credential || pendingRef.current) return;
     pendingRef.current = true;
     setPending(true);
-    setError(null);
     try {
       await login(credential, method, username.trim() || undefined);
+      if (!mountedRef.current) return;
+      clearError();
       setCredential("");
       // The sign-in page leaves the history with the signing in: back from
       // the page it returns to should not be a sign-in form for a session
       // that already exists.
-      if (!embedded)
-        replace(
-          safeReturnPath(
-            new URLSearchParams(window.location.search).get("return"),
-          ),
-        );
+      if (!embedded) replace(returnPath);
     } catch (nextError) {
-      setError(credentialErrorMessage(nextError, method));
+      if (mountedRef.current)
+        showError(
+          credentialErrorMessage(nextError, method),
+          invalidCredentialField(nextError),
+        );
     } finally {
       pendingRef.current = false;
-      setPending(false);
+      if (mountedRef.current) setPending(false);
     }
   };
 
   const startOAuth = (name: string) => {
     if (startingProvider !== null) return;
+    clearError();
     setStartingProvider(name);
-    const returnPath = safeReturnPath(
-      new URLSearchParams(window.location.search).get("return"),
-    );
     // A full page load, not a fetch: the provider owns the next screen and the
     // callback has to land back on this origin with its own cookies.
     window.location.assign(oauthStartUrl(name, returnPath));
@@ -284,7 +354,7 @@ export function OwnerLogin({
       await logout(site.instanceId);
       if (!embedded) navigate("/");
     } catch {
-      setError("退出没有完成。当前会话仍保持登录，请检查连接后重试。");
+      showError("退出没有完成。当前会话仍保持登录，请检查连接后重试。");
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -293,6 +363,19 @@ export function OwnerLogin({
 
   // The panel's own title needs no answer from the server, so it is drawn
   // from the first frame; only the form under it waits.
+  if (embedded && pathname === "/login") return null;
+  if (embedded && state === "expired")
+    return (
+      <p className={styles.storageNotice} role="status">
+        登录已过期。{" "}
+        <InternalLink
+          href={`/login?return=${encodeURIComponent(`${pathname}${window.location.search}`)}`}
+        >
+          重新登录
+        </InternalLink>
+      </p>
+    );
+
   const title = heading ? (
     <>
       <p className={styles.eyebrow}>
@@ -334,7 +417,6 @@ export function OwnerLogin({
             ? "此浏览器已通过身份验证。退出会同时清除当前实例的本地草稿。"
             : "你的账户没有问题，只是发布和站点设置属于站长。可以回到时间流继续阅读和留言。"}
         </p>
-        {error ? <p role="alert">{error}</p> : null}
         <button
           className={styles.secondaryButton}
           disabled={pending}
@@ -351,11 +433,6 @@ export function OwnerLogin({
   return (
     <section className={styles.loginGate}>
       {title}
-      {authError ? (
-        <p className={styles.authError} role="alert">
-          {authError}
-        </p>
-      ) : null}
       {state === "unavailable" ? (
         <div className={styles.inlineNotice} role="alert">
           <span>暂时无法确认现有会话，仍可尝试登录。</span>
@@ -371,11 +448,17 @@ export function OwnerLogin({
         <label htmlFor="login-username">用户名</label>
         <div className={styles.tokenField}>
           <input
+            aria-describedby={invalidField === "username" ? errorId : undefined}
+            aria-invalid={invalidField === "username" || undefined}
             autoCapitalize="none"
             autoComplete="username"
             id="login-username"
-            onChange={(event) => setUsername(event.target.value)}
+            onChange={(event) => {
+              setUsername(event.target.value);
+              clearError();
+            }}
             placeholder="你的用户名"
+            readOnly={pending}
             spellCheck={false}
             type="text"
             value={username}
@@ -384,10 +467,18 @@ export function OwnerLogin({
         <label htmlFor="owner-credential">{METHOD_LABELS[method]}</label>
         <div className={styles.tokenField}>
           <input
+            aria-describedby={
+              invalidField === "credential" ? errorId : undefined
+            }
+            aria-invalid={invalidField === "credential" || undefined}
             autoCapitalize="none"
             autoComplete={method === "password" ? "current-password" : "off"}
             id="owner-credential"
-            onChange={(event) => setCredential(event.target.value)}
+            onChange={(event) => {
+              setCredential(event.target.value);
+              clearError();
+            }}
+            readOnly={pending}
             required
             spellCheck={false}
             type={showCredential ? "text" : "password"}
@@ -395,6 +486,7 @@ export function OwnerLogin({
           />
           <button
             aria-pressed={showCredential}
+            disabled={pending}
             onClick={() => setShowCredential((current) => !current)}
             type="button"
           >
@@ -406,9 +498,11 @@ export function OwnerLogin({
             本地开发令牌保存在 <code>.moment-local/owner.token</code>。
           </small>
         ) : null}
-        {error ? <p role="alert">{error}</p> : null}
+        <p className={styles.srOnly} id={errorId}>
+          {invalidField ? error : null}
+        </p>
         <button
-          className={styles.primaryButton}
+          className={`${styles.primaryButton} ${styles.loginSubmitButton}`}
           disabled={!credential || pending || optionsPending}
           type="submit"
         >
@@ -429,7 +523,7 @@ export function OwnerLogin({
               return (
                 <button
                   className={styles.oauthButton}
-                  disabled={startingProvider !== null}
+                  disabled={pending || startingProvider !== null}
                   key={provider.name}
                   onClick={() => startOAuth(provider.name)}
                   type="button"
@@ -458,7 +552,7 @@ export function OwnerLogin({
                   setMethod(candidate);
                   setShowOtherMethods(false);
                   setCredential("");
-                  setError(null);
+                  clearError();
                 }}
                 type="button"
               >

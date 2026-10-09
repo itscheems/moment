@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -12,6 +13,9 @@ import type { SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { OwnerLogin } from "./OwnerLogin";
 import { SessionProvider } from "../auth/SessionProvider";
+import { FeedbackProvider } from "../../components/Feedback";
+
+afterEach(() => vi.useRealTimers());
 
 const site: SiteIdentity = {
   ownerId: "00000000000000000000000000000000",
@@ -127,12 +131,28 @@ function captureRedirect() {
 
 function renderLogin() {
   return render(
-    <NavigationProvider>
-      <SessionProvider>
-        <OwnerLogin site={site} />
-      </SessionProvider>
-    </NavigationProvider>,
+    <FeedbackProvider>
+      <NavigationProvider>
+        <SessionProvider>
+          <OwnerLogin site={site} />
+        </SessionProvider>
+      </NavigationProvider>
+    </FeedbackProvider>,
   );
+}
+
+async function findErrorToast(message?: string) {
+  return waitFor(() => {
+    const toast = [
+      ...document.querySelectorAll<HTMLElement>('[role="alertdialog"]'),
+    ].find(
+      (element) =>
+        !element.hasAttribute("data-ending-style") &&
+        (!message || element.textContent?.includes(message)),
+    );
+    if (!toast) throw new Error("No matching error toast");
+    return toast;
+  });
 }
 
 describe("owner login third-party entry points", () => {
@@ -379,7 +399,9 @@ describe("owner login names who is signing in", () => {
     vi.unstubAllGlobals();
   });
 
-  function installLoginApi(sessionResponse: () => Response) {
+  function installLoginApi(
+    sessionResponse: () => Response | Promise<Response>,
+  ) {
     const fetcher = vi.fn(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         void init;
@@ -412,6 +434,108 @@ describe("owner login names who is signing in", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "登录" }));
   }
+
+  it("clears an outdated credential error when the input changes", async () => {
+    installLoginApi(() => json(signedOutEnvelope(), 401));
+    renderLogin();
+    await signIn("owner", "wrong-password");
+    const toast = await findErrorToast("密码不正确，请重试。");
+    const password = screen.getByLabelText("密码");
+    expect(password).toHaveAttribute("aria-invalid", "true");
+    const description = document.getElementById(
+      password.getAttribute("aria-describedby")!,
+    );
+    expect(description).toHaveTextContent("密码不正确，请重试。");
+    fireEvent.change(password, { target: { value: "updated-password" } });
+    expect(toast).toHaveAttribute("data-ending-style");
+    expect(password).not.toHaveAttribute("aria-describedby");
+    expect(password).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByLabelText("用户名")).toHaveValue("owner");
+    expect(screen.getByRole("button", { name: "登录" })).toBeEnabled();
+  });
+
+  it("merges repeated credential failures without stealing password focus", async () => {
+    const fetcher = installLoginApi(() => json(signedOutEnvelope(), 401));
+    renderLogin();
+    await signIn("owner", "wrong-password");
+    const toast = await findErrorToast("密码不正确，请重试。");
+    const password = screen.getByLabelText("密码");
+    password.focus();
+    fireEvent.submit(password.closest("form")!);
+    await waitFor(() =>
+      expect(
+        fetcher.mock.calls.filter(
+          ([url]) => String(url) === "/api/v1/login/session",
+        ),
+      ).toHaveLength(2),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "登录" })).toBeEnabled(),
+    );
+    expect(screen.getAllByRole("alertdialog", { hidden: true })).toHaveLength(
+      1,
+    );
+    expect(
+      document
+        .querySelector<HTMLElement>('[role="alertdialog"]')!
+        .getAttribute("aria-labelledby"),
+    ).toBe(toast.getAttribute("aria-labelledby"));
+    expect(password).toHaveFocus();
+  });
+
+  it("shows transport failures without blaming either credential field", async () => {
+    installLoginApi(() => Promise.reject(new TypeError("offline")));
+    renderLogin();
+    await signIn("owner", "password");
+    expect(await findErrorToast()).toHaveTextContent("登录没有完成");
+    expect(screen.getByLabelText("用户名")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByLabelText("密码")).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("retains the field error after the toast is dismissed", async () => {
+    installLoginApi(() => json(signedOutEnvelope(), 401));
+    renderLogin();
+    await signIn("owner", "wrong-password");
+    const toast = await findErrorToast("密码不正确，请重试。");
+    const password = screen.getByLabelText("密码");
+    const description = password.getAttribute("aria-describedby");
+    fireEvent.click(toast.querySelector('button[aria-label="关闭通知"]')!);
+    expect(toast).toHaveAttribute("data-ending-style");
+    expect(password).toHaveAttribute("aria-invalid", "true");
+    expect(document.getElementById(description!)).toHaveTextContent(
+      "密码不正确，请重试。",
+    );
+    fireEvent.change(password, { target: { value: "changed-password" } });
+    expect(password).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("does not steal navigation when sign-in finishes after leaving the form", async () => {
+    let finish!: (response: Response) => void;
+    const exchange = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    installLoginApi(() => exchange);
+    window.history.replaceState({}, "", "/login?return=%2Farchive");
+    const view = renderLogin();
+    await signIn("owner", "password");
+    expect(screen.getByLabelText("密码")).toHaveAttribute("readonly");
+    expect(screen.getByLabelText("用户名")).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "正在登录…" })).toBeDisabled();
+    view.unmount();
+    window.history.replaceState({}, "", "/search");
+    await act(async () => {
+      finish(
+        json({
+          data: {
+            csrf_token: "csrf-late-login",
+            expires_at: "2999-08-11T01:00:00.000Z",
+          },
+          meta: {},
+        }),
+      );
+    });
+    expect(window.location.pathname).toBe("/search");
+  });
 
   it("sends the typed handle alongside the password", async () => {
     const entries = window.history.length;
@@ -496,7 +620,7 @@ describe("owner login names who is signing in", () => {
     await signIn("someone", "hunter2");
 
     expect(
-      await screen.findByText("这个账户只能用第三方账号登录，请在下方选择。"),
+      await findErrorToast("这个账户只能用第三方账号登录，请在下方选择。"),
     ).toBeInTheDocument();
     expect(screen.queryByText("密码不正确，请重试。")).toBeNull();
   });
@@ -507,7 +631,7 @@ describe("owner login names who is signing in", () => {
     await signIn("someone", "hunter2");
 
     expect(
-      await screen.findByText("这个账户不能这样登录，可以改用所有者令牌。"),
+      await findErrorToast("这个账户不能这样登录，可以改用所有者令牌。"),
     ).toBeInTheDocument();
   });
 
@@ -528,7 +652,12 @@ describe("owner login names who is signing in", () => {
     renderLogin();
     await signIn("nobodyhere", "hunter2");
 
-    expect(await screen.findByText("本站没有这个用户名。")).toBeInTheDocument();
+    expect(await findErrorToast("本站没有这个用户名。")).toBeInTheDocument();
+    expect(screen.getByLabelText("用户名")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(screen.getByLabelText("密码")).not.toHaveAttribute("aria-invalid");
   });
 
   it("still blames the password when the password is what was refused", async () => {
@@ -548,7 +677,7 @@ describe("owner login names who is signing in", () => {
     renderLogin();
     await signIn("owner", "wrong");
 
-    expect(await screen.findByText("密码不正确，请重试。")).toBeInTheDocument();
+    expect(await findErrorToast("密码不正确，请重试。")).toBeInTheDocument();
   });
 });
 

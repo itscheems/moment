@@ -188,7 +188,7 @@ export function ProfileEditor(props: ProfileEditorProps) {
   });
   const objectURLs = useRef<string[]>([]);
 
-  useDocumentScrollLock(open);
+  useDocumentScrollLock(open && session !== null);
 
   const restore = (avatar: string | null, cover: string | null) => {
     uploads.current.avatar?.abort();
@@ -404,12 +404,18 @@ export function ProfileEditor(props: ProfileEditorProps) {
         if (nextOpen) reopen();
         setOpen(nextOpen);
       }}
-      open={open}
+      open={open && session !== null}
     >
       <Dialog.Trigger className={styles.trigger}>编辑资料</Dialog.Trigger>
-      <Dialog.Portal>
-        <Dialog.Backdrop className={styles.backdrop} />
-        <Dialog.Viewport className={styles.viewport}>
+      <Dialog.Portal keepMounted={open}>
+        <Dialog.Backdrop
+          className={styles.backdrop}
+          style={session ? undefined : { display: "none" }}
+        />
+        <Dialog.Viewport
+          className={styles.viewport}
+          style={session ? undefined : { display: "none" }}
+        >
           <Dialog.Popup
             className={styles.popup}
             initialFocus={siteSubject ? titleInput : displayNameInput}

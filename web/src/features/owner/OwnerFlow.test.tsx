@@ -1015,6 +1015,60 @@ describe("owner composing flow", () => {
     ).toHaveLength(0);
   });
 
+  it("leaves standalone sign-in when the cookie already authenticates the browser", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/login?return=%2Fsearch%3Fq%3Dnight");
+    installApi();
+    render(<App />);
+    await waitFor(() => expect(window.location.pathname).toBe("/search"));
+    expect(window.location.search).toBe("?q=night");
+    expect(screen.queryByRole("heading", { name: "Happening now" })).toBeNull();
+  });
+
+  it("keeps expired home sign-in on its own page and preserves the compose draft", async () => {
+    preauthenticate();
+    let reauthenticated = false;
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST") {
+        return unauthorized();
+      }
+      if (url === "/api/v1/account/session" && reauthenticated) {
+        return accountSession();
+      }
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
+        reauthenticated = true;
+        return json({
+          data: {
+            csrf_token: "csrf-from-cookie",
+            expires_at: "2999-08-11T01:00:00.000Z",
+          },
+          meta: {},
+        });
+      }
+    });
+    render(<App />);
+    const composer = await screen.findByLabelText("此刻想到什么？");
+    fireEvent.change(composer, { target: { value: "重新登录也要留下这句话" } });
+    fireEvent.click(screen.getByRole("button", { name: "发布" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    expect(new URLSearchParams(window.location.search).get("return")).toBe("/");
+    expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
+    expect(screen.getByLabelText("此刻想到什么？")).toHaveValue(
+      "重新登录也要留下这句话",
+    );
+    const credential = await screen.findByLabelText("所有者令牌");
+    expect(window.location.pathname).toBe("/login");
+    fireEvent.change(credential, { target: { value: "fresh-owner-token" } });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/"));
+    expect(await screen.findByLabelText("此刻想到什么？")).toHaveValue(
+      "重新登录也要留下这句话",
+    );
+    expect(screen.queryByLabelText("所有者令牌")).toBeNull();
+  });
+
   it("preserves input before an auth-expiry response and requires a fresh exchange", async () => {
     preauthenticate();
     window.history.replaceState({}, "", "/compose");
@@ -1033,6 +1087,104 @@ describe("owner composing flow", () => {
       "会话失效也不能丢",
     );
     expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
+  });
+
+  it("restores the compose dialog and its background after reauthentication", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/search?q=night");
+    vi.mocked(window.matchMedia).mockImplementation((query) => ({
+      matches: query === "(min-width: 720px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    let reauthenticated = false;
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/posts" && init?.method === "POST")
+        return unauthorized();
+      if (url === "/api/v1/account/session" && reauthenticated)
+        return accountSession();
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
+        reauthenticated = true;
+        return json({
+          data: {
+            csrf_token: "csrf-from-cookie",
+            expires_at: "2999-08-11T01:00:00.000Z",
+          },
+          meta: {},
+        });
+      }
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("link", { name: "发布" }));
+    const dialog = await screen.findByRole("dialog", { name: "发布 Moment" });
+    fireEvent.change(within(dialog).getByLabelText("此刻想到什么？"), {
+      target: { value: "回到原来的发布弹窗" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "发布" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "发布 Moment" })).toBeNull(),
+    );
+    fireEvent.change(await screen.findByLabelText("所有者令牌"), {
+      target: { value: "fresh-owner-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/compose"));
+    const restored = await screen.findByRole("dialog", { name: "发布 Moment" });
+    expect(within(restored).getByLabelText("此刻想到什么？")).toHaveValue(
+      "回到原来的发布弹窗",
+    );
+    expect(window.history.state.momentOverlayFrom).toEqual({
+      pathname: "/search",
+      search: "?q=night",
+    });
+  });
+
+  it("redirects an expired profile edit without leaving its modal over sign-in", async () => {
+    preauthenticate();
+    window.history.replaceState({}, "", "/owner");
+    let reauthenticated = false;
+    installApi((url, init) => {
+      if (url === "/api/v1/owner/site" && init?.method === "PATCH") {
+        return unauthorized();
+      }
+      if (url === "/api/v1/account/session" && reauthenticated)
+        return accountSession();
+      if (url === "/api/v1/login/session" && init?.method === "POST") {
+        reauthenticated = true;
+        return json({
+          data: {
+            csrf_token: "csrf-from-cookie",
+            expires_at: "2999-08-11T01:00:00.000Z",
+          },
+          meta: {},
+        });
+      }
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑资料" }));
+    fireEvent.change(screen.getByLabelText("显示名称"), {
+      target: { value: "未保存的名字" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/login"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "编辑资料" })).toBeNull(),
+    );
+    fireEvent.change(await screen.findByLabelText("所有者令牌"), {
+      target: { value: "fresh-owner-token" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "登录" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/owner"));
+    expect(
+      await screen.findByRole("dialog", { name: "编辑资料" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("显示名称")).toHaveValue("未保存的名字");
   });
 
   it("keeps an edited post mounted through auth expiry, re-login, and retry", async () => {
@@ -2515,7 +2667,7 @@ describe("owner composing flow", () => {
       JSON.stringify({ content_md: "编辑后", media: [] }),
     );
     expect(new Headers(patchCall?.[1]?.headers).get("X-CSRF-Token")).toBe(
-      "csrf-from-session",
+      "csrf-from-cookie",
     );
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
     const saved = screen.getByRole("dialog", { name: "Moment 已保存" });
@@ -2706,11 +2858,17 @@ describe("owner composing flow", () => {
       }
     });
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: "退出所有者模式" }),
-    );
     await waitFor(() => expect(window.location.pathname).toBe("/"));
-    expect(window.sessionStorage.getItem(sessionKey)).toBeNull();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "乔乔 的账户菜单" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "退出 @owner" }),
+    );
+    await waitFor(() =>
+      expect(window.sessionStorage.getItem(sessionKey)).toBeNull(),
+    );
+    expect(window.location.pathname).toBe("/");
     expect(window.localStorage.getItem(composeDraftKey(instance))).toBeNull();
   });
 
@@ -2777,7 +2935,7 @@ describe("owner composing flow", () => {
     expect(screen.queryByLabelText("此刻想到什么？")).toBeNull();
     expect(screen.queryByLabelText("密码")).toBeNull();
     expect(window.sessionStorage.getItem(sessionKey)).toContain(
-      "csrf-from-session",
+      "csrf-from-cookie",
     );
   });
 

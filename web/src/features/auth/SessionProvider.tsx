@@ -48,6 +48,8 @@ type SyncMessage =
 export type SessionState =
   "checking" | "guest" | "signed-in" | "expired" | "unavailable";
 
+type ExpiryReason = "invalid-session" | "credential-rotation";
+
 interface AuthOutcome {
   kind: "ok" | "linked";
   provider: string | null;
@@ -56,6 +58,8 @@ interface AuthOutcome {
 interface SessionContextValue {
   api: OwnerApi;
   state: SessionState;
+  /** Rotation must first let the owner save its one-time credential receipt. */
+  expiryReason: ExpiryReason | null;
   session: BrowserSession | null;
   /**
    * Who this browser is signed in as, once the server has said so. Null while
@@ -332,6 +336,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const api = useMemo(() => new OwnerApi(), []);
   const [session, setSession] = useState<BrowserSession | null>(readSession);
   const [state, setState] = useState<SessionState>("checking");
+  const [expiryReason, setExpiryReason] = useState<ExpiryReason | null>(null);
   const [account, setAccount] = useState<Account | null>(null);
   const [limits, setLimits] = useState<AccountLimits | null>(null);
   const [statusAttempt, setStatusAttempt] = useState(0);
@@ -349,20 +354,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     writeSession(next);
     setSession(next);
     setState("signed-in");
+    setExpiryReason(null);
     return true;
   }, []);
 
   const clearSession = useCallback(
-    (nextState: "guest" | "expired", marker?: SessionMarker) => {
+    (
+      nextState: "guest" | "expired",
+      marker?: SessionMarker,
+      reason: ExpiryReason = "invalid-session",
+    ) => {
       if (marker && compareMarker(marker, markerRef.current) <= 0) return false;
       if (marker) markerRef.current = marker;
       sessionRef.current = null;
       writeSession(null);
       setSession(null);
       setState(nextState);
-      // An expired session still belongs to the same person, and the pages
-      // that offer re-login inline need to keep knowing who that is. Only a
-      // real sign-out forgets them.
+      setExpiryReason(nextState === "expired" ? reason : null);
+      // Preserve the account while its editing surfaces wait behind
+      // reauthentication. Only an explicit sign-out forgets that identity.
       if (nextState === "guest") {
         setAccount(null);
         setLimits(null);
@@ -449,36 +459,38 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const controller = new AbortController();
     const markerAtStart = markerRef.current;
-    // A sibling tab can hand this one a newer session while the request is in
-    // flight; that session outranks whatever the server just said about the
-    // older one.
+    // A login, sign-out, or sibling session can overtake this request. Its
+    // response describes the cookie from before that change and must not
+    // restore ended credentials or overwrite the newly signed-in account.
     const overtaken = () =>
-      sessionRef.current !== null &&
-      compareMarker(markerRef.current, markerAtStart) > 0;
-    const signedOut = () => {
-      if (overtaken()) setState("signed-in");
-      else clearSession("guest");
-    };
+      compareMarker(markerRef.current, markerAtStart) !== 0;
     setState("checking");
     void api
       .accountSession(controller.signal)
       .then((restored) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || overtaken()) return;
         setAccount(restored.account);
         setLimits(restored.limits);
-        // A session this tab already holds is kept as it is: its CSRF token
-        // came from the same cookie, and taking a new marker for it would make
-        // an ordinary reload look like a fresh login to every other tab.
-        if (sessionRef.current) setState("signed-in");
-        else adoptSession(restored);
+        // Cookies are shared across tabs; sessionStorage is not. A callback
+        // or another tab may have replaced the cookie while this tab retained
+        // its old CSRF. Only keep its marker when both credentials match.
+        const current = sessionRef.current;
+        if (
+          current?.csrfToken === restored.csrfToken &&
+          current.expiresAt === restored.expiresAt
+        ) {
+          setState("signed-in");
+        } else {
+          adoptSession(restored);
+        }
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || overtaken()) return;
         // 401 is an answer -- nobody is signed in. Anything else is the
         // question going unanswered, and guessing at it either strands the
         // owner or hands their controls to a visitor.
         if (error instanceof PublicApiError && error.status === 401) {
-          signedOut();
+          clearSession("guest");
         } else {
           setState("unavailable");
         }
@@ -608,7 +620,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const expireAfterTokenRotation = useCallback(() => {
     const marker = nextMarker(markerRef.current);
-    clearSession("expired", marker);
+    clearSession("expired", marker, "credential-rotation");
     broadcast({ type: "clear-session", marker });
   }, [broadcast, clearSession]);
 
@@ -621,6 +633,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       api,
       state,
+      expiryReason,
       session,
       account,
       limits,
@@ -638,6 +651,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       applyAccount,
       expireAfterTokenRotation,
       expireIfInvalidSession,
+      expiryReason,
       forgetSession,
       limits,
       login,
