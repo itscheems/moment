@@ -1,165 +1,114 @@
-# Moment
+<div align="center">
 
-Moment is a self-hosted personal timeline: capture now, find later, and keep the
-data portable under the site owner's control.
+<h1 align="center">
+  <img src="docs/images/readme-logo.svg" alt="" width="46" height="44" align="bottom" />&nbsp;&nbsp;<span>Moment</span>
+</h1>
 
-## Toolchain
+### 把今天留下，等以后的你回来。
 
-The repository pins Go, Node.js, pnpm, Task, lint, and release tools in
-`.mise.toml`. With [mise](https://mise.jdx.dev/) installed:
+一个可以自托管的个人微博。
+
+[开始使用](#开始使用) · [部署指南](docs/releasing.md) · [API 与客户端](docs/client-api.md)
+
+</div>
+
+几年后，你忽然想起一家面馆。
+
+店名忘了。你只记得靠窗的位置，玻璃上的水痕，还有坐在对面的人说，等雨小一点再走。
+
+你在旧记录里搜了搜「面馆」。一张照片出现了，桌角放着一把还在滴水的伞。照片下面只有一句话：
+
+> 楼下的面馆，汤很烫。等雨小一点再走。
+
+那场雨，忽然有了日期。
+
+**Moment 想留住的，就是这样的日子。**
+
+你可以把它放在自己的电脑或服务器上，随手写几句话，放几张照片，也认真写一篇文章。记录沿着时间排列，可以搜索、回看，也可以完整导出，带到下一台机器。
+
+## 有些日子，当时看不出什么
+
+修好了一个缠了两天的 bug，买到最后一袋打折的面包，或者下班时发现，天已经比上个月亮得久了一点。
+
+那时候，你大概不会觉得这些事值得专门写一篇文章。
+
+所以 Moment 把记录的入口放得很近。写一句话，传一张照片，保存一段视频或一个链接，就能留下当下。本地草稿会保留还没发出的文字，等你下一次回来。
+
+**先记下来。它的分量，可以以后再知道。**
+
+## 有些话，要过几天才能写完
+
+一件事刚发生的时候，你可能只能写两行。过了几天，再读那两行，才知道自己还想说些什么。
+
+Moment 也为长文章留了地方。选一张封面，改几次标题，把照片、引用和代码放进正文。草稿自动保存，写到一半可以停下；想安静写一会儿，就打开全屏模式。
+
+写完以后，文章会回到时间流里，和那些短短的记录待在一起。以后翻到这里，你能看到一件事发生时的样子，也能读到自己后来怎样理解它。
+
+## 再回来时，有路可走
+
+有时候，你记得一句话，却忘了是谁、在哪一天说的。有时候，你只记得那是某年夏天，刚搬过一次家。
+
+记得词语，就用搜索。记得时间，就从归档里回到某一年、某个月、某一天。
+
+翻着翻着，你会发现，搬家那个月还修过一盏灯，第一次做饭把盐放多了，后来才慢慢记住附近的路。
+
+零散的记录，开始连成一段生活。
+
+## 有人来读，也有话留给自己
+
+有些记录适合分享给朋友。发出一个链接，聊聊照片里的地方，让评论与回复留在那条记录旁边。
+
+也有些话，写下来的时候，只想让自己知道。
+
+Moment 支持公开与仅自己可见的记录。你可以决定一条内容的去处，也可以按自己的阅读习惯，选择浅色、柔和深色、纯黑背景和喜欢的强调色。显示偏好保存在当前浏览器里。
+
+## 生活会搬家，记录也应该能带走
+
+人会换电脑，会搬到另一座城市。多年前搭起的小站，也可能需要迁到新的服务器。
+
+Moment 将文字、媒体原件和站点数据保存在你管理的数据目录里，支持导出、导入与恢复。换一台机器，继续这条时间线。
+
+这是「自托管」对一个记录工具最实际的意义：几年以后，你仍然能够决定这些内容放在哪里。
+
+Moment 也提供 CLI 和 HTTP API。如果你习惯从终端做事，或想把记录接入自己的工作流，这里同样留着入口。
+
+## 开始使用
+
+进入项目源码目录，先安装 [mise](https://mise.jdx.dev/)，再运行：
 
 ```sh
 mise install
 mise exec -- task setup
+mise exec -- task run
+```
+
+打开 **<http://127.0.0.1:8080>**，开始你的第一条记录。
+
+首次启动会初始化本地数据目录 `moment-data/`，并将所有者令牌保存到 `.moment-local/owner.token`。在登录页选择所有者令牌登录；后续启动会复用已有数据。
+
+需要部署到服务器、使用容器，或了解媒体处理依赖，可以查看 [部署与发布指南](docs/releasing.md) 和 [媒体处理说明](docs/media-pipeline.md)。
+
+<details>
+<summary><strong>技术结构与检查命令</strong></summary>
+
+<br />
+
+**Go + React + TypeScript + SQLite。**
+
+前端随 Go 可执行文件一起分发，核心运行时采用单进程、SQLite 和本地媒体目录，无需单独配置数据库服务。图片与视频的处理依赖见上方媒体说明。
+
+如果要参与开发或检查改动：
+
+```sh
 mise exec -- task ci
 ```
 
-The stable entry points are:
+</details>
 
-- `task run` — build Moment, initialize local data when needed, and run the
-  server in the foreground until `Ctrl+C`;
-- `task fmt` — format Go and Web sources;
-- `task lint` — run static checks and Web type checking;
-- `task test` — run Go race tests and Web tests;
-- `task build` — write the single CGo-free binary to `dist/`;
-- `task ci` — run the complete local gate.
+---
 
-Release qualification, artifact verification, native installation, and
-container lifecycle commands are documented in [docs/releasing.md](docs/releasing.md).
+<div align="center">
 
-After building:
+**今天很普通，但也值得留下。**
 
-```sh
-./dist/moment version --json
-```
-
-To start a local site:
-
-```sh
-mise exec -- task run
-```
-
-The first run initializes the ignored `moment-data/` directory. Its one-time
-owner token is saved to the ignored `.moment-local/owner.token` file and shown
-in an interactive terminal, so the owner Web screens can be tested without
-guessing a password. Later runs reuse both files. The server listens on
-`127.0.0.1:8080` and stops cleanly with `Ctrl+C`.
-
-An owner token cannot be recovered from an existing instance. If the local
-token file is missing, rotate the token while the server is stopped:
-
-```sh
-mise exec -- task run -- --rotate-owner-token
-```
-
-Override the defaults when needed:
-
-```sh
-MOMENT_DATA_DIR=/absolute/path/to/data \
-MOMENT_LISTEN=127.0.0.1:18080 \
-MOMENT_OWNER_TOKEN_FILE=/absolute/path/to/owner.token \
-mise exec -- task run
-```
-
-Runtime data and secrets must stay outside source control. Copy `.env.example`
-for local conventions; do not commit `.env` files or real instance data.
-
-To look at a change against data without touching that site, run the
-playground: a second, disposable instance under the ignored
-`.moment-local/playground/` on `127.0.0.1:18080`, seeded with the
-`site-showcase` scenario -- seven years of posts with every reader-facing
-state on them, members in every account status, and a calendar with a year
-boundary and a leap day:
-
-```sh
-mise exec -- task playground              # build, seed once, serve
-mise exec -- task playground -- cases     # every case with its page
-mise exec -- task playground:articles     # add article reader/editor cases to the default playground
-mise exec -- task playground -- reset     # seed again from the current time
-```
-
-The additive article showcase also honors `PLAYGROUND_DIR` and verifies that
-the running instance is the matching development playground. It includes empty
-and withdrawn drafts without resetting existing content.
-
-Its posts are dated from the clock at seed time, so the newest read as
-minutes ago; reseed when they have aged. `moment dev scenario --help` lists
-the other, frozen fixture scenarios the same command can build.
-
-## Post locations
-
-Posts and owner comments can carry a saved place snapshot selected from search,
-resolved from an explicit browser/device location request, or entered as a
-manual label. Provider credentials remain in the server process and are never
-sent to the browser:
-
-```sh
-AMAP_API_KEY=... \
-GEOAPIFY_API_KEY=... \
-mise exec -- task run
-```
-
-For the development launcher, the same values may be placed in the ignored
-`.env.local` file. `scripts/dev/serve.sh` parses only the documented location
-fields and does not evaluate the file as shell code:
-
-```dotenv
-AMAP_API_KEY=...
-GEOAPIFY_API_KEY=...
-```
-
-Moment prefers AMap for mainland China and Geoapify for searches biased outside
-mainland China, with automatic fallback when both are configured. Either key can
-be omitted; manual labels remain available when no provider is configured. The
-Moment binary itself intentionally does not parse `.env` files; this convenience
-belongs only to the local development launcher. The
-same workflow is agent-operable through `moment location search`, `moment
-location nearby`, `moment post create --location-name`, and `moment post create
---location-json`. Use `moment post update --clear-location` to remove a stored
-place.
-
-Client capability discovery, native request attribution, selected media cleanup,
-edit timestamps, and account exports are documented in [docs/client-api.md](docs/client-api.md).
-
-## Post visibility
-
-Each post is either visible to everyone (the default) or only to the site
-owner. The composer's audience pill chooses between the two, and the server
-applies the choice on every route that can return a post: timeline, detail,
-search, archive counts, comment threads, share metadata, and the post's own
-media. Visitors and signed-in members never receive a hidden post; the owner's
-session or token does. The same contract is available to agents through
-`moment post create --visibility only_me` and `moment post update <id>
---visibility everyone`, and to other clients through the `visibility` field
-documented in [docs/client-api.md](docs/client-api.md).
-
-## Comment moderation
-
-Comment threads stay one level deep. The owner can delete any comment from its
-overflow menu and can pin one top-level comment per post; the pinned root and
-its direct replies move together while their timestamps remain unchanged.
-Deleting that root also clears its pin. The same moderation contract is
-available to agents through `moment comment pin`, `moment comment unpin`, and
-`moment comment delete` in direct or API mode.
-
-## Media originals and display versions
-
-Moment accepts JPEG, PNG, WebP, GIF, and HEIC image originals up to 30 MiB,
-plus MP4 and QuickTime MOV video originals up to 300 MiB. Video is currently
-limited to five minutes.
-Original bytes are retained for explicit original-quality access. Timeline and
-lightbox views use replaceable display artifacts capped at 10 MiB: HEIC is
-decoded to a bounded JPEG, while accepted video containers are normalized to
-H.264/AAC MP4 with a JPEG
-poster and file-backed HTTP byte-range delivery. Processor work is bounded and
-runs outside the short exclusive media commit boundary. The container image installs FFmpeg and
-libheif tools. Native installations that need HEIC or video ingestion must make
-`ffmpeg`, `ffprobe`, and `heif-convert` available on `PATH`; otherwise ingestion
-fails clearly with `MEDIA_PROCESSOR_UNAVAILABLE` and does not publish a partial
-media record.
-
-The lifecycle, repair commands, quality strategy, and objective thresholds for
-tus, adaptive streaming, player frameworks, libvips, and Live Photos are
-documented in [docs/media-pipeline.md](docs/media-pipeline.md).
-
-No open-source license is granted by this repository at this time.
+</div>
