@@ -15,7 +15,13 @@ const SEARCH_AND_REPLACE_SCROLL_OPTIONS: ScrollIntoViewOptions = {
   block: "center",
 };
 
-export function ArticleFormatToolbar({ editor }: { editor: Editor }) {
+export function ArticleFormatToolbar({
+  editor,
+  loading = false,
+}: {
+  editor: Editor;
+  loading?: boolean;
+}) {
   const isMobile = useIsBreakpoint("max", 481);
   const { height } = useWindowSize();
   const [mobileView, setMobileView] = useState<"main" | "highlighter" | "link">(
@@ -30,15 +36,22 @@ export function ArticleFormatToolbar({ editor }: { editor: Editor }) {
   });
 
   useEffect(() => {
+    if (!loading) return;
+    setMobileView("main");
+    setIsSearchAndReplaceOpen(false);
+  }, [loading]);
+
+  useEffect(() => {
     if (!isMobile && mobileView !== "main") {
       setMobileView("main");
     }
   }, [isMobile, mobileView]);
 
   const openSearchAndReplace = useCallback(() => {
+    if (loading) return;
     setMobileView("main");
     setIsSearchAndReplaceOpen(true);
-  }, []);
+  }, [loading]);
 
   const closeSearchAndReplace = useCallback(() => {
     setIsSearchAndReplaceOpen(false);
@@ -57,6 +70,8 @@ export function ArticleFormatToolbar({ editor }: { editor: Editor }) {
     <Toolbar
       ref={toolbarRef}
       aria-label="文章格式"
+      aria-disabled={loading}
+      inert={loading}
       tabIndex={0}
       className="moment-article-format"
       style={{
@@ -86,7 +101,8 @@ export function ArticleFormatToolbar({ editor }: { editor: Editor }) {
       {isMobile ? createPortal(toolbar, document.body) : toolbar}
       <SearchAndReplace
         className="moment-article-search"
-        open={isSearchAndReplaceOpen}
+        open={!loading && isSearchAndReplaceOpen}
+        enableShortcut={!loading}
         onOpen={openSearchAndReplace}
         onClose={closeSearchAndReplace}
         scrollIntoViewOptions={SEARCH_AND_REPLACE_SCROLL_OPTIONS}

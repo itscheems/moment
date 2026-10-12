@@ -123,7 +123,7 @@ interface Call {
 let calls: Call[] = [];
 let onPut: (() => Response | Promise<Response>) | null = null;
 let onPost: (() => Response | Promise<Response>) | null = null;
-let onRead: (() => Response) | null = null;
+let onRead: (() => Response | Promise<Response>) | null = null;
 
 function stubFetch() {
   const fetcher = vi.fn(
@@ -1117,4 +1117,189 @@ it("keeps the editor DOM and pending text across host focus changes", async () =
       (call) => call.method === "GET" && call.url.endsWith(DRAFT_ID),
     ),
   ).toHaveLength(reads);
+});
+
+describe("switching drafts without reinitializing the sheet", () => {
+  const nextId = "01K2ABCDEF0123456789ABCDE1";
+  const lastId = "01K2ABCDEF0123456789ABCDE2";
+  const host = (draftId: string) => (
+    <FeedbackProvider>
+      <ThemeProvider>
+        <NavigationProvider>
+          <ArticleEditor draftId={draftId} site={site} embedded />
+        </NavigationProvider>
+      </ThemeProvider>
+    </FeedbackProvider>
+  );
+
+  it("retains the toolbar, empty cover and document while blocking edits during a read", async () => {
+    const rendered = render(host(DRAFT_ID));
+    await advance();
+    const toolbar = screen.getByRole("toolbar", { name: "文章格式" });
+    const content = screen.getByRole("textbox", { name: "文章正文" });
+    const cover = screen.getByRole("button", { name: "添加封面图" });
+    const bold = screen.getByRole("button", { name: /^Bold$/ });
+    let finish!: (response: Response) => void;
+    onRead = () => new Promise((resolve) => (finish = resolve));
+    rendered.rerender(host(nextId));
+    await advance();
+
+    expect(screen.getByRole("toolbar", { name: "文章格式" })).toBe(toolbar);
+    expect(screen.getByRole("button", { name: /^Bold$/ })).toBe(bold);
+    expect(toolbar).toHaveAttribute("inert");
+    expect(cover).toBeInTheDocument();
+    expect(cover.closest("[inert]")).not.toBeNull();
+    expect(content.closest("[inert]")).not.toBeNull();
+    expect(titleField()).toBeDisabled();
+    expect(titleField().value).toBe("一条河流的十年");
+    expect(screen.getByRole("status")).toHaveTextContent("正在读取草稿…");
+    expect(screen.getByRole("status").closest("header")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "预览" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "返回文章列表" })).toBeEnabled();
+    await act(async () => pressSave(content));
+    await act(async () => {
+      fireEvent.keyDown(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      });
+      fireEvent.keyUp(document.body, {
+        key: "f",
+        code: "KeyF",
+        metaKey: true,
+      });
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Search and replace" }),
+    ).not.toBeInTheDocument();
+    await advance(20_000);
+    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+
+    await act(async () =>
+      finish(success(draftRow({ id: nextId, title: "下一份草稿" }))),
+    );
+    await advance();
+    expect(screen.getByRole("toolbar", { name: "文章格式" })).toBe(toolbar);
+    expect(screen.getByRole("button", { name: /^Bold$/ })).toBe(bold);
+    expect(screen.getByRole("textbox", { name: "文章正文" })).toBe(content);
+    expect(toolbar).not.toHaveAttribute("inert");
+    expect(content.closest("[inert]")).toBeNull();
+    expect(titleField().value).toBe("下一份草稿");
+    expect(titleField()).toBeEnabled();
+    expect(document.querySelector("[data-article-theme]")).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+  });
+
+  it("keeps a portaled mobile toolbar inert during a read and resets its open view", async () => {
+    vi.stubGlobal("matchMedia", () => ({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    const rendered = render(host(DRAFT_ID));
+    await advance();
+    const toolbar = screen.getByRole("toolbar", { name: "文章格式" });
+    expect(toolbar.parentElement).toBe(document.body);
+    const format = screen.getByRole("button", { name: "Highlight text" });
+    fireEvent.click(format);
+    expect(
+      screen.getByRole("button", { name: "返回格式工具" }),
+    ).toBeInTheDocument();
+    let finish!: (response: Response) => void;
+    onRead = () => new Promise((resolve) => (finish = resolve));
+    rendered.rerender(host(nextId));
+    await advance();
+    expect(screen.getByRole("toolbar", { name: "文章格式" })).toBe(toolbar);
+    expect(toolbar).toHaveAttribute("inert");
+    expect(toolbar.parentElement).toBe(document.body);
+    expect(
+      screen.queryByRole("button", { name: "返回格式工具" }),
+    ).not.toBeInTheDocument();
+    await act(async () => finish(success(draftRow({ id: nextId }))));
+    await advance();
+    expect(screen.getByRole("toolbar", { name: "文章格式" })).toBe(toolbar);
+    expect(toolbar).not.toHaveAttribute("inert");
+  });
+
+  it("keeps the previous cover intact until the selected draft is ready and ignores obsolete reads", async () => {
+    const coverId = "01K2ABCDEF0123456789ABCDE3";
+    onRead = () => success(draftRow({ cover_media_id: coverId }));
+    const rendered = render(host(DRAFT_ID));
+    await advance();
+    const remove = screen.getByRole("button", { name: "移除封面图" });
+    let finishNext!: (response: Response) => void;
+    onRead = () => new Promise((resolve) => (finishNext = resolve));
+    rendered.rerender(host(nextId));
+    await advance();
+    fireEvent.click(remove); // The handler is guarded as well as the inert sheet.
+    expect(remove).toBeInTheDocument();
+    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+
+    let finishLast!: (response: Response) => void;
+    onRead = () => new Promise((resolve) => (finishLast = resolve));
+    rendered.rerender(host(lastId));
+    await advance();
+    await act(async () =>
+      finishLast(success(draftRow({ id: lastId, title: "最后选择的草稿" }))),
+    );
+    await advance();
+    expect(titleField().value).toBe("最后选择的草稿");
+    expect(screen.getByRole("button", { name: "添加封面图" })).toBeEnabled();
+
+    await act(async () =>
+      finishNext(success(draftRow({ id: nextId, title: "已经跳过的草稿" }))),
+    );
+    await advance();
+    expect(titleField().value).toBe("最后选择的草稿");
+    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+  });
+
+  it("ignores an audience selection from a portal left open during a read", async () => {
+    const rendered = render(host(DRAFT_ID));
+    await advance();
+    fireEvent.click(screen.getByRole("button", { name: "选择受众" }));
+    await advance();
+    const privateAudience = screen.getByRole("menuitemradio", {
+      name: "仅自己",
+    });
+    let finish!: (response: Response) => void;
+    onRead = () => new Promise((resolve) => (finish = resolve));
+    rendered.rerender(host(nextId));
+    await advance();
+    fireEvent.click(privateAudience);
+    await advance();
+    await act(async () => finish(success(draftRow({ id: nextId }))));
+    await advance();
+    expect(screen.getByRole("button", { name: "选择受众" })).toHaveAttribute(
+      "data-audience",
+      "everyone",
+    );
+    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+  });
+
+  it("blocks writes after a failed read and recovers when another draft is selected", async () => {
+    const rendered = render(host(DRAFT_ID));
+    await advance();
+    onRead = () => Promise.reject(new TypeError("offline"));
+    rendered.rerender(host(nextId));
+    await advance();
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(titleField()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "发布" })).toBeDisabled();
+    await act(async () => pressSave());
+    await advance(20_000);
+    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+
+    onRead = () => success(draftRow({ id: lastId, title: "恢复读取的草稿" }));
+    rendered.rerender(host(lastId));
+    await advance();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(titleField().value).toBe("恢复读取的草稿");
+    expect(titleField()).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^Bold$/ })).toBeEnabled();
+    expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
+  });
 });

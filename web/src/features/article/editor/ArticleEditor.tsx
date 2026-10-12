@@ -103,10 +103,17 @@ export function ArticleEditor({
   const publicApi = useMemo(() => new PublicApi(), []);
   const csrfToken = owner.session?.csrfToken ?? "";
 
-  const [phase, setPhase] = useState<"loading" | "ready" | "gone">(
-    draftId === null ? "ready" : "loading",
-  );
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<{
+    draftId: string | null;
+    phase: "loading" | "ready" | "gone";
+  }>({ draftId, phase: draftId === null ? "ready" : "loading" });
+  // Disable the old sheet in the route-changing render, before the read effect
+  // starts. Its content and native toolbar stay mounted until the next draft
+  // replaces them together.
+  const phase = loadState.draftId === draftId ? loadState.phase : "loading";
+  const loading = phase === "loading";
+  const [readError, setLoadError] = useState<string | null>(null);
+  const loadError = loadState.draftId === draftId ? readError : null;
   const [draft, setDraft] = useState<ArticleDraft | null>(null);
   const [title, setTitle] = useState("");
   const [coverMediaId, setCoverMediaId] = useState<string | null>(null);
@@ -246,6 +253,7 @@ export function ArticleEditor({
     if (!editor || editor.isDestroyed) return;
     if (draftId !== null && draftId === createdDraftId.current) {
       createdDraftId.current = null;
+      setLoadState({ draftId, phase: "ready" });
       return;
     }
     uploadGeneration.current += 1;
@@ -271,10 +279,10 @@ export function ArticleEditor({
       editor.commands.setContent(toEditorContent(emptyArticleDocument()), {
         emitUpdate: false,
       });
-      setPhase("ready");
+      setLoadState({ draftId, phase: "ready" });
       return;
     }
-    setPhase("loading");
+    setLoadState({ draftId, phase: "loading" });
     setLoadError(null);
     void (async () => {
       try {
@@ -301,16 +309,16 @@ export function ArticleEditor({
         editor.commands.setContent(toEditorContent(loaded.body), {
           emitUpdate: false,
         });
-        setPhase("ready");
+        setLoadState({ draftId, phase: "ready" });
       } catch (error) {
         if (abandoned || controller.signal.aborted) return;
         if (isDraftMissingError(error)) {
-          setPhase("gone");
+          setLoadState({ draftId, phase: "gone" });
           return;
         }
         owner.expireIfInvalidSession(error);
         setLoadError(articleDraftErrorMessage(error));
-        setPhase("ready");
+        setLoadState({ draftId, phase: "ready" });
       }
     })();
     return () => {
@@ -348,11 +356,13 @@ export function ArticleEditor({
     // at the preview and coming back, would report unsaved changes nobody
     // made. Whether the sheet can be typed on is not a change to what it says.
     if (!editor || editor.isDestroyed) return;
+    // During a read the host sheet/toolbar are inert. Toggling isEditable
+    // would make the upstream buttons disappear and then initialize again.
     const editable =
       !previewing &&
       !publishing &&
       !discarding &&
-      phase === "ready" &&
+      phase !== "gone" &&
       loadError === null;
     if (editor.isEditable === editable) return;
     editor.setEditable(editable, false);
@@ -432,6 +442,7 @@ export function ArticleEditor({
             // a reload comes back to what was just written. Replaced, not
             // pushed: nobody navigated anywhere.
             createdDraftId.current = stored.id;
+            setLoadState({ draftId: stored.id, phase: "ready" });
             location.replace(articleDraftPath(stored.id));
           }
           if (!embedded) void refreshDrafts();
@@ -559,7 +570,7 @@ export function ArticleEditor({
     };
   }, [railOpen]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const bar = topBar.current;
     if (!bar) return;
     const measure = () =>
@@ -574,7 +585,7 @@ export function ArticleEditor({
   }, [phase]);
 
   // Keep a long title visible at narrow widths as well as after a resize.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const field = titleInput.current;
     if (!field) return;
     const resize = () => {
@@ -854,6 +865,7 @@ export function ArticleEditor({
       <div
         className={`${styles.page} ${embedded ? styles.embeddedEditor : ""}`}
         data-article-theme
+        aria-busy={loading}
       >
         <header className={styles.topBar} ref={topBar}>
           <button
@@ -888,7 +900,9 @@ export function ArticleEditor({
               <>
                 <span className={styles.draftBadge}>Draft</span>
                 <span aria-hidden="true">·</span>
-                {saveState.kind === "saved" ? (
+                {loading ? (
+                  <span>正在读取草稿…</span>
+                ) : saveState.kind === "saved" ? (
                   <ArticleTime
                     value={saveState.at}
                     timezone={site.timezone}
@@ -908,11 +922,13 @@ export function ArticleEditor({
                   </span>
                 )}
               </>
+            ) : loading ? (
+              "正在读取草稿…"
             ) : (
               statusLine
             )}
           </p>
-          <div className={styles.topActions}>
+          <div className={styles.topActions} inert={loading}>
             {previewing ? (
               <ButtonGroup ref={setPreviewSearchSlot} orientation="horizontal">
                 <ThemeToggle headerAction />
@@ -928,13 +944,17 @@ export function ArticleEditor({
                   phase !== "ready" ||
                   loadError !== null
                 }
-                onChange={setVisibility}
+                onChange={(next) => {
+                  if (phase === "ready" && loadError === null)
+                    setVisibility(next);
+                }}
                 value={visibility}
               />
             </span>
             <button
               aria-pressed={previewing}
               className={styles.secondaryAction}
+              disabled={loading}
               onClick={() => setPreviewing((current) => !current)}
               type="button"
             >
@@ -969,6 +989,7 @@ export function ArticleEditor({
                       className={styles.focusModeButton}
                       aria-label={focused ? "退出全屏编辑" : "全屏编辑"}
                       aria-pressed={focused}
+                      disabled={loading}
                       onClick={onToggleFocus}
                       type="button"
                     >
@@ -1037,6 +1058,8 @@ export function ArticleEditor({
                             saveState.kind === "saving" ||
                             publishing ||
                             discarding ||
+                            phase !== "ready" ||
+                            loadError !== null ||
                             coverBusy ||
                             uploads.some((task) => task.failed === null)
                           }
@@ -1057,9 +1080,8 @@ export function ArticleEditor({
         !previewing &&
         !publishing &&
         !discarding &&
-        phase === "ready" &&
-        !loadError ? (
-          <ArticleFormatToolbar editor={editor} />
+        (loading || !loadError) ? (
+          <ArticleFormatToolbar editor={editor} loading={loading} />
         ) : null}
 
         <div className={styles.main}>
@@ -1118,10 +1140,7 @@ export function ArticleEditor({
             />
           </div>
 
-          <div className={styles.document}>
-            {phase === "loading" ? (
-              <p className={styles.loading}>正在读取草稿…</p>
-            ) : null}
+          <div className={styles.document} inert={loading}>
             {loadError ? (
               <p className={styles.pageError} role="alert">
                 {loadError}
@@ -1142,17 +1161,16 @@ export function ArticleEditor({
                 <CoverField
                   busy={coverBusy}
                   mediaId={coverMediaId}
-                  onPick={() => coverInput.current?.click()}
+                  onPick={() => {
+                    if (!loading) coverInput.current?.click();
+                  }}
                   onRemove={() => {
+                    if (loading) return;
                     setCoverMediaId(null);
                     markChanged();
                   }}
                   readOnly={
-                    previewing ||
-                    publishing ||
-                    discarding ||
-                    phase !== "ready" ||
-                    loadError !== null
+                    previewing || publishing || discarding || loadError !== null
                   }
                 />
               }
@@ -1175,6 +1193,7 @@ export function ArticleEditor({
                           loadError !== null
                         }
                         onChange={(event) => {
+                          if (loading) return;
                           setTitle(event.target.value.replace(/[\r\n]+/g, " "));
                           markChanged();
                         }}
@@ -1243,7 +1262,7 @@ export function ArticleEditor({
           </div>
         </div>
 
-        {coverFile ? (
+        {coverFile && !loading ? (
           <CoverCropDialog
             file={coverFile}
             busy={coverBusy}
@@ -1253,7 +1272,10 @@ export function ArticleEditor({
               setCoverBusy(false);
               setCoverFile(null);
             }}
-            onApply={(file) => void uploadCover(file)}
+            onApply={(file) => {
+              if (phase === "ready" && loadError === null)
+                void uploadCover(file);
+            }}
           />
         ) : null}
         <input
@@ -1262,7 +1284,7 @@ export function ArticleEditor({
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
-            if (file) setCoverFile(file);
+            if (file && !loading) setCoverFile(file);
           }}
           ref={coverInput}
           tabIndex={-1}
