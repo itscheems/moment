@@ -203,7 +203,7 @@ describe("shared post presentation", () => {
       /\._quoteCard_[^{]+\{[^}]*background:\s*transparent;/s,
     );
     expect(postCss).toMatch(
-      /@media \(hover: hover\)[\s\S]*?\._quoteCard_[^:]+:hover[\s\S]*?background:\s*#efefef;/,
+      /@media \(hover: hover\)[\s\S]*?\._quoteCard_[^:]+:hover[\s\S]*?background:\s*var\(--quote-hover\);/,
     );
   });
 
