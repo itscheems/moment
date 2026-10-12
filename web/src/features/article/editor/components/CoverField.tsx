@@ -1,6 +1,5 @@
 import { ArticleCover } from "../../../../components/content/ArticleSheet";
 import styles from "../Editor.module.css";
-import { Icon } from "../../../../components/icons";
 
 function AddCoverIcon() {
   return (
@@ -17,6 +16,14 @@ function AddCoverIcon() {
         stroke="currentColor"
       />
       <path d="M4 14.333L8 11l4 4" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function RemoveCoverIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      <path d="M10.59 12L4.54 5.96l1.42-1.42L12 10.59l6.04-6.05 1.42 1.42L13.41 12l6.05 6.04-1.42 1.42L12 13.41l-6.04 6.05-1.42-1.42L10.59 12z" />
     </svg>
   );
 }
@@ -41,15 +48,17 @@ export function CoverField({
     return (
       <figure className={styles.coverPlaceholder} aria-busy={busy}>
         <div className={styles.coverStage}>
-          <button
-            aria-label={busy ? "正在上传封面…" : "添加封面图"}
-            className={styles.coverAdd}
-            disabled={busy}
-            onClick={onPick}
-            type="button"
-          >
-            <AddCoverIcon />
-          </button>
+          <div className={styles.coverAddControl}>
+            <button
+              aria-label={busy ? "正在上传封面…" : "添加封面图"}
+              className={styles.coverAdd}
+              disabled={busy}
+              onClick={onPick}
+              type="button"
+            >
+              <AddCoverIcon />
+            </button>
+          </div>
           <p className={styles.coverHint}>
             建议使用宽高比为 5:2 的图片，以获得最佳效果。
           </p>
@@ -78,7 +87,7 @@ export function CoverField({
             onClick={onRemove}
             type="button"
           >
-            <Icon name="close" />
+            <RemoveCoverIcon />
           </button>
         </div>
       )}
