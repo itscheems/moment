@@ -818,6 +818,15 @@ export function ArticleEditor({
 
   const titleLength = codePoints(title);
   const titleTooLong = titleLength > MAX_ARTICLE_TITLE_CODE_POINTS;
+  const bodyHasSubstance = useMemo(() => {
+    void changeTick;
+    void draft;
+    return (
+      editor !== null &&
+      !editor.isDestroyed &&
+      hasArticleSubstance(toArticleDocument(editor.getJSON()))
+    );
+  }, [editor, changeTick, draft]);
   const statusLine = saveStatusLabel(saveState, site.timezone, now);
 
   if (phase === "gone") {
@@ -937,6 +946,8 @@ export function ArticleEditor({
                 publishing ||
                 discarding ||
                 titleTooLong ||
+                title.trim() === "" ||
+                !bodyHasSubstance ||
                 phase !== "ready" ||
                 loadError !== null ||
                 saveState.kind === "conflict" ||

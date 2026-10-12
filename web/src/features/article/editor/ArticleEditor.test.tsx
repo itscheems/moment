@@ -216,6 +216,31 @@ it("opens a new article idle rather than claiming unsaved changes", async () => 
   expect(calls.filter((call) => call.method !== "GET")).toEqual([]);
 });
 
+it("disables publishing until both title and meaningful body are present", async () => {
+  renderEditor(null);
+  await advance();
+  const publishButton = screen.getByRole("button", {
+    name: "发布",
+  });
+  expect(publishButton).toBeDisabled();
+  await typeTitle("新的文章");
+  expect(publishButton).toBeDisabled();
+  const editable = document.querySelector<HTMLElement & { editor: Editor }>(
+    '.tiptap.ProseMirror[contenteditable="true"]',
+  );
+  if (!editable) throw new Error("missing editor");
+  await act(async () => {
+    editable.editor.commands.insertContent("   ");
+  });
+  expect(publishButton).toBeDisabled();
+  await act(async () => {
+    editable.editor.commands.insertContent("开始记录。");
+  });
+  expect(publishButton).toBeEnabled();
+  await typeTitle("");
+  expect(publishButton).toBeDisabled();
+});
+
 it("keeps preview annotations out of draft content, save status and persistence", async () => {
   await import("../reader/ArticleReadingContent");
   stubFetch();
