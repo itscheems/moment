@@ -557,11 +557,11 @@ func ValidatePost(post Post) error {
 		}
 		// A list read leaves the body behind, and leaves the rendering behind
 		// with it; a detail read carries both or neither.
-		if (post.Article.Body == nil) != (post.ContentHTML == "") {
+		if hasArticleBody(post.Article.Body) != (post.ContentHTML != "") {
 			return errors.New("an article carries its body and its rendered content together")
 		}
 		if len(post.Article.BodyMedia) > 0 {
-			if post.Article.Body == nil {
+			if !hasArticleBody(post.Article.Body) {
 				return errors.New("article body media requires a document")
 			}
 			seen := make(map[string]bool)
@@ -638,7 +638,7 @@ func validateQuotedPost(post QuotedPost) error {
 		if post.Article == nil {
 			return errors.New("a quoted article must carry its card")
 		}
-		if post.Article.Body != nil {
+		if hasArticleBody(post.Article.Body) {
 			return errors.New("a quote shows an article's card, not its body")
 		}
 	} else {
@@ -674,6 +674,12 @@ func validateQuotedPost(post QuotedPost) error {
 		return err
 	}
 	return nil
+}
+
+// json.RawMessage receives the literal bytes "null" on an API read, whereas
+// a direct projection has a nil slice. Both mean the list left its body behind.
+func hasArticleBody(body json.RawMessage) bool {
+	return body != nil && !bytes.Equal(bytes.TrimSpace(body), []byte("null"))
 }
 
 func validProjectionMIMEType(value string) bool {
@@ -736,7 +742,7 @@ func FromArticleDraft(record app.ArticleDraftRecord) ArticleDraft {
 		AuthorUserID: record.AuthorUserID, SourceState: state, SourceVisibility: string(visibility),
 		ID:                record.ID.String(),
 		Title:             record.Draft.Title,
-		Excerpt:           domain.ArticleExcerpt(record.Draft.Body),
+		Excerpt:           domain.ArticlePreviewText(record.Draft.Body),
 		BodySchemaVersion: record.Draft.Body.SchemaVersion,
 		CreatedAt:         record.CreatedAt.UTC(),
 		UpdatedAt:         record.UpdatedAt.UTC(),

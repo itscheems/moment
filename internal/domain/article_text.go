@@ -19,7 +19,8 @@ func ArticleVisibleText(document ArticleDocument) string {
 	return cleanVisibleText(output.String())
 }
 
-// ArticleExcerpt is the run of prose a card shows under the title.
+// ArticleExcerpt derives the legacy bounded summary stored beside the body.
+// Display previews use ArticlePreviewText without changing this projection.
 //
 // It is prose and only prose. Code and table cells are visible text and belong
 // in the index, but read as noise in a one-line summary: a card whose subtitle
@@ -34,6 +35,47 @@ func ArticleExcerpt(document ArticleDocument) string {
 		return prose
 	}
 	return strings.TrimSpace(string(runes[:ArticleExcerptCodePoints]))
+}
+
+// ArticlePreviewText is the reading preview shown by article cards. It keeps
+// authored line breaks and inline runs, unlike the legacy storage excerpt and
+// the search projection. Its limit is presentation-only: changing a card must
+// not rewrite the body or the bounded excerpt stored beside it.
+func ArticlePreviewText(document ArticleDocument) string {
+	const previewCodePoints = 200
+	var output strings.Builder
+	appendArticlePreviewText(&output, document.Content)
+	prose := strings.TrimSpace(output.String())
+	if prose == "" {
+		return ""
+	}
+	count := 0
+	for offset := range prose {
+		if count == previewCodePoints {
+			prose = prose[:offset]
+			break
+		}
+		count++
+	}
+	return strings.TrimSpace(prose) + "..."
+}
+
+func appendArticlePreviewText(output *strings.Builder, nodes []ArticleNode) {
+	for _, node := range nodes {
+		switch node.Type {
+		case ArticleNodeCodeBlock, ArticleNodeTable, ArticleNodeImage, ArticleNodeHorizontalRule:
+			continue
+		case ArticleNodeText:
+			output.WriteString(node.Text)
+		case ArticleNodeHardBreak:
+			output.WriteByte('\n')
+		case ArticleNodeParagraph, ArticleNodeHeading:
+			appendArticlePreviewText(output, node.Content)
+			output.WriteByte('\n')
+		default:
+			appendArticlePreviewText(output, node.Content)
+		}
+	}
 }
 
 func appendArticleProse(output *strings.Builder, nodes []ArticleNode) {
