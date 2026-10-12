@@ -1,5 +1,7 @@
 .sheet {
   --article-inset: 3rem;
+  --article-title-color: #0f1419;
+  --article-title-placeholder: #757575;
   inline-size: min(100%, 44.25rem);
   min-inline-size: 0;
   margin-inline: auto;
@@ -19,7 +21,7 @@
   padding: 0;
   overflow: hidden;
   resize: none;
-  color: inherit;
+  color: var(--article-title-color);
   background: transparent;
   font-family: var(--font-timeline);
   font-size: 2.125rem;
@@ -32,7 +34,11 @@
   outline: none;
 }
 .heading textarea::placeholder {
-  color: var(--text-tertiary);
+  color: var(--article-title-placeholder);
+}
+:root:is([data-theme="dim"], [data-theme="lights-out"]) .sheet {
+  --article-title-color: var(--tt-theme-text);
+  --article-title-placeholder: var(--text-tertiary);
 }
 .byline {
   min-block-size: 1.5rem;

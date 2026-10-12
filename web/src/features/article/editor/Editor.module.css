@@ -522,7 +522,7 @@
   align-items: center;
   gap: 0.25rem;
   min-block-size: 1.5rem;
-  color: var(--text-secondary);
+  color: #536471;
   font-family: var(--font-timeline);
   font-size: 0.9375rem;
   line-height: 1.25rem;
@@ -547,8 +547,14 @@
   flex: 0 1 auto;
 }
 .bylineName {
-  color: var(--text-primary);
+  color: #0f1419;
   font-weight: 700;
+}
+:root:is([data-theme="dim"], [data-theme="lights-out"]) .byline {
+  color: var(--text-secondary);
+}
+:root:is([data-theme="dim"], [data-theme="lights-out"]) .bylineName {
+  color: var(--text-primary);
 }
 .menuPopup {
   z-index: var(--layer-popover);
