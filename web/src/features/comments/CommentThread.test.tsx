@@ -1946,7 +1946,7 @@ describe("public comment thread", () => {
     await waitFor(() =>
       expect(screen.queryByText("顶级回应")).not.toBeInTheDocument(),
     );
-    expect(deleteTokens).toEqual(["csrf-old", "csrf-new"]);
+    expect(deleteTokens).toEqual(["csrf-from-cookie", "csrf-new"]);
   });
 
   it("reauthenticates inside a pre-expired delete dialog and deletes once with restored focus", async () => {

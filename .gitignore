@@ -42,6 +42,8 @@
 /.env.local
 
 # Tool, editor, and OS state
+AGENTS.md
+CLAUDE.md
 /.claude/skills
 /.codex/skills
 __pycache__/
