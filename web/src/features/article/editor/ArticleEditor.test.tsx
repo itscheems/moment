@@ -19,6 +19,28 @@ import type { Editor } from "@tiptap/core";
 const uploadMedia = vi.fn();
 const expireIfInvalidSession = vi.fn().mockReturnValue(false);
 
+// Exercise the editor's upload/save boundary independently of bitmap decoding.
+vi.mock("./components/CoverCropDialog", () => ({
+  CoverCropDialog: ({
+    file,
+    busy,
+    onCancel,
+    onApply,
+  }: {
+    file: File;
+    busy?: boolean;
+    onCancel: () => void;
+    onApply: (file: File) => void;
+  }) => (
+    <div role="dialog" aria-label="编辑封面图">
+      <button onClick={onCancel}>取消裁切</button>
+      <button disabled={busy} onClick={() => onApply(file)}>
+        应用裁切
+      </button>
+    </div>
+  ),
+}));
+
 vi.mock("../../auth/SessionProvider", () => ({
   useSession: () => ({
     api: { uploadMedia },
@@ -268,6 +290,7 @@ function pressSave(
 }
 
 beforeEach(() => {
+  uploadMedia.mockReset();
   calls = [];
   onPut = null;
   onPost = null;
@@ -293,6 +316,89 @@ beforeEach(() => {
     now: new Date("2026-09-25T02:01:00.000Z"),
   });
   stubFetch();
+});
+
+async function selectCover() {
+  const input = document.querySelector('input[type="file"]');
+  if (!input) throw new Error("missing cover input");
+  fireEvent.change(input, {
+    target: {
+      files: [new File(["cover"], "cover.png", { type: "image/png" })],
+    },
+  });
+  await advance();
+}
+
+describe("cover crop and upload lifecycle", () => {
+  it("cancels local selection without uploading or changing the saved cover", async () => {
+    onRead = () =>
+      success(draftRow({ cover_media_id: "01K2ABCDEF0123456789ABCDE1" }));
+    renderEditor(DRAFT_ID);
+    await advance();
+    await selectCover();
+    expect(uploadMedia).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "取消裁切" }));
+    await advance(20000);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(uploadMedia).not.toHaveBeenCalled();
+    expect(putCalls()).toEqual([]);
+    expect(
+      screen.getByRole("button", { name: "更换封面图" }),
+    ).toBeInTheDocument();
+  });
+
+  it("retains the previous cover and crop after failure, then saves the retried upload", async () => {
+    onRead = () =>
+      success(draftRow({ cover_media_id: "01K2ABCDEF0123456789ABCDE1" }));
+    uploadMedia
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce({ id: "01K2ABCDEF0123456789ABCDE2" });
+    renderEditor(DRAFT_ID);
+    await advance();
+    await selectCover();
+    fireEvent.click(screen.getByRole("button", { name: "应用裁切" }));
+    await advance();
+    expect(
+      screen.getByRole("dialog", { name: "编辑封面图" }),
+    ).toBeInTheDocument();
+    expect(document.querySelector("figure img")).toHaveAttribute(
+      "src",
+      expect.stringContaining("01K2ABCDEF0123456789ABCDE1"),
+    );
+    expect(putCalls()).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "应用裁切" }));
+    await advance();
+    await advance(2000);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(putCalls().at(-1)?.body).toMatchObject({
+      cover_media_id: "01K2ABCDEF0123456789ABCDE2",
+    });
+    expect(uploadMedia.mock.calls[0][3]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("aborts a cancelled upload and ignores its late result", async () => {
+    let resolveUpload!: (value: { id: string }) => void;
+    uploadMedia.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+    renderEditor(DRAFT_ID);
+    await advance();
+    await selectCover();
+    fireEvent.click(screen.getByRole("button", { name: "应用裁切" }));
+    await advance();
+    const signal = uploadMedia.mock.calls[0][3] as AbortSignal;
+    fireEvent.click(screen.getByRole("button", { name: "取消裁切" }));
+    expect(signal.aborted).toBe(true);
+    await act(async () => resolveUpload({ id: "01K2ABCDEF0123456789ABCDE2" }));
+    await advance(20000);
+    expect(putCalls()).toEqual([]);
+    expect(
+      screen.getByRole("button", { name: "添加封面图" }),
+    ).toBeInTheDocument();
+  });
 });
 
 afterEach(() => {

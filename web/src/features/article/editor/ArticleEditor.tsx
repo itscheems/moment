@@ -44,6 +44,7 @@ import { autosaveDelay, saveStatusLabel, type SaveState } from "./autosave";
 import { ArticleTime } from "../ArticleTime";
 import { ConflictNotice } from "./components/ConflictNotice";
 import { CoverField } from "./components/CoverField";
+import { CoverCropDialog } from "./components/CoverCropDialog";
 import { DraftRail } from "./components/DraftRail";
 type UploadTask = { id: string; failed: string | null };
 import { CharacterCount } from "./components/CharacterCount";
@@ -113,6 +114,7 @@ export function ArticleEditor({
   const [saveState, setSaveState] = useState<SaveState>({ kind: "idle" });
   const [uploads, setUploads] = useState<readonly UploadTask[]>([]);
   const [coverBusy, setCoverBusy] = useState(false);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [resolving, setResolving] = useState(false);
@@ -145,9 +147,18 @@ export function ArticleEditor({
   const libraryButton = useRef<HTMLButtonElement>(null);
   const libraryPanel = useRef<HTMLDivElement>(null);
   const coverInput = useRef<HTMLInputElement>(null);
+  const coverUpload = useRef<AbortController | null>(null);
   const publishKey = useRef(createIdempotencyKey());
   const uploadGeneration = useRef(0);
   const createdDraftId = useRef<string | null>(null);
+
+  useEffect(
+    () => () => {
+      uploadGeneration.current += 1;
+      coverUpload.current?.abort();
+    },
+    [],
+  );
 
   const uploadOwner = useRef(owner);
   uploadOwner.current = owner;
@@ -238,6 +249,9 @@ export function ArticleEditor({
       return;
     }
     uploadGeneration.current += 1;
+    coverUpload.current?.abort();
+    coverUpload.current = null;
+    setCoverFile(null);
     draftRef.current = null;
     conflicted.current = false;
     allowLeave.current = false;
@@ -614,13 +628,31 @@ export function ArticleEditor({
         return;
       }
       const generation = uploadGeneration.current;
+      coverUpload.current?.abort();
+      const controller = new AbortController();
+      coverUpload.current = controller;
       setCoverBusy(true);
       try {
-        const uploaded = await owner.api.uploadMedia(csrfToken, file);
-        if (generation !== uploadGeneration.current) return;
+        const uploaded = await owner.api.uploadMedia(
+          csrfToken,
+          file,
+          undefined,
+          controller.signal,
+        );
+        if (
+          generation !== uploadGeneration.current ||
+          controller.signal.aborted
+        )
+          return;
         setCoverMediaId(uploaded.id);
+        setCoverFile(null);
         markChanged();
       } catch (error) {
+        if (
+          generation !== uploadGeneration.current ||
+          controller.signal.aborted
+        )
+          return;
         owner.expireIfInvalidSession(error);
         notify(
           error instanceof PublicApiError
@@ -629,7 +661,13 @@ export function ArticleEditor({
           { type: "error" },
         );
       } finally {
-        if (generation === uploadGeneration.current) setCoverBusy(false);
+        if (
+          generation === uploadGeneration.current &&
+          coverUpload.current === controller
+        ) {
+          coverUpload.current = null;
+          setCoverBusy(false);
+        }
       }
     },
     [csrfToken, owner, markChanged],
@@ -1145,12 +1183,11 @@ export function ArticleEditor({
               }
               byline={
                 <div className={styles.byline}>
-                  <SiteAvatar site={site} />
+                  <SiteAvatar site={site} size={24} />
                   <span className={styles.bylineName}>
                     {siteDisplayName(site)}
                   </span>
-                  <span aria-hidden="true">·</span>
-                  <span>@{site.username}</span>
+                  <span className={styles.bylineHandle}>@{site.username}</span>
                 </div>
               }
             >
@@ -1195,13 +1232,26 @@ export function ArticleEditor({
           </div>
         </div>
 
+        {coverFile ? (
+          <CoverCropDialog
+            file={coverFile}
+            busy={coverBusy}
+            onCancel={() => {
+              coverUpload.current?.abort();
+              coverUpload.current = null;
+              setCoverBusy(false);
+              setCoverFile(null);
+            }}
+            onApply={(file) => void uploadCover(file)}
+          />
+        ) : null}
         <input
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp"
           className={styles.srOnly}
           onChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = "";
-            if (file) void uploadCover(file);
+            if (file) setCoverFile(file);
           }}
           ref={coverInput}
           tabIndex={-1}
