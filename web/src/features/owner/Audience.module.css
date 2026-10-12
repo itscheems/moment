@@ -4,6 +4,9 @@
    face without a bold weight still gets one. */
 .trigger,
 .card {
+  --audience-color: #1d9bf0;
+  --audience-hover: #ebf5fe;
+  --audience-pressed: #d7ecfd;
   font-family:
     "TwitterChirp",
     -apple-system,
@@ -21,6 +24,19 @@
   font-synthesis: weight;
 }
 
+:root:is([data-theme="dim"], [data-theme="lights-out"]) :is(.trigger, .card) {
+  --audience-hover: color-mix(
+    in srgb,
+    var(--audience-color) 10%,
+    var(--surface)
+  );
+  --audience-pressed: color-mix(
+    in srgb,
+    var(--audience-color) 20%,
+    var(--surface)
+  );
+}
+
 /* Trigger: a 24px pill, 1px border, 13/16 bold label, 16px chevron 4px after
    it, 12px side padding. Background colour and shadow fade over 0.2s. */
 .trigger {
@@ -32,7 +48,7 @@
   border: 1px solid var(--border-strong);
   border-radius: 9999px;
   padding: 0 12px;
-  color: var(--accent);
+  color: var(--audience-color);
   background-color: transparent;
   font-size: 13px;
   font-weight: 700;
@@ -60,6 +76,11 @@
   cursor: default;
 }
 
+.trigger:focus-visible {
+  outline: 2px solid var(--audience-color);
+  outline-offset: 2px;
+}
+
 /* PingFang stops at Semibold, and at 13px that reads as regular next to the
    Chirp Bold the reference label is set in; a quarter-pixel stroke brings
    the CJK label up to the same weight. */
@@ -80,7 +101,7 @@
 }
 
 .positioner {
-  z-index: var(--layer-popover);
+  z-index: var(--layer-picker);
 }
 
 /* Card: 260px wide, 16px radius, the popover shadow, 12px above and below the
@@ -147,8 +168,8 @@
   block-size: 40px;
   margin-inline-end: 12px;
   border-radius: 9999px;
-  color: var(--accent-contrast);
-  background-color: var(--accent);
+  color: #ffffff;
+  background-color: var(--audience-color);
 }
 
 .optionIcon svg {
@@ -173,7 +194,7 @@
   align-items: center;
   inline-size: 20px;
   margin-inline-start: 12px;
-  color: var(--accent);
+  color: var(--audience-color);
   font-size: 15px;
   line-height: 20px;
 }
