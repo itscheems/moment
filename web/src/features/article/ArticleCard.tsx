@@ -25,7 +25,8 @@ function ArticleBadge() {
   return (
     <span className={styles.badge}>
       <span aria-hidden="true" className={styles.badgeLogo} />
-      <span className={styles.srOnly}>类型：</span>文章
+      <span className={styles.srOnly}>Type: </span>
+      {" Article"}
     </span>
   );
 }

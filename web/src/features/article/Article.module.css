@@ -13,6 +13,7 @@
 .quotedTitle {
   font-family: var(--font-timeline);
   font-feature-settings: normal;
+  font-synthesis: weight style small-caps;
   letter-spacing: normal;
   text-rendering: auto;
   -webkit-font-smoothing: auto;
@@ -47,17 +48,16 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  gap: 0.25rem;
   block-size: 1.25rem;
   border-radius: 0.25rem;
   padding-inline: 0.5rem;
   color: var(--text-primary);
   background: var(--surface-hover);
-  font-size: 0.8125rem;
+  font-size: 0.6875rem;
   font-weight: 700;
-  line-height: 1rem;
+  line-height: 1.25rem;
   letter-spacing: normal;
-  white-space: nowrap;
+  white-space: pre-wrap;
 }
 
 .badgeLogo {
@@ -76,7 +76,6 @@
 .meta {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
   padding: var(--space-3);
 }
 
@@ -97,7 +96,7 @@
 .cardTitle {
   min-inline-size: 0;
   flex: 1;
-  margin: 0;
+  margin: 0 0 var(--space-2);
   color: var(--text-primary);
   font-size: 1.0625rem;
   font-weight: 800;
