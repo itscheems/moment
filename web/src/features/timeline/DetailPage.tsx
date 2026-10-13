@@ -16,6 +16,7 @@ import {
 import { ArticlePage } from "../article/ArticlePage";
 import { ArticleFocusLink } from "../article/ArticleFocusLink";
 import { HeaderActions } from "../../components/headerActions";
+import { postAuthorSite } from "../../components/SiteIdentity";
 import { PostPresentation } from "../posts/PostPresentation";
 import { CommentThread } from "../comments/CommentThread";
 import { useNavigation } from "../../app/navigation";
@@ -73,6 +74,11 @@ export function DetailPage({
     return () => activeRequest.current?.abort();
   }, [load]);
 
+  useEffect(() => {
+    setReplyDialogOpen(false);
+    replyTriggerRef.current = null;
+  }, [focusReading, id]);
+
   // The thread reports how the total moved, not what it is. It only ever holds
   // one page of a conversation now, so counting its rows would replace a real
   // total with the size of whatever happens to be loaded.
@@ -107,7 +113,10 @@ export function DetailPage({
     <>
       {isReadArticlePost(post) && !focusReading ? (
         <HeaderActions>
-          <ArticleFocusLink id={post.id} username={site.username} />
+          <ArticleFocusLink
+            id={post.id}
+            username={postAuthorSite(post, site).username}
+          />
         </HeaderActions>
       ) : null}
       {isReadArticlePost(post) ? (
@@ -134,6 +143,7 @@ export function DetailPage({
         />
       )}
       <CommentThread
+        active={!focusReading}
         api={api}
         onCountChange={handleCommentCountChange}
         onReplyDialogOpenChange={setReplyDialogOpen}

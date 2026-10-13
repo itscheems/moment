@@ -129,9 +129,93 @@
 
 /* ---- the detail page ---- */
 
+.readingFooter {
+  --article-footer-secondary: #536471;
+  margin-block-start: 2rem;
+  border-block-start: 1px solid #eff3f4;
+  padding-block-start: 2rem;
+  color: #0f1419;
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  font-synthesis: weight style small-caps;
+  letter-spacing: normal;
+  text-rendering: auto;
+  -webkit-font-smoothing: auto;
+}
+
+.readingAuthor {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  padding: 0.75rem 1rem;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+
+.readingAuthorAvatar {
+  flex: 0 0 2.5rem;
+}
+
+.readingAuthorAvatar > * {
+  border: 0;
+}
+
+.readingAuthorText {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+}
+
+.readingAuthorText > :is(strong, span) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readingAuthorText strong {
+  font-weight: 700;
+}
+
+.readingAuthorText > span {
+  color: var(--article-footer-secondary);
+  font-weight: 400;
+  font-feature-settings: "ss01";
+}
+
+:root:is([data-theme="dim"], [data-theme="lights-out"]) .readingFooter {
+  --article-footer-secondary: var(--text-secondary);
+  color: var(--text-primary);
+  border-color: var(--border-subtle);
+}
+
+.readingAuthor:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (max-width: 499px) {
+  .readingFooter {
+    margin-block-start: 1.5rem;
+    padding-block-start: 1.5rem;
+  }
+}
+
+@media (hover: hover) {
+  .readingAuthor:hover strong {
+    text-decoration: underline;
+  }
+}
+
 .page {
   display: block;
   padding: 0 0 1rem;
+}
+
+.page.focusReading {
+  border-block-end: 0;
 }
 .column {
   inline-size: min(calc(100% - 4rem), 38.25rem);

@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -349,6 +350,40 @@ describe("article detail page", () => {
     expect(
       screen.getByRole("button", { name: "分享这篇文章" }),
     ).toBeInTheDocument();
+  });
+
+  it("ends focus reading with the article author instead of discussion actions", () => {
+    const post = makeArticle();
+    post.commentCount = 12;
+    post.author = {
+      userId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      username: "alice",
+      displayName: "文章作者",
+      avatarMediaId: null,
+      profileUrl: "/alice",
+    };
+    render(
+      <NavigationProvider>
+        <ArticlePage post={post} site={site} focusReading />
+      </NavigationProvider>,
+    );
+    const footer = screen.getByLabelText("文章作者");
+    expect(within(footer).getByText("文章作者")).toBeInTheDocument();
+    expect(within(footer).getByText("@alice")).toBeInTheDocument();
+    expect(within(footer).getByRole("link")).toHaveAttribute("href", "/alice");
+    expect(screen.queryByRole("button", { name: /回复这篇文章/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "分享这篇文章" })).toBeNull();
+    expect(document.querySelector('a[href="#comments"]')).toBeNull();
+    expect(footer.closest("[data-article-sheet]")).not.toBeNull();
+  });
+
+  it("does not add a reading footer to the workspace publication preview", () => {
+    render(
+      <NavigationProvider>
+        <ArticlePage post={makeArticle()} site={site} showActions={false} />
+      </NavigationProvider>,
+    );
+    expect(screen.queryByLabelText("文章作者")).toBeNull();
   });
 
   it("drops the cover block and the lede when the article has neither", () => {

@@ -412,14 +412,14 @@ function ownedBySite(author: PublicCommentAuthor, site: SiteIdentity): boolean {
  * necessarily equals `clientHeight`: believing that reading would decide the
  * body fits and withdraw the control that puts it back.
  */
-function useFoldedBody(contentHtml: string) {
+function useFoldedBody(contentHtml: string, active: boolean) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
 
   useEffect(() => {
     const body = bodyRef.current;
-    if (!body || expanded) return;
+    if (!active || !body || expanded) return;
     let live = true;
     const measure = () => {
       if (!live) return;
@@ -439,7 +439,7 @@ function useFoldedBody(contentHtml: string) {
       live = false;
       observer.disconnect();
     };
-  }, [contentHtml, expanded]);
+  }, [active, contentHtml, expanded]);
 
   return { bodyRef, expanded, overflowing, setExpanded };
 }
@@ -507,6 +507,7 @@ function SignInToReplyPopover({
 }
 
 export function CommentItem({
+  active = true,
   comment,
   site,
   owner,
@@ -520,6 +521,7 @@ export function CommentItem({
   onDeleted,
   onPinChange,
 }: {
+  active?: boolean;
   comment: PublicComment;
   site: SiteIdentity;
   owner: boolean;
@@ -590,6 +592,7 @@ export function CommentItem({
   const flashTimerRef = useRef<number | null>(null);
   const { bodyRef, expanded, overflowing, setExpanded } = useFoldedBody(
     comment.contentHtml,
+    active,
   );
   const bodyId = `comment-${comment.id}-body`;
 
@@ -649,6 +652,10 @@ export function CommentItem({
       delete target.dataset.commentFlash;
     }, REPLY_TARGET_FLASH_MS);
   };
+
+  // Keep the folded-body state, but release the row's portals and scroll locks
+  // while its conversation is suspended for focused article reading.
+  if (!active) return null;
 
   return (
     <li

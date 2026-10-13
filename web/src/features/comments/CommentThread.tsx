@@ -104,6 +104,7 @@ export function CommentThread({
   postId,
   post,
   site,
+  active = true,
   onCountChange,
   replyDialogOpen = false,
   onReplyDialogOpenChange,
@@ -113,6 +114,8 @@ export function CommentThread({
   postId: string;
   post?: PublicPost;
   site: SiteIdentity;
+  /** Pause fetching and interaction while preserving the conversation drafts. */
+  active?: boolean;
   /**
    * Reports how the post's comment total moved, not what it now is. A thread
    * that only ever holds one page cannot count the whole thing, and the server
@@ -138,6 +141,11 @@ export function CommentThread({
     () => new Map(),
   );
   const visitedCursors = useRef(new Set<string>());
+  const loadedThread = useRef<{
+    api: PublicApi;
+    postId: string;
+    attempt: number;
+  } | null>(null);
   const [loadError, setLoadError] = useState<unknown>(null);
   const [attempt, setAttempt] = useState(0);
   const [topContent, setTopContent] = useState("");
@@ -154,6 +162,14 @@ export function CommentThread({
   const load = useCallback(() => setAttempt((value) => value + 1), []);
 
   useEffect(() => {
+    if (!active) return;
+    const loaded = loadedThread.current;
+    if (
+      loaded?.api === api &&
+      loaded.postId === postId &&
+      loaded.attempt === attempt
+    )
+      return;
     const controller = new AbortController();
     setLoadError(null);
     setMoreError(null);
@@ -162,6 +178,7 @@ export function CommentThread({
       .comments(postId, { signal: controller.signal })
       .then((thread) => {
         if (controller.signal.aborted) return;
+        loadedThread.current = { api, postId, attempt };
         // The pinned conversation is delivered beside the page so that pinning
         // never reorders what a cursor addresses. Folding it back into the
         // stream at its own point in time keeps one array to reason about, and
@@ -177,12 +194,12 @@ export function CommentThread({
         if (!controller.signal.aborted) setLoadError(error);
       });
     return () => controller.abort();
-  }, [api, attempt, postId]);
+  }, [active, api, attempt, postId]);
 
   const loadMoreRoots = useCallback(
     (source: "automatic" | "manual") => {
       const cursor = nextCursor;
-      if (!cursor || loadingMore) return;
+      if (!active || !cursor || loadingMore) return;
       // A cursor counts as spent only once a page actually comes back for it.
       // Marking it before the request would turn an ordinary network failure
       // into a permanent "cycle detected", with the retry button unable to do
@@ -214,13 +231,13 @@ export function CommentThread({
         .catch((error: unknown) => setMoreError(error))
         .finally(() => setLoadingMore(false));
     },
-    [api, loadingMore, nextCursor, postId],
+    [active, api, loadingMore, nextCursor, postId],
   );
 
   const loadMoreReplies = useCallback(
     (rootId: string) => {
       const paging = replyPaging.get(rootId);
-      if (!paging || paging.loading || !paging.cursor) return;
+      if (!active || !paging || paging.loading || !paging.cursor) return;
       const cursor = paging.cursor;
       const visited = new Set(paging.visited);
       visited.add(cursor);
@@ -263,15 +280,19 @@ export function CommentThread({
           ),
         );
     },
-    [api, postId, replyPaging],
+    [active, api, postId, replyPaging],
   );
 
   useEffect(() => {
+    if (!active) {
+      focusCommentRef.current = null;
+      return;
+    }
     const id = focusCommentRef.current;
     if (!id || !items?.some((comment) => comment.id === id)) return;
     focusCommentRef.current = null;
     document.querySelector<HTMLElement>(`[data-comment-id="${id}"]`)?.focus();
-  }, [items]);
+  }, [active, items]);
 
   const created = (comment: PublicComment) => {
     focusCommentRef.current = comment.id;
@@ -360,7 +381,9 @@ export function CommentThread({
     <section
       aria-labelledby="comments-heading"
       className={styles.thread}
+      hidden={!active}
       id="comments"
+      inert={!active}
     >
       <h2
         className={styles.srOnly}
@@ -375,7 +398,7 @@ export function CommentThread({
         {announcement}
       </p>
 
-      {post ? (
+      {post && active ? (
         <PostReplyDialog
           api={api}
           commentsEnabled={commentsEnabled}
@@ -422,6 +445,7 @@ export function CommentThread({
             </div>
           ) : canCompose ? (
             <CommentForm
+              active={active}
               api={api}
               commentsEnabled={commentsEnabled}
               content={topContent}
@@ -442,6 +466,7 @@ export function CommentThread({
               {displayedItems.map((comment) => (
                 <Fragment key={comment.id}>
                   <CommentItem
+                    active={active}
                     comment={comment}
                     focusTarget={headingRef}
                     onDeleted={deleted}
@@ -502,6 +527,7 @@ export function CommentThread({
                   {reply?.targetId === comment.id ? (
                     <li className={styles.replyComposerRow}>
                       <CommentForm
+                        active={active}
                         api={api}
                         commentsEnabled={commentsEnabled}
                         content={reply.content}
