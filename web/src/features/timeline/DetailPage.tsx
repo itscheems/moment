@@ -122,6 +122,7 @@ export function DetailPage({
       {isReadArticlePost(post) ? (
         <ArticlePage
           focusReading={focusReading}
+          layout={focusReading ? "document" : "detail"}
           onDeleted={() => navigate("/")}
           onReply={openReply}
           onReposted={setPost}

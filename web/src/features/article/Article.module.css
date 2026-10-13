@@ -222,6 +222,21 @@
   margin-inline: auto;
 }
 
+.detailLayout > [data-article-sheet] {
+  --article-inset: 1rem;
+  inline-size: 100%;
+}
+
+.detailLayout .column {
+  inline-size: calc(100% - 2rem);
+}
+
+@media (min-width: 1265px) {
+  .detailLayout > [data-article-sheet] :global(.toc-sidebar) {
+    inset-inline-end: -1.875rem;
+  }
+}
+
 .byline {
   display: grid;
   grid-template-columns: 2.5rem minmax(0, 1fr) auto;
