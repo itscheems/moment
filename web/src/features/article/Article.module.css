@@ -217,6 +217,17 @@
 .page.focusReading {
   border-block-end: 0;
 }
+
+.page.detailLayout {
+  --article-action-divider: #eff3f4;
+  border-block-end: 0;
+  padding-block-end: 0;
+}
+
+:root:is([data-theme="dim"], [data-theme="lights-out"]) .page.detailLayout {
+  --article-action-divider: var(--border-subtle);
+}
+
 .column {
   inline-size: min(calc(100% - 4rem), 38.25rem);
   margin-inline: auto;
@@ -229,6 +240,16 @@
 
 .detailLayout .column {
   inline-size: calc(100% - 2rem);
+}
+
+.detailLayout > div.column {
+  min-block-size: 3.0625rem;
+  border-block-start-color: var(--article-action-divider);
+  border-block-end: 1px solid var(--article-action-divider);
+}
+
+.detailLayout > a.column {
+  border-color: var(--article-action-divider);
 }
 
 @media (min-width: 1265px) {
