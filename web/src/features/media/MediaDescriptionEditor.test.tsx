@@ -179,7 +179,7 @@ describe("media descriptions", () => {
       screen.queryByRole("button", { name: "Next image" }),
     ).not.toBeInTheDocument();
   });
-  it("opens and dismisses the alt text help without losing the draft", async () => {
+  it("opens help without focusing its action and returns to the description draft", async () => {
     render(<Harness initial={[picture("a")]} />);
     open();
     fireEvent.change(input(), { target: { value: "保留" } });
@@ -187,12 +187,18 @@ describe("media descriptions", () => {
     expect(
       await screen.findByRole("heading", { name: "Add descriptions" }),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("dialog", { name: "Add descriptions" }),
+      ).toHaveFocus(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Got it" }));
     await waitFor(() =>
       expect(
         screen.queryByRole("heading", { name: "Add descriptions" }),
       ).not.toBeInTheDocument(),
     );
+    await waitFor(() => expect(input()).toHaveFocus());
     expect(input()).toHaveValue("保留");
   });
 });

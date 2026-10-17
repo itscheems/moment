@@ -80,7 +80,9 @@
 }
 
 .popup:focus,
-.popup:focus-visible {
+.popup:focus-visible,
+.helpPopup:focus,
+.helpPopup:focus-visible {
   outline: none;
   box-shadow: none;
 }

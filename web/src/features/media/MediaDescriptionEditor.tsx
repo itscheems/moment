@@ -99,6 +99,7 @@ export function MediaDescriptionEditor({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const helpPopupRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<AbortController | null>(null);
   const openedBefore = useRef(false);
   const beginRequest = useRef<{
@@ -403,7 +404,12 @@ export function MediaDescriptionEditor({
                     <Dialog.Portal>
                       <Dialog.Backdrop className={styles.backdrop} />
                       <Dialog.Viewport className={styles.viewport}>
-                        <Dialog.Popup className={styles.helpPopup}>
+                        <Dialog.Popup
+                          className={styles.helpPopup}
+                          initialFocus={helpPopupRef}
+                          finalFocus={inputRef}
+                          ref={helpPopupRef}
+                        >
                           <Dialog.Title>Add descriptions</Dialog.Title>
                           <Dialog.Description>
                             Alt text describes what is in an image for people
