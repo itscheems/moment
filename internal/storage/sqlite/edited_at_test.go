@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -12,7 +11,7 @@ import (
 func TestEditedAtTracksContentAndPreservesRepostSemantics(t *testing.T) {
 	db, _ := openTestDatabase(t, Options{})
 	service := newTestPostService(t, db, func() time.Time { return time.UnixMilli(1700000000000) }, sequenceIDs(entryOne))
-	ctx := context.Background()
+	ctx := testAccountContext()
 	created, err := service.Create(ctx, app.CreatePostInput{ContentMD: "original"})
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +42,7 @@ func TestEditedAtTracksContentAndPreservesRepostSemantics(t *testing.T) {
 			t.Fatal("repost moved edit time")
 		}
 	}
-	post, err = service.Get(ctx, id, app.OwnerViewer())
+	post, err = service.Get(ctx, id, app.AccountViewer(testAccountID))
 	if err != nil || !post.Entry.EditedAt.Equal(edited) {
 		t.Fatal("read lost edit time")
 	}

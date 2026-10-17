@@ -42,7 +42,7 @@ func TestVisibilitySurvivesPortableImportAndDefaultStaysAbsent(t *testing.T) {
 	}
 
 	now := time.Now()
-	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(ctx, writeArchiveBytes(t, exported), 7)
+	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(ctx, writeArchiveBytes(t, exported), testAuthorization(7))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestUnknownArchiveVisibilityIsRefused(t *testing.T) {
 	name := filepath.Join(t.TempDir(), "unknown-visibility.zip")
 	writeArchive(t, name, members, order)
 	now := time.Now()
-	_, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), name, 1)
+	_, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(context.Background(), name, testAuthorization(1))
 	if !domain.HasCode(err, domain.CodeExportInvalid) {
 		t.Fatalf("unknown visibility inspected as %v", err)
 	}

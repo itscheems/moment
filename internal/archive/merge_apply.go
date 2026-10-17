@@ -129,9 +129,6 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 			return ResolvedMerge{}, domain.NewError(domain.CodeInvalidArgument, "selected post has no resolved identity", map[string]any{"post_id": value.ID})
 		}
 		resolved := cloneArchiveEntry(value)
-		if resolved.AuthorUserID == "" {
-			resolved.AuthorUserID = incoming.Site.OwnerID
-		}
 		resolved.ID = resolvedID
 		if value.QuotedEntryID != nil {
 			quotedID, retained := result.EntryRemap[*value.QuotedEntryID]
@@ -248,14 +245,14 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 	applySiteSelection(&result.Authority.Site, incoming.Site, siteChoices, result.EntryRemap, mediaRemap)
 	// Instance identity and canonical public URL always remain local.
 	//
-	// Keeping owner_id local used to be the entire account story, and it was
+	// Keeping profile_user_id local used to be the entire account story, and it was
 	// enough only while there was exactly one account and it was implied by the
 	// site row. Now that accounts are real rows, this line would silently drop
 	// every account the backup carries -- including the ones the comments it is
 	// about to restore were written by. The accounts are resolved explicitly
 	// below; this line survives because which account owns the instance is
 	// still a property of the instance, not of the backup.
-	result.Authority.Site.OwnerID = local.Site.OwnerID
+	result.Authority.Site.ProfileUserID = local.Site.ProfileUserID
 	result.Authority.Site.PublicBaseURL = local.Site.PublicBaseURL
 
 	result.Authority.Users, result.Authority.Identities, err = resolveMergeAccounts(local, incoming, result.Authority.Site, mediaRemap)
@@ -347,21 +344,6 @@ func mergeUsernameCollision(local, incoming PortableAuthority) error {
 	return nil
 }
 
-// admittedOwner is the account row the site owner is written with, whatever
-// the archive said about it.
-//
-// The role is forced because a site has exactly one owner and this is it. The
-// status is forced for the same reason one step further on: SetStatus refuses
-// to suspend an owner precisely so nobody can lock the last administrator out
-// of their own instance, and an archive naming a suspended owner would do it
-// anyway -- restoring a site whose only way back in is editing the database by
-// hand.
-func admittedOwner(value sqlitestore.ArchiveUser) sqlitestore.ArchiveUser {
-	value.Role = string(domain.UserRoleOwner)
-	value.Status = string(domain.AccountActive)
-	return value
-}
-
 // resolveMergeAccounts decides which accounts and credentials the merged
 // generation holds. There is no selection to consult, on purpose.
 //
@@ -408,26 +390,16 @@ func resolveMergeAccounts(local, incoming PortableAuthority, site sqlitestore.Ar
 		added := cloneArchiveUser(value)
 		added.AvatarMediaID = remappedPointer(added.AvatarMediaID, mediaRemap)
 		added.CoverMediaID = remappedPointer(added.CoverMediaID, mediaRemap)
-		// The site has one owner and it is the local one. An incoming account
-		// that held the role elsewhere arrives as an ordinary member.
-		if added.ID != site.OwnerID {
-			added.Role = string(domain.UserRoleMember)
-		}
+
 		if err := claim(added); err != nil {
 			return nil, nil, err
 		}
 	}
-	owner, exists := accounts[site.OwnerID]
+	_, exists := accounts[site.ProfileUserID]
 	if !exists {
-		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "merged accounts do not contain the site owner", map[string]any{"owner_id": site.OwnerID})
+		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "merged accounts do not contain the site owner", map[string]any{"profile_user_id": site.ProfileUserID})
 	}
-	handles.release(owner.Username)
-	owner = admittedOwner(owner)
-	owner.Username, owner.DisplayName, owner.Bio = site.Username, site.DisplayName, site.Bio
-	owner.AvatarMediaID, owner.CoverMediaID = cloneString(site.AvatarMediaID), cloneString(site.CoverMediaID)
-	if err := claim(owner); err != nil {
-		return nil, nil, err
-	}
+
 	users := make([]sqlitestore.ArchiveUser, 0, len(accounts))
 	for _, value := range accounts {
 		users = append(users, value)
@@ -788,7 +760,7 @@ func rebuildResolvedMergeGeneration(ctx context.Context, parent *runtimefs.Runti
 	// replaces the account this generation was created with.
 	for _, ownerPass := range []bool{true, false} {
 		for _, value := range resolved.Authority.Users {
-			if (domain.UserRole(value.Role) == domain.UserRoleOwner) != ownerPass {
+			if (domain.UserRole(value.Role) == domain.UserRoleAdmin) != ownerPass {
 				continue
 			}
 			if err := importer.InsertUser(ctx, value); err != nil {

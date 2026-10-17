@@ -43,7 +43,7 @@ func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, gate
 	authored.DELETE("/comments/:id", deleteComment(service))
 
 	moderation := engine.Group("/api/v1/owner")
-	moderation.Use(gate.RequireOwner())
+	moderation.Use(gate.RequireAdmin())
 	moderation.PUT("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, true))
 	moderation.DELETE("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, false))
 }

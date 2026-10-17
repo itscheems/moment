@@ -1,11 +1,9 @@
 package sqlite
 
 import (
-	"context"
 	"testing"
 
 	"github.com/moment/moment/internal/domain"
-	"github.com/moment/moment/internal/runtimefs"
 )
 
 func TestArchiveSnapshotRejectsCrossRecordCorruption(t *testing.T) {
@@ -32,7 +30,7 @@ func TestArchiveSnapshotRejectsCrossRecordCorruption(t *testing.T) {
 			name: "article entry with no body",
 			corrupt: func(t *testing.T, database *Database) {
 				t.Helper()
-				if _, err := database.write.Exec(`INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms) VALUES (?, 'article', NULL, 1, 1, 1)`, archiveArticleID); err != nil {
+				if _, err := database.write.Exec(`INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id) VALUES (?, 'article', NULL, 1, 1, 1, '0123456789abcdef0123456789abcdef')`, archiveArticleID); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -44,30 +42,23 @@ func TestArchiveSnapshotRejectsCrossRecordCorruption(t *testing.T) {
 				if _, err := database.write.Exec(`DROP TRIGGER comments_parent_insert_guard`); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := database.write.Exec(`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'owner', 'Owner', 'nested', 3)`, archiveNestedID, archiveEntryID, archiveReplyID); err != nil {
+				if _, err := database.write.Exec(`INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'Owner', 'nested', 3)`, archiveNestedID, archiveEntryID, archiveReplyID); err != nil {
 					t.Fatal(err)
 				}
 			},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			ctx := context.Background()
-			runtimeState, err := runtimefs.Initialize(ctx, runtimefs.Config{DataDir: t.TempDir()})
-			if err != nil {
+			ctx := testAccountContext()
+			database, runtimeState := openTestDatabase(t, Options{})
+			_ = runtimeState
+			if _, err := database.write.Exec(`INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id) VALUES (?, 'moment', 'entry', 1, 1, 1, '0123456789abcdef0123456789abcdef')`, archiveEntryID); err != nil {
 				t.Fatal(err)
 			}
-			database, err := Open(ctx, runtimeState, Options{})
-			if err != nil {
+			if _, err := database.write.Exec(`INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'Guest', 'root', 1)`, archiveRootID, archiveEntryID); err != nil {
 				t.Fatal(err)
 			}
-			defer func() { _ = database.Close() }()
-			if _, err := database.write.Exec(`INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms) VALUES (?, 'moment', 'entry', 1, 1, 1)`, archiveEntryID); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := database.write.Exec(`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'guest', 'Guest', 'root', 1)`, archiveRootID, archiveEntryID); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := database.write.Exec(`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'owner', 'Owner', 'reply', 2)`, archiveReplyID, archiveEntryID, archiveRootID); err != nil {
+			if _, err := database.write.Exec(`INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'Owner', 'reply', 2)`, archiveReplyID, archiveEntryID, archiveRootID); err != nil {
 				t.Fatal(err)
 			}
 			test.corrupt(t, database)
@@ -96,7 +87,7 @@ const (
 // they leave out is what a backup leaves out.
 func TestArchiveSnapshotStreamsArticleBodiesAndTheirDrafts(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, _ := openTestDatabase(t, Options{})
 	inline, cover := seedArticleEntry(t, db)
 	coverID, err := domain.ParseID(cover)

@@ -51,13 +51,13 @@ func exportShowcase(t *testing.T, root string) showcaseExport {
 			t.Fatal(err)
 		}
 		var site struct {
-			OwnerID string `json:"owner_id"`
+			ProfileUserID string `json:"profile_user_id"`
 		}
 		if err := json.NewDecoder(opened).Decode(&site); err != nil {
 			t.Fatal(err)
 		}
 		_ = opened.Close()
-		ownerID = site.OwnerID
+		ownerID = site.ProfileUserID
 	}
 	// The owner's account id is minted at random per instance and reaches
 	// the export as an author id and a user id, so the logical digest
@@ -244,7 +244,7 @@ func TestShowcaseBuildsEveryListedCase(t *testing.T) {
 		statuses[user["role"].(string)+"/"+user["status"].(string)]++
 		usernames[user["username"].(string)] = true
 	}
-	if statuses["owner/active"] != 1 || statuses["member/active"] != 3 || statuses["member/pending"] != 1 || statuses["member/suspended"] != 1 {
+	if statuses["admin/active"] != 1 || statuses["member/active"] != 3 || statuses["member/pending"] != 1 || statuses["member/suspended"] != 1 {
 		t.Fatalf("account statuses = %v", statuses)
 	}
 	for _, username := range []string{showcaseOwnerUsername, "aming", "lena", "xiaobei", "wanger", "bestdeals4u"} {

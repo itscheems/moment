@@ -42,7 +42,7 @@ type MergeInspection struct {
 
 // InspectMergeFileOffline creates a persistent merge plan while preventing a
 // server from starting between the current snapshot and plan publication.
-func (committer *Committer) InspectMergeFileOffline(ctx context.Context, archivePath string, sessionEpoch uint64) (result MergeInspection, resultErr error) {
+func (committer *Committer) InspectMergeFileOffline(ctx context.Context, archivePath string, subject Authorization) (result MergeInspection, resultErr error) {
 	runtimeState, held, err := committer.acquireOfflineInspection(ctx)
 	if err != nil {
 		return MergeInspection{}, err
@@ -53,11 +53,11 @@ func (committer *Committer) InspectMergeFileOffline(ctx context.Context, archive
 		return MergeInspection{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, file.Close()) }()
-	inspection, err := committer.inspector.inspectWithinLocks(ctx, file, sessionEpoch, runtimeState, held, true)
+	inspection, err := committer.inspector.inspectWithinLocks(ctx, file, subject, runtimeState, held, true)
 	if err != nil {
 		return MergeInspection{}, err
 	}
-	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, nil, true)
+	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, nil)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
@@ -67,8 +67,8 @@ func (committer *Committer) InspectMergeFileOffline(ctx context.Context, archive
 // InspectMergeArchive is the live-server merge planning path. It owns the
 // import coordinator through staging and plan persistence but never enters
 // maintenance or mutates active authority.
-func (committer *Committer) InspectMergeArchive(ctx context.Context, source io.Reader, sessionEpoch uint64, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
-	if committer == nil || source == nil || sessionEpoch == 0 {
+func (committer *Committer) InspectMergeArchive(ctx context.Context, source io.Reader, subject Authorization, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
+	if committer == nil || source == nil || !subject.Valid() {
 		return MergeInspection{}, domain.NewError(domain.CodeInvalidArgument, "merge inspection requires an archive and owner epoch", nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
@@ -80,11 +80,11 @@ func (committer *Committer) InspectMergeArchive(ctx context.Context, source io.R
 		return MergeInspection{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	inspection, err := committer.inspector.inspectWithinLocks(ctx, source, sessionEpoch, runtimeState, held, true)
+	inspection, err := committer.inspector.inspectWithinLocks(ctx, source, subject, runtimeState, held, true)
 	if err != nil {
 		return MergeInspection{}, err
 	}
-	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, activeDatabase, true)
+	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, activeDatabase)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
@@ -93,7 +93,7 @@ func (committer *Committer) InspectMergeArchive(ctx context.Context, source io.R
 
 // DiscardMergeFileOffline abandons one reviewed merge plan while proving that
 // no server can concurrently claim it. Active authority is never changed.
-func (committer *Committer) DiscardMergeFileOffline(ctx context.Context, token string, sessionEpoch uint64) (resultErr error) {
+func (committer *Committer) DiscardMergeFileOffline(ctx context.Context, token string, subject Authorization) (resultErr error) {
 	if committer == nil {
 		return errors.New("import committer is required")
 	}
@@ -102,13 +102,13 @@ func (committer *Committer) DiscardMergeFileOffline(ctx context.Context, token s
 		return err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	return committer.discardMergeWithinLocks(ctx, runtimeState, held, token, sessionEpoch)
+	return committer.discardMergeWithinLocks(ctx, runtimeState, held, token, subject)
 }
 
 // DiscardMerge abandons one unclaimed live-server merge plan. The exact
 // staging credential and owner epoch are required; committing and terminal
 // staging records are deliberately not cancellable through this path.
-func (committer *Committer) DiscardMerge(ctx context.Context, token string, sessionEpoch uint64) (resultErr error) {
+func (committer *Committer) DiscardMerge(ctx context.Context, token string, subject Authorization) (resultErr error) {
 	if committer == nil {
 		return errors.New("import committer is required")
 	}
@@ -121,14 +121,14 @@ func (committer *Committer) DiscardMerge(ctx context.Context, token string, sess
 		return err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	return committer.discardMergeWithinLocks(ctx, runtimeState, held, token, sessionEpoch)
+	return committer.discardMergeWithinLocks(ctx, runtimeState, held, token, subject)
 }
 
-func (committer *Committer) discardMergeWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, token string, sessionEpoch uint64) error {
+func (committer *Committer) discardMergeWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, token string, subject Authorization) error {
 	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
 		return runtimefs.ErrInsufficientLocks
 	}
-	state, _, stageRoot, err := committer.inspector.loadReadyHeld(ctx, runtimeState, token, sessionEpoch)
+	state, _, stageRoot, err := committer.inspector.loadReadyHeld(ctx, runtimeState, token, subject)
 	if err != nil {
 		return err
 	}
@@ -142,8 +142,8 @@ func (committer *Committer) discardMergeWithinLocks(ctx context.Context, runtime
 // committed as either a same-owner merge or an exact replacement. Unlike the
 // merge-only endpoint it intentionally allows a different incoming owner so a
 // fresh instance can still restore its own portable backup.
-func (committer *Committer) InspectReviewArchive(ctx context.Context, source io.Reader, sessionEpoch uint64, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
-	if committer == nil || source == nil || sessionEpoch == 0 {
+func (committer *Committer) InspectReviewArchive(ctx context.Context, source io.Reader, subject Authorization, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
+	if committer == nil || source == nil || !subject.Valid() {
 		return MergeInspection{}, domain.NewError(domain.CodeInvalidArgument, "import review requires an archive and owner epoch", nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
@@ -155,18 +155,18 @@ func (committer *Committer) InspectReviewArchive(ctx context.Context, source io.
 		return MergeInspection{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	inspection, err := committer.inspector.inspectWithinLocks(ctx, source, sessionEpoch, runtimeState, held, true)
+	inspection, err := committer.inspector.inspectWithinLocks(ctx, source, subject, runtimeState, held, true)
 	if err != nil {
 		return MergeInspection{}, err
 	}
-	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, activeDatabase, false)
+	result, err = committer.mergeInspectionWithinLocks(ctx, runtimeState, held, inspection, activeDatabase)
 	if err != nil {
 		err = errors.Join(err, committer.inspector.discardReadyWithinLocks(runtimeState, inspection.GenerationID, held))
 	}
 	return result, err
 }
 
-func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, inspection Inspection, activeDatabase *sqlitestore.Database, requireSameOwner bool) (result MergeInspection, resultErr error) {
+func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runtimeState *runtimefs.Runtime, held *runtimefs.LeaseSet, inspection Inspection, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
 	if runtimeState == nil || held == nil || !held.BelongsTo(runtimeState.Root) || !held.Holds(runtimefs.ImportLock, runtimefs.Exclusive) {
 		return MergeInspection{}, runtimefs.ErrInsufficientLocks
 	}
@@ -209,13 +209,8 @@ func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runt
 		ArchiveSHA256: inspection.ArchiveSHA256, BaseGeneration: runtimeState.Current.ID,
 		ExpiresAt: inspection.ExpiresAt, Local: local, Incoming: incoming,
 	}
-	var plan MergePlan
+	plan, err := ComparePortableAuthorities(input)
 	mergeAllowed := true
-	if requireSameOwner {
-		plan, err = ComparePortableAuthorities(input)
-	} else {
-		plan, mergeAllowed, err = comparePortableAuthoritiesForReview(input)
-	}
 	if err != nil {
 		return MergeInspection{}, err
 	}
@@ -227,16 +222,7 @@ func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runt
 		return MergeInspection{}, err
 	}
 	var mergeBlockedReason *string
-	switch {
-	case !mergeAllowed:
-		reason := string(domain.CodeImportOwnerMismatch)
-		mergeBlockedReason = &reason
-	// A handle two different people claim is not something any choice on the
-	// review screen can settle, so saying so here is the difference between a
-	// reviewer being told before they work through the whole plan and being
-	// told after. resolveMergeAccounts still refuses it at apply time; this is
-	// the earlier of the two answers, not a replacement for it.
-	case mergeUsernameCollision(local, incoming) != nil:
+	if mergeUsernameCollision(local, incoming) != nil {
 		reason := string(domain.CodeUsernameTaken)
 		mergeAllowed, mergeBlockedReason = false, &reason
 	}
@@ -251,7 +237,7 @@ func (committer *Committer) mergeInspectionWithinLocks(ctx context.Context, runt
 // CommitReviewedReplacement consumes a reviewed token through the existing
 // atomic replacement state machine after proving that the local authority is
 // still exactly the version shown during review.
-func (committer *Committer) CommitReviewedReplacement(ctx context.Context, token string, sessionEpoch uint64, planID string, host CommitHost) (result CommitResult, resultErr error) {
+func (committer *Committer) CommitReviewedReplacement(ctx context.Context, token string, subject Authorization, planID string, host CommitHost) (result CommitResult, resultErr error) {
 	prepare := committer.prepareReviewedReplacement(planID)
 	if host == nil {
 		runtimeState, held, err := committer.acquireOfflineInspection(ctx)
@@ -259,7 +245,7 @@ func (committer *Committer) CommitReviewedReplacement(ctx context.Context, token
 			return CommitResult{}, err
 		}
 		defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-		return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, nil, prepare)
+		return committer.commitWithinLocks(ctx, runtimeState, held, token, subject, nil, prepare)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
 	if err != nil {
@@ -270,7 +256,7 @@ func (committer *Committer) CommitReviewedReplacement(ctx context.Context, token
 		return CommitResult{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, host, prepare)
+	return committer.commitWithinLocks(ctx, runtimeState, held, token, subject, host, prepare)
 }
 
 func (committer *Committer) prepareReviewedReplacement(planID string) commitPrepare {
@@ -313,7 +299,7 @@ func (committer *Committer) prepareReviewedReplacement(planID string) commitPrep
 // ReadReviewMedia returns immutable image bytes from the exact local or incoming
 // authority bound to a ready review token. Callers never receive filesystem
 // paths and the token remains outside URLs.
-func (committer *Committer) ReadReviewMedia(ctx context.Context, token string, sessionEpoch uint64, planID string, source MergeReviewSource, mediaID string) (result media.Asset, resultErr error) {
+func (committer *Committer) ReadReviewMedia(ctx context.Context, token string, subject Authorization, planID string, source MergeReviewSource, mediaID string) (result media.Asset, resultErr error) {
 	if committer == nil || planID == "" || (source != MergeReviewLocal && source != MergeReviewIncoming) {
 		return media.Asset{}, domain.NewError(domain.CodeInvalidArgument, "review media identity is invalid", nil)
 	}
@@ -330,7 +316,7 @@ func (committer *Committer) ReadReviewMedia(ctx context.Context, token string, s
 		return media.Asset{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	state, _, stageRoot, err := committer.inspector.loadReadyHeld(ctx, runtimeState, token, sessionEpoch)
+	state, _, stageRoot, err := committer.inspector.loadReadyHeld(ctx, runtimeState, token, subject)
 	if err != nil {
 		return media.Asset{}, err
 	}
@@ -364,7 +350,7 @@ func (committer *Committer) ReadReviewMedia(ctx context.Context, token string, s
 
 // CommitMerge consumes one merge token and explicit selection through the
 // existing backup, atomic switch, readiness, and rollback state machine.
-func (committer *Committer) CommitMerge(ctx context.Context, token string, sessionEpoch uint64, selection MergeSelection, host CommitHost) (result CommitResult, resultErr error) {
+func (committer *Committer) CommitMerge(ctx context.Context, token string, subject Authorization, selection MergeSelection, host CommitHost) (result CommitResult, resultErr error) {
 	prepare := committer.prepareMerge(selection)
 	if host == nil {
 		runtimeState, held, err := committer.acquireOfflineInspection(ctx)
@@ -372,7 +358,7 @@ func (committer *Committer) CommitMerge(ctx context.Context, token string, sessi
 			return CommitResult{}, err
 		}
 		defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-		return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, nil, prepare)
+		return committer.commitWithinLocks(ctx, runtimeState, held, token, subject, nil, prepare)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
 	if err != nil {
@@ -383,7 +369,7 @@ func (committer *Committer) CommitMerge(ctx context.Context, token string, sessi
 		return CommitResult{}, err
 	}
 	defer func() { resultErr = errors.Join(resultErr, held.Release()) }()
-	return committer.commitWithinLocks(ctx, runtimeState, held, token, sessionEpoch, host, prepare)
+	return committer.commitWithinLocks(ctx, runtimeState, held, token, subject, host, prepare)
 }
 
 func (committer *Committer) prepareMerge(selection MergeSelection) commitPrepare {

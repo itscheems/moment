@@ -125,7 +125,7 @@ func runBackupMergePlan(ctx context.Context, invocation Invocation, input Comman
 		if err != nil {
 			return Result{}, backupImportCLIError(err)
 		}
-		inspection, err = committer.InspectMergeFileOffline(ctx, archivePath, status.SessionEpoch)
+		inspection, err = committer.InspectMergeFileOffline(ctx, archivePath, directArchiveSubject(ctx))
 		if err != nil {
 			return Result{}, backupImportCLIError(err)
 		}
@@ -180,7 +180,7 @@ func runBackupMerge(ctx context.Context, invocation Invocation, input CommandInp
 		if err != nil {
 			return Result{}, backupImportCLIError(err)
 		}
-		result, err = committer.CommitMerge(ctx, document.StagingToken, status.SessionEpoch, document.Selection, nil)
+		result, err = committer.CommitMerge(ctx, document.StagingToken, directArchiveSubject(ctx), document.Selection, nil)
 		if err != nil {
 			return Result{}, backupImportCLIError(err)
 		}
@@ -220,7 +220,7 @@ func runBackupMergeDiscard(ctx context.Context, invocation Invocation, input Com
 		if err != nil {
 			return Result{}, backupImportCLIError(err)
 		}
-		if err := committer.DiscardMergeFileOffline(ctx, document.StagingToken, status.SessionEpoch); err != nil {
+		if err := committer.DiscardMergeFileOffline(ctx, document.StagingToken, directArchiveSubject(ctx)); err != nil {
 			return Result{}, backupImportCLIError(err)
 		}
 	case ModeAPI:

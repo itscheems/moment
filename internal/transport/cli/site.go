@@ -360,8 +360,8 @@ func requestAPIJSON(
 }
 
 func validSiteAPIData(data json.RawMessage, settings app.SiteSettings) bool {
-	if !hasRequiredAPIDataFields(data, "owner_id", "username", "display_name", "title", "bio", "timezone", "public_base_url", "avatar_media_id", "cover_media_id", "pinned_post_id", "comments_enabled") ||
-		!hasRequiredNonNullAPIDataFields(data, "owner_id", "username", "display_name", "title", "bio", "timezone", "comments_enabled") ||
+	if !hasRequiredAPIDataFields(data, "profile_user_id", "username", "display_name", "title", "bio", "timezone", "public_base_url", "avatar_media_id", "cover_media_id", "pinned_post_id", "comments_enabled") ||
+		!hasRequiredNonNullAPIDataFields(data, "profile_user_id", "username", "display_name", "title", "bio", "timezone", "comments_enabled") ||
 		settings.Timezone == "" || settings.Timezone == "Local" || strings.HasPrefix(settings.Timezone, "/") || strings.Contains(settings.Timezone, "..") {
 		return false
 	}

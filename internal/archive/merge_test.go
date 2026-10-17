@@ -14,7 +14,7 @@ func TestMergePlanClassifiesContentDependenciesAndSHAReuse(t *testing.T) {
 	localMediaID, incomingMediaID := "media-local", "media-incoming"
 	local := PortableAuthority{
 		Site: sqlitestore.ArchiveSite{
-			OwnerID: "same-owner", Username: "owner", DisplayName: "Owner", Title: "Local",
+			ProfileUserID: "same-owner", Username: "owner", DisplayName: "Owner", Title: "Local",
 			Timezone: "UTC", AvatarMediaID: &localMediaID, CommentsEnabled: true,
 		},
 		Entries: []sqlitestore.ArchiveEntry{
@@ -22,12 +22,12 @@ func TestMergePlanClassifiesContentDependenciesAndSHAReuse(t *testing.T) {
 			{ID: "entry-same", Kind: "moment", ContentMD: domain.MarkdownBody("same"), CreatedAtMS: 2, UpdatedAtMS: 2, PublishedAtMS: 2, Media: []sqlitestore.ArchiveUsage{{MediaID: localMediaID, Position: 0}}},
 			{ID: "entry-conflict", Kind: "moment", ContentMD: domain.MarkdownBody("local version"), CreatedAtMS: 3, UpdatedAtMS: 3, PublishedAtMS: 3},
 		},
-		Comments: []sqlitestore.ArchiveComment{{ID: "comment-same", EntryID: "entry-same", AuthorKind: "owner", AuthorName: "Owner", ContentMD: "same", CreatedAtMS: 4}},
+		Comments: []sqlitestore.ArchiveComment{{ID: "comment-same", EntryID: "entry-same", AuthorName: "Owner", ContentMD: "same", CreatedAtMS: 4}},
 		Media:    []sqlitestore.ArchiveMedia{{ID: localMediaID, SHA256: repeatHex("a"), OriginalName: "local.jpg", MIMEType: "image/jpeg", ByteSize: 10, Width: 2, Height: 2, CreatedAtMS: 1}},
 	}
 	incoming := PortableAuthority{
 		Site: sqlitestore.ArchiveSite{
-			OwnerID: "same-owner", Username: "owner", DisplayName: "Owner", Title: "Incoming",
+			ProfileUserID: "same-owner", Username: "owner", DisplayName: "Owner", Title: "Incoming",
 			Timezone: "UTC", AvatarMediaID: &incomingMediaID, CommentsEnabled: true,
 		},
 		Entries: []sqlitestore.ArchiveEntry{
@@ -36,8 +36,8 @@ func TestMergePlanClassifiesContentDependenciesAndSHAReuse(t *testing.T) {
 			{ID: "entry-new", Kind: "moment", ContentMD: domain.MarkdownBody("new"), CreatedAtMS: 6, UpdatedAtMS: 6, PublishedAtMS: 6, Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID, Position: 0}}},
 		},
 		Comments: []sqlitestore.ArchiveComment{
-			{ID: "comment-same", EntryID: "entry-same", AuthorKind: "owner", AuthorName: "Owner", ContentMD: "same", CreatedAtMS: 4},
-			{ID: "comment-new", EntryID: "entry-new", AuthorKind: "guest", AuthorName: "Guest", ContentMD: "new", CreatedAtMS: 7, Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID, Position: 0}}},
+			{ID: "comment-same", EntryID: "entry-same", AuthorName: "Owner", ContentMD: "same", CreatedAtMS: 4},
+			{ID: "comment-new", EntryID: "entry-new", AuthorName: "Guest", ContentMD: "new", CreatedAtMS: 7, Media: []sqlitestore.ArchiveUsage{{MediaID: incomingMediaID, Position: 0}}},
 		},
 		Media: []sqlitestore.ArchiveMedia{{ID: incomingMediaID, SHA256: repeatHex("a"), OriginalName: "renamed.jpg", MIMEType: "image/jpeg", ByteSize: 10, Width: 2, Height: 2, CreatedAtMS: 9}},
 	}
@@ -52,7 +52,7 @@ func TestMergePlanClassifiesContentDependenciesAndSHAReuse(t *testing.T) {
 	if err := ValidateMergePlan(plan); err != nil {
 		t.Fatal(err)
 	}
-	if plan.ExpiresAt != expires || plan.OwnerID != "same-owner" || plan.Summary != (MergeSummary{Unchanged: 11, IncomingOnly: 2, LocalOnly: 1, Conflict: 2}) {
+	if plan.ExpiresAt != expires || plan.ProfileUserID != "same-owner" || plan.Summary != (MergeSummary{Unchanged: 11, IncomingOnly: 2, LocalOnly: 1, Conflict: 2}) {
 		t.Fatalf("plan summary = %#v", plan)
 	}
 	items := mergeItemsByKey(plan.Items)
@@ -85,7 +85,7 @@ func TestMergePlanClassifiesContentDependenciesAndSHAReuse(t *testing.T) {
 
 func TestAuthorityDigestAndMergePlanAreStableAcrossInputOrder(t *testing.T) {
 	authority := PortableAuthority{
-		Site:     sqlitestore.ArchiveSite{OwnerID: "owner", Username: "owner", DisplayName: "Owner", Title: "Moment", Timezone: "UTC", CommentsEnabled: true},
+		Site:     sqlitestore.ArchiveSite{ProfileUserID: "owner", Username: "owner", DisplayName: "Owner", Title: "Moment", Timezone: "UTC", CommentsEnabled: true},
 		Entries:  []sqlitestore.ArchiveEntry{{ID: "b"}, {ID: "a"}},
 		Comments: []sqlitestore.ArchiveComment{{ID: "d"}, {ID: "c"}},
 		Media:    []sqlitestore.ArchiveMedia{{ID: "f", SHA256: repeatHex("f"), StoragePath: "one"}, {ID: "e", SHA256: repeatHex("e"), StoragePath: "two"}},
@@ -122,28 +122,27 @@ func TestAuthorityDigestAndMergePlanAreStableAcrossInputOrder(t *testing.T) {
 	}
 }
 
-func TestMergePlanRejectsUnknownOrDifferentOwner(t *testing.T) {
-	tests := []struct{ local, incoming string }{{"", ""}, {"owner-a", ""}, {"owner-a", "owner-b"}}
-	for _, test := range tests {
-		_, err := ComparePortableAuthorities(MergePlanInput{
-			Local:    PortableAuthority{Site: sqlitestore.ArchiveSite{OwnerID: test.local}},
-			Incoming: PortableAuthority{Site: sqlitestore.ArchiveSite{OwnerID: test.incoming}},
-		})
-		if !domain.HasCode(err, domain.CodeImportOwnerMismatch) {
-			t.Fatalf("owners %q/%q error = %v", test.local, test.incoming, err)
+func TestMergePlanRequiresDisplayReferencesButAllowsDifferentProfiles(t *testing.T) {
+	for _, pair := range [][2]string{{"", ""}, {"profile-a", ""}} {
+		if _, err := ComparePortableAuthorities(MergePlanInput{Local: PortableAuthority{Site: sqlitestore.ArchiveSite{ProfileUserID: pair[0]}}, Incoming: PortableAuthority{Site: sqlitestore.ArchiveSite{ProfileUserID: pair[1]}}}); !domain.HasCode(err, domain.CodeInvalidArgument) {
+			t.Fatalf("missing profile=%v", err)
 		}
+	}
+	plan, err := ComparePortableAuthorities(MergePlanInput{Local: PortableAuthority{Site: sqlitestore.ArchiveSite{ProfileUserID: "profile-a"}}, Incoming: PortableAuthority{Site: sqlitestore.ArchiveSite{ProfileUserID: "profile-b"}}})
+	if err != nil || plan.ProfileUserID != "profile-a" {
+		t.Fatalf("display account became a merge authority barrier: %+v,%v", plan, err)
 	}
 }
 
 func TestMergePlanDetectsLocationAltAndMediaIDCollision(t *testing.T) {
 	altLocal, altIncoming := "local", "incoming"
 	local := PortableAuthority{
-		Site:    sqlitestore.ArchiveSite{OwnerID: "owner"},
+		Site:    sqlitestore.ArchiveSite{ProfileUserID: "owner"},
 		Entries: []sqlitestore.ArchiveEntry{{ID: "entry", Media: []sqlitestore.ArchiveUsage{{MediaID: "media", Position: 0, AltText: &altLocal}}, Location: &domain.Location{Name: "A", DisplayName: "A", Provider: "manual"}}},
 		Media:   []sqlitestore.ArchiveMedia{{ID: "media", SHA256: repeatHex("a")}},
 	}
 	incoming := PortableAuthority{
-		Site:    sqlitestore.ArchiveSite{OwnerID: "owner"},
+		Site:    sqlitestore.ArchiveSite{ProfileUserID: "owner"},
 		Entries: []sqlitestore.ArchiveEntry{{ID: "entry", Media: []sqlitestore.ArchiveUsage{{MediaID: "media", Position: 0, AltText: &altIncoming}}, Location: &domain.Location{Name: "B", DisplayName: "B", Provider: "manual"}}},
 		Media:   []sqlitestore.ArchiveMedia{{ID: "media", SHA256: repeatHex("b")}},
 	}
@@ -161,18 +160,18 @@ func TestMergeReviewShowsRecognizableContentAndSiteMedia(t *testing.T) {
 	localPinned, incomingPinned := "entry-local", "entry-incoming"
 	local := PortableAuthority{
 		Site: sqlitestore.ArchiveSite{
-			OwnerID: "owner", AvatarMediaID: &localAvatar, PinnedPostID: &localPinned,
+			ProfileUserID: "owner", AvatarMediaID: &localAvatar, PinnedPostID: &localPinned,
 		},
 		Entries: []sqlitestore.ArchiveEntry{
 			{ID: localPinned, ContentMD: domain.MarkdownBody("keep this local post"), CreatedAtMS: 10, UpdatedAtMS: 10, PublishedAtMS: 10},
 			{ID: "entry-conflict", ContentMD: domain.MarkdownBody("local version"), CreatedAtMS: 20, UpdatedAtMS: 20, PublishedAtMS: 20},
 		},
-		Comments: []sqlitestore.ArchiveComment{{ID: "comment-local", EntryID: localPinned, AuthorKind: "guest", AuthorName: "Local guest", ContentMD: "local reply", CreatedAtMS: 30}},
+		Comments: []sqlitestore.ArchiveComment{{ID: "comment-local", EntryID: localPinned, AuthorName: "Local guest", ContentMD: "local reply", CreatedAtMS: 30}},
 		Media:    []sqlitestore.ArchiveMedia{{ID: localAvatar, SHA256: repeatHex("a"), OriginalName: "local-avatar.jpg", MIMEType: "image/jpeg", ByteSize: 42, Width: 32, Height: 24}},
 	}
 	incoming := PortableAuthority{
 		Site: sqlitestore.ArchiveSite{
-			OwnerID: "owner", AvatarMediaID: &incomingAvatar, PinnedPostID: &incomingPinned,
+			ProfileUserID: "owner", AvatarMediaID: &incomingAvatar, PinnedPostID: &incomingPinned,
 		},
 		Entries: []sqlitestore.ArchiveEntry{
 			{ID: incomingPinned, ContentMD: domain.MarkdownBody("incoming post"), CreatedAtMS: 40, UpdatedAtMS: 40, PublishedAtMS: 40},
@@ -272,12 +271,12 @@ func markdownText(value *string) string {
 // the identity they resolve to turned every comment present on both sides into
 // a conflict, so restoring a pre-migration backup asked the reviewer to decide
 // the entire comment table one row at a time.
-func TestMergePlanTreatsABackfilledOwnerReferenceAsUnchanged(t *testing.T) {
+func TestMergePlanKeepsMissingAuthorReferencesDistinct(t *testing.T) {
 	ownerID := "0123456789abcdef0123456789abcdef"
 	otherID := "fedcba9876543210fedcba9876543210"
-	site := sqlitestore.ArchiveSite{OwnerID: ownerID, Username: "owner", DisplayName: "Owner", Timezone: "UTC", CommentsEnabled: true}
+	site := sqlitestore.ArchiveSite{ProfileUserID: ownerID, Username: "owner", DisplayName: "Owner", Timezone: "UTC", CommentsEnabled: true}
 	comment := func(id, kind string, authorUserID *string) sqlitestore.ArchiveComment {
-		return sqlitestore.ArchiveComment{ID: id, EntryID: "entry", AuthorKind: kind, AuthorName: "Owner", AuthorUserID: authorUserID, ContentMD: "same", CreatedAtMS: 1}
+		return sqlitestore.ArchiveComment{ID: id, EntryID: "entry", AuthorName: "Owner", AuthorUserID: authorUserID, ContentMD: "same", CreatedAtMS: 1}
 	}
 	local := PortableAuthority{
 		Site:    site,
@@ -302,7 +301,7 @@ func TestMergePlanTreatsABackfilledOwnerReferenceAsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	items := mergeItemsByKey(plan.Items)
-	assertMergeItem(t, items["comment\x00comment-owner"], MergeUnchanged, []string{})
+	assertMergeItem(t, items["comment\x00comment-owner"], MergeConflict, []string{"author_user_id"})
 	assertMergeItem(t, items["comment\x00comment-guest"], MergeUnchanged, []string{})
 	assertMergeItem(t, items["comment\x00comment-moved"], MergeConflict, []string{"author_user_id"})
 }

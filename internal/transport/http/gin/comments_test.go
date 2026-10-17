@@ -57,6 +57,7 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	t.Cleanup(func() { _ = database.Close() })
 	postRepository, _ := sqlitestore.NewPostRepository(database, runtimeState.Locks)
 	postID := domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAV")
@@ -64,7 +65,7 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := posts.Create(context.Background(), app.CreatePostInput{ContentMD: "comment host"}); err != nil {
+	if _, err := posts.Create(fixtureContentContext(t, testAccounts(t, database, runtimeState)), app.CreatePostInput{ContentMD: "comment host"}); err != nil {
 		t.Fatal(err)
 	}
 	siteRepository, _ := sqlitestore.NewSiteRepository(database, runtimeState.Locks)
@@ -176,8 +177,8 @@ func insertLegacyGuestComment(t *testing.T, fixture commentHTTPFixture, id, name
 	ctx := context.Background()
 	err := fixture.database.WriteTx(ctx, func(queries sqlitestore.Queries) error {
 		_, execErr := queries.ExecContext(ctx, `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
-VALUES (?, ?, NULL, 'guest', ?, ?, ?)`, id, fixture.postID.String(), name, content, fixture.clock.Add(-time.Hour).UnixMilli())
+INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms)
+VALUES (?, ?, NULL, ?, ?, ?)`, id, fixture.postID.String(), name, content, fixture.clock.Add(-time.Hour).UnixMilli())
 		return execErr
 	})
 	if err != nil {
@@ -223,13 +224,13 @@ func TestCommentHTTPOwnerThreadAndModerationContract(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	publicPath := publicCommentPath(fixture)
 	root := postOwnerComment(t, fixture, `{"content_md":"first **comment**"}`)
-	if root["author_kind"] != "owner" || root["author_name"] != "Moment" || root["parent_id"] != nil ||
+	if root["author_kind"] != nil || root["author_name"] != "writer" || root["parent_id"] != nil ||
 		root["depth"] != float64(0) || !strings.Contains(root["content_html"].(string), "<strong>comment</strong>") {
 		t.Fatalf("root = %#v", root)
 	}
 	rootID := root["id"].(string)
 	reply := postOwnerComment(t, fixture, `{"content_md":"owner reply","parent_id":"`+rootID+`"}`)
-	if reply["author_kind"] != "owner" || reply["author_name"] != "Moment" || reply["parent_id"] != rootID || reply["depth"] != float64(1) {
+	if reply["author_kind"] != nil || reply["author_name"] != "writer" || reply["parent_id"] != rootID || reply["depth"] != float64(1) {
 		t.Fatalf("reply = %#v", reply)
 	}
 	deep := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, ownerCommentPath(fixture),
@@ -521,12 +522,12 @@ func TestCommentHTTPListsLegacyGuestRowsWrittenBeforeAccountsWereRequired(t *tes
 		t.Fatalf("thread = %d %s", listed.Code, listed.Body.String())
 	}
 	legacy := items[0]
-	if legacy["id"] != legacyGuestCommentID || legacy["author_kind"] != "guest" || legacy["author_name"] != legacyName ||
+	if legacy["id"] != legacyGuestCommentID || legacy["author_kind"] != nil || legacy["author_name"] != legacyName ||
 		legacy["depth"] != float64(0) || legacy["parent_id"] != nil ||
 		!strings.Contains(legacy["content_html"].(string), "left before accounts existed") {
 		t.Fatalf("legacy guest comment = %#v", legacy)
 	}
-	if items[1]["id"] != current["id"] || items[1]["author_kind"] != "owner" || items[1]["author_name"] != "Moment" {
+	if items[1]["id"] != current["id"] || items[1]["author_kind"] != nil || items[1]["author_name"] != "writer" {
 		t.Fatalf("owner comment = %#v", items[1])
 	}
 	postResponse := performRequest(fixture.engine, commentRequest(http.MethodGet, "/api/v1/posts/"+fixture.postID.String(), ""))

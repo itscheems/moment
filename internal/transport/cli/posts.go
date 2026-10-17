@@ -263,7 +263,7 @@ func runPostList(ctx context.Context, invocation Invocation, input CommandInput)
 			return Result{}, postCLIError(err)
 		}
 		listInput.Timezone = settings.Timezone
-		listInput.Viewer = app.OwnerViewer()
+		listInput.Viewer = app.ViewerFromContext(ctx)
 		result, err := service.List(ctx, listInput)
 		if err != nil {
 			return Result{}, postCLIError(err)
@@ -1267,7 +1267,7 @@ func getPostByTransport(ctx context.Context, invocation Invocation, id domain.ID
 		defer func() { _ = database.Close() }()
 		// Direct mode opens the data directory itself; whoever can do that
 		// is the owner, and reads the way the owner does.
-		result, err := service.Get(ctx, id, app.OwnerViewer())
+		result, err := service.Get(ctx, id, app.ViewerFromContext(ctx))
 		if err != nil {
 			return post, nil, err
 		}
@@ -1576,8 +1576,8 @@ func validRawAPIPostPage(data json.RawMessage, page postdto.Page) bool {
 }
 
 func validRawAPIComment(data json.RawMessage, comment commentdto.Comment) bool {
-	if !hasRequiredAPIDataFields(data, "id", "post_id", "parent_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at", "media", "location") ||
-		!hasRequiredNonNullAPIDataFields(data, "id", "post_id", "depth", "author_kind", "author_name", "content_md", "content_html", "created_at", "media") ||
+	if !hasRequiredAPIDataFields(data, "id", "post_id", "parent_id", "depth", "author_name", "content_md", "content_html", "created_at", "media", "location") ||
+		!hasRequiredNonNullAPIDataFields(data, "id", "post_id", "depth", "author_name", "content_md", "content_html", "created_at", "media") ||
 		!validCanonicalAPIInstantField(data, "created_at", comment.CreatedAt) {
 		return false
 	}

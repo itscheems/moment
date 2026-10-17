@@ -18,7 +18,7 @@ type DoctorReporter interface {
 // Deep topology checks remain a local/direct CLI capability.
 func RegisterDoctorRoutes(engine *gin.Engine, reporter DoctorReporter, gate *Gate) {
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireOwner())
+	owner.Use(gate.RequireAdmin())
 	owner.GET("/doctor", doctorSummary(reporter))
 }
 

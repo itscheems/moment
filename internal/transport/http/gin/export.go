@@ -23,7 +23,7 @@ type ArchiveExporter interface {
 // is accepted by the same middleware.
 func RegisterExportRoutes(engine *gin.Engine, exporter ArchiveExporter, gate *Gate) {
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireOwner())
+	owner.Use(gate.RequireAdmin())
 	owner.GET("/export", streamExport(exporter))
 	if personal, ok := exporter.(interface {
 		ExportAccount(context.Context, io.Writer, string) (archive.Summary, error)

@@ -19,22 +19,6 @@ import (
 // characters made every comment that account tried to write fail validation.
 const MaxCommentAuthorNameCodePoints = MaxDisplayNameLength
 
-// CommentAuthorKind separates the accounts that can write from the anonymous
-// visitors that once could.
-type CommentAuthorKind string
-
-const (
-	// CommentAuthorOwner marks an authenticated owner action.
-	CommentAuthorOwner CommentAuthorKind = "owner"
-	// CommentAuthorGuest marks a comment written by an anonymous visitor
-	// before commenting required an account.
-	//
-	// Nothing produces this kind any longer. It stays valid on read because
-	// archives written before the change still contain such rows, and an
-	// archive that cannot be imported is a backup that does not exist.
-	CommentAuthorGuest CommentAuthorKind = "guest"
-)
-
 // Comment is one top-level comment or one reply to a top-level comment.
 //
 // AuthorName and AuthorUserID answer different questions. AuthorName is what
@@ -47,7 +31,6 @@ type Comment struct {
 	ID           ID
 	EntryID      ID
 	ParentID     *ID
-	AuthorKind   CommentAuthorKind
 	AuthorName   string
 	AuthorUserID *string
 	// ReplyToCommentID names the comment being answered. It is an annotation,
@@ -114,9 +97,6 @@ func (comment Comment) Validate() error {
 		if *comment.ParentID == comment.ID {
 			return NewError(CodeCommentDepthExceeded, "a comment cannot reply to itself", nil)
 		}
-	}
-	if comment.AuthorKind != CommentAuthorOwner && comment.AuthorKind != CommentAuthorGuest {
-		return NewError(CodeInvalidArgument, "comment author kind is invalid", map[string]any{"field": "author_kind"})
 	}
 	name, err := NormalizeCommentAuthorName(comment.AuthorName)
 	if err != nil || name != comment.AuthorName {

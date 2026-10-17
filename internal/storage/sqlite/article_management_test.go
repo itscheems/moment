@@ -11,7 +11,7 @@ import (
 )
 
 func TestArticleManagementSeparatesAuthorsAndPreservesWithdrawnWork(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, service := articleServiceFixture(t, time.UnixMilli(1000))
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
 	bob := addContentTestAccount(t, db, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob")
@@ -75,7 +75,7 @@ func TestArticleManagementSeparatesAuthorsAndPreservesWithdrawnWork(t *testing.T
 	if err != nil || again.ID != withdrawn.ID {
 		t.Fatal("withdraw retry lost its draft")
 	}
-	for _, viewer := range []app.Viewer{app.PublicViewer(), app.ViewerFor(alice, true), app.ViewerFor(bob, true), app.OwnerViewer()} {
+	for _, viewer := range []app.Viewer{app.PublicViewer(), app.ViewerFor(alice, true), app.ViewerFor(bob, true), app.AccountViewer(testAccountID)} {
 		if _, err := service.Get(ctx, post.Entry.ID, viewer); err == nil {
 			t.Fatal("withdrawn article exposed through public detail")
 		}
@@ -105,7 +105,7 @@ func TestArticleManagementSeparatesAuthorsAndPreservesWithdrawnWork(t *testing.T
 }
 
 func TestArticleWithdrawalQuotaIsAtomicAndScopedToAuthor(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, service := articleServiceFixture(t, time.UnixMilli(1000))
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
 	bob := addContentTestAccount(t, db, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob")
@@ -135,7 +135,7 @@ func TestArticleWithdrawalQuotaIsAtomicAndScopedToAuthor(t *testing.T) {
 }
 
 func TestWithdrawnArticleKeepsCommentsAndPrivateMedia(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, service := articleServiceFixture(t, time.UnixMilli(1000))
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
 	bob := addContentTestAccount(t, db, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob")
@@ -149,7 +149,7 @@ func TestWithdrawnArticleKeepsCommentsAndPrivateMedia(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustWrite(t, db, `INSERT INTO comments(id,entry_id,parent_id,author_kind,author_name,author_user_id,content_md,created_at_ms) VALUES('01ARZ3NDEKTSV4RRFFQ69G5FAX',?,NULL,'owner','alice',?,'retained comment',1000)`, post.Entry.ID.String(), alice.ID)
+	mustWrite(t, db, `INSERT INTO comments(id,entry_id,parent_id,author_name,author_user_id,content_md,created_at_ms) VALUES('01ARZ3NDEKTSV4RRFFQ69G5FAX',?,NULL,'alice',?,'retained comment',1000)`, post.Entry.ID.String(), alice.ID)
 	withdrawn, err := service.WithdrawArticle(a, post.Entry.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestWithdrawnArticleKeepsCommentsAndPrivateMedia(t *testing.T) {
 		t.Fatal("withdrawn media stayed public")
 	}
 	refs, _ := NewMediaReferenceRepository(db)
-	for _, viewer := range []app.Viewer{app.PublicViewer(), app.ViewerFor(bob, true), app.OwnerViewer()} {
+	for _, viewer := range []app.Viewer{app.PublicViewer(), app.ViewerFor(bob, true), app.AccountViewer(testAccountID)} {
 		allowed, err := refs.CanRead(ctx, cover, viewer)
 		if err != nil || allowed {
 			t.Fatalf("non-author media=%v,%v", allowed, err)
@@ -189,7 +189,7 @@ func TestWithdrawnArticleKeepsCommentsAndPrivateMedia(t *testing.T) {
 
 func TestEmptyDraftDocumentWireAlwaysUsesAnArray(t *testing.T) {
 	_, service := articleServiceFixture(t, time.UnixMilli(1000))
-	draft, err := service.SaveArticleDraft(context.Background(), app.SaveArticleDraftInput{BodyJSON: []byte(`{"schema_version":1,"type":"doc","content":[]}`)})
+	draft, err := service.SaveArticleDraft(testAccountContext(), app.SaveArticleDraftInput{BodyJSON: []byte(`{"schema_version":1,"type":"doc","content":[]}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestEmptyDraftDocumentWireAlwaysUsesAnArray(t *testing.T) {
 	if !strings.Contains(string(encoded), `"content":[]`) {
 		t.Fatalf("empty draft wire=%s", encoded)
 	}
-	read, err := service.ArticleDraft(context.Background(), draft.ID)
+	read, err := service.ArticleDraft(testAccountContext(), draft.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

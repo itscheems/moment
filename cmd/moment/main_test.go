@@ -155,7 +155,7 @@ func TestServeBinaryStructuredLogsAndGracefulSignal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	directCreate := exec.Command(binary, "post", "create", "--data-dir", dataDir, "--content", "binary parity", "--idempotency-key", "binary-post-001", "--json")
+	directCreate := exec.Command(binary, "post", "create", "--as", "writer", "--data-dir", dataDir, "--content", "binary parity", "--idempotency-key", "binary-post-001", "--json")
 	directCreateOutput, err := directCreate.Output()
 	if err != nil {
 		t.Fatalf("direct post create: %v output=%s", err, directCreateOutput)

@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -22,9 +21,9 @@ func TestMentionSuggestionsFindAdmittedAccountsAndNobodyElse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := context.Background()
+	ctx := testAccountContext()
 
-	owner, err := accounts.OwnerAccount(ctx)
+	owner, err := accounts.ProfileAccount(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

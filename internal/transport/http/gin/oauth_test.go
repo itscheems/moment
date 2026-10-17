@@ -76,7 +76,7 @@ func newOAuthFixture(t *testing.T) oauthFixture {
 	provider := newStubProvider()
 	engine, err := New(Config{
 		Assets:         testAssets(),
-		SessionSigner:      base.manager,
+		SessionSigner:  base.manager,
 		Accounts:       base.accounts,
 		OAuthProviders: oauth.NewRegistry(provider),
 		Comments:       nil,

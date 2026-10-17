@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -10,11 +9,11 @@ import (
 )
 
 func TestPostMutationsRequireItsAuthorEvenForAdministrators(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, posts := articleServiceFixture(t, time.UnixMilli(1000))
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
 	bob := addContentTestAccount(t, db, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob")
-	admin := domain.User{ID: "cccccccccccccccccccccccccccccccc", Role: domain.UserRoleOwner, Status: domain.AccountActive}
+	admin := domain.User{ID: "cccccccccccccccccccccccccccccccc", Role: domain.UserRoleAdmin, Status: domain.AccountActive}
 	a := app.WithContentActor(ctx, alice)
 	created, err := posts.Create(a, app.CreatePostInput{ContentMD: "Alice's original words"})
 	if err != nil {
@@ -42,10 +41,10 @@ func TestPostMutationsRequireItsAuthorEvenForAdministrators(t *testing.T) {
 }
 
 func TestModerationCannotDeleteAnotherAuthorsPrivateOrUnpublishedContent(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, posts := articleServiceFixture(t, time.UnixMilli(1000))
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
-	admin := domain.User{ID: "cccccccccccccccccccccccccccccccc", Role: domain.UserRoleOwner, Status: domain.AccountActive}
+	admin := domain.User{ID: "cccccccccccccccccccccccccccccccc", Role: domain.UserRoleAdmin, Status: domain.AccountActive}
 	a := app.WithContentActor(ctx, alice)
 	private, err := posts.Create(a, app.CreatePostInput{ContentMD: "private", Visibility: domain.VisibilityOnlyMe})
 	if err != nil {
@@ -82,7 +81,7 @@ func TestModerationCannotDeleteAnotherAuthorsPrivateOrUnpublishedContent(t *test
 }
 
 func TestPostRetryKeysAreIndependentAcrossAccounts(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, posts := articleServiceFixture(t, time.UnixMilli(1000))
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
 	bob := addContentTestAccount(t, db, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob")
@@ -102,7 +101,7 @@ func TestPostRetryKeysAreIndependentAcrossAccounts(t *testing.T) {
 }
 
 func TestQuotesUseThePublishingAccountsVisibility(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, posts := articleServiceFixture(t, time.UnixMilli(1000))
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
 	bob := addContentTestAccount(t, db, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob")
@@ -122,7 +121,7 @@ func TestQuotesUseThePublishingAccountsVisibility(t *testing.T) {
 }
 
 func TestCommentModerationCannotReachAnotherAuthorsPrivatePost(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, runtime := openTestDatabase(t, Options{})
 	clock := func() time.Time { return time.UnixMilli(1000) }
 	posts := newTestPostService(t, db, clock, nil)

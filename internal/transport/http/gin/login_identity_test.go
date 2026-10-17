@@ -27,7 +27,7 @@ func exchangeWith(t *testing.T, fixture authenticationTestFixture, body map[stri
 // attribute a credential to another account.
 func TestSignInCredentialsCannotBeAttributedToAnotherAccount(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
-	account, err := fixture.accounts.OwnerAccount(context.Background())
+	account, err := fixture.accounts.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestActiveSessionsExcludeTheOnesThatNoLongerWork(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	cookie, _ := exchangeAccountSession(t, fixture, fixture.token)
 
-	owner, err := fixture.accounts.OwnerAccount(t.Context())
+	owner, err := fixture.accounts.ProfileAccount(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

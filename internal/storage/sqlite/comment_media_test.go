@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -12,7 +11,7 @@ import (
 
 func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	insertEntry(t, database, entryOne, "comment media host")
 	seededAt := time.UnixMilli(1_700_000_000_000)
@@ -57,7 +56,7 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 	assertMediaClock(t, database, mediaOne, nil)
 	assertMediaClock(t, database, mediaTwo, nil)
 
-	thread, err := service.List(ctx, postID, app.OwnerViewer())
+	thread, err := service.List(ctx, postID, app.AccountViewer(testAccountID))
 	if err != nil || len(thread.Items) != 2 ||
 		!reflect.DeepEqual(thread.Items[0].Media, expectedMediaProjections(rootMedia)) ||
 		!reflect.DeepEqual(thread.Items[1].Media, expectedMediaProjections(replyMedia)) {
@@ -88,7 +87,7 @@ func TestCommentMediaLifecycleOrderingReplayAndCascade(t *testing.T) {
 
 func TestCommentMediaRejectsMissingOverLimitAndOversizeAtomically(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	insertEntry(t, database, entryOne, "comment media host")
 	createdAt := time.UnixMilli(1_700_000_000_000)
@@ -127,7 +126,7 @@ func TestCommentMediaRejectsMissingOverLimitAndOversizeAtomically(t *testing.T) 
 // with it would change what readers see, not just how fast they see it.
 func TestBatchedCommentMediaMatchesPerCommentLoading(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	insertEntry(t, database, entryOne, "comment media host")
 	seededAt := time.UnixMilli(1_700_000_000_000)

@@ -41,7 +41,7 @@ type ArchiveImpact struct {
 
 // ArchiveSite is the complete portable site singleton.
 type ArchiveSite struct {
-	OwnerID         string
+	ProfileUserID   string
 	Username        string
 	DisplayName     string
 	Title           string
@@ -202,7 +202,6 @@ type ArchiveComment struct {
 	ID               string
 	EntryID          string
 	ParentID         *string
-	AuthorKind       string
 	AuthorName       string
 	AuthorUserID     *string
 	ReplyToCommentID *string
@@ -359,12 +358,19 @@ WHERE child.parent_id IS NOT NULL
 	if err := snapshot.tx.QueryRowContext(ctx, `
 SELECT count(*)
 FROM users AS account
-JOIN site_settings AS site ON site.owner_id = account.id
-WHERE site.id = 1 AND account.role = 'owner'`).Scan(&ownerAccounts); err != nil {
-		return fmt.Errorf("check archive owner account: %w", err)
+JOIN site_settings AS site ON site.profile_user_id = account.id
+WHERE site.id = 1`).Scan(&ownerAccounts); err != nil {
+		return fmt.Errorf("check archive profile account: %w", err)
 	}
 	if ownerAccounts != 1 {
-		return errors.New("archive snapshot does not contain exactly one owner account")
+		return errors.New("archive snapshot does not resolve its site profile")
+	}
+	var activeAdmins int64
+	if err := snapshot.tx.QueryRowContext(ctx, `SELECT count(*) FROM users WHERE role='admin' AND status='active'`).Scan(&activeAdmins); err != nil {
+		return err
+	}
+	if activeAdmins < 1 {
+		return errors.New("archive snapshot has no active administrator")
 	}
 	// The foreign key runs from entry_article to entries, so PRAGMA
 	// foreign_key_check sees a body without an entry. It cannot see the other
@@ -398,12 +404,12 @@ func (snapshot *ArchiveSnapshot) Site(ctx context.Context) (ArchiveSite, error) 
 	// stored copy would be free to drift and neither side could prove which
 	// one was right.
 	err := snapshot.tx.QueryRowContext(ctx, `
-SELECT site.owner_id, account.username, account.display_name, site.title, account.bio, site.timezone,
+SELECT site.profile_user_id, account.username, account.display_name, site.title, account.bio, site.timezone,
        site.public_base_url, account.avatar_media_id, account.cover_media_id, site.pinned_entry_id,
        site.comments_enabled
 FROM site_settings AS site
-JOIN users AS account ON account.id = site.owner_id
-WHERE site.id = 1`).Scan(&value.OwnerID, &value.Username, &value.DisplayName, &value.Title, &value.Bio, &value.Timezone, &publicURL, &avatar, &cover, &pinned, &comments)
+JOIN users AS account ON account.id = site.profile_user_id
+WHERE site.id = 1`).Scan(&value.ProfileUserID, &value.Username, &value.DisplayName, &value.Title, &value.Bio, &value.Timezone, &publicURL, &avatar, &cover, &pinned, &comments)
 	if err != nil {
 		return ArchiveSite{}, fmt.Errorf("read archive site settings: %w", err)
 	}
@@ -793,7 +799,7 @@ func (snapshot *ArchiveSnapshot) Comments(ctx context.Context, yield func(Archiv
 		return errors.New("archive comment callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT comment.id, comment.entry_id, comment.parent_id, comment.author_kind,
+SELECT comment.id, comment.entry_id, comment.parent_id,
        comment.author_name, comment.author_user_id, comment.reply_to_comment_id,
        comment.content_md, comment.created_at_ms,
        location.name, location.display_name, location.country_code,
@@ -827,7 +833,7 @@ ORDER BY comment.entry_id,
 		var latitude, longitude sql.NullInt64
 		var coordinateSystem sql.NullString
 		if err := rows.Scan(
-			&value.ID, &value.EntryID, &parent, &value.AuthorKind, &value.AuthorName,
+			&value.ID, &value.EntryID, &parent, &value.AuthorName,
 			&authorUserID, &replyToCommentID, &value.ContentMD, &value.CreatedAtMS,
 			&locationName, &locationDisplayName,
 			&countryCode, &country, &region, &city, &district, &category, &provider,

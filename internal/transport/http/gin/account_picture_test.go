@@ -174,7 +174,7 @@ func TestAccountPictureUploadRefusesWhatIsNotAPicture(t *testing.T) {
 // number of people using it.
 func TestExpiredSessionsAreSweptAndLiveOnesAreNot(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
-	owner, err := fixture.accountService.OwnerAccount(context.Background())
+	owner, err := fixture.accountService.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,7 +24,7 @@ func TestEditedAtSurvivesPortableImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(ctx, exportFixtureFile(t, fixture), 7)
+	inspection, err := testInspector(t, fixture.runtime.Root, fixture.database, &now, math.MaxUint64).InspectFile(ctx, exportFixtureFile(t, fixture), testAuthorization(7))
 	if err != nil {
 		t.Fatal(err)
 	}

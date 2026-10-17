@@ -305,8 +305,6 @@ func (repository *MediaReferenceRepository) audience(ctx context.Context, id dom
 	if viewer.UserID() != "" {
 		public = "((" + public + ") OR (entry.kind = 'article' AND entry.publication_state = 'unpublished' AND entry.author_user_id = ?))"
 		publicArguments = append(publicArguments, viewer.UserID())
-	} else if viewer.IsOwner() {
-		public = "((" + public + ") OR (entry.kind = 'article' AND entry.publication_state = 'unpublished' AND entry.author_user_id = (SELECT owner_id FROM site_settings WHERE id=1)))"
 	}
 	var referenced, exposed int
 	err := repository.transactions.ReadTx(ctx, func(queries Queries) error {
@@ -324,8 +322,6 @@ func (repository *MediaReferenceRepository) audience(ctx context.Context, id dom
 		if account != "" {
 			draftAuthor = "draft.author_user_id = ?"
 			arguments = append(arguments, account)
-		} else if viewer.IsOwner() {
-			draftAuthor = "draft.author_user_id = (SELECT owner_id FROM site_settings WHERE id = 1)"
 		}
 		return queries.QueryRowContext(ctx, `
 WITH media_id_value(id) AS (VALUES (?))

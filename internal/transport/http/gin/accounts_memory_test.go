@@ -247,8 +247,8 @@ func (store *memoryAccounts) SearchAccounts(_ context.Context, query string, lim
 		found = append(found, user)
 	}
 	sort.Slice(found, func(left, right int) bool {
-		if found[left].IsOwner() != found[right].IsOwner() {
-			return found[left].IsOwner()
+		if found[left].IsAdmin() != found[right].IsAdmin() {
+			return found[left].IsAdmin()
 		}
 		return found[left].Username < found[right].Username
 	})
@@ -258,7 +258,7 @@ func (store *memoryAccounts) SearchAccounts(_ context.Context, query string, lim
 	return found, nil
 }
 
-func (store *memoryAccounts) OwnerUserID(_ context.Context) (string, error) {
+func (store *memoryAccounts) ProfileUserID(_ context.Context) (string, error) {
 	return store.ownerID, nil
 }
 
@@ -368,8 +368,15 @@ func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 		return service
 	}
 
+	bootstrap, err := app.NewAccountService(repository, app.WithAccountClock(func() time.Time { return time.UnixMilli(1) }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bootstrap.InitializeSiteAccount(ctx, "writer"); err != nil {
+		t.Fatal(err)
+	}
 	stored := build(repository)
-	owner, err := stored.OwnerAccount(ctx)
+	owner, err := stored.ProfileAccount(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,13 +479,13 @@ func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 	}
 }
 
-// testOwnerAccount is the account every transport fixture signs in as.
-func testOwnerAccount() domain.User {
+// testProfileAccount is the account every transport fixture signs in as.
+func testProfileAccount() domain.User {
 	return domain.User{
 		ID:          "0123456789abcdef0123456789abcdef",
 		Username:    "owner",
 		DisplayName: "Owner",
-		Role:        domain.UserRoleOwner,
+		Role:        domain.UserRoleAdmin,
 		Status:      domain.AccountActive,
 		CreatedAtMS: 1,
 		UpdatedAtMS: 1,
@@ -496,6 +503,19 @@ func testAccounts(t *testing.T, database *sqlitestore.Database, runtimeState *ru
 	service, err := app.NewAccountService(repository)
 	if err != nil {
 		t.Fatal(err)
+	}
+	users, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) == 0 {
+		bootstrap, err := app.NewAccountService(repository, app.WithAccountIDGenerator(func() (string, error) { return "0123456789abcdef0123456789abcdef", nil }))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := bootstrap.InitializeSiteAccount(context.Background(), "writer"); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return service
 }
@@ -563,4 +583,13 @@ func (store *memoryAccounts) RevokeUserAPITokens(ctx context.Context, userID str
 		}
 	}
 	return nil
+}
+
+func fixtureContentContext(t *testing.T, accounts *app.AccountService) context.Context {
+	t.Helper()
+	user, err := accounts.ProfileAccount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return app.WithContentActor(context.Background(), user)
 }

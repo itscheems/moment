@@ -33,7 +33,7 @@ func TestAccountExportCLIFileParityAndIdentityBoundary(t *testing.T) {
 	}
 	defer func() { _ = db.Close() }()
 	accounts := testAccountService(t, db, runtimeState)
-	owner, err := accounts.OwnerAccount(ctx)
+	owner, err := accounts.ProfileAccount(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}

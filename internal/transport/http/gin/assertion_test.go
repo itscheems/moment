@@ -71,7 +71,7 @@ func newAssertionFixture(t *testing.T) assertionFixture {
 	}
 	engine, err := New(Config{
 		Assets:         testAssets(),
-		SessionSigner:      base.manager,
+		SessionSigner:  base.manager,
 		Accounts:       base.accounts,
 		OAuthProviders: oauth.NewRegistry(google, github),
 		RequestID:      func() string { return "req_assert" },

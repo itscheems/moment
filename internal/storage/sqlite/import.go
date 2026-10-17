@@ -29,22 +29,6 @@ type PortableImporter struct {
 	pendingReplies []pendingReplyTarget
 }
 
-// portableOwnerPlaceholder is the handle the schema-generated owner account is
-// parked under while the archive's own owner takes its place.
-//
-// A fresh generation is not accountless: the migrations create one owner named
-// "owner", which is also the default handle of every instance that never
-// renamed itself -- so the incoming owner collides with it on the unique
-// username index far more often than not. Renaming the generated row first, and
-// deleting it once nothing references it, is what keeps that ordinary case from
-// failing. Both candidates are valid handles, and the second exists only so the
-// step still frees the name when the archive's owner is literally called the
-// first one.
-const (
-	portableOwnerPlaceholder          = "zzportableownerplaceholder1"
-	portableOwnerPlaceholderAlternate = "zzportableownerplaceholder2"
-)
-
 type pendingQuote struct {
 	entryID  string
 	targetID *string
@@ -114,20 +98,6 @@ func (importer *PortableImporter) InsertUser(ctx context.Context, value ArchiveU
 	if err := validatePortableUser(value); err != nil {
 		return err
 	}
-	owner := domain.UserRole(value.Role) == domain.UserRoleOwner
-	if importer.users == 0 {
-		if !owner {
-			return errors.New("the owner account must be the first portable account imported")
-		}
-		if err := importer.adoptPortableOwner(ctx, value); err != nil {
-			return err
-		}
-		importer.users++
-		return nil
-	}
-	if owner {
-		return errors.New("portable accounts contain more than one owner")
-	}
 	if _, err := importer.tx.ExecContext(ctx, `
 INSERT INTO users (
     id, username, display_name, bio, avatar_media_id, cover_media_id,
@@ -147,98 +117,7 @@ INSERT INTO users (
 // checked the moment a row changes and is not deferrable, so the site row is
 // repointed at the new account before the generated one is deleted, and the new
 // account only becomes the owner once the old one is gone.
-func (importer *PortableImporter) adoptPortableOwner(ctx context.Context, value ArchiveUser) error {
-	var generated string
-	if err := importer.tx.QueryRowContext(ctx, `SELECT owner_id FROM site_settings WHERE id = 1`).Scan(&generated); err != nil {
-		return fmt.Errorf("resolve generated owner account: %w", err)
-	}
-	if generated == value.ID {
-		return importer.updatePortableUser(ctx, value)
-	}
-	placeholder := portableOwnerPlaceholder
-	if value.Username == placeholder {
-		placeholder = portableOwnerPlaceholderAlternate
-	}
-	steps := []struct {
-		description string
-		query       string
-		args        []any
-	}{
-		{"park the generated owner handle", `UPDATE users SET username = ? WHERE id = ?`, []any{placeholder, generated}},
-		{"insert the portable owner account", `
-INSERT INTO users (
-    id, username, display_name, bio, avatar_media_id, cover_media_id,
-    role, status, username_set_at_ms, created_at_ms, updated_at_ms
-) VALUES (?, ?, ?, ?, ?, ?, 'member', ?, ?, ?, ?)`, []any{
-			value.ID, value.Username, value.DisplayName, value.Bio, value.AvatarMediaID, value.CoverMediaID,
-			value.Status, value.UsernameSetAtMS, value.CreatedAtMS, value.UpdatedAtMS,
-		}},
-		{"point the site at the portable owner", `UPDATE site_settings SET owner_id = ? WHERE id = 1`, []any{value.ID}},
-		{"remove the generated owner account", `DELETE FROM users WHERE id = ?`, []any{generated}},
-		{"promote the portable owner", `UPDATE users SET role = ? WHERE id = ?`, []any{value.Role, value.ID}},
-	}
-	for _, step := range steps {
-		result, err := importer.tx.ExecContext(ctx, step.query, step.args...)
-		if err != nil {
-			return fmt.Errorf("%s: %w", step.description, err)
-		}
-		changed, err := result.RowsAffected()
-		if err != nil || changed != 1 {
-			return errors.Join(fmt.Errorf("%s changed %d rows", step.description, changed), err)
-		}
-	}
-	return nil
-}
 
-func (importer *PortableImporter) updatePortableUser(ctx context.Context, value ArchiveUser) error {
-	result, err := importer.tx.ExecContext(ctx, `
-UPDATE users
-SET username = ?, display_name = ?, bio = ?, avatar_media_id = ?, cover_media_id = ?,
-    role = ?, status = ?, username_set_at_ms = ?, created_at_ms = ?, updated_at_ms = ?
-WHERE id = ?`,
-		value.Username, value.DisplayName, value.Bio, value.AvatarMediaID, value.CoverMediaID,
-		value.Role, value.Status, value.UsernameSetAtMS, value.CreatedAtMS, value.UpdatedAtMS, value.ID)
-	if err != nil {
-		return fmt.Errorf("replace portable account %s: %w", value.ID, err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil || changed != 1 {
-		return errors.Join(fmt.Errorf("replace portable account %s changed %d rows", value.ID, changed), err)
-	}
-	return nil
-}
-
-// KeepGeneratedOwner accepts the account the migrations generated as this
-// import's owner.
-//
-// An archive written before owner identity existed names no owner at all, so
-// there is nothing to adopt and nothing to synthesize from. The generated
-// account is then the only answer to "who owns this site", and counting it here
-// keeps the importer's own accounting equal to what the database holds.
-func (importer *PortableImporter) KeepGeneratedOwner(ctx context.Context) error {
-	if err := importer.requireOpen(); err != nil {
-		return err
-	}
-	if importer.users != 0 {
-		return errors.New("the generated owner can only be kept before any portable account is imported")
-	}
-	var total, owners int64
-	if err := importer.tx.QueryRowContext(ctx, `
-SELECT
-  (SELECT count(*) FROM users),
-  (SELECT count(*) FROM users AS account JOIN site_settings AS site ON site.owner_id = account.id
-    WHERE site.id = 1 AND account.role = 'owner')`).Scan(&total, &owners); err != nil {
-		return fmt.Errorf("inspect generated owner account: %w", err)
-	}
-	if total != 1 || owners != 1 {
-		return errors.New("the generated generation does not hold exactly one owner account")
-	}
-	importer.users = 1
-	return nil
-}
-
-// InsertIdentity writes one external credential. Its account must already exist
-// so the foreign key names a real row rather than a future one.
 func (importer *PortableImporter) InsertIdentity(ctx context.Context, value ArchiveIdentity) error {
 	if err := importer.requireOpen(); err != nil {
 		return err
@@ -726,7 +605,7 @@ func (importer *PortableImporter) InsertComment(ctx context.Context, value Archi
 	}
 	comment := domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
-		AuthorKind: domain.CommentAuthorKind(value.AuthorKind), AuthorName: value.AuthorName,
+		AuthorName:   value.AuthorName,
 		AuthorUserID: value.AuthorUserID, ReplyToCommentID: replyToID, ContentMD: value.ContentMD,
 		Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
 	}
@@ -748,8 +627,8 @@ func (importer *PortableImporter) InsertComment(ctx context.Context, value Archi
 		return err
 	}
 	if _, err := importer.tx.ExecContext(ctx, `
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, author_user_id, content_md, created_at_ms)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, value.ID, value.EntryID, value.ParentID, value.AuthorKind, value.AuthorName, value.AuthorUserID, value.ContentMD, value.CreatedAtMS); err != nil {
+INSERT INTO comments (id, entry_id, parent_id, author_name, author_user_id, content_md, created_at_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?)`, value.ID, value.EntryID, value.ParentID, value.AuthorName, value.AuthorUserID, value.ContentMD, value.CreatedAtMS); err != nil {
 		return fmt.Errorf("insert portable comment %s: %w", value.ID, err)
 	}
 	if value.Location != nil {
@@ -808,7 +687,7 @@ VALUES (?, ?, ?, ?)`, value.ID, usage.MediaID, usage.Position, usage.AltText); e
 // the site row and the account it names cannot end up describing different
 // people.
 //
-// An archive that predates owner identity carries no owner_id, and there is
+// An archive that predates owner identity carries no profile_user_id, and there is
 // nothing to name: the account the migrations generated keeps its handle and
 // display name, and only the fields the archive actually states are applied.
 func (importer *PortableImporter) SetSite(ctx context.Context, value ArchiveSite) error {
@@ -819,37 +698,11 @@ func (importer *PortableImporter) SetSite(ctx context.Context, value ArchiveSite
 	if value.CommentsEnabled {
 		commentsEnabled = 1
 	}
-	result, err := importer.tx.ExecContext(ctx, `
-UPDATE site_settings
-SET title = ?, timezone = ?, public_base_url = ?, pinned_entry_id = ?, comments_enabled = ?
-WHERE id = 1`, value.Title, value.Timezone, value.PublicBaseURL, value.PinnedPostID, commentsEnabled)
+	_, err := importer.tx.ExecContext(ctx, `INSERT INTO site_settings
+(id, title, timezone, public_base_url, profile_user_id, pinned_entry_id, comments_enabled, registration_mode)
+VALUES (1, ?, ?, ?, ?, ?, ?, 'approval')`, value.Title, value.Timezone, value.PublicBaseURL, value.ProfileUserID, value.PinnedPostID, commentsEnabled)
 	if err != nil {
-		return fmt.Errorf("replace portable site settings: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil || changed != 1 {
-		return fmt.Errorf("replace portable site settings changed %d rows: %w", changed, err)
-	}
-	var owner string
-	if err := importer.tx.QueryRowContext(ctx, `SELECT owner_id FROM site_settings WHERE id = 1`).Scan(&owner); err != nil {
-		return fmt.Errorf("resolve portable site owner: %w", err)
-	}
-	if value.OwnerID != "" && value.OwnerID != owner {
-		return errors.New("portable site owner does not name the imported owner account")
-	}
-	profile := `UPDATE users SET bio = ?, avatar_media_id = ?, cover_media_id = ? WHERE id = ?`
-	arguments := []any{value.Bio, value.AvatarMediaID, value.CoverMediaID, owner}
-	if value.OwnerID != "" {
-		profile = `UPDATE users SET username = ?, display_name = ?, bio = ?, avatar_media_id = ?, cover_media_id = ? WHERE id = ?`
-		arguments = []any{value.Username, value.DisplayName, value.Bio, value.AvatarMediaID, value.CoverMediaID, owner}
-	}
-	result, err = importer.tx.ExecContext(ctx, profile, arguments...)
-	if err != nil {
-		return fmt.Errorf("replace portable owner profile: %w", err)
-	}
-	changed, err = result.RowsAffected()
-	if err != nil || changed != 1 {
-		return fmt.Errorf("replace portable owner profile changed %d rows: %w", changed, err)
+		return fmt.Errorf("insert portable site settings: %w", err)
 	}
 	return nil
 }
@@ -979,7 +832,7 @@ func validatePortableReady(ctx context.Context, pool *sql.DB, expected ArchiveCo
 		return fmt.Errorf("iterate staged foreign keys: %w", err)
 	}
 	var entries, comments, mediaCount, mediaGC, ftsRows, missingFTS, extraFTS, mismatchedFTS, duplicateFTS int64
-	var users, identities, ownerAccounts, sessions int64
+	var users, identities, profiles, sessions, activeAdministrators, passwords, tokens int64
 	var articles, drafts, bodylessArticles int64
 	if err := pool.QueryRowContext(ctx, `
 SELECT
@@ -994,15 +847,18 @@ SELECT
 	  (SELECT count(*) FROM (SELECT entry_id FROM entry_fts GROUP BY entry_id HAVING count(*) <> 1)),
 	  (SELECT count(*) FROM users),
 	  (SELECT count(*) FROM identities),
-	  (SELECT count(*) FROM users AS account JOIN site_settings AS site ON site.owner_id = account.id
-	    WHERE site.id = 1 AND account.role = 'owner'),
+	  (SELECT count(*) FROM users AS account JOIN site_settings AS site ON site.profile_user_id = account.id
+	    WHERE site.id = 1 AND account.status = 'active'),
 	  (SELECT count(*) FROM sessions),
+ (SELECT count(*) FROM users WHERE role='admin' AND status='active'),
+ (SELECT count(*) FROM account_passwords),
+ (SELECT count(*) FROM api_tokens),
 	  (SELECT count(*) FROM entry_article),
 	  (SELECT count(*) FROM article_drafts),
 	  (SELECT count(*) FROM entries AS e WHERE e.kind = 'article'
 	    AND NOT EXISTS (SELECT 1 FROM entry_article AS a WHERE a.entry_id = e.id))`).Scan(
 		&entries, &comments, &mediaCount, &mediaGC, &ftsRows, &missingFTS, &extraFTS, &mismatchedFTS, &duplicateFTS,
-		&users, &identities, &ownerAccounts, &sessions, &articles, &drafts, &bodylessArticles,
+		&users, &identities, &profiles, &sessions, &activeAdministrators, &passwords, &tokens, &articles, &drafts, &bodylessArticles,
 	); err != nil {
 		return fmt.Errorf("check staged portable counts: %w", err)
 	}
@@ -1024,7 +880,7 @@ SELECT
 	// Sessions are excluded from the archive on purpose, so a staged generation
 	// that somehow holds one is carrying a sign-in a restore was supposed to
 	// end.
-	if users != expected.Users || identities != expected.Identities || ownerAccounts != 1 || sessions != 0 {
+	if users != expected.Users || identities != expected.Identities || profiles != 1 || activeAdministrators < 1 || sessions != 0 || passwords != 0 || tokens != 0 {
 		return errors.New("staged portable accounts are inconsistent")
 	}
 	// The indexed text is derived, and which authority derives it depends on

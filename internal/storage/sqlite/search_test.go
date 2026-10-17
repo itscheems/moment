@@ -14,7 +14,7 @@ import (
 
 func TestSearchArchivePostSyncAndRebuild(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	if _, err := database.write.ExecContext(ctx, `UPDATE site_settings SET timezone = 'America/New_York' WHERE id = 1`); err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestSearchArchivePostSyncAndRebuild(t *testing.T) {
 	if err != nil || len(months.Items) != 1 || months.Items[0].Count != 3 {
 		t.Fatalf("archive months = %#v, %v", months, err)
 	}
-	march, err := service.ArchiveMonth(ctx, "2024-03", app.OwnerViewer())
+	march, err := service.ArchiveMonth(ctx, "2024-03", app.AccountViewer(testAccountID))
 	if err != nil || len(march.Days) != 2 || march.Days[0].Day != 9 || march.Days[0].Count != 1 || march.Days[1].Day != 10 || march.Days[1].Count != 2 {
 		t.Fatalf("DST archive days = %#v, %v", march, err)
 	}
@@ -188,7 +188,7 @@ func TestSearchLinkCardTextAgreesBetweenWriteAndRebuild(t *testing.T) {
 	// wrote. Both of those happened when the rebuild side concatenated the
 	// card in SQL instead of calling the combiner.
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	postRepository, err := newPostRepository(database)
 	if err != nil {
@@ -280,7 +280,7 @@ func TestSearchLinkCardTextAgreesBetweenWriteAndRebuild(t *testing.T) {
 
 func TestSearchCursorRejectsCreateUpdateAndDeleteBetweenPages(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	postRepository, err := newPostRepository(database)
 	if err != nil {
@@ -350,7 +350,7 @@ func TestSearchCursorRejectsCreateUpdateAndDeleteBetweenPages(t *testing.T) {
 
 func cursorPage(t *testing.T, service *app.SearchService) app.SearchPage {
 	t.Helper()
-	page, err := service.Search(context.Background(), app.SearchInput{Query: "revision searchable", Limit: 1})
+	page, err := service.Search(testAccountContext(), app.SearchInput{Query: "revision searchable", Limit: 1})
 	if err != nil || page.NextCursor == "" {
 		t.Fatalf("cursor page = %#v, %v", page, err)
 	}
@@ -373,7 +373,7 @@ func mustID(t *testing.T, value string) domain.ID {
 
 func TestSearchBootstrapUsesVersionedNormalizerWithoutMaskingDrift(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, _ := openTestDatabase(t, Options{})
 	if _, err := database.write.ExecContext(ctx, entryInsertSQL, entryOne, "moment", "[Visible](https://hidden.example) STRAßE", int64(1), int64(1), int64(1)); err != nil {
 		t.Fatal(err)
@@ -422,7 +422,7 @@ func TestSearchBootstrapUsesVersionedNormalizerWithoutMaskingDrift(t *testing.T)
 
 func TestSearchBootstrapForwardUpgradeFromV1RebuildsDerivedState(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	runtimeState, err := runtimefs.Initialize(ctx, runtimefs.Config{
 		DataDir:     t.TempDir(),
 		Environment: runtimefs.EnvironmentDevelopment,
@@ -434,15 +434,18 @@ func TestSearchBootstrapForwardUpgradeFromV1RebuildsDerivedState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) < 5 {
-		t.Fatalf("embedded migrations = %d, want at least 5", len(migrations))
+	if len(migrations) != 1 {
+		t.Fatalf("embedded migrations = %d, want the account/content baseline", len(migrations))
 	}
 	legacy, err := openPool(sqliteDSN(runtimeState.Current.DatabasePath, defaultBusyTimeout, false), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := applyMigrations(ctx, legacy, migrations[:4], time.UnixMilli(1)); err != nil {
+	if err := applyMigrations(ctx, legacy, migrations, time.UnixMilli(1)); err != nil {
 		_ = legacy.Close()
+		t.Fatal(err)
+	}
+	if err := newAccountStore(legacy).InitializeSiteAccount(ctx, domain.User{ID: testAccountID, Username: "writer", DisplayName: "Writer", Role: domain.UserRoleAdmin, Status: domain.AccountActive, CreatedAtMS: 1, UpdatedAtMS: 1}, "UTC"); err != nil {
 		t.Fatal(err)
 	}
 	const (
@@ -452,8 +455,8 @@ func TestSearchBootstrapForwardUpgradeFromV1RebuildsDerivedState(t *testing.T) {
 		publishedAt = int64(303)
 	)
 	if _, err := legacy.ExecContext(ctx, `
-INSERT INTO entries (id, kind, content_md, content_text, created_at_ms, updated_at_ms, published_at_ms)
-VALUES (?, ?, ?, '', ?, ?, ?)`, entryOne, string(domain.KindMoment), contentMD, createdAt, updatedAt, publishedAt); err != nil {
+INSERT INTO entries (id, kind, content_md, content_text, created_at_ms, updated_at_ms, published_at_ms, author_user_id)
+VALUES (?, ?, ?, '', ?, ?, ?, '0123456789abcdef0123456789abcdef')`, entryOne, string(domain.KindMoment), contentMD, createdAt, updatedAt, publishedAt); err != nil {
 		_ = legacy.Close()
 		t.Fatal(err)
 	}
@@ -472,7 +475,7 @@ VALUES (?, ?, ?, '', ?, ?, ?)`, entryOne, string(domain.KindMoment), contentMD, 
 		_ = legacy.Close()
 		t.Fatal(err)
 	}
-	if legacyVersion != 4 || legacyMatches != 0 {
+	if legacyVersion != 1 || legacyMatches != 0 {
 		_ = legacy.Close()
 		t.Fatalf("legacy fixture version=%d nonempty_fts=%d", legacyVersion, legacyMatches)
 	}

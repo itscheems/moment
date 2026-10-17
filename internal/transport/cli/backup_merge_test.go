@@ -23,7 +23,7 @@ import (
 func TestDecodeMergeInspectionAPIAllowsOnlyExpectedNullBlockReason(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	authority := archive.PortableAuthority{Site: sqlitestore.ArchiveSite{
-		OwnerID: "owner", Username: "owner", DisplayName: "Moment", Title: "Moment",
+		ProfileUserID: "owner", Username: "owner", DisplayName: "Moment", Title: "Moment",
 		Timezone: "UTC", CommentsEnabled: true,
 	}}
 	plan, err := archive.ComparePortableAuthorities(archive.MergePlanInput{
@@ -74,7 +74,6 @@ func TestBackupMergeDomainConflictsUseConflictExit(t *testing.T) {
 		suggestion string
 	}{
 		{code: domain.CodeImportMergePlanStale, suggestion: "moment backup merge-plan"},
-		{code: domain.CodeImportOwnerMismatch, suggestion: "same Moment owner"},
 	} {
 		t.Run(string(test.code), func(t *testing.T) {
 			err := backupImportCLIError(domain.NewError(test.code, "merge conflict", map[string]any{"safe": true}))

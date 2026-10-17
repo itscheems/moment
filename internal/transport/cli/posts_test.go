@@ -110,7 +110,7 @@ func TestPostDirectAgentContractIdempotencyAndDeleteSafety(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()
 
-	createdOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "first **moment**", "--idempotency-key", "cli-post-001", "--json")
+	createdOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "first **moment**", "--idempotency-key", "cli-post-001", "--json")
 	created := commandData(t, createdOutput)
 	id := created["id"].(string)
 	// kind is on the wire now that a post can be a moment or an article.
@@ -121,47 +121,47 @@ func TestPostDirectAgentContractIdempotencyAndDeleteSafety(t *testing.T) {
 	if createdEnvelope["meta"].(map[string]any)["replayed"] != false {
 		t.Fatalf("create meta = %#v", createdEnvelope["meta"])
 	}
-	quotedOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--quote", id, "--content", "my take", "--idempotency-key", "cli-post-quote-001", "--json")
+	quotedOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--quote", id, "--content", "my take", "--idempotency-key", "cli-post-quote-001", "--json")
 	quoted := commandData(t, quotedOutput)
 	quotedPost, ok := quoted["quoted_post"].(map[string]any)
 	if quotedOutput.exit != ExitSuccess || !ok || quoted["content_md"] != "my take" || quotedPost["id"] != id || quotedPost["content_md"] != "first **moment**" {
 		t.Fatalf("quoted create = %#v data=%#v", quotedOutput, quoted)
 	}
 
-	replayOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "first **moment**", "--idempotency-key", "cli-post-001", "--json")
+	replayOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "first **moment**", "--idempotency-key", "cli-post-001", "--json")
 	if replay := commandData(t, replayOutput); !reflect.DeepEqual(created, replay) || decodeOneDocument(t, replayOutput.stdout)["meta"].(map[string]any)["replayed"] != true {
 		t.Fatalf("replay data = %#v, output = %#v", replay, replayOutput)
 	}
-	conflict := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "different", "--idempotency-key", "cli-post-001", "--json")
+	conflict := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "different", "--idempotency-key", "cli-post-001", "--json")
 	if conflict.exit != ExitConflict || decodeOneDocument(t, conflict.stdout)["error"].(map[string]any)["code"] != "IDEMPOTENCY_KEY_REUSED" || conflict.stderr != "" {
 		t.Fatalf("conflict = %#v", conflict)
 	}
 
-	updated := commandData(t, execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir, "--content", "edited", "--json"))
+	updated := commandData(t, execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir, "--as", "writer", "--content", "edited", "--json"))
 	if updated["content_md"] != "edited" || updated["published_at"] != created["published_at"] {
 		t.Fatalf("updated = %#v", updated)
 	}
-	dryRunOutput := execute(application, "", "post", "delete", id, "--data-dir", fixture.dataDir, "--dry-run", "--json")
+	dryRunOutput := execute(application, "", "post", "delete", id, "--data-dir", fixture.dataDir, "--as", "writer", "--dry-run", "--json")
 	if commandData(t, dryRunOutput)["content_md"] != "edited" || decodeOneDocument(t, dryRunOutput.stdout)["meta"].(map[string]any)["dry_run"] != true {
 		t.Fatalf("dry-run = %#v", dryRunOutput)
 	}
-	if current := commandData(t, execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--json")); current["content_md"] != "edited" {
+	if current := commandData(t, execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--as", "writer", "--json")); current["content_md"] != "edited" {
 		t.Fatalf("dry-run mutated = %#v", current)
 	}
 
-	refused := execute(application, "", "post", "delete", id, "--data-dir", fixture.dataDir, "--no-input", "--json")
+	refused := execute(application, "", "post", "delete", id, "--data-dir", fixture.dataDir, "--as", "writer", "--no-input", "--json")
 	if refused.exit != ExitInvalidInput || decodeOneDocument(t, refused.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("non-interactive refusal = %#v", refused)
 	}
-	deleted := execute(application, "", "post", "delete", id, "--data-dir", fixture.dataDir, "--yes", "--json")
+	deleted := execute(application, "", "post", "delete", id, "--data-dir", fixture.dataDir, "--as", "writer", "--yes", "--json")
 	if deleted.exit != ExitSuccess || commandData(t, deleted)["content_md"] != "edited" || decodeOneDocument(t, deleted.stdout)["meta"].(map[string]any)["deleted"] != true {
 		t.Fatalf("deleted = %#v", deleted)
 	}
-	missing := execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--json")
+	missing := execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if missing.exit != ExitNotFound || decodeOneDocument(t, missing.stdout)["error"].(map[string]any)["code"] != "POST_NOT_FOUND" {
 		t.Fatalf("missing = %#v", missing)
 	}
-	replayedAfterDelete := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "first **moment**", "--idempotency-key", "cli-post-001", "--json"))
+	replayedAfterDelete := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "first **moment**", "--idempotency-key", "cli-post-001", "--json"))
 	if !reflect.DeepEqual(created, replayedAfterDelete) {
 		t.Fatalf("replay after delete = %#v, want %#v", replayedAfterDelete, created)
 	}
@@ -172,7 +172,7 @@ func TestPostDirectAPIParityAndPublicReadsDoNotRequireToken(t *testing.T) {
 	application := momentTestApplication()
 	t.Setenv("MOMENT_TOKEN", fixture.token)
 
-	directCreated := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "parity", "--json"))
+	directCreated := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "parity", "--json"))
 	id := directCreated["id"].(string)
 	apiGet := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "get", id, "--json"))
 	if !reflect.DeepEqual(directCreated, apiGet) {
@@ -180,11 +180,11 @@ func TestPostDirectAPIParityAndPublicReadsDoNotRequireToken(t *testing.T) {
 	}
 
 	apiUpdated := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "update", id, "--content", "updated through API", "--json"))
-	directGet := commandData(t, execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--json"))
+	directGet := commandData(t, execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	if !reflect.DeepEqual(apiUpdated, directGet) {
 		t.Fatalf("API update = %#v, direct get = %#v", apiUpdated, directGet)
 	}
-	pinned := commandData(t, execute(application, "", "post", "pin", id, "--data-dir", fixture.dataDir, "--yes", "--json"))
+	pinned := commandData(t, execute(application, "", "post", "pin", id, "--data-dir", fixture.dataDir, "--as", "writer", "--yes", "--json"))
 	if pinned["pinned_post_id"] != id {
 		t.Fatalf("direct pin = %#v", pinned)
 	}
@@ -196,11 +196,11 @@ func TestPostDirectAPIParityAndPublicReadsDoNotRequireToken(t *testing.T) {
 	if unpinned["pinned_post_id"] != nil {
 		t.Fatalf("API unpin = %#v", unpinned)
 	}
-	directSite := commandData(t, execute(application, "", "site", "get", "--data-dir", fixture.dataDir, "--json"))
+	directSite := commandData(t, execute(application, "", "site", "get", "--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	if !reflect.DeepEqual(unpinned, directSite) {
 		t.Fatalf("API unpin = %#v, direct site = %#v", unpinned, directSite)
 	}
-	directList := commandData(t, execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--limit", "1", "--json"))
+	directList := commandData(t, execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--limit", "1", "--json"))
 	apiList := commandData(t, execute(application, "", "--url", fixture.server.URL, "post", "list", "--limit", "1", "--json"))
 	if !reflect.DeepEqual(directList, apiList) {
 		t.Fatalf("direct list = %#v, API list = %#v", directList, apiList)
@@ -252,7 +252,7 @@ func TestPostLocationCLIDirectAPIParityAndStrictInputs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir,
+	created := commandData(t, execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer",
 		"--content", "带位置", "--location-json", manifest, "--json"))
 	id := created["id"].(string)
 	if got := created["location"].(map[string]any); got["name"] != "静安寺" || len(got) != 2 {
@@ -267,16 +267,16 @@ func TestPostLocationCLIDirectAPIParityAndStrictInputs(t *testing.T) {
 	if manual["location"].(map[string]any)["name"] != "书房" {
 		t.Fatalf("manual location = %#v", manual)
 	}
-	cleared := commandData(t, execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir,
+	cleared := commandData(t, execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir, "--as", "writer",
 		"--clear-location", "--json"))
 	if cleared["location"] != nil {
 		t.Fatalf("location not cleared: %#v", cleared)
 	}
 
 	for _, output := range []commandOutput{
-		execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--location-name", "书房", "--location-json", manifest, "--json"),
-		execute(application, location, "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--location-json", "-", "--media-manifest", "-", "--json"),
-		execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir, "--clear-location", "--location-name", "书房", "--json"),
+		execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--location-name", "书房", "--location-json", manifest, "--json"),
+		execute(application, location, "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--location-json", "-", "--media-manifest", "-", "--json"),
+		execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir, "--as", "writer", "--clear-location", "--location-name", "书房", "--json"),
 	} {
 		if output.exit != ExitInvalidInput || decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 			t.Fatalf("invalid location flags = %#v", output)
@@ -290,7 +290,7 @@ func TestPostMediaCLISingleManifestAndTransportParity(t *testing.T) {
 	imagePath := writeCLIImage(t)
 	t.Setenv("MOMENT_TOKEN", fixture.token)
 
-	createdOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir,
+	createdOutput := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer",
 		"--content", "single image", "--media", imagePath, "--json")
 	if createdOutput.exit != ExitSuccess || createdOutput.stderr != "" {
 		t.Fatalf("single create = %#v", createdOutput)
@@ -305,7 +305,7 @@ func TestPostMediaCLISingleManifestAndTransportParity(t *testing.T) {
   {"media_id":"`+mediaID+`","alt_text":""},
   {"media_id":"`+mediaID+`","alt_text":null}
 ]`)
-	directUpdate := execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir,
+	directUpdate := execute(application, "", "post", "update", id, "--data-dir", fixture.dataDir, "--as", "writer",
 		"--media-manifest", manifest, "--json")
 	if directUpdate.exit != ExitSuccess || commandData(t, directUpdate)["content_md"] != "single image" {
 		t.Fatalf("direct manifest update = %#v", directUpdate)
@@ -322,12 +322,12 @@ func TestPostMediaCLISingleManifestAndTransportParity(t *testing.T) {
 		t.Fatalf("API decorative update = %#v", apiDecorative)
 	}
 	assertCLIPostMedia(t, commandData(t, apiDecorative), []any{""})
-	directGet := commandData(t, execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--json"))
+	directGet := commandData(t, execute(application, "", "post", "get", id, "--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	if !reflect.DeepEqual(commandData(t, apiDecorative), directGet) {
 		t.Fatalf("API update/direct get drift: api=%#v direct=%#v", commandData(t, apiDecorative), directGet)
 	}
 
-	cleared := execute(application, "[]", "post", "update", id, "--data-dir", fixture.dataDir,
+	cleared := execute(application, "[]", "post", "update", id, "--data-dir", fixture.dataDir, "--as", "writer",
 		"--media-manifest", "-", "--json")
 	if cleared.exit != ExitSuccess {
 		t.Fatalf("stdin clear = %#v", cleared)
@@ -415,7 +415,7 @@ func TestPostMediaCLIStrictManifestFlagsAndPathSafety(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()
 	imagePath := writeCLIImage(t)
-	mediaID := commandData(t, execute(application, "", "media", "add", imagePath, "--data-dir", fixture.dataDir, "--json"))["media"].(map[string]any)["id"].(string)
+	mediaID := commandData(t, execute(application, "", "media", "add", imagePath, "--data-dir", fixture.dataDir, "--as", "writer", "--json"))["media"].(map[string]any)["id"].(string)
 	overLimit := make([]string, 0, 10)
 	for range 10 {
 		overLimit = append(overLimit, `{"media_id":"`+mediaID+`","alt_text":null}`)
@@ -425,22 +425,22 @@ func TestPostMediaCLIStrictManifestFlagsAndPathSafety(t *testing.T) {
 		stdin string
 		args  []string
 	}{
-		{name: "empty convenience alt", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media-alt", "", "--json"}},
-		{name: "both alt modes", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media-alt", "x", "--media-decorative", "--json"}},
-		{name: "repeated convenience path", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media", imagePath, "--json"}},
-		{name: "manifest and convenience", stdin: "[]", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", imagePath, "--media-manifest", "-", "--json"}},
-		{name: "repeated manifest", stdin: "[]", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--media-manifest", "-", "--json"}},
-		{name: "manifest EOF", stdin: "", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "manifest malformed", stdin: "[", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "manifest null", stdin: "null", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "manifest trailing", stdin: "[] {}", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "missing alt", stdin: `[{"media_id":"` + mediaID + `"}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "both source fields", stdin: `[{"path":` + jsonString(imagePath) + `,"media_id":"` + mediaID + `","alt_text":null}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "unknown field", stdin: `[{"media_id":"` + mediaID + `","alt_text":null,"decorative":true}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "duplicate field", stdin: `[{"media_id":"` + mediaID + `","media_id":"` + mediaID + `","alt_text":null}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "blank provided alt", stdin: `[{"media_id":"` + mediaID + `","alt_text":"   "}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "over limit", stdin: `[` + strings.Join(overLimit, ",") + `]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
-		{name: "over byte limit", stdin: strings.Repeat(" ", maxPostMediaManifestBytes+1), args: []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "empty convenience alt", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media", imagePath, "--media-alt", "", "--json"}},
+		{name: "both alt modes", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media", imagePath, "--media-alt", "x", "--media-decorative", "--json"}},
+		{name: "repeated convenience path", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media", imagePath, "--media", imagePath, "--json"}},
+		{name: "manifest and convenience", stdin: "[]", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media", imagePath, "--media-manifest", "-", "--json"}},
+		{name: "repeated manifest", stdin: "[]", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--media-manifest", "-", "--json"}},
+		{name: "manifest EOF", stdin: "", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "manifest malformed", stdin: "[", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "manifest null", stdin: "null", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "manifest trailing", stdin: "[] {}", args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "missing alt", stdin: `[{"media_id":"` + mediaID + `"}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "both source fields", stdin: `[{"path":` + jsonString(imagePath) + `,"media_id":"` + mediaID + `","alt_text":null}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "unknown field", stdin: `[{"media_id":"` + mediaID + `","alt_text":null,"decorative":true}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "duplicate field", stdin: `[{"media_id":"` + mediaID + `","media_id":"` + mediaID + `","alt_text":null}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "blank provided alt", stdin: `[{"media_id":"` + mediaID + `","alt_text":"   "}]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "over limit", stdin: `[` + strings.Join(overLimit, ",") + `]`, args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
+		{name: "over byte limit", stdin: strings.Repeat(" ", maxPostMediaManifestBytes+1), args: []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -452,7 +452,7 @@ func TestPostMediaCLIStrictManifestFlagsAndPathSafety(t *testing.T) {
 	}
 
 	manifestDirectory := t.TempDir()
-	if output := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", manifestDirectory, "--json"); output.exit != ExitInvalidInput {
+	if output := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", manifestDirectory, "--json"); output.exit != ExitInvalidInput {
 		t.Fatalf("manifest directory = %#v", output)
 	}
 	manifestTarget := writePostManifest(t, "[]")
@@ -460,14 +460,14 @@ func TestPostMediaCLIStrictManifestFlagsAndPathSafety(t *testing.T) {
 	if err := os.Symlink(manifestTarget, manifestLink); err != nil {
 		t.Fatal(err)
 	}
-	if output := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", manifestLink, "--json"); output.exit != ExitInvalidInput {
+	if output := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", manifestLink, "--json"); output.exit != ExitInvalidInput {
 		t.Fatalf("manifest symlink = %#v", output)
 	}
 	mediaLink := filepath.Join(t.TempDir(), "linked.png")
 	if err := os.Symlink(imagePath, mediaLink); err != nil {
 		t.Fatal(err)
 	}
-	if output := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media", mediaLink, "--json"); output.exit != ExitInvalidInput {
+	if output := execute(application, "", "post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media", mediaLink, "--json"); output.exit != ExitInvalidInput {
 		t.Fatalf("media symlink = %#v", output)
 	}
 	if postCLITableCount(t, fixture.database, "entries") != 0 || postCLITableCount(t, fixture.database, "entry_media") != 0 {
@@ -477,7 +477,7 @@ func TestPostMediaCLIStrictManifestFlagsAndPathSafety(t *testing.T) {
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	var stdout, stderr bytes.Buffer
-	exit := application.Execute(cancelled, []string{"post", "create", "--data-dir", fixture.dataDir, "--content", "x", "--media-manifest", "-", "--json"}, Streams{
+	exit := application.Execute(cancelled, []string{"post", "create", "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", "--media-manifest", "-", "--json"}, Streams{
 		In: strings.NewReader(`[]`), Out: &stdout, Err: &stderr,
 	})
 	if exit != ExitTimeout || stderr.String() != "" || decodeOneDocument(t, stdout.String())["error"].(map[string]any)["code"] != "CANCELLED" ||
@@ -508,12 +508,12 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, content := range []string{"before", "inside one", "inside two"} {
-		if _, err := seed.Create(context.Background(), app.CreatePostInput{ContentMD: content}); err != nil {
+		if _, err := seed.Create(cliFixtureContentContext(t, testAccountService(t, fixture.database, fixture.runtime)), app.CreatePostInput{ContentMD: content}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	firstOutput := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--from", "2026-08-10", "--to", "2026-08-11", "--limit", "1", "--json")
+	firstOutput := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--from", "2026-08-10", "--to", "2026-08-11", "--limit", "1", "--json")
 	first := commandData(t, firstOutput)
 	items := first["items"].([]any)
 	firstMeta := decodeOneDocument(t, firstOutput.stdout)["meta"].(map[string]any)
@@ -521,19 +521,19 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 		t.Fatalf("first = %#v, meta = %#v", first, firstMeta)
 	}
 	cursor := firstMeta["next_cursor"].(string)
-	continued := commandData(t, execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--from", "2026-08-10", "--to", "2026-08-11", "--limit", "1", "--cursor", cursor, "--json"))
+	continued := commandData(t, execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--from", "2026-08-10", "--to", "2026-08-11", "--limit", "1", "--cursor", cursor, "--json"))
 	if continued["items"].([]any)[0].(map[string]any)["content_md"] != "inside one" {
 		t.Fatalf("continued = %#v", continued)
 	}
 
 	// An anchored day reads back from its end and prev_cursor walks forward.
-	anchoredOutput := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--anchor", "2026-08-09", "--limit", "5", "--json")
+	anchoredOutput := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--anchor", "2026-08-09", "--limit", "5", "--json")
 	anchored := commandData(t, anchoredOutput)
 	anchoredMeta := decodeOneDocument(t, anchoredOutput.stdout)["meta"].(map[string]any)
 	if anchoredItems := anchored["items"].([]any); len(anchoredItems) != 1 || anchoredItems[0].(map[string]any)["content_md"] != "before" || anchoredMeta["next_cursor"] != nil || anchoredMeta["prev_cursor"] == nil {
 		t.Fatalf("anchored = %#v, meta = %#v", anchored, anchoredMeta)
 	}
-	newerOutput := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--limit", "1", "--cursor", anchoredMeta["prev_cursor"].(string), "--json")
+	newerOutput := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--limit", "1", "--cursor", anchoredMeta["prev_cursor"].(string), "--json")
 	newer := commandData(t, newerOutput)
 	newerMeta := decodeOneDocument(t, newerOutput.stdout)["meta"].(map[string]any)
 	if newer["items"].([]any)[0].(map[string]any)["content_md"] != "inside one" || newerMeta["prev_cursor"] == nil {
@@ -541,14 +541,14 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 	}
 
 	for _, args := range [][]string{
-		{"post", "list", "--data-dir", fixture.dataDir, "--cursor", cursor, "--json"},
-		{"post", "list", "--data-dir", fixture.dataDir, "--cursor", "invalid", "--json"},
-		{"post", "list", "--data-dir", fixture.dataDir, "--limit", "101", "--json"},
-		{"post", "list", "--data-dir", fixture.dataDir, "--from", "2026-08-11", "--to", "2026-08-10", "--json"},
-		{"post", "list", "--data-dir", fixture.dataDir, "--anchor", "2026-08-09", "--from", "2026-08-01", "--json"},
-		{"post", "list", "--data-dir", fixture.dataDir, "--anchor", "2026-08-09", "--cursor", cursor, "--json"},
-		{"post", "list", "--data-dir", fixture.dataDir, "--anchor", "08-09-2026", "--json"},
-		{"post", "list", "--data-dir", fixture.dataDir, "--anchor", "", "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--cursor", cursor, "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--cursor", "invalid", "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--limit", "101", "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--from", "2026-08-11", "--to", "2026-08-10", "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--anchor", "2026-08-09", "--from", "2026-08-01", "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--anchor", "2026-08-09", "--cursor", cursor, "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--anchor", "08-09-2026", "--json"},
+		{"post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--anchor", "", "--json"},
 	} {
 		output := execute(application, "", args...)
 		if output.exit != ExitInvalidInput || decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
@@ -556,11 +556,11 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 		}
 	}
 
-	repostOutput := execute(application, "", "post", "repost", ids[1].String(), "--data-dir", fixture.dataDir, "--json")
+	repostOutput := execute(application, "", "post", "repost", ids[1].String(), "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if repostOutput.exit != ExitSuccess || commandData(t, repostOutput)["timeline_item_kind"] != "original" {
 		t.Fatalf("repost = %#v", repostOutput)
 	}
-	linked := commandData(t, execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--from", "2026-08-10", "--to", "2026-08-11", "--json"))["items"].([]any)
+	linked := commandData(t, execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--from", "2026-08-10", "--to", "2026-08-11", "--json"))["items"].([]any)
 	linkedKinds := map[string]bool{}
 	for _, raw := range linked {
 		item := raw.(map[string]any)
@@ -571,7 +571,7 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 	if len(linkedKinds) != 2 || !linkedKinds["original"] || !linkedKinds["repost"] {
 		t.Fatalf("linked CLI timeline = %#v", linked)
 	}
-	unrepostOutput := execute(application, "", "post", "unrepost", ids[1].String(), "--data-dir", fixture.dataDir, "--json")
+	unrepostOutput := execute(application, "", "post", "unrepost", ids[1].String(), "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if unrepostOutput.exit != ExitSuccess || commandData(t, unrepostOutput)["reposted_at"] != nil {
 		t.Fatalf("unrepost = %#v", unrepostOutput)
 	}
@@ -579,7 +579,7 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 	cancelledContext, cancel := context.WithCancel(context.Background())
 	cancel()
 	var stdout, stderr bytes.Buffer
-	exit := application.Execute(cancelledContext, []string{"post", "list", "--data-dir", fixture.dataDir, "--json"}, Streams{Out: &stdout, Err: &stderr})
+	exit := application.Execute(cancelledContext, []string{"post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--json"}, Streams{Out: &stdout, Err: &stderr})
 	if exit != ExitTimeout || decodeOneDocument(t, stdout.String())["error"].(map[string]any)["code"] != "CANCELLED" || stderr.String() != "" {
 		t.Fatalf("cancelled exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
@@ -784,7 +784,7 @@ func postCLITableCount(t *testing.T, database *sqlitestore.Database, table strin
 func TestPostListRefreshCursorDirectAndAPIParity(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()
-	direct := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--json")
+	direct := execute(application, "", "post", "list", "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	envelope := decodeOneDocument(t, direct.stdout)
 	cursor, ok := envelope["meta"].(map[string]any)["refresh_cursor"].(string)
 	if direct.exit != ExitSuccess || !ok || cursor == "" {

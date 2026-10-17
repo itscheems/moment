@@ -36,7 +36,7 @@ func newLinkFixture(t *testing.T) linkFixture {
 	}
 	engine, err := New(Config{
 		Assets:         testAssets(),
-		SessionSigner:      base.manager,
+		SessionSigner:  base.manager,
 		Accounts:       base.accounts,
 		OAuthProviders: oauth.NewRegistry(google, github),
 		RequestID:      func() string { return "req_link" },
@@ -151,7 +151,7 @@ func TestStartOAuthWithASignedOutCookieAttachesNothing(t *testing.T) {
 		t.Fatalf("a signed-out cookie linked a provider: %q", location)
 	}
 
-	owner, err := fixture.accounts.OwnerAccount(context.Background())
+	owner, err := fixture.accounts.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

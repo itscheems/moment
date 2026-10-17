@@ -34,7 +34,7 @@ func TestBackupExportDirectFileStdoutFlagsAndStableErrors(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
 	application := momentTestApplication()
 	destination := filepath.Join(t.TempDir(), "moment-export.zip")
-	fileOutput := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", destination, "--no-input", "--json")
+	fileOutput := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", destination, "--no-input", "--json")
 	data := commandData(t, fileOutput)
 	if data["format_version"] != float64(archive.FormatVersion) || data["path"] != destination || data["archive_sha256"] == "" {
 		t.Fatalf("file result = %#v", data)
@@ -42,15 +42,15 @@ func TestBackupExportDirectFileStdoutFlagsAndStableErrors(t *testing.T) {
 	if err := archive.ValidateFile(destination); err != nil {
 		t.Fatal(err)
 	}
-	if existing := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", destination, "--json"); existing.exit != ExitConflict || decodeOneDocument(t, existing.stdout)["error"].(map[string]any)["code"] != "OUTPUT_EXISTS" {
+	if existing := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", destination, "--json"); existing.exit != ExitConflict || decodeOneDocument(t, existing.stdout)["error"].(map[string]any)["code"] != "OUTPUT_EXISTS" {
 		t.Fatalf("no-clobber = %#v", existing)
 	}
-	if replaced := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", destination, "--overwrite", "--json"); replaced.exit != ExitSuccess {
+	if replaced := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", destination, "--overwrite", "--json"); replaced.exit != ExitSuccess {
 		t.Fatalf("overwrite = %#v", replaced)
 	}
 
 	var stdout, stderr bytes.Buffer
-	exit := application.Execute(context.Background(), []string{"backup", "export", "--data-dir", dataDir, "--stdout", "--no-input"}, Streams{Out: &stdout, Err: &stderr})
+	exit := application.Execute(context.Background(), []string{"backup", "export", "--data-dir", dataDir, "--as", "writer", "--stdout", "--no-input"}, Streams{Out: &stdout, Err: &stderr})
 	if exit != ExitSuccess || stderr.Len() != 0 || !bytes.HasPrefix(stdout.Bytes(), []byte("PK\x03\x04")) {
 		t.Fatalf("stdout export exit=%d bytes=%d stderr=%q", exit, stdout.Len(), stderr.String())
 	}
@@ -59,11 +59,11 @@ func TestBackupExportDirectFileStdoutFlagsAndStableErrors(t *testing.T) {
 	}
 
 	for _, args := range [][]string{
-		{"backup", "export", "--data-dir", dataDir, "--json"},
-		{"backup", "export", "--data-dir", dataDir, "--stdout", "--output", filepath.Join(t.TempDir(), "both.zip"), "--json"},
-		{"backup", "export", "--data-dir", dataDir, "--stdout", "--json"},
-		{"backup", "export", "--data-dir", dataDir, "--output", "a.zip", "--output", "b.zip", "--json"},
-		{"backup", "export", "--data-dir", dataDir, "--stdout", "--stdout", "--json"},
+		{"backup", "export", "--data-dir", dataDir, "--as", "writer", "--json"},
+		{"backup", "export", "--data-dir", dataDir, "--as", "writer", "--stdout", "--output", filepath.Join(t.TempDir(), "both.zip"), "--json"},
+		{"backup", "export", "--data-dir", dataDir, "--as", "writer", "--stdout", "--json"},
+		{"backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", "a.zip", "--output", "b.zip", "--json"},
+		{"backup", "export", "--data-dir", dataDir, "--as", "writer", "--stdout", "--stdout", "--json"},
 	} {
 		output := execute(application, "", args...)
 		if output.exit != ExitInvalidInput || decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
@@ -79,7 +79,7 @@ func TestBackupExportDirectFileStdoutFlagsAndStableErrors(t *testing.T) {
 	if err := os.WriteFile(parentFile, []byte("owner"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	unavailable := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", filepath.Join(parentFile, "export.zip"), "--json")
+	unavailable := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", filepath.Join(parentFile, "export.zip"), "--json")
 	if unavailable.exit != ExitIO || decodeOneDocument(t, unavailable.stdout)["error"].(map[string]any)["code"] != "OUTPUT_UNAVAILABLE" {
 		t.Fatalf("unavailable output = %#v", unavailable)
 	}
@@ -92,7 +92,7 @@ func TestBackupExportDirectFileStdoutFlagsAndStableErrors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	protected := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", runtimeState.Current.DatabasePath, "--overwrite", "--json")
+	protected := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", runtimeState.Current.DatabasePath, "--overwrite", "--json")
 	if protected.exit != ExitIO || decodeOneDocument(t, protected.stdout)["error"].(map[string]any)["code"] != "OUTPUT_UNAVAILABLE" {
 		t.Fatalf("protected database output = %#v", protected)
 	}
@@ -104,7 +104,7 @@ func TestBackupExportDirectFileStdoutFlagsAndStableErrors(t *testing.T) {
 	if err := os.Symlink(runtimeState.Current.Root, alias); err != nil {
 		t.Fatal(err)
 	}
-	aliasOutput := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", filepath.Join(alias, "export.zip"), "--json")
+	aliasOutput := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", filepath.Join(alias, "export.zip"), "--json")
 	if aliasOutput.exit != ExitIO || decodeOneDocument(t, aliasOutput.stdout)["error"].(map[string]any)["code"] != "OUTPUT_UNAVAILABLE" {
 		t.Fatalf("symlink alias output = %#v", aliasOutput)
 	}
@@ -119,7 +119,7 @@ func TestBackupExportDirectFileStdoutFlagsAndStableErrors(t *testing.T) {
 			t.Fatal(statErr)
 		}
 		if os.SameFile(rootInfo, aliasInfo) && caseAlias != runtimeState.Root {
-			caseOutput := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", filepath.Join(caseAlias, "case-alias.zip"), "--json")
+			caseOutput := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", filepath.Join(caseAlias, "case-alias.zip"), "--json")
 			if caseOutput.exit != ExitIO || decodeOneDocument(t, caseOutput.stdout)["error"].(map[string]any)["code"] != "OUTPUT_UNAVAILABLE" {
 				t.Fatalf("case-insensitive alias output = %#v", caseOutput)
 			}
@@ -131,7 +131,7 @@ func TestBackupExportAPIParityHeaderValidationTruncationAndTimeout(t *testing.T)
 	_, dataDir := initializeSiteCLIData(t)
 	application := momentTestApplication()
 	sourcePath := filepath.Join(t.TempDir(), "source.zip")
-	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", sourcePath, "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", sourcePath, "--json"); output.exit != ExitSuccess {
 		t.Fatalf("source export = %#v", output)
 	}
 	source, err := os.ReadFile(sourcePath)
@@ -333,13 +333,13 @@ func TestBackupInspectDirectJSONHelpAndActiveState(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
 	application := momentTestApplication()
 	archivePath := filepath.Join(t.TempDir(), "source.zip")
-	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", archivePath, "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", archivePath, "--json"); output.exit != ExitSuccess {
 		t.Fatalf("source export = %#v", output)
 	}
 	if _, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	result := execute(application, "", "backup", "inspect", archivePath, "--data-dir", dataDir, "--timeout", "30s", "--json")
+	result := execute(application, "", "backup", "inspect", archivePath, "--data-dir", dataDir, "--as", "writer", "--timeout", "30s", "--json")
 	if result.exit != ExitSuccess || result.stderr != "" {
 		t.Fatalf("inspect = %#v", result)
 	}
@@ -351,7 +351,7 @@ func TestBackupInspectDirectJSONHelpAndActiveState(t *testing.T) {
 	if disk["space_ok"] != true || disk["required_additional_bytes"].(float64) <= 0 {
 		t.Fatalf("disk = %#v", disk)
 	}
-	again := execute(application, "", "backup", "inspect", archivePath, "--data-dir", dataDir, "--json")
+	again := execute(application, "", "backup", "inspect", archivePath, "--data-dir", dataDir, "--as", "writer", "--json")
 	if again.exit != ExitConflict || decodeOneDocument(t, again.stdout)["error"].(map[string]any)["code"] != "IMPORT_IN_PROGRESS" {
 		t.Fatalf("active inspection = %#v", again)
 	}
@@ -367,23 +367,23 @@ func TestBackupImportDirectSafetySuccessReplayAndHelp(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
 	application := momentTestApplication()
 	archivePath := filepath.Join(t.TempDir(), "source.zip")
-	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", archivePath, "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", archivePath, "--json"); output.exit != ExitSuccess {
 		t.Fatalf("source export=%#v", output)
 	}
 	if _, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{}); err != nil {
 		t.Fatal(err)
 	}
-	inspected := execute(application, "", "backup", "inspect", archivePath, "--data-dir", dataDir, "--json")
+	inspected := execute(application, "", "backup", "inspect", archivePath, "--data-dir", dataDir, "--as", "writer", "--json")
 	token := commandData(t, inspected)["staging_token"].(string)
-	withoutYes := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--json")
+	withoutYes := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--as", "writer", "--json")
 	if withoutYes.exit != ExitInvalidInput || decodeOneDocument(t, withoutYes.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("missing confirmation=%#v", withoutYes)
 	}
-	noInput := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--no-input")
+	noInput := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--as", "writer", "--no-input")
 	if noInput.exit != ExitInvalidInput {
 		t.Fatalf("no-input confirmation=%#v", noInput)
 	}
-	committed := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--yes", "--json")
+	committed := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--as", "writer", "--yes", "--json")
 	if committed.exit != ExitSuccess || committed.stderr != "" || strings.Contains(committed.stdout, token) {
 		t.Fatalf("direct import=%#v", committed)
 	}
@@ -392,11 +392,11 @@ func TestBackupImportDirectSafetySuccessReplayAndHelp(t *testing.T) {
 	if status["phase"] != string(archive.CommitSucceeded) || status["active_generation"] != status["new_generation"] || status["backup_verified"] != true {
 		t.Fatalf("direct commit status=%#v", status)
 	}
-	queried := execute(application, "", "backup", "status", "--data-dir", dataDir, "--json")
+	queried := execute(application, "", "backup", "status", "--data-dir", dataDir, "--as", "writer", "--json")
 	if queried.exit != ExitSuccess || queried.stderr != "" || commandData(t, queried)["phase"] != string(archive.CommitSucceeded) {
 		t.Fatalf("direct durable status=%#v", queried)
 	}
-	replayed := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--yes", "--json")
+	replayed := execute(application, "", "backup", "import", "--staging-token", token, "--data-dir", dataDir, "--as", "writer", "--yes", "--json")
 	if replayed.exit != ExitConflict || decodeOneDocument(t, replayed.stdout)["error"].(map[string]any)["code"] != string(domain.CodeImportStagingInvalid) {
 		t.Fatalf("replay=%#v", replayed)
 	}
@@ -418,7 +418,7 @@ func TestBackupImportArchiveDryRunHasNoDurableSideEffectsAndPathCommits(t *testi
 	runtimeState, dataDir := initializeSiteCLIData(t)
 	application := momentTestApplication()
 	archivePath := filepath.Join(t.TempDir(), "source.zip")
-	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", archivePath, "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", archivePath, "--json"); output.exit != ExitSuccess {
 		t.Fatalf("source export=%#v", output)
 	}
 	if _, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{}); err != nil {
@@ -440,7 +440,7 @@ func TestBackupImportArchiveDryRunHasNoDurableSideEffectsAndPathCommits(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	blocked := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--yes", "--json")
+	blocked := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--as", "writer", "--yes", "--json")
 	if blocked.exit != ExitConflict || decodeOneDocument(t, blocked.stdout)["error"].(map[string]any)["code"] != string(domain.CodeInstanceInUse) {
 		t.Fatalf("server-running path import=%#v", blocked)
 	}
@@ -452,7 +452,7 @@ func TestBackupImportArchiveDryRunHasNoDurableSideEffectsAndPathCommits(t *testi
 			t.Fatalf("server-blocked path import changed %s", root)
 		}
 	}
-	dryRun := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--dry-run", "--json")
+	dryRun := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--as", "writer", "--dry-run", "--json")
 	if dryRun.exit != ExitSuccess || dryRun.stderr != "" {
 		t.Fatalf("archive dry-run=%#v", dryRun)
 	}
@@ -473,7 +473,7 @@ func TestBackupImportArchiveDryRunHasNoDurableSideEffectsAndPathCommits(t *testi
 	if err := os.WriteFile(invalidArchive, []byte("not a zip"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	invalid := execute(application, "", "backup", "import", invalidArchive, "--data-dir", dataDir, "--dry-run", "--json")
+	invalid := execute(application, "", "backup", "import", invalidArchive, "--data-dir", dataDir, "--as", "writer", "--dry-run", "--json")
 	if invalid.exit != ExitIntegrity {
 		t.Fatalf("invalid dry-run=%#v", invalid)
 	}
@@ -482,7 +482,7 @@ func TestBackupImportArchiveDryRunHasNoDurableSideEffectsAndPathCommits(t *testi
 			t.Fatalf("failed dry-run changed %s: before=%#v after=%#v", root, before[root], got)
 		}
 	}
-	withoutConfirmation := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--json")
+	withoutConfirmation := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--as", "writer", "--json")
 	if withoutConfirmation.exit != ExitInvalidInput {
 		t.Fatalf("path import without confirmation=%#v", withoutConfirmation)
 	}
@@ -491,7 +491,7 @@ func TestBackupImportArchiveDryRunHasNoDurableSideEffectsAndPathCommits(t *testi
 			t.Fatalf("unconfirmed path import changed %s", root)
 		}
 	}
-	declined := execute(application, "n\n", "backup", "import", archivePath, "--data-dir", dataDir)
+	declined := execute(application, "n\n", "backup", "import", archivePath, "--data-dir", dataDir, "--as", "writer")
 	if declined.exit != ExitConflict || declined.stdout != "" || !strings.Contains(declined.stderr, "Import preview\nArchive SHA-256:") ||
 		!strings.Contains(declined.stderr, "Incoming:") || !strings.Contains(declined.stderr, "Replacing:") ||
 		!strings.Contains(declined.stderr, "Disk:") || !strings.Contains(declined.stderr, "Warnings:") ||
@@ -503,7 +503,7 @@ func TestBackupImportArchiveDryRunHasNoDurableSideEffectsAndPathCommits(t *testi
 			t.Fatalf("declined scoped import changed %s", root)
 		}
 	}
-	committed := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--yes", "--json")
+	committed := execute(application, "", "backup", "import", archivePath, "--data-dir", dataDir, "--as", "writer", "--yes", "--json")
 	if committed.exit != ExitSuccess || commandData(t, committed)["status"].(map[string]any)["phase"] != string(archive.CommitSucceeded) {
 		t.Fatalf("path import=%#v", committed)
 	}
@@ -513,7 +513,7 @@ func TestBackupImportRejectsArchiveFileSwapAfterScopedPrompt(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
 	application := momentTestApplication()
 	archivePath := filepath.Join(t.TempDir(), "source.zip")
-	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--output", archivePath, "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "", "backup", "export", "--data-dir", dataDir, "--as", "writer", "--output", archivePath, "--json"); output.exit != ExitSuccess {
 		t.Fatalf("source export=%#v", output)
 	}
 	if _, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{}); err != nil {
@@ -536,7 +536,7 @@ func TestBackupImportRejectsArchiveFileSwapAfterScopedPrompt(t *testing.T) {
 	var stdout bytes.Buffer
 	exit := make(chan ExitCode, 1)
 	go func() {
-		exit <- application.Execute(context.Background(), []string{"backup", "import", archivePath, "--data-dir", dataDir}, Streams{
+		exit <- application.Execute(context.Background(), []string{"backup", "import", archivePath, "--data-dir", dataDir, "--as", "writer"}, Streams{
 			In: inputReader, Out: &stdout, Err: diagnostics,
 		})
 	}()

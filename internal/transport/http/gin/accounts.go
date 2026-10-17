@@ -25,7 +25,6 @@ type accountView struct {
 	Bio           string  `json:"bio"`
 	AvatarMediaID *string `json:"avatar_media_id"`
 	CoverMediaID  *string `json:"cover_media_id"`
-	Role          string  `json:"role"`
 	ProfileURL    string  `json:"profile_url"`
 }
 
@@ -33,6 +32,7 @@ type accountView struct {
 // nobody else may see about it.
 type privateAccountView struct {
 	accountView
+	Role           string `json:"role"`
 	Status         string `json:"status"`
 	UsernameChosen bool   `json:"username_chosen"`
 }
@@ -45,7 +45,6 @@ func publicAccount(user domain.User) accountView {
 		Bio:           user.Bio,
 		AvatarMediaID: user.AvatarMediaID,
 		CoverMediaID:  user.CoverMediaID,
-		Role:          string(user.Role),
 		ProfileURL:    domain.ProfileURL(user.Username),
 	}
 }
@@ -53,6 +52,7 @@ func publicAccount(user domain.User) accountView {
 func privateAccount(user domain.User) privateAccountView {
 	return privateAccountView{
 		accountView:    publicAccount(user),
+		Role:           string(user.Role),
 		Status:         string(user.Status),
 		UsernameChosen: user.UsernameSetAtMS != nil,
 	}
@@ -145,7 +145,7 @@ func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store
 	}
 
 	owner := engine.Group("/api/v1/owner/accounts")
-	owner.Use(gate.RequireOwner())
+	owner.Use(gate.RequireAdmin())
 	owner.GET("", listAllAccounts(gate))
 	owner.PATCH("/:id", setAccountStatus(gate))
 }

@@ -36,12 +36,12 @@ import (
 
 const (
 	// FormatVersion is the import-facing Moment export protocol version.
-	FormatVersion           = 1
+	FormatVersion           = 2
 	formatName              = "moment-export"
 	copyBufferSize          = 128 << 10
 	manifestFixedPointLimit = 32
 	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v1.
-	FormatHeaderValue = "moment-export-v1"
+	FormatHeaderValue = "moment-export-v2"
 )
 
 // ErrDestinationUnavailable classifies a safe output target that cannot be
@@ -49,7 +49,7 @@ const (
 var ErrDestinationUnavailable = errors.New("archive destination is unavailable")
 
 const readme = "Moment portable export\n\n" +
-	"Format: moment-export v1\n" +
+	"Format: moment-export v2\n" +
 	"Portable records are under data/ and immutable originals are under media/.\n" +
 	"checksums.sha256 uses: <sha256>\\t<uncompressed-bytes>\\t<path>.\n" +
 	"It lists every ZIP member except checksums.sha256 itself.\n"
@@ -568,7 +568,7 @@ type limitManifest struct {
 }
 
 type siteRecord struct {
-	OwnerID         string  `json:"owner_id,omitempty"`
+	ProfileUserID   string  `json:"profile_user_id,omitempty"`
 	Username        string  `json:"username,omitempty"`
 	DisplayName     string  `json:"display_name,omitempty"`
 	Title           string  `json:"title"`
@@ -757,7 +757,6 @@ type commentRecord struct {
 	ID               string          `json:"id"`
 	EntryID          string          `json:"entry_id"`
 	ParentID         *string         `json:"parent_id"`
-	AuthorKind       string          `json:"author_kind"`
 	AuthorName       string          `json:"author_name"`
 	AuthorUserID     *string         `json:"author_user_id,omitempty"`
 	ReplyToCommentID *string         `json:"reply_to_comment_id,omitempty"`
@@ -799,7 +798,7 @@ type mediaRecord struct {
 
 func portableSiteRecord(value sqlitestore.ArchiveSite) siteRecord {
 	return siteRecord{
-		OwnerID: value.OwnerID, Username: value.Username, DisplayName: value.DisplayName,
+		ProfileUserID: value.ProfileUserID, Username: value.Username, DisplayName: value.DisplayName,
 		Title: value.Title, Bio: value.Bio, Timezone: value.Timezone,
 		PublicBaseURL: value.PublicBaseURL, AvatarMediaID: value.AvatarMediaID,
 		CoverMediaID: value.CoverMediaID, PinnedPostID: value.PinnedPostID,
@@ -809,7 +808,7 @@ func portableSiteRecord(value sqlitestore.ArchiveSite) siteRecord {
 
 func archiveSiteOf(value siteRecord) sqlitestore.ArchiveSite {
 	return sqlitestore.ArchiveSite{
-		OwnerID: value.OwnerID, Username: value.Username, DisplayName: value.DisplayName,
+		ProfileUserID: value.ProfileUserID, Username: value.Username, DisplayName: value.DisplayName,
 		Title: value.Title, Bio: value.Bio, Timezone: value.Timezone,
 		PublicBaseURL: value.PublicBaseURL, AvatarMediaID: value.AvatarMediaID,
 		CoverMediaID: value.CoverMediaID, PinnedPostID: value.PinnedPostID,
@@ -1001,7 +1000,7 @@ func archiveVisibility(value string) (domain.Visibility, error) {
 func portableCommentRecord(value sqlitestore.ArchiveComment) commentRecord {
 	return commentRecord{
 		ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
-		AuthorKind: value.AuthorKind, AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
+		AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
 		ReplyToCommentID: value.ReplyToCommentID, ContentMD: value.ContentMD,
 		CreatedAt: portableTime(value.CreatedAtMS), Media: portableUsageRecords(value.Media),
 		Location: portableLocation(value.Location), Pinned: value.Pinned,
@@ -1507,7 +1506,7 @@ func validateArchiveComment(value sqlitestore.ArchiveComment) error {
 	}
 	if err := (domain.Comment{
 		ID: id, EntryID: entryID, ParentID: parentID,
-		AuthorKind: domain.CommentAuthorKind(value.AuthorKind), AuthorName: value.AuthorName,
+		AuthorName:   value.AuthorName,
 		AuthorUserID: value.AuthorUserID, ReplyToCommentID: replyToID, ContentMD: value.ContentMD,
 		Location: domain.CloneLocation(value.Location), CreatedAt: time.UnixMilli(value.CreatedAtMS).UTC(),
 	}).Validate(); err != nil {
@@ -1525,13 +1524,13 @@ func validateArchiveComment(value sqlitestore.ArchiveComment) error {
 }
 
 func validateArchiveSite(value sqlitestore.ArchiveSite, development bool) error {
-	for _, field := range []string{value.OwnerID, value.Username, value.DisplayName, value.Title, value.Bio, value.Timezone} {
+	for _, field := range []string{value.ProfileUserID, value.Username, value.DisplayName, value.Title, value.Bio, value.Timezone} {
 		if !utf8.ValidString(field) || strings.ContainsRune(field, 0) {
 			return errors.New("site text is not canonical UTF-8")
 		}
 	}
-	if value.OwnerID != "" {
-		if len(value.OwnerID) != 32 || strings.Trim(value.OwnerID, "0123456789abcdef") != "" ||
+	if value.ProfileUserID != "" {
+		if len(value.ProfileUserID) != 32 || strings.Trim(value.ProfileUserID, "0123456789abcdef") != "" ||
 			len(value.Username) < 3 || len(value.Username) > 30 || value.Username != strings.ToLower(value.Username) ||
 			value.Username[0] < 'a' || value.Username[0] > 'z' || strings.Trim(value.Username, "abcdefghijklmnopqrstuvwxyz0123456789_") != "" ||
 			strings.TrimSpace(value.DisplayName) != value.DisplayName || value.DisplayName == "" || len([]rune(value.DisplayName)) > 80 {
@@ -1666,33 +1665,6 @@ func validateArchiveIdentity(value sqlitestore.ArchiveIdentity) error {
 	return nil
 }
 
-// synthesizeOwnerAccount reconstructs the one account an archive written before
-// data/users.jsonl existed describes without naming.
-//
-// Such an archive is not accountless: its site record already carries the
-// owner's id, handle, name, bio and pictures, which is every field an account
-// row needs but its timestamps. Those come from when the archive itself was
-// written -- the only instant the archive states. The handle is stamped as
-// deliberately chosen because it was: it belonged to a person before the
-// rename prompt existed, and leaving it unstamped would ask them to pick a
-// username they already have.
-func synthesizeOwnerAccount(site siteRecord, archivedAt time.Time) (sqlitestore.ArchiveUser, error) {
-	if site.OwnerID == "" {
-		return sqlitestore.ArchiveUser{}, errors.New("archive states no owner identity to synthesize an account from")
-	}
-	millis := archivedAt.UnixMilli()
-	if millis <= 0 {
-		return sqlitestore.ArchiveUser{}, errors.New("archive creation instant cannot date an owner account")
-	}
-	stamped := millis
-	return sqlitestore.ArchiveUser{
-		ID: site.OwnerID, Username: site.Username, DisplayName: site.DisplayName, Bio: site.Bio,
-		AvatarMediaID: site.AvatarMediaID, CoverMediaID: site.CoverMediaID,
-		Role: string(domain.UserRoleOwner), Status: string(domain.AccountActive),
-		UsernameSetAtMS: &stamped, CreatedAtMS: millis, UpdatedAtMS: millis,
-	}, nil
-}
-
 func validateArchiveMedia(value sqlitestore.ArchiveMedia) error {
 	if _, err := domain.ParseID(value.ID); err != nil {
 		return err
@@ -1825,67 +1797,19 @@ func createPartial(destination string) (*os.File, error) {
 	return os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 }
 
-// Format version 1 has three member layouts, and all three are valid to read.
-//
-// articlePortableMembers is what an exporter writes today. accountPortableMembers
-// is what one wrote before articles existed, and legacyPortableMembers before
-// accounts did. The format version is compared with strict equality, so bumping
-// it would make the backup a person took just before upgrading unreadable by the
-// binary they upgraded to -- which is the one moment a backup exists for, since a
-// schema migration only runs forwards. The rule that already governs added
-// fields therefore governs added members: always write the newest layout, always
-// accept any of them on read.
+// Version 2 always contains real accounts and the complete article graph.
 var (
-	legacyPortableMembers = []string{
-		"README.txt", "data/site.json", "data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl",
-	}
-	accountPortableMembers = []string{
-		"README.txt", "data/site.json", "data/users.jsonl", "data/identities.jsonl",
-		"data/entries.jsonl", "data/comments.jsonl", "data/media.jsonl",
-	}
-	articlePortableMembers = []string{
-		"README.txt", "data/site.json", "data/users.jsonl", "data/identities.jsonl",
-		"data/entries.jsonl", "data/entry_articles.jsonl", "data/article_drafts.jsonl",
-		"data/comments.jsonl", "data/media.jsonl",
-	}
+	articlePortableMembers = []string{"README.txt", "data/site.json", "data/users.jsonl", "data/identities.jsonl", "data/entries.jsonl", "data/entry_articles.jsonl", "data/article_drafts.jsonl", "data/comments.jsonl", "data/media.jsonl"}
 	portableTrailerMembers = []string{"manifest.json", "checksums.sha256"}
 )
 
-// portableLeadingMembers decides which layout an archive uses and proves every
-// member that layout requires is present.
-//
-// Each pair arrives together or not at all: one accounts member without the
-// other is no layout, and so is a body member without a drafts member. Articles
-// additionally imply accounts, because no exporter ever wrote the one without
-// the other, and accepting the combination would mean inventing a fourth layout
-// nothing produces.
 func portableLeadingMembers(seen map[string]struct{}) ([]string, error) {
-	_, users := seen["data/users.jsonl"]
-	_, identities := seen["data/identities.jsonl"]
-	if users != identities {
-		return nil, errors.New("portable accounts members must be present together")
-	}
-	_, articles := seen["data/entry_articles.jsonl"]
-	_, drafts := seen["data/article_drafts.jsonl"]
-	if articles != drafts {
-		return nil, errors.New("portable article members must be present together")
-	}
-	if articles && !users {
-		return nil, errors.New("portable article members require the accounts members")
-	}
-	leading := legacyPortableMembers
-	switch {
-	case articles:
-		leading = articlePortableMembers
-	case users:
-		leading = accountPortableMembers
-	}
-	for _, required := range append(append([]string{}, leading...), portableTrailerMembers...) {
+	for _, required := range append(append([]string{}, articlePortableMembers...), portableTrailerMembers...) {
 		if _, exists := seen[required]; !exists {
 			return nil, fmt.Errorf("required member %q is missing", required)
 		}
 	}
-	return leading, nil
+	return articlePortableMembers, nil
 }
 
 // archiveCarriesAccounts reports whether a ZIP holds the accounts members.
@@ -1922,7 +1846,7 @@ func ValidateFileContext(ctx context.Context, name string) error {
 		return archiveInvalid("prepared ZIP central directory is invalid", err)
 	}
 	defer func() { _ = reader.Close() }()
-	if len(reader.File) < len(legacyPortableMembers)+len(portableTrailerMembers) {
+	if len(reader.File) < len(articlePortableMembers)+len(portableTrailerMembers) {
 		return archiveInvalid("prepared ZIP is missing required members", nil)
 	}
 	seen := make(map[string]struct{}, len(reader.File))
@@ -2287,11 +2211,11 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	replyTargets := make(map[string]string)
 	pinnedEntries := make(map[string]struct{})
 	var previousComment *commentOrder
-	comments, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_kind", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
+	comments, err := validateJSONLines[commentRecord](ctx, files["data/comments.jsonl"], []string{"id", "entry_id", "parent_id", "author_name", "content_md", "created_at"}, func(value commentRecord, fields map[string]json.RawMessage) error {
 		if int64(len(commentIDs)) >= document.Counts.Comments {
 			return errors.New("comment records exceed the manifest count")
 		}
-		if err := requireNonNull(fields, "id", "entry_id", "author_kind", "author_name", "content_md", "created_at"); err != nil {
+		if err := requireNonNull(fields, "id", "entry_id", "author_name", "content_md", "created_at"); err != nil {
 			return err
 		}
 		created, err := parsePortableTimestamp(value.CreatedAt)
@@ -2337,7 +2261,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		}
 		if err := validateArchiveComment(sqlitestore.ArchiveComment{
 			ID: value.ID, EntryID: value.EntryID, ParentID: value.ParentID,
-			AuthorKind: value.AuthorKind, AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
+			AuthorName: value.AuthorName, AuthorUserID: value.AuthorUserID,
 			ReplyToCommentID: value.ReplyToCommentID, ContentMD: value.ContentMD,
 			CreatedAtMS: created.UnixMilli(), Media: usages, Location: location, Pinned: value.Pinned,
 		}); err != nil {
@@ -2637,12 +2561,12 @@ func validatePortableAccounts(ctx context.Context, files map[string]*zip.File, d
 	// site record's copy is the one older readers see, so an archive that
 	// dropped it would restore under a different name depending on which
 	// version opened it.
-	if site.OwnerID == "" {
+	if site.ProfileUserID == "" {
 		return nil, errors.New("an archive carrying accounts must name its owner in the site record")
 	}
 	userIDs := make(map[string]struct{})
 	usernames := make(map[string]struct{})
-	owners := 0
+	activeAdmins := 0
 	lastUserID := ""
 	users, err := validateJSONLines[userRecord](ctx, files["data/users.jsonl"], []string{
 		"id", "username", "display_name", "bio", "avatar_media_id", "cover_media_id", "role", "status", "created_at", "updated_at",
@@ -2668,13 +2592,15 @@ func validatePortableAccounts(ctx context.Context, files map[string]*zip.File, d
 			return errors.New("account username is duplicated")
 		}
 		usernames[handle] = struct{}{}
-		if domain.UserRole(value.Role) == domain.UserRoleOwner {
-			owners++
+		if domain.UserRole(value.Role) == domain.UserRoleAdmin && domain.AccountStatus(value.Status) == domain.AccountActive {
+			activeAdmins++
+		}
+		if value.ID == site.ProfileUserID {
 			// The site record's profile half is a second copy of these five
 			// fields. Rejecting a disagreement is the only honest option: with
 			// two answers and no tiebreak, picking one would silently rename
 			// the owner on restore.
-			if value.ID != site.OwnerID || value.Username != site.Username || value.DisplayName != site.DisplayName ||
+			if value.Username != site.Username || value.DisplayName != site.DisplayName ||
 				value.Bio != site.Bio || !reflect.DeepEqual(value.AvatarMediaID, site.AvatarMediaID) ||
 				!reflect.DeepEqual(value.CoverMediaID, site.CoverMediaID) {
 				return errors.New("owner account and site record describe different owners")
@@ -2692,8 +2618,11 @@ func validatePortableAccounts(ctx context.Context, files map[string]*zip.File, d
 	if err != nil {
 		return nil, err
 	}
-	if owners != 1 {
-		return nil, errors.New("portable accounts must contain exactly one owner")
+	if activeAdmins < 1 {
+		return nil, errors.New("portable accounts must contain an active administrator")
+	}
+	if _, found := userIDs[site.ProfileUserID]; !found {
+		return nil, errors.New("site profile account is absent")
 	}
 	lastProvider, lastProviderUserID := "", ""
 	seenIdentities := int64(0)

@@ -13,7 +13,7 @@ import (
 )
 
 func TestSiteSettingsMigrationServiceAndAtomicAvatarValidation(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	repository, err := NewSiteRepository(database, runtimeState.Locks)
 	if err != nil {
@@ -79,12 +79,12 @@ func TestSiteSettingsReadFailsClosedAndUpdateHonorsMaintenanceLock(t *testing.T)
 		t.Fatal(err)
 	}
 
-	lease, err := runtimeState.Locks.Acquire(context.Background(), runtimefs.MaintenanceLock, runtimefs.Exclusive)
+	lease, err := runtimeState.Locks.Acquire(testAccountContext(), runtimefs.MaintenanceLock, runtimefs.Exclusive)
 	if err != nil {
 		t.Fatal(err)
 	}
 	title := "blocked"
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	ctx, cancel := context.WithTimeout(testAccountContext(), 25*time.Millisecond)
 	defer cancel()
 	_, updateErr := service.Update(ctx, app.SiteUpdate{Title: &title})
 	if !errors.Is(updateErr, context.DeadlineExceeded) {
@@ -95,14 +95,14 @@ func TestSiteSettingsReadFailsClosedAndUpdateHonorsMaintenanceLock(t *testing.T)
 	}
 
 	mustWrite(t, database, `DELETE FROM site_settings WHERE id = 1`)
-	if _, err := service.Get(context.Background()); !domain.HasCode(err, domain.CodeDataIntegrityFailed) {
+	if _, err := service.Get(testAccountContext()); !domain.HasCode(err, domain.CodeDataIntegrityFailed) {
 		t.Fatalf("missing singleton error = %v", err)
 	}
 }
 
 func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T) {
 	database, runtimeState := openTestDatabase(t, Options{})
-	guardedRuntime, maintenance, err := runtimefs.OpenForWriteContext(context.Background(), runtimeState.Root)
+	guardedRuntime, maintenance, err := runtimefs.OpenForWriteContext(testAccountContext(), runtimeState.Root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T
 
 	waiterStarted := make(chan struct{})
 	writerAcquired := make(chan *runtimefs.Lease, 1)
-	writerContext, cancelWriter := context.WithTimeout(context.Background(), time.Second)
+	writerContext, cancelWriter := context.WithTimeout(testAccountContext(), time.Second)
 	defer cancelWriter()
 	go func() {
 		close(waiterStarted)
@@ -135,7 +135,7 @@ func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T
 	}
 
 	title := "No nested lock"
-	updateContext, cancelUpdate := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	updateContext, cancelUpdate := context.WithTimeout(testAccountContext(), 250*time.Millisecond)
 	defer cancelUpdate()
 	if _, err := service.Update(updateContext, app.SiteUpdate{Title: &title}); err != nil {
 		t.Fatalf("preheld update waited behind later writer: %v", err)
@@ -151,7 +151,7 @@ func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T
 	case <-time.After(time.Second):
 		t.Fatal("exclusive writer did not acquire after shared release")
 	}
-	if _, err := service.Update(context.Background(), app.SiteUpdate{Title: &title}); !domain.HasCode(err, domain.CodeInternal) {
+	if _, err := service.Update(testAccountContext(), app.SiteUpdate{Title: &title}); !domain.HasCode(err, domain.CodeInternal) {
 		t.Fatalf("released maintenance lease allowed a write: %v", err)
 	}
 }
@@ -175,7 +175,7 @@ VALUES (?, ?, ?, 'avatar.jpg', 'image/jpeg', 10, 32, 32, 1, 1)`, id, sha, path)
 // same constraint failure as an opaque error, so the settings form was told
 // "operation failed" for a refusal it already carries the words for.
 func TestOwnerRenameOntoAMemberHandleIsReportedAsAConflict(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 
 	accountRepository, err := NewAccountRepository(database, runtimeState.Locks)
@@ -223,7 +223,7 @@ func TestOwnerRenameOntoAMemberHandleIsReportedAsAConflict(t *testing.T) {
 
 // registration_mode is site policy the owner sets, and the row has to keep it.
 func TestSiteRegistrationModeRoundTripsThroughTheRow(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 	repository, err := NewSiteRepository(database, runtimeState.Locks)
 	if err != nil {

@@ -41,9 +41,8 @@ var requiredCatalogObjects = []expectedCatalogObject{
 	{name: "entry_link_card_favicon_idx", kind: "index", table: "entry_link_card"},
 	{name: "comments_entry_idx", kind: "index", table: "comments"},
 	{name: "comments_parent_idx", kind: "index", table: "comments"},
+	{name: "users_role_status_idx", kind: "index", table: "users"},
 	{name: "users_username_unique", kind: "index", table: "users"},
-	// The database, not every write path, is what keeps there being one owner.
-	{name: "users_single_owner", kind: "index", table: "users"},
 	{name: "identities_user_idx", kind: "index", table: "identities"},
 	{name: "sessions_user_idx", kind: "index", table: "sessions"},
 	{name: "idempotency_keys_created_idx", kind: "index", table: "idempotency_keys"},

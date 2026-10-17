@@ -32,7 +32,7 @@ type shareHTTPPosts struct {
 }
 
 func (posts shareHTTPPosts) Get(_ context.Context, id domain.ID, viewer app.Viewer) (app.Post, error) {
-	if id != posts.id || !viewer.CanRead(posts.post.Entry.Visibility) {
+	if id != posts.id || !viewer.CanReadEntry(posts.post.Entry) {
 		return app.Post{}, domain.NewError(domain.CodePostNotFound, "missing", nil)
 	}
 	return posts.post, nil

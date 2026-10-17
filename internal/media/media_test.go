@@ -1386,6 +1386,17 @@ func newTestStoreWithOptions(t *testing.T, options Options) (*Store, *runtimefs.
 	if err != nil {
 		t.Fatal(err)
 	}
+	repo, err := sqlite.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := app.NewAccountService(repo, app.WithAccountIDGenerator(func() (string, error) { return "0123456789abcdef0123456789abcdef", nil }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.InitializeSiteAccount(context.Background(), "writer"); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { _ = database.Close() })
 	if options.Clock == nil {
 		options.Clock = func() time.Time { return time.Date(2026, 8, 10, 12, 0, 0, 123_000_000, time.UTC) }

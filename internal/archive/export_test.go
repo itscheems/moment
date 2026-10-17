@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -51,7 +52,7 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.FormatVersion != 1 || summary.ArchiveBytes != int64(first.Len()) || summary.ArchiveSHA256 != shaHex(first.Bytes()) {
+	if summary.FormatVersion != 2 || summary.ArchiveBytes != int64(first.Len()) || summary.ArchiveSHA256 != shaHex(first.Bytes()) {
 		t.Fatalf("summary = %#v", summary)
 	}
 	members, order := readArchive(t, first.Bytes())
@@ -79,7 +80,7 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	if err := json.Unmarshal(members["manifest.json"], &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.Format != formatName || document.FormatVersion != 1 || document.Source.InstanceID != fixture.runtime.Instance.ID || len(document.Source.InstanceID) != 32 {
+	if document.Format != formatName || document.FormatVersion != 2 || document.Source.InstanceID != fixture.runtime.Instance.ID || len(document.Source.InstanceID) != 32 {
 		t.Fatalf("manifest identity = %#v", document)
 	}
 	if document.Counts != (countManifest{Entries: 1, Comments: 2, Media: 2, Users: 1}) {
@@ -637,43 +638,6 @@ func TestValidateFileIgnoresUnknownFieldsAndBoundsUntrustedCounts(t *testing.T) 
 		t.Fatalf("unknown v1 extensions were not ignored: %v", err)
 	}
 
-	// A v1 archive from before the cover and pin extensions also predates the
-	// accounts members, so it is stripped to that whole shape rather than to a
-	// site record no exporter ever wrote.
-	legacyMembers, legacyOrder := readArchive(t, output.Bytes())
-	legacyOrder = stripAccountMembers(t, legacyMembers, legacyOrder)
-	var legacySite map[string]any
-	_ = json.Unmarshal(legacyMembers["data/site.json"], &legacySite)
-	delete(legacySite, "cover_media_id")
-	delete(legacySite, "pinned_post_id")
-	legacyMembers["data/site.json"] = append(mustMarshalTest(t, legacySite), '\n')
-	rebuildManifestExpanded(t, legacyMembers)
-	rebuildChecksums(legacyMembers)
-	legacyName := filepath.Join(t.TempDir(), "legacy-without-profile-extensions.zip")
-	writeArchive(t, legacyName, legacyMembers, legacyOrder)
-	if err := ValidateFile(legacyName); err != nil {
-		t.Fatalf("v1 archive without cover extension was rejected: %v", err)
-	}
-
-	legacyCommentMembers, legacyCommentOrder := readArchive(t, output.Bytes())
-	commentLines := nonemptyLines(legacyCommentMembers["data/comments.jsonl"])
-	legacyComments := make([]byte, 0, len(legacyCommentMembers["data/comments.jsonl"]))
-	for _, line := range commentLines {
-		var comment map[string]any
-		_ = json.Unmarshal(line, &comment)
-		delete(comment, "media")
-		legacyComments = append(legacyComments, mustMarshalTest(t, comment)...)
-		legacyComments = append(legacyComments, '\n')
-	}
-	legacyCommentMembers["data/comments.jsonl"] = legacyComments
-	rebuildManifestExpanded(t, legacyCommentMembers)
-	rebuildChecksums(legacyCommentMembers)
-	legacyCommentName := filepath.Join(t.TempDir(), "legacy-without-comment-media.zip")
-	writeArchive(t, legacyCommentName, legacyCommentMembers, legacyCommentOrder)
-	if err := ValidateFile(legacyCommentName); err != nil {
-		t.Fatalf("v1 archive without comment media extension was rejected: %v", err)
-	}
-
 	hugeMembers, hugeOrder := readArchive(t, output.Bytes())
 	for _, field := range []string{"entries", "comments", "media"} {
 		setManifestCount(t, hugeMembers, field, int64(^uint64(0)>>1))
@@ -836,7 +800,7 @@ type exportFixture struct {
 	mediaOnePath, mediaOneSHA, mediaTwoSHA string
 }
 
-func newExportFixture(t *testing.T, full bool) exportFixture {
+func newExportFixture(t *testing.T, full bool, accountIDs ...string) exportFixture {
 	t.Helper()
 	ctx := context.Background()
 	runtimeState, err := runtimefs.Initialize(ctx, runtimefs.Config{DataDir: t.TempDir(), Environment: runtimefs.EnvironmentDevelopment})
@@ -853,6 +817,22 @@ func newExportFixture(t *testing.T, full bool) exportFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	accountID := fixtureAccountID
+	if len(accountIDs) > 0 {
+		accountID = accountIDs[0]
+	}
+	accountRepository, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := app.NewAccountService(accountRepository, app.WithAccountIDGenerator(func() (string, error) { return accountID, nil }), app.WithAccountClock(func() time.Time { return clock }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.InitializeSiteAccount(ctx, "writer"); err != nil {
+		t.Fatal(err)
+	}
+	initializeFixtureSessions(t, accounts, accountID)
 	fixture := exportFixture{exporter: exporter, runtime: runtimeState, database: database}
 	if !full {
 		return fixture
@@ -869,19 +849,19 @@ func newExportFixture(t *testing.T, full bool) exportFixture {
 			query string
 			args  []any
 		}{
-			{`INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms) VALUES (?, 'moment', ?, ?, ?, ?)`, []any{entryID, "Unicode 世界", clock.UnixMilli(), clock.UnixMilli(), clock.UnixMilli()}},
+			{`INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, author_user_id) VALUES (?, 'moment', ?, ?, ?, ?, '0123456789abcdef0123456789abcdef')`, []any{entryID, "Unicode 世界", clock.UnixMilli(), clock.UnixMilli(), clock.UnixMilli()}},
 			{`INSERT INTO entry_location (entry_id, name, display_name, country_code, country, region, city, district, category, provider, provider_place_id, latitude_e7, longitude_e7, coordinate_system) VALUES (?, '静安寺', '上海市静安区南京西路1686号', 'CN', '中国', '上海市', '上海市', '静安区', '风景名胜', 'amap', 'B0FFF', 312231860, 1214452600, 'gcj02')`, []any{entryID}},
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, []any{entryID, mediaOneID}},
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 1, '')`, []any{entryID, mediaOneID}},
 			{`INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 2, '街景')`, []any{entryID, mediaTwoID}},
-			{`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, 'guest', '访客', 'root', ?)`, []any{rootCommentID, entryID, clock.UnixMilli()}},
-			{`INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'owner', 'Owner', 'reply', ?)`, []any{replyID, entryID, rootCommentID, clock.UnixMilli()}},
+			{`INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, NULL, '访客', 'root', ?)`, []any{rootCommentID, entryID, clock.UnixMilli()}},
+			{`INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms) VALUES (?, ?, ?, 'Owner', 'reply', ?)`, []any{replyID, entryID, rootCommentID, clock.UnixMilli()}},
 			{`INSERT INTO comment_location (comment_id, name, display_name, country_code, country, region, city, district, category, provider, provider_place_id, latitude_e7, longitude_e7, coordinate_system) VALUES (?, '静安寺', '上海市静安区南京西路1686号', 'CN', '中国', '上海市', '上海市', '静安区', '风景名胜', 'amap', 'B0FFF', 312231860, 1214452600, 'gcj02')`, []any{replyID}},
 			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, []any{rootCommentID, mediaOneID}},
 			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 1, '街景')`, []any{rootCommentID, mediaTwoID}},
 			{`INSERT INTO comment_media (comment_id, media_id, position, alt_text) VALUES (?, ?, 0, '')`, []any{replyID, mediaTwoID}},
 			{`UPDATE site_settings SET title = '我的 Moment', timezone = 'Asia/Shanghai', public_base_url = 'http://localhost:8080', pinned_entry_id = ?, comments_enabled = 1 WHERE id = 1`, []any{entryID}},
-			{`UPDATE users SET bio = 'portable', avatar_media_id = ?, cover_media_id = ? WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`, []any{mediaOneID, mediaTwoID}},
+			{`UPDATE users SET bio = 'portable', avatar_media_id = ?, cover_media_id = ? WHERE id = (SELECT profile_user_id FROM site_settings WHERE id = 1)`, []any{mediaOneID, mediaTwoID}},
 			{`UPDATE media SET unreferenced_since_ms = NULL WHERE id IN (?, ?)`, []any{mediaOneID, mediaTwoID}},
 		}
 		for _, statement := range statements {

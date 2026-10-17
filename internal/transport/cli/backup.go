@@ -39,9 +39,9 @@ func registerBackup(application *Application, info buildinfo.Info) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path:   []string{"backup", "export"},
 		Short:  "Export one consistent portable archive",
-		Long:   "Stream Moment export format v1 from one logical SQLite and reachable-media snapshot through direct or authenticated API mode.",
+		Long:   "Stream Moment export format v2 from one logical SQLite and reachable-media snapshot through direct or authenticated API mode.",
 		Inputs: "Choose exactly one destination: --output <zip> for atomic file publication or --stdout for raw ZIP bytes. Direct file output must be outside the selected --data-dir. --stdout is mutually exclusive with --json. API mode authenticates through MOMENT_TOKEN or --token-file.",
-		Output: "File mode validates v1 then reports path, format_version, archive_bytes, and archive_sha256 in the normal human/JSON contract. --stdout fail-closes on the HTTP format header before writing only ZIP bytes; a transport failure after the first byte leaves an intentionally truncated stdout stream and diagnostics only on stderr.",
+		Output: "File mode validates v2 then reports path, format_version, archive_bytes, and archive_sha256 in the normal human/JSON contract. --stdout fail-closes on the HTTP format header before writing only ZIP bytes; a transport failure after the first byte leaves an intentionally truncated stdout stream and diagnostics only on stderr.",
 		Errors: "Invalid output flags use exit 2; unsafe or unavailable destinations use exit 6; existing destinations without --overwrite use OUTPUT_EXISTS; data/checksum failures use exit 7; cancellation and timeout use exit 9.",
 		Safety: "File output is prepared and flushed beside the destination, then atomically published. Direct output inside --data-dir is rejected before creating a partial. --overwrite replaces only the exact regular non-symlink destination and never weakens archive validation.",
 		Example: "moment backup export --data-dir ./moment-data --output ./moment-export.zip --json\n" +
@@ -62,7 +62,7 @@ func registerBackup(application *Application, info buildinfo.Info) {
 		ArgsUsage: "<archive.zip>",
 		Short:     "Inspect a portable archive into restartable staging",
 		Long:      "Treat one Moment export as hostile input, validate it completely, rebuild the current schema and search index in a restartable staging generation, and issue one expiring commit token without changing active data.",
-		Inputs:    "Exactly one regular non-symlink v1 ZIP path. Direct mode stages locally and binds the result to the current owner epoch. API mode streams application/zip to the authenticated server. --timeout bounds upload, validation, media checks, migrations, and index rebuild.",
+		Inputs:    "Exactly one regular non-symlink v2 ZIP path. Direct mode stages locally and binds the result to the initiating account and credential. API mode streams application/zip to the authenticated server. --timeout bounds upload, validation, media checks, migrations, and index rebuild.",
 		Output:    "The normal human/JSON contract reports format, counts, time range, media bytes, missing-alt warnings, replacement impact, the complete peak disk estimate, expiry, and the one-time staging token. Save the token for backup import confirmation.",
 		Errors:    "Hostile or corrupt archives use stable integrity errors and exit 7; unavailable input or disk uses exit 6; an active inspection uses IMPORT_IN_PROGRESS; cancellation uses exit 9.",
 		Safety:    "Inspection never changes CURRENT or active media. ZIP paths, links, duplicates, counts, sizes, ratios, checksums, records, references, and image bytes are bounded before staging members become authority candidates.",
@@ -79,7 +79,7 @@ func registerBackup(application *Application, info buildinfo.Info) {
 		Long:      "Validate one archive and replace the active generation in one coordinated operation, or consume an advanced staging token from backup inspect. Commit creates and verifies a pre-import backup, atomically switches CURRENT, proves readiness, and can automatically roll back on failure.",
 		Inputs:    "Provide exactly one positional archive path or --staging-token. Archive mode first computes a zero-persistence plan; interactive confirmation names that archive hash and replacement scope before a separately bound restore. Direct mode requires the server to be stopped and holds Import→Serve continuously before its second validation and commit. --dry-run returns only the plan.",
 		Output:    "Dry-run reports the token-free replacement/disk plan after removing all temporary staging. Interactive archive import presents the same hash, counts, replacement, disk, and warnings before confirmation; --yes still computes and binds that plan before returning durable commit status. Tokens are never echoed.",
-		Errors:    "Replay, expiry, owner rotation, disk pressure, instance use, integrity, maintenance, and rollback failures use stable codes and exits. Resolve an ambiguous API result with 'moment backup status', never by replaying the token.",
+		Errors:    "Replay, expiry, credential revocation, disk pressure, instance use, integrity, maintenance, and rollback failures use stable codes and exits. Resolve an ambiguous API result with 'moment backup status', never by replaying the token.",
 		Safety:    "This command replaces active authority. --dry-run leaves no staging token, journal, backup, CURRENT, or maintenance change. Actual archive import binds confirmation to a zero-persistence plan, then revalidates the same file identity, size, and SHA-256 before commit. --no-input never confirms implicitly.",
 		Example: "moment backup import ./moment-export.zip --data-dir ./moment-data --dry-run --json\n" +
 			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup import ./moment-export.zip --yes --json",
@@ -220,9 +220,9 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 		if hasArchive {
 			result, err = committer.CommitFileOffline(ctx, archivePath, archive.InputBinding{
 				FileInfo: confirmedIdentity.info, Size: confirmedIdentity.size, SHA256: confirmedPlan.ArchiveSHA256,
-			}, status.SessionEpoch)
+			}, directArchiveSubject(ctx))
 		} else {
-			result, err = committer.Commit(ctx, token, status.SessionEpoch, nil)
+			result, err = committer.Commit(ctx, token, directArchiveSubject(ctx), nil)
 		}
 	case ModeAPI:
 		if hasArchive {
@@ -338,7 +338,7 @@ func runBackupImportPlan(ctx context.Context, invocation Invocation, archivePath
 		if err != nil {
 			return archive.ImportPlan{}, nil, err
 		}
-		plan, err := committer.PlanFileOffline(ctx, archivePath, status.SessionEpoch)
+		plan, err := committer.PlanFileOffline(ctx, archivePath, directArchiveSubject(ctx))
 		return plan, nil, err
 	case ModeAPI:
 		return uploadImportPlan(ctx, invocation, archivePath)
@@ -373,7 +373,7 @@ func runBackupInspect(ctx context.Context, invocation Invocation, input CommandI
 		if createErr != nil {
 			return Result{}, createErr
 		}
-		result, err = inspector.InspectFile(ctx, archivePath, status.SessionEpoch)
+		result, err = inspector.InspectFile(ctx, archivePath, directArchiveSubject(ctx))
 	case ModeAPI:
 		result, meta, err = uploadImportInspection(ctx, invocation, archivePath)
 	default:

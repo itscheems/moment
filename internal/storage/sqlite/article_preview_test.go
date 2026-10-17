@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"strings"
@@ -15,7 +14,7 @@ import (
 
 func TestArticlePreviewReadsBeyondTheLegacyCacheWithoutWritingAuthority(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, _ := openTestDatabase(t, Options{})
 	seedArticleEntry(t, db)
 	prose := strings.Repeat("界", 160)
@@ -92,7 +91,7 @@ func TestArticlePreviewReadsBeyondTheLegacyCacheWithoutWritingAuthority(t *testi
 
 func TestDraftPreviewReadsAreAuthorScopedAndPreserveLegacyMetadata(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, service := articleServiceFixture(t, time.UnixMilli(1000))
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
 	bob := addContentTestAccount(t, db, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob")

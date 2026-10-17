@@ -29,7 +29,7 @@ func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.Si
 	engine.GET("/api/v1/posts", listPosts(posts, site, gate))
 	engine.GET("/api/v1/posts/:id", getPost(posts, gate))
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireOwner())
+	owner.Use(gate.RequireAdmin())
 	owner.POST("/posts", createPost(posts))
 	owner.PATCH("/posts/:id", updatePost(posts))
 	owner.DELETE("/posts/:id", deletePost(posts))

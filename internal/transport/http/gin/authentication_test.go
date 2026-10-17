@@ -47,14 +47,14 @@ func newAuthenticationTestFixture(t *testing.T, secure bool) authenticationTestF
 	if err := manager.Load(); err != nil {
 		t.Fatal(err)
 	}
-	store := newMemoryAccounts(testOwnerAccount())
+	store := newMemoryAccounts(testProfileAccount())
 	accounts, err := app.NewAccountService(store)
 	if err != nil {
 		t.Fatal(err)
 	}
 	engine, err := New(Config{
 		Assets:        testAssets(),
-		SessionSigner:     manager,
+		SessionSigner: manager,
 		Accounts:      accounts,
 		SecureCookies: secure,
 		Readiness:     func(context.Context) error { return nil },
@@ -118,7 +118,7 @@ func mustJSON(t *testing.T, value any) []byte {
 
 func issueTestAPIToken(t *testing.T, accounts *app.AccountService) string {
 	t.Helper()
-	account, err := accounts.OwnerAccount(context.Background())
+	account, err := accounts.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

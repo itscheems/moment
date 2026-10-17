@@ -30,7 +30,7 @@ const (
 //
 //	RequireAccount        signed in, not suspended            -- read yourself, edit yourself
 //	RequireActiveAccount  + approved                          -- write things others see
-//	RequireOwner          + owns the site                     -- everything else
+//	RequireAdmin          + owns the site                     -- everything else
 //
 // VerifiedAccount is not a fourth level. It is the same resolution the three
 // share, handed to a route that has to stay open to a caller with no session
@@ -74,13 +74,13 @@ func (gate *Gate) RequireActiveAccount() gin.HandlerFunc {
 	})
 }
 
-// RequireOwner admits only the account that owns the site.
-func (gate *Gate) RequireOwner() gin.HandlerFunc {
+// RequireAdmin admits only the account that owns the site.
+func (gate *Gate) RequireAdmin() gin.HandlerFunc {
 	return gate.admit(func(user domain.User) error {
 		if !user.CanWritePublicContent() {
 			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by the site owner", nil)
 		}
-		if !user.IsOwner() {
+		if !user.IsAdmin() {
 			return domain.NewError(domain.CodeUnauthorized, "owner access is required", nil)
 		}
 		return nil
@@ -278,6 +278,8 @@ func writeAccountError(ctx *gin.Context, err error) {
 	// in and allowed; the provider they named simply is not attached.
 	case domain.CodeIdentityNotLinked:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodeLastAdministrator, domain.CodeAccountInUse, domain.CodeInstanceAlreadyInitialized:
+		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeAPITokenNotFound:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, nil)
 	case domain.CodeAccountSuspended:

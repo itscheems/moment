@@ -278,6 +278,8 @@ func accountCLIError(err error) error {
 		return err
 	}
 	switch domainErr.Code {
+	case domain.CodeLastAdministrator, domain.CodeAccountInUse, domain.CodeInstanceAlreadyInitialized:
+		return NewCommandError(string(domainErr.Code), domainErr.Message, "resolve the account dependency before retrying", ExitConflict)
 	case domain.CodeAccountNotFound:
 		return NewCommandError(string(domainErr.Code), domainErr.Message, "run 'moment user list' to see the accounts on this site", ExitInvalidInput)
 	case domain.CodeInvalidArgument, domain.CodeUsernameTaken, domain.CodeUsernameReserved:

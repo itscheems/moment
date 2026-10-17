@@ -57,36 +57,36 @@ type hostedImportCommitter struct {
 	host *liveServerHost
 }
 
-func (committer *hostedImportCommitter) Commit(ctx context.Context, token string, epoch uint64) (archive.CommitResult, error) {
-	return committer.core.Commit(ctx, token, epoch, committer.host)
+func (committer *hostedImportCommitter) Commit(ctx context.Context, token string, subject archive.Authorization) (archive.CommitResult, error) {
+	return committer.core.Commit(ctx, token, subject, committer.host)
 }
 
-func (committer *hostedImportCommitter) CommitArchive(ctx context.Context, source io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
-	return committer.core.CommitArchive(ctx, source, expectedArchiveSHA, epoch, committer.host)
+func (committer *hostedImportCommitter) CommitArchive(ctx context.Context, source io.Reader, expectedArchiveSHA string, subject archive.Authorization) (archive.CommitResult, error) {
+	return committer.core.CommitArchive(ctx, source, expectedArchiveSHA, subject, committer.host)
 }
 
-func (committer *hostedImportCommitter) InspectMergeArchive(ctx context.Context, source io.Reader, epoch uint64) (archive.MergeInspection, error) {
-	return committer.core.InspectMergeArchive(ctx, source, epoch, committer.host.ActiveDatabase())
+func (committer *hostedImportCommitter) InspectMergeArchive(ctx context.Context, source io.Reader, subject archive.Authorization) (archive.MergeInspection, error) {
+	return committer.core.InspectMergeArchive(ctx, source, subject, committer.host.ActiveDatabase())
 }
 
-func (committer *hostedImportCommitter) InspectReviewArchive(ctx context.Context, source io.Reader, epoch uint64) (archive.MergeInspection, error) {
-	return committer.core.InspectReviewArchive(ctx, source, epoch, committer.host.ActiveDatabase())
+func (committer *hostedImportCommitter) InspectReviewArchive(ctx context.Context, source io.Reader, subject archive.Authorization) (archive.MergeInspection, error) {
+	return committer.core.InspectReviewArchive(ctx, source, subject, committer.host.ActiveDatabase())
 }
 
-func (committer *hostedImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, epoch uint64, planID string) (archive.CommitResult, error) {
-	return committer.core.CommitReviewedReplacement(ctx, token, epoch, planID, committer.host)
+func (committer *hostedImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, subject archive.Authorization, planID string) (archive.CommitResult, error) {
+	return committer.core.CommitReviewedReplacement(ctx, token, subject, planID, committer.host)
 }
 
-func (committer *hostedImportCommitter) ReadReviewMedia(ctx context.Context, token string, epoch uint64, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
-	return committer.core.ReadReviewMedia(ctx, token, epoch, planID, source, mediaID)
+func (committer *hostedImportCommitter) ReadReviewMedia(ctx context.Context, token string, subject archive.Authorization, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
+	return committer.core.ReadReviewMedia(ctx, token, subject, planID, source, mediaID)
 }
 
-func (committer *hostedImportCommitter) CommitMerge(ctx context.Context, token string, epoch uint64, selection archive.MergeSelection) (archive.CommitResult, error) {
-	return committer.core.CommitMerge(ctx, token, epoch, selection, committer.host)
+func (committer *hostedImportCommitter) CommitMerge(ctx context.Context, token string, subject archive.Authorization, selection archive.MergeSelection) (archive.CommitResult, error) {
+	return committer.core.CommitMerge(ctx, token, subject, selection, committer.host)
 }
 
-func (committer *hostedImportCommitter) DiscardMerge(ctx context.Context, token string, epoch uint64) error {
-	return committer.core.DiscardMerge(ctx, token, epoch)
+func (committer *hostedImportCommitter) DiscardMerge(ctx context.Context, token string, subject archive.Authorization) error {
+	return committer.core.DiscardMerge(ctx, token, subject)
 }
 
 func (committer *hostedImportCommitter) Status(ctx context.Context) (archive.CommitStatus, error) {
@@ -95,11 +95,6 @@ func (committer *hostedImportCommitter) Status(ctx context.Context) (archive.Com
 
 func (host *liveServerHost) BeginMaintenance(ctx context.Context) error {
 	return host.board.BeginMaintenance(ctx)
-}
-
-func (host *liveServerHost) CurrentSessionEpoch() (uint64, error) {
-	status, err := host.auth.Status()
-	return status.SessionEpoch, err
 }
 
 func (host *liveServerHost) EndMaintenance() { host.board.EndMaintenance() }

@@ -33,20 +33,11 @@ const (
 	UsernameMaxLength = 30
 )
 
-// UserRole separates the single account that owns the site from everyone else.
-//
-// The role lives on the account rather than on anything the account writes.
-// Storing it beside each comment would freeze a fact that can change: an
-// account promoted later would keep rendering under its old role on every row
-// written before the promotion.
+// UserRole describes administration independently from authorship and profiles.
 type UserRole string
 
 const (
-	// UserRoleOwner is the account that owns the site. Exactly one exists,
-	// and the database enforces that with a partial unique index rather than
-	// trusting every write path to remember.
-	UserRoleOwner UserRole = "owner"
-	// UserRoleMember is any other account.
+	UserRoleAdmin  UserRole = "admin"
 	UserRoleMember UserRole = "member"
 )
 
@@ -112,9 +103,9 @@ func (user User) CanSignIn() bool {
 	return user.Status == AccountPending || user.Status == AccountActive
 }
 
-// IsOwner reports whether this account owns the site.
-func (user User) IsOwner() bool {
-	return user.Role == UserRoleOwner
+// IsAdmin reports whether this account owns the site.
+func (user User) IsAdmin() bool {
+	return user.Role == UserRoleAdmin
 }
 
 // Identity is one external account that can sign in as a User.
@@ -290,7 +281,7 @@ func isRejectedBioControl(character rune) bool {
 // ValidateUserRole accepts the roles an account may hold.
 func ValidateUserRole(value UserRole) error {
 	switch value {
-	case UserRoleOwner, UserRoleMember:
+	case UserRoleAdmin, UserRoleMember:
 		return nil
 	default:
 		return NewError(CodeInvalidArgument, "account role is not recognised", map[string]any{"field": "role"})

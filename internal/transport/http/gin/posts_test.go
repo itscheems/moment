@@ -30,6 +30,7 @@ const (
 )
 
 type postHTTPFixture struct {
+	ctx context.Context
 	authenticationTestFixture
 	database *sqlitestore.Database
 	posts    *app.PostService
@@ -59,6 +60,7 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	t.Cleanup(func() { _ = database.Close() })
 	mediaStore, err := media.NewStore(runtimeState, database, media.Options{})
 	if err != nil {
@@ -102,15 +104,15 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 		t.Fatal(err)
 	}
 	engine, err := New(Config{
-		Assets:       testAssets(),
-		SessionSigner:    manager,
-		Accounts:     testAccounts(t, database, runtimeState),
-		SiteSettings: site,
-		Posts:        posts,
-		Media:        mediaStore,
-		Search:       search,
-		RequestID:    func() string { return "req_posts" },
-		Limits:       BodyLimits{JSON: jsonLimit},
+		Assets:        testAssets(),
+		SessionSigner: manager,
+		Accounts:      testAccounts(t, database, runtimeState),
+		SiteSettings:  site,
+		Posts:         posts,
+		Media:         mediaStore,
+		Search:        search,
+		RequestID:     func() string { return "req_posts" },
+		Limits:        BodyLimits{JSON: jsonLimit},
 		Readiness: func(ctx context.Context) error {
 			if err := database.Ready(ctx); err != nil {
 				return err
@@ -122,6 +124,7 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 		t.Fatal(err)
 	}
 	return postHTTPFixture{
+		ctx:                       fixtureContentContext(t, testAccounts(t, database, runtimeState)),
 		authenticationTestFixture: authenticationTestFixture{manager: manager, token: issueTestAPIToken(t, testAccounts(t, database, runtimeState)), engine: engine, now: &now},
 		database:                  database,
 		posts:                     posts,
@@ -430,15 +433,15 @@ END`)
 func TestPostHTTPDateCursorStrictBindingAndQueryValidation(t *testing.T) {
 	fixture := newPostHTTPFixture(t, 0)
 	*fixture.now = time.Date(2026, time.August, 9, 15, 59, 59, 0, time.UTC) // 2026-08-09 23:59:59 +08
-	if _, err := fixture.posts.Create(context.Background(), app.CreatePostInput{ContentMD: "before"}); err != nil {
+	if _, err := fixture.posts.Create(fixture.ctx, app.CreatePostInput{ContentMD: "before"}); err != nil {
 		t.Fatal(err)
 	}
 	*fixture.now = time.Date(2026, time.August, 9, 16, 0, 0, 0, time.UTC) // 2026-08-10 00:00 +08
-	if _, err := fixture.posts.Create(context.Background(), app.CreatePostInput{ContentMD: "inside one"}); err != nil {
+	if _, err := fixture.posts.Create(fixture.ctx, app.CreatePostInput{ContentMD: "inside one"}); err != nil {
 		t.Fatal(err)
 	}
 	*fixture.now = time.Date(2026, time.August, 10, 3, 0, 0, 0, time.UTC)
-	if _, err := fixture.posts.Create(context.Background(), app.CreatePostInput{ContentMD: "inside two"}); err != nil {
+	if _, err := fixture.posts.Create(fixture.ctx, app.CreatePostInput{ContentMD: "inside two"}); err != nil {
 		t.Fatal(err)
 	}
 

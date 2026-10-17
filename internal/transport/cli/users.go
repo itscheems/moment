@@ -19,7 +19,7 @@ func registerUsers(application *Application) {
 		Path: []string{"user", "suggest"}, Short: "Search users for an @mention",
 		Long:       "Return bounded public identities ranked by the same lightweight service used by the browser composer.",
 		Inputs:     "An optional --query username or display-name fragment and --limit from 1 to 20. API mode authenticates through MOMENT_TOKEN or --token-file.",
-		Output:     "A stable JSON list containing immutable owner_id, username, display_name, avatar_media_id, and profile_url.",
+		Output:     "A stable JSON list containing immutable user_id, username, display_name, avatar_media_id, and profile_url.",
 		Errors:     "Invalid limits return INVALID_ARGUMENT; API authentication failures return UNAUTHORIZED; unavailable APIs use dependency exit codes.",
 		Example:    "moment user suggest --data-dir ./moment-data --query che --json",
 		Capability: CapabilityBoth,

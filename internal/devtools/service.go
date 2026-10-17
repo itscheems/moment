@@ -449,7 +449,7 @@ func issueDevelopmentAccountToken(ctx context.Context, runtimeState *runtimefs.R
 	if err != nil {
 		return "", err
 	}
-	account, err := accounts.OwnerAccount(ctx)
+	account, err := accounts.ProfileAccount(ctx)
 	if err != nil {
 		return "", err
 	}

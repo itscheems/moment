@@ -7,16 +7,8 @@ import (
 	"github.com/moment/moment/internal/app"
 )
 
-func (store postStore) PrimaryAuthorID(ctx context.Context) (string, error) {
-	return newCommentStore(store.queries).SiteOwnerID(ctx)
-}
-
 func (store postStore) AuthorIdentities(ctx context.Context, ids []string) (map[string]app.CommentAuthorIdentity, error) {
 	return newCommentStore(store.queries).CommentAuthorIdentities(ctx, ids)
-}
-
-func (store commentStore) PrimaryAuthorID(ctx context.Context) (string, error) {
-	return store.SiteOwnerID(ctx)
 }
 
 func (store commentStore) AuthorIdentities(ctx context.Context, ids []string) (map[string]app.CommentAuthorIdentity, error) {

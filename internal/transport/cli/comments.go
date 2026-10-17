@@ -300,7 +300,7 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 		// Direct mode is authorised by access to the data directory, not by a
 		// session, so there is nobody to read the author from. The owner is the
 		// account it writes as, and it is read rather than assumed.
-		owner, err := directOwnerAccount(ctx, direct.database, direct.runtime)
+		owner, err := directProfileAccount(ctx, direct.database, direct.runtime)
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -494,13 +494,13 @@ type directCommentRuntime struct {
 	runtime     *runtimefs.Runtime
 }
 
-// directOwnerAccount reads the account a direct-mode write is performed as.
+// directProfileAccount reads the account a direct-mode write is performed as.
 //
 // Direct mode is authorised by access to the data directory rather than by a
 // session, so there is no admitted caller to take an author from. The owner
 // account is that author, and reading it keeps the row honest rather than
 // stamping an id the CLI assumed.
-func directOwnerAccount(ctx context.Context, database *sqlitestore.Database, runtimeState *runtimefs.Runtime) (domain.User, error) {
+func directProfileAccount(ctx context.Context, database *sqlitestore.Database, runtimeState *runtimefs.Runtime) (domain.User, error) {
 	repository, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
 	if err != nil {
 		return domain.User{}, err
@@ -509,7 +509,7 @@ func directOwnerAccount(ctx context.Context, database *sqlitestore.Database, run
 	if err != nil {
 		return domain.User{}, err
 	}
-	return service.OwnerAccount(ctx)
+	return service.ProfileAccount(ctx)
 }
 
 func (runtime *directCommentRuntime) Close() error {
@@ -589,7 +589,7 @@ func commentAPIRequest(ctx context.Context, invocation Invocation, method, endpo
 }
 
 func commentResult(action string, comment commentdto.Comment, meta map[string]any) Result {
-	return Result{Data: comment, Text: fmt.Sprintf("%s %s.\nAuthor: %s (%s)\n%s", action, comment.ID, commentAuthorLabel(comment), comment.AuthorKind, comment.ContentMD), Meta: meta}
+	return Result{Data: comment, Text: fmt.Sprintf("%s %s.\nAuthor: %s\n%s", action, comment.ID, commentAuthorLabel(comment), comment.ContentMD), Meta: meta}
 }
 
 // commentThreadText renders one page of a thread together with its pinned

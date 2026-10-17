@@ -59,7 +59,7 @@ func newCommentCLIFixture(t *testing.T) commentCLIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := posts.Create(context.Background(), app.CreatePostInput{ContentMD: "comment host"}); err != nil {
+	if _, err := posts.Create(cliFixtureContentContext(t, testAccountService(t, database, runtimeState)), app.CreatePostInput{ContentMD: "comment host"}); err != nil {
 		t.Fatal(err)
 	}
 	siteRepository, _ := sqlitestore.NewSiteRepository(database, runtimeState.Locks)
@@ -82,31 +82,31 @@ func newCommentCLIFixture(t *testing.T) commentCLIFixture {
 func TestCommentCLIDirectAPIParityOwnerIdentityIdempotencyAndSafety(t *testing.T) {
 	fixture := newCommentCLIFixture(t)
 	application := momentTestApplication()
-	createdOutput := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--content", "owner **root**", "--idempotency-key", "comment-cli-1", "--json")
+	createdOutput := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--content", "owner **root**", "--idempotency-key", "comment-cli-1", "--json")
 	created := commandData(t, createdOutput)
-	if created["author_kind"] != "owner" || created["author_name"] != "Moment" || created["parent_id"] != nil || created["depth"] != float64(0) || createdOutput.stderr != "" {
+	if created["author_kind"] != nil || created["author_name"] != "writer" || created["parent_id"] != nil || created["depth"] != float64(0) || createdOutput.stderr != "" {
 		t.Fatalf("created = %#v output=%#v", created, createdOutput)
 	}
-	replayedOutput := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--content", "owner **root**", "--idempotency-key", "comment-cli-1", "--json")
+	replayedOutput := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--content", "owner **root**", "--idempotency-key", "comment-cli-1", "--json")
 	if replayed := commandData(t, replayedOutput); !reflect.DeepEqual(created, replayed) || decodeOneDocument(t, replayedOutput.stdout)["meta"].(map[string]any)["replayed"] != true {
 		t.Fatalf("replay = %#v", replayedOutput)
 	}
-	conflict := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--content", "changed", "--idempotency-key", "comment-cli-1", "--json")
+	conflict := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--content", "changed", "--idempotency-key", "comment-cli-1", "--json")
 	if conflict.exit != ExitConflict || decodeOneDocument(t, conflict.stdout)["error"].(map[string]any)["code"] != "IDEMPOTENCY_KEY_REUSED" {
 		t.Fatalf("conflict = %#v", conflict)
 	}
 
 	t.Setenv("MOMENT_TOKEN", fixture.token)
 	apiList := commandData(t, execute(application, "", "--url", fixture.server.URL, "comment", "list", fixture.postID, "--json"))
-	directList := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--json"))
+	directList := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	if !reflect.DeepEqual(apiList, directList) {
 		t.Fatalf("api=%#v direct=%#v", apiList, directList)
 	}
 	reply := commandData(t, execute(application, "", "--url", fixture.server.URL, "comment", "reply", fixture.postID, created["id"].(string), "--content", "API owner reply", "--json"))
-	if reply["author_kind"] != "owner" || reply["parent_id"] != created["id"] || reply["depth"] != float64(1) {
+	if reply["author_kind"] != nil || reply["parent_id"] != created["id"] || reply["depth"] != float64(1) {
 		t.Fatalf("reply = %#v", reply)
 	}
-	if after := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--json")); len(after["items"].([]any)) != 2 {
+	if after := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--json")); len(after["items"].([]any)) != 2 {
 		t.Fatalf("after = %#v", after)
 	}
 
@@ -115,15 +115,15 @@ func TestCommentCLIDirectAPIParityOwnerIdentityIdempotencyAndSafety(t *testing.T
 	if dryRun.exit != ExitSuccess || dryMeta["dry_run"] != true || dryMeta["deleted"] != false || dryMeta["replies_affected"] != float64(1) {
 		t.Fatalf("dry-run = %#v", dryRun)
 	}
-	refused := execute(application, "", "comment", "delete", created["id"].(string), "--data-dir", fixture.dataDir, "--no-input", "--json")
+	refused := execute(application, "", "comment", "delete", created["id"].(string), "--data-dir", fixture.dataDir, "--as", "writer", "--no-input", "--json")
 	if refused.exit != ExitInvalidInput {
 		t.Fatalf("refused = %#v", refused)
 	}
-	deleted := execute(application, "", "comment", "delete", created["id"].(string), "--data-dir", fixture.dataDir, "--yes", "--json")
+	deleted := execute(application, "", "comment", "delete", created["id"].(string), "--data-dir", fixture.dataDir, "--as", "writer", "--yes", "--json")
 	if deleted.exit != ExitSuccess || decodeOneDocument(t, deleted.stdout)["meta"].(map[string]any)["replies_affected"] != float64(1) {
 		t.Fatalf("deleted = %#v", deleted)
 	}
-	if empty := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--json")); len(empty["items"].([]any)) != 0 {
+	if empty := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--json")); len(empty["items"].([]any)) != 0 {
 		t.Fatalf("empty = %#v", empty)
 	}
 	missing := execute(application, "", "--url", fixture.server.URL, "comment", "delete", created["id"].(string), "--yes", "--json")
@@ -143,7 +143,7 @@ func TestCommentLocationCLIDirectAPIParityAndStrictInputs(t *testing.T) {
 	}
 
 	createdOutput := execute(application, "", "comment", "create", fixture.postID,
-		"--data-dir", fixture.dataDir, "--location-json", manifest, "--json")
+		"--data-dir", fixture.dataDir, "--as", "writer", "--location-json", manifest, "--json")
 	if createdOutput.exit != ExitSuccess || createdOutput.stderr != "" {
 		t.Fatalf("direct location comment = %#v", createdOutput)
 	}
@@ -168,14 +168,14 @@ func TestCommentLocationCLIDirectAPIParityAndStrictInputs(t *testing.T) {
 	apiList := commandData(t, execute(application, "", "--url", fixture.server.URL,
 		"comment", "list", fixture.postID, "--json"))
 	directList := commandData(t, execute(application, "", "comment", "list", fixture.postID,
-		"--data-dir", fixture.dataDir, "--json"))
+		"--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	if !reflect.DeepEqual(apiList, directList) {
 		t.Fatalf("comment location parity: api=%#v direct=%#v", apiList, directList)
 	}
 
 	for _, output := range []commandOutput{
-		execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--json"),
-		execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir,
+		execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--json"),
+		execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer",
 			"--location-name", "书房", "--location-json", manifest, "--json"),
 	} {
 		if output.exit != ExitInvalidInput || decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
@@ -194,7 +194,7 @@ func TestCommentMediaCLIManifestAndAPIUploadParity(t *testing.T) {
 ]`)
 
 	directOutput := execute(application, "", "comment", "create", fixture.postID,
-		"--data-dir", fixture.dataDir, "--content", "direct media comment",
+		"--data-dir", fixture.dataDir, "--as", "writer", "--content", "direct media comment",
 		"--media-manifest", manifest, "--json")
 	if directOutput.exit != ExitSuccess || directOutput.stderr != "" {
 		t.Fatalf("direct media comment = %#v", directOutput)
@@ -215,7 +215,7 @@ func TestCommentMediaCLIManifestAndAPIUploadParity(t *testing.T) {
 	apiList := commandData(t, execute(application, "", "--url", fixture.server.URL,
 		"comment", "list", fixture.postID, "--json"))
 	directList := commandData(t, execute(application, "", "comment", "list", fixture.postID,
-		"--data-dir", fixture.dataDir, "--json"))
+		"--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	if !reflect.DeepEqual(apiList, directList) {
 		t.Fatalf("comment media parity: api=%#v direct=%#v", apiList, directList)
 	}
@@ -225,7 +225,7 @@ func TestCommentMediaCLIManifestAndAPIUploadParity(t *testing.T) {
 		overLimit[index] = `{"path":` + jsonString(imagePath) + `,"alt_text":null}`
 	}
 	invalid := execute(application, "["+strings.Join(overLimit, ",")+"]",
-		"comment", "create", fixture.postID, "--data-dir", fixture.dataDir,
+		"comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer",
 		"--content", "too many", "--media-manifest", "-", "--json")
 	if invalid.exit != ExitInvalidInput || decodeOneDocument(t, invalid.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("over-limit media = %#v", invalid)
@@ -255,7 +255,7 @@ func TestCommentCLIIdentityBoundaryErrorsCancellationHelpAndMaintenanceLease(t *
 	fixture := newCommentCLIFixture(t)
 	application := momentTestApplication()
 	for _, flag := range []string{"--guest-name", "--client-ip", "--honeypot"} {
-		output := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--content", "x", flag, "spoof", "--json")
+		output := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--content", "x", flag, "spoof", "--json")
 		if output.exit != ExitInvalidInput || decodeOneDocument(t, output.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 			t.Fatalf("flag %s = %#v", flag, output)
 		}
@@ -273,17 +273,17 @@ func TestCommentCLIIdentityBoundaryErrorsCancellationHelpAndMaintenanceLease(t *
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	var stdout, stderr bytes.Buffer
-	exit := application.Execute(cancelled, []string{"comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--json"}, Streams{Out: &stdout, Err: &stderr})
+	exit := application.Execute(cancelled, []string{"comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--json"}, Streams{Out: &stdout, Err: &stderr})
 	if exit != ExitTimeout || decodeOneDocument(t, stdout.String())["error"].(map[string]any)["code"] != "CANCELLED" || stderr.String() != "" {
 		t.Fatalf("cancelled exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
 	stderr.Reset()
-	exit = application.Execute(cancelled, []string{"comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--content", "cancelled", "--json"}, Streams{Out: &stdout, Err: &stderr})
+	exit = application.Execute(cancelled, []string{"comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--content", "cancelled", "--json"}, Streams{Out: &stdout, Err: &stderr})
 	if exit != ExitTimeout || decodeOneDocument(t, stdout.String())["error"].(map[string]any)["code"] != "CANCELLED" || stderr.String() != "" {
 		t.Fatalf("cancelled create exit=%d stdout=%q stderr=%q", exit, stdout.String(), stderr.String())
 	}
-	if thread := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--json")); len(thread["items"].([]any)) != 0 {
+	if thread := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--json")); len(thread["items"].([]any)) != 0 {
 		t.Fatalf("cancelled create mutated = %#v", thread)
 	}
 	for _, verb := range []string{"list", "create", "reply", "delete"} {
@@ -324,11 +324,11 @@ func TestCommentPagingKeepsDirectAndAPIAnswersIdentical(t *testing.T) {
 	fixture := newCommentCLIFixture(t)
 	application := momentTestApplication()
 	root := commandData(t, execute(application, "", "comment", "create", fixture.postID,
-		"--data-dir", fixture.dataDir, "--content", "paged root", "--idempotency-key", "page-root", "--json"))
+		"--data-dir", fixture.dataDir, "--as", "writer", "--content", "paged root", "--idempotency-key", "page-root", "--json"))
 	rootID := root["id"].(string)
 	for index := range 4 {
 		execute(application, "", "comment", "reply", fixture.postID, rootID,
-			"--data-dir", fixture.dataDir, "--content", "reply "+strconv.Itoa(index),
+			"--data-dir", fixture.dataDir, "--as", "writer", "--content", "reply "+strconv.Itoa(index),
 			"--idempotency-key", "page-reply-"+strconv.Itoa(index), "--json")
 	}
 
@@ -342,7 +342,7 @@ func TestCommentPagingKeepsDirectAndAPIAnswersIdentical(t *testing.T) {
 	} {
 		t.Run(probe.name, func(t *testing.T) {
 			apiOutput := execute(application, "", append([]string{"--url", fixture.server.URL}, append(probe.args, "--json")...)...)
-			directOutput := execute(application, "", append(append([]string{}, probe.args...), "--data-dir", fixture.dataDir, "--json")...)
+			directOutput := execute(application, "", append(append([]string{}, probe.args...), "--data-dir", fixture.dataDir, "--as", "writer", "--json")...)
 			if apiOutput.exit != ExitSuccess {
 				t.Fatalf("api %v = %#v", probe.args, apiOutput)
 			}
@@ -361,7 +361,7 @@ func TestCommentPagingKeepsDirectAndAPIAnswersIdentical(t *testing.T) {
 
 	// The root reports every reply it has, not the three that travelled with
 	// it, and offers a cursor for the rest.
-	thread := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--json"))
+	thread := commandData(t, execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	items := thread["items"].([]any)
 	first := items[0].(map[string]any)
 	if first["reply_count"] != float64(4) || first["replies_next_cursor"] == nil {
@@ -386,28 +386,28 @@ func TestCommentListTextRendersThePinnedConversationOffPage(t *testing.T) {
 	fixture := newCommentCLIFixture(t)
 	application := momentTestApplication()
 	first := commandData(t, execute(application, "", "comment", "create", fixture.postID,
-		"--data-dir", fixture.dataDir, "--content", "first root", "--idempotency-key", "pin-1", "--json"))
+		"--data-dir", fixture.dataDir, "--as", "writer", "--content", "first root", "--idempotency-key", "pin-1", "--json"))
 	second := commandData(t, execute(application, "", "comment", "create", fixture.postID,
-		"--data-dir", fixture.dataDir, "--content", "second root", "--idempotency-key", "pin-2", "--json"))
+		"--data-dir", fixture.dataDir, "--as", "writer", "--content", "second root", "--idempotency-key", "pin-2", "--json"))
 
 	// Which root leads the stream is decided by creation order, and the two can
 	// share a millisecond; ask for the first page rather than assume.
 	page := commandData(t, execute(application, "", "comment", "list", fixture.postID,
-		"--data-dir", fixture.dataDir, "--limit", "1", "--json"))
+		"--data-dir", fixture.dataDir, "--as", "writer", "--limit", "1", "--json"))
 	onPage := page["items"].([]any)[0].(map[string]any)["id"].(string)
 	offPage := first["id"].(string)
 	if offPage == onPage {
 		offPage = second["id"].(string)
 	}
 	execute(application, "", "comment", "reply", fixture.postID, offPage,
-		"--data-dir", fixture.dataDir, "--content", "pinned reply", "--idempotency-key", "pin-reply", "--json")
+		"--data-dir", fixture.dataDir, "--as", "writer", "--content", "pinned reply", "--idempotency-key", "pin-reply", "--json")
 	pinned := execute(application, "", "comment", "pin", fixture.postID, offPage,
-		"--data-dir", fixture.dataDir, "--yes", "--json")
+		"--data-dir", fixture.dataDir, "--as", "writer", "--yes", "--json")
 	if pinned.exit != ExitSuccess {
 		t.Fatalf("pin = %#v", pinned)
 	}
 
-	output := execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--limit", "1")
+	output := execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--limit", "1")
 	if output.exit != ExitSuccess || output.stderr != "" {
 		t.Fatalf("text listing = %#v", output)
 	}
@@ -429,7 +429,7 @@ func TestCommentListTextRendersThePinnedConversationOffPage(t *testing.T) {
 	}
 
 	// A page that already contains the pinned root shows it once, not twice.
-	wide := execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir)
+	wide := execute(application, "", "comment", "list", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer")
 	if wide.exit != ExitSuccess || strings.Count(wide.stdout, offPage) != 1 || strings.Count(wide.stdout, "(pinned)") != 1 {
 		t.Fatalf("full page repeated the pinned conversation:\n%s", wide.stdout)
 	}
@@ -437,7 +437,7 @@ func TestCommentListTextRendersThePinnedConversationOffPage(t *testing.T) {
 	// The JSON shape is untouched: the pinned conversation still travels beside
 	// the page instead of being folded into it.
 	shape := commandData(t, execute(application, "", "comment", "list", fixture.postID,
-		"--data-dir", fixture.dataDir, "--limit", "1", "--json"))
+		"--data-dir", fixture.dataDir, "--as", "writer", "--limit", "1", "--json"))
 	if len(shape["items"].([]any)) != 1 || shape["pinned_comment_id"] != offPage || len(shape["pinned"].([]any)) != 2 {
 		t.Fatalf("JSON shape changed = %#v", shape)
 	}
@@ -466,5 +466,23 @@ func testAccountService(t *testing.T, database *sqlitestore.Database, runtimeSta
 	if err != nil {
 		t.Fatal(err)
 	}
+	users, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) == 0 {
+		if _, err := service.InitializeSiteAccount(context.Background(), "writer"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return service
+}
+
+func cliFixtureContentContext(t *testing.T, accounts *app.AccountService) context.Context {
+	t.Helper()
+	user, err := accounts.ProfileAccount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return app.WithContentActor(context.Background(), user)
 }

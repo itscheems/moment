@@ -42,7 +42,7 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 	// still owes itself before registration opens to anyone.
 	uploads := engine.Group("/api/v1/owner")
 	uploads.Use(gate.RequireActiveAccount())
-	engine.DELETE("/api/v1/owner/media/:id", gate.RequireOwner(), deleteMedia(store))
+	engine.DELETE("/api/v1/owner/media/:id", gate.RequireAdmin(), deleteMedia(store))
 	posters := newUploadPosterCache()
 	uploads.POST("/media", mediaDeadlines(true, mediaTransferIdle, mediaTransferMax), uploadMedia(store, posters))
 	uploads.GET("/media-uploads/:uploadID/poster", getUploadPoster(posters))

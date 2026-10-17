@@ -23,7 +23,6 @@ type Comment struct {
 	PostID      string            `json:"post_id"`
 	ParentID    *string           `json:"parent_id"`
 	Depth       int               `json:"depth"`
-	AuthorKind  string            `json:"author_kind"`
 	AuthorName  string            `json:"author_name"`
 	Author      Author            `json:"author"`
 	ReplyTo     *ReplyTarget      `json:"reply_to"`
@@ -113,7 +112,7 @@ func FromComment(comment app.Comment) Comment {
 	}
 	return Comment{
 		ID: comment.Comment.ID.String(), PostID: comment.Comment.EntryID.String(), ParentID: parentID, Depth: depth,
-		AuthorKind: string(comment.Comment.AuthorKind), AuthorName: comment.Comment.AuthorName, Author: fromAuthor(comment.Author), ReplyTo: fromReplyTarget(comment.ReplyTo),
+		AuthorName: comment.Comment.AuthorName, Author: fromAuthor(comment.Author), ReplyTo: fromReplyTarget(comment.ReplyTo),
 		ReplyCount: comment.ReplyCount, RepliesNextCursor: comment.RepliesNextCursor,
 		ContentMD: comment.Comment.ContentMD, ContentHTML: comment.ContentHTML, CreatedAt: comment.Comment.CreatedAt.UTC(), Media: media, Location: location,
 	}
@@ -212,7 +211,7 @@ func ValidateComment(comment Comment) error {
 	if comment.Location != nil {
 		location = &domain.Location{Name: comment.Location.Name, DisplayName: comment.Location.DisplayName, Provider: "manual"}
 	}
-	record := domain.Comment{ID: id, EntryID: postID, ParentID: parentID, AuthorKind: domain.CommentAuthorKind(comment.AuthorKind), AuthorName: comment.AuthorName, ContentMD: comment.ContentMD, Location: location, CreatedAt: comment.CreatedAt}
+	record := domain.Comment{ID: id, EntryID: postID, ParentID: parentID, AuthorName: comment.AuthorName, ContentMD: comment.ContentMD, Location: location, CreatedAt: comment.CreatedAt}
 	if err := record.Validate(); err != nil {
 		return err
 	}

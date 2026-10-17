@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -11,8 +10,8 @@ import (
 
 func addContentTestAccount(t *testing.T, db *Database, id, username string) domain.User {
 	t.Helper()
-	err := db.WriteTx(context.Background(), func(q Queries) error {
-		_, err := q.ExecContext(context.Background(), `INSERT INTO users(id, username, display_name, role, status, created_at_ms, updated_at_ms) VALUES(?, ?, ?, 'member', 'active', 1, 1)`, id, username, username)
+	err := db.WriteTx(testAccountContext(), func(q Queries) error {
+		_, err := q.ExecContext(testAccountContext(), `INSERT INTO users(id, username, display_name, role, status, created_at_ms, updated_at_ms) VALUES(?, ?, ?, 'member', 'active', 1, 1)`, id, username, username)
 		return err
 	})
 	if err != nil {
@@ -22,7 +21,7 @@ func addContentTestAccount(t *testing.T, db *Database, id, username string) doma
 }
 
 func TestContentAuthorshipDoesNotFollowAdministratorRole(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, service := articleServiceFixture(t, time.UnixMilli(1000))
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
 	bob := addContentTestAccount(t, db, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob")
@@ -38,7 +37,7 @@ func TestContentAuthorshipDoesNotFollowAdministratorRole(t *testing.T) {
 	if err != nil || read.Author == nil || read.Author.UserID != alice.ID {
 		t.Fatalf("author read = %+v, %v", read, err)
 	}
-	for _, viewer := range []app.Viewer{app.PublicViewer(), app.ViewerFor(bob, true), app.OwnerViewer()} {
+	for _, viewer := range []app.Viewer{app.PublicViewer(), app.ViewerFor(bob, true), app.AccountViewer(testAccountID)} {
 		if _, err := service.Get(ctx, private.Post.Entry.ID, viewer); err == nil {
 			t.Fatal("non-author read private content")
 		}
@@ -49,16 +48,16 @@ func TestContentAuthorshipDoesNotFollowAdministratorRole(t *testing.T) {
 	}
 	// Admin identity changes must not transfer existing content to the new admin.
 	err = db.WriteTx(ctx, func(q Queries) error {
-		if _, err := q.ExecContext(ctx, `UPDATE users SET role='member' WHERE role='owner'`); err != nil {
+		if _, err := q.ExecContext(ctx, `UPDATE users SET role='member' WHERE role='admin'`); err != nil {
 			return err
 		}
-		_, err := q.ExecContext(ctx, `UPDATE users SET role='owner' WHERE id=?`, bob.ID)
+		_, err := q.ExecContext(ctx, `UPDATE users SET role='admin' WHERE id=?`, bob.ID)
 		return err
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	bob.Role = domain.UserRoleOwner
+	bob.Role = domain.UserRoleAdmin
 	if _, err := service.Get(ctx, private.Post.Entry.ID, app.ViewerFor(bob, true)); err == nil {
 		t.Fatal("new admin read another author's private content")
 	}
@@ -68,9 +67,9 @@ func TestContentAuthorshipDoesNotFollowAdministratorRole(t *testing.T) {
 }
 
 func TestContentWriteRejectsUnattributedRecoveryIdentity(t *testing.T) {
-	ctx := context.Background()
+	ctx := testAccountContext()
 	_, service := articleServiceFixture(t, time.UnixMilli(1000))
-	actor := domain.User{Role: domain.UserRoleOwner, Status: domain.AccountActive}
+	actor := domain.User{Role: domain.UserRoleAdmin, Status: domain.AccountActive}
 	if _, err := service.Create(app.WithContentActor(ctx, actor), app.CreatePostInput{ContentMD: "unattributed"}); err == nil {
 		t.Fatal("recovery identity created content without an account")
 	}

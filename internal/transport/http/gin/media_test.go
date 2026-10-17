@@ -134,6 +134,7 @@ func newMediaHTTPFixture(t *testing.T) (http.Handler, *media.Store, string, *run
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	t.Cleanup(func() { _ = database.Close() })
 	store, err := media.NewStore(runtimeState, database, media.Options{Clock: func() time.Time { return time.UnixMilli(1_800_000_000_000) }, Entropy: bytes.NewReader(bytes.Repeat([]byte{0x31}, 128))})
 	if err != nil {

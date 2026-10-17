@@ -19,6 +19,7 @@ Flags:
   -h, --help   help for version
 
 Global Flags:
+      --as string           local account username for content operations; not accepted in API mode
       --data-dir string     local Moment data directory (direct mode)
       --json                write one machine-readable JSON document to stdout
       --log-format string   stderr log format: text or json (default "text")

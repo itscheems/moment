@@ -150,7 +150,7 @@ type MergePlan struct {
 	BaseGeneration          string           `json:"base_generation"`
 	BaseAuthoritySHA256     string           `json:"base_authority_sha256"`
 	IncomingAuthoritySHA256 string           `json:"incoming_authority_sha256"`
-	OwnerID                 string           `json:"owner_id"`
+	ProfileUserID           string           `json:"profile_user_id"`
 	ExpiresAt               time.Time        `json:"expires_at"`
 	Summary                 MergeSummary     `json:"summary"`
 	Items                   []MergeItem      `json:"items"`
@@ -259,30 +259,12 @@ func AuthorityDigest(authority PortableAuthority) (string, error) {
 // ComparePortableAuthorities builds a stable two-way plan without mutating
 // either authority source.
 func ComparePortableAuthorities(input MergePlanInput) (MergePlan, error) {
-	return comparePortableAuthorities(input, true)
+	return comparePortableAuthorities(input)
 }
 
-// comparePortableAuthoritiesForReview creates the same deterministic plan
-// while allowing an exact-replacement review to compare a backup from a
-// different owner. Merge commit still calls ComparePortableAuthorities and
-// therefore retains the same-owner boundary.
-func comparePortableAuthoritiesForReview(input MergePlanInput) (MergePlan, bool, error) {
-	mergeAllowed := input.Local.Site.OwnerID != "" && input.Incoming.Site.OwnerID != "" && input.Local.Site.OwnerID == input.Incoming.Site.OwnerID
-	plan, err := comparePortableAuthorities(input, false)
-	return plan, mergeAllowed, err
-}
-
-func comparePortableAuthorities(input MergePlanInput, requireSameOwner bool) (MergePlan, error) {
-	if input.Local.Site.OwnerID == "" || input.Incoming.Site.OwnerID == "" || input.Local.Site.OwnerID != input.Incoming.Site.OwnerID {
-		if requireSameOwner {
-			return MergePlan{}, domain.NewError(domain.CodeImportOwnerMismatch, "merge import requires a backup from the same owner", map[string]any{
-				"local_owner_id":    input.Local.Site.OwnerID,
-				"incoming_owner_id": input.Incoming.Site.OwnerID,
-			})
-		}
-		if input.Local.Site.OwnerID == "" {
-			return MergePlan{}, errors.New("local portable authority owner is required")
-		}
+func comparePortableAuthorities(input MergePlanInput) (MergePlan, error) {
+	if input.Local.Site.ProfileUserID == "" || input.Incoming.Site.ProfileUserID == "" {
+		return MergePlan{}, domain.NewError(domain.CodeInvalidArgument, "both authorities must identify their display accounts", nil)
 	}
 	localDigest, err := AuthorityDigest(input.Local)
 	if err != nil {
@@ -295,7 +277,7 @@ func comparePortableAuthorities(input MergePlanInput, requireSameOwner bool) (Me
 	plan := MergePlan{
 		Version: mergePlanVersion, ArchiveSHA256: input.ArchiveSHA256,
 		BaseGeneration: input.BaseGeneration, BaseAuthoritySHA256: localDigest,
-		IncomingAuthoritySHA256: incomingDigest, OwnerID: input.Local.Site.OwnerID,
+		IncomingAuthoritySHA256: incomingDigest, ProfileUserID: input.Local.Site.ProfileUserID,
 		ExpiresAt: input.ExpiresAt,
 	}
 	plan.PlanID = mergePlanID(plan)
@@ -357,7 +339,7 @@ func comparePortableAuthorities(input MergePlanInput, requireSameOwner bool) (Me
 	for _, incoming := range sortedComments(input.Incoming.Comments) {
 		item := MergeItem{Kind: MergeComment, ID: incoming.ID, Selectable: true, ChangedFields: []string{}, Dependencies: commentDependencies(incoming)}
 		if local, exists := localComment[incoming.ID]; exists {
-			item.ChangedFields = commentChangedFields(local, incoming, localSHA, incomingSHA, input.Local.Site.OwnerID, input.Incoming.Site.OwnerID)
+			item.ChangedFields = commentChangedFields(local, incoming, localSHA, incomingSHA, input.Local.Site.ProfileUserID, input.Incoming.Site.ProfileUserID)
 			if len(item.ChangedFields) == 0 {
 				item.Classification = MergeUnchanged
 			} else {
@@ -451,7 +433,7 @@ func (plan *MergePlan) increment(classification MergeClassification) {
 }
 
 func mergePlanID(plan MergePlan) string {
-	value := strings.Join([]string{strconv.Itoa(plan.Version), plan.ArchiveSHA256, plan.BaseGeneration, plan.BaseAuthoritySHA256, plan.IncomingAuthoritySHA256, plan.OwnerID, plan.ExpiresAt.UTC().Format(time.RFC3339Nano)}, "\x00")
+	value := strings.Join([]string{strconv.Itoa(plan.Version), plan.ArchiveSHA256, plan.BaseGeneration, plan.BaseAuthoritySHA256, plan.IncomingAuthoritySHA256, plan.ProfileUserID, plan.ExpiresAt.UTC().Format(time.RFC3339Nano)}, "\x00")
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
 }
@@ -687,22 +669,16 @@ func resolvedCommentAuthor(value sqlitestore.ArchiveComment, ownerID string) str
 	if value.AuthorUserID != nil {
 		return *value.AuthorUserID
 	}
-	if domain.CommentAuthorKind(value.AuthorKind) == domain.CommentAuthorOwner {
-		return ownerID
-	}
 	return ""
 }
 
-func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, incomingSHA map[string]string, localOwnerID, incomingOwnerID string) []string {
+func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, incomingSHA map[string]string, localProfileUserID, incomingProfileUserID string) []string {
 	fields := []string{}
 	if local.EntryID != incoming.EntryID {
 		fields = append(fields, "entry_id")
 	}
 	if !reflect.DeepEqual(local.ParentID, incoming.ParentID) {
 		fields = append(fields, "parent_id")
-	}
-	if local.AuthorKind != incoming.AuthorKind {
-		fields = append(fields, "author_kind")
 	}
 	if local.AuthorName != incoming.AuthorName {
 		fields = append(fields, "author_name")
@@ -714,7 +690,7 @@ func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, 
 	// over a difference no reader can observe. Two distinct accounts still
 	// differ, and so does an owner row that lost or gained a reference against
 	// a guest row that never had one.
-	if resolvedCommentAuthor(local, localOwnerID) != resolvedCommentAuthor(incoming, incomingOwnerID) {
+	if resolvedCommentAuthor(local, localProfileUserID) != resolvedCommentAuthor(incoming, incomingProfileUserID) {
 		fields = append(fields, "author_user_id")
 	}
 	if !reflect.DeepEqual(local.ReplyToCommentID, incoming.ReplyToCommentID) {
@@ -1022,7 +998,7 @@ func cloneString(value *string) *string {
 // ValidateMergePlan checks public invariants before an adapter persists or
 // accepts a plan from another transport.
 func ValidateMergePlan(plan MergePlan) error {
-	if plan.Version != mergePlanVersion || len(plan.PlanID) != sha256.Size*2 || len(plan.BaseAuthoritySHA256) != sha256.Size*2 || len(plan.IncomingAuthoritySHA256) != sha256.Size*2 || plan.OwnerID == "" {
+	if plan.Version != mergePlanVersion || len(plan.PlanID) != sha256.Size*2 || len(plan.BaseAuthoritySHA256) != sha256.Size*2 || len(plan.IncomingAuthoritySHA256) != sha256.Size*2 || plan.ProfileUserID == "" {
 		return fmt.Errorf("merge plan identity is invalid")
 	}
 	if mergePlanID(plan) != plan.PlanID {

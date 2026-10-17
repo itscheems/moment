@@ -30,7 +30,7 @@ func draftBodyJSON(prose string) []byte {
 
 func TestPublishingADraftLeavesOneArticleAndNoDraft(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
 
 	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
@@ -71,7 +71,7 @@ func TestPublishingADraftLeavesOneArticleAndNoDraft(t *testing.T) {
 
 func TestRepublishingWithTheSameKeyReturnsTheSameArticle(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
 
 	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
@@ -106,7 +106,7 @@ func TestRepublishingWithTheSameKeyReturnsTheSameArticle(t *testing.T) {
 // that copy is published in turn.
 func TestEditingAPublishedArticleGoesThroughAWorkingCopy(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
 
 	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
@@ -176,7 +176,7 @@ func TestEditingAPublishedArticleGoesThroughAWorkingCopy(t *testing.T) {
 
 func TestSavingADraftRefusesAStaleRevisionAndAnOverfullSite(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	_, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
 
 	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{Title: "第一版", BodyJSON: draftBodyJSON("内容")})
@@ -213,7 +213,7 @@ func TestSavingADraftRefusesAStaleRevisionAndAnOverfullSite(t *testing.T) {
 
 func TestAnEmptyDraftCannotBePublished(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	_, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
 
 	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
@@ -236,7 +236,7 @@ func TestAnEmptyDraftCannotBePublished(t *testing.T) {
 // door refuses at.
 func TestOpeningAWorkingCopyAnswersToTheDraftCeiling(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	_, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
 
 	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
@@ -280,7 +280,7 @@ func TestOpeningAWorkingCopyAnswersToTheDraftCeiling(t *testing.T) {
 // silently put an article in front of people the caller did not name.
 func TestRepublishingWithTheSameKeyButADifferentAudienceIsRefused(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	_, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
 
 	draft, err := service.SaveArticleDraft(ctx, app.SaveArticleDraftInput{
@@ -307,7 +307,7 @@ func TestRepublishingWithTheSameKeyButADifferentAudienceIsRefused(t *testing.T) 
 // retry that can never work.
 func TestADraftNamingAMissingPictureIsRefusedByName(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	_, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
 
 	absent := "01ARZ3NDEKTSV4RRFFQ69G5FAV"
@@ -353,8 +353,8 @@ func uploadedMedia(t *testing.T, db *Database, fill string) string {
 // look collectable, and a missing one makes an orphan uncollectable forever.
 func assertMediaClocksAgree(t *testing.T, db *Database, step string) {
 	t.Helper()
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
-		rows, err := queries.QueryContext(context.Background(), `
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
+		rows, err := queries.QueryContext(testAccountContext(), `
 SELECT media.id, media.unreferenced_since_ms IS NULL, `+mediaReferencedSQL+`
 FROM media ORDER BY media.id`)
 		if err != nil {
@@ -384,7 +384,7 @@ FROM media ORDER BY media.id`)
 // threw away kept a null clock -- the one state prune never collects.
 func TestEveryArticleWriteKeepsTheReclamationClockHonest(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := testAccountContext()
 	db, service := articleServiceFixture(t, time.UnixMilli(1_000).UTC())
 	cover, inline, dropped := uploadedMedia(t, db, "a"), uploadedMedia(t, db, "b"), uploadedMedia(t, db, "c")
 	assertMediaClocksAgree(t, db, "upload")

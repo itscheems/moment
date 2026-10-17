@@ -170,9 +170,6 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "IMPORT_MERGE_PLAN_STALE":
 		exit = ExitConflict
 		suggestion = "run 'moment backup merge-plan' again, review the new selection, and retry"
-	case "IMPORT_OWNER_MISMATCH":
-		exit = ExitConflict
-		suggestion = "select a portable backup created by the same Moment owner"
 	case "MAINTENANCE_MODE":
 		exit = ExitUnavailable
 		suggestion = "wait for the active maintenance window to finish, then retry"

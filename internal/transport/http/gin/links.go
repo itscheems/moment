@@ -19,7 +19,7 @@ import (
 // into an outbound request trigger.
 func RegisterLinkRoutes(engine *gin.Engine, links *app.LinkPreviewService, gate *Gate) {
 	owner := engine.Group("/api/v1/owner/links")
-	owner.Use(gate.RequireOwner())
+	owner.Use(gate.RequireAdmin())
 	owner.GET("/unfurl", unfurlLink(links))
 }
 

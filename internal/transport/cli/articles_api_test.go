@@ -25,7 +25,7 @@ func TestArticleAPIWholeWorkflowAndDirectReadParity(t *testing.T) {
 	created := commandData(t, run("article", "new", "--title", "API article", "--body", bodyPath))
 	id := created["id"].(string)
 	read := commandData(t, run("article", "draft", id))
-	direct := commandData(t, execute(application, "", "article", "draft", id, "--data-dir", fixture.dataDir, "--json"))
+	direct := commandData(t, execute(application, "", "article", "draft", id, "--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	if !reflect.DeepEqual(read, direct) {
 		t.Fatalf("API/direct differ: %#v / %#v", read, direct)
 	}
@@ -121,7 +121,7 @@ func TestArticleInlineGeometryHasDirectAPIParity(t *testing.T) {
 	draft := run("article", "new", "--title", "Picture", "--body", writeArticleBodyFile(t, body))
 	post := run("article", "publish", draft["id"].(string))
 	read := run("post", "get", post["id"].(string))
-	direct := commandData(t, execute(application, "", "post", "get", post["id"].(string), "--data-dir", fixture.dataDir, "--json"))
+	direct := commandData(t, execute(application, "", "post", "get", post["id"].(string), "--data-dir", fixture.dataDir, "--as", "writer", "--json"))
 	if !reflect.DeepEqual(read, direct) {
 		t.Fatalf("read parity: %#v / %#v", read, direct)
 	}

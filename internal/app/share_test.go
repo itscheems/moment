@@ -171,7 +171,7 @@ func TestShareMetadataReadsThePostAsAVisitor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seen == nil || seen.IsOwner() {
+	if seen == nil || seen.UserID() != "" {
 		t.Fatalf("post read with viewer %v", seen)
 	}
 	if metadata.PostFound || !metadata.NoIndex {

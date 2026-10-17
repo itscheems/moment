@@ -120,7 +120,7 @@ func newDeviceFixture(t *testing.T) deviceFixture {
 	events := &deviceEventLog{}
 	engine, err := New(Config{
 		Assets:         testAssets(),
-		SessionSigner:      base.manager,
+		SessionSigner:  base.manager,
 		Accounts:       base.accounts,
 		OAuthProviders: oauth.NewRegistry(provider, browserOnly),
 		RequestID:      func() string { return "req_device" },

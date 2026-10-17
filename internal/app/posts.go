@@ -398,10 +398,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 			if quoteErr != nil {
 				return quoteErr
 			}
-			viewer, err := resolvedViewer(ctx, store, OwnerViewer())
-			if err != nil {
-				return err
-			}
+			viewer := ViewerFromContext(ctx)
 			if !found || !viewer.CanReadEntry(target) {
 				return postNotFound(*input.QuotedPostID)
 			}
@@ -491,7 +488,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 			return err
 		}
 		if input.QuotedPostID != nil {
-			quoted, quoteErr := loadQuotedPost(ctx, store, OwnerViewer(), *input.QuotedPostID)
+			quoted, quoteErr := loadQuotedPost(ctx, store, ViewerFromContext(ctx), *input.QuotedPostID)
 			if quoteErr != nil {
 				return quoteErr
 			}
@@ -539,7 +536,7 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 			return storeErr
 		}
 		if input.QuotedPostID != nil {
-			post.Quoted, storeErr = loadQuotedPost(ctx, store, OwnerViewer(), *input.QuotedPostID)
+			post.Quoted, storeErr = loadQuotedPost(ctx, store, ViewerFromContext(ctx), *input.QuotedPostID)
 		}
 		if storeErr != nil {
 			return storeErr
@@ -625,10 +622,6 @@ func (service *PostService) Get(ctx context.Context, id domain.ID, viewer Viewer
 	var authors map[string]CommentAuthorIdentity
 	err := service.transactions.Read(ctx, func(store PostStore) error {
 		var storeErr error
-		viewer, storeErr = resolvedViewer(ctx, store, viewer)
-		if storeErr != nil {
-			return storeErr
-		}
 		entry, found, storeErr = store.EntryByID(ctx, id)
 		if storeErr != nil || !found {
 			return storeErr
@@ -725,7 +718,7 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if storeErr != nil {
 			return storeErr
 		}
-		quoted, quoteErr := loadEntryQuote(ctx, store, OwnerViewer(), id)
+		quoted, quoteErr := loadEntryQuote(ctx, store, ViewerFromContext(ctx), id)
 		if quoteErr != nil {
 			return quoteErr
 		}
@@ -1139,7 +1132,7 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		resultAuthor = contentAuthor(authors, entry.AuthorUserID)
 		updated = entry
 		if quoteReference.Present {
-			updatedQuoted, mediaErr = loadEntryQuote(ctx, store, OwnerViewer(), input.ID)
+			updatedQuoted, mediaErr = loadEntryQuote(ctx, store, ViewerFromContext(ctx), input.ID)
 			if mediaErr != nil {
 				return mediaErr
 			}
@@ -1192,7 +1185,7 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if mediaErr != nil {
 			return mediaErr
 		}
-		quoted, mediaErr := loadEntryQuote(ctx, store, OwnerViewer(), id)
+		quoted, mediaErr := loadEntryQuote(ctx, store, ViewerFromContext(ctx), id)
 		if mediaErr != nil {
 			return mediaErr
 		}
@@ -1384,10 +1377,6 @@ func loadEntryQuote(ctx context.Context, store PostStore, viewer Viewer, entryID
 // tombstone a deleted target does: the quote stays, its words do not travel.
 func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id domain.ID) (*QuotedPost, error) {
 	entry, found, err := store.EntryByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	viewer, err = resolvedViewer(ctx, store, viewer)
 	if err != nil {
 		return nil, err
 	}

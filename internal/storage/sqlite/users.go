@@ -481,7 +481,7 @@ WHERE status = 'active'
   AND (? = ''
        OR username LIKE ? ESCAPE '\'
        OR lower(display_name) LIKE ? ESCAPE '\')
-ORDER BY CASE WHEN role = 'owner' THEN 0 ELSE 1 END, username
+ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, username
 LIMIT ?`, query, prefix, pattern, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search accounts: %w", err)
@@ -529,9 +529,9 @@ func (store accountStore) ListAccounts(ctx context.Context) ([]domain.User, erro
 	return users, nil
 }
 
-func (store accountStore) OwnerUserID(ctx context.Context) (string, error) {
+func (store accountStore) ProfileUserID(ctx context.Context) (string, error) {
 	var ownerID string
-	err := store.queries.QueryRowContext(ctx, `SELECT owner_id FROM site_settings WHERE id = 1`).Scan(&ownerID)
+	err := store.queries.QueryRowContext(ctx, `SELECT profile_user_id FROM site_settings WHERE id = 1`).Scan(&ownerID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", domain.NewError(domain.CodeDataIntegrityFailed, "site settings singleton is missing", nil)
 	}

@@ -15,74 +15,74 @@ import (
 	"github.com/moment/moment/internal/media"
 )
 
-type importInspectorFunc func(context.Context, io.Reader, uint64) (archive.Inspection, error)
+type importInspectorFunc func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error)
 
-func (function importInspectorFunc) Inspect(ctx context.Context, input io.Reader, epoch uint64) (archive.Inspection, error) {
+func (function importInspectorFunc) Inspect(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.Inspection, error) {
 	return function(ctx, input, epoch)
 }
 
 type importInspectorPlanner struct {
 	inspect importInspectorFunc
-	plan    func(context.Context, io.Reader, uint64) (archive.ImportPlan, error)
+	plan    func(context.Context, io.Reader, archive.Authorization) (archive.ImportPlan, error)
 }
 
-func (value importInspectorPlanner) Inspect(ctx context.Context, input io.Reader, epoch uint64) (archive.Inspection, error) {
+func (value importInspectorPlanner) Inspect(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.Inspection, error) {
 	return value.inspect(ctx, input, epoch)
 }
 
-func (value importInspectorPlanner) Plan(ctx context.Context, input io.Reader, epoch uint64) (archive.ImportPlan, error) {
+func (value importInspectorPlanner) Plan(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.ImportPlan, error) {
 	return value.plan(ctx, input, epoch)
 }
 
 type fakeImportCommitter struct {
-	commit func(context.Context, string, uint64) (archive.CommitResult, error)
+	commit func(context.Context, string, archive.Authorization) (archive.CommitResult, error)
 	status func(context.Context) (archive.CommitStatus, error)
 }
 
 type fakeArchiveImportCommitter struct {
 	fakeImportCommitter
-	restore func(context.Context, io.Reader, string, uint64) (archive.CommitResult, error)
+	restore func(context.Context, io.Reader, string, archive.Authorization) (archive.CommitResult, error)
 }
 
 type fakeMergeImportCommitter struct {
 	fakeImportCommitter
-	planMerge    func(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
-	commitMerge  func(context.Context, string, uint64, archive.MergeSelection) (archive.CommitResult, error)
-	discardMerge func(context.Context, string, uint64) error
+	planMerge    func(context.Context, io.Reader, archive.Authorization) (archive.MergeInspection, error)
+	commitMerge  func(context.Context, string, archive.Authorization, archive.MergeSelection) (archive.CommitResult, error)
+	discardMerge func(context.Context, string, archive.Authorization) error
 }
 
 type fakeReviewImportCommitter struct {
 	fakeImportCommitter
-	review      func(context.Context, io.Reader, uint64) (archive.MergeInspection, error)
-	replace     func(context.Context, string, uint64, string) (archive.CommitResult, error)
-	reviewMedia func(context.Context, string, uint64, string, archive.MergeReviewSource, string) (media.Asset, error)
+	review      func(context.Context, io.Reader, archive.Authorization) (archive.MergeInspection, error)
+	replace     func(context.Context, string, archive.Authorization, string) (archive.CommitResult, error)
+	reviewMedia func(context.Context, string, archive.Authorization, string, archive.MergeReviewSource, string) (media.Asset, error)
 }
 
-func (fake fakeReviewImportCommitter) InspectReviewArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+func (fake fakeReviewImportCommitter) InspectReviewArchive(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.MergeInspection, error) {
 	return fake.review(ctx, input, epoch)
 }
 
-func (fake fakeReviewImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, epoch uint64, planID string) (archive.CommitResult, error) {
+func (fake fakeReviewImportCommitter) CommitReviewedReplacement(ctx context.Context, token string, epoch archive.Authorization, planID string) (archive.CommitResult, error) {
 	return fake.replace(ctx, token, epoch, planID)
 }
 
-func (fake fakeReviewImportCommitter) ReadReviewMedia(ctx context.Context, token string, epoch uint64, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
+func (fake fakeReviewImportCommitter) ReadReviewMedia(ctx context.Context, token string, epoch archive.Authorization, planID string, source archive.MergeReviewSource, mediaID string) (media.Asset, error) {
 	return fake.reviewMedia(ctx, token, epoch, planID, source, mediaID)
 }
 
-func (fake fakeMergeImportCommitter) InspectMergeArchive(ctx context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+func (fake fakeMergeImportCommitter) InspectMergeArchive(ctx context.Context, input io.Reader, epoch archive.Authorization) (archive.MergeInspection, error) {
 	return fake.planMerge(ctx, input, epoch)
 }
 
-func (fake fakeMergeImportCommitter) CommitMerge(ctx context.Context, token string, epoch uint64, selection archive.MergeSelection) (archive.CommitResult, error) {
+func (fake fakeMergeImportCommitter) CommitMerge(ctx context.Context, token string, epoch archive.Authorization, selection archive.MergeSelection) (archive.CommitResult, error) {
 	return fake.commitMerge(ctx, token, epoch, selection)
 }
 
-func (fake fakeMergeImportCommitter) DiscardMerge(ctx context.Context, token string, epoch uint64) error {
+func (fake fakeMergeImportCommitter) DiscardMerge(ctx context.Context, token string, epoch archive.Authorization) error {
 	return fake.discardMerge(ctx, token, epoch)
 }
 
-func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
+func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input io.Reader, expectedArchiveSHA string, epoch archive.Authorization) (archive.CommitResult, error) {
 	return fake.restore(ctx, input, expectedArchiveSHA, epoch)
 }
 
@@ -92,27 +92,27 @@ func TestImportReviewReplacementAndMediaContracts(t *testing.T) {
 	mediaID := "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 	committer := fakeReviewImportCommitter{
 		fakeImportCommitter: fakeImportCommitter{
-			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+			commit: func(context.Context, string, archive.Authorization) (archive.CommitResult, error) {
 				return archive.CommitResult{}, nil
 			},
 			status: func(context.Context) (archive.CommitStatus, error) { return archive.CommitStatus{}, nil },
 		},
-		review: func(_ context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+		review: func(_ context.Context, input io.Reader, epoch archive.Authorization) (archive.MergeInspection, error) {
 			body, _ := io.ReadAll(input)
-			if string(body) != "review-zip" || epoch != 1 {
-				t.Fatalf("review body=%q epoch=%d", body, epoch)
+			if string(body) != "review-zip" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("review body=%q subject=%+v", body, epoch)
 			}
 			return archive.MergeInspection{Plan: archive.MergePlan{PlanID: planID}, MergeAllowed: true, Warnings: []string{}, StagingToken: "review-token"}, nil
 		},
-		replace: func(_ context.Context, token string, epoch uint64, gotPlanID string) (archive.CommitResult, error) {
-			if token != "review-token" || epoch != 1 || gotPlanID != planID {
-				t.Fatalf("replace token=%q epoch=%d plan=%q", token, epoch, gotPlanID)
+		replace: func(_ context.Context, token string, epoch archive.Authorization, gotPlanID string) (archive.CommitResult, error) {
+			if token != "review-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") || gotPlanID != planID {
+				t.Fatalf("replace token=%q subject=%+v plan=%q", token, epoch, gotPlanID)
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{Phase: archive.CommitSucceeded}}, nil
 		},
-		reviewMedia: func(_ context.Context, token string, epoch uint64, gotPlanID string, source archive.MergeReviewSource, gotMediaID string) (media.Asset, error) {
-			if token != "review-token" || epoch != 1 || gotPlanID != planID || source != archive.MergeReviewIncoming || gotMediaID != mediaID {
-				t.Fatalf("media token=%q epoch=%d plan=%q source=%q id=%q", token, epoch, gotPlanID, source, gotMediaID)
+		reviewMedia: func(_ context.Context, token string, epoch archive.Authorization, gotPlanID string, source archive.MergeReviewSource, gotMediaID string) (media.Asset, error) {
+			if token != "review-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") || gotPlanID != planID || source != archive.MergeReviewIncoming || gotMediaID != mediaID {
+				t.Fatalf("media token=%q subject=%+v plan=%q source=%q id=%q", token, epoch, gotPlanID, source, gotMediaID)
 			}
 			return media.Asset{Contents: []byte("image"), MIMEType: "image/png", ETag: `"sha256-image"`}, nil
 		},
@@ -152,7 +152,7 @@ func TestImportReviewReplacementAndMediaContracts(t *testing.T) {
 	}
 }
 
-func (fake fakeImportCommitter) Commit(ctx context.Context, token string, epoch uint64) (archive.CommitResult, error) {
+func (fake fakeImportCommitter) Commit(ctx context.Context, token string, epoch archive.Authorization) (archive.CommitResult, error) {
 	return fake.commit(ctx, token, epoch)
 }
 
@@ -169,27 +169,27 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 	}
 	committer := fakeMergeImportCommitter{
 		fakeImportCommitter: fakeImportCommitter{
-			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+			commit: func(context.Context, string, archive.Authorization) (archive.CommitResult, error) {
 				return archive.CommitResult{}, nil
 			},
 			status: func(context.Context) (archive.CommitStatus, error) { return archive.CommitStatus{}, nil },
 		},
-		planMerge: func(_ context.Context, input io.Reader, epoch uint64) (archive.MergeInspection, error) {
+		planMerge: func(_ context.Context, input io.Reader, epoch archive.Authorization) (archive.MergeInspection, error) {
 			body, _ := io.ReadAll(input)
-			if string(body) != "zip-merge" || epoch != 1 {
-				t.Fatalf("plan body=%q epoch=%d", body, epoch)
+			if string(body) != "zip-merge" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("plan body=%q subject=%+v", body, epoch)
 			}
 			return archive.MergeInspection{Plan: archive.MergePlan{PlanID: selection.PlanID}, Warnings: []string{}, StagingToken: "merge-token"}, nil
 		},
-		commitMerge: func(_ context.Context, token string, epoch uint64, got archive.MergeSelection) (archive.CommitResult, error) {
-			if token != "merge-token" || epoch != 1 || got.PlanID != selection.PlanID {
-				t.Fatalf("commit token=%q epoch=%d selection=%#v", token, epoch, got)
+		commitMerge: func(_ context.Context, token string, epoch archive.Authorization, got archive.MergeSelection) (archive.CommitResult, error) {
+			if token != "merge-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") || got.PlanID != selection.PlanID {
+				t.Fatalf("commit token=%q subject=%+v selection=%#v", token, epoch, got)
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{Phase: archive.CommitSucceeded}}, nil
 		},
-		discardMerge: func(_ context.Context, token string, epoch uint64) error {
-			if token != "merge-token" || epoch != 1 {
-				t.Fatalf("discard token=%q epoch=%d", token, epoch)
+		discardMerge: func(_ context.Context, token string, epoch archive.Authorization) error {
+			if token != "merge-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("discard token=%q subject=%+v", token, epoch)
 			}
 			return nil
 		},
@@ -236,10 +236,10 @@ func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
 	now := time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC)
 	calls := 0
 	fake := fakeImportCommitter{
-		commit: func(_ context.Context, token string, epoch uint64) (archive.CommitResult, error) {
+		commit: func(_ context.Context, token string, epoch archive.Authorization) (archive.CommitResult, error) {
 			calls++
-			if token != "stage-token" || epoch != 1 {
-				t.Fatalf("token=%q epoch=%d", token, epoch)
+			if token != "stage-token" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("token=%q subject=%+v", token, epoch)
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{
 				OperationID: "import-20260811T010203000Z-0011223344556677", Phase: archive.CommitSucceeded,
@@ -302,7 +302,7 @@ func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
 func TestImportCommitMapsDomainFailure(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	fake := fakeImportCommitter{
-		commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+		commit: func(context.Context, string, archive.Authorization) (archive.CommitResult, error) {
 			return archive.CommitResult{}, domain.NewError(domain.CodeImportDiskSpaceInsufficient, "low disk", map[string]any{"required_additional_bytes": 10})
 		},
 		status: func(context.Context) (archive.CommitStatus, error) {
@@ -324,14 +324,14 @@ func TestImportCommitMapsDomainFailure(t *testing.T) {
 func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	called := 0
-	inspector := importInspectorFunc(func(_ context.Context, input io.Reader, epoch uint64) (archive.Inspection, error) {
+	inspector := importInspectorFunc(func(_ context.Context, input io.Reader, epoch archive.Authorization) (archive.Inspection, error) {
 		called++
 		body, err := io.ReadAll(input)
 		if err != nil {
 			return archive.Inspection{}, err
 		}
-		if string(body) != "zip" || epoch != 1 {
-			t.Fatalf("body=%q epoch=%d", body, epoch)
+		if string(body) != "zip" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+			t.Fatalf("body=%q subject=%+v", body, epoch)
 		}
 		return archive.Inspection{
 			FormatVersion: 1, StagingToken: "token", ExpiresAt: time.Date(2026, 8, 11, 0, 0, 0, 0, time.UTC),
@@ -380,13 +380,13 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
 	id := "import-20260811T013000000Z-0011223344556677"
 	inspector := importInspectorPlanner{
-		inspect: importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+		inspect: importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 			return archive.Inspection{}, errors.New("inspect must not run")
 		}),
-		plan: func(_ context.Context, input io.Reader, epoch uint64) (archive.ImportPlan, error) {
+		plan: func(_ context.Context, input io.Reader, epoch archive.Authorization) (archive.ImportPlan, error) {
 			body, err := io.ReadAll(input)
-			if err != nil || string(body) != "zip-plan" || epoch != 1 {
-				t.Fatalf("plan body=%q epoch=%d err=%v", body, epoch, err)
+			if err != nil || string(body) != "zip-plan" || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("plan body=%q subject=%+v err=%v", body, epoch, err)
 			}
 			return archive.ImportPlan{DryRun: true, FormatVersion: archive.FormatVersion, ArchiveSHA256: strings.Repeat("a", 64), Warnings: []string{}, Disk: archive.DiskEstimate{SpaceOK: true}}, nil
 		},
@@ -394,18 +394,18 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 	restoreCalls := 0
 	committer := fakeArchiveImportCommitter{
 		fakeImportCommitter: fakeImportCommitter{
-			commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
+			commit: func(context.Context, string, archive.Authorization) (archive.CommitResult, error) {
 				return archive.CommitResult{}, errors.New("token commit must not run")
 			},
 			status: func(context.Context) (archive.CommitStatus, error) {
 				return archive.CommitStatus{}, errors.New("status must not run")
 			},
 		},
-		restore: func(_ context.Context, input io.Reader, expectedArchiveSHA string, epoch uint64) (archive.CommitResult, error) {
+		restore: func(_ context.Context, input io.Reader, expectedArchiveSHA string, epoch archive.Authorization) (archive.CommitResult, error) {
 			restoreCalls++
 			body, err := io.ReadAll(input)
-			if err != nil || string(body) != "zip-restore" || expectedArchiveSHA != strings.Repeat("a", 64) || epoch != 1 {
-				t.Fatalf("restore body=%q sha=%q epoch=%d err=%v", body, expectedArchiveSHA, epoch, err)
+			if err != nil || string(body) != "zip-restore" || expectedArchiveSHA != strings.Repeat("a", 64) || (!epoch.Valid() || epoch.AccountID != "0123456789abcdef0123456789abcdef") {
+				t.Fatalf("restore body=%q sha=%q subject=%+v err=%v", body, expectedArchiveSHA, epoch, err)
 			}
 			return archive.CommitResult{Status: archive.CommitStatus{
 				OperationID: id, Phase: archive.CommitSucceeded, ActiveGeneration: id, PreviousGeneration: "gen-old", NewGeneration: id,
@@ -467,17 +467,17 @@ func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
 		status    int
 		code      string
 	}{
-		{name: "body limit", limit: 2, body: "zip", inspector: importInspectorFunc(func(_ context.Context, input io.Reader, _ uint64) (archive.Inspection, error) {
+		{name: "body limit", limit: 2, body: "zip", inspector: importInspectorFunc(func(_ context.Context, input io.Reader, _ archive.Authorization) (archive.Inspection, error) {
 			_, err := io.ReadAll(input)
 			return archive.Inspection{}, err
 		}), status: http.StatusRequestEntityTooLarge, code: "REQUEST_BODY_TOO_LARGE"},
-		{name: "disk", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+		{name: "disk", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 			return archive.Inspection{}, domain.NewError(domain.CodeImportDiskSpaceInsufficient, "low disk", map[string]any{"required_additional_bytes": 10})
 		}), status: http.StatusInsufficientStorage, code: "IMPORT_DISK_SPACE_INSUFFICIENT"},
-		{name: "in progress", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+		{name: "in progress", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 			return archive.Inspection{}, domain.NewError(domain.CodeImportInProgress, "active", nil)
 		}), status: http.StatusConflict, code: "IMPORT_IN_PROGRESS"},
-		{name: "cancel", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+		{name: "cancel", body: "z", inspector: importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 			return archive.Inspection{}, context.Canceled
 		}), status: http.StatusRequestTimeout, code: "CANCELLED"},
 	}
@@ -505,7 +505,7 @@ func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
 }
 
 func TestImportInspectConfigRequiresSessionSigner(t *testing.T) {
-	inspector := importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+	inspector := importInspectorFunc(func(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 		return archive.Inspection{}, errors.New("must not run")
 	})
 	if _, err := New(Config{Assets: testAssets(), ImportInspector: inspector}); err == nil {

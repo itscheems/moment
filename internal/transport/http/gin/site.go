@@ -19,7 +19,7 @@ import (
 func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, gate *Gate, instanceID string, instanceInitializedAt time.Time) {
 	engine.GET("/api/v1/site", getSiteSettings(service, instanceID, instanceInitializedAt))
 	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireOwner())
+	owner.Use(gate.RequireAdmin())
 	owner.PATCH("/site", updateSiteSettings(service))
 }
 

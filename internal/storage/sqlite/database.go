@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/runtimefs"
 
 	// Register the pinned CGo-free database/sql driver.
@@ -236,9 +235,6 @@ func (db *Database) bootstrap(ctx context.Context) error {
 		return db.failReadiness(fmt.Errorf("verify SQLite write connections: %w", err))
 	}
 	if err := applyMigrations(ctx, db.write, db.migrations, time.Now()); err != nil {
-		return db.failReadiness(err)
-	}
-	if err := initializeSiteSettings(ctx, db.write, app.HostTimezone()); err != nil {
 		return db.failReadiness(err)
 	}
 	if err := bootstrapSearchDerived(ctx, db.write); err != nil {

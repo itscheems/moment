@@ -26,9 +26,10 @@ var momentGroups = []GroupSpec{
 // Feature packages add behavior through RegisterLeaf in later composition work.
 func NewMoment(info buildinfo.Info) *Application {
 	application := New(Config{
-		BinaryName: "moment",
-		Short:      "A portable personal timeline",
-		Long:       "Moment captures a personal timeline now and keeps it portable and searchable later.",
+		BinaryName:     "moment",
+		Short:          "A portable personal timeline",
+		Long:           "Moment captures a personal timeline now and keeps it portable and searchable later.",
+		PrepareContext: prepareAccountContext,
 	})
 	for _, group := range momentGroups {
 		application.MustRegisterGroup(group)

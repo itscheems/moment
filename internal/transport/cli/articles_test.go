@@ -29,7 +29,7 @@ func TestArticleCLIWritesPublishesAndEditsAnArticle(t *testing.T) {
 	application := momentTestApplication()
 	bodyPath := writeArticleBodyFile(t, cliArticleBody)
 
-	createOutput := execute(application, "", "article", "new", "--data-dir", fixture.dataDir,
+	createOutput := execute(application, "", "article", "new", "--data-dir", fixture.dataDir, "--as", "writer",
 		"--title", "命令行文章", "--body", bodyPath, "--json")
 	if createOutput.exit != ExitSuccess || createOutput.stderr != "" {
 		t.Fatalf("create draft = %#v", createOutput)
@@ -41,7 +41,7 @@ func TestArticleCLIWritesPublishesAndEditsAnArticle(t *testing.T) {
 	}
 	revision, _ := draft["updated_at"].(string)
 
-	listOutput := execute(application, "", "article", "drafts", "--data-dir", fixture.dataDir, "--json")
+	listOutput := execute(application, "", "article", "drafts", "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	var listed struct {
 		Data []map[string]any `json:"data"`
 	}
@@ -53,18 +53,18 @@ func TestArticleCLIWritesPublishesAndEditsAnArticle(t *testing.T) {
 	}
 
 	// A save that does not name the revision it was based on is refused.
-	missing := execute(application, "", "article", "save", draftID, "--data-dir", fixture.dataDir,
+	missing := execute(application, "", "article", "save", draftID, "--data-dir", fixture.dataDir, "--as", "writer",
 		"--title", "改名", "--body", bodyPath, "--json")
 	if missing.exit == ExitSuccess {
 		t.Fatalf("a replacement without a revision must fail: %#v", missing)
 	}
-	updated := execute(application, "", "article", "save", draftID, "--data-dir", fixture.dataDir,
+	updated := execute(application, "", "article", "save", draftID, "--data-dir", fixture.dataDir, "--as", "writer",
 		"--title", "改过的标题", "--body", bodyPath, "--expected-updated-at", revision, "--json")
 	if updated.exit != ExitSuccess {
 		t.Fatalf("update = %#v", updated)
 	}
 
-	published := execute(application, "", "article", "publish", draftID, "--data-dir", fixture.dataDir,
+	published := execute(application, "", "article", "publish", draftID, "--data-dir", fixture.dataDir, "--as", "writer",
 		"--idempotency-key", "cli-article-001", "--json")
 	if published.exit != ExitSuccess || published.stderr != "" {
 		t.Fatalf("publish = %#v", published)
@@ -76,20 +76,20 @@ func TestArticleCLIWritesPublishesAndEditsAnArticle(t *testing.T) {
 	}
 
 	// A retry replays rather than publishing twice.
-	replay := execute(application, "", "article", "publish", draftID, "--data-dir", fixture.dataDir,
+	replay := execute(application, "", "article", "publish", draftID, "--data-dir", fixture.dataDir, "--as", "writer",
 		"--idempotency-key", "cli-article-001", "--json")
 	if replay.exit != ExitSuccess || commandData(t, replay)["id"] != postID {
 		t.Fatalf("replay = %#v", replay)
 	}
 
 	// It reads back through the ordinary post surface.
-	got := execute(application, "", "post", "get", postID, "--data-dir", fixture.dataDir, "--json")
+	got := execute(application, "", "post", "get", postID, "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if got.exit != ExitSuccess || commandData(t, got)["kind"] != "article" {
 		t.Fatalf("post get = %#v", got)
 	}
 
 	// Editing opens a working copy that names the article.
-	editing := execute(application, "", "article", "edit", postID, "--data-dir", fixture.dataDir, "--json")
+	editing := execute(application, "", "article", "edit", postID, "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if editing.exit != ExitSuccess {
 		t.Fatalf("edit = %#v", editing)
 	}
@@ -103,14 +103,14 @@ func TestArticleCLIRefusesAnEmptyDraftAndReportsItOnStderr(t *testing.T) {
 	application := momentTestApplication()
 	bodyPath := writeArticleBodyFile(t, `{"schema_version":1,"type":"doc","content":[]}`)
 
-	created := execute(application, "", "article", "new", "--data-dir", fixture.dataDir,
+	created := execute(application, "", "article", "new", "--data-dir", fixture.dataDir, "--as", "writer",
 		"--body", bodyPath, "--json")
 	if created.exit != ExitSuccess {
 		t.Fatalf("an empty draft must be saveable: %#v", created)
 	}
 	draftID, _ := commandData(t, created)["id"].(string)
 
-	refused := execute(application, "", "article", "publish", draftID, "--data-dir", fixture.dataDir, "--json")
+	refused := execute(application, "", "article", "publish", draftID, "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if refused.exit == ExitSuccess {
 		t.Fatalf("an empty draft must not publish: %#v", refused)
 	}
@@ -130,7 +130,7 @@ func TestArticleCLIRefusesAnEmptyDraftAndReportsItOnStderr(t *testing.T) {
 func TestArticleCLIReadsABodyFromStandardInput(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()
-	created := execute(application, cliArticleBody, "article", "new", "--data-dir", fixture.dataDir,
+	created := execute(application, cliArticleBody, "article", "new", "--data-dir", fixture.dataDir, "--as", "writer",
 		"--title", "管道进来的", "--body", "-", "--json")
 	if created.exit != ExitSuccess {
 		t.Fatalf("stdin body = %#v", created)
@@ -175,20 +175,20 @@ func TestArticleRebuildRepairsDerivedValuesWithoutMarkingAnArticleEdited(t *test
 	application := momentTestApplication()
 	bodyPath := writeArticleBodyFile(t, cliArticleBody)
 
-	created := execute(application, "", "article", "new", "--data-dir", fixture.dataDir,
+	created := execute(application, "", "article", "new", "--data-dir", fixture.dataDir, "--as", "writer",
 		"--title", "要修的文章", "--body", bodyPath, "--json")
 	if created.exit != ExitSuccess {
 		t.Fatalf("create = %#v", created)
 	}
 	draftID, _ := commandData(t, created)["id"].(string)
-	published := execute(application, "", "article", "publish", draftID, "--data-dir", fixture.dataDir, "--json")
+	published := execute(application, "", "article", "publish", draftID, "--data-dir", fixture.dataDir, "--as", "writer", "--json")
 	if published.exit != ExitSuccess {
 		t.Fatalf("publish = %#v", published)
 	}
 	postID, _ := commandData(t, published)["id"].(string)
 
 	// A site that was just written has nothing to repair.
-	clean := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--dry-run", "--json")
+	clean := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--as", "writer", "--dry-run", "--json")
 	if clean.exit != ExitSuccess || clean.stderr != "" {
 		t.Fatalf("clean inspection = %#v", clean)
 	}
@@ -207,7 +207,7 @@ func TestArticleRebuildRepairsDerivedValuesWithoutMarkingAnArticleEdited(t *test
 	}
 
 	// A dry run counts it and changes nothing.
-	dry := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--dry-run", "--json")
+	dry := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--as", "writer", "--dry-run", "--json")
 	if data := commandData(t, dry); dry.exit != ExitSuccess || data["drifted"] != float64(1) || data["rebuilt"] != float64(0) {
 		t.Fatalf("dry run = %#v", dry)
 	}
@@ -215,12 +215,12 @@ func TestArticleRebuildRepairsDerivedValuesWithoutMarkingAnArticleEdited(t *test
 		t.Fatalf("a dry run must not repair anything, excerpt = %q", got.excerpt)
 	}
 	// And without a confirmation there is no repair either.
-	refused := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--no-input", "--json")
+	refused := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--as", "writer", "--no-input", "--json")
 	if refused.exit != ExitInvalidInput {
 		t.Fatalf("an unconfirmed repair must be refused: %#v", refused)
 	}
 
-	repaired := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--yes", "--json")
+	repaired := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--as", "writer", "--yes", "--json")
 	if data := commandData(t, repaired); repaired.exit != ExitSuccess ||
 		data["drifted"] != float64(1) || data["rebuilt"] != float64(1) || data["dry_run"] != false {
 		t.Fatalf("repair = %#v", repaired)
@@ -241,7 +241,7 @@ func TestArticleRebuildRepairsDerivedValuesWithoutMarkingAnArticleEdited(t *test
 	}
 
 	// Once repaired it stays repaired.
-	again := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--dry-run", "--json")
+	again := execute(application, "", "article", "rebuild", "--data-dir", fixture.dataDir, "--as", "writer", "--dry-run", "--json")
 	if data := commandData(t, again); again.exit != ExitSuccess || data["drifted"] != float64(0) {
 		t.Fatalf("second inspection = %#v", again)
 	}

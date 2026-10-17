@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"testing"
 
 	"github.com/moment/moment/internal/app"
@@ -37,7 +36,7 @@ func articleTimelineIDs(t *testing.T, db *Database, query app.TimelineQuery) []s
 	t.Helper()
 	var ids []string
 	if err := withPostStore(t, db, false, func(store postStore) error {
-		entries, err := store.ListEntries(context.Background(), query, 20)
+		entries, err := store.ListEntries(testAccountContext(), query, 20)
 		if err != nil {
 			return err
 		}
@@ -56,7 +55,7 @@ func TestTimelineCarriesBothKindsAndCanBeNarrowedToOne(t *testing.T) {
 	db, _ := openTestDatabase(t, Options{})
 	publishArticleFixture(t, db, "文章标题", "文章正文")
 
-	owner := app.TimelineQuery{Viewer: app.OwnerViewer()}
+	owner := app.TimelineQuery{Viewer: app.AccountViewer(testAccountID)}
 	if ids := articleTimelineIDs(t, db, owner); !equalStrings(ids, []string{articleEntryID, momentEntryID}) {
 		t.Fatalf("both kinds share one timeline, newest first: %v", ids)
 	}
@@ -77,7 +76,7 @@ func TestArticleIsAPostEverywhereAPostIsRead(t *testing.T) {
 	id := publishArticleFixture(t, db, "读得到的文章", "正文")
 
 	if err := withPostStore(t, db, false, func(store postStore) error {
-		entry, found, err := store.EntryByID(context.Background(), id)
+		entry, found, err := store.EntryByID(testAccountContext(), id)
 		if err != nil || !found {
 			t.Fatalf("an article must be readable by id: found=%v err=%v", found, err)
 		}
@@ -91,10 +90,10 @@ func TestArticleIsAPostEverywhereAPostIsRead(t *testing.T) {
 
 	// Commented on, pinned, reposted, deleted: all of it works on an article.
 	var visibility domain.Visibility
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
 		found := false
 		var err error
-		visibility, found, err = commentStore{queries: queries}.EntryVisibility(context.Background(), id)
+		visibility, found, err = commentStore{queries: queries}.EntryVisibility(testAccountContext(), id)
 		if !found {
 			t.Fatal("an article must be a valid comment target")
 		}
@@ -110,7 +109,7 @@ func TestArticleIsAPostEverywhereAPostIsRead(t *testing.T) {
 
 	if err := withPostStore(t, db, true, func(store postStore) error {
 		at := domain.TimeFromMillis(9_000)
-		changed, err := store.SetEntryRepostedAt(context.Background(), id, &at, at)
+		changed, err := store.SetEntryRepostedAt(testAccountContext(), id, &at, at)
 		if err != nil || !changed {
 			t.Fatalf("an article must be repostable: changed=%v err=%v", changed, err)
 		}
@@ -120,7 +119,7 @@ func TestArticleIsAPostEverywhereAPostIsRead(t *testing.T) {
 	}
 
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		deleted, err := store.DeleteEntry(context.Background(), id)
+		deleted, err := store.DeleteEntry(testAccountContext(), id)
 		if err != nil || !deleted {
 			t.Fatalf("an article must be deletable: deleted=%v err=%v", deleted, err)
 		}
@@ -129,8 +128,8 @@ func TestArticleIsAPostEverywhereAPostIsRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	var remaining int
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
-		return queries.QueryRowContext(context.Background(),
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
+		return queries.QueryRowContext(testAccountContext(),
 			`SELECT count(*) FROM entry_article WHERE entry_id = ?`, articleEntryID).Scan(&remaining)
 	}); err != nil {
 		t.Fatal(err)
@@ -154,7 +153,7 @@ func TestArticleCannotBeEditedThroughTheMarkdownPath(t *testing.T) {
 			Visibility: domain.VisibilityEveryone,
 			CreatedAt:  domain.TimeFromMillis(1), UpdatedAt: domain.TimeFromMillis(2), PublishedAt: domain.TimeFromMillis(1),
 		}
-		changed, err := store.UpdateEntry(context.Background(), entry, "偷偷塞进来")
+		changed, err := store.UpdateEntry(testAccountContext(), entry, "偷偷塞进来")
 		if err != nil {
 			return err
 		}
@@ -178,9 +177,9 @@ func TestArticlesAreSearchableByTitleAndByBody(t *testing.T) {
 	}
 	for _, term := range []string{"荔枝", "妃子笑"} {
 		var hits int
-		if err := search.Read(context.Background(), func(store app.SearchStore) error {
-			records, readErr := store.SearchEntries(context.Background(), app.SearchRepositoryQuery{
-				Mode: app.SearchModeLike, QueryValue: "%" + term + "%", Viewer: app.OwnerViewer(),
+		if err := search.Read(testAccountContext(), func(store app.SearchStore) error {
+			records, readErr := store.SearchEntries(testAccountContext(), app.SearchRepositoryQuery{
+				Mode: app.SearchModeLike, QueryValue: "%" + term + "%", Viewer: app.AccountViewer(testAccountID),
 			}, 10)
 			hits = len(records)
 			return readErr

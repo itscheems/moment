@@ -56,14 +56,14 @@ func (s stubArchiveExporter) Export(context.Context, io.Writer) (archive.Summary
 
 type stubImportInspector struct{ t *testing.T }
 
-func (s stubImportInspector) Inspect(context.Context, io.Reader, uint64) (archive.Inspection, error) {
+func (s stubImportInspector) Inspect(context.Context, io.Reader, archive.Authorization) (archive.Inspection, error) {
 	s.t.Fatal("import Inspect reached by an unapproved account")
 	return archive.Inspection{}, nil
 }
 
 type stubImportCommitter struct{ t *testing.T }
 
-func (s stubImportCommitter) Commit(context.Context, string, uint64) (archive.CommitResult, error) {
+func (s stubImportCommitter) Commit(context.Context, string, archive.Authorization) (archive.CommitResult, error) {
 	s.t.Fatal("import Commit reached by an unapproved account")
 	return archive.CommitResult{}, nil
 }
@@ -109,6 +109,7 @@ func newFullEngineFixture(t *testing.T) fullEngineFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	t.Cleanup(func() { _ = database.Close() })
 
 	now := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
@@ -118,7 +119,7 @@ func newFullEngineFixture(t *testing.T) fullEngineFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := posts.Create(context.Background(), app.CreatePostInput{ContentMD: "comment host"}); err != nil {
+	if _, err := posts.Create(fixtureContentContext(t, testAccounts(t, database, runtimeState)), app.CreatePostInput{ContentMD: "comment host"}); err != nil {
 		t.Fatal(err)
 	}
 	siteRepository, _ := sqlitestore.NewSiteRepository(database, runtimeState.Locks)
@@ -158,7 +159,7 @@ func newFullEngineFixture(t *testing.T) fullEngineFixture {
 	provider := newStubProvider()
 	engine, err := New(Config{
 		Assets:          testAssets(),
-		SessionSigner:       manager,
+		SessionSigner:   manager,
 		Accounts:        accounts,
 		OAuthProviders:  oauth.NewRegistry(provider),
 		SiteSettings:    site,
@@ -357,7 +358,7 @@ func TestForgedSessionCookieIsRefused(t *testing.T) {
 	fixture := newFullEngineFixture(t)
 	session, _, _ := fixture.signInPending(t)
 
-	owner, err := fixture.accounts.OwnerAccount(context.Background())
+	owner, err := fixture.accounts.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -330,12 +330,12 @@ LIMIT ?`, limit+1)
 // first two, which are counts of something that should be exactly one. A
 // healthy site reads 1, 1, 0, 0, 0, 0.
 type DiagnosticAccounts struct {
-	Owners            int
-	OwnerResolves     int
-	OrphanIdentities  int
-	OrphanSessions    int
-	OrphanCommentRefs int
-	ReservedUsernames []string
+	ActiveAdministrators int
+	ProfileResolves      int
+	OrphanIdentities     int
+	OrphanSessions       int
+	OrphanCommentRefs    int
+	ReservedUsernames    []string
 }
 
 // Accounts reports account integrity for diagnostics.
@@ -346,8 +346,8 @@ func (database *DiagnosticDatabase) Accounts(ctx context.Context, reserved func(
 			query  string
 			target *int
 		}{
-			{`SELECT count(*) FROM users WHERE role = 'owner' AND status = 'active'`, &value.Owners},
-			{`SELECT count(*) FROM site_settings AS site JOIN users AS account ON account.id = site.owner_id WHERE site.id = 1`, &value.OwnerResolves},
+			{`SELECT count(*) FROM users WHERE role = 'admin' AND status = 'active'`, &value.ActiveAdministrators},
+			{`SELECT count(*) FROM site_settings AS site JOIN users AS account ON account.id = site.profile_user_id WHERE site.id = 1`, &value.ProfileResolves},
 			{`SELECT count(*) FROM identities WHERE user_id NOT IN (SELECT id FROM users)`, &value.OrphanIdentities},
 			{`SELECT count(*) FROM sessions WHERE user_id NOT IN (SELECT id FROM users)`, &value.OrphanSessions},
 			// author_user_id deliberately carries no foreign key, so this is

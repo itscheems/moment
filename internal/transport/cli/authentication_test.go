@@ -131,7 +131,16 @@ func initializeTestAccountCredential(ctx context.Context, state *runtimefs.Runti
 	if err != nil {
 		return credential, err
 	}
-	account, err := accounts.OwnerAccount(ctx)
+	users, err := accounts.List(ctx)
+	if err != nil {
+		return credential, err
+	}
+	if len(users) == 0 {
+		if _, err := accounts.InitializeSiteAccount(ctx, "writer"); err != nil {
+			return credential, err
+		}
+	}
+	account, err := accounts.ProfileAccount(ctx)
 	if err != nil {
 		return credential, err
 	}

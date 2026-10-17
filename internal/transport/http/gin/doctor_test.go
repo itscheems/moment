@@ -27,11 +27,12 @@ func TestDoctorHTTPSummarySessionSignerStrictInputAndRedaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	defer func() { _ = database.Close() }()
 	if err := database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
 		_, writeErr := queries.ExecContext(context.Background(), `INSERT INTO entries
-(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1, 1, 'CANARY_PRIVATE_POST_BODY')`)
+(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1, 1, 'CANARY_PRIVATE_POST_BODY', '0123456789abcdef0123456789abcdef')`)
 		return writeErr
 	}); err != nil {
 		t.Fatal(err)

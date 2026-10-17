@@ -465,8 +465,8 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 		return Counts{}, err
 	}
 	authors := map[string]domain.User{"owner": {
-		ID: settings.OwnerID, Username: settings.Username, DisplayName: settings.DisplayName,
-		Role: domain.UserRoleOwner, Status: domain.AccountActive,
+		ID: settings.ProfileUserID, Username: settings.Username, DisplayName: settings.DisplayName,
+		Role: domain.UserRoleAdmin, Status: domain.AccountActive,
 	}}
 
 	// Members join in the order they joined. Registration is open while the
@@ -809,11 +809,15 @@ func newShowcaseBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runti
 	if err != nil {
 		return nil, err
 	}
+	actor, err := accounts.ProfileAccount(context.Background())
+	if err != nil {
+		return nil, err
+	}
 	return &fixtureBuilder{
 		target: target, runtime: runtimeState, database: database, recipe: recipe,
 		seed: seed, base: anchor, posts: posts, comments: comments, site: site,
 		media: mediaStore, staged: staged, progress: progress,
-		accounts: accounts, clock: clock, anchor: anchor, zone: zone,
+		accounts: accounts, clock: clock, anchor: anchor, zone: zone, actor: actor,
 	}, nil
 }
 

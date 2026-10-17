@@ -19,7 +19,7 @@ import (
 // Authentication material and deployment-derived request data never belong in
 // this value.
 type SiteSettings struct {
-	OwnerID         string  `json:"owner_id"`
+	ProfileUserID   string  `json:"profile_user_id"`
 	Username        string  `json:"username"`
 	DisplayName     string  `json:"display_name"`
 	Title           string  `json:"title"`
@@ -46,9 +46,9 @@ type SiteSettings struct {
 }
 
 // MentionSuggestion is the bounded public identity projection used by
-// composers. OwnerID remains stable when the editable username changes.
+// composers. ProfileUserID remains stable when the editable username changes.
 type MentionSuggestion struct {
-	OwnerID       string  `json:"owner_id"`
+	UserID        string  `json:"user_id"`
 	Username      string  `json:"username"`
 	DisplayName   string  `json:"display_name"`
 	AvatarMediaID *string `json:"avatar_media_id"`
@@ -190,7 +190,6 @@ func (service *SiteService) Get(ctx context.Context) (SiteSettings, error) {
 		if err != nil {
 			return err
 		}
-		settings = withLegacyIdentityDefaults(settings)
 		return service.validateStored(ctx, store, settings)
 	})
 	if err != nil {
@@ -222,7 +221,6 @@ func (service *SiteService) Pin(ctx context.Context, id domain.ID) (SiteSettings
 		if err != nil {
 			return err
 		}
-		current = withLegacyIdentityDefaults(current)
 		if err := service.validateStored(ctx, store, current); err != nil {
 			return err
 		}
@@ -258,7 +256,6 @@ func (service *SiteService) Unpin(ctx context.Context, expected ...domain.ID) (S
 		if err != nil {
 			return err
 		}
-		current = withLegacyIdentityDefaults(current)
 		if err := service.validateStored(ctx, store, current); err != nil {
 			return err
 		}
@@ -303,7 +300,6 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 		if err != nil {
 			return err
 		}
-		current = withLegacyIdentityDefaults(current)
 		if err := service.validateStored(ctx, store, current); err != nil {
 			return err
 		}
@@ -426,7 +422,7 @@ func (service *SiteService) validateStored(ctx context.Context, store SiteStore,
 	// stored row against a list that grew, or against a rule tightened after
 	// the row was written, would turn an owner's own settings page into the
 	// screen that refuses to load and refuses to let them fix it.
-	if !validOwnerID(settings.OwnerID) || domain.ValidateStoredUsername(settings.Username) != nil || strings.TrimSpace(settings.DisplayName) != settings.DisplayName || settings.DisplayName == "" || len([]rune(settings.DisplayName)) > domain.MaxDisplayNameLength ||
+	if !validProfileUserID(settings.ProfileUserID) || domain.ValidateStoredUsername(settings.Username) != nil || strings.TrimSpace(settings.DisplayName) != settings.DisplayName || settings.DisplayName == "" || len([]rune(settings.DisplayName)) > domain.MaxDisplayNameLength ||
 		strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > domain.MaxBioLength {
 		return domain.NewError(domain.CodeDataIntegrityFailed, "stored site identity text is invalid", nil)
 	}
@@ -516,7 +512,7 @@ func applySiteUpdate(current SiteSettings, update SiteUpdate) SiteSettings {
 	return next
 }
 
-func validOwnerID(value string) bool {
+func validProfileUserID(value string) bool {
 	if len(value) != 32 {
 		return false
 	}
@@ -526,22 +522,6 @@ func validOwnerID(value string) bool {
 		}
 	}
 	return true
-}
-
-// withLegacyIdentityDefaults keeps older in-process adapters and pre-migration
-// archives readable while SQLite's migration supplies a random immutable ID
-// for every real instance. New persistence always writes all three fields.
-func withLegacyIdentityDefaults(settings SiteSettings) SiteSettings {
-	if settings.OwnerID != "" || settings.Username != "" || settings.DisplayName != "" {
-		return settings
-	}
-	settings.OwnerID = "00000000000000000000000000000000"
-	settings.Username = "owner"
-	settings.DisplayName = strings.TrimSpace(settings.Title)
-	if settings.DisplayName == "" {
-		settings.DisplayName = "Moment"
-	}
-	return settings
 }
 
 func validateTimezone(value string) error {

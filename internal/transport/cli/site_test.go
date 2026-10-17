@@ -33,6 +33,7 @@ func initializeSiteCLIData(t *testing.T) (*runtimefs.Runtime, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccountService(t, database, runtimeState)
 	if err := database.Close(); err != nil {
 		t.Fatal(err)
 	}

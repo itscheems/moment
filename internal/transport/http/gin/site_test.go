@@ -100,7 +100,7 @@ func newSiteHTTPFixture(t *testing.T) (authenticationTestFixture, *httpSiteTrans
 		t.Fatal(err)
 	}
 	transactions := &httpSiteTransactions{
-		settings: app.SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval},
+		settings: app.SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval},
 		media:    map[string]bool{httpAvatarID: true},
 	}
 	service, err := app.NewSiteService(transactions, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
@@ -109,7 +109,7 @@ func newSiteHTTPFixture(t *testing.T) (authenticationTestFixture, *httpSiteTrans
 	}
 	engine, err := New(Config{
 		Assets:                testAssets(),
-		SessionSigner:             manager,
+		SessionSigner:         manager,
 		Accounts:              testAccountsForRuntime(t, runtimeState),
 		SiteSettings:          service,
 		InstanceID:            runtimeState.Instance.ID,
@@ -230,7 +230,7 @@ func TestSitePatchStrictJSONCSRFAndCancellation(t *testing.T) {
 }
 
 func TestSiteRoutesRequireAuthWhenConfigured(t *testing.T) {
-	transactions := &httpSiteTransactions{settings: app.SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}}
+	transactions := &httpSiteTransactions{settings: app.SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true}}
 	service, err := app.NewSiteService(transactions, app.SiteOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +270,7 @@ func TestOwnerSitePatchAnswersHandleRefusalsLikeTheAccountRoute(t *testing.T) {
 	if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "USERNAME_RESERVED" {
 		t.Fatalf("reserved status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if transactions.settings.Username != "" {
+	if transactions.settings.Username != "writer" {
 		t.Fatalf("reserved handle persisted: %#v", transactions.settings)
 	}
 

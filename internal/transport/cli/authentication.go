@@ -144,11 +144,7 @@ func runAuthenticationInit(ctx context.Context, invocation Invocation, input Com
 		if err != nil {
 			return err
 		}
-		account, err := accounts.OwnerAccount(ctx)
-		if err != nil {
-			return err
-		}
-		account, err = accounts.UpdateProfile(ctx, account.ID, app.ProfileUpdate{Username: &username})
+		account, err := accounts.InitializeSiteAccount(ctx, username)
 		if err != nil {
 			return err
 		}

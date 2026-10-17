@@ -1,7 +1,6 @@
 package sqlite
 
 import (
-	"context"
 	"testing"
 
 	"github.com/moment/moment/internal/domain"
@@ -17,7 +16,7 @@ func mediaVisibility(t *testing.T, db *Database, mediaID string) domain.Visibili
 	if err != nil {
 		t.Fatal(err)
 	}
-	visibility, err := repository.Visibility(context.Background(), id)
+	visibility, err := repository.Visibility(testAccountContext(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +26,8 @@ func mediaVisibility(t *testing.T, db *Database, mediaID string) domain.Visibili
 func mediaIsReferenced(t *testing.T, db *Database, mediaID string) bool {
 	t.Helper()
 	var referenced int
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
-		return queries.QueryRowContext(context.Background(),
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
+		return queries.QueryRowContext(testAccountContext(),
 			`SELECT EXISTS (SELECT 1 FROM media WHERE media.id = ? AND `+mediaReferencedSQL+`)`,
 			mediaID).Scan(&referenced)
 	}); err != nil {
@@ -117,7 +116,7 @@ func TestDraftPicturesAreKeptAliveButNeverPublic(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		return store.InsertArticleDraft(context.Background(), recordFor(draftID, draft))
+		return store.InsertArticleDraft(testAccountContext(), recordFor(draftID, draft))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +132,7 @@ func TestDraftPicturesAreKeptAliveButNeverPublic(t *testing.T) {
 
 	// Once the draft is gone the files are ordinary orphans again.
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		_, err := store.DeleteArticleDraft(context.Background(), draftID)
+		_, err := store.DeleteArticleDraft(testAccountContext(), draftID)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -173,7 +172,7 @@ func TestAPictureSharedByADraftAndAPublicArticleStaysPublic(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := withPostStore(t, db, true, func(store postStore) error {
-		return store.InsertArticleDraft(context.Background(), recordFor(draftID, draft))
+		return store.InsertArticleDraft(testAccountContext(), recordFor(draftID, draft))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -203,9 +202,9 @@ func TestEntryMediaIDsIncludesTheArticleCover(t *testing.T) {
 		t.Fatal(err)
 	}
 	var ids []domain.ID
-	if err := db.ReadTx(context.Background(), func(queries Queries) error {
+	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
 		var readErr error
-		ids, readErr = mediaReferenceStore{queries: queries}.EntryMediaIDs(context.Background(), entryID)
+		ids, readErr = mediaReferenceStore{queries: queries}.EntryMediaIDs(testAccountContext(), entryID)
 		return readErr
 	}); err != nil {
 		t.Fatal(err)

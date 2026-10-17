@@ -37,6 +37,7 @@ type fixtureBuilder struct {
 
 	// The showcase alone writes accounts, dates everything from a clock it
 	// sets by hand, and reports what it built under stable keys.
+	actor    domain.User
 	accounts *app.AccountService
 	clock    *settableClock
 	anchor   time.Time
@@ -54,6 +55,27 @@ func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtim
 		return nil, err
 	}
 	siteRepository, err := sqlitestore.NewDevelopmentSiteRepository(database, runtimeState.Root, held)
+	if err != nil {
+		return nil, err
+	}
+	accountRepository, err := sqlitestore.NewDevelopmentAccountRepository(database, runtimeState.Root, held)
+	if err != nil {
+		return nil, err
+	}
+	bootstrapAt := deterministicBase(recipe.Name, seed)
+	if recipe.Name == ShowcaseScenarioName && !anchor.IsZero() {
+		bootstrapAt = anchor.UTC().Truncate(time.Minute)
+	}
+	bootstrapID := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%d|initial-account", RecipeVersion, recipe.Name, seed)))
+	accounts, err := app.NewAccountService(accountRepository, app.WithAccountClock(func() time.Time { return bootstrapAt }), app.WithAccountIDGenerator(func() (string, error) { return hex.EncodeToString(bootstrapID[:16]), nil }))
+	if err != nil {
+		return nil, err
+	}
+	username := "writer"
+	if recipe.Name == ShowcaseScenarioName {
+		username = showcaseOwnerUsername
+	}
+	actor, err := accounts.InitializeSiteAccount(context.Background(), username)
 	if err != nil {
 		return nil, err
 	}
@@ -90,11 +112,12 @@ func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtim
 	return &fixtureBuilder{
 		target: target, runtime: runtimeState, database: database, recipe: recipe,
 		seed: seed, base: base, posts: posts, comments: comments, site: site,
-		media: mediaStore, staged: staged, progress: progress,
+		media: mediaStore, staged: staged, progress: progress, actor: actor, accounts: accounts,
 	}, nil
 }
 
 func (builder *fixtureBuilder) build(ctx context.Context) (Counts, error) {
+	ctx = app.WithContentActor(ctx, builder.actor)
 	if builder.recipe.Name == ShowcaseScenarioName {
 		return builder.buildShowcase(ctx)
 	}
@@ -216,10 +239,10 @@ func (builder *fixtureBuilder) createComments(ctx context.Context, entryID domai
 			return index, settingsErr
 		}
 		input.Author = domain.User{
-			ID:          settings.OwnerID,
+			ID:          settings.ProfileUserID,
 			Username:    settings.Username,
 			DisplayName: settings.DisplayName,
-			Role:        domain.UserRoleOwner,
+			Role:        domain.UserRoleAdmin,
 			Status:      domain.AccountActive,
 		}
 

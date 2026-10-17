@@ -16,11 +16,11 @@ import (
 
 func activeCredentialAccount(t *testing.T, service *app.AccountService, name string) domain.User {
 	t.Helper()
-	outcome, err := service.SignIn(context.Background(), app.ExternalIdentity{Provider: "github", ProviderUserID: name, DisplayName: name})
+	outcome, err := service.SignIn(testAccountContext(), app.ExternalIdentity{Provider: "github", ProviderUserID: name, DisplayName: name})
 	if err != nil {
 		t.Fatal(err)
 	}
-	user, err := service.SetStatus(context.Background(), outcome.User.ID, domain.AccountActive)
+	user, err := service.SetStatus(testAccountContext(), outcome.User.ID, domain.AccountActive)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func activeCredentialAccount(t *testing.T, service *app.AccountService, name str
 
 func TestAccountCredentialsSeparatePasswordsAndTokens(t *testing.T) {
 	repository, accounts := newAccountFixture(t)
-	ctx := context.Background()
+	ctx := testAccountContext()
 	alice := activeCredentialAccount(t, accounts, "alice")
 	bob := activeCredentialAccount(t, accounts, "bob")
 	for _, account := range []domain.User{alice, bob} {
@@ -90,7 +90,7 @@ func TestAccountCredentialsSeparatePasswordsAndTokens(t *testing.T) {
 
 func TestRevokingOneAccountTokenDoesNotAffectOtherCredentials(t *testing.T) {
 	_, accounts := newAccountFixture(t)
-	ctx := context.Background()
+	ctx := testAccountContext()
 	alice := activeCredentialAccount(t, accounts, "alice")
 	bob := activeCredentialAccount(t, accounts, "bob")
 	first, err := accounts.CreateAPIToken(ctx, alice.ID, "first")
@@ -123,7 +123,7 @@ func TestRevokingOneAccountTokenDoesNotAffectOtherCredentials(t *testing.T) {
 
 func TestPasswordReplacementRevokesOnlyThatAccountsSessions(t *testing.T) {
 	_, accounts := newAccountFixture(t)
-	ctx := context.Background()
+	ctx := testAccountContext()
 	alice := activeCredentialAccount(t, accounts, "alice")
 	bob := activeCredentialAccount(t, accounts, "bob")
 	aliceSession := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -155,7 +155,7 @@ func TestPasswordReplacementRevokesOnlyThatAccountsSessions(t *testing.T) {
 
 func TestSuspensionPermanentlyRevokesAccountTokens(t *testing.T) {
 	_, accounts := newAccountFixture(t)
-	ctx := context.Background()
+	ctx := testAccountContext()
 	alice := activeCredentialAccount(t, accounts, "alice")
 	token, err := accounts.CreateAPIToken(ctx, alice.ID, "device")
 	if err != nil {
@@ -193,18 +193,18 @@ func TestCredentialVerificationRefusesUnreadableDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := accounts.VerifyPassword(context.Background(), "alice", "a-password"); !errors.Is(err, failure) {
+	if _, err := accounts.VerifyPassword(testAccountContext(), "alice", "a-password"); !errors.Is(err, failure) {
 		t.Fatalf("password swallowed storage failure: %v", err)
 	}
 	value := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
-	if _, err := accounts.ResolveAPIToken(context.Background(), value); !errors.Is(err, failure) {
+	if _, err := accounts.ResolveAPIToken(testAccountContext(), value); !errors.Is(err, failure) {
 		t.Fatalf("token swallowed storage failure: %v", err)
 	}
 }
 
 func TestPendingAccountsCannotMintTokensAndInvalidPasswordsDoNotReplaceCredentials(t *testing.T) {
 	_, accounts := newAccountFixture(t)
-	ctx := context.Background()
+	ctx := testAccountContext()
 	pending, err := accounts.SignIn(ctx, app.ExternalIdentity{Provider: "github", ProviderUserID: "pending", DisplayName: "pending"})
 	if err != nil {
 		t.Fatal(err)

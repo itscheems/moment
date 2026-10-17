@@ -20,43 +20,17 @@ func ContentActor(ctx context.Context) (domain.User, bool) {
 	return user, ok
 }
 
-// ContentAuthorStore resolves the original local author for trusted direct
-// calls and batches public identity projections for reads.
+// ContentAuthorStore batches real account identity projections for reads.
 type ContentAuthorStore interface {
-	PrimaryAuthorID(context.Context) (string, error)
 	AuthorIdentities(context.Context, []string) (map[string]CommentAuthorIdentity, error)
 }
 
-func contentActorID(ctx context.Context, store any) (string, error) {
-	if user, present := ContentActor(ctx); present {
-		if domain.ValidateUserID(user.ID) != nil || !user.CanWritePublicContent() {
-			return "", domain.NewError(domain.CodeUnauthorized, "an active account identity is required", nil)
-		}
-		return user.ID, nil
+func contentActorID(ctx context.Context, _ any) (string, error) {
+	user, present := ContentActor(ctx)
+	if !present || domain.ValidateUserID(user.ID) != nil || !user.CanWritePublicContent() {
+		return "", domain.NewError(domain.CodeUnauthorized, "an active account identity is required", nil)
 	}
-	// Direct application calls retain their original account, not whichever
-	// account happens to have an administrator role later.
-	if authors, ok := store.(ContentAuthorStore); ok {
-		return authors.PrimaryAuthorID(ctx)
-	}
-	return "", nil
-}
-
-func resolvedViewer(ctx context.Context, store any, viewer Viewer) (Viewer, error) {
-	if viewer.owner && viewer.userID == "" {
-		if user, present := ContentActor(ctx); present {
-			id, err := contentActorID(ctx, store)
-			viewer.userID = id
-			viewer.owner = user.IsOwner()
-			return viewer, err
-		}
-		if authors, ok := store.(ContentAuthorStore); ok {
-			id, err := authors.PrimaryAuthorID(ctx)
-			viewer.userID = id
-			return viewer, err
-		}
-	}
-	return viewer, nil
+	return user.ID, nil
 }
 
 func requireContentAuthor(ctx context.Context, store any, authorID string) error {
@@ -80,7 +54,7 @@ func requireContentRemoval(ctx context.Context, store any, entry domain.Entry) e
 	if id == entry.AuthorUserID {
 		return nil
 	}
-	if user, present := ContentActor(ctx); present && user.IsOwner() &&
+	if user, present := ContentActor(ctx); present && user.IsAdmin() &&
 		entry.Visibility == domain.VisibilityEveryone && entry.PublicationState != "unpublished" {
 		return nil
 	}

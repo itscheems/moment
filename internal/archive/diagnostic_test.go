@@ -16,12 +16,19 @@ import (
 
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/runtimefs"
+	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
 )
 
 func TestDiagnosePersistentStateClassifiesBoundedRedactedStaging(t *testing.T) {
 	fixture := newExportFixture(t, false)
 	runtimeState := fixture.runtime
 	archiveBytes := exportFixtureBytes(t, fixture)
+	if err := fixture.database.WriteTx(context.Background(), func(q sqlitestore.Queries) error {
+		_, err := q.ExecContext(context.Background(), `DELETE FROM sessions`)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := fixture.database.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +70,7 @@ func TestDiagnosePersistentStateClassifiesBoundedRedactedStaging(t *testing.T) {
 		}
 		if err := writeStagingMetadata(stageRoot, stagingMetadata{
 			TokenHash: strings.Repeat("a", 64), ArchiveSHA: shaHex(archiveBytes), InstanceID: runtimeState.Instance.ID,
-			SessionEpoch: 1, GenerationID: test.name, ExpiresAtMS: test.expires.UnixMilli(), State: test.state,
+			Authorization: testAuthorization(1), GenerationID: test.name, ExpiresAtMS: test.expires.UnixMilli(), State: test.state,
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -74,7 +81,7 @@ func TestDiagnosePersistentStateClassifiesBoundedRedactedStaging(t *testing.T) {
 	}
 	if err := writeStagingMetadata(invalidRoot, stagingMetadata{
 		TokenHash: "CANARY_TOKEN_HASH", ArchiveSHA: strings.Repeat("b", 64), InstanceID: runtimeState.Instance.ID,
-		SessionEpoch: 1, GenerationID: "different-generation", ExpiresAtMS: now.Add(time.Hour).UnixMilli(), State: stagingReady,
+		Authorization: testAuthorization(1), GenerationID: "different-generation", ExpiresAtMS: now.Add(time.Hour).UnixMilli(), State: stagingReady,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +174,7 @@ func TestDiagnoseStagingRejectsTruncatedOrHashMismatchedPayloadsReadOnly(t *test
 		t.Run(test.name, func(t *testing.T) {
 			fixture := newExportFixture(t, test.full)
 			now := time.Date(2026, 8, 11, 4, 0, 0, 0, time.UTC)
-			inspection, err := testInspector(t, fixture.runtime.Root, nil, &now, math.MaxUint64).Inspect(context.Background(), bytes.NewReader(exportFixtureBytes(t, fixture)), 1)
+			inspection, err := testInspector(t, fixture.runtime.Root, nil, &now, math.MaxUint64).Inspect(context.Background(), bytes.NewReader(exportFixtureBytes(t, fixture)), testAuthorization(1))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -201,11 +208,11 @@ func TestDiagnoseRecoveryUsesDurableAuthorityAcrossHistory(t *testing.T) {
 		}
 		now := time.Date(2026, 8, 11, 9, 0, 0, 0, time.UTC)
 		for range 2 {
-			inspection, err := testInspector(t, fixture.runtime.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, 1)
+			inspection, err := testInspector(t, fixture.runtime.Root, nil, &now, math.MaxUint64).InspectFile(context.Background(), archivePath, Authorization{AccountID: fixtureAccountID, CredentialID: "local"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64).Commit(context.Background(), inspection.StagingToken, 1, nil); err != nil {
+			if _, err := testCommitter(t, fixture.runtime.Root, &now, math.MaxUint64).Commit(context.Background(), inspection.StagingToken, Authorization{AccountID: fixtureAccountID, CredentialID: "local"}, nil); err != nil {
 				t.Fatal(err)
 			}
 			now = now.Add(time.Minute)
@@ -255,7 +262,7 @@ func TestDiagnoseRecoveryUsesDurableAuthorityAcrossHistory(t *testing.T) {
 		}
 		if err := writeStagingMetadata(activeRoot, stagingMetadata{
 			TokenHash: strings.Repeat("a", 64), ArchiveSHA: strings.Repeat("b", 64), InstanceID: runtimeState.Instance.ID,
-			SessionEpoch: 1, GenerationID: activeID, ExpiresAtMS: now.Add(time.Hour).UnixMilli(), State: stagingCommitting,
+			Authorization: Authorization{AccountID: fixtureAccountID, CredentialID: "local"}, GenerationID: activeID, ExpiresAtMS: now.Add(time.Hour).UnixMilli(), State: stagingCommitting,
 		}); err != nil {
 			t.Fatal(err)
 		}

@@ -11,33 +11,6 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 )
 
-const hostTimezoneSentinel = "__moment_host_timezone__"
-
-func initializeSiteSettings(ctx context.Context, database *sql.DB, timezone string) error {
-	result, err := database.ExecContext(ctx, `
-UPDATE site_settings
-SET timezone = ?
-WHERE id = 1 AND timezone = ?`, timezone, hostTimezoneSentinel)
-	if err != nil {
-		return fmt.Errorf("initialize site timezone: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("inspect site timezone initialization: %w", err)
-	}
-	if changed > 1 {
-		return fmt.Errorf("initialize site timezone changed %d rows", changed)
-	}
-	var count int
-	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM site_settings WHERE id = 1`).Scan(&count); err != nil {
-		return fmt.Errorf("verify site settings singleton: %w", err)
-	}
-	if count != 1 {
-		return fmt.Errorf("%w: site settings singleton count is %d", ErrSchemaIncomplete, count)
-	}
-	return nil
-}
-
 // SiteRepository adapts SQLite and the ordinary-write maintenance boundary to
 // the site settings application ports.
 type SiteRepository struct {
@@ -168,13 +141,13 @@ func (store siteStore) SiteSettings(ctx context.Context) (app.SiteSettings, erro
 	// ever disagreeing -- and the wire shape stays exactly as it was, so no
 	// adapter above this line has to know the move happened.
 	err := store.queries.QueryRowContext(ctx, `
-SELECT site.owner_id, account.username, account.display_name, site.title, account.bio, site.timezone,
+SELECT site.profile_user_id, account.username, account.display_name, site.title, account.bio, site.timezone,
        site.public_base_url, account.avatar_media_id, account.cover_media_id, site.pinned_entry_id,
        site.comments_enabled, site.registration_mode
 FROM site_settings AS site
-JOIN users AS account ON account.id = site.owner_id
+JOIN users AS account ON account.id = site.profile_user_id
 WHERE site.id = 1`).Scan(
-		&settings.OwnerID, &settings.Username, &settings.DisplayName, &settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &coverID, &pinnedID, &comments, &registration,
+		&settings.ProfileUserID, &settings.Username, &settings.DisplayName, &settings.Title, &settings.Bio, &settings.Timezone, &publicURL, &avatarID, &coverID, &pinnedID, &comments, &registration,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return app.SiteSettings{}, domain.NewError(domain.CodeDataIntegrityFailed, "site settings singleton is missing", nil)
@@ -248,7 +221,7 @@ WHERE id = 1`,
 UPDATE users
 SET username = ?, display_name = ?, bio = ?, avatar_media_id = ?, cover_media_id = ?,
     updated_at_ms = CASE WHEN ? > 0 THEN ? ELSE updated_at_ms END
-WHERE id = (SELECT owner_id FROM site_settings WHERE id = 1)`,
+WHERE id = (SELECT profile_user_id FROM site_settings WHERE id = 1)`,
 		settings.Username, settings.DisplayName, settings.Bio, optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID),
 		settings.UpdatedAtMS, settings.UpdatedAtMS,
 	)

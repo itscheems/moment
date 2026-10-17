@@ -94,7 +94,7 @@ func newTestSiteService(t *testing.T, transactions *memorySiteTransactions, deve
 }
 
 func TestSiteDefaultsAndPartialNullableUpdates(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "Asia/Shanghai", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "Asia/Shanghai", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{testAvatarID: true, testCoverID: true}}
 	service := newTestSiteService(t, transactions, true)
 
@@ -146,7 +146,7 @@ func TestSiteDefaultsAndPartialNullableUpdates(t *testing.T) {
 }
 
 func TestSiteUpdateValidationAndAtomicRollback(t *testing.T) {
-	initial := SiteSettings{Title: "Before", Bio: "kept", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Before", Bio: "kept", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 
@@ -259,7 +259,7 @@ func TestHostTimezoneDetectionUsesIANAInputsAndFallsBack(t *testing.T) {
 }
 
 func TestSiteAcceptsSingleSegmentIANALinks(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 	for _, timezone := range []string{"GMT", "CET", "Singapore", "Turkey", "Zulu"} {
@@ -270,7 +270,7 @@ func TestSiteAcceptsSingleSegmentIANALinks(t *testing.T) {
 }
 
 func TestSiteConcurrentPartialUpdatesMergeInsideSerializedWrite(t *testing.T) {
-	initial := SiteSettings{Title: "Before", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Before", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 	title := "After"
@@ -306,7 +306,7 @@ func TestSiteConcurrentPartialUpdatesMergeInsideSerializedWrite(t *testing.T) {
 }
 
 func TestSitePinReplaceAndUnpinAreAtomicAndIdempotent(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{
 		settings: &initial,
 		media:    map[string]bool{},
@@ -361,7 +361,7 @@ func ptr(value string) *string { return &value }
 // route ever sees it, leaving the owner's own page permanently unreachable and
 // every profile_url the server emits pointing at the wrong screen.
 func TestSiteHandleWritesPassTheGateTheAccountRouteUses(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 
@@ -403,7 +403,7 @@ func TestSiteHandleWritesPassTheGateTheAccountRouteUses(t *testing.T) {
 // name carrying a newline into the column that CommentService stamps onto every
 // comment the owner writes -- an account that saves fine and can never comment.
 func TestSiteProfileTextIsNormalizedNotJustMeasured(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 
@@ -443,7 +443,7 @@ func TestSiteProfileTextIsNormalizedNotJustMeasured(t *testing.T) {
 // default forever, with no way to close registration short of editing the
 // database.
 func TestSiteRegistrationModeIsWrittenAndValidated(t *testing.T) {
-	initial := SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval}
+	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}
 	service := newTestSiteService(t, transactions, false)
 

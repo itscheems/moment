@@ -48,6 +48,7 @@ func accountFailureFixture(t *testing.T, failure error) (http.Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	testAccounts(t, database, runtimeState)
 	t.Cleanup(func() { _ = database.Close() })
 	_, err = auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
@@ -69,12 +70,12 @@ func accountFailureFixture(t *testing.T, failure error) (http.Handler, string) {
 		t.Fatal(err)
 	}
 	engine, err := New(Config{
-		Assets:    testAssets(),
+		Assets:        testAssets(),
 		SessionSigner: manager,
-		Accounts:  accounts,
-		Doctor:    reporter,
-		Readiness: func(context.Context) error { return nil },
-		RequestID: func() string { return "req_broken" },
+		Accounts:      accounts,
+		Doctor:        reporter,
+		Readiness:     func(context.Context) error { return nil },
+		RequestID:     func() string { return "req_broken" },
 	})
 	if err != nil {
 		t.Fatal(err)

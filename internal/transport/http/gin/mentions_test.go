@@ -46,12 +46,12 @@ func newMentionFixture(t *testing.T) mentionFixture {
 	}
 	accounts := testAccountsForRuntime(t, runtimeState)
 	engine, err := New(Config{
-		Assets:       testAssets(),
-		SessionSigner:    manager,
-		Accounts:     accounts,
-		SiteSettings: site,
-		Readiness:    func(context.Context) error { return nil },
-		RequestID:    func() string { return "req_mentions" },
+		Assets:        testAssets(),
+		SessionSigner: manager,
+		Accounts:      accounts,
+		SiteSettings:  site,
+		Readiness:     func(context.Context) error { return nil },
+		RequestID:     func() string { return "req_mentions" },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func mentionUsernames(t *testing.T, response *httptest.ResponseRecorder) []strin
 // returned applications would be a way to read the review queue.
 func TestMentionSuggestionsAreForApprovedAccountsOnly(t *testing.T) {
 	fixture := newMentionFixture(t)
-	owner, err := fixture.accounts.OwnerAccount(context.Background())
+	owner, err := fixture.accounts.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/archive"
 	"github.com/moment/moment/internal/auth"
 	mediastore "github.com/moment/moment/internal/media"
@@ -44,6 +45,17 @@ func newDoctorFixture(t *testing.T) doctorFixture {
 	}
 	database, err := sqlitestore.Open(context.Background(), runtimeState, sqlitestore.Options{})
 	if err != nil {
+		t.Fatal(err)
+	}
+	repo, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := app.NewAccountService(repo, app.WithAccountIDGenerator(func() (string, error) { return "0123456789abcdef0123456789abcdef", nil }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.InitializeSiteAccount(context.Background(), "writer"); err != nil {
 		t.Fatal(err)
 	}
 	if err := database.Ready(context.Background()); err != nil {
@@ -306,7 +318,7 @@ func TestDeepDoctorTreatsRealEarlyImportFailuresAsTerminalWarnings(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := inspector.Inspect(context.Background(), test.source, 1); err == nil {
+			if _, err := inspector.Inspect(context.Background(), test.source, archiveTestAuthorization(1)); err == nil {
 				t.Fatal("early import inspection unexpectedly succeeded")
 			}
 
@@ -378,8 +390,8 @@ func runDoctorWALHelper() {
 	}
 	err = database.WriteTx(ctx, func(queries sqlitestore.Queries) error {
 		_, err := queries.ExecContext(ctx, `INSERT INTO entries
-(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'wal only committed content', 1, 1, 1, 'wal only committed content')`)
+(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'wal only committed content', 1, 1, 1, 'wal only committed content', '0123456789abcdef0123456789abcdef')`)
 		return err
 	})
 	if err != nil {
@@ -462,8 +474,8 @@ INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES ('01ARZ3
 			name: "article projection drifted from its body", checkID: CheckArticleIntegrity, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
 			corrupt: func(t *testing.T, fixture doctorFixture) {
 				mutateDatabase(t, fixture.current.DatabasePath, `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD7', 'article', NULL, 1, 1, 1, '标题');
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD7', 'article', NULL, 1, 1, 1, '标题', '0123456789abcdef0123456789abcdef');
 INSERT INTO entry_article (entry_id, title, body_json, body_schema_version, cover_media_id, excerpt)
 VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD7', '标题',
   '{"schema_version":1,"type":"doc","content":[{"type":"image","attrs":{"media_id":"01ARZ3NDEKTSV4RRFFQ69G5FAY"}}]}',
@@ -474,8 +486,8 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD7', '标题',
 			name: "article body that no longer parses", checkID: CheckArticleIntegrity, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
 			corrupt: func(t *testing.T, fixture doctorFixture) {
 				mutateDatabase(t, fixture.current.DatabasePath, `
-INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD8', 'article', NULL, 1, 1, 1, '标题');
+INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD8', 'article', NULL, 1, 1, 1, '标题', '0123456789abcdef0123456789abcdef');
 INSERT INTO entry_article (entry_id, title, body_json, body_schema_version, cover_media_id, excerpt)
 VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD8', '标题', '{"schema_version":1,"type":"doc","content":[{"type":"callout"}]}', 1, NULL, '')`)
 			},
@@ -490,20 +502,20 @@ UPDATE site_settings SET pinned_entry_id = '01ARZ3NDEKTSV4RRFFQ69G5FAV' WHERE id
 		{
 			name: "FTS source drift", checkID: CheckFTSConsistency, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
 			corrupt: func(t *testing.T, fixture doctorFixture) {
-				mutateDatabase(t, fixture.current.DatabasePath, `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1, 1, 'wrong derived text')`)
+				mutateDatabase(t, fixture.current.DatabasePath, `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1, 1, 'wrong derived text', '0123456789abcdef0123456789abcdef')`)
 			},
 		},
 		{
 			name: "missing comment media original", checkID: CheckMissingMedia, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
 			corrupt: func(t *testing.T, fixture doctorFixture) {
 				sha := strings.Repeat("a", 64)
-				mutateDatabase(t, fixture.current.DatabasePath, `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'moment', 'private body', 1, 1, 1, 'private body');
+				mutateDatabase(t, fixture.current.DatabasePath, `INSERT INTO entries (id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAV', 'moment', 'private body', 1, 1, 1, 'private body', '0123456789abcdef0123456789abcdef');
 INSERT INTO media (id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms, unreferenced_since_ms)
 VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FAY', '`+sha+`', 'media/original/aa/`+sha+`.png', 'CANARY_SECRET_NAME.png', 'image/png', 1, 1, 1, 1, NULL);
-INSERT INTO comments (id, entry_id, parent_id, author_kind, author_name, content_md, created_at_ms)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', '01ARZ3NDEKTSV4RRFFQ69G5FAV', NULL, 'guest', 'Guest', 'private reply', 1);
+INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', '01ARZ3NDEKTSV4RRFFQ69G5FAV', NULL, 'Guest', 'private reply', 1);
 INSERT INTO comment_media (comment_id, media_id, position, alt_text)
 VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', '01ARZ3NDEKTSV4RRFFQ69G5FAY', 0, NULL)`)
 			},
@@ -763,8 +775,8 @@ func TestDeepDoctorClassifiesCorruptPreviewAsDerivedWarning(t *testing.T) {
 	}
 	if err := database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
 		if _, err := queries.ExecContext(context.Background(), `INSERT INTO entries
-(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'preview fixture', 1, 1, 1, 'preview fixture')`); err != nil {
+(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'preview fixture', 1, 1, 1, 'preview fixture', '0123456789abcdef0123456789abcdef')`); err != nil {
 			return err
 		}
 		if _, err := queries.ExecContext(context.Background(), `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', ?, 0, NULL)`, value.ID.String()); err != nil {
@@ -956,8 +968,8 @@ func seedReferencedMedia(t *testing.T, fixture doctorFixture) string {
 	if err == nil {
 		err = database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
 			if _, writeErr := queries.ExecContext(context.Background(), `INSERT INTO entries
-(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text)
-VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', 'moment', 'permission fixture', 1, 1, 1, 'permission fixture')`); writeErr != nil {
+(id, kind, content_md, created_at_ms, updated_at_ms, published_at_ms, content_text, author_user_id)
+VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', 'moment', 'permission fixture', 1, 1, 1, 'permission fixture', '0123456789abcdef0123456789abcdef')`); writeErr != nil {
 				return writeErr
 			}
 			if _, writeErr := queries.ExecContext(context.Background(), `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FB0', ?, 0, NULL)`, value.ID.String()); writeErr != nil {
@@ -1025,4 +1037,8 @@ func generationSnapshot(t *testing.T, root string) map[string]generationFingerpr
 		t.Fatal(err)
 	}
 	return result
+}
+
+func archiveTestAuthorization(n int) archive.Authorization {
+	return archive.Authorization{AccountID: "0123456789abcdef0123456789abcdef", CredentialID: fmt.Sprintf("session:%032x", n)}
 }
