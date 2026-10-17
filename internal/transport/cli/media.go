@@ -279,7 +279,7 @@ func openDirectMedia(ctx context.Context, invocation Invocation) (*directMediaRu
 	}
 	runtimeState, maintenance, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, ownerRuntimeError(err)
+		return nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -349,7 +349,7 @@ func mediaAPIUpload(ctx context.Context, invocation Invocation, filename string,
 		return nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	if response.StatusCode != http.StatusCreated {
 		return nil, invalidAPIResponse()
@@ -460,7 +460,7 @@ func mediaAPIDownload(ctx context.Context, invocation Invocation, id domain.ID) 
 		if !validAPIJSONContentType(response.Header.Get("Content-Type")) {
 			return media.Asset{}, invalidAPIResponse()
 		}
-		return media.Asset{}, decodeOwnerAPIFailure(response.StatusCode, body)
+		return media.Asset{}, decodeAPIFailure(response.StatusCode, body)
 	}
 	mimeType := response.Header.Get("Content-Type")
 	if !controlledMediaType(mimeType) {

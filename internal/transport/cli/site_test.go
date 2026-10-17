@@ -101,7 +101,7 @@ func TestSiteDirectCommandsJSONFlagsAndStableErrors(t *testing.T) {
 
 func TestSiteDirectAPIParityPublicGetAndAuthenticatedUpdate(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	credential, err := initializeTestAccountCredential(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,9 +129,9 @@ func TestSiteDirectAPIParityPublicGetAndAuthenticatedUpdate(t *testing.T) {
 		Assets: fstest.MapFS{
 			"index.html": &fstest.MapFile{Data: []byte("Moment")},
 		},
-		OwnerAuth:    manager,
-		Accounts:     testAccountService(t, database, runtimeState),
-		SiteSettings: service,
+		SessionSigner: manager,
+		Accounts:      testAccountService(t, database, runtimeState),
+		SiteSettings:  service,
 		Readiness: func(ctx context.Context) error {
 			if err := database.Ready(ctx); err != nil {
 				return err
@@ -158,7 +158,7 @@ func TestSiteDirectAPIParityPublicGetAndAuthenticatedUpdate(t *testing.T) {
 	}
 
 	unauthorized := execute(application, "", "--url", server.URL, "site", "update", "--bio", "blocked", "--json")
-	if unauthorized.exit != ExitUnauthorized || decodeOneDocument(t, unauthorized.stdout)["error"].(map[string]any)["code"] != "OWNER_TOKEN_REQUIRED" {
+	if unauthorized.exit != ExitUnauthorized || decodeOneDocument(t, unauthorized.stdout)["error"].(map[string]any)["code"] != "ACCOUNT_TOKEN_REQUIRED" {
 		t.Fatalf("unauthorized = %#v", unauthorized)
 	}
 

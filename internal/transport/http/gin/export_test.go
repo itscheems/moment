@@ -25,9 +25,9 @@ func (function archiveExporterFunc) Export(ctx context.Context, writer io.Writer
 	return function(ctx, writer)
 }
 
-func TestExportOwnerAuthStrictInputAndDownloadHeaders(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
-	cookie, _ := exchangeOwnerSession(t, fixture, fixture.token)
+func TestExportSessionSignerStrictInputAndDownloadHeaders(t *testing.T) {
+	fixture := newAuthenticationTestFixture(t, false)
+	cookie, _ := exchangeAccountSession(t, fixture, fixture.token)
 	var calls atomic.Int64
 	exporter := archiveExporterFunc(func(_ context.Context, writer io.Writer) (archive.Summary, error) {
 		calls.Add(1)
@@ -35,7 +35,7 @@ func TestExportOwnerAuthStrictInputAndDownloadHeaders(t *testing.T) {
 		return archive.Summary{FormatVersion: 1}, nil
 	})
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, Archive: exporter,
+		Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, Archive: exporter,
 		Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_export" },
 	})
 	if err != nil {

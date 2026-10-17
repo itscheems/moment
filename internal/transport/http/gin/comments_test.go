@@ -27,7 +27,7 @@ const legacyGuestCommentID = "01ARZ3NDEKTSV4RRFFQ69G5FB9"
 
 type commentHTTPFixture struct {
 	runtime *runtimefs.Runtime
-	ownerTestFixture
+	authenticationTestFixture
 	accountService *app.AccountService
 	comments       *app.CommentService
 	site           *app.SiteService
@@ -42,7 +42,7 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	_, err = auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,15 +95,15 @@ func newCommentHTTPFixture(t *testing.T, log LogFunc) commentHTTPFixture {
 	}
 	// Federated sign-in is wired in so a test can mint a real member account
 	// against this same engine; the provider is substituted, not reached.
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: manager, Accounts: commentAccounts, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore, OAuthProviders: oauth.NewRegistry(newStubProvider()), Log: log, RequestID: func() string { return "req_comments" }})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: manager, Accounts: commentAccounts, SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore, OAuthProviders: oauth.NewRegistry(newStubProvider()), Log: log, RequestID: func() string { return "req_comments" }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return commentHTTPFixture{
-		runtime:          runtimeState,
-		ownerTestFixture: ownerTestFixture{manager: manager, accounts: commentAccounts, gate: NewGate(manager, commentAccounts), token: credential.Token, engine: engine, now: &now},
-		accountService:   commentAccounts,
-		comments:         comments, site: site, postID: postID, clock: &now, database: database,
+		runtime:                   runtimeState,
+		authenticationTestFixture: authenticationTestFixture{manager: manager, accounts: commentAccounts, gate: NewGate(manager, commentAccounts), token: issueTestAPIToken(t, commentAccounts), engine: engine, now: &now},
+		accountService:            commentAccounts,
+		comments:                  comments, site: site, postID: postID, clock: &now, database: database,
 	}
 }
 
@@ -118,7 +118,7 @@ func ownerCommentPath(fixture commentHTTPFixture) string {
 }
 
 func commentRequest(method, path, body string) *http.Request {
-	request := ownerRequest(method, path, body)
+	request := jsonRequest(method, path, body)
 	request.RemoteAddr = "192.0.2.25:4000"
 	return request
 }
@@ -252,7 +252,7 @@ func TestCommentHTTPOwnerThreadAndModerationContract(t *testing.T) {
 	if unauthorized.Code != http.StatusUnauthorized || decodeError(t, unauthorized.Body).Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("unauthorized = %d", unauthorized.Code)
 	}
-	cookie, session := exchangeOwnerSession(t, fixture.ownerTestFixture, fixture.token)
+	cookie, session := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
 	missingCSRF := commentRequest(http.MethodDelete, "/api/v1/owner/comments/"+rootID, "")
 	missingCSRF.AddCookie(cookie)
 	if response := performRequest(fixture.engine, missingCSRF); response.Code != http.StatusForbidden || decodeError(t, response.Body).Error.Code != "CSRF_INVALID" {

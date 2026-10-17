@@ -12,7 +12,7 @@ const articleDraftBodyJSON = `{"schema_version":1,"type":"doc","content":[{"type
 
 // ownerCall signs an owner request the way every other owner test does.
 func ownerCall(fixture postHTTPFixture, method, path, body string) *http.Request {
-	request := ownerRequest(method, path, body)
+	request := jsonRequest(method, path, body)
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
 	return request
 }

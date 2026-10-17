@@ -51,7 +51,7 @@ func (provider *stubAssertionProvider) VerifyAssertion(_ context.Context, assert
 // assertionFixture wires an engine whose google speaks assertions and whose
 // github does not.
 type assertionFixture struct {
-	ownerTestFixture
+	authenticationTestFixture
 	google *stubAssertionProvider
 	github *stubProvider
 	engine http.Handler
@@ -59,7 +59,7 @@ type assertionFixture struct {
 
 func newAssertionFixture(t *testing.T) assertionFixture {
 	t.Helper()
-	base := newOwnerTestFixture(t, false)
+	base := newAuthenticationTestFixture(t, false)
 	google := newStubAssertionProvider()
 	github := &stubProvider{
 		name: "github",
@@ -71,7 +71,7 @@ func newAssertionFixture(t *testing.T) assertionFixture {
 	}
 	engine, err := New(Config{
 		Assets:         testAssets(),
-		OwnerAuth:      base.manager,
+		SessionSigner:      base.manager,
 		Accounts:       base.accounts,
 		OAuthProviders: oauth.NewRegistry(google, github),
 		RequestID:      func() string { return "req_assert" },
@@ -79,7 +79,7 @@ func newAssertionFixture(t *testing.T) assertionFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return assertionFixture{ownerTestFixture: base, google: google, github: github, engine: engine}
+	return assertionFixture{authenticationTestFixture: base, google: google, github: github, engine: engine}
 }
 
 func (fixture assertionFixture) postJSON(t *testing.T, target, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {

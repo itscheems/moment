@@ -155,7 +155,7 @@ func runSearchRebuild(ctx context.Context, invocation Invocation, _ CommandInput
 	}
 	runtimeState, maintenance, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return Result{}, ownerRuntimeError(err)
+		return Result{}, runtimeError(err)
 	}
 	defer func() { _ = maintenance.Release() }()
 	if invocation.Safety().DryRun {
@@ -221,7 +221,7 @@ func openDirectSearch(ctx context.Context, invocation Invocation) (*app.SearchSe
 	}
 	runtimeState, err := runtimefs.OpenContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, nil, ownerRuntimeError(err)
+		return nil, nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {

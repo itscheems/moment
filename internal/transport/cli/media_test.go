@@ -114,7 +114,7 @@ func TestMediaDirectAgentContractAndMaintenanceSafety(t *testing.T) {
 
 func TestMediaDirectAPIParityAndUnsupportedMaintenanceModes(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	credential, err := initializeTestAccountCredential(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestMediaDirectAPIParityAndUnsupportedMaintenanceModes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager, Accounts: testAccountService(t, database, runtimeState), Media: store, Readiness: func(context.Context) error { return nil }})
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, SessionSigner: manager, Accounts: testAccountService(t, database, runtimeState), Media: store, Readiness: func(context.Context) error { return nil }})
 	if err != nil {
 		t.Fatal(err)
 	}

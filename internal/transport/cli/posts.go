@@ -1295,7 +1295,7 @@ func openDirectPostRead(ctx context.Context, invocation Invocation) (*app.PostSe
 	}
 	runtimeState, err := runtimefs.OpenContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, nil, nil, ownerRuntimeError(err)
+		return nil, nil, nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -1342,7 +1342,7 @@ func openDirectPostWrite(ctx context.Context, invocation Invocation) (*directPos
 	}
 	runtimeState, maintenance, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, ownerRuntimeError(err)
+		return nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -1446,7 +1446,7 @@ func postAPIRequest(
 		return nil, response.StatusCode, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, response.StatusCode, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return nil, response.StatusCode, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	data, meta, err := decodePostAPIEnvelope(responseBody)
 	if err != nil {

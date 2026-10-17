@@ -78,8 +78,8 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 	authManager, err := auth.NewManager(runtime.Root, auth.Options{})
 	if err != nil {
 		return Result{}, NewCommandError(
-			"OWNER_AUTH_INVALID",
-			"owner authentication configuration is invalid",
+			"SIGNING_CONFIGURATION_INVALID",
+			"session signing configuration is invalid",
 			"inspect the selected data directory and retry",
 			ExitIntegrity,
 		).WithCause(err)
@@ -150,15 +150,15 @@ func runServe(ctx context.Context, invocation Invocation, input CommandInput, in
 			).WithCause(err)
 		case errors.Is(err, auth.ErrNotInitialized):
 			return Result{}, NewCommandError(
-				"OWNER_NOT_INITIALIZED",
-				"owner authentication is not initialized",
-				"run 'moment owner init --data-dir <path>' while the server is stopped",
+				"SIGNING_NOT_INITIALIZED",
+				"session signing is not initialized",
+				"run 'moment init --username <name> --data-dir <path>' while the server is stopped",
 				ExitConflict,
 			).WithCause(err)
 		case errors.Is(err, auth.ErrInvalidSecrets), errors.Is(err, auth.ErrSecretPermissions):
 			return Result{}, NewCommandError(
-				"OWNER_SECRETS_INVALID",
-				"owner authentication secrets are invalid or insecure",
+				"SIGNING_MATERIAL_INVALID",
+				"session signing material are invalid or insecure",
 				"restore a protected secrets.json or inspect the selected data directory",
 				ExitIntegrity,
 			).WithCause(err)

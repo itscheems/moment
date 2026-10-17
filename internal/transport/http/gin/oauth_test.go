@@ -65,18 +65,18 @@ func newStubProvider() *stubProvider {
 
 // oauthFixture wires a real engine to a substituted provider.
 type oauthFixture struct {
-	ownerTestFixture
+	authenticationTestFixture
 	provider *stubProvider
 	engine   http.Handler
 }
 
 func newOAuthFixture(t *testing.T) oauthFixture {
 	t.Helper()
-	base := newOwnerTestFixture(t, false)
+	base := newAuthenticationTestFixture(t, false)
 	provider := newStubProvider()
 	engine, err := New(Config{
 		Assets:         testAssets(),
-		OwnerAuth:      base.manager,
+		SessionSigner:      base.manager,
 		Accounts:       base.accounts,
 		OAuthProviders: oauth.NewRegistry(provider),
 		Comments:       nil,
@@ -85,7 +85,7 @@ func newOAuthFixture(t *testing.T) oauthFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return oauthFixture{ownerTestFixture: base, provider: provider, engine: engine}
+	return oauthFixture{authenticationTestFixture: base, provider: provider, engine: engine}
 }
 
 func (fixture oauthFixture) do(t *testing.T, request *http.Request) *httptest.ResponseRecorder {
@@ -283,8 +283,8 @@ func TestOAuthSignInCreatesAPendingAccountThatCannotWrite(t *testing.T) {
 		path   string
 	}{
 		{http.MethodGet, "/api/v1/owner/accounts"},
-		{http.MethodGet, "/api/v1/owner/status"},
-		{http.MethodPost, "/api/v1/owner/token/rotate"},
+		{http.MethodGet, "/api/v1/owner/accounts"},
+		{http.MethodPost, "/api/v1/account/tokens"},
 	} {
 		request := httptest.NewRequest(probe.method, probe.path, nil)
 		request.AddCookie(session)
@@ -352,7 +352,7 @@ func TestPendingAccountCannotPromoteItself(t *testing.T) {
 
 func TestOAuthStartedWhileSignedInLinksInsteadOfCreatingAnAccount(t *testing.T) {
 	fixture := newOAuthFixture(t)
-	ownerCookie, _ := exchangeOwnerSession(t, fixture.ownerTestFixture, fixture.token)
+	ownerCookie, _ := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
 
 	flow, state := fixture.startFlow(t, "?return="+url.QueryEscape("/owner/settings"), ownerCookie)
 	response := fixture.do(t, callbackRequest(state, "code", flow))

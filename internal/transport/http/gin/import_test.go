@@ -87,7 +87,7 @@ func (fake fakeArchiveImportCommitter) CommitArchive(ctx context.Context, input 
 }
 
 func TestImportReviewReplacementAndMediaContracts(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	planID := strings.Repeat("a", 64)
 	mediaID := "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 	committer := fakeReviewImportCommitter{
@@ -117,7 +117,7 @@ func TestImportReviewReplacementAndMediaContracts(t *testing.T) {
 			return media.Asset{Contents: []byte("image"), MIMEType: "image/png", ETag: `"sha256-image"`}, nil
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func (fake fakeImportCommitter) Status(ctx context.Context) (archive.CommitStatu
 }
 
 func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	selection := archive.MergeSelection{
 		PlanID: strings.Repeat("a", 64), ArchiveSHA256: strings.Repeat("b", 64),
 		BaseGeneration: "generation", BaseAuthoritySHA256: strings.Repeat("c", 64),
@@ -194,7 +194,7 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 			return nil
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer, RequestID: func() string { return "req_merge" }})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportCommitter: committer, RequestID: func() string { return "req_merge" }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 }
 
 func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	now := time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC)
 	calls := 0
 	fake := fakeImportCommitter{
@@ -253,7 +253,7 @@ func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
 		},
 	}
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake,
+		Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake,
 		Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_commit" },
 	})
 	if err != nil {
@@ -300,7 +300,7 @@ func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
 }
 
 func TestImportCommitMapsDomainFailure(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	fake := fakeImportCommitter{
 		commit: func(context.Context, string, uint64) (archive.CommitResult, error) {
 			return archive.CommitResult{}, domain.NewError(domain.CodeImportDiskSpaceInsufficient, "low disk", map[string]any{"required_additional_bytes": 10})
@@ -309,7 +309,7 @@ func TestImportCommitMapsDomainFailure(t *testing.T) {
 			return archive.CommitStatus{}, domain.NewError(domain.CodeDataIntegrityFailed, "needs attention", nil)
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportCommitter: fake})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +322,7 @@ func TestImportCommitMapsDomainFailure(t *testing.T) {
 }
 
 func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	called := 0
 	inspector := importInspectorFunc(func(_ context.Context, input io.Reader, epoch uint64) (archive.Inspection, error) {
 		called++
@@ -339,7 +339,7 @@ func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
 		}, nil
 	})
 	engine, err := New(Config{
-		Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector,
+		Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector,
 		Readiness: func(context.Context) error { return nil }, RequestID: func() string { return "req_import" },
 	})
 	if err != nil {
@@ -376,7 +376,7 @@ func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
 }
 
 func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
 	id := "import-20260811T013000000Z-0011223344556677"
 	inspector := importInspectorPlanner{
@@ -413,7 +413,7 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 			}}, nil
 		},
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector, ImportCommitter: committer, RequestID: func() string { return "req_archive" }})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportInspector: inspector, ImportCommitter: committer, RequestID: func() string { return "req_archive" }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -458,7 +458,7 @@ func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
 }
 
 func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
-	fixture := newOwnerTestFixture(t, false)
+	fixture := newAuthenticationTestFixture(t, false)
 	tests := []struct {
 		name      string
 		inspector ImportInspector
@@ -488,7 +488,7 @@ func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
 				limit = 1 << 20
 			}
 			engine, err := New(Config{
-				Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accounts, ImportInspector: test.inspector,
+				Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accounts, ImportInspector: test.inspector,
 				Readiness: func(context.Context) error { return nil }, Limits: BodyLimits{Archive: limit},
 			})
 			if err != nil {
@@ -504,7 +504,7 @@ func TestImportInspectMapsLimitsDomainAndCancellation(t *testing.T) {
 	}
 }
 
-func TestImportInspectConfigRequiresOwnerAuth(t *testing.T) {
+func TestImportInspectConfigRequiresSessionSigner(t *testing.T) {
 	inspector := importInspectorFunc(func(context.Context, io.Reader, uint64) (archive.Inspection, error) {
 		return archive.Inspection{}, errors.New("must not run")
 	})

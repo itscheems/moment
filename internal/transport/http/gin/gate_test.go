@@ -49,7 +49,7 @@ func accountFailureFixture(t *testing.T, failure error) (http.Handler, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	_, err = auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func accountFailureFixture(t *testing.T, failure error) (http.Handler, string) {
 	}
 	engine, err := New(Config{
 		Assets:    testAssets(),
-		OwnerAuth: manager,
+		SessionSigner: manager,
 		Accounts:  accounts,
 		Doctor:    reporter,
 		Readiness: func(context.Context) error { return nil },
@@ -79,14 +79,14 @@ func accountFailureFixture(t *testing.T, failure error) (http.Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return engine, credential.Token
+	return engine, issueTestAPIToken(t, testAccounts(t, database, runtimeState))
 }
 
 // A valid credential grants nothing when the account database cannot answer.
 func TestBearerRejectsProtectedRoutesWhileTheAccountDatabaseIsUnreadable(t *testing.T) {
 	engine, token := brokenAccountsFixture(t)
 
-	for _, path := range []string{"/api/v1/owner/doctor", "/api/v1/owner/status", "/api/v1/account/session"} {
+	for _, path := range []string{"/api/v1/owner/doctor", "/api/v1/account/security", "/api/v1/account/session"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		request.Header.Set("Authorization", "Bearer "+token)
 		response := performRequest(engine, request)

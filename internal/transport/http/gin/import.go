@@ -163,17 +163,20 @@ func requireImportJSON(ctx *gin.Context, operation string) bool {
 }
 
 func authorizedImportEpoch(ctx *gin.Context, gate *Gate) (uint64, bool) {
-	grant, ok := ownerGrant(ctx)
-	if !ok {
+	if _, ok := CurrentAccount(ctx); !ok {
 		unauthorized(ctx)
 		return 0, false
 	}
-	epoch, err := gate.manager.SessionEpochAuthorized(grant)
+	if _, ok := CurrentCredentialID(ctx); !ok {
+		unauthorized(ctx)
+		return 0, false
+	}
+	status, err := gate.manager.Status()
 	if err != nil {
-		unauthorized(ctx)
+		Failure(ctx, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "session signing is unavailable", nil)
 		return 0, false
 	}
-	return epoch, true
+	return status.SessionEpoch, true
 }
 
 func planMergeImport(merger mergeImportCommitter, gate *Gate) gin.HandlerFunc {
@@ -214,14 +217,8 @@ func importArchiveUpload(gate *Gate, operation string, requireExpectedSHA bool, 
 			}
 			expectedArchiveSHA = values[0]
 		}
-		grant, ok := ownerGrant(ctx)
+		epoch, ok := authorizedImportEpoch(ctx, gate)
 		if !ok {
-			unauthorized(ctx)
-			return
-		}
-		epoch, err := gate.manager.SessionEpochAuthorized(grant)
-		if err != nil {
-			unauthorized(ctx)
 			return
 		}
 		result, err := run(ctx.Request.Context(), ctx.Request.Body, expectedArchiveSHA, epoch)
@@ -306,14 +303,8 @@ func commitMergeImport(committer mergeImportCommitter, gate *Gate) gin.HandlerFu
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge commit requires exactly staging_token and selection", nil)
 			return
 		}
-		grant, ok := ownerGrant(ctx)
+		epoch, ok := authorizedImportEpoch(ctx, gate)
 		if !ok {
-			unauthorized(ctx)
-			return
-		}
-		epoch, err := gate.manager.SessionEpochAuthorized(grant)
-		if err != nil {
-			unauthorized(ctx)
 			return
 		}
 		result, err := committer.CommitMerge(ctx.Request.Context(), token, epoch, selection)
@@ -345,14 +336,8 @@ func discardMergeImport(committer mergeImportCommitter, gate *Gate) gin.HandlerF
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge discard requires exactly one non-empty staging_token", map[string]any{"field": "staging_token"})
 			return
 		}
-		grant, ok := ownerGrant(ctx)
+		epoch, ok := authorizedImportEpoch(ctx, gate)
 		if !ok {
-			unauthorized(ctx)
-			return
-		}
-		epoch, err := gate.manager.SessionEpochAuthorized(grant)
-		if err != nil {
-			unauthorized(ctx)
 			return
 		}
 		if err := committer.DiscardMerge(ctx.Request.Context(), token, epoch); err != nil {
@@ -383,14 +368,8 @@ func commitImport(committer ImportCommitter, gate *Gate) gin.HandlerFunc {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import commit requires exactly one non-empty staging_token", map[string]any{"field": "staging_token"})
 			return
 		}
-		grant, ok := ownerGrant(ctx)
+		epoch, ok := authorizedImportEpoch(ctx, gate)
 		if !ok {
-			unauthorized(ctx)
-			return
-		}
-		epoch, err := gate.manager.SessionEpochAuthorized(grant)
-		if err != nil {
-			unauthorized(ctx)
 			return
 		}
 		result, err := committer.Commit(ctx.Request.Context(), token, epoch)
@@ -579,14 +558,8 @@ func inspectImport(inspector ImportInspector, gate *Gate) gin.HandlerFunc {
 			Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "import inspection requires application/zip", map[string]any{"field": "content_type"})
 			return
 		}
-		grant, ok := ownerGrant(ctx)
+		epoch, ok := authorizedImportEpoch(ctx, gate)
 		if !ok {
-			unauthorized(ctx)
-			return
-		}
-		epoch, err := gate.manager.SessionEpochAuthorized(grant)
-		if err != nil {
-			unauthorized(ctx)
 			return
 		}
 		result, err := inspector.Inspect(ctx.Request.Context(), ctx.Request.Body, epoch)

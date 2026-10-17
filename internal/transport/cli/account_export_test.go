@@ -19,7 +19,7 @@ import (
 func TestAccountExportCLIFileParityAndIdentityBoundary(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
 	ctx := context.Background()
-	credential, err := auth.InitializeOffline(ctx, runtimeState, auth.Options{})
+	credential, err := initializeTestAccountCredential(ctx, runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestAccountExportCLIFileParityAndIdentityBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager, Accounts: accounts, Archive: exporter})
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, SessionSigner: manager, Accounts: accounts, Archive: exporter})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -43,7 +43,7 @@ func newPostCLIFixture(t *testing.T) postCLIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	credential, err := initializeTestAccountCredential(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +91,8 @@ func newPostCLIFixture(t *testing.T) postCLIFixture {
 		t.Fatal(err)
 	}
 	engine, err := ginhttp.New(ginhttp.Config{
-		Assets:    fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
-		OwnerAuth: manager, Accounts: testAccountService(t, database, runtimeState), SiteSettings: site, Posts: posts, Search: search, Media: mediaStore,
+		Assets:        fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}},
+		SessionSigner: manager, Accounts: testAccountService(t, database, runtimeState), SiteSettings: site, Posts: posts, Search: search, Media: mediaStore,
 		Readiness: func(ctx context.Context) error { return database.Ready(ctx) },
 	})
 	if err != nil {

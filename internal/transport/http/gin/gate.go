@@ -166,31 +166,21 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
 			return domain.User{}, errNoCredential
 		}
-		grant, err := gate.manager.AuthorizeBearer(parts[1])
-		if err != nil {
-			return domain.User{}, errNoCredential
-		}
-		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
+		verified, err := gate.accounts.ResolveAPIToken(ctx.Request.Context(), parts[1])
 		if err != nil {
 			return domain.User{}, accountAuthenticationError(err)
 		}
-		if domain.ValidateUserID(owner.ID) != nil {
-			return domain.User{}, errNoCredential
-		}
-		if !owner.CanSignIn() {
-			return domain.User{}, domain.NewError(domain.CodeAccountSuspended, "this account has been suspended", nil)
-		}
-		ctx.Set(ownerSourceKey, "bearer")
-		ctx.Set(ownerGrantKey, grant)
-		ctx.Set(accountKey, owner)
-		return owner, nil
+		account := verified.User
+		ctx.Set(accountCredentialKey, "token:"+verified.Token.ID)
+		ctx.Set(accountKey, account)
+		return account, nil
 	}
 
 	cookie, err := ctx.Request.Cookie(SessionCookieName)
 	if err != nil {
 		return domain.User{}, errNoCredential
 	}
-	session, grant, err := gate.manager.AuthorizeSession(cookie.Value)
+	session, _, err := gate.manager.AuthorizeSession(cookie.Value)
 	if err != nil {
 		return domain.User{}, errNoCredential
 	}
@@ -213,8 +203,7 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 	// valid request.
 	_ = gate.accounts.TouchSession(ctx.Request.Context(), resolved.Session)
 
-	ctx.Set(ownerSourceKey, "session")
-	ctx.Set(ownerGrantKey, grant)
+	ctx.Set(accountCredentialKey, "session:"+resolved.Session.ID)
 	ctx.Set(accountKey, resolved.User)
 	ctx.Set(accountSessionKey, resolved.Session)
 	return resolved.User, nil
@@ -289,6 +278,8 @@ func writeAccountError(ctx *gin.Context, err error) {
 	// in and allowed; the provider they named simply is not attached.
 	case domain.CodeIdentityNotLinked:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodeAPITokenNotFound:
+		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, nil)
 	case domain.CodeAccountSuspended:
 		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeAccountNotApproved:

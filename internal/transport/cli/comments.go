@@ -467,7 +467,7 @@ func openDirectCommentRead(ctx context.Context, invocation Invocation) (*app.Com
 	}
 	runtimeState, err := runtimefs.OpenContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, nil, ownerRuntimeError(err)
+		return nil, nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -523,7 +523,7 @@ func openDirectCommentWrite(ctx context.Context, invocation Invocation) (*direct
 	}
 	runtimeState, maintenance, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, ownerRuntimeError(err)
+		return nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {

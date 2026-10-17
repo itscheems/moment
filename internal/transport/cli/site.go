@@ -238,7 +238,7 @@ func directSiteWrite(ctx context.Context, invocation Invocation, mutate func(*ap
 	}
 	runtimeState, lease, err := runtimefs.OpenForWriteContext(ctx, target.DataDirectory())
 	if err != nil {
-		return app.SiteSettings{}, ownerRuntimeError(err)
+		return app.SiteSettings{}, runtimeError(err)
 	}
 	defer func() { _ = lease.Release() }()
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
@@ -264,7 +264,7 @@ func openDirectSite(ctx context.Context, invocation Invocation) (*app.SiteServic
 	}
 	runtimeState, err := runtimefs.OpenContext(ctx, target.DataDirectory())
 	if err != nil {
-		return nil, nil, ownerRuntimeError(err)
+		return nil, nil, runtimeError(err)
 	}
 	database, err := sqlitestore.Open(ctx, runtimeState, sqlitestore.Options{})
 	if err != nil {
@@ -347,7 +347,7 @@ func requestAPIJSON(
 		return nil, nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return nil, nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	if response.StatusCode != expectedStatus {
 		return nil, nil, invalidAPIResponse()

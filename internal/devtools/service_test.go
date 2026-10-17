@@ -30,7 +30,7 @@ func TestExecuteScenarioPublishesDoctorHealthyFixture(t *testing.T) {
 		}
 		t.Fatal(err)
 	}
-	if !result.Applied || !result.DoctorHealthy || result.Plan.Counts.Entries != 25 || result.OwnerToken == "" {
+	if !result.Applied || !result.DoctorHealthy || result.Plan.Counts.Entries != 25 || result.APIToken == "" {
 		t.Fatalf("result = %#v", result)
 	}
 	current, err := runtimeState.ResolveCurrent()
@@ -50,7 +50,7 @@ func TestExecuteArchiveRoundTripUsesFormalPortableContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Applied || !result.DoctorHealthy || !result.ArchiveRoundTripPassed || result.OwnerToken == "" {
+	if !result.Applied || !result.DoctorHealthy || !result.ArchiveRoundTripPassed || result.APIToken == "" {
 		t.Fatalf("roundtrip result = %#v", result)
 	}
 	currentRuntime, err := runtimefs.OpenContext(context.Background(), runtimeState.Root)
@@ -426,7 +426,7 @@ func TestBootstrapConcurrentCommandsShareOneInstanceAndOneOwnerDelivery(t *testi
 	for index, err := range errorsSeen {
 		if err == nil {
 			successes++
-			if results[index].OwnerToken != "" {
+			if results[index].APIToken != "" {
 				tokens++
 			}
 			continue
@@ -468,7 +468,7 @@ func TestBootstrapCancelledCheckpointIsRetryable(t *testing.T) {
 	result, err := Execute(context.Background(), Request{
 		DataDir: root, Operation: OperationScenario, Scenario: "timeline-basic", Seed: 33,
 	})
-	if err != nil || !result.Applied || result.OwnerToken == "" {
+	if err != nil || !result.Applied || result.APIToken == "" {
 		t.Fatalf("retry result=%#v err=%v", result, err)
 	}
 	diagnostic, err := doctor.New(doctor.Options{DataDir: root})

@@ -91,14 +91,14 @@ func TestParityNormalizationNeverRemovesSubstantiveFields(t *testing.T) {
 }
 
 func TestAllAPIFamiliesRejectIncompleteSharedErrorEnvelope(t *testing.T) {
-	const token = "CANARY_SHARED_OWNER_TOKEN"
+	const token = "CANARY_SHARED_ACCOUNT_TOKEN"
 	t.Setenv("MOMENT_TOKEN", token)
 	mediaOutput := filepath.Join(t.TempDir(), "media.png")
 	families := []struct {
 		name string
 		args []string
 	}{
-		{name: "owner", args: []string{"owner", "status", "--json"}},
+		{name: "account", args: []string{"auth", "status", "--json"}},
 		{name: "post", args: []string{"post", "get", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "--json"}},
 		{name: "comment", args: []string{"comment", "list", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "--json"}},
 		{name: "media", args: []string{"media", "get", "01ARZ3NDEKTSV4RRFFQ69G5FAV", "--output", mediaOutput, "--json"}},
@@ -160,7 +160,7 @@ func TestSharedSuccessAdaptersRequireServerRequestID(t *testing.T) {
 		mutate   func(map[string]any)
 		args     []string
 	}{
-		{name: "owner empty", upstream: postFixture.server.URL, token: postFixture.token, mutate: empty, args: []string{"owner", "status", "--json"}},
+		{name: "account empty", upstream: postFixture.server.URL, token: postFixture.token, mutate: empty, args: []string{"auth", "status", "--json"}},
 		{name: "site missing", upstream: postFixture.server.URL, token: postFixture.token, mutate: missing, args: []string{"site", "get", "--json"}},
 		{name: "media blank", upstream: postFixture.server.URL, token: postFixture.token, mutate: blank, args: []string{"media", "add", imagePath, "--json"}},
 		{name: "post wrong type", upstream: postFixture.server.URL, token: postFixture.token, mutate: wrongType, args: []string{"post", "get", postID, "--json"}},
@@ -197,12 +197,12 @@ func TestSharedSuccessAdaptersRequireExactHTTPStatus(t *testing.T) {
 		status int
 		args   []string
 	}{
-		{name: "owner status", status: http.StatusCreated, args: []string{"owner", "status", "--json"}},
+		{name: "account status", status: http.StatusCreated, args: []string{"auth", "status", "--json"}},
 		{name: "site get", status: http.StatusCreated, args: []string{"site", "get", "--json"}},
 		{name: "site update", status: http.StatusAccepted, args: []string{"site", "update", "--title", "Exact status", "--json"}},
 		{name: "media add", status: http.StatusOK, args: []string{"media", "add", imagePath, "--json"}},
 		{name: "media get", status: http.StatusPartialContent, args: []string{"media", "get", mediaID, "--output", filepath.Join(t.TempDir(), "media.png"), "--json"}},
-		{name: "owner rotate", status: http.StatusAccepted, args: []string{"owner", "rotate-token", "--json"}},
+		{name: "account create token", status: http.StatusAccepted, args: []string{"auth", "create-token", "--json"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

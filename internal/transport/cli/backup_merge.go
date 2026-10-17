@@ -119,7 +119,7 @@ func runBackupMergePlan(ctx context.Context, invocation Invocation, input Comman
 		}
 		status, err := auth.ReadStatus(root)
 		if err != nil || !status.Initialized || status.SessionEpoch == 0 {
-			return Result{}, ownerAuthError(errors.Join(err, auth.ErrNotInitialized))
+			return Result{}, authenticationError(errors.Join(err, auth.ErrNotInitialized))
 		}
 		committer, err := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
 		if err != nil {
@@ -174,7 +174,7 @@ func runBackupMerge(ctx context.Context, invocation Invocation, input CommandInp
 		}
 		status, err := auth.ReadStatus(root)
 		if err != nil || !status.Initialized || status.SessionEpoch == 0 {
-			return Result{}, ownerAuthError(errors.Join(err, auth.ErrNotInitialized))
+			return Result{}, authenticationError(errors.Join(err, auth.ErrNotInitialized))
 		}
 		committer, err := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
 		if err != nil {
@@ -214,7 +214,7 @@ func runBackupMergeDiscard(ctx context.Context, invocation Invocation, input Com
 		}
 		status, err := auth.ReadStatus(root)
 		if err != nil || !status.Initialized || status.SessionEpoch == 0 {
-			return Result{}, ownerAuthError(errors.Join(err, auth.ErrNotInitialized))
+			return Result{}, authenticationError(errors.Join(err, auth.ErrNotInitialized))
 		}
 		committer, err := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
 		if err != nil {
@@ -325,7 +325,7 @@ func commitMergeAPI(ctx context.Context, invocation Invocation, document mergeSe
 		return archive.CommitResult{}, nil, errors.Join(invalidAPIResponse(), err)
 	}
 	if response.StatusCode != http.StatusOK {
-		return archive.CommitResult{}, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return archive.CommitResult{}, nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	result, meta, err := decodeImportCommitAPI(responseBody)
 	if err != nil {
@@ -368,7 +368,7 @@ func discardMergeAPI(ctx context.Context, invocation Invocation, stagingToken st
 		return nil, errors.Join(invalidAPIResponse(), err)
 	}
 	if response.StatusCode != http.StatusOK {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	envelope, err := decodeExactJSONObject(responseBody, "data", "meta")
 	if err != nil {

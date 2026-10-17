@@ -49,8 +49,8 @@ func TestDevCLIConfirmationBootstrapJSONAndHelp(t *testing.T) {
 	}
 	document := decodeOneDocument(t, seeded.stdout)
 	data := document["data"].(map[string]any)
-	if data["owner_token"] == "" || strings.Contains(seeded.stderr, data["owner_token"].(string)) {
-		t.Fatalf("owner token delivery = %#v stderr=%q", data, seeded.stderr)
+	if data["api_token"] == "" || strings.Contains(seeded.stderr, data["api_token"].(string)) {
+		t.Fatalf("account token delivery = %#v stderr=%q", data, seeded.stderr)
 	}
 	doctor := execute(application, "", "doctor", "--deep", "--data-dir", root, "--json")
 	if doctor.exit != ExitSuccess || decodeOneDocument(t, doctor.stdout)["data"].(map[string]any)["status"] != "healthy" {

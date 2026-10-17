@@ -101,7 +101,7 @@ func TestRevokingOneAccountTokenDoesNotAffectOtherCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := accounts.RevokeAPIToken(ctx, bob.ID, first.Token.ID); !domain.HasCode(err, domain.CodeUnauthorized) {
+	if err := accounts.RevokeAPIToken(ctx, bob.ID, first.Token.ID); !domain.HasCode(err, domain.CodeAPITokenNotFound) {
 		t.Fatalf("another account revoked a token: %v", err)
 	}
 	if _, err := accounts.ResolveAPIToken(ctx, first.Value); err != nil {

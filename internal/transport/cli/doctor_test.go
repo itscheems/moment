@@ -19,9 +19,9 @@ import (
 func TestDoctorCLIDirectHealthyFailureAndHelp(t *testing.T) {
 	application := momentTestApplication()
 	dataDir := t.TempDir()
-	initialized := execute(application, "", "owner", "init", "--data-dir", dataDir, "--json")
+	initialized := execute(application, "", "init", "--username", "writer", "--data-dir", dataDir, "--json")
 	if initialized.exit != ExitSuccess {
-		t.Fatalf("owner init = %#v", initialized)
+		t.Fatalf("account init = %#v", initialized)
 	}
 	var credential struct {
 		Data struct {
@@ -70,7 +70,7 @@ func TestDoctorCLIDirectHealthyFailureAndHelp(t *testing.T) {
 func TestDoctorCLIAPIDeepUnsupportedAndStrictReport(t *testing.T) {
 	application := momentTestApplication()
 	dataDir := t.TempDir()
-	if output := execute(application, "", "owner", "init", "--data-dir", dataDir, "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "", "init", "--username", "writer", "--data-dir", dataDir, "--json"); output.exit != ExitSuccess {
 		t.Fatal(output)
 	}
 	service, err := doctor.New(doctor.Options{DataDir: dataDir})
@@ -221,7 +221,7 @@ func TestDoctorCLIExitMatrixPreservesPartialReports(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
-	if output := execute(application, "", "owner", "init", "--data-dir", dataDir, "--json"); output.exit != ExitSuccess {
+	if output := execute(application, "", "init", "--username", "writer", "--data-dir", dataDir, "--json"); output.exit != ExitSuccess {
 		t.Fatal(output)
 	}
 	locker, err := runtimefs.OpenExistingLocker(dataDir)

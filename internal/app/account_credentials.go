@@ -199,7 +199,7 @@ func (service *AccountService) RevokeAPIToken(ctx context.Context, userID, token
 			return err
 		}
 		if !found || token.UserID != userID {
-			return domain.NewError(domain.CodeUnauthorized, "API credential does not belong to this account", nil)
+			return domain.NewError(domain.CodeAPITokenNotFound, "API credential does not exist for this account", nil)
 		}
 		return store.RevokeAPIToken(ctx, tokenID, domain.TimeToMillis(domain.NormalizeTime(service.clock())))
 	})

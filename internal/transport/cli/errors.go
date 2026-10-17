@@ -102,6 +102,12 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "COMMENT_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "run 'moment comment list <post-id> --json' to inspect available comments"
+	case "API_TOKEN_NOT_FOUND":
+		exit = ExitNotFound
+		suggestion = "list the authenticated account's API tokens and select an existing credential"
+	case "AUTH_UNAVAILABLE":
+		exit = ExitUnavailable
+		suggestion = "inspect the account database locally before retrying authentication"
 	case "MEDIA_IN_USE":
 		exit = ExitConflict
 		suggestion = "remove all post, comment, profile and link references before deleting media"
@@ -146,18 +152,18 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "OAUTH_PROVIDER_UNAVAILABLE":
 		exit = ExitUnavailable
 		suggestion = "check that the provider is configured on the selected Moment server"
-	case "UNAUTHORIZED", "CSRF_INVALID", "OWNER_TOKEN_REQUIRED":
+	case "UNAUTHORIZED", "CSRF_INVALID", "ACCOUNT_TOKEN_REQUIRED", "ACCOUNT_SUSPENDED", "ACCOUNT_NOT_APPROVED":
 		exit = ExitUnauthorized
-		suggestion = "update MOMENT_TOKEN or --token-file with the current owner token"
+		suggestion = "use valid credentials belonging to an admitted account"
 	case "INSTANCE_IN_USE":
 		exit = ExitConflict
 		suggestion = "stop the running server or use the supported API operation"
-	case "OWNER_ALREADY_INITIALIZED":
+	case "SIGNING_ALREADY_INITIALIZED":
 		exit = ExitConflict
-		suggestion = "run 'moment owner status --json' or rotate the token instead"
-	case "OWNER_NOT_INITIALIZED":
+		suggestion = "inspect the existing account with 'moment auth status --username <name> --json'"
+	case "SIGNING_NOT_INITIALIZED":
 		exit = ExitConflict
-		suggestion = "run 'moment init --data-dir <path> --json' while the server is stopped"
+		suggestion = "run 'moment init --username <name> --data-dir <path> --json' while the server is stopped"
 	case "IMPORT_IN_PROGRESS", "IMPORT_STAGING_INVALID", "IMPORT_STAGING_EXPIRED":
 		exit = ExitConflict
 		suggestion = "inspect 'moment backup status --json' and finish or retry the current recovery operation"

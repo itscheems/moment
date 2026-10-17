@@ -139,7 +139,7 @@ seed_playground() {
   say "灌入 ${scenario}（seed ${seed}，以当前时间为锚）"
   "$binary" --data-dir "$data_dir" --no-input dev scenario "$scenario" --seed "$seed" --yes --json >"$seed_file"
   umask 077
-  json_field "$seed_file" 'document.data.owner_token' >"$token_file"
+  json_field "$seed_file" 'document.data.api_token' >"$token_file"
   chmod 600 "$token_file"
   rm -f -- "$cookie_file"
   say "$(json_field "$seed_file" '"锚点 " + document.data.showcase.anchored_at + "，" + document.data.showcase.cases.length + " 个 case，站长 @" + document.data.showcase.owner')"

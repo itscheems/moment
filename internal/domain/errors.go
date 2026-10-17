@@ -41,6 +41,7 @@ const (
 	CodeIdentityAlreadyLinked       Code = "IDENTITY_ALREADY_LINKED"
 	CodeIdentityNotLinked           Code = "IDENTITY_NOT_LINKED"
 	CodeLastCredential              Code = "LAST_CREDENTIAL"
+	CodeAPITokenNotFound            Code = "API_TOKEN_NOT_FOUND"
 	// CodeCredentialUnavailable means the account exists and does not sign in
 	// the way the caller offered. Its details carry the kinds that would work,
 	// so a client can say what to do instead rather than guessing that a

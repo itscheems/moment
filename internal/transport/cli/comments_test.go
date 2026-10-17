@@ -38,7 +38,7 @@ func newCommentCLIFixture(t *testing.T) commentCLIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	credential, err := initializeTestAccountCredential(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func newCommentCLIFixture(t *testing.T) commentCLIFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, OwnerAuth: manager, Accounts: testAccountService(t, database, runtimeState), SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore})
+	engine, err := ginhttp.New(ginhttp.Config{Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("Moment")}}, SessionSigner: manager, Accounts: testAccountService(t, database, runtimeState), SiteSettings: site, Posts: posts, Comments: comments, Media: mediaStore})
 	if err != nil {
 		t.Fatal(err)
 	}

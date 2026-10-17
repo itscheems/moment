@@ -26,7 +26,7 @@ func newMentionFixture(t *testing.T) mentionFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	credential, err := auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
+	_, err = auth.InitializeOffline(context.Background(), runtimeState, auth.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func newMentionFixture(t *testing.T) mentionFixture {
 	accounts := testAccountsForRuntime(t, runtimeState)
 	engine, err := New(Config{
 		Assets:       testAssets(),
-		OwnerAuth:    manager,
+		SessionSigner:    manager,
 		Accounts:     accounts,
 		SiteSettings: site,
 		Readiness:    func(context.Context) error { return nil },
@@ -56,7 +56,7 @@ func newMentionFixture(t *testing.T) mentionFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return mentionFixture{engine: engine, manager: manager, accounts: accounts, token: credential.Token}
+	return mentionFixture{engine: engine, manager: manager, accounts: accounts, token: issueTestAPIToken(t, accounts)}
 }
 
 // signIn puts one account behind a browser credential, the same way the

@@ -93,8 +93,8 @@ func runDev(ctx context.Context, invocation Invocation, operation devtools.Opera
 	if result.Showcase != nil {
 		text += fmt.Sprintf("\nShowcase anchored at %s: %d cases listed under data.showcase", result.Showcase.AnchoredAt, len(result.Showcase.Cases))
 	}
-	if result.OwnerToken != "" {
-		text += "\nOwner token (shown once): " + result.OwnerToken
+	if result.APIToken != "" {
+		text += "\nAccount API token (shown once): " + result.APIToken
 	}
 	return Result{Data: result, Text: text}, nil
 }

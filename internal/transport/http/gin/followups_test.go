@@ -129,7 +129,7 @@ func TestAccountExportHTTPUsesAuthenticatedIdentityAndKeepsOwnerBoundary(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := New(Config{Assets: testAssets(), OwnerAuth: fixture.manager, Accounts: fixture.accountService, Archive: exporter})
+	engine, err := New(Config{Assets: testAssets(), SessionSigner: fixture.manager, Accounts: fixture.accountService, Archive: exporter})
 	if err != nil {
 		t.Fatal(err)
 	}

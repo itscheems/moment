@@ -331,7 +331,7 @@ func (application *Application) buildRoot(streams Streams) (*cobra.Command, *Opt
 	flags := root.PersistentFlags()
 	flags.StringVar(&options.DataDir, "data-dir", defaultDataDir, "local Moment data directory (direct mode)")
 	flags.StringVar(&options.URL, "url", "", "Moment HTTP API base URL (API mode)")
-	flags.StringVar(&options.TokenFile, "token-file", "", "file containing the owner API token")
+	flags.StringVar(&options.TokenFile, "token-file", "", "file containing an account API token")
 	flags.BoolVar(&options.JSON, "json", false, "write one machine-readable JSON document to stdout")
 	flags.StringVar(&options.LogLevel, "log-level", "info", "stderr log level: error, warn, info, or debug")
 	flags.StringVar(&options.LogFormat, "log-format", "text", "stderr log format: text or json")

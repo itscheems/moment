@@ -8,12 +8,12 @@ import (
 )
 
 var momentGroups = []GroupSpec{
-	{Name: "owner", Short: "Manage the single site owner", Long: "Inspect and manage the single Moment owner."},
+	{Name: "auth", Short: "Manage account credentials", Long: "Inspect and manage passwords and API tokens belonging to individual accounts."},
 	{Name: "post", Short: "Create and manage Moments", Long: "Create, inspect, update, pin, and delete Moment posts."},
 	{Name: "article", Short: "Write and publish long posts", Long: "Draft, publish, and edit Moment articles, whose body is a structured document rather than Markdown."},
 	{Name: "location", Short: "Resolve post locations", Long: "Search and normalize location snapshots for Moment posts."},
-	{Name: "link", Short: "Capture link preview cards", Long: "Unfurl owner-supplied URLs into portable link card snapshots."},
-	{Name: "comment", Short: "Inspect and manage comments", Long: "Inspect comments and perform owner comment actions."},
+	{Name: "link", Short: "Capture link preview cards", Long: "Unfurl user-supplied URLs into portable link card snapshots."},
+	{Name: "comment", Short: "Inspect and manage comments", Long: "Inspect comments and perform account comment actions."},
 	{Name: "media", Short: "Inspect and maintain managed media", Long: "Add, inspect, verify, and maintain managed Moment media."},
 	{Name: "search", Short: "Search and rebuild the memory index", Long: "Query Moment history and maintain its derived search index."},
 	{Name: "backup", Short: "Export, inspect, and restore portable data", Long: "Operate the versioned Moment portability protocol."},
@@ -51,7 +51,7 @@ func NewMoment(info buildinfo.Info) *Application {
 	})
 	registerServe(application, info)
 	registerDoctor(application)
-	registerOwner(application)
+	registerAuthentication(application)
 	registerSite(application)
 	registerUsers(application)
 	registerAccounts(application, info.Version)

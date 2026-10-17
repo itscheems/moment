@@ -185,7 +185,7 @@ func locationAPIRequest(ctx context.Context, invocation Invocation, endpoint str
 		return nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, body)
+		return nil, decodeAPIFailure(response.StatusCode, body)
 	}
 	data, meta, err := decodeStrictAPIEnvelope(body)
 	if err != nil {

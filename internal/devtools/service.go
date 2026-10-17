@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
 	"github.com/moment/moment/internal/doctor"
 	"github.com/moment/moment/internal/domain"
@@ -63,7 +64,7 @@ type Result struct {
 	ExpectedDoctorCheckID  string `json:"expected_doctor_check_id,omitempty"`
 	DoctorHealthy          bool   `json:"doctor_healthy"`
 	ArchiveRoundTripPassed bool   `json:"archive_round_trip_passed,omitempty"`
-	OwnerToken             string `json:"owner_token,omitempty"`
+	APIToken               string `json:"api_token,omitempty"`
 	// Showcase lists what the site-showcase scenario built, under keys that
 	// do not change between builds; every other scenario leaves it absent.
 	Showcase *ShowcaseManifest `json:"showcase,omitempty"`
@@ -312,17 +313,19 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 		return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, postSwitchErr)
 	}
 	healthy := recipe.ExpectedDoctorCheckID == ""
-	ownerToken := ""
+	apiToken, err := issueDevelopmentAccountToken(context.WithoutCancel(ctx), runtimeState, developmentAuthority, held)
+	if err != nil {
+		return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, err)
+	}
 	if needsOwner {
-		credential, err := auth.InitializeDevelopmentWithinLocks(context.WithoutCancel(ctx), runtimeState, developmentAuthority, held)
-		if err != nil {
+		if _, err := auth.InitializeDevelopmentWithinLocks(context.WithoutCancel(ctx), runtimeState, developmentAuthority, held); err != nil {
 			return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, err)
 		}
-		ownerToken = credential.Token
 	}
+
 	return Result{
 		Plan: plan, Applied: true, ExpectedDoctorCheckID: recipe.ExpectedDoctorCheckID,
-		DoctorHealthy: healthy, ArchiveRoundTripPassed: recipe.ArchiveRoundTrip, OwnerToken: ownerToken,
+		DoctorHealthy: healthy, ArchiveRoundTripPassed: recipe.ArchiveRoundTrip, APIToken: apiToken,
 		Showcase: showcase,
 	}, nil
 }
@@ -428,4 +431,28 @@ func runHook(hooks *operationHooks, selectHook func(*operationHooks) func() erro
 		return nil
 	}
 	return hook()
+}
+
+// issueDevelopmentAccountToken creates a normal credential in the newly seeded
+// generation. Resetting the generation never preserves a previous API token.
+func issueDevelopmentAccountToken(ctx context.Context, runtimeState *runtimefs.Runtime, authority *runtimefs.DevelopmentAuthority, held *runtimefs.LeaseSet) (value string, resultErr error) {
+	database, err := sqlitestore.OpenDevelopmentPinned(ctx, runtimeState, held, authority, sqlitestore.Options{})
+	if err != nil {
+		return "", err
+	}
+	defer func() { resultErr = errors.Join(resultErr, database.Close()) }()
+	repository, err := sqlitestore.NewDevelopmentAccountRepository(database, runtimeState.Root, held)
+	if err != nil {
+		return "", err
+	}
+	accounts, err := app.NewAccountService(repository)
+	if err != nil {
+		return "", err
+	}
+	account, err := accounts.OwnerAccount(ctx)
+	if err != nil {
+		return "", err
+	}
+	issued, err := accounts.CreateAPIToken(ctx, account.ID, "development")
+	return issued.Value, err
 }

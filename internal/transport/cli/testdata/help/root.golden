@@ -6,17 +6,17 @@ Usage:
 
 Available Commands:
   article     Write and publish long posts
+  auth        Manage account credentials
   backup      Export, inspect, and restore portable data
   comment     Inspect and manage comments
   dev         Build deterministic development scenarios
   doctor      Diagnose runtime and data health
   help        Help about any command
-  init        Initialize the Moment instance and owner
+  init        Initialize a named administrator account
   link        Capture link preview cards
   location    Resolve post locations
   login       Sign in to a Moment server from this terminal
   media       Inspect and maintain managed media
-  owner       Manage the single site owner
   post        Create and manage Moments
   search      Search and rebuild the memory index
   serve       Run the Moment HTTP server
@@ -32,7 +32,7 @@ Flags:
       --log-level string    stderr log level: error, warn, info, or debug (default "info")
       --no-input            fail instead of prompting for input
       --timeout duration    maximum command duration (default 30s)
-      --token-file string   file containing the owner API token
+      --token-file string   file containing an account API token
       --url string          Moment HTTP API base URL (API mode)
 
 Use "moment [command] --help" for more information about a command.

@@ -1,6 +1,7 @@
 package ginhttp
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"slices"
@@ -27,6 +28,8 @@ type memoryAccounts struct {
 	users      map[string]domain.User
 	identities map[string]domain.Identity
 	sessions   map[string]domain.SessionRecord
+	passwords  map[string][]byte
+	tokens     map[string]domain.APIToken
 	ownerID    string
 	mode       domain.RegistrationMode
 }
@@ -36,6 +39,8 @@ func newMemoryAccounts(owner domain.User) *memoryAccounts {
 		users:      map[string]domain.User{owner.ID: owner},
 		identities: map[string]domain.Identity{},
 		sessions:   map[string]domain.SessionRecord{},
+		passwords:  map[string][]byte{},
+		tokens:     map[string]domain.APIToken{},
 		ownerID:    owner.ID,
 		mode:       domain.RegistrationApproval,
 	}
@@ -505,4 +510,57 @@ func testAccountsForRuntime(t *testing.T, runtimeState *runtimefs.Runtime) *app.
 	}
 	t.Cleanup(func() { _ = database.Close() })
 	return testAccounts(t, database, runtimeState)
+}
+
+func (store *memoryAccounts) PasswordHash(_ context.Context, userID string) ([]byte, bool, error) {
+	hash, ok := store.passwords[userID]
+	return bytes.Clone(hash), ok, nil
+}
+func (store *memoryAccounts) PutPasswordHash(_ context.Context, userID string, hash []byte, _ int64) error {
+	store.passwords[userID] = bytes.Clone(hash)
+	return nil
+}
+func (store *memoryAccounts) InsertAPIToken(_ context.Context, token domain.APIToken) error {
+	store.tokens[token.ID] = token
+	return nil
+}
+func (store *memoryAccounts) APITokenByHash(_ context.Context, hash []byte) (domain.APIToken, bool, error) {
+	for _, t := range store.tokens {
+		if bytes.Equal(t.Hash, hash) {
+			return t, true, nil
+		}
+	}
+	return domain.APIToken{}, false, nil
+}
+func (store *memoryAccounts) APITokenByID(_ context.Context, id string) (domain.APIToken, bool, error) {
+	token, ok := store.tokens[id]
+	return token, ok, nil
+}
+func (store *memoryAccounts) ListAPITokens(_ context.Context, userID string) ([]domain.APIToken, error) {
+	tokens := []domain.APIToken{}
+	for _, t := range store.tokens {
+		if t.UserID == userID {
+			tokens = append(tokens, t)
+		}
+	}
+	sort.Slice(tokens, func(i, j int) bool { return tokens[i].ID < tokens[j].ID })
+	return tokens, nil
+}
+func (store *memoryAccounts) RevokeAPIToken(_ context.Context, id string, at int64) error {
+	token, ok := store.tokens[id]
+	if ok {
+		token.RevokedAtMS = &at
+		store.tokens[id] = token
+	}
+	return nil
+}
+func (store *memoryAccounts) RevokeUserAPITokens(ctx context.Context, userID string, at int64) error {
+	for _, t := range store.tokens {
+		if t.UserID == userID {
+			if err := store.RevokeAPIToken(ctx, t.ID, at); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

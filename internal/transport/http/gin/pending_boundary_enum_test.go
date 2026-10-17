@@ -158,7 +158,7 @@ func newFullEngineFixture(t *testing.T) fullEngineFixture {
 	provider := newStubProvider()
 	engine, err := New(Config{
 		Assets:          testAssets(),
-		OwnerAuth:       manager,
+		SessionSigner:       manager,
 		Accounts:        accounts,
 		OAuthProviders:  oauth.NewRegistry(provider),
 		SiteSettings:    site,
@@ -278,9 +278,7 @@ func TestPendingAccountIsRefusedByEveryOwnerScopedRoute(t *testing.T) {
 		{"import", http.MethodPost, "/api/v1/owner/import/commit"},
 		{"import", http.MethodGet, "/api/v1/owner/import/status"},
 		// owner_auth
-		{"owner_auth", http.MethodGet, "/api/v1/owner/status"},
-		{"owner_auth", http.MethodPost, "/api/v1/owner/token/rotate"},
-		{"owner_auth", http.MethodPut, "/api/v1/owner/password"},
+		{"personal_tokens", http.MethodPost, "/api/v1/account/tokens"},
 		// Ending a session is deliberately absent. It used to sit here, and
 		// this list dutifully asserted that a pending account was refused it --
 		// proving the bug rather than catching it, because the one action that

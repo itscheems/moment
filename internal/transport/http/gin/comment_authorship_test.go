@@ -152,7 +152,7 @@ func approvedMemberSession(t *testing.T, fixture commentHTTPFixture) commentMemb
 // memberCommentRequest authenticates as a member the way a browser does: the
 // session cookie, and the CSRF header that cookie authentication requires.
 func memberCommentRequest(member commentMember, method, path, body string) *http.Request {
-	request := ownerRequest(method, path, body)
+	request := jsonRequest(method, path, body)
 	request.RemoteAddr = "192.0.2.25:4000"
 	request.AddCookie(member.session)
 	request.Header.Set(CSRFHeaderName, member.csrf)

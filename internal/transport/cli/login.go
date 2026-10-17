@@ -432,7 +432,7 @@ func readAPIResponse(request *http.Request) ([]byte, error) {
 		return nil, invalidAPIResponse()
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, decodeOwnerAPIFailure(response.StatusCode, body)
+		return nil, decodeAPIFailure(response.StatusCode, body)
 	}
 	return body, nil
 }

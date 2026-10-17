@@ -211,7 +211,7 @@ func runBackupImport(ctx context.Context, invocation Invocation, input CommandIn
 		}
 		status, statusErr := auth.ReadStatus(root)
 		if statusErr != nil || !status.Initialized || status.SessionEpoch == 0 {
-			return Result{}, ownerAuthError(errors.Join(statusErr, auth.ErrNotInitialized))
+			return Result{}, authenticationError(errors.Join(statusErr, auth.ErrNotInitialized))
 		}
 		committer, createErr := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
 		if createErr != nil {
@@ -332,7 +332,7 @@ func runBackupImportPlan(ctx context.Context, invocation Invocation, archivePath
 		}
 		status, err := auth.ReadStatus(root)
 		if err != nil || !status.Initialized || status.SessionEpoch == 0 {
-			return archive.ImportPlan{}, nil, ownerAuthError(errors.Join(err, auth.ErrNotInitialized))
+			return archive.ImportPlan{}, nil, authenticationError(errors.Join(err, auth.ErrNotInitialized))
 		}
 		committer, err := archive.NewCommitter(archive.CommitOptions{DataDir: root, AppVersion: appVersion})
 		if err != nil {
@@ -364,10 +364,10 @@ func runBackupInspect(ctx context.Context, invocation Invocation, input CommandI
 		}
 		status, statusErr := auth.ReadStatus(runtimeState.Root)
 		if statusErr != nil {
-			return Result{}, ownerAuthError(statusErr)
+			return Result{}, authenticationError(statusErr)
 		}
 		if !status.Initialized || status.SessionEpoch == 0 {
-			return Result{}, ownerAuthError(auth.ErrNotInitialized)
+			return Result{}, authenticationError(auth.ErrNotInitialized)
 		}
 		inspector, createErr := archive.NewInspector(archive.InspectOptions{DataDir: runtimeState.Root})
 		if createErr != nil {
@@ -442,7 +442,7 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 		return archive.Inspection{}, nil, invalidAPIResponse()
 	}
 	if response.StatusCode != http.StatusCreated {
-		return archive.Inspection{}, nil, decodeOwnerAPIFailure(response.StatusCode, body)
+		return archive.Inspection{}, nil, decodeAPIFailure(response.StatusCode, body)
 	}
 	inspection, meta, err := decodeImportInspectionAPI(body, after.Size(), time.Now().UTC())
 	if err != nil {
@@ -543,7 +543,7 @@ func uploadImportArchiveBounded(ctx context.Context, invocation Invocation, arch
 		return nil, 0, invalidAPIResponse()
 	}
 	if response.StatusCode != successStatus {
-		return nil, 0, decodeOwnerAPIFailure(response.StatusCode, body)
+		return nil, 0, decodeAPIFailure(response.StatusCode, body)
 	}
 	return body, after.Size(), nil
 }
@@ -588,7 +588,7 @@ func commitImportAPI(ctx context.Context, invocation Invocation, stagingToken st
 		return archive.CommitResult{}, nil, invalidAPIResponse()
 	}
 	if response.StatusCode != http.StatusOK {
-		return archive.CommitResult{}, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return archive.CommitResult{}, nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	result, meta, err := decodeImportCommitAPI(responseBody)
 	if err != nil {
@@ -632,7 +632,7 @@ func importStatusAPI(ctx context.Context, invocation Invocation) (archive.Commit
 		return archive.CommitStatus{}, nil, invalidAPIResponse()
 	}
 	if response.StatusCode != http.StatusOK {
-		return archive.CommitStatus{}, nil, decodeOwnerAPIFailure(response.StatusCode, responseBody)
+		return archive.CommitStatus{}, nil, decodeAPIFailure(response.StatusCode, responseBody)
 	}
 	status, meta, err := decodeImportStatusAPI(responseBody)
 	if err != nil {
@@ -1409,7 +1409,7 @@ func downloadNamedExport(ctx context.Context, invocation Invocation, destination
 		if !validAPIJSONContentType(response.Header.Get("Content-Type")) || validateUniqueJSONObjects(body) != nil {
 			return archive.Summary{}, invalidAPIResponse()
 		}
-		return archive.Summary{}, decodeOwnerAPIFailure(response.StatusCode, body)
+		return archive.Summary{}, decodeAPIFailure(response.StatusCode, body)
 	}
 	mediaType, _, parseErr := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if parseErr != nil || mediaType != "application/zip" {
