@@ -261,8 +261,6 @@ func TestOpeningAWorkingCopyAnswersToTheDraftCeiling(t *testing.T) {
 		t.Fatalf("a full site must refuse another working copy by name, got %v", err)
 	}
 
-	// The copy that already exists is still reachable: the ceiling stops new
-	// drafts, not the one an owner is in the middle of.
 	if err := service.DiscardArticleDraft(ctx, draftIDOfNewest(ctx, t, service)); err != nil {
 		t.Fatal(err)
 	}

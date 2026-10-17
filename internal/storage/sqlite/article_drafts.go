@@ -14,30 +14,6 @@ import (
 const articleDraftColumns = `author_user_id, id, title, body_json, body_schema_version, cover_media_id,
        published_entry_id, created_at_ms, updated_at_ms`
 
-// Hold one document at a time while creating the list's cached text. Original
-// bodies, authors and save revisions are not changed by the backfill.
-func backfillArticleDraftExcerpts(ctx context.Context, tx *sql.Tx) error {
-	last := ""
-	for {
-		var id, raw string
-		err := tx.QueryRowContext(ctx, `SELECT id, body_json FROM article_drafts WHERE id > ? ORDER BY id LIMIT 1`, last).Scan(&id, &raw)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		body, err := domain.ParseArticleDraftDocument([]byte(raw))
-		if err != nil {
-			return fmt.Errorf("invalid stored draft %s: %w", id, err)
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE article_drafts SET excerpt = ? WHERE id = ?`, domain.ArticleExcerpt(body), id); err != nil {
-			return err
-		}
-		last = id
-	}
-}
-
 func (store postStore) InsertArticleDraft(ctx context.Context, record app.ArticleDraftRecord) error {
 	if err := store.checkMediaPresent(ctx, record.Draft.CoverID); err != nil {
 		return err

@@ -23,11 +23,11 @@ func TestMentionSuggestionsFindAdmittedAccountsAndNobodyElse(t *testing.T) {
 	}
 	ctx := testAccountContext()
 
-	owner, err := accounts.ProfileAccount(ctx)
+	primaryAccount, err := accounts.ProfileAccount(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := accounts.UpdateProfile(ctx, owner.ID, app.ProfileUpdate{
+	if _, err := accounts.UpdateProfile(ctx, primaryAccount.ID, app.ProfileUpdate{
 		Username: strptr("hostess"), DisplayName: strptr("The Hostess"),
 	}); err != nil {
 		t.Fatal(err)
@@ -68,7 +68,6 @@ func TestMentionSuggestionsFindAdmittedAccountsAndNobodyElse(t *testing.T) {
 		return found
 	}
 
-	// The owner sorts first; an application and a barred account are absent.
 	all := names("")
 	if len(all) != 2 || all[0] != "hostess" || all[1] != admitted.Username {
 		t.Fatalf("suggestions = %v, want the owner then the admitted member", all)

@@ -73,7 +73,7 @@ func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtim
 	}
 	username := "writer"
 	if recipe.Name == ShowcaseScenarioName {
-		username = showcaseOwnerUsername
+		username = showcaseProfileUsername
 	}
 	actor, err := accounts.InitializeSiteAccount(context.Background(), username)
 	if err != nil {
@@ -229,14 +229,6 @@ func (builder *fixtureBuilder) createComments(ctx context.Context, entryID domai
 				input.Media[position].Position = position
 			}
 		}
-		// Every fixture comment is owner-authored because that is the only
-		// kind the product can still write. Legacy guest rows are exercised by
-		// archive tests rather than seeded here: a fixture generator that
-		// produced rows no live code path can produce would drift away from
-		// what an actual instance looks like.
-		// The generator writes as the owner account because that is the only
-		// account a fixture has. Reading it from the site rather than assuming
-		// one keeps the fixture honest about who actually authored the rows.
 		settings, settingsErr := builder.site.Get(ctx)
 		if settingsErr != nil {
 			return index, settingsErr

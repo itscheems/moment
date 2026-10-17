@@ -55,17 +55,17 @@ func TestTimelineCarriesBothKindsAndCanBeNarrowedToOne(t *testing.T) {
 	db, _ := openTestDatabase(t, Options{})
 	publishArticleFixture(t, db, "文章标题", "文章正文")
 
-	owner := app.TimelineQuery{Viewer: app.AccountViewer(testAccountID)}
-	if ids := articleTimelineIDs(t, db, owner); !equalStrings(ids, []string{articleEntryID, momentEntryID}) {
+	primaryAccount := app.TimelineQuery{Viewer: app.AccountViewer(testAccountID)}
+	if ids := articleTimelineIDs(t, db, primaryAccount); !equalStrings(ids, []string{articleEntryID, momentEntryID}) {
 		t.Fatalf("both kinds share one timeline, newest first: %v", ids)
 	}
 
-	owner.Kind = domain.KindArticle
-	if ids := articleTimelineIDs(t, db, owner); !equalStrings(ids, []string{articleEntryID}) {
+	primaryAccount.Kind = domain.KindArticle
+	if ids := articleTimelineIDs(t, db, primaryAccount); !equalStrings(ids, []string{articleEntryID}) {
 		t.Fatalf("narrowed to articles: %v", ids)
 	}
-	owner.Kind = domain.KindMoment
-	if ids := articleTimelineIDs(t, db, owner); !equalStrings(ids, []string{momentEntryID}) {
+	primaryAccount.Kind = domain.KindMoment
+	if ids := articleTimelineIDs(t, db, primaryAccount); !equalStrings(ids, []string{momentEntryID}) {
 		t.Fatalf("narrowed to moments: %v", ids)
 	}
 }

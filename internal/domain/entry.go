@@ -199,8 +199,7 @@ func (entry Entry) Validate() error {
 	return nil
 }
 
-// SetReposted applies or removes the owner's single repost activity while
-// preserving the original publication instant.
+// SetReposted changes linked repost activity while preserving original publication time.
 func (entry *Entry) SetReposted(active bool, now time.Time) {
 	updated := NormalizeTime(now)
 	if !updated.After(entry.UpdatedAt) {

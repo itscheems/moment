@@ -107,17 +107,9 @@ func mentionUsernames(t *testing.T, response *httptest.ResponseRecorder) []strin
 	return names
 }
 
-// Who may enumerate the roster.
-//
-// This endpoint answered for the site's single owner when it was written, which
-// made it a public fact about a public profile. It now answers for every
-// admitted account, over a leading-wildcard scan, and its only caller is a
-// composer -- so it is admitted at the tier that may open one. Approval is the
-// line because a pending account is an application, and an autocomplete that
-// returned applications would be a way to read the review queue.
 func TestMentionSuggestionsAreForApprovedAccountsOnly(t *testing.T) {
 	fixture := newMentionFixture(t)
-	owner, err := fixture.accounts.ProfileAccount(context.Background())
+	primaryAccount, err := fixture.accounts.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +145,7 @@ func TestMentionSuggestionsAreForApprovedAccountsOnly(t *testing.T) {
 			t.Fatalf("member = %d, body = %s", response.Code, response.Body.String())
 		}
 		names := mentionUsernames(t, response)
-		if len(names) != 2 || names[0] != owner.Username || names[1] != admitted.Username {
+		if len(names) != 2 || names[0] != primaryAccount.Username || names[1] != admitted.Username {
 			t.Fatalf("suggestions = %v, want the owner first then %q", names, admitted.Username)
 		}
 		for _, name := range names {

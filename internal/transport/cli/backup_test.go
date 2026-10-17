@@ -356,7 +356,7 @@ func TestBackupInspectDirectJSONHelpAndActiveState(t *testing.T) {
 		t.Fatalf("active inspection = %#v", again)
 	}
 	help := execute(application, "", "backup", "inspect", "--help")
-	for _, expected := range []string{"<archive.zip>", "restartable staging", "one-time staging token", "never changes CURRENT", "moment backup inspect ./moment-export.zip"} {
+	for _, expected := range []string{"<archive.zip>", "restartable staging", "one-time staging token", "never changes CURRENT", "moment --as writer backup inspect ./moment-export.zip"} {
 		if help.exit != ExitSuccess || !strings.Contains(help.stdout, expected) {
 			t.Fatalf("help missing %q: %#v", expected, help)
 		}
@@ -401,7 +401,7 @@ func TestBackupImportDirectSafetySuccessReplayAndHelp(t *testing.T) {
 		t.Fatalf("replay=%#v", replayed)
 	}
 	help := execute(application, "", "backup", "import", "--help")
-	for _, expected := range []string{"--staging-token", "--yes", "Direct mode requires the server to be stopped", "automatically roll back"} {
+	for _, expected := range []string{"--staging-token", "--yes", "Direct mode requires --as naming an active administrator and the server to be stopped", "automatically roll back"} {
 		if help.exit != ExitSuccess || !strings.Contains(help.stdout, expected) {
 			t.Fatalf("help missing %q: %#v", expected, help)
 		}
@@ -1072,10 +1072,6 @@ func TestDecodeImportInspectionAPIAcceptsServerEncodedCounts(t *testing.T) {
 	}
 }
 
-// TestImportPreviewRejectsAnAccountlessArchive pins the one account rule at the
-// client boundary: every Moment authority has an owner, so an incoming archive
-// that previews as zero accounts is describing a replacement no importer can
-// produce, and the preview is not something to show an owner.
 func TestImportPreviewRejectsAnAccountlessArchive(t *testing.T) {
 	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
 	envelope := validImportInspectionAPIEnvelope(11, now.Add(importInspectionTokenTTL))

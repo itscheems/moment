@@ -16,8 +16,7 @@ import (
 	"github.com/moment/moment/internal/media"
 )
 
-// RegisterMediaRoutes installs explicit immutable original/preview delivery
-// and owner-authenticated ingestion. Preview failures never route to originals.
+// RegisterMediaRoutes installs reference-authorized reads and account-scoped uploads.
 func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 	for _, path := range []string{"/api/v1/media/:id", "/api/v1/media/:id/preview", "/api/v1/media/:id/poster"} {
 		kind := "original"
@@ -30,17 +29,6 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 		engine.GET(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind, gate))
 		engine.HEAD(path, mediaDeadlines(false, mediaTransferIdle, mediaTransferMax), getMediaAsset(store, kind, gate))
 	}
-	// Approved accounts, not just the owner. Comments carry media and the
-	// comment group already admits them, so leaving the upload behind made the
-	// composer offer a picker whose every use answered 401 -- which the browser
-	// reads as an expired session, telling a correctly signed-in member to sign
-	// in again, forever.
-	//
-	// The pool this writes into is global, and an abandoned upload is
-	// unreferenced rather than lost: the same media sweep that reclaims the
-	// owner's abandoned uploads reclaims these. What that does not bound is how
-	// fast somebody can produce them, which is the rate limit this instance
-	// still owes itself before registration opens to anyone.
 	uploads := engine.Group("/api/v1")
 	uploads.Use(gate.RequireActiveAccount())
 	engine.DELETE("/api/v1/media/:id", gate.RequireAdmin(), deleteMedia(store))

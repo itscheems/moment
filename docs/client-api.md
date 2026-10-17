@@ -51,19 +51,28 @@ aggregate post/comment budget. Comment page sizes count roots, not flattened row
 CLI: `moment site capabilities --data-dir ./moment-data --json`, or
 `moment --url http://127.0.0.1:8080 site capabilities --json`.
 
+## Accounts and administration
+
+Passwords, API tokens and browser sessions belong to individual accounts. Every authenticated request resolves that account's current status and role. Roles are `admin` or `member`; status is `pending`, `active` or `suspended`. Multiple administrators are supported, and role changes, suspension and deletion must leave at least one active administrator.
+
+- `POST /login/session` exchanges a password with `username`, or an account API `token`, for a browser session. `GET /account/session` returns the real account and CSRF token.
+- `GET /account/security`, `PUT /account/password`, and `GET|POST|DELETE /account/tokens[/id]` manage only the caller's credentials. Password changes revoke that account's sessions; API tokens remain independently revocable.
+- `/account/profile`, `/account/avatar`, and `/account/cover` edit the caller's personal profile. `/site` edits site configuration. `PUT /site/profile` selects the independent display account with `{user_id}`.
+- `/accounts` and `PUT /accounts/:id/role` are administrative resources. Selection as the site display account does not grant privileges or transfer content.
+- Web settings use `/settings/account`, `/settings/site`, `/settings/members`, and `/settings/backups`. Publishing uses `/compose` and editing a post uses `/m/:id/edit`.
+
+Sensitive browser drafts and reader caches are separated by instance and account. A changed or unresolved account cannot inherit another account's private editing state.
+
 ## Media transfers and cleanup
 
-Media GET/HEAD routes and `POST /owner/media` use a 30-second idle I/O budget,
+Media GET/HEAD routes and `POST /media` use a 30-second idle I/O budget,
 renewed before each read/write, with a two-hour maximum transfer window. Upload
 processing has a separate five-minute context budget. Normal JSON routes retain
 the server's existing timeouts. Reverse proxies and clients must also allow the
 necessary transfer duration. A stalled upload returns HTTP 408 with
 `MEDIA_UPLOAD_TIMEOUT`; malformed multipart input still returns `INVALID_ARGUMENT`.
 
-`DELETE /owner/media/:id` removes one **unreferenced** media object. It requires the
-owner, including when `?dry_run=true` is supplied. Cookie callers also need CSRF.
-The pool is shared and has no per-upload owner, so approval to comment/upload does
-not grant permission to delete another person's unpublished media.
+`DELETE /media/:id` removes one **unreferenced** media object and requires an active administrator, including with `?dry_run=true`. Cookie callers also need CSRF. Active accounts upload through `POST /media` and receive a reuse grant for their own account. Deduplication shares the immutable object while keeping grants separate. Reading publicly referenced media does not grant permission to reuse it; unused uploads are private to accounts that hold a grant.
 
 The result is:
 
@@ -104,36 +113,25 @@ to Markdown, ordered media/alt text, location, or link cards update this field.
 No-op updates and repost/unrepost activity do not. `updated_at` remains the general
 mutation timestamp. Null means no recorded edit: historical rows are not backfilled
 from ambiguous update times. Archives, import and merge preserve `edited_at` as an
-optional v1 field. The database adds a forward-only nullable column.
+nullable field in format v2.
 
 ## Post visibility
 
 Every post carries `visibility`, either `"everyone"` (the default) or
-`"only_me"`. `POST /owner/posts` accepts an optional `visibility`, and
-`PATCH /owner/posts/:id` accepts it alone or alongside other fields; changing
+`"only_me"`. `POST /posts` accepts an optional `visibility`, and
+`PATCH /posts/:id` accepts it alone or alongside other fields; changing
 it advances `updated_at` but never `edited_at`. Unknown values are rejected with
 `INVALID_ARGUMENT`.
 
-The server decides who sees what, and every route that can return a post
-applies the same rule: the site owner reads everything, everybody else --
-visitors, crawlers, and signed-in members alike -- reads only `everyone`
-posts. A hidden post answers `POST_NOT_FOUND` from `GET /posts/:id` and from
-its comment routes, is absent from `GET /posts`, `GET /search` and the archive
-counts, embeds as an unavailable tombstone when quoted, contributes no share
-metadata, and its media answers `MEDIA_NOT_FOUND` unless every file is also
-referenced from a public post, an avatar, or a cover. Clients therefore need
-no visibility logic of their own: send the owner credential on reads to see
-hidden posts, or omit it to render the site as a visitor does. Because the
-answer depends on the credential, JSON responses stay `Cache-Control:
-no-store` and owner-only media is served `private`.
+The server checks publication state and authorship on every read. Public posts are readable by everyone. Only their author may read private posts or unpublished articles; an administrator receives no override. Hidden content is absent from other accounts' timelines, search and archive counts, and quoted targets become unavailable. Media is public only through a public content or active-profile reference; private responses use private caching.
 
-CLI: `moment post create --visibility only_me`, `moment post update <id>
---visibility everyone`. Direct mode reads as the owner; `--url` mode presents
-`MOMENT_TOKEN` on reads when it is configured and otherwise reads as a visitor.
+Any active account may publish a post or article. Authors edit, withdraw and delete their own content. Administrators may delete another account's public post and manage site pins, but cannot rewrite another author's text or inspect their drafts. Comment author badges compare the comment account ID with the current post author ID. Public account and comment projections do not expose administrative roles.
+
+CLI content writes require an explicit local actor, for example `moment --as writer post create --data-dir ./moment-data --content 'Hello'`. API mode uses the verified account credential and rejects `--as`. Direct reads may select an actor with `--as`; without one they use public visibility. `MOMENT_TOKEN` or `--token-file` selects the API account on reads as well as writes.
 
 ## Timeline paging
 
-`GET /api/v1/posts` reads one page at a time, newest first. The page's `meta`
+`GET /api/v1/posts` reads one page at a time, newest first. `author_user_id` filters by an immutable account ID without widening visibility; the CLI exposes the same filter as `post list --author-id`. The page's `meta`
 carries two opaque cursors: `next_cursor` continues *older* from the page's
 last item and `prev_cursor` continues *newer* from its first. Either goes back
 as `cursor=`; a cursor knows its own direction. Each is `null` once the read
@@ -153,7 +151,7 @@ timezone, and a cursor minted under a window is valid only with that window.
 
 ## Exports
 
-`GET /owner/export` remains an owner-only, complete `moment-export-v1` backup.
+`GET /backups/export` returns a complete `moment-export-v2` backup for an active administrator.
 `GET /account/export` returns the authenticated account's
 `moment-account-export-v1` personal archive. Pending accounts can export their own
 data; unauthenticated or revoked/suspended sessions cannot. Neither route accepts
@@ -165,7 +163,7 @@ Personal archives contain:
 - `data/identities.jsonl`: that account's provider bindings and profile metadata,
   without passwords, bearer tokens, OAuth secrets or sessions;
 - `data/comments.jsonl`: comments attributed to that account;
-- `data/entries.jsonl`: the owner's entries, or an empty file for a member;
+- `data/entries.jsonl`: posts and articles authored by the selected account;
 - `data/media.jsonl` and `media/<sha256>.<extension>`: only originals reachable from
   the selected profile and content;
 - `README.txt`, `manifest.json`, and `checksums.sha256` covering every other member.
@@ -210,11 +208,10 @@ its absence from older servers, and must never infer body media from a cover.
 ## Author article management
 
 An active authenticated account may manage its own articles and drafts. Article
-management uses `/api/v1/articles`; existing `/api/v1/owner/articles` addresses
-are compatibility aliases with identical author checks. An administrator has
+management uses `/api/v1/articles`; retired identity-based routes are absent. An administrator has
 no override for another account's draft, private article, edit, withdrawal or
 deletion. Actor identity comes from the verified credential, never a request
-body author field. Existing ordinary-post publication permissions are unchanged.
+body author field. Ordinary posts use the same active-account and author rules.
 
 - `GET /articles/drafts` returns body-free summaries with a cached plain-text
   `excerpt`, ordered by last save. Draft details also include the same excerpt.

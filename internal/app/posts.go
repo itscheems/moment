@@ -135,15 +135,13 @@ func cloneLinkCardProjections(projections []LinkCardProjection) []LinkCardProjec
 	return clones
 }
 
-// TimelineItemKind distinguishes the canonical publication from the owner's
-// later repost activity. Both projections point at the same authoritative
-// Entry and therefore share media, comments, detail URL, and undo state.
+// TimelineItemKind distinguishes original publication from the author's linked repost activity.
 type TimelineItemKind string
 
 const (
 	// TimelineItemOriginal is the canonical publication surface.
 	TimelineItemOriginal TimelineItemKind = "original"
-	// TimelineItemRepost is the linked owner repost activity surface.
+	// TimelineItemRepost is the linked self-repost surface of an existing post.
 	TimelineItemRepost TimelineItemKind = "repost"
 )
 
@@ -670,8 +668,7 @@ func (service *PostService) Get(ctx context.Context, id domain.ID, viewer Viewer
 	return post, err
 }
 
-// SetReposted toggles the owner's repost activity. Repeating the requested
-// state is idempotent and does not move the timeline again.
+// SetReposted toggles the author's repost activity without changing publication time.
 func (service *PostService) SetReposted(ctx context.Context, id domain.ID, active bool) (Post, error) {
 	if err := contextError(ctx); err != nil {
 		return Post{}, err

@@ -30,7 +30,7 @@ import (
 func registerMedia(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"media", "delete"}, ArgsUsage: "<media-id>", Short: "Delete one unreferenced media object",
-		Long:    "Delete one selected object only when no post, comment, account or link card references it. API mode requires the owner.",
+		Long:    "Delete one selected object only when no post, comment, account or link card references it. API mode requires the account.",
 		Inputs:  "Canonical media ID; --dry-run previews eligibility, --yes confirms deletion.",
 		Output:  "media_id, dry_run, deleted and cleanup_failures.",
 		Errors:  "MEDIA_NOT_FOUND for absent media; MEDIA_IN_USE for referenced media; authentication errors in API mode.",

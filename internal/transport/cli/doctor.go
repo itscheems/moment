@@ -18,8 +18,8 @@ func registerDoctor(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path:       []string{"doctor"},
 		Short:      "Diagnose runtime and data health",
-		Long:       "Run a deterministic read-only diagnostic report. Summary mode is fast and safe over direct or owner-authenticated API transport; --deep is local/direct only and scans SQLite, media, previews, search, and import state within hard bounds.",
-		Inputs:     "A direct --data-dir or owner-authenticated --url. Add --deep only with direct mode for expensive topology-sensitive checks.",
+		Long:       "Run a deterministic read-only diagnostic report. Summary mode is fast and safe over direct or account-authenticated API transport; --deep is local/direct only and scans SQLite, media, previews, search, and import state within hard bounds.",
+		Inputs:     "A direct --data-dir or account-authenticated --url. Add --deep only with direct mode for expensive topology-sensitive checks.",
 		Output:     "Doctor JSON schema v1 with a stable overall status and ordered per-check IDs, severities, bounded evidence, and remediation hints.",
 		Errors:     "Authoritative failures preserve the complete report with ok=false and a deterministic non-zero exit; cancellation returns exit 9. API --deep returns MODE_UNSUPPORTED.",
 		Safety:     "Read-only. Doctor never repairs, migrates, cleans staging, generates previews, rebuilds search, or reads secret contents.",

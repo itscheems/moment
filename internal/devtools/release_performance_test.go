@@ -332,10 +332,6 @@ func validateEmptyTargetImportPlan(
 	archiveSHA256 string,
 	replacementDataBytes int64,
 ) error {
-	// Counts carries no account dimension because the fixture recipes create
-	// none: a generated authority holds exactly the owner the migrations made,
-	// and nothing signs in to it, so every fixture archive and every freshly
-	// initialized target is one account and no linked identity.
 	expectedArchiveCounts := archive.ImportCounts{
 		Entries: expected.Entries, Comments: expected.Comments, Media: expected.Media, Users: 1,
 	}
@@ -765,7 +761,7 @@ func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir strin
 	}
 
 	validationDir := filepath.Join(workDir, "fixture-probe-import-validation")
-	initializeOutput, err := exec.Command(binary, "owner", "init", "--data-dir", validationDir, "--json").Output()
+	initializeOutput, err := exec.Command(binary, "profile", "init", "--data-dir", validationDir, "--json").Output()
 	if err != nil {
 		t.Fatalf("fixture backup validation init probe: %v", err)
 	}
@@ -789,7 +785,7 @@ func probeReleaseBackupInvocation(t *testing.T, binary, workDir, sourceDir strin
 	assertDryRunTargetUnchanged(t, validationBefore, snapshotAuthorityTree(t, validationDir))
 
 	restoreDir := filepath.Join(workDir, "fixture-probe-restore")
-	initializeOutput, err = exec.Command(binary, "owner", "init", "--data-dir", restoreDir, "--json").Output()
+	initializeOutput, err = exec.Command(binary, "profile", "init", "--data-dir", restoreDir, "--json").Output()
 	if err != nil {
 		t.Fatalf("fixture backup restore init probe: %v", err)
 	}
@@ -1057,7 +1053,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	}
 
 	validationDir := filepath.Join(workDir, "import-validation")
-	initializeOutput, err := exec.Command(releaseBinary, "owner", "init", "--data-dir", validationDir, "--json").Output()
+	initializeOutput, err := exec.Command(releaseBinary, "profile", "init", "--data-dir", validationDir, "--json").Output()
 	if err != nil {
 		t.Fatalf("initialize import validation target: %v", err)
 	}
@@ -1081,7 +1077,7 @@ func qualifyAcceptanceScale(t *testing.T, evidencePath string) {
 	assertDryRunTargetUnchanged(t, validationBefore, snapshotAuthorityTree(t, validationDir))
 
 	restoreDir := filepath.Join(workDir, "restore")
-	initializeOutput, err = exec.Command(releaseBinary, "owner", "init", "--data-dir", restoreDir, "--json").Output()
+	initializeOutput, err = exec.Command(releaseBinary, "profile", "init", "--data-dir", restoreDir, "--json").Output()
 	if err != nil {
 		t.Fatalf("initialize restore target: %v", err)
 	}

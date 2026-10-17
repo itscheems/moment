@@ -45,11 +45,11 @@ docker build \
   --tag "$image" \
   --file deploy/Dockerfile .
 
-docker run --rm --mount type=volume,dst=/data "$image" owner init --data-dir /data --json >"$scratch/anonymous-init.json"
+docker run --rm --mount type=volume,dst=/data "$image" init --username writer --data-dir /data --json >"$scratch/anonymous-init.json"
 jq -e '.ok == true and (.data.token | length > 0)' "$scratch/anonymous-init.json" >/dev/null
 
 docker volume create "$volume" >/dev/null
-docker run --rm --mount "type=volume,src=$volume,dst=/data" "$image" owner init --data-dir /data --json >"$scratch/init.json"
+docker run --rm --mount "type=volume,src=$volume,dst=/data" "$image" init --username writer --data-dir /data --json >"$scratch/init.json"
 token="$(jq -er '.data.token' "$scratch/init.json")"
 
 docker run -d --name "$container" --mount "type=volume,src=$volume,dst=/data" -p 127.0.0.1::8080 "$image" >/dev/null

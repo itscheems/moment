@@ -20,9 +20,7 @@ import (
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
-// RegisterPostRoutes exposes public plain-text reads and owner-only mutations
-// over one PostService. SiteService supplies the authoritative IANA timezone
-// used by application-owned date range interpretation.
+// RegisterPostRoutes installs public reading, author mutations and administrative moderation.
 func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.SiteService, gate *Gate) {
 	// The two reads stay public but are not anonymous: a session or token,
 	// when one is presented, widens what they return.

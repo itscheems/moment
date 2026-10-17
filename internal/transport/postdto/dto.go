@@ -17,11 +17,7 @@ import (
 	"github.com/moment/moment/internal/mediatype"
 )
 
-// Post is the stable plain-text post representation used by HTTP and CLI.
-//
-// Visibility is who may read the post, "everyone" or "only_me". A reader only
-// ever receives posts they may read, so for anyone but the owner it is always
-// "everyone".
+// Post is the shared public HTTP and CLI content projection.
 type Post struct {
 	AuthorInfo *Author `json:"author,omitempty"`
 	ID         string  `json:"id"`
@@ -176,8 +172,7 @@ type LinkCard struct {
 	EmbedURL *string `json:"embed_url"`
 }
 
-// Location is the deliberately coarse public location projection. Exact
-// coordinates and provider identifiers remain owner-only.
+// Location exposes the readable place label without private provider coordinates.
 type Location struct {
 	Name        string `json:"name"`
 	DisplayName string `json:"display_name"`

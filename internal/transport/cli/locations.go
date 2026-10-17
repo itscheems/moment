@@ -22,7 +22,7 @@ import (
 func registerLocations(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"location", "search"}, Short: "Search selectable post locations",
-		Long:       "Search normalized location candidates through configured providers in direct mode or the owner HTTP API.",
+		Long:       "Search normalized location candidates through configured providers in direct mode or the account HTTP API.",
 		Inputs:     "Provide --query and optionally both --latitude and --longitude to bias results. Provider credentials come from AMAP_API_KEY and GEOAPIFY_API_KEY in direct mode.",
 		Output:     "A canonical location result array suitable for --location-json.",
 		Errors:     "Invalid coordinates and unavailable providers use stable codes.",

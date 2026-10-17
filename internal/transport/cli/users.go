@@ -62,7 +62,7 @@ func runUserSuggest(ctx context.Context, invocation Invocation, input CommandInp
 	return Result{Data: items, Meta: meta, Text: fmt.Sprintf("%d mention suggestion(s)", len(items))}, nil
 }
 
-// userAPIRequest reads one bounded account listing under the owner credential.
+// userAPIRequest reads one bounded account listing under the account credential.
 //
 // The mention endpoint answers with the account roster, which is not a public
 // fact about a site, so it no longer admits a caller who presents nothing. The

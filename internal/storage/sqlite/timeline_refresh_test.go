@@ -61,9 +61,9 @@ func TestTimelineRefreshCursorSurvivesEmptyHeadAndSameMillisecondPublications(t 
 	if err != nil || len(visible.Items) != 1 {
 		t.Fatalf("visibility: %+v %v", visible, err)
 	}
-	owner, err := service.List(ctx, app.ListPostsInput{Cursor: loaded.RefreshCursor, Viewer: app.AccountViewer(testAccountID)})
-	if err != nil || len(owner.Items) != 2 {
-		t.Fatalf("owner visibility: %+v %v", owner, err)
+	primaryAccount, err := service.List(ctx, app.ListPostsInput{Cursor: loaded.RefreshCursor, Viewer: app.AccountViewer(testAccountID)})
+	if err != nil || len(primaryAccount.Items) != 2 {
+		t.Fatalf("owner visibility: %+v %v", primaryAccount, err)
 	}
 }
 

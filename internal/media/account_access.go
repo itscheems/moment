@@ -2,10 +2,11 @@ package media
 
 import (
 	"context"
+	"time"
+
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/storage/sqlite"
-	"time"
 )
 
 // grantIngestedMedia shares the immutable object with this uploader. Trusted

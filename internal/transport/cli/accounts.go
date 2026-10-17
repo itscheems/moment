@@ -62,7 +62,7 @@ func registerAccounts(application *Application, appVersion string) {
 		Long:       "Move one account to active so it may write. This is the everyday operation of the approval registration mode.",
 		Inputs:     "One username.",
 		Output:     "The updated account.",
-		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; the owner account cannot be changed.",
+		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; at least one active administrator must remain.",
 		Example:    "moment user approve visitor --data-dir ./moment-data",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityDirectOnly,
@@ -74,7 +74,7 @@ func registerAccounts(application *Application, appVersion string) {
 		Long:       "Stop an account from signing in and end every session it currently holds.",
 		Inputs:     "One username.",
 		Output:     "The updated account.",
-		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; the owner account cannot be changed.",
+		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; at least one active administrator must remain.",
 		Example:    "moment user suspend visitor --data-dir ./moment-data",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityDirectOnly,
@@ -88,7 +88,7 @@ func registerAccounts(application *Application, appVersion string) {
 		Long:       "Remove one account and the sign-in methods and sessions that only described it. Comments it wrote stay, attributed to a name rather than an account.",
 		Inputs:     "One username.",
 		Output:     "The account that was removed.",
-		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; the owner account cannot be removed.",
+		Errors:     "An unknown username returns ACCOUNT_NOT_FOUND; selected display accounts and authors with content cannot be removed.",
 		Example:    "moment user delete visitor --data-dir ./moment-data --yes",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityDirectOnly,
@@ -114,7 +114,7 @@ func registerAccounts(application *Application, appVersion string) {
 //
 // These commands are direct-only. Reviewing who may write is exactly the kind
 // of decision worth requiring physical access to the data directory for, and
-// the API-mode alternative already exists in the browser for an owner who is
+// the API-mode alternative already exists in the browser for an account who is
 // signed in.
 func openDirectAccounts(ctx context.Context, invocation Invocation) (*app.AccountService, *sqlitestore.Database, error) {
 	target, err := invocation.DirectTransport()

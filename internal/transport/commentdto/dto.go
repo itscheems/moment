@@ -12,12 +12,7 @@ import (
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
-// Comment is the canonical one-level comment wire representation.
-//
-// AuthorName is the value stored on the row and exists so a client can round
-// trip a comment without losing what was persisted. Author is the identity to
-// render: it is resolved server side, so every adapter shows the same name and
-// no client has to know that owner comments take theirs from the site.
+// Comment is the public comment projection with its resolved author.
 type Comment struct {
 	ID          string            `json:"id"`
 	PostID      string            `json:"post_id"`
@@ -87,7 +82,7 @@ type ReplyPage struct {
 	Items []Comment `json:"items"`
 }
 
-// Pin is the canonical owner mutation result for one post comment pin.
+// Pin identifies the root pinned within one post's conversation.
 type Pin struct {
 	PostID          string  `json:"post_id"`
 	PinnedCommentID *string `json:"pinned_comment_id"`
@@ -176,7 +171,7 @@ func NextCursor(cursor string) *string {
 	return &cursor
 }
 
-// FromPin maps one canonical owner pin result.
+// FromPin maps the application pin into its transport representation.
 func FromPin(pin app.CommentPin) Pin {
 	var pinnedCommentID *string
 	if pin.PinnedCommentID != nil {
@@ -452,7 +447,7 @@ func validateCommentRun(comments []Comment) error {
 	return nil
 }
 
-// ValidatePin rejects a non-canonical owner mutation result.
+// ValidatePin checks the public pin identifiers.
 func ValidatePin(pin Pin) error {
 	if _, err := domain.ParseID(pin.PostID); err != nil {
 		return err

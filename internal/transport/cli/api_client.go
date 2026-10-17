@@ -99,28 +99,12 @@ func validCanonicalAPITime(value time.Time) bool {
 	return !value.IsZero() && value.Location() == time.UTC && value.Nanosecond()%int(time.Millisecond) == 0
 }
 
-func validCanonicalAPITimePointer(value *time.Time) bool {
-	return value != nil && validCanonicalAPITime(*value)
-}
-
 func validCanonicalAPIInstantField(data json.RawMessage, field string, expected time.Time) bool {
 	fields, ok := apiDataFields(data)
 	if !ok {
 		return false
 	}
 	return validCanonicalAPIRawInstant(fields[field], expected)
-}
-
-func validOptionalCanonicalAPIInstantField(data json.RawMessage, field string, expected *time.Time) bool {
-	fields, ok := apiDataFields(data)
-	if !ok {
-		return false
-	}
-	raw, present := fields[field]
-	if expected == nil {
-		return !present
-	}
-	return present && validCanonicalAPIRawInstant(raw, *expected)
 }
 
 func validNullableCanonicalAPIInstantField(data json.RawMessage, field string, expected *time.Time) bool {

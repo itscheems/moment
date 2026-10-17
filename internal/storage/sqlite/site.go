@@ -135,11 +135,6 @@ func (store siteStore) SiteSettings(ctx context.Context) (app.SiteSettings, erro
 
 		registration string
 	)
-	// The owner's name, picture and self-description belong to the account
-	// now; the site row keeps only what is a property of the site. Joining
-	// here rather than duplicating the columns is what stops the two from
-	// ever disagreeing -- and the wire shape stays exactly as it was, so no
-	// adapter above this line has to know the move happened.
 	err := store.queries.QueryRowContext(ctx, `
 SELECT site.profile_user_id, account.username, account.display_name, site.title, account.bio, site.timezone,
        site.public_base_url, account.avatar_media_id, account.cover_media_id, site.pinned_entry_id,

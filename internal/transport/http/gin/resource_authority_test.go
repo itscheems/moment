@@ -2,11 +2,12 @@ package ginhttp
 
 import (
 	"context"
-	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/domain"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/moment/moment/internal/app"
+	"github.com/moment/moment/internal/domain"
 )
 
 func TestResourceRoutesLetActiveMembersWriteUnderTheirOwnIdentity(t *testing.T) {

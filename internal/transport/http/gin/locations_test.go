@@ -28,7 +28,7 @@ func (resolver *locationHTTPResolver) Nearby(_ context.Context, point domain.Geo
 	return []domain.Location{{Name: "上海展览中心", DisplayName: "上海市静安区", CountryCode: "CN", Country: "中国", Provider: "amap", Point: &point}}, nil
 }
 
-func TestLocationHTTPRequiresOwnerAndReturnsCanonicalSnapshots(t *testing.T) {
+func TestLocationHTTPRequiresActiveAccountAndReturnsCanonicalSnapshots(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	resolver := &locationHTTPResolver{}
 	service, err := app.NewLocationService(resolver)

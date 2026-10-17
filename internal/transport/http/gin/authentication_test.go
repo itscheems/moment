@@ -3,15 +3,16 @@ package ginhttp
 import (
 	"context"
 	"encoding/json"
-	"github.com/moment/moment/internal/app"
-	"github.com/moment/moment/internal/auth"
-	"github.com/moment/moment/internal/domain"
-	"github.com/moment/moment/internal/runtimefs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/moment/moment/internal/app"
+	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/domain"
+	"github.com/moment/moment/internal/runtimefs"
 )
 
 type authenticationTestFixture struct {
@@ -256,11 +257,11 @@ func TestPersonalTokensCannotRevokeAnotherAccountsCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := fixture.accounts.ResolveAPIToken(context.Background(), fixture.token)
+	primaryAccount, err := fixture.accounts.ResolveAPIToken(context.Background(), fixture.token)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := jsonRequest(http.MethodDelete, "/api/v1/account/tokens/"+owner.Token.ID, "")
+	request := jsonRequest(http.MethodDelete, "/api/v1/account/tokens/"+primaryAccount.Token.ID, "")
 	request.Header.Set("Authorization", "Bearer "+issued.Value)
 	response := performRequest(fixture.engine, request)
 	if response.Code != http.StatusNotFound {

@@ -78,8 +78,7 @@ type statusPatch struct {
 // spent the work discovering the same thing.
 const maxAccountPictureBytes = 8 << 20
 
-// RegisterAccountRoutes installs the routes an account uses on itself, the
-// public account lookup, and the owner's review screens.
+// RegisterAccountRoutes installs personal account and administrative account resources.
 func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store, cookies CookieOptions, oauth OAuthConfig) {
 	engine.GET("/api/v1/users/:username", publicAccountLookup(gate))
 
@@ -343,9 +342,6 @@ func listAllAccounts(gate *Gate) gin.HandlerFunc {
 	}
 }
 
-// setAccountStatus is the owner's approve, suspend and reinstate control. It is
-// the only route in the product that can change an account's status, and it
-// admits only the administration.
 func setAccountStatus(gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		body, read := readBody(ctx)

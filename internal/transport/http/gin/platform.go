@@ -149,10 +149,6 @@ func New(config Config) (*gin.Engine, error) {
 		}
 		Success(ctx, http.StatusOK, map[string]string{"status": "ready"}, nil)
 	})
-	// Every owner-scoped group is admitted by one gate, so authorisation has
-	// exactly one implementation. A route group cannot be registered without
-	// it, which is what makes "this route forgot to check" unrepresentable
-	// rather than merely unlikely.
 	var gate *Gate
 	if config.SessionSigner != nil {
 		if config.Accounts == nil {

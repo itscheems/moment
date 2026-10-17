@@ -574,16 +574,6 @@ func (service *Service) inspectSite(ctx context.Context, builder *reportBuilder,
 	service.inspectArticles(ctx, builder, database)
 }
 
-// inspectAccounts reports whether the account graph still holds together.
-//
-// Two of these have no database constraint behind them and can only be noticed
-// here. comments.author_user_id deliberately carries no foreign key -- adding
-// one would have meant rebuilding a table six others cascade from -- so a row
-// pointing at a deleted account is invisible until something looks. And a
-// username that collides with a reserved path produces an account whose profile
-// is unreachable, which is a warning rather than a failure precisely because
-// the reserved list is enforced on write and never on read: an existing account
-// keeps working, and renaming it is the owner's decision, not the migration's.
 func (service *Service) inspectAccounts(ctx context.Context, builder *reportBuilder, database *sqlitestore.DiagnosticDatabase) {
 	accounts, err := database.Accounts(ctx, domain.UsernameReserved)
 	if err != nil {

@@ -14,8 +14,7 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-// RegisterSiteRoutes installs the public settings read and owner-only partial
-// mutation over one application service.
+// RegisterSiteRoutes installs public site identity and administrative configuration.
 func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, gate *Gate, instanceID string, instanceInitializedAt time.Time) {
 	engine.GET("/api/v1/site", getSiteSettings(service, instanceID, instanceInitializedAt))
 	settings := engine.Group("/api/v1")
@@ -114,13 +113,10 @@ func (field *requiredBoolField) UnmarshalJSON(data []byte) error {
 }
 
 type siteUpdateRequest struct {
-	Title           requiredStringField `json:"title"`
-	Timezone        requiredStringField `json:"timezone"`
-	PublicBaseURL   optionalStringField `json:"public_base_url"`
-	CommentsEnabled requiredBoolField   `json:"comments_enabled"`
-	// Accepted on the write and absent from the read: the route is owner-only,
-	// while GET /api/v1/site is public and SiteSettings is serialised straight
-	// to it. Whether applications are being accepted is the owner's to publish.
+	Title            requiredStringField `json:"title"`
+	Timezone         requiredStringField `json:"timezone"`
+	PublicBaseURL    optionalStringField `json:"public_base_url"`
+	CommentsEnabled  requiredBoolField   `json:"comments_enabled"`
 	RegistrationMode requiredStringField `json:"registration_mode"`
 }
 
@@ -171,9 +167,6 @@ func writeSiteError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeInvalidArgument, domain.CodeUsernameReserved:
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
-	// A conflict with the state of the world rather than a fault in what was
-	// sent, and the same status the account route answers with -- one handle
-	// column, one answer, whichever form the owner reached it from.
 	case domain.CodeUsernameTaken:
 		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeMediaNotFound:

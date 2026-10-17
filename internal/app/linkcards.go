@@ -11,17 +11,13 @@ import (
 	"github.com/moment/moment/internal/linkfetch"
 )
 
-// LinkPreviewResolver unfurls one owner-supplied URL. The application layer
-// depends on this port, never on an HTTP client, so the guarded transport is
-// the only way out to the network.
+// LinkPreviewResolver resolves a supplied URL into a bounded preview snapshot.
 type LinkPreviewResolver interface {
 	Resolve(context.Context, string) (linkfetch.Preview, error)
 	Fetcher() *linkfetch.Fetcher
 }
 
-// LinkThumbnailStore ingests a downloaded thumbnail as managed media. It is the
-// same seam an owner upload uses, so a remote image gets exactly the same
-// signature sniffing, MIME allowlist, dimension caps, and content-hash dedup.
+// LinkThumbnailStore captures preview images as managed media.
 type LinkThumbnailStore interface {
 	Ingest(ctx context.Context, originalName string, input io.Reader) (domain.ID, string, uint32, uint32, error)
 }
@@ -124,10 +120,6 @@ func (service *LinkPreviewService) Resolve(ctx context.Context, rawURL string) (
 	return result, nil
 }
 
-// captureImage downloads a remote image through the guarded fetcher and hands
-// the bytes to the managed media store. The remote image receives no exemption
-// from the owner-upload rules: an SVG or an unsupported codec is refused here
-// exactly as it would be on upload, and the card simply renders without it.
 func (service *LinkPreviewService) captureImage(ctx context.Context, imageURL, name string) (domain.ID, string, uint32, uint32, error) {
 	response, err := service.resolver.Fetcher().Get(ctx, imageURL, []string{"image/*"}, linkfetch.DefaultMaxImageBytes)
 	if err != nil {

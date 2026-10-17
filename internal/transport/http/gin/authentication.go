@@ -15,11 +15,14 @@ import (
 )
 
 const (
-	SessionCookieName    = "moment_session"
+	// SessionCookieName identifies the signed account-session cookie.
+	SessionCookieName = "moment_session"
+	// CSRFHeaderName carries the session-bound token on browser mutations.
 	CSRFHeaderName       = "X-CSRF-Token"
 	accountCredentialKey = "moment.credential_id"
 )
 
+// CookieOptions controls transport requirements for browser sessions.
 type CookieOptions struct{ Secure bool }
 type sessionRequest struct {
 	Username *string `json:"username"`
@@ -207,6 +210,7 @@ func revokeAccountToken(gate *Gate) gin.HandlerFunc {
 	}
 }
 
+// CurrentCredentialID returns the verified credential associated with this request.
 func CurrentCredentialID(ctx *gin.Context) (string, bool) {
 	value, ok := ctx.Get(accountCredentialKey)
 	id, valid := value.(string)

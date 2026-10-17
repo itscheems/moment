@@ -183,11 +183,11 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 	if err := target.Verify(); err != nil {
 		return Result{}, err
 	}
-	ownerStatus, err := auth.ReadStatusWithinRoot(authority)
+	signerStatus, err := auth.ReadStatusWithinRoot(authority)
 	if err != nil {
 		return Result{}, err
 	}
-	needsOwner := !ownerStatus.Initialized
+	needsSigner := !signerStatus.Initialized
 	generation, err := runtimeState.CreateDevelopmentGeneration(ctx, authority, held)
 	if err != nil {
 		return Result{}, err
@@ -299,7 +299,7 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 		if err != nil {
 			return err
 		}
-		if _, err = validateDoctorHandoff(report, recipe.ExpectedDoctorCheckID, needsOwner); err != nil {
+		if _, err = validateDoctorHandoff(report, recipe.ExpectedDoctorCheckID, needsSigner); err != nil {
 			return err
 		}
 		if recipe.ArchiveRoundTrip {
@@ -317,7 +317,7 @@ func Execute(ctx context.Context, request Request) (result Result, resultErr err
 	if err != nil {
 		return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, err)
 	}
-	if needsOwner {
+	if needsSigner {
 		if _, err := auth.InitializeDevelopmentWithinLocks(context.WithoutCancel(ctx), runtimeState, developmentAuthority, held); err != nil {
 			return Result{}, rollbackIfPublished(runtimeState, authority, held, targetGenerationAuthority(target), generation.ID, err)
 		}
@@ -376,13 +376,13 @@ func rollbackIfPublished(runtimeState *runtimefs.Runtime, authority *os.Root, he
 	return operationErr
 }
 
-func validateDoctorHandoff(report doctor.Report, expected string, allowMissingOwner bool) (bool, error) {
+func validateDoctorHandoff(report doctor.Report, expected string, allowMissingSigner bool) (bool, error) {
 	failures := make([]doctor.Check, 0, report.Counts.Fail)
 	for _, check := range report.Checks {
 		if check.Status != doctor.StatusFail {
 			continue
 		}
-		if allowMissingOwner && check.ID == doctor.CheckSecretPermissions {
+		if allowMissingSigner && check.ID == doctor.CheckSecretPermissions {
 			continue
 		}
 		failures = append(failures, check)

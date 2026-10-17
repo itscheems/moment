@@ -11,4 +11,5 @@ type APIToken struct {
 	RevokedAtMS *int64 `json:"revoked_at_ms"`
 }
 
+// Live reports whether this independently revocable token is still active.
 func (token APIToken) Live() bool { return token.RevokedAtMS == nil }

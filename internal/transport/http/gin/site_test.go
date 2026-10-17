@@ -124,9 +124,9 @@ func TestOwnProfileChangesAndPictureClearAreIndependentFromSiteConfiguration(t *
 	if site, err := fixture.site.Get(context.Background()); err != nil || site.DisplayName != "Actual writer" || site.AvatarMediaID == nil || site.Title != "Moment" {
 		t.Fatalf("profile projection=%+v,%v", site, err)
 	}
-	clear := jsonRequest(http.MethodPatch, "/api/v1/account/profile", `{"avatar_media_id":null}`)
-	clear.Header.Set("Authorization", "Bearer "+fixture.token)
-	response = performRequest(fixture.engine, clear)
+	clearRequest := jsonRequest(http.MethodPatch, "/api/v1/account/profile", `{"avatar_media_id":null}`)
+	clearRequest.Header.Set("Authorization", "Bearer "+fixture.token)
+	response = performRequest(fixture.engine, clearRequest)
 	if response.Code != http.StatusOK || decodeDataMap(t, response)["avatar_media_id"] != nil {
 		t.Fatalf("explicit picture clear=%d %s", response.Code, response.Body.String())
 	}

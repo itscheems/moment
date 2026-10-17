@@ -12,21 +12,6 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-// mediaReferencedSQL is the one SQLite definition of v0 reachability. Every
-// resolver operation below composes this predicate; no consumer owns a local
-// entry_media/avatar query.
-//
-// Avatars and covers are read from users rather than site_settings because
-// 0022 moved them there. Every account's picture has to appear here, not just
-// the owner's: a name missing from this predicate is not a stale query, it is
-// a file the collector is entitled to delete.
-//
-// An article contributes three ways: its cover, a draft's cover, and the
-// pictures a draft body places. Its published body pictures arrive through
-// entry_media like any other post's, which is the reason they are projected
-// there at all. Note what is deliberately absent: none of the draft rows
-// appear in the visibility query below. Being referenced by a draft keeps a
-// file alive; it does not make it public, because a draft is not published.
 const mediaReferencedSQL = `(
     EXISTS (SELECT 1 FROM entry_media AS usage WHERE usage.media_id = media.id)
     OR EXISTS (SELECT 1 FROM comment_media AS usage WHERE usage.media_id = media.id)
@@ -288,18 +273,6 @@ func (store mediaReferenceStore) DeleteMediaIfUnreferenced(ctx context.Context, 
 	return count == 1, err
 }
 
-// Visibility reports the widest audience that may fetch a media file, derived
-// from what references it.
-//
-// A file inherits the audience of the posts it appears in: through an entry's
-// own media, through a comment under that entry, or through a link card the
-// entry carries. One public reference is enough to make it public. Avatars and
-// covers are always public. A file nothing references yet -- an upload the
-// composer is still holding -- is public too, because it always has been and
-// a member previewing their own upload has no other standing to fetch it by.
-//
-// Only a file every reference of which sits under a hidden post is narrowed
-// to the owner.
 func (repository *MediaReferenceRepository) audience(ctx context.Context, id domain.ID, viewer app.Viewer) (bool, bool, error) {
 	public, publicArguments := visibilityPredicate(viewer, "entry.visibility")
 	if viewer.UserID() != "" {

@@ -13,8 +13,7 @@ import (
 	"github.com/moment/moment/internal/transport/postdto"
 )
 
-// RegisterArticleRoutes exposes the owner's unfinished articles and the act of
-// publishing one. Nothing here is public: a draft is by definition not.
+// RegisterArticleRoutes installs author-scoped article and draft management resources.
 func RegisterArticleRoutes(engine *gin.Engine, posts *app.PostService, gate *Gate) {
 	routes := engine.Group("/api/v1")
 	routes.Use(gate.RequireActiveAccount())

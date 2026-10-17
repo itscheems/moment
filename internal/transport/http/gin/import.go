@@ -51,45 +51,44 @@ type reviewImportCommitter interface {
 	ReadReviewMedia(context.Context, string, archive.Authorization, string, archive.MergeReviewSource, string) (media.Asset, error)
 }
 
-// RegisterImportInspectRoutes installs the owner-only raw ZIP upload endpoint.
+// RegisterImportInspectRoutes installs administrator-authorized archive inspection.
 func RegisterImportInspectRoutes(engine *gin.Engine, inspector ImportInspector, gate *Gate) {
 	backups := engine.Group("/api/v1/backups")
 	backups.Use(gate.RequireAdmin())
-	backups.POST("/import/inspect", inspectImport(inspector, gate))
+	backups.POST("/import/inspect", inspectImport(inspector))
 	if planner, ok := inspector.(importPlanner); ok {
-		backups.POST("/import/plan", planImport(planner, gate))
+		backups.POST("/import/plan", planImport(planner))
 	}
 }
 
-// RegisterImportCommitRoutes installs the owner-only destructive commit and
-// polling status endpoints. Status intentionally accepts no token.
+// RegisterImportCommitRoutes installs administrator-authorized replacement and merge resources.
 func RegisterImportCommitRoutes(engine *gin.Engine, committer ImportCommitter, gate *Gate) {
 	backups := engine.Group("/api/v1/backups")
 	backups.Use(gate.RequireAdmin())
-	backups.POST("/import/commit", commitImport(committer, gate))
+	backups.POST("/import/commit", commitImport(committer))
 	if restorer, ok := committer.(archiveImportCommitter); ok {
-		backups.POST("/import/restore", restoreImport(restorer, gate))
+		backups.POST("/import/restore", restoreImport(restorer))
 	}
 	if merger, ok := committer.(mergeImportCommitter); ok {
-		backups.POST("/import/merge/plan", planMergeImport(merger, gate))
-		backups.POST("/import/merge/commit", commitMergeImport(merger, gate))
-		backups.POST("/import/merge/discard", discardMergeImport(merger, gate))
+		backups.POST("/import/merge/plan", planMergeImport(merger))
+		backups.POST("/import/merge/commit", commitMergeImport(merger))
+		backups.POST("/import/merge/discard", discardMergeImport(merger))
 	}
 	if reviewer, ok := committer.(reviewImportCommitter); ok {
-		backups.POST("/import/review", reviewImport(reviewer, gate))
-		backups.POST("/import/review/replace", commitReviewedReplacement(reviewer, gate))
-		backups.POST("/import/review/media", getReviewMedia(reviewer, gate))
+		backups.POST("/import/review", reviewImport(reviewer))
+		backups.POST("/import/review/replace", commitReviewedReplacement(reviewer))
+		backups.POST("/import/review/media", getReviewMedia(reviewer))
 	}
 	backups.GET("/import/status", importStatus(committer))
 }
 
-func reviewImport(reviewer reviewImportCommitter, gate *Gate) gin.HandlerFunc {
-	return importArchiveUpload(gate, "review", false, func(ctx context.Context, source io.Reader, _ string, epoch archive.Authorization) (any, error) {
+func reviewImport(reviewer reviewImportCommitter) gin.HandlerFunc {
+	return importArchiveUpload("review", false, func(ctx context.Context, source io.Reader, _ string, epoch archive.Authorization) (any, error) {
 		return reviewer.InspectReviewArchive(ctx, source, epoch)
 	}, http.StatusCreated)
 }
 
-func commitReviewedReplacement(reviewer reviewImportCommitter, gate *Gate) gin.HandlerFunc {
+func commitReviewedReplacement(reviewer reviewImportCommitter) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if !requireImportJSON(ctx, "review replacement") {
 			return
@@ -103,7 +102,7 @@ func commitReviewedReplacement(reviewer reviewImportCommitter, gate *Gate) gin.H
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import review replacement requires exactly staging_token and plan_id", nil)
 			return
 		}
-		epoch, ok := authorizedImportSubject(ctx, gate)
+		epoch, ok := authorizedImportSubject(ctx)
 		if !ok {
 			return
 		}
@@ -116,7 +115,7 @@ func commitReviewedReplacement(reviewer reviewImportCommitter, gate *Gate) gin.H
 	}
 }
 
-func getReviewMedia(reviewer reviewImportCommitter, gate *Gate) gin.HandlerFunc {
+func getReviewMedia(reviewer reviewImportCommitter) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if !requireImportJSON(ctx, "review media") {
 			return
@@ -130,7 +129,7 @@ func getReviewMedia(reviewer reviewImportCommitter, gate *Gate) gin.HandlerFunc 
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import review media requires exactly staging_token, plan_id, source and media_id", nil)
 			return
 		}
-		epoch, ok := authorizedImportSubject(ctx, gate)
+		epoch, ok := authorizedImportSubject(ctx)
 		if !ok {
 			return
 		}
@@ -162,7 +161,7 @@ func requireImportJSON(ctx *gin.Context, operation string) bool {
 	return true
 }
 
-func authorizedImportSubject(ctx *gin.Context, gate *Gate) (archive.Authorization, bool) {
+func authorizedImportSubject(ctx *gin.Context) (archive.Authorization, bool) {
 	user, ok := CurrentAccount(ctx)
 	if !ok {
 		unauthorized(ctx)
@@ -176,25 +175,25 @@ func authorizedImportSubject(ctx *gin.Context, gate *Gate) (archive.Authorizatio
 	return archive.Authorization{AccountID: user.ID, CredentialID: credential}, true
 }
 
-func planMergeImport(merger mergeImportCommitter, gate *Gate) gin.HandlerFunc {
-	return importArchiveUpload(gate, "merge plan", false, func(ctx context.Context, source io.Reader, _ string, epoch archive.Authorization) (any, error) {
+func planMergeImport(merger mergeImportCommitter) gin.HandlerFunc {
+	return importArchiveUpload("merge plan", false, func(ctx context.Context, source io.Reader, _ string, epoch archive.Authorization) (any, error) {
 		return merger.InspectMergeArchive(ctx, source, epoch)
 	}, http.StatusCreated)
 }
 
-func restoreImport(restorer archiveImportCommitter, gate *Gate) gin.HandlerFunc {
-	return importArchiveUpload(gate, "restore", true, func(ctx context.Context, source io.Reader, expectedArchiveSHA string, epoch archive.Authorization) (any, error) {
+func restoreImport(restorer archiveImportCommitter) gin.HandlerFunc {
+	return importArchiveUpload("restore", true, func(ctx context.Context, source io.Reader, expectedArchiveSHA string, epoch archive.Authorization) (any, error) {
 		return restorer.CommitArchive(ctx, source, expectedArchiveSHA, epoch)
 	}, http.StatusOK)
 }
 
-func planImport(planner importPlanner, gate *Gate) gin.HandlerFunc {
-	return importArchiveUpload(gate, "plan", false, func(ctx context.Context, source io.Reader, _ string, epoch archive.Authorization) (any, error) {
+func planImport(planner importPlanner) gin.HandlerFunc {
+	return importArchiveUpload("plan", false, func(ctx context.Context, source io.Reader, _ string, epoch archive.Authorization) (any, error) {
 		return planner.Plan(ctx, source, epoch)
 	}, http.StatusOK)
 }
 
-func importArchiveUpload(gate *Gate, operation string, requireExpectedSHA bool, run func(context.Context, io.Reader, string, archive.Authorization) (any, error), successStatus int) gin.HandlerFunc {
+func importArchiveUpload(operation string, requireExpectedSHA bool, run func(context.Context, io.Reader, string, archive.Authorization) (any, error), successStatus int) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if ctx.Request.URL.RawQuery != "" {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import "+operation+" does not accept query parameters", map[string]any{"field": "query"})
@@ -214,7 +213,7 @@ func importArchiveUpload(gate *Gate, operation string, requireExpectedSHA bool, 
 			}
 			expectedArchiveSHA = values[0]
 		}
-		epoch, ok := authorizedImportSubject(ctx, gate)
+		epoch, ok := authorizedImportSubject(ctx)
 		if !ok {
 			return
 		}
@@ -280,7 +279,7 @@ func writeImportUploadError(ctx *gin.Context, operation string, err error) {
 	Failure(ctx, status, string(domainErr.Code), domainErr.Message, domainErr.Details)
 }
 
-func commitMergeImport(committer mergeImportCommitter, gate *Gate) gin.HandlerFunc {
+func commitMergeImport(committer mergeImportCommitter) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if ctx.Request.URL.RawQuery != "" {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge commit does not accept query parameters", map[string]any{"field": "query"})
@@ -300,7 +299,7 @@ func commitMergeImport(committer mergeImportCommitter, gate *Gate) gin.HandlerFu
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge commit requires exactly staging_token and selection", nil)
 			return
 		}
-		epoch, ok := authorizedImportSubject(ctx, gate)
+		epoch, ok := authorizedImportSubject(ctx)
 		if !ok {
 			return
 		}
@@ -313,7 +312,7 @@ func commitMergeImport(committer mergeImportCommitter, gate *Gate) gin.HandlerFu
 	}
 }
 
-func discardMergeImport(committer mergeImportCommitter, gate *Gate) gin.HandlerFunc {
+func discardMergeImport(committer mergeImportCommitter) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if ctx.Request.URL.RawQuery != "" {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge discard does not accept query parameters", map[string]any{"field": "query"})
@@ -333,7 +332,7 @@ func discardMergeImport(committer mergeImportCommitter, gate *Gate) gin.HandlerF
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import merge discard requires exactly one non-empty staging_token", map[string]any{"field": "staging_token"})
 			return
 		}
-		epoch, ok := authorizedImportSubject(ctx, gate)
+		epoch, ok := authorizedImportSubject(ctx)
 		if !ok {
 			return
 		}
@@ -345,7 +344,7 @@ func discardMergeImport(committer mergeImportCommitter, gate *Gate) gin.HandlerF
 	}
 }
 
-func commitImport(committer ImportCommitter, gate *Gate) gin.HandlerFunc {
+func commitImport(committer ImportCommitter) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if ctx.Request.URL.RawQuery != "" {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import commit does not accept query parameters", map[string]any{"field": "query"})
@@ -365,7 +364,7 @@ func commitImport(committer ImportCommitter, gate *Gate) gin.HandlerFunc {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import commit requires exactly one non-empty staging_token", map[string]any{"field": "staging_token"})
 			return
 		}
-		epoch, ok := authorizedImportSubject(ctx, gate)
+		epoch, ok := authorizedImportSubject(ctx)
 		if !ok {
 			return
 		}
@@ -544,7 +543,7 @@ func writeImportCommitError(ctx *gin.Context, err error) {
 	Failure(ctx, status, string(domainErr.Code), domainErr.Message, domainErr.Details)
 }
 
-func inspectImport(inspector ImportInspector, gate *Gate) gin.HandlerFunc {
+func inspectImport(inspector ImportInspector) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if ctx.Request.URL.RawQuery != "" {
 			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "import inspection does not accept query parameters", map[string]any{"field": "query"})
@@ -555,7 +554,7 @@ func inspectImport(inspector ImportInspector, gate *Gate) gin.HandlerFunc {
 			Failure(ctx, http.StatusUnsupportedMediaType, "INVALID_ARGUMENT", "import inspection requires application/zip", map[string]any{"field": "content_type"})
 			return
 		}
-		epoch, ok := authorizedImportSubject(ctx, gate)
+		epoch, ok := authorizedImportSubject(ctx)
 		if !ok {
 			return
 		}

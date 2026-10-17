@@ -141,7 +141,7 @@ func TestBatchedCommentMediaMatchesPerCommentLoading(t *testing.T) {
 	two, _ := domain.ParseID(mediaTwo)
 	described := "street at night"
 
-	withMedia := mustOwnerComment(t, service, author, app.CreateCommentInput{
+	withMedia := mustAccountComment(t, service, author, app.CreateCommentInput{
 		EntryID: postID, ContentMD: "two images",
 		Media: []domain.EntryMediaUsage{
 			{MediaID: one, Position: 0},
@@ -152,7 +152,7 @@ func TestBatchedCommentMediaMatchesPerCommentLoading(t *testing.T) {
 	// A comment with no attachments at all has to come back as an empty slice
 	// rather than be absent from the batch, or the caller reading the map by
 	// key would silently render nothing for it.
-	bare := mustOwnerComment(t, service, author, app.CreateCommentInput{
+	bare := mustAccountComment(t, service, author, app.CreateCommentInput{
 		EntryID: postID, ParentID: &rootID, ContentMD: "no images",
 	})
 	bareID := bare.Comment.Comment.ID

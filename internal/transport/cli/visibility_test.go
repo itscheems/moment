@@ -5,9 +5,6 @@ import (
 	"testing"
 )
 
-// Direct mode is the owner by construction; API mode is the owner when its
-// token is configured. Either way the CLI writes and reads the audience it
-// was asked for, and a visitor's read of the same server sees none of it.
 func TestPostVisibilityFlagDirectAPIParityAndVisitorReads(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	application := momentTestApplication()

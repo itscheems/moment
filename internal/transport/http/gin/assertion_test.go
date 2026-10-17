@@ -387,15 +387,6 @@ func TestLinkIdentityRequiresExactlyOneCredential(t *testing.T) {
 	}
 }
 
-// Removing a provider that is not attached is a 404 about that provider, not a
-// 401 about the caller.
-//
-// It reported ACCOUNT_NOT_FOUND, which the account error writer maps to "owner
-// authentication is required". The account was fine -- it had just been
-// authenticated to reach the handler -- and the answer told whoever asked to
-// sign in again, which is the one thing that could not help. On a client that
-// reads a 401 as a dead session, unlinking a row that had already gone would
-// have ended the session.
 func TestUnlinkingAProviderThatIsNotAttachedIsNotAnAuthFailure(t *testing.T) {
 	fixture := newAssertionFixture(t)
 	base := newLinkFixtureFrom(t, fixture)

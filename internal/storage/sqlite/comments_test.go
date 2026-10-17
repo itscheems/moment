@@ -29,10 +29,10 @@ func TestCommentServiceOneLevelOrderingIdentityAndCascade(t *testing.T) {
 	author := testCommentAuthor(t, db, runtimeState)
 	postID, _ := domain.ParseID(entryOne)
 
-	rootOne := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, AuthorName: "  Impostor  ", ContentMD: "first **root**"})
-	replyOne := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootOne.Comment.Comment.ID, ContentMD: "latest reply"})
-	rootTwo := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "second root"})
-	replyTwo := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootTwo.Comment.Comment.ID, ContentMD: "earlier reply"})
+	rootOne := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, AuthorName: "  Impostor  ", ContentMD: "first **root**"})
+	replyOne := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootOne.Comment.Comment.ID, ContentMD: "latest reply"})
+	rootTwo := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "second root"})
+	replyTwo := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootTwo.Comment.Comment.ID, ContentMD: "earlier reply"})
 
 	thread, err := service.List(testAccountContext(), postID, app.AccountViewer(testAccountID))
 	if err != nil {
@@ -47,12 +47,6 @@ func TestCommentServiceOneLevelOrderingIdentityAndCascade(t *testing.T) {
 			t.Fatalf("item %d = %s, want %s", index, item.Comment.ID, want[index])
 		}
 	}
-	// A caller-supplied author name is not an identity. CreateOwner overwrites
-	// it, so no adapter can sign a comment as anybody but the owner.
-	// A comment names the account that wrote it. Stamping the site owner here
-	// was correct while the owner was the only account that could exist; the
-	// moment a second one could, it meant a member's words were published
-	// under someone else's name.
 	if rootOne.Comment.Comment.AuthorUserID == nil || *rootOne.Comment.Comment.AuthorUserID != author.ID {
 		t.Fatalf("comment author = %v, want the writing account %s", rootOne.Comment.Comment.AuthorUserID, author.ID)
 	}
@@ -91,10 +85,10 @@ func TestCommentPinIsSingletonRootScopedAndCascadesWithDeletion(t *testing.T) {
 	author := testCommentAuthor(t, db, runtimeState)
 	one, _ := domain.ParseID(entryOne)
 	two, _ := domain.ParseID(entryTwo)
-	rootOne := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: one, ContentMD: "first"})
-	reply := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: one, ParentID: &rootOne.Comment.Comment.ID, ContentMD: "reply"})
-	rootTwo := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: one, ContentMD: "second"})
-	otherPostRoot := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: two, ContentMD: "other"})
+	rootOne := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: one, ContentMD: "first"})
+	reply := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: one, ParentID: &rootOne.Comment.Comment.ID, ContentMD: "reply"})
+	rootTwo := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: one, ContentMD: "second"})
+	otherPostRoot := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: two, ContentMD: "other"})
 
 	pinned, err := service.Pin(testAccountContext(), one, rootOne.Comment.Comment.ID)
 	if err != nil || pinned.PinnedCommentID == nil || *pinned.PinnedCommentID != rootOne.Comment.Comment.ID {
@@ -190,8 +184,8 @@ func TestCommentServiceRejectsDepthCrossPostUnsafeContentAndDisabledWrites(t *te
 	author := testCommentAuthor(t, db, runtimeState)
 	one, _ := domain.ParseID(entryOne)
 	two, _ := domain.ParseID(entryTwo)
-	root := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: one, ContentMD: "root"})
-	reply := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: one, ParentID: &root.Comment.Comment.ID, ContentMD: "reply"})
+	root := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: one, ContentMD: "root"})
+	reply := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: one, ParentID: &root.Comment.Comment.ID, ContentMD: "reply"})
 	if _, err := service.Create(testAccountContext(), app.CreateCommentInput{Author: author, EntryID: one, ParentID: &reply.Comment.Comment.ID, ContentMD: "deep"}); !domain.HasCode(err, domain.CodeCommentDepthExceeded) {
 		t.Fatalf("deep = %v", err)
 	}
@@ -320,7 +314,7 @@ func TestCommentServiceReadsLegacyGuestRowsWrittenBeforeAccountsWereRequired(t *
 INSERT INTO comments (id, entry_id, parent_id, author_name, content_md, created_at_ms)
 VALUES (?, ?, NULL, ?, 'left **before** accounts existed', ?)`, commentOne, entryOne, legacyName, base.UnixMilli())
 	legacyRootID, _ := domain.ParseID(commentOne)
-	reply := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &legacyRootID, ContentMD: "answered later"})
+	reply := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &legacyRootID, ContentMD: "answered later"})
 
 	thread, err := service.List(testAccountContext(), postID, app.AccountViewer(testAccountID))
 	if err != nil || len(thread.Items) != 2 {
@@ -373,7 +367,7 @@ func commentIDs(values ...string) app.CommentIDGenerator {
 	}
 }
 
-func mustOwnerComment(t *testing.T, service *app.CommentService, author domain.User, input app.CreateCommentInput) app.CreateCommentResult {
+func mustAccountComment(t *testing.T, service *app.CommentService, author domain.User, input app.CreateCommentInput) app.CreateCommentResult {
 	t.Helper()
 	input.Author = author
 	result, err := service.Create(testAccountContext(), input)
@@ -399,12 +393,12 @@ func TestCommentReplyTargetStaysWithinItsConversation(t *testing.T) {
 	postID, _ := domain.ParseID(entryOne)
 	otherPostID, _ := domain.ParseID(entryTwo)
 
-	root := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root"})
+	root := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root"})
 	rootID := root.Comment.Comment.ID
-	first := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "first reply"})
+	first := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "first reply"})
 	firstID := first.Comment.Comment.ID
 
-	answeringSibling := mustOwnerComment(t, service, author, app.CreateCommentInput{
+	answeringSibling := mustAccountComment(t, service, author, app.CreateCommentInput{
 		EntryID: postID, ParentID: &rootID, ReplyToCommentID: &firstID, ContentMD: "answering the sibling",
 	})
 	if answeringSibling.Comment.ReplyTo == nil || answeringSibling.Comment.ReplyTo.CommentID != firstID {
@@ -416,9 +410,9 @@ func TestCommentReplyTargetStaysWithinItsConversation(t *testing.T) {
 		t.Fatalf("reply target author = %#v", answeringSibling.Comment.ReplyTo.Author)
 	}
 
-	otherRoot := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "unrelated root"})
+	otherRoot := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "unrelated root"})
 	otherRootID := otherRoot.Comment.Comment.ID
-	otherPostRoot := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: otherPostID, ContentMD: "other post root"})
+	otherPostRoot := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: otherPostID, ContentMD: "other post root"})
 	otherPostRootID := otherPostRoot.Comment.Comment.ID
 
 	for name, target := range map[string]*domain.ID{
@@ -476,12 +470,12 @@ func TestCommentIdempotencyDistinguishesReplyTargets(t *testing.T) {
 	author := testCommentAuthor(t, db, runtimeState)
 	postID, _ := domain.ParseID(entryOne)
 
-	root := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root"})
+	root := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root"})
 	rootID := root.Comment.Comment.ID
-	first := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "first"})
+	first := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "first"})
 	firstID := first.Comment.Comment.ID
 
-	original := mustOwnerComment(t, service, author, app.CreateCommentInput{
+	original := mustAccountComment(t, service, author, app.CreateCommentInput{
 		EntryID: postID, ParentID: &rootID, ReplyToCommentID: &firstID,
 		ContentMD: "same body", IdempotencyKey: "reply-target",
 	})
@@ -514,8 +508,8 @@ func TestCommentReplyTargetTriggerRejectsRawWrites(t *testing.T) {
 	service := newTestCommentService(t, db, runtimeState, clock.Now, commentIDs(commentOne, commentTwo, commentThree))
 	author := testCommentAuthor(t, db, runtimeState)
 	postID, _ := domain.ParseID(entryOne)
-	root := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root"})
-	other := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "unrelated root"})
+	root := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root"})
+	other := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "unrelated root"})
 
 	err := db.WriteTx(testAccountContext(), func(queries Queries) error {
 		_, execErr := queries.ExecContext(testAccountContext(), `
@@ -555,7 +549,7 @@ func TestCommentRootPagingWalksForwardThroughATie(t *testing.T) {
 	postID, _ := domain.ParseID(entryOne)
 
 	for _, content := range []string{"first", "second", "third", "fourth"} {
-		mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: content})
+		mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: content})
 	}
 
 	seen := make([]string, 0, 4)
@@ -603,12 +597,12 @@ func TestCommentCursorsRefuseAnotherScope(t *testing.T) {
 	postID, _ := domain.ParseID(entryOne)
 	otherPostID, _ := domain.ParseID(entryTwo)
 
-	rootOne := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root one"})
-	mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root two"})
-	mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: otherPostID, ContentMD: "other post root"})
+	rootOne := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root one"})
+	mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "root two"})
+	mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: otherPostID, ContentMD: "other post root"})
 	rootID := rootOne.Comment.Comment.ID
-	mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "reply one"})
-	mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "reply two"})
+	mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "reply one"})
+	mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "reply two"})
 
 	page, err := service.ListPage(testAccountContext(), app.ListCommentsInput{EntryID: postID, Limit: 1})
 	if err != nil || page.NextCursor == "" {
@@ -661,12 +655,12 @@ func TestCommentPageReportsTotalsAndCarriesThePinnedConversation(t *testing.T) {
 	author := testCommentAuthor(t, db, runtimeState)
 	postID, _ := domain.ParseID(entryOne)
 
-	root := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "busy root"})
+	root := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "busy root"})
 	rootID := root.Comment.Comment.ID
 	for index := 0; index < 5; index++ {
-		mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "reply"})
+		mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "reply"})
 	}
-	later := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "later root"})
+	later := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "later root"})
 
 	thread, err := service.ListPage(testAccountContext(), app.ListCommentsInput{EntryID: postID})
 	if err != nil {
@@ -730,15 +724,15 @@ func TestReplyPreviewsMatchPerRootPaging(t *testing.T) {
 	author := testCommentAuthor(t, db, runtimeState)
 	postID, _ := domain.ParseID(entryOne)
 
-	busy := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "busy"})
+	busy := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "busy"})
 	busyID := busy.Comment.Comment.ID
 	for index := 0; index < 6; index++ {
-		mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &busyID, ContentMD: "busy reply"})
+		mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &busyID, ContentMD: "busy reply"})
 	}
-	quiet := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "quiet"})
+	quiet := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "quiet"})
 	quietID := quiet.Comment.Comment.ID
-	mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &quietID, ContentMD: "only reply"})
-	bare := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "bare"})
+	mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ParentID: &quietID, ContentMD: "only reply"})
+	bare := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "bare"})
 	bareID := bare.Comment.Comment.ID
 
 	if err := db.ReadTx(testAccountContext(), func(queries Queries) error {
@@ -785,24 +779,19 @@ func TestReplyPreviewsMatchPerRootPaging(t *testing.T) {
 	}
 }
 
-// A root leaves with every reply under it -- parent_id cascades in SQL, and
-// nothing above it counted whose replies those were. That cascade was the
-// owner's moderation for as long as removing a comment was an owner-only route.
-// The day an approved member could reach it, "delete my own comment" became a
-// way to delete anybody who had answered it.
 func TestAMemberDeletingTheirOwnCommentCannotTakeAnotherAccountsReply(t *testing.T) {
 	db, runtimeState := openTestDatabase(t, Options{})
 	insertEntry(t, db, entryOne, "post")
 	base := time.UnixMilli(1_700_000_000_000)
 	clock := newSequenceClock(base, base.Add(time.Second))
 	service := newTestCommentService(t, db, runtimeState, clock.Now, commentIDs(commentOne, commentTwo))
-	owner := testCommentAuthor(t, db, runtimeState)
+	primaryAccount := testCommentAuthor(t, db, runtimeState)
 	member := testCommentMember(t, db, runtimeState, "member-with-a-guest", "Lin Lin")
 	postID, _ := domain.ParseID(entryOne)
 
-	root := mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "member root"})
+	root := mustAccountComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "member root"})
 	rootID := root.Comment.Comment.ID
-	ownerReply := mustOwnerComment(t, service, owner, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "owner reply"})
+	authorReply := mustAccountComment(t, service, primaryAccount, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "owner reply"})
 
 	// The preview is refused too. It reports the reach of a delete that cannot
 	// happen, which leaves it reporting how many replies somebody else wrote.
@@ -813,12 +802,10 @@ func TestAMemberDeletingTheirOwnCommentCannotTakeAnotherAccountsReply(t *testing
 			}
 		})
 	}
-	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id = ?`, 1, ownerReply.Comment.Comment.ID.String())
+	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id = ?`, 1, authorReply.Comment.Comment.ID.String())
 	assertCount(t, db.read, `SELECT count(*) FROM comments WHERE id = ?`, 1, rootID.String())
 
-	// The owner keeps the cascade, because moderating the site is what it is
-	// for. Nothing about the refusal above narrows that.
-	deleted, err := service.DeleteBy(testAccountContext(), rootID, owner, false)
+	deleted, err := service.DeleteBy(testAccountContext(), rootID, primaryAccount, false)
 	if err != nil || !deleted.Deleted || deleted.RepliesAffected != 1 {
 		t.Fatalf("owner delete = %+v, %v", deleted, err)
 	}
@@ -836,9 +823,9 @@ func TestAMemberRemovesTheirOwnCommentTogetherWithTheirOwnReplies(t *testing.T) 
 	member := testCommentMember(t, db, runtimeState, "member-alone", "Lin Lin")
 	postID, _ := domain.ParseID(entryOne)
 
-	root := mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "member root"})
+	root := mustAccountComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "member root"})
 	rootID := root.Comment.Comment.ID
-	mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "member reply"})
+	mustAccountComment(t, service, member, app.CreateCommentInput{EntryID: postID, ParentID: &rootID, ContentMD: "member reply"})
 
 	preview, err := service.DeleteBy(testAccountContext(), rootID, member, true)
 	if err != nil || preview.Deleted || preview.RepliesAffected != 1 {
@@ -851,10 +838,6 @@ func TestAMemberRemovesTheirOwnCommentTogetherWithTheirOwnReplies(t *testing.T) 
 	assertCount(t, db.read, `SELECT count(*) FROM comments`, 0)
 }
 
-// A legacy guest reply has no account behind it, so it is nobody's to withdraw
-// but the owner's. Counting it as the member's own -- which a NULL author_user_id
-// compared for equality would do -- would put the anonymous visitors an archive
-// still holds inside a member's cascade.
 func TestAMemberCannotTakeALegacyGuestReplyWithTheirOwnComment(t *testing.T) {
 	db, runtimeState := openTestDatabase(t, Options{})
 	insertEntry(t, db, entryOne, "post")
@@ -863,7 +846,7 @@ func TestAMemberCannotTakeALegacyGuestReplyWithTheirOwnComment(t *testing.T) {
 	member := testCommentMember(t, db, runtimeState, "member-with-a-ghost", "Lin Lin")
 	postID, _ := domain.ParseID(entryOne)
 
-	root := mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "member root"})
+	root := mustAccountComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "member root"})
 	rootID := root.Comment.Comment.ID
 	if err := db.WriteTx(testAccountContext(), func(queries Queries) error {
 		_, execErr := queries.ExecContext(testAccountContext(), `
@@ -889,15 +872,15 @@ func TestAnIdempotencyKeyIsOneAccountsAndNotTheSites(t *testing.T) {
 	insertEntry(t, db, entryOne, "post")
 	base := time.UnixMilli(1_700_000_000_000)
 	service := newTestCommentService(t, db, runtimeState, func() time.Time { return base }, commentIDs(commentOne, commentTwo))
-	owner := testCommentAuthor(t, db, runtimeState)
+	primaryAccount := testCommentAuthor(t, db, runtimeState)
 	// The same display name on both, so the two requests differ in nothing the
 	// digest can see. This is the case that used to hand the second account the
 	// first account's comment rather than merely refusing it.
-	member := testCommentMember(t, db, runtimeState, "twin", owner.DisplayName)
+	member := testCommentMember(t, db, runtimeState, "twin", primaryAccount.DisplayName)
 	postID, _ := domain.ParseID(entryOne)
 
-	first := mustOwnerComment(t, service, owner, app.CreateCommentInput{EntryID: postID, ContentMD: "same words", IdempotencyKey: "shared"})
-	second := mustOwnerComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "same words", IdempotencyKey: "shared"})
+	first := mustAccountComment(t, service, primaryAccount, app.CreateCommentInput{EntryID: postID, ContentMD: "same words", IdempotencyKey: "shared"})
+	second := mustAccountComment(t, service, member, app.CreateCommentInput{EntryID: postID, ContentMD: "same words", IdempotencyKey: "shared"})
 
 	if second.Replayed {
 		t.Fatal("the second account was told its first attempt had already been made")
@@ -930,7 +913,7 @@ func TestARenameDoesNotTurnARetryIntoAConflict(t *testing.T) {
 	author := testCommentAuthor(t, db, runtimeState)
 	postID, _ := domain.ParseID(entryOne)
 
-	written := mustOwnerComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "unchanged words", IdempotencyKey: "retried-across-a-rename"})
+	written := mustAccountComment(t, service, author, app.CreateCommentInput{EntryID: postID, ContentMD: "unchanged words", IdempotencyKey: "retried-across-a-rename"})
 
 	renamed, err := accounts.UpdateProfile(testAccountContext(), author.ID, app.ProfileUpdate{DisplayName: strptr("A Different Name")})
 	if err != nil {
@@ -958,8 +941,6 @@ func testAccountService(t *testing.T, database *Database, runtimeState *runtimef
 	return service
 }
 
-// testCommentMember signs a second account in and approves it. Signing in is
-// the only way an account that is not the owner comes to exist.
 func testCommentMember(t *testing.T, database *Database, runtimeState *runtimefs.Runtime, providerUserID, displayName string) domain.User {
 	t.Helper()
 	service := testAccountService(t, database, runtimeState)
@@ -988,9 +969,9 @@ func testCommentAuthor(t *testing.T, database *Database, runtimeState *runtimefs
 	if err != nil {
 		t.Fatal(err)
 	}
-	owner, err := service.ProfileAccount(testAccountContext())
+	primaryAccount, err := service.ProfileAccount(testAccountContext())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return owner
+	return primaryAccount
 }

@@ -79,9 +79,6 @@ func (s stubDoctorReporter) Run(context.Context, doctor.Mode) (doctor.Report, er
 	return doctor.Report{}, nil
 }
 
-// fullEngineFixture wires every owner-scoped route group onto one engine backed
-// by real SQLite, plus a substituted identity provider that mints genuine
-// pending accounts and genuine session cookies.
 type fullEngineFixture struct {
 	engine   http.Handler
 	accounts *app.AccountService
@@ -228,15 +225,7 @@ func (fixture fullEngineFixture) signInPending(t *testing.T) (*http.Cookie, stri
 	return session, envelope.Data.CSRFToken, envelope.Data.Account.UserID
 }
 
-// TestPendingAccountIsRefusedByEveryOwnerScopedRoute enumerates every route in
-// every owner-scoped group and proves an approved-content credential is refused
-// on all of them, even carrying a valid session cookie and a valid CSRF token.
-//
-// The point is the claim in gate.go that authorisation has exactly one
-// implementation. If any group forgot the gate, the request would reach the
-// handler and answer with something other than 401/403 -- a 2xx, or a 400/404
-// from the handler parsing input it should never have seen.
-func TestPendingAccountIsRefusedByEveryOwnerScopedRoute(t *testing.T) {
+func TestPendingAccountIsRefusedByProtectedRoutes(t *testing.T) {
 	fixture := newFullEngineFixture(t)
 	session, csrf, memberID := fixture.signInPending(t)
 
@@ -310,10 +299,6 @@ func TestPendingAccountIsRefusedByEveryOwnerScopedRoute(t *testing.T) {
 	}
 }
 
-// TestPendingAccountCannotWriteAComment closes the highest-value vector: the
-// comment write path is the one owner-scoped group that steps down to
-// RequireActiveAccount, and it is exactly where an unapproved account would
-// most like to slip a row in. The thread must be empty before and after.
 func TestPendingAccountCannotWriteAComment(t *testing.T) {
 	fixture := newFullEngineFixture(t)
 	session, csrf, _ := fixture.signInPending(t)
@@ -360,7 +345,7 @@ func TestForgedSessionCookieIsRefused(t *testing.T) {
 	fixture := newFullEngineFixture(t)
 	session, _, _ := fixture.signInPending(t)
 
-	owner, err := fixture.accounts.ProfileAccount(context.Background())
+	primaryAccount, err := fixture.accounts.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -377,9 +362,7 @@ func TestForgedSessionCookieIsRefused(t *testing.T) {
 	if err := json.Unmarshal(rawPayload, &payload); err != nil {
 		t.Fatal(err)
 	}
-	// Re-aim the payload at the owner, keeping the signature the server issued
-	// for the original payload.
-	payload["user_id"] = owner.ID
+	payload["user_id"] = primaryAccount.ID
 	reaimed, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
@@ -426,10 +409,6 @@ func TestPendingAccountKeepsItsOwnAllowedPowers(t *testing.T) {
 		t.Fatalf("profile edit = %d, body = %s", response.Code, performRequest(fixture.engine, edit).Body.String())
 	}
 
-	// Signing out was owner-scoped, so somebody who signed in through a
-	// provider and landed unapproved could not sign out again: the refusal that
-	// guards owner powers was standing in front of the one action that gives a
-	// power up. Nothing an account does to its own session needs approval.
 	out := httptest.NewRequest(http.MethodDelete, "/api/v1/login/session", nil)
 	out.AddCookie(session)
 	out.Header.Set(CSRFHeaderName, csrf)

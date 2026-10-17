@@ -33,9 +33,9 @@ func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T)
 		t.Fatal("create replay duplicated a draft")
 	}
 	for _, prefix := range []string{"/api/v1", "/api/v1"} {
-		ownerRead := jsonRequest(http.MethodGet, prefix+"/articles/drafts/"+id, "")
-		ownerRead.Header.Set("Authorization", "Bearer "+fixture.token)
-		if response := performRequest(fixture.engine, ownerRead); response.Code == http.StatusOK {
+		authorRead := jsonRequest(http.MethodGet, prefix+"/articles/drafts/"+id, "")
+		authorRead.Header.Set("Authorization", "Bearer "+fixture.token)
+		if response := performRequest(fixture.engine, authorRead); response.Code == http.StatusOK {
 			t.Fatal("non-author admin read member draft")
 		}
 		response := performRequest(fixture.engine, memberCommentRequest(member, http.MethodGet, prefix+"/articles/drafts", ""))

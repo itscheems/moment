@@ -25,11 +25,13 @@ type AccountCredentialStore interface {
 	RevokeUserAPITokens(context.Context, string, int64) error
 }
 
+// IssuedAPIToken returns a one-time plaintext credential alongside its persisted metadata.
 type IssuedAPIToken struct {
 	Token domain.APIToken `json:"credential"`
 	Value string          `json:"token"`
 }
 
+// TokenAuthorization binds an API credential to the live account it represents.
 type TokenAuthorization struct {
 	User  domain.User
 	Token domain.APIToken
@@ -102,6 +104,7 @@ func (service *AccountService) SetAccountPassword(ctx context.Context, userID, p
 	})
 }
 
+// CreateAPIToken issues a separately revocable credential for an active account.
 func (service *AccountService) CreateAPIToken(ctx context.Context, userID, label string) (IssuedAPIToken, error) {
 	label = strings.TrimSpace(label)
 	if !utf8.ValidString(label) || utf8.RuneCountInString(label) > 80 || strings.ContainsAny(label, "\r\n\x00") {
@@ -172,6 +175,7 @@ func (service *AccountService) ResolveAPIToken(ctx context.Context, value string
 	return result, err
 }
 
+// APITokens lists credential metadata without returning plaintext tokens.
 func (service *AccountService) APITokens(ctx context.Context, userID string) ([]domain.APIToken, error) {
 	var tokens []domain.APIToken
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
@@ -188,6 +192,7 @@ func (service *AccountService) APITokens(ctx context.Context, userID string) ([]
 	return tokens, err
 }
 
+// RevokeAPIToken revokes one credential belonging to the selected account.
 func (service *AccountService) RevokeAPIToken(ctx context.Context, userID, tokenID string) error {
 	return service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
 		store, err := credentialStore(accounts)
@@ -205,6 +210,7 @@ func (service *AccountService) RevokeAPIToken(ctx context.Context, userID, token
 	})
 }
 
+// AccountSignInMethods reports the configured credential kinds for an account.
 func (service *AccountService) AccountSignInMethods(ctx context.Context, userID string) ([]domain.CredentialKind, error) {
 	methods := []domain.CredentialKind{}
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {

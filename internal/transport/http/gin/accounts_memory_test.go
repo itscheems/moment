@@ -24,25 +24,25 @@ import (
 // behaviour is the thing under test. Here the store is a map, which keeps a
 // route test from failing for reasons that have nothing to do with the route.
 type memoryAccounts struct {
-	mu         sync.Mutex
-	users      map[string]domain.User
-	identities map[string]domain.Identity
-	sessions   map[string]domain.SessionRecord
-	passwords  map[string][]byte
-	tokens     map[string]domain.APIToken
-	ownerID    string
-	mode       domain.RegistrationMode
+	mu               sync.Mutex
+	users            map[string]domain.User
+	identities       map[string]domain.Identity
+	sessions         map[string]domain.SessionRecord
+	passwords        map[string][]byte
+	tokens           map[string]domain.APIToken
+	primaryAccountID string
+	mode             domain.RegistrationMode
 }
 
-func newMemoryAccounts(owner domain.User) *memoryAccounts {
+func newMemoryAccounts(primaryAccount domain.User) *memoryAccounts {
 	return &memoryAccounts{
-		users:      map[string]domain.User{owner.ID: owner},
-		identities: map[string]domain.Identity{},
-		sessions:   map[string]domain.SessionRecord{},
-		passwords:  map[string][]byte{},
-		tokens:     map[string]domain.APIToken{},
-		ownerID:    owner.ID,
-		mode:       domain.RegistrationApproval,
+		users:            map[string]domain.User{primaryAccount.ID: primaryAccount},
+		identities:       map[string]domain.Identity{},
+		sessions:         map[string]domain.SessionRecord{},
+		passwords:        map[string][]byte{},
+		tokens:           map[string]domain.APIToken{},
+		primaryAccountID: primaryAccount.ID,
+		mode:             domain.RegistrationApproval,
 	}
 }
 
@@ -210,9 +210,6 @@ func (store *memoryAccounts) ListAccounts(_ context.Context) ([]domain.User, err
 	for _, user := range store.users {
 		users = append(users, user)
 	}
-	// (created_at_ms, id), which is what the SQL orders by. Account ids are
-	// random hex rather than time-ordered, so sorting by id alone put the
-	// owner's review list in an order the real store never produces.
 	sort.Slice(users, func(left, right int) bool {
 		if users[left].CreatedAtMS != users[right].CreatedAtMS {
 			return users[left].CreatedAtMS < users[right].CreatedAtMS
@@ -259,7 +256,7 @@ func (store *memoryAccounts) SearchAccounts(_ context.Context, query string, lim
 }
 
 func (store *memoryAccounts) ProfileUserID(_ context.Context) (string, error) {
-	return store.ownerID, nil
+	return store.primaryAccountID, nil
 }
 
 func (store *memoryAccounts) RegistrationMode(_ context.Context) (domain.RegistrationMode, error) {
@@ -327,10 +324,6 @@ func (store *memoryAccounts) PurgeExpiredSessions(_ context.Context, beforeMS in
 	return purged, nil
 }
 
-// A fake is only worth having while it is wrong in no way a route test could
-// notice. These two disagreements were both reachable: the owner's review
-// screen is rendered in list order, and every account created through a
-// provider goes through the handle allocator.
 func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 	ctx := context.Background()
 	runtimeState, err := runtimefs.Initialize(ctx, runtimefs.Config{DataDir: t.TempDir(), Environment: runtimefs.EnvironmentDevelopment})
@@ -376,11 +369,11 @@ func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored := build(repository)
-	owner, err := stored.ProfileAccount(ctx)
+	primaryAccount, err := stored.ProfileAccount(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := newMemoryAccounts(owner)
+	store := newMemoryAccounts(primaryAccount)
 	remembered := build(store)
 
 	for _, seed := range []struct {
@@ -417,7 +410,7 @@ func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 	if !slices.Equal(fromSQLite, fromMemory) {
 		t.Fatalf("list order: sqlite = %v, memory = %v", fromSQLite, fromMemory)
 	}
-	if len(fromSQLite) != 3 || fromSQLite[0] != owner.Username {
+	if len(fromSQLite) != 3 || fromSQLite[0] != primaryAccount.Username {
 		t.Fatalf("list = %v, want the oldest account first", fromSQLite)
 	}
 
@@ -461,7 +454,7 @@ func TestMemoryAccountsAgreesWithSQLiteOnOrderAndUniqueness(t *testing.T) {
 		return transactions.WriteAccounts(ctx, func(accounts app.AccountStore, _ app.SessionStore) error {
 			return accounts.CreateAccountWithIdentity(ctx,
 				domain.User{
-					ID: "0123456789abcdef0123456789abcdef", Username: owner.Username, DisplayName: "Impostor",
+					ID: "0123456789abcdef0123456789abcdef", Username: primaryAccount.Username, DisplayName: "Impostor",
 					Role: domain.UserRoleMember, Status: domain.AccountPending, CreatedAtMS: 3000, UpdatedAtMS: 3000,
 				},
 				domain.Identity{

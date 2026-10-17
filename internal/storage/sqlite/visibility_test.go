@@ -9,10 +9,7 @@ import (
 	"github.com/moment/moment/internal/domain"
 )
 
-// A visitor and the owner read the same rows through the same services; only
-// the Viewer differs. Every read path is asserted from both sides so a path
-// that forgets to ask is caught here rather than by a reader.
-func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
+func TestHiddenPostsReachOnlyTheAuthorThroughEveryReadPath(t *testing.T) {
 	ctx := testAccountContext()
 	db, runtimeState := openTestDatabase(t, Options{})
 	clock := time.Date(2024, 3, 10, 12, 0, 0, 0, time.UTC)
@@ -59,11 +56,11 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 	if ids := timelineIDs(visitorPage); strings.Join(ids, ",") != entryOne {
 		t.Fatalf("visitor timeline = %v", ids)
 	}
-	ownerPage, err := posts.List(ctx, app.ListPostsInput{Timezone: "UTC", Viewer: app.AccountViewer(testAccountID)})
+	authorPage, err := posts.List(ctx, app.ListPostsInput{Timezone: "UTC", Viewer: app.AccountViewer(testAccountID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids := timelineIDs(ownerPage); strings.Join(ids, ",") != strings.Join([]string{entryTwo, entryTwo, entryOne}, ",") {
+	if ids := timelineIDs(authorPage); strings.Join(ids, ",") != strings.Join([]string{entryTwo, entryTwo, entryOne}, ",") {
 		t.Fatalf("owner timeline = %v", ids)
 	}
 
@@ -83,31 +80,30 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 	if len(visitorSearch.Items) != 1 || visitorSearch.Items[0].Post.Entry.ID.String() != entryOne || visitorSearch.YearCounts[0].Count != 1 {
 		t.Fatalf("visitor search = %+v", visitorSearch)
 	}
-	ownerSearch, err := search.Search(ctx, app.SearchInput{Query: "shoreline", Viewer: app.AccountViewer(testAccountID)})
+	authorSearch, err := search.Search(ctx, app.SearchInput{Query: "shoreline", Viewer: app.AccountViewer(testAccountID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ownerSearch.Items) != 2 || ownerSearch.YearCounts[0].Count != 2 {
-		t.Fatalf("owner search = %+v", ownerSearch)
+	if len(authorSearch.Items) != 2 || authorSearch.YearCounts[0].Count != 2 {
+		t.Fatalf("owner search = %+v", authorSearch)
 	}
 	visitorMonths, err := search.ArchiveMonths(ctx, app.ArchiveMonthsInput{})
 	if err != nil || len(visitorMonths.Items) != 1 || visitorMonths.Items[0].Count != 1 {
 		t.Fatalf("visitor months = %+v %v", visitorMonths, err)
 	}
-	ownerMonths, err := search.ArchiveMonths(ctx, app.ArchiveMonthsInput{Viewer: app.AccountViewer(testAccountID)})
-	if err != nil || ownerMonths.Items[0].Count != 2 {
-		t.Fatalf("owner months = %+v %v", ownerMonths, err)
+	authorMonths, err := search.ArchiveMonths(ctx, app.ArchiveMonthsInput{Viewer: app.AccountViewer(testAccountID)})
+	if err != nil || authorMonths.Items[0].Count != 2 {
+		t.Fatalf("owner months = %+v %v", authorMonths, err)
 	}
 	visitorMonth, err := search.ArchiveMonth(ctx, "2024-03", app.PublicViewer())
 	if err != nil || visitorMonth.Days[0].Count != 1 {
 		t.Fatalf("visitor month = %+v %v", visitorMonth, err)
 	}
-	ownerMonth, err := search.ArchiveMonth(ctx, "2024-03", app.AccountViewer(testAccountID))
-	if err != nil || ownerMonth.Days[0].Count != 2 {
-		t.Fatalf("owner month = %+v %v", ownerMonth, err)
+	authorMonth, err := search.ArchiveMonth(ctx, "2024-03", app.AccountViewer(testAccountID))
+	if err != nil || authorMonth.Days[0].Count != 2 {
+		t.Fatalf("owner month = %+v %v", authorMonth, err)
 	}
 
-	// A public quote of a hidden post carries the words only to the owner.
 	clock = clock.Add(time.Minute)
 	target := hidden.Post.Entry.ID
 	quote, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "look", QuotedPostID: &target})
@@ -118,22 +114,22 @@ func TestHiddenPostsReachOnlyTheOwnerThroughEveryReadPath(t *testing.T) {
 	if err != nil || visitorQuote.Quoted == nil || !visitorQuote.Quoted.Unavailable {
 		t.Fatalf("visitor quote = %+v %v", visitorQuote.Quoted, err)
 	}
-	ownerQuote, err := posts.Get(ctx, quote.Post.Entry.ID, app.AccountViewer(testAccountID))
-	if err != nil || ownerQuote.Quoted == nil || ownerQuote.Quoted.Unavailable {
-		t.Fatalf("owner quote = %+v %v", ownerQuote.Quoted, err)
+	authorQuote, err := posts.Get(ctx, quote.Post.Entry.ID, app.AccountViewer(testAccountID))
+	if err != nil || authorQuote.Quoted == nil || authorQuote.Quoted.Unavailable {
+		t.Fatalf("owner quote = %+v %v", authorQuote.Quoted, err)
 	}
-	if quotedBody, ok := ownerQuote.Quoted.Entry.Markdown(); !ok || quotedBody != "shoreline hidden" {
+	if quotedBody, ok := authorQuote.Quoted.Entry.Markdown(); !ok || quotedBody != "shoreline hidden" {
 		t.Fatalf("owner quote body = %q, present = %t", quotedBody, ok)
 	}
 
 	// Comments under a hidden post: a member is a visitor here.
 	comments := newTestCommentService(t, db, runtimeState, func() time.Time { return clock }, commentIDs(commentOne, commentTwo))
-	owner := testCommentAuthor(t, db, runtimeState)
+	primaryAccount := testCommentAuthor(t, db, runtimeState)
 	member := testCommentMember(t, db, runtimeState, "reader", "Reader")
 	if _, err := comments.Create(ctx, app.CreateCommentInput{Author: member, EntryID: target, ContentMD: "hi"}); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("member comment on hidden post: %v", err)
 	}
-	if _, err := comments.Create(ctx, app.CreateCommentInput{Author: owner, EntryID: target, ContentMD: "note to self"}); err != nil {
+	if _, err := comments.Create(ctx, app.CreateCommentInput{Author: primaryAccount, EntryID: target, ContentMD: "note to self"}); err != nil {
 		t.Fatalf("owner comment on hidden post: %v", err)
 	}
 	if _, err := comments.ListPage(ctx, app.ListCommentsInput{EntryID: target}); !domain.HasCode(err, domain.CodePostNotFound) {

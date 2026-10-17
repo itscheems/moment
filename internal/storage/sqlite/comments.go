@@ -709,12 +709,6 @@ func (store commentStore) CountCommentReplies(ctx context.Context, id domain.ID)
 	return count, nil
 }
 
-// CountCommentRepliesByOthers counts the replies under a comment that some
-// other account wrote.
-//
-// A reply with no account behind it counts as somebody else's: a legacy guest
-// row and an owner row written before author_user_id existed are both somebody
-// whose words the caller did not write.
 func (store commentStore) CountCommentRepliesByOthers(ctx context.Context, id domain.ID, authorUserID string) (int, error) {
 	var count int
 	if err := store.queries.QueryRowContext(ctx, `

@@ -131,25 +131,6 @@ func TestSiteSettingsPreheldMaintenanceDoesNotReacquireBehindWriter(t *testing.T
 	}
 }
 
-func insertManagedMedia(t *testing.T, database *Database, id string) {
-	t.Helper()
-	sha := strings.Repeat("a", 64)
-	path := "media/original/aa/" + sha + ".jpg"
-	mustWrite(t, database, `
-INSERT INTO media (
-    id, sha256, storage_path, original_name, mime_type,
-    byte_size, width, height, created_at_ms, unreferenced_since_ms
-)
-VALUES (?, ?, ?, 'avatar.jpg', 'image/jpeg', 10, 32, 32, 1, 1)`, id, sha, path)
-	mustWrite(t, database, `INSERT INTO media_grants(user_id,media_id,created_at_ms) VALUES(?,?,1)`, testAccountID, id)
-}
-
-// The owner renaming onto a member's handle is a conflict, not a server fault.
-//
-// users_username_unique guards this column for every writer, and the account
-// route reports its refusal as USERNAME_TAKEN. The owner's route wrapped the
-// same constraint failure as an opaque error, so the settings form was told
-// "operation failed" for a refusal it already carries the words for.
 func TestAccountRenameOntoAnotherHandleIsReportedAsAConflict(t *testing.T) {
 	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
@@ -200,7 +181,6 @@ func TestAccountRenameOntoAnotherHandleIsReportedAsAConflict(t *testing.T) {
 	}
 }
 
-// registration_mode is site policy the owner sets, and the row has to keep it.
 func TestSiteRegistrationModeRoundTripsThroughTheRow(t *testing.T) {
 	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
@@ -213,7 +193,6 @@ func TestSiteRegistrationModeRoundTripsThroughTheRow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The migration default is the owner's deliberate choice, not a placeholder.
 	fresh, err := service.Get(ctx)
 	if err != nil {
 		t.Fatal(err)

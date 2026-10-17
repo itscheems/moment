@@ -13,12 +13,14 @@ type AccountInitializer interface {
 	InitializeSiteAccount(context.Context, domain.User, string) error
 }
 
+// AccountAdministrationStore persists atomic account bootstrap and role changes.
 type AccountAdministrationStore interface {
 	SetSiteProfile(context.Context, string) error
 	SetRole(context.Context, string, domain.UserRole, int64) error
 	HasAuthoredContent(context.Context, string) (bool, error)
 }
 
+// InitializeSiteAccount creates a named first administrator and selects its display profile.
 func (service *AccountService) InitializeSiteAccount(ctx context.Context, username string) (domain.User, error) {
 	username, err := domain.NormalizeUsername(username)
 	if err != nil {
@@ -56,6 +58,7 @@ func retainActiveAdministrator(ctx context.Context, accounts AccountStore, user 
 	return domain.NewError(domain.CodeLastAdministrator, "at least one active administrator must remain", nil)
 }
 
+// SetRole changes administrative access while preserving at least one active administrator.
 func (service *AccountService) SetRole(ctx context.Context, userID string, role domain.UserRole) (domain.User, error) {
 	if err := domain.ValidateUserRole(role); err != nil {
 		return domain.User{}, err

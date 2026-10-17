@@ -301,14 +301,6 @@ func cloneSettingsPointer(settings *SiteSettings) *SiteSettings {
 
 func ptr(value string) *string { return &value }
 
-// The owner's handle is one column with one gate, whichever form reaches it.
-//
-// This path validated the shape and stopped there, so a name the account route
-// answers USERNAME_RESERVED for saved here without complaint -- and a handle
-// like "search" or "profile" is matched by the route table before the profile
-// route ever sees it, leaving the owner's own page permanently unreachable and
-// every profile_url the server emits pointing at the wrong screen.
-
 func TestSiteRegistrationModeIsWrittenAndValidated(t *testing.T) {
 	initial := SiteSettings{ProfileUserID: "0123456789abcdef0123456789abcdef", Username: "writer", DisplayName: "Moment", Title: "Moment", Timezone: "UTC", CommentsEnabled: true, RegistrationMode: domain.RegistrationApproval}
 	transactions := &memorySiteTransactions{settings: &initial, media: map[string]bool{}}

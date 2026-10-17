@@ -1,3 +1,4 @@
+// Package accountdto separates public profiles from private account facts.
 package accountdto
 
 import "github.com/moment/moment/internal/domain"
@@ -21,10 +22,12 @@ type Private struct {
 	UsernameChosen bool   `json:"username_chosen"`
 }
 
+// PublicFromUser projects a public profile without administrative facts.
 func PublicFromUser(user domain.User) Public {
 	return Public{UserID: user.ID, Username: user.Username, DisplayName: user.DisplayName, Bio: user.Bio, AvatarMediaID: user.AvatarMediaID, CoverMediaID: user.CoverMediaID, ProfileURL: domain.ProfileURL(user.Username)}
 }
 
+// PrivateFromUser adds role, status and onboarding facts for authorized callers.
 func PrivateFromUser(user domain.User) Private {
 	return Private{Public: PublicFromUser(user), Role: string(user.Role), Status: string(user.Status), UsernameChosen: user.UsernameSetAtMS != nil}
 }

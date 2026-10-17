@@ -134,28 +134,28 @@ func identitiesOf(t *testing.T, fixture linkFixture, userID string) []domain.Ide
 // suspension.
 func TestStartOAuthWithASignedOutCookieAttachesNothing(t *testing.T) {
 	fixture := newLinkFixture(t)
-	ownerCookie, session := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
+	accountCookie, session := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
 	csrf, _ := session["csrf_token"].(string)
 
 	logout := httptest.NewRequest(http.MethodDelete, "/api/v1/login/session", nil)
-	logout.AddCookie(ownerCookie)
+	logout.AddCookie(accountCookie)
 	logout.Header.Set(CSRFHeaderName, csrf)
 	if response := performRequest(fixture.engine, logout); response.Code != http.StatusOK {
 		t.Fatalf("logout = %d, body = %s", response.Code, response.Body.String())
 	}
 
 	// The browser kept its copy. Everything below is that copy being used.
-	flow, state := fixture.start(t, fixture.github, "?return="+url.QueryEscape("/owner/settings"), ownerCookie)
+	flow, state := fixture.start(t, fixture.github, "?return="+url.QueryEscape("/owner/settings"), accountCookie)
 	response := fixture.callback(t, fixture.github, state, flow)
 	if location := response.Header().Get("Location"); strings.Contains(location, "auth=linked") {
 		t.Fatalf("a signed-out cookie linked a provider: %q", location)
 	}
 
-	owner, err := fixture.accounts.ProfileAccount(context.Background())
+	primaryAccount, err := fixture.accounts.ProfileAccount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if attached := identitiesOf(t, fixture, owner.ID); len(attached) != 0 {
+	if attached := identitiesOf(t, fixture, primaryAccount.ID); len(attached) != 0 {
 		t.Fatalf("a signed-out cookie attached %d identities to the owner: %+v", len(attached), attached)
 	}
 }

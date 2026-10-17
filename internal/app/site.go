@@ -18,26 +18,17 @@ import (
 // Authentication material and deployment-derived request data never belong in
 // this value.
 type SiteSettings struct {
-	ProfileUserID   string  `json:"profile_user_id"`
-	Username        string  `json:"username"`
-	DisplayName     string  `json:"display_name"`
-	Title           string  `json:"title"`
-	Bio             string  `json:"bio"`
-	Timezone        string  `json:"timezone"`
-	PublicBaseURL   *string `json:"public_base_url"`
-	AvatarMediaID   *string `json:"avatar_media_id"`
-	CoverMediaID    *string `json:"cover_media_id"`
-	PinnedPostID    *string `json:"pinned_post_id"`
-	CommentsEnabled bool    `json:"comments_enabled"`
-	// RegistrationMode decides what happens to an external identity the site
-	// has not seen before.
-	//
-	// It is never serialised here. GET /api/v1/site is public, and this value
-	// is site policy rather than public identity -- telling an anonymous reader
-	// whether applications are being accepted is the owner's decision to
-	// publish, not a field that leaks by being in the same struct. The owner
-	// reads it from the account review endpoint, which is already about
-	// exactly this.
+	ProfileUserID    string                  `json:"profile_user_id"`
+	Username         string                  `json:"username"`
+	DisplayName      string                  `json:"display_name"`
+	Title            string                  `json:"title"`
+	Bio              string                  `json:"bio"`
+	Timezone         string                  `json:"timezone"`
+	PublicBaseURL    *string                 `json:"public_base_url"`
+	AvatarMediaID    *string                 `json:"avatar_media_id"`
+	CoverMediaID     *string                 `json:"cover_media_id"`
+	PinnedPostID     *string                 `json:"pinned_post_id"`
+	CommentsEnabled  bool                    `json:"comments_enabled"`
 	RegistrationMode domain.RegistrationMode `json:"-"`
 }
 
@@ -65,6 +56,7 @@ type SiteUpdate struct {
 	RegistrationMode *string
 }
 
+// Empty reports whether any site configuration field was supplied.
 func (update SiteUpdate) Empty() bool {
 	return update.Title == nil && update.Timezone == nil && update.PublicBaseURL == nil && update.CommentsEnabled == nil && update.RegistrationMode == nil
 }
@@ -323,11 +315,6 @@ func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
 }
 
 func (service *SiteService) validateStored(ctx context.Context, store SiteStore, settings SiteSettings) error {
-	// Shape only, deliberately: the reserved list and the character rules are
-	// write-time constraints on creating something broken. Re-checking a
-	// stored row against a list that grew, or against a rule tightened after
-	// the row was written, would turn an owner's own settings page into the
-	// screen that refuses to load and refuses to let them fix it.
 	if !validProfileUserID(settings.ProfileUserID) || domain.ValidateStoredUsername(settings.Username) != nil || strings.TrimSpace(settings.DisplayName) != settings.DisplayName || settings.DisplayName == "" || len([]rune(settings.DisplayName)) > domain.MaxDisplayNameLength ||
 		strings.TrimSpace(settings.Title) == "" || len([]rune(settings.Title)) > 120 || len([]rune(settings.Bio)) > domain.MaxBioLength {
 		return domain.NewError(domain.CodeDataIntegrityFailed, "stored site identity text is invalid", nil)

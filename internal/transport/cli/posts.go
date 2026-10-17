@@ -72,7 +72,7 @@ func registerPosts(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path:   []string{"post", "create"},
 		Short:  "Publish a Moment post",
-		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated owner HTTP API.",
+		Long:   "Publish one Markdown post through the shared application service in direct mode or the authenticated account HTTP API.",
 		Inputs: "Provide --content, managed media, --quote, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin. --visibility everyone|only_me chooses who may read the post (default everyone).",
 		Output: "The canonical created post and replay metadata.",
 		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
@@ -135,7 +135,7 @@ func registerPosts(application *Application) {
 		Path:       []string{"post", "repost"},
 		ArgsUsage:  "<post-id>",
 		Short:      "Repost one Moment to the top of the timeline",
-		Long:       "Record an owner repost activity while preserving the Moment's original publication timestamp.",
+		Long:       "Record an account repost activity while preserving the Moment's original publication timestamp.",
 		Inputs:     "Provide one canonical post ULID. Repeating the same repost is an idempotent success.",
 		Output:     "The complete canonical post DTO with reposted_at set.",
 		Errors:     "Invalid or absent posts and authentication failures use stable codes and exit statuses.",
@@ -150,7 +150,7 @@ func registerPosts(application *Application) {
 		Path:       []string{"post", "unrepost"},
 		ArgsUsage:  "<post-id>",
 		Short:      "Remove one Moment repost",
-		Long:       "Remove the owner repost activity and return the Moment to its original chronological position.",
+		Long:       "Remove the account repost activity and return the Moment to its original chronological position.",
 		Inputs:     "Provide one canonical post ULID. Repeating the same removal is an idempotent success.",
 		Output:     "The complete canonical post DTO with reposted_at cleared.",
 		Errors:     "Invalid or absent posts and authentication failures use stable codes and exit statuses.",
@@ -1277,7 +1277,7 @@ func getPostByTransport(ctx context.Context, invocation Invocation, id domain.ID
 		}
 		defer func() { _ = database.Close() }()
 		// Direct mode opens the data directory itself; whoever can do that
-		// is the owner, and reads the way the owner does.
+		// is the account, and reads the way the account does.
 		result, err := service.Get(ctx, id, app.ViewerFromContext(ctx))
 		if err != nil {
 			return post, nil, err
@@ -1436,9 +1436,9 @@ func postAPIRequest(
 	if idempotencyKey != "" {
 		request.Header.Set("Idempotency-Key", idempotencyKey)
 	}
-	// A write needs the owner's token. A read does not, but presents it when
+	// A write needs the account's token. A read does not, but presents it when
 	// one is configured: the public routes answer according to the credential,
-	// and the owner listing their own site expects to see all of it. Without
+	// and the account listing their own site expects to see all of it. Without
 	// a token the read is a visitor's, which is also what the server makes of
 	// a token it does not honour.
 	token, err := apiToken(target, authenticate)

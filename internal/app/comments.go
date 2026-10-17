@@ -97,17 +97,7 @@ type CommentReplyTarget struct {
 	Author    CommentAuthor
 }
 
-// CommentAuthor is the identity a reader sees beside a comment, resolved at
-// read time rather than copied out of the row.
-//
-// Reading through a reference is what lets one rename reach every comment an
-// account ever wrote, and it is what stopped the web and the CLI disagreeing:
-// the web used to overlay the site identity on top of the stored "Owner"
-// placeholder and the CLI printed the placeholder as-is.
-//
-// A legacy guest row has no account behind it, so it carries only DisplayName;
-// Username, UserID and ProfileURL are empty and callers must render it as
-// plain text with no link.
+// CommentAuthor is the resolved public account identity or a historical signature.
 type CommentAuthor struct {
 	UserID        string
 	Username      string
@@ -185,14 +175,11 @@ type CreateCommentInput struct {
 	ParentID         *domain.ID
 	ReplyToCommentID *domain.ID
 	AuthorName       string
-	// Author names the account writing this comment. It is supplied by the
-	// caller because only the transport knows who was admitted; the service
-	// refuses to write without it rather than falling back to the owner.
-	Author         domain.User
-	ContentMD      string
-	Media          []domain.EntryMediaUsage
-	Location       *domain.Location
-	IdempotencyKey string
+	Author           domain.User
+	ContentMD        string
+	Media            []domain.EntryMediaUsage
+	Location         *domain.Location
+	IdempotencyKey   string
 }
 
 // CreateCommentResult reports a safe idempotent retry.
@@ -876,19 +863,12 @@ func (service *CommentService) changePin(ctx context.Context, entryID, commentID
 	return result, nil
 }
 
-// DeleteBy removes a comment on behalf of one account.
-//
-// The owner may remove anything -- moderating the site is theirs. Anybody else
-// may remove only what they wrote, and only where removing it takes nothing of
-// anybody else's with it; authorizeCommentRemoval holds that rule. Deciding it
-// down there, where the stored row is in hand, is what keeps the transport from
-// having to read the comment first and then make the same judgement with a
-// staler copy of it.
+// DeleteBy checks the verified actor and the full reply cascade before deletion.
 func (service *CommentService) DeleteBy(ctx context.Context, id domain.ID, actor domain.User, dryRun bool) (DeleteCommentResult, error) {
 	return service.delete(ctx, id, actor, dryRun)
 }
 
-// Delete previews or executes owner moderation. SQLite owns reply cascade.
+// Delete uses the context account to authorize a comment and its reply cascade.
 func (service *CommentService) Delete(ctx context.Context, id domain.ID, dryRun bool) (DeleteCommentResult, error) {
 	actor, present := ContentActor(ctx)
 	if !present {
@@ -974,18 +954,6 @@ func (service *CommentService) delete(ctx context.Context, id domain.ID, actor d
 	return result, nil
 }
 
-// authorizeCommentRemoval decides whether this actor may take this comment and
-// everything the cascade removes with it.
-//
-// What somebody wrote has to be read as including what removing it takes away.
-// parent_id cascades, so a root leaves with every reply under it; that cascade
-// was moderation for as long as removing a comment was an owner-only route, and
-// the day an approved member could reach it, deleting your own comment became a
-// way to delete other people's. So a non-owner is refused whenever the cascade
-// would reach a reply somebody else wrote. The preview is refused on the same
-// rule rather than allowed through: it exists to report what the removal would
-// take, and for a removal that cannot happen that is only a count of another
-// person's replies.
 func authorizeCommentRemoval(ctx context.Context, store CommentStore, record domain.Comment, actor domain.User) error {
 	if actor.IsAdmin() {
 		return nil

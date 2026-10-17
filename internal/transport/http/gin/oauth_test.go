@@ -144,6 +144,9 @@ func redirectError(t *testing.T, response *httptest.ResponseRecorder) string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if location.Query().Get("auth_error") != "" && location.Path != "/login" {
+		t.Fatalf("sign-in error landed at %s", location.Path)
+	}
 	return location.Query().Get("auth_error")
 }
 
@@ -276,8 +279,6 @@ func TestOAuthSignInCreatesAPendingAccountThatCannotWrite(t *testing.T) {
 		t.Fatal("the browser was given no CSRF token to finish signing in with")
 	}
 
-	// Owner-only routes stay closed to it, with a valid session and a valid
-	// CSRF token in hand. This is the whole point of approval.
 	for _, probe := range []struct {
 		method string
 		path   string
@@ -338,7 +339,6 @@ func TestPendingAccountCannotPromoteItself(t *testing.T) {
 		})
 	}
 
-	// And the owner's own control refuses it too.
 	escalate := httptest.NewRequest(http.MethodPatch,
 		"/api/v1/accounts/"+envelope.Data.Account.UserID, strings.NewReader(`{"status":"active"}`))
 	escalate.Header.Set("Content-Type", "application/json")
@@ -352,9 +352,9 @@ func TestPendingAccountCannotPromoteItself(t *testing.T) {
 
 func TestOAuthStartedWhileSignedInLinksInsteadOfCreatingAnAccount(t *testing.T) {
 	fixture := newOAuthFixture(t)
-	ownerCookie, _ := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
+	accountCookie, _ := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
 
-	flow, state := fixture.startFlow(t, "?return="+url.QueryEscape("/owner/settings"), ownerCookie)
+	flow, state := fixture.startFlow(t, "?return="+url.QueryEscape("/owner/settings"), accountCookie)
 	response := fixture.do(t, callbackRequest(state, "code", flow))
 	if response.Code != http.StatusSeeOther {
 		t.Fatalf("callback = %d", response.Code)

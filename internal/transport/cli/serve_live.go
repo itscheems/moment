@@ -194,7 +194,7 @@ func (host *liveServerHost) Activate(ctx context.Context, runtimeState *runtimef
 	}
 	accountService, err := app.NewAccountService(accountRepository,
 		// An account picture is fetched through the same hardened transport a
-		// link thumbnail is, and ingested through the same media path an owner
+		// link thumbnail is, and ingested through the same media path an account
 		// upload uses. Remote bytes get no exemption from either.
 		app.WithAvatarCapture(linkResolver.Fetcher(), media.NewLinkThumbnailAdapter(mediaStore)),
 	)

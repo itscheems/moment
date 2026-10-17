@@ -160,7 +160,7 @@ func (fake fakeImportCommitter) Status(ctx context.Context) (archive.CommitStatu
 	return fake.status(ctx)
 }
 
-func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
+func TestImportMergePlanAndCommitAdministratorContracts(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	selection := archive.MergeSelection{
 		PlanID: strings.Repeat("a", 64), ArchiveSHA256: strings.Repeat("b", 64),
@@ -231,7 +231,7 @@ func TestImportMergePlanAndCommitStrictOwnerContracts(t *testing.T) {
 	}
 }
 
-func TestImportCommitStrictOwnerContractAndStatus(t *testing.T) {
+func TestImportCommitAdministratorContractAndStatus(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	now := time.Date(2026, 8, 11, 1, 2, 3, 0, time.UTC)
 	calls := 0
@@ -321,7 +321,7 @@ func TestImportCommitMapsDomainFailure(t *testing.T) {
 	}
 }
 
-func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
+func TestImportInspectCredentialBindingAndEnvelope(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	called := 0
 	inspector := importInspectorFunc(func(_ context.Context, input io.Reader, epoch archive.Authorization) (archive.Inspection, error) {
@@ -375,7 +375,7 @@ func TestImportInspectOwnerUploadEpochAndEnvelope(t *testing.T) {
 	}
 }
 
-func TestImportPlanAndSingleRequestRestoreOwnerContracts(t *testing.T) {
+func TestImportPlanAndSingleRequestRestoreAdministratorContracts(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	now := time.Date(2026, 8, 11, 1, 30, 0, 0, time.UTC)
 	id := "import-20260811T013000000Z-0011223344556677"

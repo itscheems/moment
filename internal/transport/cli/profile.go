@@ -2,11 +2,12 @@ package cli
 
 import (
 	"context"
+	"net/http"
+
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/accountdto"
 	"github.com/spf13/pflag"
-	"net/http"
 )
 
 func registerProfile(application *Application) {
@@ -55,14 +56,14 @@ func profileUpdateInput(input CommandInput) (app.ProfileUpdate, map[string]any, 
 		{"avatar-media-id", "clear-avatar", "avatar_media_id", func(v *app.NullableString) { update.AvatarMediaID = v }},
 		{"cover-media-id", "clear-cover", "cover_media_id", func(v *app.NullableString) { update.CoverMediaID = v }},
 	} {
-		clear, err := input.Bool(field.clear)
+		clearRequested, err := input.Bool(field.clear)
 		if err != nil {
 			return update, nil, err
 		}
-		if clear && input.Changed(field.flag) {
+		if clearRequested && input.Changed(field.flag) {
 			return update, nil, invalidArgument("picture selection and clearing are mutually exclusive", "choose one picture operation")
 		}
-		if clear {
+		if clearRequested {
 			field.set(&app.NullableString{})
 			payload[field.wire] = nil
 		} else if input.Changed(field.flag) {

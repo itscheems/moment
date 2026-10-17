@@ -8,25 +8,10 @@ import (
 	"unicode/utf8"
 )
 
-// MaxCommentAuthorNameCodePoints bounds the name stored beside a comment.
-//
-// It is defined as the display name bound rather than as a number of its own,
-// because writing a comment stamps the author's display name into this field.
-// Two independent numbers meant a name an account was allowed to hold could be
-// one a comment was not allowed to carry: while every comment was the owner's
-// and the stored name was the literal "Owner", nothing reached the smaller
-// limit, and the day the real name went in instead, a display name of 41 to 80
-// characters made every comment that account tried to write fail validation.
+// MaxCommentAuthorNameCodePoints bounds stored historical signatures to the profile name limit.
 const MaxCommentAuthorNameCodePoints = MaxDisplayNameLength
 
-// Comment is one top-level comment or one reply to a top-level comment.
-//
-// AuthorName and AuthorUserID answer different questions. AuthorName is what
-// the author was called when the row was written and is the only identity a
-// legacy guest row has. AuthorUserID points at the account that wrote it, so
-// a rename reaches every comment that account ever made. Owner rows carry
-// both; rows imported from an archive written before accounts existed carry
-// only the name, and the reader falls back to the site identity for them.
+// Comment stores a reply relationship, content and optional real account identity.
 type Comment struct {
 	ID           ID
 	EntryID      ID

@@ -237,8 +237,6 @@ func TestArticleDraftWorkingCopyIsUniquePerPublishedArticle(t *testing.T) {
 		t.Fatalf("working copy lookup = %+v found=%v err=%v", read, found, err)
 	}
 
-	// Deleting the article leaves the draft behind rather than taking the
-	// owner's unsaved words with it.
 	mustWrite(t, db, `DELETE FROM entries WHERE id = ?`, articleEntryID)
 	if err := withPostStore(t, db, false, func(store postStore) error {
 		var err error

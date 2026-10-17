@@ -47,12 +47,12 @@ func registerComments(application *Application) {
 			flags.Int("limit", 0, "maximum replies to return (1-100)")
 		},
 	})
-	application.MustRegisterLeaf(commentCreateSpec("create", "Create an owner comment", "Create one top-level owner comment through the application service or authenticated owner API.", "moment --as writer comment create 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'owner note' --json", runCommentCreate))
+	application.MustRegisterLeaf(commentCreateSpec("create", "Create an account comment", "Create one top-level account comment through the application service or authenticated account API.", "moment --as writer comment create 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'account note' --json", runCommentCreate))
 	application.MustRegisterLeaf(LeafSpec{
-		Path: []string{"comment", "reply"}, ArgsUsage: "<post-id> <parent-comment-id>", Short: "Reply as the owner",
-		Long:    "Create one owner reply to a top-level comment through the shared one-level comment service.",
+		Path: []string{"comment", "reply"}, ArgsUsage: "<post-id> <parent-comment-id>", Short: "Reply as the account",
+		Long:    "Create one account reply to a top-level comment through the shared one-level comment service.",
 		Inputs:  "Provide a post ULID, top-level parent comment ULID, comment content or location, optional --reply-to naming another comment in the same conversation, and optional --idempotency-key. Direct writes require --as; API writes use the authenticated account.",
-		Output:  "The canonical created owner comment and replay metadata.",
+		Output:  "The canonical created account comment and replay metadata.",
 		Errors:  "Missing/deleted parents, depth violations, disabled comments, and authentication failures use stable codes.",
 		Example: "moment --as writer comment reply 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --content 'thanks' --json",
 		Args:    cobra.ExactArgs(2), Capability: CapabilityBoth,
@@ -66,7 +66,7 @@ func registerComments(application *Application) {
 		Run: runCommentReply,
 	})
 	application.MustRegisterLeaf(LeafSpec{
-		Path: []string{"comment", "delete"}, ArgsUsage: "<comment-id>", Short: "Delete a comment as the owner",
+		Path: []string{"comment", "delete"}, ArgsUsage: "<comment-id>", Short: "Delete a comment as the account",
 		Long:    "Preview or delete one comment. Deleting a top-level comment atomically cascades its direct replies.",
 		Inputs:  "Provide one comment ULID. Use --dry-run to inspect the exact cascade count or --yes for non-interactive deletion.",
 		Output:  "The canonical target comment plus deleted, dry_run, and replies_affected metadata.",
@@ -108,7 +108,7 @@ func commentCreateSpec(verb, short, long, example string, run Handler) LeafSpec 
 	return LeafSpec{
 		Path: []string{"comment", verb}, ArgsUsage: "<post-id>", Short: short, Long: long,
 		Inputs:  "Provide one post ULID, comment content or location, and optional --idempotency-key. CLI mutations require an explicitly selected or authenticated account and never accept guest names or client IPs.",
-		Output:  "The canonical created owner comment and replay metadata.",
+		Output:  "The canonical created account comment and replay metadata.",
 		Errors:  "Content validation, disabled comments, missing posts, authentication, and idempotency conflicts use stable codes.",
 		Example: example, Args: cobra.ExactArgs(1), Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
@@ -232,7 +232,7 @@ func runCommentReplies(ctx context.Context, invocation Invocation, input Command
 }
 
 func runCommentCreate(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
-	return runOwnerCommentCreate(ctx, invocation, input, nil)
+	return createCommentAsActor(ctx, invocation, input, nil)
 }
 
 func runCommentReply(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -240,10 +240,10 @@ func runCommentReply(ctx context.Context, invocation Invocation, input CommandIn
 	if err != nil {
 		return Result{}, commentCLIError(err)
 	}
-	return runOwnerCommentCreate(ctx, invocation, input, &parentID)
+	return createCommentAsActor(ctx, invocation, input, &parentID)
 }
 
-func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input CommandInput, parentID *domain.ID) (Result, error) {
+func createCommentAsActor(ctx context.Context, invocation Invocation, input CommandInput, parentID *domain.ID) (Result, error) {
 	postID, err := domain.ParseID(input.Args()[0])
 	if err != nil {
 		return Result{}, commentCLIError(err)
@@ -678,11 +678,6 @@ func commentCLIError(err error) error {
 	return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0).WithCause(err)
 }
 
-// commentAuthorLabel renders the identity the server resolved rather than the
-// name stored on the row. Owner comments store the placeholder "Owner", which
-// the browser has always replaced with the site identity and the CLI used to
-// print verbatim — the same comment reported two different authors depending
-// on where you read it.
 func commentAuthorLabel(comment commentdto.Comment) string {
 	if comment.Author.Username != nil {
 		return fmt.Sprintf("%s (@%s)", comment.Author.DisplayName, *comment.Author.Username)

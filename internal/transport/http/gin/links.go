@@ -12,11 +12,7 @@ import (
 	"github.com/moment/moment/internal/transport/linkdto"
 )
 
-// RegisterLinkRoutes mounts the owner-only unfurl endpoint.
-//
-// Only an authenticated owner can make Moment request an arbitrary URL. A
-// visitor comment is never unfurled: doing so would turn an anonymous text box
-// into an outbound request trigger.
+// RegisterLinkRoutes installs active-account preview resolution.
 func RegisterLinkRoutes(engine *gin.Engine, links *app.LinkPreviewService, gate *Gate) {
 	previews := engine.Group("/api/v1/links")
 	previews.Use(gate.RequireActiveAccount())

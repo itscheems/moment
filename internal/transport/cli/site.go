@@ -34,7 +34,7 @@ func registerSite(application *Application) {
 		Path:       []string{"site", "get"},
 		Short:      "Read portable public site settings",
 		Long:       "Read the public site identity from the selected local instance or HTTP API without deriving values from request headers.",
-		Inputs:     "Direct mode reads --data-dir. API mode reads the public endpoint and does not require an owner token.",
+		Inputs:     "Direct mode reads --data-dir. API mode reads the public endpoint and does not require an account token.",
 		Output:     "Title, bio, IANA timezone, normalized public base URL, nullable managed avatar and cover IDs, and comments state.",
 		Errors:     "Missing or invalid authority data returns DATA_INTEGRITY_FAILED; unavailable APIs use dependency exit codes.",
 		Example:    "moment site get --data-dir ./moment-data --json",
@@ -129,14 +129,14 @@ func siteUpdateInput(input CommandInput) (app.SiteUpdate, map[string]any, error)
 			payload[field.wire] = value
 		}
 	}
-	clear, err := input.Bool("clear-public-base-url")
+	clearRequested, err := input.Bool("clear-public-base-url")
 	if err != nil {
 		return update, nil, err
 	}
-	if clear && input.Changed("public-base-url") {
+	if clearRequested && input.Changed("public-base-url") {
 		return update, nil, invalidArgument("URL selection and clearing are mutually exclusive", "choose one URL operation")
 	}
-	if clear {
+	if clearRequested {
 		update.PublicBaseURL = &app.NullableString{}
 		payload["public_base_url"] = nil
 	} else if input.Changed("public-base-url") {

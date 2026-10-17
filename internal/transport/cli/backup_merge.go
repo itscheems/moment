@@ -43,10 +43,10 @@ func registerBackupMerge(application *Application, info buildinfo.Info) {
 		Long:      "Validate one portable archive, compare every portable authority record with the current instance, and create a restartable explicit selection without changing active data.",
 		Inputs:    "One regular non-symlink v1 ZIP and required --selection-output <json>. The private selection file contains the expiring staging credential and editable default actions; keep its mode at 0600.",
 		Output:    "Human output reports deterministic counts. JSON also includes bounded local and incoming post, comment, location, profile, avatar, cover, and pinned-post review data. The private selection file is written atomically for editing before backup merge.",
-		Errors:    "Cross-owner archives, hostile input, unsafe output paths, active imports, disk pressure, cancellation, and direct-mode server use fail with stable errors.",
+		Errors:    "hostile input, unsafe output paths, active imports, disk pressure, cancellation, and direct-mode server use fail with stable errors.",
 		Safety:    "Read-only for active authority. Planning creates isolated expiring staging but never creates a pre-merge backup or switches CURRENT.",
-		Example: "moment backup merge-plan ./moment-export.zip --data-dir ./moment-data --selection-output ./merge-selection.json --json\n" +
-			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup merge-plan ./moment-export.zip --selection-output ./merge-selection.json --json",
+		Example: "moment --as writer backup merge-plan ./moment-export.zip --data-dir ./moment-data --selection-output ./merge-selection.json --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./account.token backup merge-plan ./moment-export.zip --selection-output ./merge-selection.json --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
@@ -63,10 +63,10 @@ func registerBackupMerge(application *Application, info buildinfo.Info) {
 		Long:      "Consume one private selection produced by backup merge-plan, rebuild the merged authority graph, create and verify a pre-merge backup, atomically switch CURRENT, prove readiness, and automatically roll back on failure.",
 		Inputs:    "One exact 0600 selection JSON. Every post, comment, profile field, and dependency decision must remain bound to the staged archive and base authority.",
 		Output:    "Dry-run reports action counts without consuming the staging credential. Commit reports the same durable import status as replacement restore; resolve ambiguous API outcomes with backup status.",
-		Errors:    "Stale, incomplete, swapped, expired, replayed, cross-owner, unsafe-permission, maintenance, and rollback failures use stable errors and never silently fall back to replacement.",
-		Safety:    "Destructive. --yes bypasses only the confirmation prompt. It never bypasses exact selection, current-authority digest, owner epoch, archive hash, backup, readiness, or rollback checks.",
-		Example: "moment backup merge ./merge-selection.json --data-dir ./moment-data --dry-run --json\n" +
-			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup merge ./merge-selection.json --yes --json",
+		Errors:    "Stale, incomplete, swapped, expired, replayed, unsafe-permission, maintenance, and rollback failures use stable errors and never silently fall back to replacement.",
+		Safety:    "Destructive. --yes bypasses only the confirmation prompt. It never bypasses exact selection, current-authority digest, current account credential, archive hash, backup, readiness, or rollback checks.",
+		Example: "moment --as writer backup merge ./merge-selection.json --data-dir ./moment-data --dry-run --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./account.token backup merge ./merge-selection.json --yes --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
@@ -82,12 +82,12 @@ func registerBackupMerge(application *Application, info buildinfo.Info) {
 		ArgsUsage: "<merge-selection.json>",
 		Short:     "Discard an uncommitted portable backup merge plan",
 		Long:      "Consume the private staging credential only to remove its unclaimed merge staging generation, allowing a different backup inspection to start without waiting for expiry.",
-		Inputs:    "One exact 0600 selection JSON produced by backup merge-plan. The owner epoch and staging credential must still match; committing or terminal plans cannot be cancelled.",
+		Inputs:    "One exact 0600 selection JSON produced by backup merge-plan. The current account credential and staging credential must still match; committing or terminal plans cannot be cancelled.",
 		Output:    "Reports the discarded plan ID. Active authority, CURRENT, backups, and durable import status are unchanged.",
 		Errors:    "Expired, claimed, replayed, mismatched, unsafe-permission, active-server direct mode, and cancellation failures use stable errors.",
-		Safety:    "Removes only isolated uncommitted staging bound to the supplied credential. Direct mode requires the server to be stopped; API mode asks the live owner service to discard it.",
-		Example: "moment backup merge-discard ./merge-selection.json --data-dir ./moment-data --json\n" +
-			"moment --url http://127.0.0.1:8080 --token-file ./owner.token backup merge-discard ./merge-selection.json --json",
+		Safety:    "Removes only isolated uncommitted staging bound to the supplied credential. Direct mode requires --as naming an active administrator and the server to be stopped; API mode asks the live account service to discard it.",
+		Example: "moment --as writer backup merge-discard ./merge-selection.json --data-dir ./moment-data --json\n" +
+			"moment --url http://127.0.0.1:8080 --token-file ./account.token backup merge-discard ./merge-selection.json --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -296,7 +296,7 @@ func commitMergeAPI(ctx context.Context, invocation Invocation, document mergeSe
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
-	ownerToken, err := readAPIToken(target)
+	accountToken, err := readAPIToken(target)
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
@@ -312,7 +312,7 @@ func commitMergeAPI(ctx context.Context, invocation Invocation, document mergeSe
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+ownerToken)
+	request.Header.Set("Authorization", "Bearer "+accountToken)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)
@@ -339,7 +339,7 @@ func discardMergeAPI(ctx context.Context, invocation Invocation, stagingToken st
 	if err != nil {
 		return nil, err
 	}
-	ownerToken, err := readAPIToken(target)
+	accountToken, err := readAPIToken(target)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +355,7 @@ func discardMergeAPI(ctx context.Context, invocation Invocation, stagingToken st
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("Authorization", "Bearer "+ownerToken)
+	request.Header.Set("Authorization", "Bearer "+accountToken)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Accept", "application/json")
 	response, err := http.DefaultClient.Do(request)

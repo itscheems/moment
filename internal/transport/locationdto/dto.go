@@ -1,5 +1,4 @@
-// Package locationdto owns the exact owner/CLI wire representation for one
-// selectable or stored location snapshot.
+// Package locationdto maps canonical location payloads.
 package locationdto
 
 import (
@@ -33,9 +32,7 @@ type Results struct {
 	Items []Location `json:"items"`
 }
 
-// UnmarshalJSON keeps persisted/provider location snapshots exact across the
-// owner API and CLI. A partial or duplicate object must never silently turn
-// into a different place.
+// UnmarshalJSON rejects unsupported location fields before decoding.
 func (wire *Location) UnmarshalJSON(data []byte) error {
 	*wire = Location{}
 	decoder := json.NewDecoder(bytes.NewReader(data))

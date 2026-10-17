@@ -70,11 +70,11 @@ func TestActiveSessionsExcludeTheOnesThatNoLongerWork(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
 	cookie, _ := exchangeAccountSession(t, fixture, fixture.token)
 
-	owner, err := fixture.accounts.ProfileAccount(t.Context())
+	primaryAccount, err := fixture.accounts.ProfileAccount(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	expired, err := fixture.accounts.StartSession(t.Context(), owner.ID,
+	expired, err := fixture.accounts.StartSession(t.Context(), primaryAccount.ID,
 		"11111111111111111111111111111111", "web",
 		time.Now().UTC().Add(-time.Hour).UnixMilli())
 	if err != nil {

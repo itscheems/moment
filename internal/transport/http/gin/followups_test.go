@@ -97,7 +97,7 @@ func TestPreparedExportLengthFailureAndCleanup(t *testing.T) {
 
 func TestSelectedMediaDeletionRejectsActiveMember(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
-	id := uploadOwnerMedia(t, fixture)
+	id := uploadAccountMedia(t, fixture)
 	session, csrf, member := signInMember(t, fixture)
 	if _, err := fixture.accountService.SetStatus(context.Background(), member.ID, domain.AccountActive); err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestSelectedMediaDeletionRejectsActiveMember(t *testing.T) {
 	}
 }
 
-func TestAccountExportHTTPUsesAuthenticatedIdentityAndKeepsOwnerBoundary(t *testing.T) {
+func TestAccountExportHTTPUsesAuthenticatedIdentityAndKeepsAuthorBoundary(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	session, _, member := signInMember(t, fixture)
 	exporter, err := archive.NewExporter(archive.Options{DataDir: fixture.runtime.Root, AppVersion: "test"})

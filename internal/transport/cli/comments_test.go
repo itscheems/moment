@@ -79,7 +79,7 @@ func newCommentCLIFixture(t *testing.T) commentCLIFixture {
 	return commentCLIFixture{dataDir: dataDir, token: credential.Token, postID: postID.String(), runtime: runtimeState, server: server}
 }
 
-func TestCommentCLIDirectAPIParityOwnerIdentityIdempotencyAndSafety(t *testing.T) {
+func TestCommentCLIDirectAPIParityAccountIdentityIdempotencyAndSafety(t *testing.T) {
 	fixture := newCommentCLIFixture(t)
 	application := momentTestApplication()
 	createdOutput := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--as", "writer", "--content", "owner **root**", "--idempotency-key", "comment-cli-1", "--json")
@@ -450,19 +450,6 @@ func TestCommentListTextRendersThePinnedConversationOffPage(t *testing.T) {
 	if len(shape["items"].([]any)) != 1 || shape["pinned_comment_id"] != offPage || len(shape["pinned"].([]any)) != 2 {
 		t.Fatalf("JSON shape changed = %#v", shape)
 	}
-}
-
-// testAccountService builds the account service the HTTP platform now requires.
-// These tests exercise the CLI against a real engine, so the accounts come from
-// the same SQLite generation everything else in the test is using.
-func testAccountServiceForRuntime(t *testing.T, runtimeState *runtimefs.Runtime) *app.AccountService {
-	t.Helper()
-	database, err := sqlitestore.Open(context.Background(), runtimeState, sqlitestore.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	return testAccountService(t, database, runtimeState)
 }
 
 func testAccountService(t *testing.T, database *sqlitestore.Database, runtimeState *runtimefs.Runtime) *app.AccountService {

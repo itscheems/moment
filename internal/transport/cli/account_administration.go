@@ -3,12 +3,13 @@ package cli
 import (
 	"context"
 	"fmt"
+	"net/http"
+
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/transport/accountdto"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"net/http"
 )
 
 func registerAccountAdministration(application *Application) {

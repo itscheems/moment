@@ -93,7 +93,7 @@ func TestMediaDeliveryHeadersConditionalsAndExplicitGIFOriginal(t *testing.T) {
 	}
 }
 
-func TestOwnerMediaUploadRequiresAuthenticationAndReturnsManagedURLs(t *testing.T) {
+func TestAccountMediaUploadRequiresAuthenticationAndReturnsManagedURLs(t *testing.T) {
 	engine, _, token, _ := newMediaHTTPFixture(t)
 	contents := testGIF(t)
 	request := mediaUploadRequest(t, contents)

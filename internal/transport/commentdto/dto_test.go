@@ -41,8 +41,6 @@ func TestCommentMediaReadProjectionCarriesPositiveDimensions(t *testing.T) {
 	}
 }
 
-// A legacy guest row has a name and nothing else; an owner row has the full
-// reference set. Anything between the two would render a link to nowhere.
 func TestCommentAuthorRejectsPartiallyResolvedIdentity(t *testing.T) {
 	username := "cheems"
 	userID := "0123456789abcdef0123456789abcdef"

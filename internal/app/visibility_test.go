@@ -1,8 +1,9 @@
 package app
 
 import (
-	"github.com/moment/moment/internal/domain"
 	"testing"
+
+	"github.com/moment/moment/internal/domain"
 )
 
 func TestVisibilityBelongsToTheAuthorRatherThanAdministratorRole(t *testing.T) {

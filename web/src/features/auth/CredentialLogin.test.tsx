@@ -158,7 +158,7 @@ async function findErrorToast(message?: string) {
 
 describe("owner login third-party entry points", () => {
   beforeEach(() => {
-    window.history.replaceState({}, "", "/owner/login");
+    window.history.replaceState({}, "", "/login");
     window.sessionStorage.clear();
   });
 
@@ -289,11 +289,7 @@ describe("owner login third-party entry points", () => {
   });
 
   it("redirects the whole page to the start endpoint and locks the buttons", async () => {
-    window.history.replaceState(
-      {},
-      "",
-      "/owner/login?return=%2Fowner%2Fcompose",
-    );
+    window.history.replaceState({}, "", "/login?return=%2Fcompose");
     installApi([
       { name: "github", label: "GitHub" },
       { name: "google", label: "Google" },
@@ -308,7 +304,7 @@ describe("owner login third-party entry points", () => {
 
     expect(assign).toHaveBeenCalledTimes(1);
     expect(assign).toHaveBeenCalledWith(
-      "/api/v1/login/oauth/github/start?return=%2Fowner%2Fcompose",
+      "/api/v1/login/oauth/github/start?return=%2Fcompose",
     );
 
     // The browser has not left yet, so nothing may accept a second click.
@@ -346,7 +342,7 @@ describe("owner login third-party entry points", () => {
     ["REGISTRATION_CLOSED", "本站当前不接受新注册。"],
     ["OAUTH_EXCHANGE_FAILED", "与登录服务通信失败，请重试。"],
   ])("explains the %s failure in the reader's language", async (code, text) => {
-    window.history.replaceState({}, "", `/owner/login?auth_error=${code}`);
+    window.history.replaceState({}, "", `/login?auth_error=${code}`);
     installApi([{ name: "github", label: "GitHub" }]);
     renderLogin();
 
@@ -358,7 +354,7 @@ describe("owner login third-party entry points", () => {
     window.history.replaceState(
       {},
       "",
-      "/owner/login?return=%2Farchive&auth_error=ACCOUNT_SUSPENDED",
+      "/login?return=%2Farchive&auth_error=ACCOUNT_SUSPENDED",
     );
     installApi([]);
     renderLogin();
@@ -370,11 +366,7 @@ describe("owner login third-party entry points", () => {
   });
 
   it("still names an unrecognised failure rather than staying silent", async () => {
-    window.history.replaceState(
-      {},
-      "",
-      "/owner/login?auth_error=SOMETHING_NEW",
-    );
+    window.history.replaceState({}, "", "/login?auth_error=SOMETHING_NEW");
     installApi([]);
     renderLogin();
 
@@ -387,7 +379,7 @@ describe("owner login third-party entry points", () => {
 
 describe("owner login names who is signing in", () => {
   beforeEach(() => {
-    window.history.replaceState({}, "", "/owner/login");
+    window.history.replaceState({}, "", "/login");
     window.sessionStorage.clear();
   });
 

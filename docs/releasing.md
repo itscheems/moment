@@ -136,7 +136,7 @@ runners execute the complete host test suite, race detector, and real
 cross-process lock tests. Arm64 archives for all three systems are CGo-free
 cross-builds; v0 does not claim native Windows arm64 runtime qualification.
 
-Build and exercise the container with an explicit authority volume. The owner
+Build and exercise the container with an explicit authority volume. The initial account
 token is printed only by the one-off initialization command, so capture it in a
 password manager rather than logs or shell history:
 
@@ -144,7 +144,7 @@ password manager rather than logs or shell history:
 docker build -f deploy/Dockerfile -t moment:local .
 docker volume create moment-data
 docker run --rm --mount type=volume,src=moment-data,dst=/data \
-  moment:local owner init --data-dir /data --json
+  moment:local init --username writer --data-dir /data --json
 docker run --name moment --mount type=volume,src=moment-data,dst=/data \
   -p 127.0.0.1:8080:8080 moment:local
 docker inspect --format '{{.State.Health.Status}}' moment

@@ -404,7 +404,7 @@ func TestBootstrapRejectsConcurrentMember(t *testing.T) {
 	}
 }
 
-func TestBootstrapConcurrentCommandsShareOneInstanceAndOneOwnerDelivery(t *testing.T) {
+func TestBootstrapConcurrentCommandsShareOneInstanceAndCredentialDelivery(t *testing.T) {
 	root := canonicalTempDir(t)
 	start := make(chan struct{})
 	results := make([]Result, 2)

@@ -287,7 +287,7 @@ func initializeRoundTripTarget(ctx context.Context, workspace *roundTripWorkspac
 	}
 	credential, err := auth.InitializeDevelopmentWithinLocks(context.WithoutCancel(ctx), runtimeState, capability, held)
 	if err != nil || !credential.Initialized || credential.SessionEpoch == 0 {
-		return errors.Join(errors.New("initialize isolated roundtrip owner authority"), err)
+		return errors.Join(errors.New("initialize isolated roundtrip signing authority"), err)
 	}
 	return nil
 }

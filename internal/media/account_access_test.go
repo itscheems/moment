@@ -3,10 +3,11 @@ package media
 import (
 	"bytes"
 	"context"
+	"testing"
+
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/storage/sqlite"
-	"testing"
 )
 
 func TestDeduplicatedUploadsGrantEachUploaderWithoutMakingTheObjectPublic(t *testing.T) {

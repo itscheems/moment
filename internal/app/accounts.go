@@ -254,13 +254,7 @@ func (service *AccountService) SignIn(ctx context.Context, external ExternalIden
 	return outcome, nil
 }
 
-// LinkIdentity attaches a provider identity to an account that is already
-// signed in.
-//
-// This is the path that exists so a person can add a second way to sign in
-// without becoming a second person. It refuses an identity already claimed
-// elsewhere rather than moving it, because moving it would sign the previous
-// owner out of their own account.
+// LinkIdentity links a verified external identity to an existing account.
 func (service *AccountService) LinkIdentity(ctx context.Context, userID string, external ExternalIdentity) error {
 	if external.Provider == "" || external.ProviderUserID == "" {
 		return domain.NewError(domain.CodeOAuthIdentityUnusable, "the provider returned no stable account identifier", nil)
@@ -546,7 +540,7 @@ func (service *AccountService) Identities(ctx context.Context, userID string) ([
 	return identities, err
 }
 
-// List reports every account, for the owner's review screens.
+// List returns private account facts for administration.
 func (service *AccountService) List(ctx context.Context) ([]domain.User, error) {
 	var users []domain.User
 	err := service.transactions.ReadAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {
@@ -569,11 +563,7 @@ type ProfileUpdate struct {
 	CoverMediaID  *NullableString
 }
 
-// UpdateProfile applies an account's edit to itself.
-//
-// Every field here is one the account owns. Role and status are absent by
-// construction rather than by filtering: a struct that cannot express "make me
-// an owner" cannot be tricked into carrying it.
+// UpdateProfile changes personal profile fields and validates account media grants.
 func (service *AccountService) UpdateProfile(ctx context.Context, userID string, update ProfileUpdate) (domain.User, error) {
 	nowMS := domain.TimeToMillis(domain.NormalizeTime(service.clock()))
 	var result domain.User
@@ -663,10 +653,7 @@ func (service *AccountService) UpdateProfile(ctx context.Context, userID string,
 	return result, err
 }
 
-// SetStatus is the owner's decision about another account.
-//
-// It refuses to touch the owner's own row. Suspending the only account that can
-// administer the site is not a decision worth being able to make by accident.
+// SetStatus changes account status and revokes credentials when access is suspended.
 func (service *AccountService) SetStatus(ctx context.Context, userID string, status domain.AccountStatus) (domain.User, error) {
 	if err := domain.ValidateAccountStatus(status); err != nil {
 		return domain.User{}, err
@@ -950,16 +937,7 @@ func (service *AccountService) SweepExpiredSessions(ctx context.Context) (int, e
 	return removed, err
 }
 
-// Delete removes an account and everything that only existed to describe it.
-//
-// Its identities and sessions go with it by cascade. Its comments do not: the
-// text is the site's content rather than the account's property, and
-// author_user_id carries no foreign key, so those rows keep pointing at an id
-// that no longer resolves and render as the stored name in plain text -- the
-// same treatment a legacy guest row gets. doctor reports the count.
-//
-// The owner cannot be removed. The database would refuse it anyway, because the
-// site row references it, but a message beats a constraint error.
+// Delete removes an account only when site and authored-content references allow it.
 func (service *AccountService) Delete(ctx context.Context, userID string) (domain.User, error) {
 	var removed domain.User
 	err := service.transactions.WriteAccounts(ctx, func(accounts AccountStore, _ SessionStore) error {

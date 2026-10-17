@@ -2,9 +2,10 @@ package cli
 
 import (
 	"context"
+	"testing"
+
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
-	"testing"
 )
 
 func TestRoleAndDisplaySelectionHaveDirectAPIParity(t *testing.T) {
