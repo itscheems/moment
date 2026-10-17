@@ -200,7 +200,6 @@ describe("App shell and public routes", () => {
     const { container } = render(<App />);
 
     expect(screen.getByRole("main")).toHaveAttribute("id", "main-content");
-    expect(screen.getByRole("main")).toHaveAttribute("tabindex", "-1");
     expect(
       screen.getByRole("navigation", { name: "主要导航" }),
     ).toBeInTheDocument();

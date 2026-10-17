@@ -555,9 +555,6 @@ export function AppShell({
           data-article-theme={focusReading || undefined}
           style={focusReading ? readingLayoutStyle(readingLayout) : undefined}
         >
-          <a className={styles.skipLink} href="#main-content">
-            跳到主要内容
-          </a>
           <div
             className={`${styles.shell} ${route.id === "detail" ? styles.detailShell : ""} ${focusReading ? styles.focusShell : ""} ${workspace ? styles.workspaceShell : ""} ${focusWriting ? styles.workspaceFocusShell : ""}`}
           >
@@ -571,7 +568,7 @@ export function AppShell({
                 site={site}
               />
             ) : null}
-            <main className={styles.timeline} id="main-content" tabIndex={-1}>
+            <main className={styles.timeline} id="main-content">
               <header
                 className={`${styles.timelineHeader} ${
                   route.id === "home" ? styles.homeHeader : ""

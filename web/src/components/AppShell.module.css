@@ -3,23 +3,6 @@
   background: var(--canvas);
 }
 
-.skipLink {
-  position: fixed;
-  inset-block-start: var(--space-3);
-  inset-inline-start: var(--space-3);
-  z-index: var(--layer-skip);
-  border-radius: 999px;
-  padding: var(--space-3) var(--space-4);
-  color: var(--accent-contrast);
-  background: var(--accent);
-  transform: translateY(-160%);
-  transition: transform var(--motion-fast) var(--ease-out);
-}
-
-.skipLink:focus {
-  transform: translateY(0);
-}
-
 .shell {
   --shell-rail-width: clamp(17.1875rem, calc(50vw - 22.34375rem), 20.9375rem);
   inline-size: min(100%, 86.5625rem);
@@ -708,7 +691,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .skipLink,
   .brand,
   .navPill,
   .navLink,
