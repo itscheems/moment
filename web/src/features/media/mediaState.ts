@@ -3,11 +3,15 @@ import { mediaOriginalUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import type { PublicMediaUsage } from "../../api/public";
 import { PublicApiError } from "../../api/public";
 
+import type { MediaCropSelection, MediaCropSource } from "./mediaCrop";
+
 export type AltMode = "missing" | "decorative" | "provided";
 export type MediaUploadState = "ready" | "queued" | "uploading" | "failed";
 
 export interface ComposerMediaItem {
   key: string;
+  cropSource?: MediaCropSource;
+  cropSelection?: MediaCropSelection;
   file: File | null;
   localPreviewUrl: string | null;
   processingPosterUrl: string | null;
@@ -111,13 +115,19 @@ export function releaseDiscardedLocalPreviews(
 ): void {
   const retained = new Set(
     next.flatMap((item) =>
-      [item.localPreviewUrl, item.processingPosterUrl].filter(
-        (url): url is string => Boolean(url),
-      ),
+      [
+        item.localPreviewUrl,
+        item.processingPosterUrl,
+        item.cropSource?.url,
+      ].filter((url): url is string => Boolean(url)),
     ),
   );
   for (const item of current) {
-    for (const url of [item.localPreviewUrl, item.processingPosterUrl]) {
+    for (const url of [
+      item.localPreviewUrl,
+      item.processingPosterUrl,
+      item.cropSource?.url,
+    ]) {
       if (url && !retained.has(url)) releaseLocalPreview(url);
     }
   }

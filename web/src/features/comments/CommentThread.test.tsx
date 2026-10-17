@@ -1527,6 +1527,9 @@ describe("public comment thread", () => {
       target: { value: "night sky" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
 
     await waitFor(() => expect(FakeCommentUploadRequest.last).not.toBeNull());

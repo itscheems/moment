@@ -901,7 +901,21 @@ export function CommentForm({
                   replaceMedia(next);
                   setActivated(true);
                 }}
-                onChange={(next) => replaceMedia(next)}
+                onChange={(next) => {
+                  const replacements = next.filter(
+                    (item) =>
+                      item.file &&
+                      item.file !==
+                        mediaItemsRef.current.find(
+                          (current) => current.key === item.key,
+                        )?.file,
+                  );
+                  for (const item of replacements) {
+                    mediaUploadsRef.current.get(item.key)?.abort();
+                    mediaUploadsRef.current.delete(item.key);
+                  }
+                  replaceMedia(next);
+                }}
                 onRemove={(key) => {
                   mediaUploadsRef.current.get(key)?.abort();
                   mediaUploadsRef.current.delete(key);

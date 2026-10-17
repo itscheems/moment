@@ -1560,8 +1560,29 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 />
               }
               onChange={(next, message) => {
+                const replacements = next.filter(
+                  (item) =>
+                    item.file &&
+                    item.file !==
+                      mediaItemsRef.current.find(
+                        (current) => current.key === item.key,
+                      )?.file,
+                );
+                for (const item of replacements) {
+                  mediaUploadsRef.current.get(item.key)?.abort();
+                  mediaUploadsRef.current.delete(item.key);
+                }
                 replaceMedia(next);
                 markMediaEdited(message);
+                if (session)
+                  for (const item of replacements) {
+                    void uploadOne(item.key, session.csrfToken).catch(
+                      (nextError) => {
+                        if (expireIfInvalidSession(nextError))
+                          setAuthExpired(true);
+                      },
+                    );
+                  }
               }}
               onRemove={(key) => {
                 const current = mediaItemsRef.current;

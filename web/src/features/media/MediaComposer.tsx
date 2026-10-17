@@ -25,6 +25,7 @@ import {
 } from "./mediaState";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import styles from "./Media.module.css";
+import { canCropMedia } from "./mediaCrop";
 import { MediaDescriptionEditor } from "./MediaDescriptionEditor";
 
 const MEDIA_SPRING = {
@@ -149,6 +150,10 @@ export function MediaComposer({
     null,
   );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [editRequest, setEditRequest] = useState<{
+    key: string;
+    version: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
@@ -403,6 +408,24 @@ export function MediaComposer({
                         </span>
                       )}
                     </button>
+                    {canCropMedia(item) ? (
+                      <button
+                        type="button"
+                        aria-label={`Edit image ${index + 1}`}
+                        className={styles.editorEdit}
+                        disabled={
+                          disabled || !present || !editorPreviewAvailable
+                        }
+                        onClick={() =>
+                          setEditRequest((current) => ({
+                            key: item.key,
+                            version: (current?.version ?? 0) + 1,
+                          }))
+                        }
+                      >
+                        Edit
+                      </button>
+                    ) : null}
                     <button
                       aria-label={
                         isVideo
@@ -510,6 +533,7 @@ export function MediaComposer({
       ) : null}
       {items.length > 0 ? (
         <MediaDescriptionEditor
+          editRequest={editRequest}
           items={items}
           disabled={disabled}
           onChange={onChange}
