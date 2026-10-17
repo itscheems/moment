@@ -72,8 +72,10 @@ export function SiteIdentityPreview({
   const title = siteDisplayName(site);
   const profileHref = siteProfileHref(site);
   const previewActionsRef = useRef<PreviewCard.Root.Actions>(null);
-  const unmountBeforeNavigation = () => {
-    previewActionsRef.current?.unmount();
+  const closeBeforeNavigation = () => {
+    const actions = previewActionsRef.current;
+    actions?.close();
+    actions?.unmount();
   };
   return (
     <PreviewCard.Root actionsRef={previewActionsRef}>
@@ -94,7 +96,7 @@ export function SiteIdentityPreview({
                 aria-label={`查看 ${title} 的个人资料`}
                 className={styles.identityAvatarLink}
                 href={profileHref}
-                onClick={unmountBeforeNavigation}
+                onClick={closeBeforeNavigation}
               >
                 <span className={styles.identityAvatar}>
                   <SiteAvatar eager site={site} />
@@ -104,7 +106,7 @@ export function SiteIdentityPreview({
                 <InternalLink
                   className={styles.identityNameLink}
                   href={profileHref}
-                  onClick={unmountBeforeNavigation}
+                  onClick={closeBeforeNavigation}
                 >
                   {title}
                 </InternalLink>

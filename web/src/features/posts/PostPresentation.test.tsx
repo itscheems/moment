@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { PublicPost, SiteIdentity } from "../../api/public";
+import { mediaPreviewUrl } from "../../api/mediaUrls";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";
@@ -742,11 +743,24 @@ describe("shared post presentation", () => {
   });
 
   it("opens the site profile preview from the author identity", async () => {
+    const ownerSite = {
+      ...site,
+      coverMediaId: "01K2ABCDEF0123456789ABCDE8",
+    };
     render(
       <NavigationProvider>
         <PostPresentation
-          post={makePost("查看作者", "<p>查看作者</p>")}
-          site={site}
+          post={{
+            ...makePost("查看作者", "<p>查看作者</p>"),
+            author: {
+              userId: site.ownerId,
+              username: site.username,
+              displayName: site.displayName,
+              avatarMediaId: site.avatarMediaId,
+              profileUrl: "/owner",
+            },
+          }}
+          site={ownerSite}
         />
       </NavigationProvider>,
     );
@@ -760,7 +774,14 @@ describe("shared post presentation", () => {
     expect(
       await screen.findByRole("heading", { name: "Moment" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("一些正在发生的事")).toBeInTheDocument();
+    expect(screen.queryByText("一些正在发生的事")).toBeInTheDocument();
+    const preview = screen
+      .getByRole("heading", { name: "Moment" })
+      .closest('[class*="identityCard"]');
+    expect(preview?.querySelector("img")).toHaveAttribute(
+      "src",
+      mediaPreviewUrl(ownerSite.coverMediaId),
+    );
     const avatarLinks = screen.getAllByRole("link", {
       name: "查看 Moment 的个人资料",
     });
@@ -777,6 +798,39 @@ describe("shared post presentation", () => {
     expect(
       screen.queryByRole("link", { name: "查看个人资料" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps owner profile details out of another author's preview", async () => {
+    render(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...makePost("另一位作者", "<p>另一位作者</p>"),
+            author: {
+              userId: "11111111111111111111111111111111",
+              username: "aming",
+              displayName: "阿明",
+              avatarMediaId: null,
+              profileUrl: "/aming",
+            },
+          }}
+          site={{ ...site, coverMediaId: "01K2ABCDEF0123456789ABCDE8" }}
+        />
+      </NavigationProvider>,
+    );
+
+    fireEvent.focus(screen.getByRole("link", { name: "查看 阿明 的个人资料" }));
+    const preview = (
+      await screen.findByRole("heading", { name: "阿明" })
+    ).closest('[class*="identityCard"]');
+    expect(screen.queryByText(site.bio)).not.toBeInTheDocument();
+    expect(preview?.querySelector("img")).toBeNull();
+    expect(
+      within(preview as HTMLElement).getByText("@aming"),
+    ).toBeInTheDocument();
+    expect(
+      within(preview as HTMLElement).getByRole("link", { name: "阿明" }),
+    ).toHaveAttribute("href", "/aming");
   });
 
   it("opens the same site profile preview from the author display name", async () => {
@@ -834,6 +888,13 @@ describe("shared post presentation", () => {
       expect(
         screen.queryByRole("heading", { name: "Moment" }),
       ).not.toBeInTheDocument();
+
+      fireEvent.focus(
+        screen.getByRole("link", { name: "查看 Moment 的个人资料" }),
+      );
+      expect(
+        await screen.findByRole("heading", { name: "Moment" }),
+      ).toBeInTheDocument();
     },
   );
 
