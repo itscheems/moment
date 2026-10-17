@@ -117,7 +117,7 @@ describe("shared post presentation", () => {
       /\.tiptap\.ProseMirror\s*\{[^}]*white-space:\s*pre-wrap;/,
     );
     expect(postCss).toMatch(
-      /\._timelineDensity_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*margin-block-start:\s*0;/,
+      /\._timelineDensity_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*margin-block-start:\s*0\.75rem;/,
     );
   });
 

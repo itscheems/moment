@@ -132,7 +132,7 @@ export function PostPresentation({
   searchQuery,
   onReply,
   eagerVideo = false,
-  compactTallVideo = false,
+  compactTallVideo,
   timelineDensity = false,
 }: {
   post: PublicPost;
@@ -480,7 +480,7 @@ export function PostPresentation({
             of them under the card would show the article twice. */}
         {isArticlePost(post) ? null : (
           <ImageGrid
-            compactTallVideo={compactTallVideo}
+            compactTallVideo={compactTallVideo ?? useTimelineDensity}
             eagerVideo={eagerVideo}
             media={post.media}
           />

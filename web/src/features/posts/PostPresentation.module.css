@@ -36,7 +36,26 @@
 }
 
 .post.timelineDensity {
-  padding-block: 0.75rem 0.25rem;
+  --post-menu-icon-size: 1.171875rem;
+  /* Align the glyph with Share while retaining the full menu hit target. */
+  --post-menu-inline-offset: calc(
+    (var(--post-menu-icon-size) - var(--post-edge-action-size)) / 2
+  );
+
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  column-gap: var(--space-2);
+  padding: 0.75rem var(--space-4);
+}
+
+.timelineDensity .avatar,
+.timelineDensity .avatarFallback {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+}
+
+.timelineDensity .repostedLabel {
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  column-gap: var(--space-2);
 }
 
 .surfaceLink {
@@ -314,10 +333,6 @@
   line-height: 1.25rem;
 }
 
-.timelineDensity .postActions {
-  margin-block-start: 0;
-}
-
 .postLocation {
   min-block-size: 1.6rem;
   inline-size: fit-content;
@@ -581,6 +596,104 @@
     (var(--post-edge-action-size) - var(--post-action-halo-size)) / 2
   );
   background-clip: content-box;
+}
+
+.timelineDensity .postActions {
+  min-block-size: 1.25rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 3.09375rem;
+  gap: var(--space-1);
+  margin-block-start: 0.75rem;
+}
+
+.post.timelineDensity .postAction {
+  isolation: isolate;
+  inline-size: max-content;
+  min-inline-size: 1.171875rem;
+  block-size: 1.25rem;
+  flex: none;
+  justify-content: flex-start;
+  border-radius: 0;
+  padding: 0;
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: 1rem;
+  transition: color 200ms;
+}
+
+.timelineDensity .postAction::before {
+  position: absolute;
+  z-index: -1;
+  inset-block-start: 50%;
+  inset-inline-start: -0.5rem;
+  inline-size: var(--post-action-halo-size);
+  block-size: var(--post-action-halo-size);
+  border-radius: 50%;
+  background: transparent;
+  content: "";
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: background-color 200ms;
+}
+
+/* Preserve a taller pointer target without changing the visible action row. */
+.timelineDensity .postAction::after {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: -0.5rem;
+  inline-size: var(--post-action-halo-size);
+  block-size: var(--target-size);
+  content: "";
+  transform: translateY(-50%);
+}
+
+.timelineDensity .replyAction {
+  margin-inline-start: 0;
+}
+
+.timelineDensity .shareAction {
+  grid-column: 5;
+}
+
+.timelineDensity .actionCount {
+  position: static;
+  inset: auto;
+  min-inline-size: 0;
+  padding-inline: var(--space-1);
+  font-variant-numeric: normal;
+  line-height: 1rem;
+  transform: none;
+}
+
+.timelineDensity .repostAction {
+  --feed-action-color: #00ba7c;
+  --feed-action-background: rgb(0 186 124 / 10%);
+}
+
+.timelineDensity .postAction.repostActive {
+  color: #00ba7c;
+}
+
+.post.timelineDensity .postAction:focus-visible {
+  color: var(--feed-action-color, #1d9bf0);
+  background: transparent;
+}
+
+.timelineDensity .postAction:focus-visible::before {
+  background: var(--feed-action-background, rgb(29 155 240 / 10%));
+}
+
+@media (hover: hover) {
+  .post.timelineDensity .postAction:hover:not(:disabled) {
+    color: var(--feed-action-color, #1d9bf0);
+    background: transparent;
+  }
+
+  .timelineDensity .postAction:hover:not(:disabled)::before {
+    background: var(--feed-action-background, rgb(29 155 240 / 10%));
+  }
 }
 
 .quoteCard {

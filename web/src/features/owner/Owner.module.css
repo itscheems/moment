@@ -779,6 +779,7 @@
   border: 0;
   border-radius: 50%;
   margin-block: -0.75rem;
+  margin-inline-end: var(--post-menu-inline-offset, 0px);
   padding: calc(
     (
         var(--post-edge-action-size, 2.75rem) -
@@ -793,8 +794,8 @@
 }
 
 .ownerMenuTrigger svg {
-  inline-size: 1.15rem;
-  block-size: 1.15rem;
+  inline-size: var(--post-menu-icon-size, 1.15rem);
+  block-size: var(--post-menu-icon-size, 1.15rem);
 }
 
 .ownerMenuTrigger:focus-visible,
