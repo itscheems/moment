@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,6 +24,7 @@ import { HeaderActionsContext } from "../../components/headerActions";
 import { SessionProvider } from "../auth/SessionProvider";
 import { DetailPage } from "../timeline/DetailPage";
 import { ArticlePage } from "./ArticlePage";
+import styles from "./Article.module.css";
 import sheetCss from "../../components/content/ArticleSheet.module.css?inline";
 import contentCss from "../../components/content/notion.scss?inline";
 
@@ -351,6 +353,42 @@ describe("article detail page", () => {
     ).toBeInTheDocument();
   });
 
+  it("ends focus reading with the article author instead of discussion actions", () => {
+    const post = makeArticle();
+    post.commentCount = 12;
+    post.author = {
+      userId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      username: "alice",
+      displayName: "文章作者",
+      avatarMediaId: null,
+      profileUrl: "/alice",
+    };
+    render(
+      <NavigationProvider>
+        <ArticlePage post={post} site={site} focusReading />
+      </NavigationProvider>,
+    );
+    const footer = screen.getByLabelText("文章作者");
+    expect(within(footer).getByText("文章作者")).toBeInTheDocument();
+    expect(within(footer).getByText("@alice")).toBeInTheDocument();
+    expect(within(footer).getByRole("link")).toHaveAttribute("href", "/alice");
+    expect(screen.queryByRole("button", { name: /回复这篇文章/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "分享这篇文章" })).toBeNull();
+    expect(document.querySelector('a[href="#comments"]')).toBeNull();
+    expect(screen.getByRole("article")).not.toHaveClass(styles.detailLayout);
+    expect(footer.closest("[data-article-sheet]")).not.toBeNull();
+  });
+
+  it("does not add a reading footer to the workspace publication preview", () => {
+    render(
+      <NavigationProvider>
+        <ArticlePage post={makeArticle()} site={site} showActions={false} />
+      </NavigationProvider>,
+    );
+    expect(screen.queryByLabelText("文章作者")).toBeNull();
+    expect(screen.getByRole("article")).not.toHaveClass(styles.detailLayout);
+  });
+
   it("drops the cover block and the lede when the article has neither", () => {
     const { container } = renderArticle(
       makeArticle({ cover: null, excerpt: "" }),
@@ -409,7 +447,7 @@ describe("the post detail route", () => {
     content_html: "<h2>上游</h2>",
   };
 
-  function renderDetail(data: unknown) {
+  function renderDetail(data: unknown, focusReading = false) {
     const fetcher = vi.fn(async (input: RequestInfo | URL) =>
       String(input).includes("/comments")
         ? new Response(
@@ -427,6 +465,7 @@ describe("the post detail route", () => {
           <NavigationProvider>
             <DetailPage
               api={new PublicApi(fetcher as typeof fetch)}
+              focusReading={focusReading}
               id="01K2ABCDEF0123456789ABCDE0"
               site={site}
             />
@@ -446,6 +485,17 @@ describe("the post detail route", () => {
     );
     expect(screen.getByRole("article")).toHaveAccessibleName(
       "Moment发布的文章：一条河流的十年",
+    );
+    expect(screen.getByRole("article")).toHaveClass(styles.detailLayout);
+  });
+
+  it("keeps the paper layout when the detail route enters focus reading", async () => {
+    renderDetail(wireArticle, true);
+
+    expect(await screen.findByLabelText("文章作者")).toBeInTheDocument();
+    expect(screen.getByRole("article")).not.toHaveClass(styles.detailLayout);
+    expect(document.querySelector("[data-article-sheet]")).toHaveAttribute(
+      "data-reading-layout",
     );
   });
 

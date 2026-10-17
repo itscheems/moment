@@ -13,6 +13,7 @@
 }
 
 .post:not(.detail) {
+  --post-action-halo-size: 2.171875rem;
   cursor: pointer;
 }
 
@@ -573,6 +574,13 @@
 .shareAction {
   grid-column: 4;
   justify-self: end;
+}
+
+.post:not(.detail) .postAction {
+  padding: calc(
+    (var(--post-edge-action-size) - var(--post-action-halo-size)) / 2
+  );
+  background-clip: content-box;
 }
 
 .quoteCard {

@@ -313,6 +313,7 @@ export function Reauthenticate({
 }
 
 export function CommentForm({
+  active = true,
   api,
   site,
   postId,
@@ -331,6 +332,7 @@ export function CommentForm({
   textareaRef: suppliedTextareaRef,
   topLevelTargetUsername,
 }: {
+  active?: boolean;
   api: PublicApi;
   site: SiteIdentity;
   postId: string;
@@ -813,101 +815,103 @@ export function CommentForm({
             className={`${styles.toolbarRow} ${expanded ? "" : styles.toolbarRowCollapsed}`}
             inert={!expanded}
           >
-            <MediaComposer
-              className={styles.commentMediaComposer}
-              disabled={pending || !commentsEnabled}
-              footerAction={
-                <div className={styles.commentSubmitCluster}>
-                  <CommentProgress count={contentCount} />
-                  <div className={styles.commentSubmitActions}>
-                    {onCancel ? (
+            {active ? (
+              <MediaComposer
+                className={styles.commentMediaComposer}
+                disabled={pending || !commentsEnabled}
+                footerAction={
+                  <div className={styles.commentSubmitCluster}>
+                    <CommentProgress count={contentCount} />
+                    <div className={styles.commentSubmitActions}>
+                      {onCancel ? (
+                        <button
+                          className={styles.secondaryAction}
+                          onClick={onCancel}
+                          type="button"
+                        >
+                          取消
+                        </button>
+                      ) : null}
                       <button
-                        className={styles.secondaryAction}
-                        onClick={onCancel}
-                        type="button"
+                        aria-busy={pending || undefined}
+                        aria-label="发表回复"
+                        className={styles.primaryAction}
+                        data-pending={pending ? "true" : undefined}
+                        disabled={
+                          pending ||
+                          !validContent ||
+                          !commentsEnabled ||
+                          !owner.session ||
+                          mediaError !== null
+                        }
+                        type="submit"
                       >
-                        取消
+                        <span aria-hidden="true">
+                          {pending ? "正在发表…" : "回复"}
+                        </span>
                       </button>
-                    ) : null}
-                    <button
-                      aria-busy={pending || undefined}
-                      aria-label="发表回复"
-                      className={styles.primaryAction}
-                      data-pending={pending ? "true" : undefined}
-                      disabled={
-                        pending ||
-                        !validContent ||
-                        !commentsEnabled ||
-                        !owner.session ||
-                        mediaError !== null
-                      }
-                      type="submit"
-                    >
-                      <span aria-hidden="true">
-                        {pending ? "正在发表…" : "回复"}
-                      </span>
-                    </button>
+                    </div>
                   </div>
-                </div>
-              }
-              items={mediaItems}
-              maximum={4}
-              maximumTotalBytes={MAX_TOTAL_BYTES}
-              pickerTooltip={inlineTopLevel ? "媒体" : undefined}
-              subject="回复"
-              toolbarAction={
-                <LocationPicker
-                  api={owner.api}
-                  disabled={pending || !commentsEnabled || !owner.session}
-                  onChange={(nextLocation) => {
-                    setCommentLocation(nextLocation);
-                    setActivated(true);
-                    setError(null);
-                  }}
-                  pickerTooltip="位置"
-                  value={commentLocation}
-                />
-              }
-              onAdd={(files) => {
-                const next = [...mediaItemsRef.current];
-                for (const file of files) {
-                  if (fileValidation(file, next, MAX_TOTAL_BYTES)) continue;
-                  const item = newMediaItem(file);
-                  next.push(item);
-                  void readLocalPreview(file)
-                    .then((localPreviewUrl) => {
-                      if (
-                        !mountedRef.current ||
-                        !mediaItemsRef.current.some(
-                          (candidate) => candidate.key === item.key,
-                        )
-                      ) {
-                        releaseLocalPreview(localPreviewUrl);
-                        return;
-                      }
-                      replaceMedia(
-                        mediaItemsRef.current.map((candidate) =>
-                          candidate.key === item.key
-                            ? { ...candidate, localPreviewUrl }
-                            : candidate,
-                        ),
-                      );
-                    })
-                    .catch(() => undefined);
                 }
-                replaceMedia(next);
-                setActivated(true);
-              }}
-              onChange={(next) => replaceMedia(next)}
-              onRemove={(key) => {
-                mediaUploadsRef.current.get(key)?.abort();
-                mediaUploadsRef.current.delete(key);
-                replaceMedia(
-                  mediaItemsRef.current.filter((item) => item.key !== key),
-                );
-              }}
-              onRetry={(key) => void uploadOne(key).catch(() => undefined)}
-            />
+                items={mediaItems}
+                maximum={4}
+                maximumTotalBytes={MAX_TOTAL_BYTES}
+                pickerTooltip={inlineTopLevel ? "媒体" : undefined}
+                subject="回复"
+                toolbarAction={
+                  <LocationPicker
+                    api={owner.api}
+                    disabled={pending || !commentsEnabled || !owner.session}
+                    onChange={(nextLocation) => {
+                      setCommentLocation(nextLocation);
+                      setActivated(true);
+                      setError(null);
+                    }}
+                    pickerTooltip="位置"
+                    value={commentLocation}
+                  />
+                }
+                onAdd={(files) => {
+                  const next = [...mediaItemsRef.current];
+                  for (const file of files) {
+                    if (fileValidation(file, next, MAX_TOTAL_BYTES)) continue;
+                    const item = newMediaItem(file);
+                    next.push(item);
+                    void readLocalPreview(file)
+                      .then((localPreviewUrl) => {
+                        if (
+                          !mountedRef.current ||
+                          !mediaItemsRef.current.some(
+                            (candidate) => candidate.key === item.key,
+                          )
+                        ) {
+                          releaseLocalPreview(localPreviewUrl);
+                          return;
+                        }
+                        replaceMedia(
+                          mediaItemsRef.current.map((candidate) =>
+                            candidate.key === item.key
+                              ? { ...candidate, localPreviewUrl }
+                              : candidate,
+                          ),
+                        );
+                      })
+                      .catch(() => undefined);
+                  }
+                  replaceMedia(next);
+                  setActivated(true);
+                }}
+                onChange={(next) => replaceMedia(next)}
+                onRemove={(key) => {
+                  mediaUploadsRef.current.get(key)?.abort();
+                  mediaUploadsRef.current.delete(key);
+                  replaceMedia(
+                    mediaItemsRef.current.filter((item) => item.key !== key),
+                  );
+                }}
+                onRetry={(key) => void uploadOne(key).catch(() => undefined)}
+              />
+            ) : null}
           </div>
           {mediaError ? (
             <p className={styles.formError} role="alert">

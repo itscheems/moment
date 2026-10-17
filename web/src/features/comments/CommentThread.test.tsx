@@ -435,6 +435,127 @@ describe("public comment thread", () => {
     vi.unstubAllGlobals();
   });
 
+  it("loads nothing while inactive and preserves the draft and loaded thread when resumed", async () => {
+    preauthenticate();
+    const fetcher = installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [root, reply] });
+      }
+    });
+    const api = new PublicApi();
+    const show = (active: boolean) => (
+      <NavigationProvider>
+        <SessionProvider>
+          <CommentThread
+            active={active}
+            api={api}
+            postId={postId}
+            site={site}
+          />
+        </SessionProvider>
+      </NavigationProvider>
+    );
+    const mounted = render(show(false));
+    expect(screen.queryByRole("region", { name: "回复" })).toBeNull();
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).endsWith("/comments")),
+    ).toHaveLength(0);
+    mounted.rerender(show(true));
+    const form = await screen.findByRole("form", { name: "发表回复" });
+    const input = within(form).getByLabelText("回复内容");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "写了一半，返回继续" } });
+    fireEvent.click(within(form).getByRole("button", { name: "添加位置" }));
+    expect(
+      await screen.findByRole("dialog", { name: "添加位置" }),
+    ).toBeVisible();
+    mounted.rerender(show(false));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(form).not.toBeVisible();
+    expect(form.closest("[inert]")).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "回复" })).toBeNull();
+    mounted.rerender(show(true));
+    expect(screen.getByRole("form", { name: "发表回复" })).toBe(form);
+    expect(input).toHaveValue("写了一半，返回继续");
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).endsWith("/comments")),
+    ).toHaveLength(1);
+  });
+
+  it("closes comment moderation portals when its conversation is suspended", async () => {
+    preauthenticate();
+    installApi((url, init) => {
+      if (url.endsWith("/comments") && init?.method !== "POST") {
+        return success({ items: [root, reply] });
+      }
+    });
+    const api = new PublicApi();
+    const show = (active: boolean) => (
+      <NavigationProvider>
+        <SessionProvider>
+          <CommentThread
+            active={active}
+            api={api}
+            postId={postId}
+            site={site}
+          />
+        </SessionProvider>
+      </NavigationProvider>
+    );
+    const mounted = render(show(true));
+    await screen.findByRole("form", { name: "发表回复" });
+    await chooseFirstCommentAction("删除");
+    expect(
+      await screen.findByRole("dialog", { name: "删除这条回复？" }),
+    ).toHaveAttribute("data-open");
+    mounted.rerender(show(false));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.body.style.overflow).not.toBe("hidden");
+    mounted.rerender(show(true));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("form", { name: "发表回复" })).toBeVisible();
+  });
+
+  it("aborts an unfinished comment read on pause and ignores its late response", async () => {
+    let answerFirst!: (response: Response) => void;
+    let firstSignal: AbortSignal | undefined;
+    let calls = 0;
+    installApi((url, init) => {
+      if (!url.endsWith("/comments")) return;
+      calls++;
+      if (calls === 1) {
+        firstSignal = init?.signal ?? undefined;
+        return new Promise<Response>((resolve) => {
+          answerFirst = resolve;
+        });
+      }
+      return success({ items: [] });
+    });
+    const api = new PublicApi();
+    const show = (active: boolean) => (
+      <NavigationProvider>
+        <SessionProvider>
+          <CommentThread
+            active={active}
+            api={api}
+            postId={postId}
+            site={site}
+          />
+        </SessionProvider>
+      </NavigationProvider>
+    );
+    const mounted = render(show(true));
+    await waitFor(() => expect(calls).toBe(1));
+    mounted.rerender(show(false));
+    expect(firstSignal?.aborted).toBe(true);
+    await act(async () => answerFirst(success({ items: [root] })));
+    expect(screen.queryByRole("region", { name: "回复" })).toBeNull();
+    mounted.rerender(show(true));
+    await waitFor(() => expect(calls).toBe(2));
+    expect(await screen.findByRole("region", { name: "回复" })).toBeVisible();
+    expect(document.querySelector(`[data-comment-id="${rootId}"]`)).toBeNull();
+  });
+
   // The thread reports movement, not a total: holding one page of a
   // conversation, it cannot know how many comments the post has, and
   // announcing the size of the loaded page would overwrite the real figure.

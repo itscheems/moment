@@ -1201,12 +1201,23 @@ describe("App shell and public routes", () => {
     });
   });
 
-  function installArticleApi() {
+  function installArticleApi(authorUsername?: string) {
     const id = "01K2ABCDEF0123456789ABCDE0";
     const item = {
       ...post(id, ""),
       kind: "article",
       content_md: null,
+      ...(authorUsername
+        ? {
+            author: {
+              user_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              username: authorUsername,
+              display_name: "文章作者",
+              avatar_media_id: null,
+              profile_url: `/${authorUsername}`,
+            },
+          }
+        : {}),
       article: {
         title: "专注阅读的文章",
         excerpt: "同一份正文",
@@ -1233,6 +1244,11 @@ describe("App shell and public routes", () => {
       if (url === "/api/v1/site") return json(siteEnvelope);
       if (url === `/api/v1/posts/${id}`)
         return json({ data: item, meta: { request_id: "article" } });
+      if (url === `/api/v1/posts/${id}/comments`)
+        return json({
+          data: { items: [] },
+          meta: { next_cursor: null, request_id: "comments" },
+        });
       return json(timelineEnvelope());
     });
     return { id, fetcher };
@@ -1270,6 +1286,9 @@ describe("App shell and public routes", () => {
     fireEvent.click(trigger);
     expect(window.location.pathname).toBe(`/owner/article/${id}`);
     expect(screen.getByRole("article")).toBe(article);
+    expect(screen.queryByRole("region", { name: "回复" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /回复这篇文章/ })).toBeNull();
+    expect(screen.getByLabelText("文章作者")).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "主要导航" })).toBeNull();
     expect(screen.queryByRole("navigation", { name: "移动导航" })).toBeNull();
     expect(
@@ -1291,6 +1310,8 @@ describe("App shell and public routes", () => {
     fireEvent.click(screen.getByRole("link", { name: "退出全屏阅读" }));
     await waitFor(() => expect(window.location.pathname).toBe(`/m/${id}`));
     expect(screen.getByRole("article")).toBe(article);
+    expect(screen.getByRole("region", { name: "回复" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("文章作者")).toBeNull();
     expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
     expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
     await waitFor(() =>
@@ -1320,7 +1341,7 @@ describe("App shell and public routes", () => {
   });
 
   it("loads a focus address directly and exits to the corresponding detail without previous history", async () => {
-    const { id } = installArticleApi();
+    const { id, fetcher } = installArticleApi();
     window.history.replaceState({}, "", `/owner/article/${id}`);
     render(<App />);
     await waitFor(() => {
@@ -1332,6 +1353,10 @@ describe("App shell and public routes", () => {
       expect(screen.getByRole("button", { name: "Search" })).toBeVisible();
     });
     const back = screen.getByRole("link", { name: "退出全屏阅读" });
+    expect(screen.queryByRole("region", { name: "回复" })).toBeNull();
+    expect(
+      fetcher.mock.calls.filter(([url]) => String(url).includes("/comments")),
+    ).toHaveLength(0);
     expect(back).toHaveAttribute("href", `/m/${id}`);
     const modified = new MouseEvent("click", {
       bubbles: true,
@@ -1346,6 +1371,18 @@ describe("App shell and public routes", () => {
     expect(
       screen.getByRole("navigation", { name: "主要导航" }),
     ).toBeInTheDocument();
+  });
+
+  it("opens a member article's focus address under its actual author", async () => {
+    const { id } = installArticleApi("alice");
+    window.history.replaceState({}, "", `/m/${id}`);
+    render(<App />);
+    const trigger = await screen.findByRole("link", { name: "全屏阅读" });
+    expect(trigger).toHaveAttribute("href", `/alice/article/${id}`);
+    fireEvent.click(trigger);
+    expect(window.location.pathname).toBe(`/alice/article/${id}`);
+    const footer = screen.getByLabelText("文章作者");
+    expect(within(footer).getByRole("link")).toHaveAttribute("href", "/alice");
   });
 
   it.each(["moment", "missing"])(

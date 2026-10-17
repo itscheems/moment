@@ -33,13 +33,14 @@ import {
 } from "../../components/content/ArticleSheet";
 import styles from "./Article.module.css";
 
-/** Read the document using the same grammar, paper, and typography as writing. */
+/** Share the document renderer while keeping detail and paper layouts distinct. */
 export function ArticlePage({
   post,
   site,
   now,
   owner = false,
   focusReading = false,
+  layout = "document",
   showActions = true,
   onDeleted,
   onReposted,
@@ -51,6 +52,7 @@ export function ArticlePage({
   now?: Date;
   owner?: boolean;
   focusReading?: boolean;
+  layout?: "document" | "detail";
   showActions?: boolean;
   onDeleted?: (post: PublicPost) => void;
   onReposted?: (post: PublicPost) => void;
@@ -67,11 +69,12 @@ export function ArticlePage({
   const published = formatMomentDate(post.publishedAt, site.timezone, now);
   const hidden = post.visibility === "only_me";
   const siteName = siteDisplayName(site);
+  const showDiscussionActions = showActions && !focusReading;
 
   return (
     <article
       aria-label={`${siteName}发布的文章：${title}`}
-      className={`${postStyles.post} ${postStyles.detail} ${styles.page}`}
+      className={`${postStyles.post} ${postStyles.detail} ${styles.page} ${focusReading ? styles.focusReading : ""} ${layout === "detail" ? styles.detailLayout : ""}`}
       data-post-id={post.id}
       data-article-theme
       tabIndex={-1}
@@ -183,8 +186,30 @@ export function ArticlePage({
             publishedLabel: `文章摘录 · ${published.absolute}`,
           }}
         />
+        {focusReading ? (
+          <footer aria-label="文章作者" className={styles.readingFooter}>
+            <SiteIdentityPreview
+              site={site}
+              children={
+                <InternalLink
+                  aria-label={`查看 ${siteName} 的个人资料`}
+                  className={styles.readingAuthor}
+                  href={siteProfileHref(site)}
+                >
+                  <span className={styles.readingAuthorAvatar}>
+                    <SiteAvatar site={site} size={40} />
+                  </span>
+                  <span className={styles.readingAuthorText}>
+                    <strong>{siteName}</strong>
+                    <span>@{site.username}</span>
+                  </span>
+                </InternalLink>
+              }
+            />
+          </footer>
+        ) : null}
       </ArticleSheet>
-      {showActions && post.commentCount > 0 ? (
+      {showDiscussionActions && post.commentCount > 0 ? (
         <a
           className={`${postStyles.detailStats} ${styles.column}`}
           href="#comments"
@@ -193,7 +218,7 @@ export function ArticlePage({
           <span>条回复</span>
         </a>
       ) : null}
-      {showActions ? (
+      {showDiscussionActions ? (
         <div className={`${postStyles.postActions} ${styles.column}`}>
           <ActionTooltip label="回复">
             <button

@@ -864,19 +864,7 @@
   }
 }
 
-/* A document needs the same paper width it has while being written. */
-@media (min-width: 1265px) {
-  .shell.detailShell:has([data-article-sheet]) {
-    grid-template-columns: var(--shell-rail-width) 44.375rem minmax(0, 1fr);
-  }
-}
 @media (min-width: 720px) and (max-width: 1264px) {
-  .shell.detailShell:has([data-article-sheet]) {
-    grid-template-columns: var(--shell-rail-width) minmax(0, 44.375rem);
-  }
-  .shell.detailShell:has([data-article-sheet]) .timeline {
-    max-inline-size: 44.375rem;
-  }
   .shell.detailShell :global([data-article-sheet] .toc-sidebar) {
     inset-inline-end: 1rem;
   }
