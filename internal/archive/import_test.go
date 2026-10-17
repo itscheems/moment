@@ -307,9 +307,9 @@ func TestCommentAuthorAccountRoundTripsThroughPortableArchive(t *testing.T) {
 	if len(staged) != 2 {
 		t.Fatalf("staged comments = %#v", staged)
 	}
-	owner := staged[0]
-	if owner.ID != authorAccountCommentID || owner.AuthorUserID == nil || *owner.AuthorUserID != commentAuthorAccount {
-		t.Fatalf("staged owner comment = %#v", owner)
+	primaryAccount := staged[0]
+	if primaryAccount.ID != authorAccountCommentID || primaryAccount.AuthorUserID == nil || *primaryAccount.AuthorUserID != commentAuthorAccount {
+		t.Fatalf("staged owner comment = %#v", primaryAccount)
 	}
 	if staged[1].ID != legacyGuestCommentID || staged[1].AuthorUserID != nil {
 		t.Fatalf("staged guest comment = %#v", staged[1])
@@ -546,10 +546,6 @@ func commentLineOrder(t *testing.T, data []byte) map[string]int {
 	return result
 }
 
-// insertCommentAuthorFixture adds one entry carrying two root comments: one
-// owner comment that references an account and one legacy guest comment that
-// never had an identity to reference. Their IDs order the pair deterministically
-// in canonical thread order.
 func insertCommentAuthorFixture(t *testing.T, fixture exportFixture) {
 	t.Helper()
 	if err := fixture.database.WriteTx(context.Background(), func(queries sqlitestore.Queries) error {
@@ -659,9 +655,6 @@ func TestInspectAndPlanRejectChecksumValidUnreachableArchiveMedia(t *testing.T) 
 	site["avatar_media_id"] = nil
 	site["cover_media_id"] = nil
 	members["data/site.json"] = append(mustMarshalTest(t, site), '\n')
-	// The owner account carries the same two pictures, so clearing only the
-	// site record would describe two different owners rather than an archive
-	// whose media is genuinely unreferenced.
 	setAccountPictures(t, members, nil, nil)
 	rebuildManifestExpanded(t, members)
 	rebuildChecksums(members)

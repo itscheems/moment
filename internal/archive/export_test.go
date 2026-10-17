@@ -45,7 +45,7 @@ const (
 // an archive built from it is byte-stable across runs.
 var exportFixtureClock = time.Date(2026, 8, 10, 12, 0, 0, 123_000_000, time.UTC)
 
-func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
+func TestExportV2FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	var first bytes.Buffer
 	summary, err := fixture.exporter.Export(context.Background(), &first)
@@ -147,17 +147,13 @@ func TestExportV1FullDataChecksumsOrderingAndExclusions(t *testing.T) {
 	}
 }
 
-func TestExportV1EmptyArchiveAndManifestFixedPointBoundaries(t *testing.T) {
+func TestExportV2EmptyArchiveAndManifestFixedPointBoundaries(t *testing.T) {
 	fixture := newExportFixture(t, false)
 	var output bytes.Buffer
 	if _, err := fixture.exporter.Export(context.Background(), &output); err != nil {
 		t.Fatal(err)
 	}
 	members, order := readArchive(t, output.Bytes())
-	// An empty site is still not an accountless one: the owner is always there.
-	// The article members are written even when they hold nothing, because the
-	// member set a writer emits is fixed; an absent one means "this archive
-	// predates articles", not "this site has none".
 	if len(order) != 11 || len(members["data/entries.jsonl"]) != 0 || len(members["data/comments.jsonl"]) != 0 ||
 		len(members["data/media.jsonl"]) != 0 || len(members["data/identities.jsonl"]) != 0 ||
 		len(members["data/entry_articles.jsonl"]) != 0 || len(members["data/article_drafts.jsonl"]) != 0 ||

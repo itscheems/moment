@@ -74,9 +74,9 @@ func (importer *PortableImporter) InsertMedia(ctx context.Context, value Archive
 INSERT INTO media (
     id, sha256, storage_path, original_name, mime_type,
     byte_size, width, height, created_at_ms, unreferenced_since_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		value.ID, value.SHA256, value.StoragePath, value.OriginalName, value.MIMEType,
-		value.ByteSize, value.Width, value.Height, value.CreatedAtMS)
+		value.ByteSize, value.Width, value.Height, value.CreatedAtMS, value.UnreferencedSinceMS)
 	if err != nil {
 		return fmt.Errorf("insert portable media %s: %w", value.ID, err)
 	}
@@ -84,13 +84,7 @@ INSERT INTO media (
 	return nil
 }
 
-// InsertUser writes one portable account.
-//
-// The owner must arrive first, because it does not arrive into an empty table:
-// a freshly migrated generation already holds the account the schema created
-// for its generated site row, and that account holds both the single-owner
-// index and, by default, the handle "owner". Adopting it before any other
-// account is inserted is what makes the remaining inserts ordinary.
+// InsertUser restores one real account before dependent records.
 func (importer *PortableImporter) InsertUser(ctx context.Context, value ArchiveUser) error {
 	if err := importer.requireOpen(); err != nil {
 		return err
@@ -111,13 +105,7 @@ INSERT INTO users (
 	return nil
 }
 
-// adoptPortableOwner replaces the generated owner account with the archive's.
-//
-// Every step is ordered so no foreign key is ever left dangling: RESTRICT is
-// checked the moment a row changes and is not deferrable, so the site row is
-// repointed at the new account before the generated one is deleted, and the new
-// account only becomes the owner once the old one is gone.
-
+// InsertIdentity restores one external provider binding for an existing account.
 func (importer *PortableImporter) InsertIdentity(ctx context.Context, value ArchiveIdentity) error {
 	if err := importer.requireOpen(); err != nil {
 		return err
@@ -679,17 +667,7 @@ VALUES (?, ?, ?, ?)`, value.ID, usage.MediaID, usage.Position, usage.AltText); e
 	return nil
 }
 
-// SetSite replaces the generated singleton with portable public settings.
-//
-// The portable site record still carries the owner's handle, name, bio and
-// pictures because that is the v1 wire contract, but those columns now live on
-// the account. The write therefore lands in two places, on one transaction, so
-// the site row and the account it names cannot end up describing different
-// people.
-//
-// An archive that predates owner identity carries no profile_user_id, and there is
-// nothing to name: the account the migrations generated keeps its handle and
-// display name, and only the fields the archive actually states are applied.
+// SetSite restores site configuration and its independent display-account reference.
 func (importer *PortableImporter) SetSite(ctx context.Context, value ArchiveSite) error {
 	if err := importer.requireOpen(); err != nil {
 		return err
@@ -839,7 +817,7 @@ SELECT
   (SELECT count(*) FROM entries),
   (SELECT count(*) FROM comments),
 	  (SELECT count(*) FROM media),
-	  (SELECT count(*) FROM media WHERE unreferenced_since_ms IS NOT NULL),
+	  (SELECT count(*) FROM media WHERE NOT `+portableMediaSQL+` OR (`+mediaReferencedSQL+` AND unreferenced_since_ms IS NOT NULL) OR (NOT `+mediaReferencedSQL+` AND unreferenced_since_ms IS NULL)),
 	  (SELECT count(*) FROM entry_fts),
   (SELECT count(*) FROM entries AS e WHERE NOT EXISTS (SELECT 1 FROM entry_fts AS f WHERE f.entry_id = e.id)),
 	  (SELECT count(*) FROM entry_fts AS f WHERE NOT EXISTS (SELECT 1 FROM entries AS e WHERE e.id = f.entry_id)),

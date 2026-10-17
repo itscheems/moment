@@ -261,6 +261,7 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 	}
 
 	referenced := referencedMediaIDs(result.Authority)
+	retainGrantedMedia(referenced, result.Authority.Users, local.Media, incoming.Media, mediaRemap)
 	for id := range referenced {
 		if value, exists := localMediaByID[id]; exists {
 			result.Authority.Media = append(result.Authority.Media, value)
@@ -284,6 +285,17 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 		result.MediaSources[id] = MergeMediaSource{Origin: MergeMediaIncoming, Media: source}
 	}
 	mergeMediaPermissions(&result.Authority, local, incoming, mediaRemap)
+	contentRefs := referencedMediaIDs(result.Authority)
+	for i := range result.Authority.Media {
+		value := &result.Authority.Media[i]
+		if _, exists := contentRefs[value.ID]; exists {
+			value.UnreferencedSinceMS = nil
+		} else if value.UnreferencedSinceMS == nil {
+			at := options.Clock().UnixMilli()
+			value.UnreferencedSinceMS = &at
+		}
+	}
+
 	result.Authority.Media = sortedMedia(result.Authority.Media)
 	return result, nil
 }
@@ -308,21 +320,6 @@ func (claimed handleClaimer) claim(userID, username string) error {
 	return nil
 }
 
-// release gives a handle up so its holder can claim a different one. The owner
-// is the only account a merge renames, and it renames it to whatever the
-// resolved site says.
-func (claimed handleClaimer) release(username string) {
-	delete(claimed, strings.ToLower(username))
-}
-
-// mergeUsernameCollision reports a handle a local account and a different
-// incoming account both claim.
-//
-// It walks the two sides in the order resolveMergeAccounts does, so it sees
-// the same collisions that would abort the apply -- minus the one the owner's
-// rename can introduce, which depends on a site-field choice nobody has made
-// yet. Everything it finds is fatal whatever the reviewer chooses, which is
-// what makes it safe to report before the choosing starts.
 func mergeUsernameCollision(local, incoming PortableAuthority) error {
 	handles := handleClaimer{}
 	known := make(map[string]struct{}, len(local.Users))
@@ -345,30 +342,9 @@ func mergeUsernameCollision(local, incoming PortableAuthority) error {
 	return nil
 }
 
-// resolveMergeAccounts decides which accounts and credentials the merged
-// generation holds. There is no selection to consult, on purpose.
-//
-// A local account is never replaced by its backup copy: a person's current
-// handle, status and role are facts about this instance now, and a backup is a
-// picture of a moment that has already passed. An account the backup knows and
-// this instance does not is added, because the comments being restored beside
-// it name it as their author and an account that is missing renders as plain
-// text with no way back.
-//
-// The owner is the one account whose profile a merge can change, and only
-// through the site fields, which is where the portable format states those five
-// columns. Copying the resolved site back onto the owner row here is what makes
-// choosing "use incoming" for a display name actually land on the account.
-//
-// Two accounts cannot share a handle, and nothing in a two-way merge can decide
-// which of two people gets renamed. That is refused rather than resolved.
 func resolveMergeAccounts(local, incoming PortableAuthority, site sqlitestore.ArchiveSite, mediaRemap map[string]string) ([]sqlitestore.ArchiveUser, []sqlitestore.ArchiveIdentity, error) {
-	if len(local.Users) == 0 && len(incoming.Users) == 0 {
-		// Neither side states any account, which is what an authority read from
-		// an archive written before accounts existed looks like. There is
-		// nothing to merge and nothing to lose; the rebuilt generation keeps
-		// the account its own migrations created.
-		return nil, nil, nil
+	if len(local.Users) == 0 || len(incoming.Users) == 0 {
+		return nil, nil, errors.New("portable merge requires account records")
 	}
 	accounts := map[string]sqlitestore.ArchiveUser{}
 	handles := handleClaimer{}
@@ -398,7 +374,7 @@ func resolveMergeAccounts(local, incoming PortableAuthority, site sqlitestore.Ar
 	}
 	_, exists := accounts[site.ProfileUserID]
 	if !exists {
-		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "merged accounts do not contain the site owner", map[string]any{"profile_user_id": site.ProfileUserID})
+		return nil, nil, domain.NewError(domain.CodeDataIntegrityFailed, "merged accounts do not contain the display account", map[string]any{"profile_user_id": site.ProfileUserID})
 	}
 
 	users := make([]sqlitestore.ArchiveUser, 0, len(accounts))
@@ -674,8 +650,6 @@ func referencedMediaIDs(authority PortableAuthority) map[string]struct{} {
 			result[*id] = struct{}{}
 		}
 	}
-	// Every account has pictures, not just the owner's, and a picture whose
-	// bytes are not carried across becomes a foreign key the rebuild refuses.
 	for _, account := range authority.Users {
 		for _, id := range []*string{account.AvatarMediaID, account.CoverMediaID} {
 			if id != nil {
@@ -756,19 +730,12 @@ func rebuildResolvedMergeGeneration(ctx context.Context, parent *runtimefs.Runti
 			return err
 		}
 	}
-	// Accounts precede comments because a comment names the account that wrote
-	// it, and the owner precedes every other account because it is the one that
-	// replaces the account this generation was created with.
-	for _, ownerPass := range []bool{true, false} {
-		for _, value := range resolved.Authority.Users {
-			if (domain.UserRole(value.Role) == domain.UserRoleAdmin) != ownerPass {
-				continue
-			}
-			if err := importer.InsertUser(ctx, value); err != nil {
-				return err
-			}
+	for _, value := range resolved.Authority.Users {
+		if err := importer.InsertUser(ctx, value); err != nil {
+			return err
 		}
 	}
+
 	for _, value := range resolved.Authority.Media {
 		for _, grant := range value.Grants {
 			if err := importer.InsertMediaGrant(ctx, value.ID, grant); err != nil {

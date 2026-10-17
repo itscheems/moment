@@ -411,18 +411,18 @@ func TestADraftWhoseProjectedPicturesDisagreeWithItsBodyIsRefused(t *testing.T) 
 // of their own writing. Handing them article envelopes with no words in them,
 // and no drafts at all, would make it a copy of the parts they care least
 // about.
-func TestAPersonalExportOfTheOwnerCarriesTheirArticlesAndDrafts(t *testing.T) {
+func TestPersonalExportCarriesTheAuthorsArticlesAndDrafts(t *testing.T) {
 	fixture := newExportFixture(t, true)
 	seeded := seedArticleFixture(t, fixture)
 	ctx := context.Background()
-	var ownerID string
+	var primaryAccountID string
 	if err := fixture.database.ReadTx(ctx, func(queries sqlitestore.Queries) error {
-		return queries.QueryRowContext(ctx, `SELECT profile_user_id FROM site_settings WHERE id = 1`).Scan(&ownerID)
+		return queries.QueryRowContext(ctx, `SELECT profile_user_id FROM site_settings WHERE id = 1`).Scan(&primaryAccountID)
 	}); err != nil {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	if _, err := fixture.exporter.ExportAccount(ctx, &output, ownerID); err != nil {
+	if _, err := fixture.exporter.ExportAccount(ctx, &output, primaryAccountID); err != nil {
 		t.Fatal(err)
 	}
 	members, _ := readArchive(t, output.Bytes())

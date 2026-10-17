@@ -5,9 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sort"
+
 	"github.com/moment/moment/internal/domain"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
-	"sort"
 )
 
 var portableMediaFields = []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}
@@ -88,5 +89,42 @@ func mergeMediaPermissions(resolved *PortableAuthority, local, incoming Portable
 		}
 		sort.Slice(values, func(i, j int) bool { return values[i].UserID < values[j].UserID })
 		resolved.Media[index].Grants = values
+	}
+}
+
+func portableMediaRetention(value *string) (*int64, error) {
+	if value == nil {
+		return nil, nil
+	}
+	instant, err := parsePortableTimestamp(*value)
+	if err != nil {
+		return nil, err
+	}
+	at := instant.UnixMilli()
+	return &at, nil
+}
+
+func retainGrantedMedia(result map[string]struct{}, users []sqlitestore.ArchiveUser, local, incoming []sqlitestore.ArchiveMedia, remap map[string]string) {
+	present := map[string]bool{}
+	for _, user := range users {
+		present[user.ID] = true
+	}
+	for _, value := range local {
+		for _, grant := range value.Grants {
+			if present[grant.UserID] {
+				result[value.ID] = struct{}{}
+				break
+			}
+		}
+	}
+	for _, value := range incoming {
+		for _, grant := range value.Grants {
+			if present[grant.UserID] {
+				if id, ok := remap[value.ID]; ok {
+					result[id] = struct{}{}
+				}
+				break
+			}
+		}
 	}
 }

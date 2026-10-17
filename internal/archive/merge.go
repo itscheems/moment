@@ -20,7 +20,7 @@ import (
 const mergePlanVersion = 1
 
 // MergeClassification is one deterministic two-way comparison result. A
-// local-only record is always retained because portable v1 has no tombstones.
+// local-only record is always retained because portable v2 has no tombstones.
 type MergeClassification string
 
 // Merge classification values describe the deterministic relationship
@@ -339,7 +339,7 @@ func comparePortableAuthorities(input MergePlanInput) (MergePlan, error) {
 	for _, incoming := range sortedComments(input.Incoming.Comments) {
 		item := MergeItem{Kind: MergeComment, ID: incoming.ID, Selectable: true, ChangedFields: []string{}, Dependencies: commentDependencies(incoming)}
 		if local, exists := localComment[incoming.ID]; exists {
-			item.ChangedFields = commentChangedFields(local, incoming, localSHA, incomingSHA, input.Local.Site.ProfileUserID, input.Incoming.Site.ProfileUserID)
+			item.ChangedFields = commentChangedFields(local, incoming, localSHA, incomingSHA)
 			if len(item.ChangedFields) == 0 {
 				item.Classification = MergeUnchanged
 			} else {
@@ -355,9 +355,6 @@ func comparePortableAuthorities(input MergePlanInput) (MergePlan, error) {
 			plan.addItem(MergeItem{Kind: MergeComment, ID: local.ID, Classification: MergeLocalOnly, ChangedFields: []string{}, Dependencies: []MergeRef{}})
 		}
 	}
-	// Accounts are compared by identity, never offered as a choice. The owner's
-	// own profile is still decided through the site fields below, because that
-	// is where those five columns are stated in the portable format.
 	localUser, incomingUser := indexUsers(input.Local.Users), indexUsers(input.Incoming.Users)
 	for _, incoming := range sortedUsers(input.Incoming.Users) {
 		item := MergeItem{Kind: MergeUser, ID: incoming.ID, ChangedFields: []string{}, Dependencies: userDependencies(incoming)}
@@ -657,22 +654,14 @@ func entryChangedFields(local, incoming sqlitestore.ArchiveEntry, localSHA, inco
 	return fields
 }
 
-// resolvedCommentAuthor answers the question every reader of a comment asks —
-// which account wrote this — rather than reporting the reference as stored.
-//
-// An owner row written before author_user_id existed carries no reference of
-// its own and resolves to the site owner, which is by definition who wrote it;
-// resolveCommentAuthors does exactly this on the read path. Migration 0020
-// backfilled the same value into every existing owner row, so a live database
-// and a backup taken one migration earlier describe one author two ways.
-func resolvedCommentAuthor(value sqlitestore.ArchiveComment, ownerID string) string {
+func resolvedCommentAuthor(value sqlitestore.ArchiveComment) string {
 	if value.AuthorUserID != nil {
 		return *value.AuthorUserID
 	}
 	return ""
 }
 
-func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, incomingSHA map[string]string, localProfileUserID, incomingProfileUserID string) []string {
+func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, incomingSHA map[string]string) []string {
 	fields := []string{}
 	if local.EntryID != incoming.EntryID {
 		fields = append(fields, "entry_id")
@@ -683,14 +672,7 @@ func commentChangedFields(local, incoming sqlitestore.ArchiveComment, localSHA, 
 	if local.AuthorName != incoming.AuthorName {
 		fields = append(fields, "author_name")
 	}
-	// Compared as the account each side resolves to, not as the stored pointer.
-	// A nil reference on an owner row means "predates the field", and reading it
-	// as a different author than the backfilled owner id it stands for would
-	// turn every comment shared with a pre-migration backup into a conflict
-	// over a difference no reader can observe. Two distinct accounts still
-	// differ, and so does an owner row that lost or gained a reference against
-	// a guest row that never had one.
-	if resolvedCommentAuthor(local, localProfileUserID) != resolvedCommentAuthor(incoming, incomingProfileUserID) {
+	if resolvedCommentAuthor(local) != resolvedCommentAuthor(incoming) {
 		fields = append(fields, "author_user_id")
 	}
 	if !reflect.DeepEqual(local.ReplyToCommentID, incoming.ReplyToCommentID) {

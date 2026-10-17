@@ -31,10 +31,7 @@ type accountManifest struct {
 	Counts        countManifest `json:"counts"`
 }
 
-// ExportAccount writes one account's profile, identities, authored comments and
-// reachable originals from one WAL snapshot. Only the site owner has entries;
-// member exports never include a surrounding post or somebody else's reply.
-// Reference IDs can name content outside this export and do not pull it in.
+// ExportAccount streams only one account's portable personal data.
 func (exporter *Exporter) ExportAccount(ctx context.Context, destination io.Writer, accountID string) (summary Summary, resultErr error) {
 	if exporter == nil || destination == nil || accountID == "" {
 		return Summary{}, errors.New("exporter, destination and account are required")

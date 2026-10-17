@@ -69,7 +69,7 @@ func (committer *Committer) InspectMergeFileOffline(ctx context.Context, archive
 // maintenance or mutates active authority.
 func (committer *Committer) InspectMergeArchive(ctx context.Context, source io.Reader, subject Authorization, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
 	if committer == nil || source == nil || !subject.Valid() {
-		return MergeInspection{}, domain.NewError(domain.CodeInvalidArgument, "merge inspection requires an archive and owner epoch", nil)
+		return MergeInspection{}, domain.NewError(domain.CodeInvalidArgument, "merge inspection requires an archive and current account credential", nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
 	if err != nil {
@@ -106,7 +106,7 @@ func (committer *Committer) DiscardMergeFileOffline(ctx context.Context, token s
 }
 
 // DiscardMerge abandons one unclaimed live-server merge plan. The exact
-// staging credential and owner epoch are required; committing and terminal
+// staging credential and current account credential are required; committing and terminal
 // staging records are deliberately not cancellable through this path.
 func (committer *Committer) DiscardMerge(ctx context.Context, token string, subject Authorization) (resultErr error) {
 	if committer == nil {
@@ -139,12 +139,12 @@ func (committer *Committer) discardMergeWithinLocks(ctx context.Context, runtime
 }
 
 // InspectReviewArchive creates one persistent comparison that can later be
-// committed as either a same-owner merge or an exact replacement. Unlike the
-// merge-only endpoint it intentionally allows a different incoming owner so a
+// committed as either a account merge or an exact replacement. Unlike the
+// merge-only endpoint it intentionally allows a different incoming display account so a
 // fresh instance can still restore its own portable backup.
 func (committer *Committer) InspectReviewArchive(ctx context.Context, source io.Reader, subject Authorization, activeDatabase *sqlitestore.Database) (result MergeInspection, resultErr error) {
 	if committer == nil || source == nil || !subject.Valid() {
-		return MergeInspection{}, domain.NewError(domain.CodeInvalidArgument, "import review requires an archive and owner epoch", nil)
+		return MergeInspection{}, domain.NewError(domain.CodeInvalidArgument, "import review requires an archive and current account credential", nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
 	if err != nil {

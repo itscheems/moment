@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"path/filepath"
+	"testing"
+	"time"
+
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
-	"path/filepath"
-	"testing"
 )
 
 func TestPortableRestoreKeepsAllAccountsDuplicateUploadRights(t *testing.T) {
@@ -87,5 +89,84 @@ func TestMergeUnionsDuplicateUploadRightsAfterMediaRemapping(t *testing.T) {
 	grants := resolved.Media[0].Grants
 	if len(grants) != 2 || grants[0].UserID != first || grants[0].CreatedAtMS != 10 || grants[1].UserID != second {
 		t.Fatalf("merge lost account rights=%+v", grants)
+	}
+}
+
+func TestPortableRestoreKeepsUnusedAccountUploadAndItsReuseGrant(t *testing.T) {
+	source := newExportFixture(t, false)
+	ctx := context.Background()
+	repo, _ := sqlitestore.NewAccountRepository(source.database, source.runtime.Locks)
+	accounts, _ := app.NewAccountService(repo)
+	user, err := accounts.Account(ctx, fixtureAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := media.NewStore(source.runtime, source.database, media.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploaded, _, err := store.Ingest(app.WithContentActor(ctx, user), "not-attached.png", bytes.NewReader(encodedTestImage(t, "png")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := newExportFixture(t, false)
+	restored := stageArchive(t, target, exportFixtureFile(t, source))
+	if err := restored.ReadTx(ctx, func(q sqlitestore.Queries) error {
+		var present bool
+		var unreferenced int64
+		if err := q.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM media_grants WHERE user_id=? AND media_id=?)`, user.ID, uploaded.ID.String()).Scan(&present); err != nil {
+			return err
+		}
+		if !present {
+			t.Fatal("restore lost the unused upload grant")
+		}
+		if err := q.QueryRowContext(ctx, `SELECT unreferenced_since_ms FROM media WHERE id=?`, uploaded.ID.String()).Scan(&unreferenced); err != nil {
+			return err
+		}
+		if uploaded.UnreferencedSince == nil || unreferenced != uploaded.UnreferencedSince.UnixMilli() {
+			t.Fatal("restore changed unused upload retention time")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPortableMergeRetainsUnusedUploadsWithAccountGrants(t *testing.T) {
+	source := newExportFixture(t, false)
+	ctx := context.Background()
+	repo, _ := sqlitestore.NewAccountRepository(source.database, source.runtime.Locks)
+	accounts, _ := app.NewAccountService(repo)
+	user, err := accounts.Account(ctx, fixtureAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := media.NewStore(source.runtime, source.database, media.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uploaded, _, err := store.Ingest(app.WithContentActor(ctx, user), "unused.png", bytes.NewReader(encodedTestImage(t, "png")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := newExportFixture(t, false)
+	current, err := ReadPortableAuthority(ctx, local.database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	incoming, err := ReadPortableAuthority(ctx, source.database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := ComparePortableAuthorities(MergePlanInput{ArchiveSHA256: repeatHex("a"), BaseGeneration: "test", ExpiresAt: exportFixtureClock.Add(time.Hour), Local: current, Incoming: incoming})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := ResolvePortableMerge(plan, plan.DefaultSelection, current, incoming, MergeResolveOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Authority.Media) != 1 || result.Authority.Media[0].ID != uploaded.ID.String() || len(result.Authority.Media[0].Grants) != 1 || result.Authority.Media[0].UnreferencedSinceMS == nil {
+		t.Fatalf("merge lost unused upload: %+v", result.Authority.Media)
 	}
 }

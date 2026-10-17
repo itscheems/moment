@@ -2,6 +2,7 @@ package archive
 
 import (
 	"context"
+
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/runtimefs"
@@ -15,6 +16,7 @@ type Authorization struct {
 	CredentialID string `json:"credential_id"`
 }
 
+// Valid checks that staging names a real account and a bounded credential identifier.
 func (subject Authorization) Valid() bool {
 	return domain.ValidateUserID(subject.AccountID) == nil && subject.CredentialID != "" && len(subject.CredentialID) <= 128
 }

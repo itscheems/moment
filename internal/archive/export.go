@@ -40,7 +40,7 @@ const (
 	formatName              = "moment-export"
 	copyBufferSize          = 128 << 10
 	manifestFixedPointLimit = 32
-	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v1.
+	// FormatHeaderValue is the fail-closed HTTP/CLI negotiation token for v2.
 	FormatHeaderValue = "moment-export-v2"
 )
 
@@ -92,7 +92,7 @@ func NewExporter(options Options) (*Exporter, error) {
 	return &Exporter{dataDir: options.DataDir, appVersion: options.AppVersion, clock: options.Clock}, nil
 }
 
-// Export streams one v1 ZIP. It holds maintenance shared from CURRENT
+// Export streams one v2 ZIP. It holds maintenance shared from CURRENT
 // resolution through completion, then media shared and one SQLite read snapshot
 // until the last reachable immutable original has been copied.
 func (exporter *Exporter) Export(ctx context.Context, destination io.Writer) (summary Summary, exportErr error) {
@@ -120,7 +120,7 @@ func (exporter *Exporter) Export(ctx context.Context, destination io.Writer) (su
 	return exporter.exportResolved(ctx, destination, runtimeState, database, nil)
 }
 
-// ExportWithinLocks writes a complete v1 backup from an already-open active
+// ExportWithinLocks writes a complete v2 backup from an already-open active
 // database while the caller holds maintenance and media exclusion. It avoids
 // re-acquiring a shared maintenance lease during import commit.
 func (exporter *Exporter) ExportWithinLocks(ctx context.Context, destination io.Writer, runtimeState *runtimefs.Runtime, database *sqlitestore.Database, held *runtimefs.LeaseSet) (Summary, error) {
@@ -545,14 +545,9 @@ type sourceManifest struct {
 }
 
 type countManifest struct {
-	Entries  int64 `json:"entries"`
-	Comments int64 `json:"comments"`
-	Media    int64 `json:"media"`
-	// Users and Identities are additive within format version 1 for the same
-	// reason every added record field is: the version is compared with strict
-	// equality, so an archive written before accounts existed must still
-	// import. They are omitted when absent, and their absence is what marks an
-	// archive as carrying no accounts members at all.
+	Entries    int64 `json:"entries"`
+	Comments   int64 `json:"comments"`
+	Media      int64 `json:"media"`
 	Users      int64 `json:"users,omitempty"`
 	Identities int64 `json:"identities,omitempty"`
 	// Articles and ArticleDrafts are additive on the same terms. Articles
@@ -581,7 +576,7 @@ type siteRecord struct {
 	CommentsEnabled bool    `json:"comments_enabled"`
 }
 
-// userRecord is the v1 wire shape of one account.
+// userRecord is the v2 wire shape of one account.
 //
 // It duplicates five fields siteRecord already carries -- username, display
 // name, bio, avatar and cover -- because siteRecord cannot lose them without
@@ -605,7 +600,7 @@ type userRecord struct {
 	UpdatedAt     string  `json:"updated_at"`
 }
 
-// identityRecord is the v1 wire shape of one external credential.
+// identityRecord is the v2 wire shape of one external credential.
 //
 // It carries no secret: a provider and the opaque account id that provider
 // issued are what let a returning person be recognised, and nothing here can be
@@ -645,17 +640,15 @@ type entryRecord struct {
 	// of a site that never hid anything is byte-for-byte what earlier
 	// versions wrote -- and stays importable by them, which is the rollback
 	// path. An absent key reads as everyone.
-	Visibility       string          `json:"visibility,omitempty"`
-	QuotedEntryID    *string         `json:"quoted_entry_id,omitempty"`
-	QuoteUnavailable bool            `json:"quote_unavailable,omitempty"`
-	Media            []usageRecord   `json:"media"`
-	Location         *locationRecord `json:"location,omitempty"`
-	// LinkCards is additive within format version 1, exactly as location was:
-	// the key is absent when there are none, and an older reader ignores it.
-	LinkCards []linkCardRecord `json:"link_cards,omitempty"`
+	Visibility       string           `json:"visibility,omitempty"`
+	QuotedEntryID    *string          `json:"quoted_entry_id,omitempty"`
+	QuoteUnavailable bool             `json:"quote_unavailable,omitempty"`
+	Media            []usageRecord    `json:"media"`
+	Location         *locationRecord  `json:"location,omitempty"`
+	LinkCards        []linkCardRecord `json:"link_cards,omitempty"`
 }
 
-// entryArticleRecord is the v1 wire shape of one published article body.
+// entryArticleRecord is the v2 wire shape of one published article body.
 //
 // It travels in its own member rather than inside the entry record because an
 // entry line is small and read by everything, while a body is up to half a
@@ -681,7 +674,7 @@ type entryArticleRecord struct {
 	CoverMediaID *string `json:"cover_media_id"`
 }
 
-// articleDraftRecord is the v1 wire shape of one unfinished article.
+// articleDraftRecord is the v2 wire shape of one unfinished article.
 //
 // A draft is writing that exists nowhere else, so a backup that skipped it
 // would lose work rather than lose a copy. It is not an entry: drafts live
@@ -749,7 +742,7 @@ type locationRecord struct {
 	CoordinateSystem *string `json:"coordinate_system"`
 }
 
-// commentRecord is the v1 wire shape of one comment. Fields added after v1
+// commentRecord is the v2 wire shape of one comment. Fields added after v2
 // shipped are omitempty and never required on read, because the format version
 // is compared with strict equality and an archive written before the field
 // existed must still import.
@@ -773,16 +766,17 @@ type mediaGrantRecord struct {
 }
 
 type mediaRecord struct {
-	Grants       []mediaGrantRecord `json:"grants"`
-	ID           string             `json:"id"`
-	SHA256       string             `json:"sha256"`
-	ArchivePath  string             `json:"archive_path"`
-	OriginalName string             `json:"original_name"`
-	MIMEType     string             `json:"mime_type"`
-	ByteSize     int64              `json:"byte_size"`
-	Width        uint32             `json:"width"`
-	Height       uint32             `json:"height"`
-	CreatedAt    string             `json:"created_at"`
+	UnreferencedSince *string            `json:"unreferenced_since,omitempty"`
+	Grants            []mediaGrantRecord `json:"grants"`
+	ID                string             `json:"id"`
+	SHA256            string             `json:"sha256"`
+	ArchivePath       string             `json:"archive_path"`
+	OriginalName      string             `json:"original_name"`
+	MIMEType          string             `json:"mime_type"`
+	ByteSize          int64              `json:"byte_size"`
+	Width             uint32             `json:"width"`
+	Height            uint32             `json:"height"`
+	CreatedAt         string             `json:"created_at"`
 }
 
 // The functions below are the single definition of how one authority row
@@ -1022,7 +1016,7 @@ func portableMediaRecord(value sqlitestore.ArchiveMedia) (mediaRecord, error) {
 	for _, grant := range value.Grants {
 		grants = append(grants, mediaGrantRecord{UserID: grant.UserID, CreatedAt: portableTime(grant.CreatedAtMS)})
 	}
-	return mediaRecord{Grants: grants,
+	return mediaRecord{Grants: grants, UnreferencedSince: portableOptionalTime(value.UnreferencedSinceMS),
 		ID: value.ID, SHA256: value.SHA256, ArchivePath: archivePath,
 		OriginalName: value.OriginalName, MIMEType: value.MIMEType,
 		ByteSize: value.ByteSize, Width: value.Width, Height: value.Height,
@@ -1544,10 +1538,10 @@ func validateArchiveSite(value sqlitestore.ArchiveSite, development bool) error 
 			len(value.Username) < 3 || len(value.Username) > 30 || value.Username != strings.ToLower(value.Username) ||
 			value.Username[0] < 'a' || value.Username[0] > 'z' || strings.Trim(value.Username, "abcdefghijklmnopqrstuvwxyz0123456789_") != "" ||
 			strings.TrimSpace(value.DisplayName) != value.DisplayName || value.DisplayName == "" || len([]rune(value.DisplayName)) > 80 {
-			return errors.New("site owner identity is invalid")
+			return errors.New("site profile identity is invalid")
 		}
 	} else if value.Username != "" || value.DisplayName != "" {
-		return errors.New("site owner identity is incomplete")
+		return errors.New("site profile identity is incomplete")
 	}
 	if strings.TrimSpace(value.Title) == "" || len([]rune(value.Title)) > 120 {
 		return errors.New("site title is empty")
@@ -1838,7 +1832,7 @@ func archiveCarriesArticles(files map[string]*zip.File) bool {
 	return articles && drafts
 }
 
-// ValidateFile independently validates one complete v1 archive using only its
+// ValidateFile independently validates one complete v2 archive using only its
 // ZIP members. It performs bounded-memory checksum verification and therefore
 // doubles as the future import protocol's fail-closed inspection primitive.
 func ValidateFile(name string) error {
@@ -1898,7 +1892,7 @@ func ValidateFileContext(ctx context.Context, name string) error {
 	}
 	readmeData, err := readSmallZIPMember(ctx, files["README.txt"], 64<<10)
 	if err != nil || !bytes.Equal(readmeData, []byte(readme)) {
-		return archiveInvalid("prepared ZIP README is not the fixed v1 payload", err)
+		return archiveInvalid("prepared ZIP README is not the fixed v2 payload", err)
 	}
 
 	manifestData, err := readSmallZIPMember(ctx, files["manifest.json"], 64<<10)
@@ -2313,8 +2307,12 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 		if err != nil {
 			return err
 		}
+		unreferenced, err := portableMediaRetention(value.UnreferencedSince)
+		if err != nil {
+			return err
+		}
 		metadata := sqlitestore.ArchiveMedia{
-			ID: value.ID, SHA256: value.SHA256, OriginalName: value.OriginalName,
+			UnreferencedSinceMS: unreferenced, ID: value.ID, SHA256: value.SHA256, OriginalName: value.OriginalName,
 			MIMEType: value.MIMEType, ByteSize: value.ByteSize, Width: value.Width,
 			Height: value.Height, CreatedAtMS: created.UnixMilli(),
 		}
@@ -2431,13 +2429,7 @@ func validatePortableArticles(
 ) (map[string]struct{}, error) {
 	pictures := make(map[string]struct{})
 	if !archiveCarriesArticles(files) {
-		if document.Counts.Articles != 0 || document.Counts.ArticleDrafts != 0 {
-			return nil, errors.New("manifest declares articles the archive does not carry")
-		}
-		if len(articleEntryUsages) != 0 {
-			return nil, errors.New("an article entry has no body in this archive")
-		}
-		return pictures, nil
+		return nil, errors.New("portable archives must contain article and draft members")
 	}
 	bodies := make(map[string]struct{}, len(articleEntryUsages))
 	lastArticleID := ""
@@ -2562,17 +2554,10 @@ func validatePortableArticles(
 func validatePortableAccounts(ctx context.Context, files map[string]*zip.File, document manifest, site siteRecord) (map[string]struct{}, error) {
 	pictures := make(map[string]struct{})
 	if !archiveCarriesAccounts(files) {
-		if document.Counts.Users != 0 || document.Counts.Identities != 0 {
-			return nil, errors.New("manifest declares accounts the archive does not carry")
-		}
-		return pictures, nil
+		return nil, errors.New("portable archives must contain account members")
 	}
-	// An archive that carries accounts states its owner in both places. The
-	// site record's copy is the one older readers see, so an archive that
-	// dropped it would restore under a different name depending on which
-	// version opened it.
 	if site.ProfileUserID == "" {
-		return nil, errors.New("an archive carrying accounts must name its owner in the site record")
+		return nil, errors.New("an archive carrying accounts must name its display account in the site record")
 	}
 	userIDs := make(map[string]struct{})
 	usernames := make(map[string]struct{})
@@ -2606,14 +2591,10 @@ func validatePortableAccounts(ctx context.Context, files map[string]*zip.File, d
 			activeAdmins++
 		}
 		if value.ID == site.ProfileUserID {
-			// The site record's profile half is a second copy of these five
-			// fields. Rejecting a disagreement is the only honest option: with
-			// two answers and no tiebreak, picking one would silently rename
-			// the owner on restore.
 			if value.Username != site.Username || value.DisplayName != site.DisplayName ||
 				value.Bio != site.Bio || !reflect.DeepEqual(value.AvatarMediaID, site.AvatarMediaID) ||
 				!reflect.DeepEqual(value.CoverMediaID, site.CoverMediaID) {
-				return errors.New("owner account and site record describe different owners")
+				return errors.New("display account and site record describe different profiles")
 			}
 		}
 		for _, picture := range []*string{value.AvatarMediaID, value.CoverMediaID} {

@@ -197,7 +197,7 @@ func (committer *Committer) acquireOfflineInspection(ctx context.Context) (*runt
 // materialization and CURRENT replacement.
 func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath string, binding InputBinding, subject Authorization) (result CommitResult, resultErr error) {
 	if committer == nil || !subject.Valid() || binding.FileInfo == nil || binding.Size < 0 || !validExpectedArchiveSHA(binding.SHA256) {
-		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires an archive and owner epoch", nil)
+		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires an archive and current account credential", nil)
 	}
 	runtimeState, held, err := committer.acquireOfflineInspection(ctx)
 	if err != nil {
@@ -232,7 +232,7 @@ func (committer *Committer) CommitFileOffline(ctx context.Context, archivePath s
 // first uploaded byte through the terminal commit state.
 func (committer *Committer) CommitArchive(ctx context.Context, source io.Reader, expectedArchiveSHA string, subject Authorization, host CommitHost) (result CommitResult, resultErr error) {
 	if committer == nil || source == nil || host == nil || !subject.Valid() || !validExpectedArchiveSHA(expectedArchiveSHA) {
-		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "online import requires an archive, host, and owner epoch", nil)
+		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "online import requires an archive, host, and current account credential", nil)
 	}
 	runtimeState, err := runtimefs.OpenForCoordination(committer.dataDir)
 	if err != nil {
@@ -280,7 +280,7 @@ func verifyExpectedArchiveSHA(actual, expected string) error {
 // host; direct callers pass nil and therefore also acquire serve.lock.
 func (committer *Committer) Commit(ctx context.Context, token string, subject Authorization, host CommitHost) (result CommitResult, resultErr error) {
 	if committer == nil || !subject.Valid() {
-		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires a staging token and owner epoch", nil)
+		return CommitResult{}, domain.NewError(domain.CodeInvalidArgument, "import commit requires a staging token and current account credential", nil)
 	}
 	if host == nil {
 		runtimeState, held, err := committer.acquireOfflineInspection(ctx)
@@ -654,7 +654,7 @@ func (committer *Committer) nextStatusTime(status CommitStatus) time.Time {
 
 func (committer *Committer) revalidateClaim(ctx context.Context, runtimeState *runtimefs.Runtime, claim StagingClaim, subject Authorization) error {
 	if subject != claim.Authorization || !committer.now().Before(claim.ExpiresAt) {
-		return domain.NewError(domain.CodeImportStagingExpired, "import staging token expired or owner authority changed while waiting", nil)
+		return domain.NewError(domain.CodeImportStagingExpired, "import staging token expired or account credential changed while waiting", nil)
 	}
 	state, err := readStagingMetadata(claim.StageRoot)
 	if err != nil || state.State != stagingCommitting || state.GenerationID != claim.GenerationID || state.Authorization != subject || state.ArchiveSHA != claim.ArchiveSHA {

@@ -55,13 +55,7 @@ type ArchiveSite struct {
 	CommentsEnabled bool
 }
 
-// ArchiveUser is one portable account.
-//
-// The five profile columns ArchiveSite still carries -- username, display name,
-// bio, avatar and cover -- live here now. ArchiveSite keeps its copy because it
-// is the v1 wire contract and archives written before accounts existed have no
-// other place to state who the owner was; the exporter reads both from this one
-// row, so the two can never disagree.
+// ArchiveUser preserves a real account's profile, status and administrative role.
 type ArchiveUser struct {
 	ID            string
 	Username      string
@@ -188,17 +182,8 @@ func ArchiveLinkCardsOf(values []ArchiveLinkCard) []domain.LinkCard {
 	return cards
 }
 
-// ArchiveComment is one portable comment record.
-//
-// AuthorUserID is the account the comment belongs to and is absent from every
-// archive written before accounts existed, so it is optional on read: a nil
-// pointer means the record predates the field, not that authorship was lost.
-// ReplyToCommentID is optional for the same reason.
-//
-// The two optional references differ in kind. AuthorUserID names an account,
-// which no archive operation reissues. ReplyToCommentID names a comment in this
-// same archive, so anything that reissues comment identities must carry it
-// along or the annotation lands on a stranger.
+// ArchiveComment preserves authorship when known and the historical signature otherwise.
+// ReplyToCommentID names another comment in the same conversation.
 type ArchiveComment struct {
 	ID               string
 	EntryID          string
@@ -213,25 +198,28 @@ type ArchiveComment struct {
 	Pinned           bool
 }
 
-// ArchiveMedia contains portable metadata plus the private source path needed
-// by the exporter. StoragePath is never serialized into the archive.
+// ArchiveMediaGrant preserves account reuse permission independently of references.
 type ArchiveMediaGrant struct {
 	UserID      string `json:"user_id"`
 	CreatedAtMS int64  `json:"created_at_ms"`
 }
 
+// ArchiveMedia includes portable metadata, retention state and a private source path.
 type ArchiveMedia struct {
-	Grants       []ArchiveMediaGrant
-	ID           string
-	SHA256       string
-	StoragePath  string
-	OriginalName string
-	MIMEType     string
-	ByteSize     int64
-	Width        uint32
-	Height       uint32
-	CreatedAtMS  int64
+	UnreferencedSinceMS *int64
+	Grants              []ArchiveMediaGrant
+	ID                  string
+	SHA256              string
+	StoragePath         string
+	OriginalName        string
+	MIMEType            string
+	ByteSize            int64
+	Width               uint32
+	Height              uint32
+	CreatedAtMS         int64
 }
+
+const portableMediaSQL = `(` + mediaReferencedSQL + ` OR EXISTS (SELECT 1 FROM media_grants WHERE media_grants.media_id=media.id))`
 
 // ArchiveSnapshot holds one query-only SQLite transaction until every
 // authoritative record and reachable immutable original has been copied.
@@ -281,7 +269,7 @@ func beginArchiveSnapshot(ctx context.Context, pool *sql.DB) (*ArchiveSnapshot, 
 SELECT
     (SELECT count(*) FROM entries),
     (SELECT count(*) FROM comments),
-    (SELECT count(*) FROM media WHERE `+mediaReferencedSQL+`),
+    (SELECT count(*) FROM media WHERE `+portableMediaSQL+`),
     (SELECT count(*) FROM users),
     (SELECT count(*) FROM identities),
     (SELECT count(*) FROM entry_article),
@@ -314,7 +302,7 @@ func (snapshot *ArchiveSnapshot) Impact(ctx context.Context) (ArchiveImpact, err
 	if err := snapshot.tx.QueryRowContext(ctx, `
 SELECT COALESCE(sum(byte_size), 0)
 FROM media
-WHERE `+mediaReferencedSQL).Scan(&impact.MediaBytes); err != nil {
+WHERE `+portableMediaSQL).Scan(&impact.MediaBytes); err != nil {
 		return ArchiveImpact{}, fmt.Errorf("read archive impact: %w", err)
 	}
 	return impact, nil
@@ -358,18 +346,15 @@ WHERE child.parent_id IS NOT NULL
 	if siteRows != 1 {
 		return errors.New("archive snapshot does not contain exactly one site singleton")
 	}
-	// The site record's profile half is read through the owner account, so a
-	// missing or duplicated owner turns a complete export into a silently
-	// truncated one. Proving it here fails the export instead.
-	var ownerAccounts int64
+	var profileAccounts int64
 	if err := snapshot.tx.QueryRowContext(ctx, `
 SELECT count(*)
 FROM users AS account
 JOIN site_settings AS site ON site.profile_user_id = account.id
-WHERE site.id = 1`).Scan(&ownerAccounts); err != nil {
+WHERE site.id = 1`).Scan(&profileAccounts); err != nil {
 		return fmt.Errorf("check archive profile account: %w", err)
 	}
-	if ownerAccounts != 1 {
+	if profileAccounts != 1 {
 		return errors.New("archive snapshot does not resolve its site profile")
 	}
 	var activeAdmins int64
@@ -405,11 +390,6 @@ func (snapshot *ArchiveSnapshot) Site(ctx context.Context) (ArchiveSite, error) 
 	var value ArchiveSite
 	var publicURL, avatar, cover, pinned sql.NullString
 	var comments int
-	// The owner's handle, name, self-description and pictures moved to the
-	// account in 0022. Reading them back through the join is what keeps the
-	// portable site record saying exactly what the account says; a second
-	// stored copy would be free to drift and neither side could prove which
-	// one was right.
 	err := snapshot.tx.QueryRowContext(ctx, `
 SELECT site.profile_user_id, account.username, account.display_name, site.title, account.bio, site.timezone,
        site.public_base_url, account.avatar_media_id, account.cover_media_id, site.pinned_entry_id,
@@ -918,11 +898,11 @@ func (snapshot *ArchiveSnapshot) Media(ctx context.Context, yield func(ArchiveMe
 		return errors.New("archive media callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms,
+SELECT id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms, unreferenced_since_ms,
  (SELECT json_group_array(json_object('user_id',granted.user_id,'created_at_ms',granted.created_at_ms)) FROM
   (SELECT user_id,created_at_ms FROM media_grants WHERE media_id=media.id ORDER BY user_id) AS granted)
 FROM media
-WHERE `+mediaReferencedSQL+`
+WHERE `+portableMediaSQL+`
 ORDER BY sha256, id`)
 	if err != nil {
 		return fmt.Errorf("query archive media: %w", err)
@@ -931,8 +911,12 @@ ORDER BY sha256, id`)
 	for rows.Next() {
 		var value ArchiveMedia
 		var grants string
-		if err := rows.Scan(&value.ID, &value.SHA256, &value.StoragePath, &value.OriginalName, &value.MIMEType, &value.ByteSize, &value.Width, &value.Height, &value.CreatedAtMS, &grants); err != nil {
+		var unreferenced sql.NullInt64
+		if err := rows.Scan(&value.ID, &value.SHA256, &value.StoragePath, &value.OriginalName, &value.MIMEType, &value.ByteSize, &value.Width, &value.Height, &value.CreatedAtMS, &unreferenced, &grants); err != nil {
 			return fmt.Errorf("scan archive media: %w", err)
+		}
+		if unreferenced.Valid {
+			value.UnreferencedSinceMS = &unreferenced.Int64
 		}
 		if err := json.Unmarshal([]byte(grants), &value.Grants); err != nil {
 			return fmt.Errorf("decode media grants: %w", err)

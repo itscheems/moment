@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"math"
-	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -158,9 +157,6 @@ func TestAccountsRoundTripThroughPortableArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The preview is what an owner reads before an irreversible replacement, so
-	// it has to say the archive carries accounts, and that this site has three
-	// of its own that commit would delete.
 	if result.Counts != (ImportCounts{Entries: 1, Comments: 1, Users: 3, Identities: 3}) {
 		t.Fatalf("accounts archive preview counts = %#v", result.Counts)
 	}
@@ -174,15 +170,14 @@ func TestAccountsRoundTripThroughPortableArchive(t *testing.T) {
 	if !reflect.DeepEqual(sourceIdentities, stagedIdentities) {
 		t.Fatalf("staged identities = %#v want %#v", stagedIdentities, sourceIdentities)
 	}
-	// The owner account survived being adopted rather than inserted.
-	owner := stagedUsers[0]
+	primaryAccount := stagedUsers[0]
 	for _, value := range stagedUsers {
 		if value.Role == "owner" {
-			owner = value
+			primaryAccount = value
 		}
 	}
-	if owner.ID != stagedSite.ProfileUserID || owner.Username != stagedSite.Username || owner.DisplayName != stagedSite.DisplayName {
-		t.Fatalf("staged owner = %#v site = %#v", owner, stagedSite)
+	if primaryAccount.ID != stagedSite.ProfileUserID || primaryAccount.Username != stagedSite.Username || primaryAccount.DisplayName != stagedSite.DisplayName {
+		t.Fatalf("staged owner = %#v site = %#v", primaryAccount, stagedSite)
 	}
 }
 
@@ -250,10 +245,7 @@ func TestArchiveWithOneAccountsMemberIsRejected(t *testing.T) {
 	}
 }
 
-// TestOwnerDisagreementBetweenSiteAndAccountIsRejected proves the duplicated
-// profile fields cannot silently diverge. With two answers and no tiebreak,
-// picking one would rename the owner on restore.
-func TestOwnerDisagreementBetweenSiteAndAccountIsRejected(t *testing.T) {
+func TestSelectedProfileDisagreementIsRejected(t *testing.T) {
 	fixture := newExportFixture(t, false)
 	members, order := readArchive(t, exportFixtureBytes(t, fixture))
 	var rebuilt []byte
@@ -298,8 +290,7 @@ func TestMergeReviewProjectsEveryComparedField(t *testing.T) {
 		MergeComment: commentChangedFields(
 			sqlitestore.ArchiveComment{EntryID: first, ParentID: &first, AuthorName: "a", AuthorUserID: &first, ReplyToCommentID: &first, ContentMD: "a", CreatedAtMS: early, Media: []sqlitestore.ArchiveUsage{{MediaID: first}}, Pinned: true},
 			sqlitestore.ArchiveComment{EntryID: second, AuthorName: "b", ContentMD: "b", CreatedAtMS: late, Media: []sqlitestore.ArchiveUsage{{MediaID: second}}, Location: &domainLocationForReview},
-			shas, shas, first, second,
-		),
+			shas, shas),
 		MergeUser: userChangedFields(
 			sqlitestore.ArchiveUser{Username: "a", DisplayName: "A", Bio: "a", AvatarMediaID: &first, CoverMediaID: &first, Role: "admin", Status: "active", UsernameSetAtMS: &early, CreatedAtMS: early, UpdatedAtMS: early},
 			sqlitestore.ArchiveUser{Username: "b", DisplayName: "B", Bio: "b", AvatarMediaID: &second, CoverMediaID: &second, Role: "member", Status: "pending", CreatedAtMS: late, UpdatedAtMS: late},
@@ -460,20 +451,20 @@ func TestMergeRestoresAnAccountTheBackupKnowsAndTheSiteLost(t *testing.T) {
 // TestMergeRefusesTwoAccountsClaimingOneUsername refuses rather than resolves.
 // Nothing in a two-way merge can decide which of two people gets renamed.
 func TestMergeRefusesTwoAccountsClaimingOneUsername(t *testing.T) {
-	ownerID := "00112233445566778899aabbccddeeff"
+	primaryAccountID := "00112233445566778899aabbccddeeff"
 	localMember := "aa112233445566778899aabbccddeeff"
 	incomingMember := "bb112233445566778899aabbccddeeff"
-	owner := sqlitestore.ArchiveUser{
-		ID: ownerID, Username: "owner", DisplayName: "Owner", Role: "admin", Status: "active",
+	primaryAccount := sqlitestore.ArchiveUser{
+		ID: primaryAccountID, Username: "owner", DisplayName: "Owner", Role: "admin", Status: "active",
 		CreatedAtMS: 1, UpdatedAtMS: 1,
 	}
 	local := PortableAuthority{
-		Site:  sqlitestore.ArchiveSite{ProfileUserID: ownerID, Username: "owner", DisplayName: "Owner", Title: "T", Timezone: "UTC"},
-		Users: []sqlitestore.ArchiveUser{owner, {ID: localMember, Username: "shared", DisplayName: "Local", Role: "member", Status: "active", CreatedAtMS: 1, UpdatedAtMS: 1}},
+		Site:  sqlitestore.ArchiveSite{ProfileUserID: primaryAccountID, Username: "owner", DisplayName: "Owner", Title: "T", Timezone: "UTC"},
+		Users: []sqlitestore.ArchiveUser{primaryAccount, {ID: localMember, Username: "shared", DisplayName: "Local", Role: "member", Status: "active", CreatedAtMS: 1, UpdatedAtMS: 1}},
 	}
 	incoming := PortableAuthority{
 		Site:  local.Site,
-		Users: []sqlitestore.ArchiveUser{owner, {ID: incomingMember, Username: "shared", DisplayName: "Incoming", Role: "member", Status: "active", CreatedAtMS: 1, UpdatedAtMS: 1}},
+		Users: []sqlitestore.ArchiveUser{primaryAccount, {ID: incomingMember, Username: "shared", DisplayName: "Incoming", Role: "member", Status: "active", CreatedAtMS: 1, UpdatedAtMS: 1}},
 	}
 	plan, err := ComparePortableAuthorities(MergePlanInput{
 		ArchiveSHA256: repeatHex("c"), BaseGeneration: "generation",
@@ -488,13 +479,6 @@ func TestMergeRefusesTwoAccountsClaimingOneUsername(t *testing.T) {
 	}
 }
 
-// TestLegacyArchiveRestoresAllTheWayThroughCommit takes a pre-accounts backup
-// the whole distance: inspect, stage, commit, switch CURRENT, and serve.
-//
-// Inspection alone would not prove this. Commit revalidates the staged
-// authority against the archive a second time, takes its own pre-import
-// backup and validates that too, so a synthesized owner that only satisfied
-// the import path would fail here instead.
 func TestLegacyArchiveVersionIsRejectedBeforeCommit(t *testing.T) {
 	source := newExportFixture(t, true)
 	members, order := readArchive(t, exportFixtureBytes(t, source))
@@ -521,15 +505,6 @@ func TestLegacyArchiveVersionIsRejectedBeforeCommit(t *testing.T) {
 	if !reflect.DeepEqual(before, after) {
 		t.Fatal("rejected archive changed active data")
 	}
-}
-
-func mustReadFile(t *testing.T, name string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(name)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return data
 }
 
 // The refusal a merge cannot avoid arrives before the review, not after it.
@@ -593,14 +568,6 @@ VALUES (?, 'newcomer', 'Someone Else', '', NULL, NULL, 'member', 'active', 17000
 	}
 }
 
-// A backup naming a suspended owner used to restore an instance nobody could
-// sign into.
-//
-// SetStatus refuses to suspend an owner precisely so the last administrator
-// cannot be locked out, and the import path wrote the archived status straight
-// into the column, going around it. There is no in-product way back from that:
-// a suspended account cannot sign in, and only a signed-in owner can change a
-// status.
 func TestArchiveRefusesDataWithNoActiveAdministrator(t *testing.T) {
 	fixture := newExportFixture(t, false)
 	if err := fixture.database.WriteTx(context.Background(), func(q sqlitestore.Queries) error {
@@ -616,18 +583,18 @@ func TestArchiveRefusesDataWithNoActiveAdministrator(t *testing.T) {
 }
 
 func TestMergePreservesExplicitAccountStatus(t *testing.T) {
-	ownerID := "00112233445566778899aabbccddeeff"
+	primaryAccountID := "00112233445566778899aabbccddeeff"
 	memberID := "aa112233445566778899aabbccddeeff"
-	suspendedOwner := sqlitestore.ArchiveUser{
-		ID: ownerID, Username: "owner", DisplayName: "Owner", Role: "admin", Status: "suspended",
+	suspendedAdmin := sqlitestore.ArchiveUser{
+		ID: primaryAccountID, Username: "owner", DisplayName: "Owner", Role: "admin", Status: "suspended",
 		CreatedAtMS: 1, UpdatedAtMS: 1,
 	}
-	site := sqlitestore.ArchiveSite{ProfileUserID: ownerID, Username: "owner", DisplayName: "Owner", Title: "T", Timezone: "UTC"}
+	site := sqlitestore.ArchiveSite{ProfileUserID: primaryAccountID, Username: "owner", DisplayName: "Owner", Title: "T", Timezone: "UTC"}
 	local := PortableAuthority{
 		Site:  site,
-		Users: []sqlitestore.ArchiveUser{suspendedOwner, {ID: memberID, Username: "meihua", DisplayName: "Local", Role: "member", Status: "suspended", CreatedAtMS: 1, UpdatedAtMS: 1}},
+		Users: []sqlitestore.ArchiveUser{suspendedAdmin, {ID: memberID, Username: "meihua", DisplayName: "Local", Role: "member", Status: "suspended", CreatedAtMS: 1, UpdatedAtMS: 1}},
 	}
-	incoming := PortableAuthority{Site: site, Users: []sqlitestore.ArchiveUser{suspendedOwner}}
+	incoming := PortableAuthority{Site: site, Users: []sqlitestore.ArchiveUser{suspendedAdmin}}
 	plan, err := ComparePortableAuthorities(MergePlanInput{
 		ArchiveSHA256: repeatHex("c"), BaseGeneration: "generation",
 		ExpiresAt: time.Unix(20, 0).UTC(), Local: local, Incoming: incoming,
@@ -641,7 +608,7 @@ func TestMergePreservesExplicitAccountStatus(t *testing.T) {
 	}
 	for _, value := range resolved.Authority.Users {
 		switch value.ID {
-		case ownerID:
+		case primaryAccountID:
 			if value.Role != string(domain.UserRoleAdmin) || value.Status != string(domain.AccountSuspended) {
 				t.Fatalf("merged owner = %#v", value)
 			}
