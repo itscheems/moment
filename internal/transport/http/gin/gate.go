@@ -3,6 +3,7 @@ package ginhttp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -146,6 +147,8 @@ var errNoCredential = errors.New("no usable credential was presented")
 // bound into it.
 var errCSRFRequired = errors.New("a CSRF token is required")
 
+var errAccountUnavailable = errors.New("account authentication is unavailable")
+
 // authenticate turns the request's credential into an account and stores it on
 // the context. It writes nothing; every refusal is returned.
 func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
@@ -155,8 +158,7 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 	}
 
 	if len(authorizationValues) == 1 {
-		// A bearer token is the owner's own credential, kept outside the
-		// database so it still works when the database does not.
+		// A verified credential must still resolve to a real, admitted account.
 		if strings.TrimSpace(authorizationValues[0]) == "" {
 			return domain.User{}, errNoCredential
 		}
@@ -168,20 +170,18 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 		if err != nil {
 			return domain.User{}, errNoCredential
 		}
-		ctx.Set(ownerSourceKey, "bearer")
-		ctx.Set(ownerGrantKey, grant)
-		// The token names no account, so the owner row is read to put a name to
-		// it -- but that read does not get to decide admission. Requiring it
-		// would take doctor and credential repair away at exactly the moment
-		// they are wanted, which is the moment the database is what is broken,
-		// and the token was kept outside the database precisely so that could
-		// not happen. A caller admitted without the row keeps every power the
-		// token carries and loses only its name, so a handler that has to
-		// attribute work to an account finds none and refuses on its own.
 		owner, err := gate.accounts.OwnerAccount(ctx.Request.Context())
 		if err != nil {
-			return unnamedOwner, nil
+			return domain.User{}, accountAuthenticationError(err)
 		}
+		if domain.ValidateUserID(owner.ID) != nil {
+			return domain.User{}, errNoCredential
+		}
+		if !owner.CanSignIn() {
+			return domain.User{}, domain.NewError(domain.CodeAccountSuspended, "this account has been suspended", nil)
+		}
+		ctx.Set(ownerSourceKey, "bearer")
+		ctx.Set(ownerGrantKey, grant)
 		ctx.Set(accountKey, owner)
 		return owner, nil
 	}
@@ -200,7 +200,7 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 
 	resolved, err := gate.accounts.ResolveSession(ctx.Request.Context(), session.SessionID)
 	if err != nil {
-		return domain.User{}, err
+		return domain.User{}, accountAuthenticationError(err)
 	}
 	// The signature already proves the cookie was issued here, so a mismatch
 	// between the two halves is not something an attacker can reach. It would
@@ -220,12 +220,13 @@ func (gate *Gate) authenticate(ctx *gin.Context) (domain.User, error) {
 	return resolved.User, nil
 }
 
-// unnamedOwner is everything a bearer token proves without reading a row: the
-// owner's authority, and no identity to attribute anything to.
-//
-// It is deliberately never stored as the current account. An id of "" that
-// reached CurrentAccount would be authored content signed by nobody.
-var unnamedOwner = domain.User{Role: domain.UserRoleOwner, Status: domain.AccountActive}
+func accountAuthenticationError(err error) error {
+	var refusal *domain.Error
+	if errors.As(err, &refusal) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", errAccountUnavailable, err)
+}
 
 // writeGateError answers a refusal authenticate returned.
 func writeGateError(ctx *gin.Context, err error) {
@@ -234,6 +235,8 @@ func writeGateError(ctx *gin.Context, err error) {
 		unauthorized(ctx)
 	case errors.Is(err, errCSRFRequired):
 		Failure(ctx, http.StatusForbidden, "CSRF_INVALID", "a valid CSRF token is required", nil)
+	case errors.Is(err, errAccountUnavailable):
+		Failure(ctx, http.StatusServiceUnavailable, "AUTH_UNAVAILABLE", "account authentication is temporarily unavailable", nil)
 	default:
 		writeAccountError(ctx, err)
 	}
