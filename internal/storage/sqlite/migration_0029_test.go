@@ -32,15 +32,22 @@ func TestMigration0029BackfillsDraftExcerptsWithoutChangingBodiesOrRevisions(t *
 	if raw != body || created != 1000 || updated != 2000 || excerpt != "English 中文 preview" {
 		t.Fatalf("backfill changed authority: %s,%s,%d,%d", raw, excerpt, created, updated)
 	}
-	// The summary projection is independent of decoding body JSON at list time.
-	if _, err := pool.ExecContext(ctx, `UPDATE article_drafts SET body_json='{"schema_version":1,"type":"doc","content":[{"type":"unknown"}]}' WHERE id=?`, fixtureEntryOne); err != nil {
-		t.Fatal(err)
-	}
 	var author string
 	if err := pool.QueryRowContext(ctx, `SELECT author_user_id FROM article_drafts WHERE id=?`, fixtureEntryOne).Scan(&author); err != nil {
 		t.Fatal(err)
 	}
 	summaries, err := newPostStore(pool).ArticleDraftSummaries(ctx, author)
+	if err != nil || len(summaries) != 1 || summaries[0].Excerpt != "English 中文 preview..." {
+		t.Fatalf("reading preview=%+v,%v", summaries, err)
+	}
+	if err := pool.QueryRowContext(ctx, `SELECT excerpt FROM article_drafts WHERE id=?`, fixtureEntryOne).Scan(&excerpt); err != nil || excerpt != "English 中文 preview" {
+		t.Fatalf("a preview read rewrote the legacy cache: %q,%v", excerpt, err)
+	}
+	// A damaged body's last cached summary remains available to the list.
+	if _, err := pool.ExecContext(ctx, `UPDATE article_drafts SET body_json='{"schema_version":1,"type":"doc","content":[{"type":"unknown"}]}' WHERE id=?`, fixtureEntryOne); err != nil {
+		t.Fatal(err)
+	}
+	summaries, err = newPostStore(pool).ArticleDraftSummaries(ctx, author)
 	if err != nil || len(summaries) != 1 || summaries[0].Excerpt != "English 中文 preview" {
 		t.Fatalf("body-free summary=%+v,%v", summaries, err)
 	}

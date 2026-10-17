@@ -1507,7 +1507,7 @@ func assemblePost(entry domain.Entry, view articleView, html string, media []Med
 	// A detail read has the body, so its card costs nothing to derive and
 	// every article answers with one whichever way it was read.
 	if post.ArticleCard == nil && view.Body != nil {
-		post.ArticleCard = &ArticleCard{Title: view.Body.Title, Excerpt: view.Body.Excerpt()}
+		post.ArticleCard = &ArticleCard{Title: view.Body.Title, Excerpt: domain.ArticlePreviewText(view.Body.Body)}
 	}
 	return post, nil
 }

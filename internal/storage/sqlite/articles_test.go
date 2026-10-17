@@ -246,7 +246,7 @@ func TestArticleCardsCarryTheListFieldsAndNotTheBody(t *testing.T) {
 		t.Fatalf("a moment has no article card: %+v", cards)
 	}
 	card := cards[id]
-	if card.Title != "卡片标题" || card.Excerpt != "卡片摘要" || card.Cover == nil || card.Cover.MediaID.String() != second {
+	if card.Title != "卡片标题" || card.Excerpt != "卡片摘要..." || card.Cover == nil || card.Cover.MediaID.String() != second {
 		t.Fatalf("card = %+v", card)
 	}
 	// The cover carries geometry so the browser can reserve its space.

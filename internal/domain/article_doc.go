@@ -36,7 +36,8 @@ const (
 	// MaxArticleTableColumns and MaxArticleTableRows bound one table.
 	MaxArticleTableColumns = 20
 	MaxArticleTableRows    = 200
-	// ArticleExcerptCodePoints is how much of the body a card shows.
+	// ArticleExcerptCodePoints bounds the legacy stored summary. Display previews
+	// are read projections and do not change this database constraint.
 	ArticleExcerptCodePoints = 140
 )
 

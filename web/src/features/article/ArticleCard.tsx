@@ -21,20 +21,16 @@ export function articleShareBlocks(article: PublicArticle): ShareCardBlock[] {
   return blocks;
 }
 
-/**
- * An article as the timeline shows it: a cover, a title and an excerpt inside
- * one bordered card, in place of the prose a moment would print.
- *
- * The card carries no link of its own. It sits inside the post surface, which
- * already holds the focusable overlay that opens the detail page and the click
- * handling that follows it; a second anchor over the same target would give a
- * reader two stops for one destination and a nested link to the same place.
- *
- * The body is deliberately absent. An article's `content_html` is empty in a
- * list -- the server leaves the rendering behind with the body it came from --
- * so there is nothing here to truncate, and the excerpt is the summary the
- * server already made.
- */
+function ArticleBadge() {
+  return (
+    <span className={styles.badge}>
+      <span aria-hidden="true" className={styles.badgeLogo} />
+      <span className={styles.srOnly}>Type: </span>
+      {" Article"}
+    </span>
+  );
+}
+
 /**
  * QuotedArticle is the article shown inside somebody's quote.
  *
@@ -58,9 +54,7 @@ export function QuotedArticle({ article }: { article: PublicArticle }) {
         />
       ) : null}
       <p className={styles.quotedBadge}>
-        <span className={styles.badge}>
-          <span className={styles.srOnly}>类型：</span>文章
-        </span>
+        <ArticleBadge />
       </p>
       <h3 className={styles.quotedTitle}>{title}</h3>
       {excerpt.trim() ? (
@@ -70,13 +64,22 @@ export function QuotedArticle({ article }: { article: PublicArticle }) {
   );
 }
 
+/**
+ * An article as the timeline shows it: a cover, a title and an excerpt inside
+ * one bordered card, in place of the prose a moment would print.
+ *
+ * The card carries no link of its own. It sits inside the post surface, which
+ * already holds the focusable overlay that opens the detail page and the click
+ * handling that follows it; a second anchor over the same target would give a
+ * reader two stops for one destination and a nested link to the same place.
+ *
+ * The body is deliberately absent. An article's `content_html` is empty in a
+ * list -- the server leaves the rendering behind with the body it came from --
+ * so there is nothing here to truncate, and the excerpt is the summary the
+ * server already made.
+ */
 export function ArticleCard({ post }: { post: PublicArticlePost }) {
   const { title, excerpt, cover } = post.article;
-  const badge = (
-    <span className={styles.badge}>
-      <span className={styles.srOnly}>类型：</span>文章
-    </span>
-  );
 
   return (
     <div className={styles.card}>
@@ -93,14 +96,16 @@ export function ArticleCard({ post }: { post: PublicArticlePost }) {
             src={articleCoverUrl(cover)}
             width={cover.width}
           />
-          <span className={styles.coverBadge}>{badge}</span>
+          <span className={styles.coverBadge}>
+            <ArticleBadge />
+          </span>
         </div>
       ) : null}
       <div className={styles.meta}>
-        {/* With no cover there is nothing for the pill to sit on, so it leads
-            the text instead of disappearing. */}
-        {cover ? null : <p className={styles.metaBadge}>{badge}</p>}
-        <h2 className={styles.cardTitle}>{title}</h2>
+        <div className={styles.cardHeader}>
+          {cover ? null : <ArticleBadge />}
+          <h2 className={styles.cardTitle}>{title}</h2>
+        </div>
         {excerpt.trim() ? (
           <p className={styles.cardExcerpt}>{excerpt}</p>
         ) : null}

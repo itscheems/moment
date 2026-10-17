@@ -39,7 +39,7 @@ func TestArticleManagementSeparatesAuthorsAndPreservesWithdrawnWork(t *testing.T
 		}
 	}
 	summaries, err := service.ArticleDraftSummaries(a)
-	if err != nil || len(summaries) != 1 || summaries[0].ID != draft.ID || summaries[0].Excerpt != "public version" {
+	if err != nil || len(summaries) != 1 || summaries[0].ID != draft.ID || summaries[0].Excerpt != "public version..." {
 		t.Fatalf("summary = %+v,%v", summaries, err)
 	}
 	post, err := service.PublishArticleDraft(a, app.PublishArticleDraftInput{DraftID: draft.ID, IdempotencyKey: "publish"})
@@ -64,7 +64,7 @@ func TestArticleManagementSeparatesAuthorsAndPreservesWithdrawnWork(t *testing.T
 		t.Fatal(err)
 	}
 	updatedSummaries, err := service.ArticleDraftSummaries(a)
-	if err != nil || len(updatedSummaries) != 1 || updatedSummaries[0].Excerpt != "unpublished edits" {
+	if err != nil || len(updatedSummaries) != 1 || updatedSummaries[0].Excerpt != "unpublished edits..." {
 		t.Fatalf("saved summary = %+v, %v", updatedSummaries, err)
 	}
 	withdrawn, err := service.WithdrawArticle(a, post.Entry.ID)

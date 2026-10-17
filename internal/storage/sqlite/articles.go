@@ -138,8 +138,9 @@ WHERE entry_id = ?`, entryID.String()).Scan(&title, &bodyJSON, &version, &cover,
 	return article, true, nil
 }
 
-// ArticleCards answers what a list needs and nothing else. A timeline page
-// holding twenty full bodies would ship megabytes nobody reads.
+// ArticleCards derives the current reading preview for the requested page from
+// its bodies, leaving the legacy bounded excerpts untouched. Only card fields
+// travel to the caller, never the documents used to derive them.
 func (store postStore) ArticleCards(ctx context.Context, ids []domain.ID) (map[domain.ID]app.ArticleCard, error) {
 	cards := make(map[domain.ID]app.ArticleCard, len(ids))
 	if len(ids) == 0 {
@@ -155,7 +156,7 @@ func (store postStore) ArticleCards(ctx context.Context, ids []domain.ID) (map[d
 		arguments = append(arguments, id.String())
 	}
 	rows, err := store.queries.QueryContext(ctx, `
-SELECT article.entry_id, article.title, article.excerpt, article.cover_media_id,
+SELECT article.entry_id, article.title, article.body_json, article.excerpt, article.cover_media_id,
        coalesce(cover.mime_type, ''), coalesce(cover.width, 0), coalesce(cover.height, 0)
 FROM entry_article AS article
 LEFT JOIN media AS cover ON cover.id = article.cover_media_id
@@ -167,18 +168,24 @@ WHERE article.entry_id IN (`+string(placeholders)+`)`, arguments...)
 	for rows.Next() {
 		var (
 			entryID  string
+			bodyJSON string
 			card     app.ArticleCard
 			cover    sql.NullString
 			mimeType string
 			width    uint32
 			height   uint32
 		)
-		if err := rows.Scan(&entryID, &card.Title, &card.Excerpt, &cover, &mimeType, &width, &height); err != nil {
+		if err := rows.Scan(&entryID, &card.Title, &bodyJSON, &card.Excerpt, &cover, &mimeType, &width, &height); err != nil {
 			return nil, fmt.Errorf("scan article card: %w", err)
 		}
 		id, err := domain.ParseID(entryID)
 		if err != nil {
 			return nil, domain.NewError(domain.CodeDataIntegrityFailed, "stored article has an invalid entry ID", nil)
+		}
+		// A bad body still has its last stored summary. Keep the list readable;
+		// opening the detail continues to report the original integrity error.
+		if body, err := domain.ParseArticleDocument([]byte(bodyJSON)); err == nil {
+			card.Excerpt = domain.ArticlePreviewText(body)
 		}
 		if cover.Valid {
 			coverID, coverErr := domain.ParseID(cover.String)

@@ -576,6 +576,7 @@
 }
 
 .quoteCard {
+  --quote-hover: #efefef;
   position: relative;
   z-index: 2;
   overflow: hidden;
@@ -589,12 +590,17 @@
 }
 
 .quoteCard:focus-visible {
-  background: #efefef;
+  background: var(--quote-hover);
+}
+
+:global(:root[data-theme="dim"]) .quoteCard,
+:global(:root[data-theme="lights-out"]) .quoteCard {
+  --quote-hover: var(--surface-hover-strong);
 }
 
 @media (hover: hover) {
   .quoteCard:hover {
-    background: #efefef;
+    background: var(--quote-hover);
   }
 }
 

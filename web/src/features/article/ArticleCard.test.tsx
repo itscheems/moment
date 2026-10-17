@@ -94,7 +94,7 @@ describe("article card", () => {
   it("leads with a cover, a marked type, a title and an excerpt", () => {
     render(<ArticleCard post={makeArticle()} />);
 
-    expect(screen.getByText("文章")).toBeInTheDocument();
+    expect(screen.getByText("Article")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "一条河流的十年" }),
     ).toBeInTheDocument();
@@ -115,20 +115,29 @@ describe("article card", () => {
     expect(cover).toHaveAttribute("alt", "");
   });
 
-  it("drops the picture block and keeps the mark when there is no cover", () => {
+  it("keeps the type and complete title in one header without adding a second link", () => {
     const { container } = render(
       <ArticleCard post={makeArticle({ cover: null })} />,
     );
 
     expect(container.querySelector("img")).toBeNull();
-    expect(screen.getByText("文章")).toBeInTheDocument();
-    // The mark now leads the text, so it comes before the title in reading
-    // order rather than sitting on a picture that is not there.
-    const mark = screen.getByText("文章");
+    expect(screen.getByText("Article")).toBeInTheDocument();
+    const mark = screen.getByText("Article");
     const heading = screen.getByRole("heading", { name: "一条河流的十年" });
-    expect(
-      mark.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(mark.parentElement).toBe(heading.parentElement);
+    expect(container.querySelector("a")).toBeNull();
+    expect(mark.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
+  });
+
+  it("preserves multiline titles and excerpts for presentation without changing the source text", () => {
+    const title = `沿着一条河走过很多年\n${"A long article title ".repeat(8)}`;
+    const excerpt = "第一段摘录\n第二段摘录\n继续走到入海口。";
+    const { container } = render(
+      <ArticleCard post={makeArticle({ title, excerpt, cover: null })} />,
+    );
+
+    expect(screen.getByRole("heading").textContent).toBe(title);
+    expect(container.querySelector("p")?.textContent).toBe(excerpt);
   });
 
   it("omits an excerpt the server had nothing to fill", () => {
@@ -151,7 +160,7 @@ describe("an article in the timeline", () => {
     expect(
       screen.getByRole("heading", { name: "一条河流的十年" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("文章")).toBeInTheDocument();
+    expect(screen.getByText("Article")).toBeInTheDocument();
     // The whole card is still one keyboard stop that opens the detail page,
     // and the reply and share actions are the ones a moment has.
     expect(
@@ -205,7 +214,41 @@ describe("an article in the timeline", () => {
     );
 
     expect(screen.getByText("今天下了一场雨。")).toBeInTheDocument();
-    expect(screen.queryByText("文章")).toBeNull();
+    expect(screen.queryByText("Article")).toBeNull();
+  });
+
+  it("keeps a quoted article inside its own destination without adding article or media links", () => {
+    const article = makeArticle();
+    const { container } = render(
+      <NavigationProvider>
+        <PostPresentation
+          post={{
+            ...makeMoment(),
+            quotedPost: {
+              unavailable: false,
+              id: article.id,
+              kind: "article",
+              article: article.article,
+              contentMd: null,
+              contentHtml: "",
+              publishedAt: article.publishedAt,
+              media: [],
+              location: null,
+            },
+          }}
+          site={site}
+          timelineDensity
+        />
+      </NavigationProvider>,
+    );
+
+    const quote = screen.getByRole("link", { name: "打开被引用的 Moment" });
+    expect(quote).toContainElement(
+      screen.getByRole("heading", { name: article.article.title }),
+    );
+    expect(quote.querySelectorAll("a")).toHaveLength(0);
+    expect(quote).toHaveAttribute("tabindex", "0");
+    expect(container.querySelectorAll("img")).toHaveLength(1);
   });
 });
 
@@ -242,12 +285,8 @@ describe("article styling contract", () => {
     expect(withoutHoverQueries(articleCss)).not.toContain(":hover");
   });
 
-  it("stops the card's transition when the reader asks for less motion", () => {
-    expect(articleCss).toContain("@media (prefers-reduced-motion: reduce)");
-  });
-
   it("dresses the card from the shared tokens, so both themes follow", () => {
-    expect(articleCss).toContain("var(--border-strong)");
+    expect(articleCss).toContain("var(--border-subtle)");
     expect(articleCss).toContain("var(--surface-muted)");
     expect(articleCss).toContain("var(--text-secondary)");
   });

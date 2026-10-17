@@ -46,7 +46,7 @@ func NormalizeArticleTitle(title string) (string, error) {
 	return trimmed, nil
 }
 
-// Excerpt is the run of prose a timeline card shows under the title.
+// Excerpt is the legacy bounded prose summary persisted beside the body.
 func (article Article) Excerpt() string {
 	return ArticleExcerpt(article.Body)
 }

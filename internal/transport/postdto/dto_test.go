@@ -89,6 +89,43 @@ func TestRepostTimelineProjectionRequiresActiveRepost(t *testing.T) {
 	}
 }
 
+func TestArticleListAndQuoteValidateAfterJSONNullBodiesAreDecoded(t *testing.T) {
+	t.Parallel()
+	instant := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
+	id := domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAV")
+	articleID := domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAW")
+	card := &app.ArticleCard{Title: "标题", Excerpt: "摘要..."}
+	for _, post := range []app.Post{
+		{Entry: domain.Entry{ID: articleID, Kind: domain.KindArticle, Visibility: domain.VisibilityEveryone, CreatedAt: instant, UpdatedAt: instant, PublishedAt: instant}, ArticleCard: card},
+		{Entry: domain.Entry{ID: id, Kind: domain.KindMoment, ContentMD: domain.MarkdownBody("引用"), Visibility: domain.VisibilityEveryone, CreatedAt: instant, UpdatedAt: instant, PublishedAt: instant}, ContentHTML: "<p>引用</p>\n",
+			Quoted: &app.QuotedPost{Entry: domain.Entry{ID: articleID, Kind: domain.KindArticle, PublishedAt: instant}, ArticleCard: card}},
+	} {
+		encoded, err := json.Marshal(FromPost(post))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decoded Post
+		if err := json.Unmarshal(encoded, &decoded); err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidatePost(decoded); err != nil {
+			t.Fatalf("canonical body:null list/quote was refused: %v", err)
+		}
+		var body *json.RawMessage
+		if decoded.Article != nil {
+			body = &decoded.Article.Body
+		} else {
+			body = &decoded.QuotedPost.Article.Body
+		}
+		for _, raw := range []string{" null ", "", " \n ", `"null"`, `{"schema_version":1,"type":"doc","content":[]}`, "false", "nul"} {
+			*body = json.RawMessage(raw)
+			if err := ValidatePost(decoded); (err == nil) != (raw == " null ") {
+				t.Fatalf("body %q validation = %v", raw, err)
+			}
+		}
+	}
+}
+
 func TestUnavailableQuoteUsesAnExplicitNullOnlyTombstone(t *testing.T) {
 	instant := time.Date(2026, time.August, 10, 12, 0, 0, 0, time.UTC)
 	id, err := domain.ParseID("01ARZ3NDEKTSV4RRFFQ69G5FAV")
