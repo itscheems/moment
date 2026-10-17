@@ -83,16 +83,16 @@ describe("media editor", () => {
     const buttonBlock = mediaCss.match(
       /\._mediaToolbar_[\w-]+ button\s*\{([^}]*)\}/,
     )?.[1];
-    expect(buttonBlock).toContain("color: #829aab");
+    expect(buttonBlock).toContain("color: var(--composer-tool-color, #829aab)");
     expect(buttonBlock).not.toContain("var(--accent)");
     expect(buttonBlock).toContain("transform 0.15s ease");
     expect(buttonBlock).toContain("background-color 0.2s ease");
     expect(buttonBlock).toContain("filter 0.15s ease");
     expect(mediaCss).toMatch(
-      /@media \(hover: hover\)[\s\S]*?\._mediaToolbar_[\w-]+ button:hover:not\(:disabled\)\s*\{[^}]*color: #829aab;[^}]*background: rgb\(15 20 25 \/ 10%\);[^}]*transform: scale\(1\.12\);/,
+      /@media \(hover: hover\)[\s\S]*?\._mediaToolbar_[\w-]+ button:hover:not\(:disabled\)\s*\{[^}]*color: var\(--composer-tool-color, #829aab\);[^}]*background: var\(--composer-tool-hover, rgb\(15 20 25 \/ 10%\)\);[^}]*transform: var\(--composer-tool-transform, scale\(1\.12\)\);/,
     );
     expect(mediaCss).toMatch(
-      /\._mediaToolbar_[\w-]+ button:active:not\(:disabled\)\s*\{[^}]*background: rgb\(15 20 25 \/ 7%\);[^}]*filter: brightness\(0\.7\);[^}]*transform: scale\(1\.12\);/,
+      /\._mediaToolbar_[\w-]+ button:active:not\(:disabled\)\s*\{[^}]*background: var\(--composer-tool-pressed, rgb\(15 20 25 \/ 7%\)\);[^}]*filter: var\(--composer-tool-filter, brightness\(0\.7\)\);[^}]*transform: var\(--composer-tool-transform, scale\(1\.12\)\);/,
     );
     expect(mediaCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\._mediaToolbar_[\w-]+ button:hover:not\(:disabled\),[\s\S]*?transform: none;/,

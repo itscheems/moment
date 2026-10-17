@@ -266,9 +266,28 @@
 }
 
 .inlineComposer {
-  grid-template-columns: 3rem minmax(0, 1fr);
+  --motion-dialog: var(--motion-content);
+  --button-primary: #1d9bf0;
+  --button-primary-hover: #1a8cd8;
+  --button-primary-pressed: #177cc0;
+  --button-primary-disabled: #1d9bf0;
+  --button-primary-disabled-opacity: 0.5;
+  --button-primary-contrast: #fff;
+  --composer-tool-color: #829aab;
+  --composer-tool-hover: rgb(15 20 25 / 10%);
+  --composer-tool-pressed: rgb(15 20 25 / 20%);
+  --composer-tool-transform: none;
+  --composer-tool-filter: none;
+  --composer-toolbar-padding: 10px;
+  --audience-label-size: 14px;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 10px;
   border-block-start: 0;
   padding-block: var(--space-2);
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  letter-spacing: normal;
+  text-rendering: auto;
 }
 
 /* The avatar sits 16px below the composer's top edge, which puts it
@@ -350,6 +369,59 @@
     margin-block-end var(--motion-dialog) var(--ease-out),
     opacity var(--motion-dialog) var(--ease-out),
     visibility 0s linear var(--motion-dialog);
+}
+
+.inlineComposer .audienceRow:not(.audienceRowCollapsed) {
+  margin-block-end: 12px;
+}
+
+.inlineComposer .composerEditor {
+  margin-block-start: 2px;
+}
+
+.inlineComposer
+  :is(.composerHighlight, .composerMentionMeasure, .composerEditor textarea) {
+  padding-block-start: 12px;
+  line-height: 24px;
+}
+
+.inlineComposer .composerEditor textarea {
+  min-block-size: 52px;
+}
+
+.replyAudienceRow {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-block: 12px;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--motion-content) var(--ease-out),
+    margin-block var(--motion-content) var(--ease-out),
+    opacity var(--motion-content) var(--ease-out),
+    visibility 0s;
+}
+
+.replyAudienceRow > div {
+  display: grid;
+  min-block-size: 0;
+  overflow: visible;
+}
+
+.replyAudienceRowCollapsed {
+  grid-template-rows: 0fr;
+  margin-block: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-content) var(--ease-out),
+    margin-block var(--motion-content) var(--ease-out),
+    opacity var(--motion-content) var(--ease-out),
+    visibility 0s linear var(--motion-content);
+}
+
+.inlineComposer[data-expanded="true"] .inlineMedia {
+  margin-block-start: 0;
 }
 
 /* The page and edit composers have no header above the avatar, so the pill's
@@ -707,6 +779,7 @@
   border: 0;
   border-radius: 50%;
   margin-block: -0.75rem;
+  margin-inline-end: var(--post-menu-inline-offset, 0px);
   padding: calc(
     (
         var(--post-edge-action-size, 2.75rem) -
@@ -721,8 +794,8 @@
 }
 
 .ownerMenuTrigger svg {
-  inline-size: 1.15rem;
-  block-size: 1.15rem;
+  inline-size: var(--post-menu-icon-size, 1.15rem);
+  block-size: var(--post-menu-icon-size, 1.15rem);
 }
 
 .ownerMenuTrigger:focus-visible,
@@ -1385,6 +1458,8 @@
   .mentionSuggestionsCaret,
   .audienceRow,
   .audienceRowCollapsed,
+  .replyAudienceRow,
+  .replyAudienceRowCollapsed,
   .draftsCheck,
   .draftsCheck > span,
   .draftsDelete {

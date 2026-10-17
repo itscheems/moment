@@ -518,7 +518,7 @@ describe("owner composing flow", () => {
     const kept = keepDraft(
       instance,
       "上周写的",
-      new Date("2026-09-14T02:00:00.000Z"),
+      new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
     );
     window.localStorage.setItem(
       composeDraftKey(instance),
@@ -1394,6 +1394,47 @@ describe("owner composing flow", () => {
     fireEvent.focus(inline);
     expect(screen.getByRole("button", { name: "选择受众" })).toHaveTextContent(
       "所有人",
+    );
+  });
+
+  it("keeps an empty composer open through the reply settings portal and returns focus on selection", async () => {
+    preauthenticate();
+    const fetcher = installApi();
+    render(<App />);
+    const input = await screen.findByLabelText("此刻想到什么？");
+    const composer = input.closest("section")!;
+    expect(
+      screen.queryByRole("button", { name: "Everyone can reply" }),
+    ).not.toBeInTheDocument();
+    fireEvent.focus(input);
+    const trigger = screen.getByRole("button", { name: "Everyone can reply" });
+    fireEvent.click(trigger);
+    const menu = await screen.findByRole("menu", { name: "Who can reply?" });
+    const options = within(menu).getAllByRole("menuitemradio");
+    expect(options).toHaveLength(1);
+    expect(options[0]).toHaveTextContent("Everyone");
+    expect(options[0]).toHaveAttribute("aria-checked", "true");
+    expect(composer).toHaveAttribute("data-expanded", "true");
+    fireEvent.click(options[0]);
+    await waitFor(() =>
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument(),
+    );
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(composer).toHaveAttribute("data-expanded", "true");
+    expect(input).toHaveValue("");
+    expect(fetcher.mock.calls.some(([, init]) => init?.method === "POST")).toBe(
+      false,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "选择受众" }));
+    const audience = await screen.findByRole("menu", { name: "选择受众" });
+    fireEvent.click(
+      within(audience).getByRole("menuitemradio", { name: "仅自己" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Everyone can reply" }),
+      ).not.toBeInTheDocument(),
     );
   });
 

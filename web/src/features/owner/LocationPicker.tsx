@@ -131,12 +131,16 @@ export function LocationPicker({
   disabled,
   onChange,
   pickerTooltip,
+  onOpenChange,
+  onOpenChangeComplete,
   value,
 }: {
   api: OwnerApi;
   disabled: boolean;
   onChange: (location: OwnerLocation | null) => void;
   pickerTooltip?: string;
+  onOpenChange?: (open: boolean) => void;
+  onOpenChangeComplete?: (open: boolean) => void;
   value: OwnerLocation | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -235,8 +239,10 @@ export function LocationPicker({
 
   return (
     <Dialog.Root
+      onOpenChangeComplete={onOpenChangeComplete}
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
+        onOpenChange?.(nextOpen);
         if (nextOpen) {
           setQuery("");
           setResults([]);

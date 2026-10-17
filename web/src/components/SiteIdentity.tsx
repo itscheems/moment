@@ -95,13 +95,16 @@ export function postAuthorSite(
 ): SiteIdentity {
   const author = post.author;
   if (!author?.userId || !author.username) return site;
+  const sameAccount = author.userId === site.ownerId;
   return {
     ...site,
     ownerId: author.userId,
     username: author.username,
     displayName: author.displayName,
     avatarMediaId: author.avatarMediaId,
-    bio: "",
-    coverMediaId: null,
+    // Author projections omit profile details; the site already has the
+    // owner's, but those details must not follow another account's identity.
+    bio: sameAccount ? site.bio : "",
+    coverMediaId: sameAccount ? site.coverMediaId : null,
   };
 }

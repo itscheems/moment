@@ -35,11 +35,13 @@ export function AudienceSelector({
   value,
   onChange,
   onOpenChange,
+  onOpenChangeComplete,
   disabled = false,
 }: {
   value: PostVisibility;
   onChange: (next: PostVisibility) => void;
   onOpenChange?: (open: boolean) => void;
+  onOpenChangeComplete?: (open: boolean) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -49,6 +51,7 @@ export function AudienceSelector({
   };
   return (
     <Menu.Root
+      onOpenChangeComplete={onOpenChangeComplete}
       onOpenChange={(next, details) => {
         // Open the card on click, not on press, so the pill keeps
         // its pressed fill for as long as the button is held. Base UI opens

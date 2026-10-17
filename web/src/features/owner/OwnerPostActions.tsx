@@ -155,7 +155,7 @@ export function OwnerPostActions({
           className={styles.ownerMenuTrigger}
           ref={triggerRef}
         >
-          <Icon name="more" />
+          <Icon name="ellipsis" />
         </Menu.Trigger>
         <Menu.Portal>
           <Menu.Positioner

@@ -1,0 +1,124 @@
+.trigger,
+.card {
+  font-family: var(--font-timeline);
+  font-synthesis: weight;
+  letter-spacing: normal;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 4px;
+  min-block-size: 24px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  padding: 0 12px;
+  margin-inline-start: -18px;
+  color: #1d9bf0;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 16px;
+  cursor: pointer;
+  transition: background-color 200ms;
+}
+
+.trigger > svg {
+  flex: none;
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+.trigger:focus-visible {
+  outline: 2px solid #1d9bf0;
+  outline-offset: 2px;
+}
+
+.trigger[data-popup-open] {
+  background: rgb(29 155 240 / 10%);
+}
+
+@media (hover: hover) {
+  .trigger:hover:not(:disabled) {
+    background: rgb(29 155 240 / 10%);
+  }
+}
+
+.trigger:active:not(:disabled) {
+  background: rgb(29 155 240 / 20%);
+}
+
+.positioner {
+  z-index: var(--layer-picker);
+}
+
+.card {
+  inline-size: 360px;
+  max-inline-size: calc(100vw - 24px);
+  border-radius: 16px;
+  padding: 24px 16px;
+  outline: 0;
+  color: var(--text-primary);
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
+}
+
+.title {
+  margin-block-end: 8px;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  min-block-size: 48px;
+  padding-block: 12px;
+  outline: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.option[data-highlighted] {
+  background: rgb(29 155 240 / 10%);
+}
+
+.option > svg {
+  flex: none;
+  inline-size: 20px;
+  block-size: 20px;
+}
+
+.option > span:not(.check) {
+  margin-block: 2px;
+}
+
+.check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 50%;
+  margin-inline-start: auto;
+  color: #fff;
+  background: #1d9bf0;
+}
+
+.check svg {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trigger,
+  .card,
+  .option {
+    transition: none;
+  }
+}
