@@ -215,7 +215,7 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 	}
 	for key, values := range query {
 		switch key {
-		case "cursor", "limit", "from", "to", "anchor", "kind":
+		case "cursor", "limit", "from", "to", "anchor", "kind", "author_user_id":
 		default:
 			return app.ListPostsInput{}, invalidPostArgument("unsupported query parameter", key)
 		}
@@ -224,10 +224,14 @@ func postListInput(ctx *gin.Context) (app.ListPostsInput, error) {
 		}
 	}
 	input := app.ListPostsInput{
-		Cursor:   query.Get("cursor"),
-		FromDate: query.Get("from"),
-		ToDate:   query.Get("to"),
-		Anchor:   query.Get("anchor"),
+		AuthorUserID: query.Get("author_user_id"),
+		Cursor:       query.Get("cursor"),
+		FromDate:     query.Get("from"),
+		ToDate:       query.Get("to"),
+		Anchor:       query.Get("anchor"),
+	}
+	if values, present := query["author_user_id"]; present && (len(values) != 1 || domain.ValidateUserID(values[0]) != nil) {
+		return app.ListPostsInput{}, invalidPostArgument("author_user_id must be an account ID", "author_user_id")
 	}
 	// Absent reads both kinds. An empty value is a client that meant to send
 	// something, which is worth refusing rather than silently widening.

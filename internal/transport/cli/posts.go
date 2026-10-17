@@ -52,6 +52,7 @@ func registerPosts(application *Application) {
 			flags.String("from", "", "inclusive local date in YYYY-MM-DD format")
 			flags.String("to", "", "exclusive local date in YYYY-MM-DD format")
 			flags.String("anchor", "", "local date in YYYY-MM-DD format to read back from")
+			flags.String("author-id", "", "only posts authored by this account ID")
 		},
 		Run: runPostList,
 	})
@@ -287,6 +288,9 @@ func runPostList(ctx context.Context, invocation Invocation, input CommandInput)
 		}
 		if listInput.Anchor != "" {
 			query.Set("anchor", listInput.Anchor)
+		}
+		if listInput.AuthorUserID != "" {
+			query.Set("author_user_id", listInput.AuthorUserID)
 		}
 		var status int
 		meta, status, err = postAPIRequest(ctx, invocation, http.MethodGet, "/api/v1/posts", query, nil, "", false, &page)
@@ -1248,7 +1252,14 @@ func postListFlags(input CommandInput) (app.ListPostsInput, error) {
 	if input.Changed("anchor") && anchor == "" {
 		return app.ListPostsInput{}, invalidArgument("--anchor cannot be empty", "provide a local date in YYYY-MM-DD format or remove --anchor")
 	}
-	return app.ListPostsInput{Cursor: cursor, Limit: limit, FromDate: fromDate, ToDate: toDate, Anchor: anchor}, nil
+	author, err := input.String("author-id")
+	if err != nil {
+		return app.ListPostsInput{}, err
+	}
+	if input.Changed("author-id") && domain.ValidateUserID(author) != nil {
+		return app.ListPostsInput{}, invalidArgument("--author-id must be an account ID", "use the immutable user_id from an account")
+	}
+	return app.ListPostsInput{AuthorUserID: author, Cursor: cursor, Limit: limit, FromDate: fromDate, ToDate: toDate, Anchor: anchor}, nil
 }
 
 func postID(value string) (domain.ID, error) { return domain.ParseID(value) }

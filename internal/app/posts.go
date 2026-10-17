@@ -164,6 +164,7 @@ func (item TimelineEntry) TimelineAt() time.Time {
 
 // QuotedPost is the non-recursive public projection embedded by a quote Moment.
 type QuotedPost struct {
+	Author      *CommentAuthor
 	Unavailable bool
 	Entry       domain.Entry
 	ContentHTML string
@@ -1383,6 +1384,11 @@ func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id doma
 	if !found || !viewer.CanReadEntry(entry) {
 		return nil, nil
 	}
+	authors, err := readContentAuthors(ctx, store, []domain.Entry{entry})
+	if err != nil {
+		return nil, err
+	}
+	author := contentAuthor(authors, entry.AuthorUserID)
 	location, err := store.EntryLocation(ctx, id)
 	if err != nil {
 		return nil, err
@@ -1399,7 +1405,7 @@ func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id doma
 		if !present {
 			return nil, storedEntryError(id)
 		}
-		return &QuotedPost{Entry: entry, ArticleCard: &card, Location: location}, nil
+		return &QuotedPost{Author: author, Entry: entry, ArticleCard: &card, Location: location}, nil
 	}
 	media, err := store.EntryMediaUsages(ctx, id)
 	if err != nil {
@@ -1409,7 +1415,7 @@ func loadQuotedPost(ctx context.Context, store PostStore, viewer Viewer, id doma
 	if err != nil {
 		return nil, storedEntryError(id)
 	}
-	return &QuotedPost{Entry: entry, ContentHTML: html, Media: media, Location: location}, nil
+	return &QuotedPost{Author: author, Entry: entry, ContentHTML: html, Media: media, Location: location}, nil
 }
 
 func renderPost(entry domain.Entry, view articleView, media []MediaUsageProjection, location *domain.Location, cards []LinkCardProjection, commentCount int) (Post, error) {

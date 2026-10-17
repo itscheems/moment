@@ -131,6 +131,7 @@ type ArticleCover struct {
 
 // QuotedPost is either a complete embedded target or an explicit unavailable tombstone.
 type QuotedPost struct {
+	AuthorInfo  *Author `json:"author,omitempty"`
 	Unavailable bool    `json:"unavailable"`
 	ID          *string `json:"id"`
 	// Kind is set whenever the target is available. Unavailable is what says a
@@ -446,7 +447,7 @@ func FromPost(post app.Post) Post {
 		contentHTML := post.Quoted.ContentHTML
 		publishedAt := post.Quoted.Entry.PublishedAt.UTC()
 		mapped.QuotedPost = &QuotedPost{
-			ID: &id, Kind: &kind, Article: fromArticleCard(post.Quoted.ArticleCard, nil),
+			AuthorInfo: fromAuthor(post.Quoted.Author), ID: &id, Kind: &kind, Article: fromArticleCard(post.Quoted.ArticleCard, nil),
 			ContentMD: cloneOptionalText(post.Quoted.Entry.ContentMD), ContentHTML: &contentHTML,
 			PublishedAt: &publishedAt, Media: quotedMedia,
 		}
@@ -599,7 +600,7 @@ func ValidatePost(post Post) error {
 	}
 	if post.QuotedPost != nil {
 		if post.QuotedPost.Unavailable {
-			if post.QuotedPost.ID != nil || post.QuotedPost.Kind != nil || post.QuotedPost.Article != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.Location != nil {
+			if post.QuotedPost.AuthorInfo != nil || post.QuotedPost.ID != nil || post.QuotedPost.Kind != nil || post.QuotedPost.Article != nil || post.QuotedPost.ContentMD != nil || post.QuotedPost.ContentHTML != nil || post.QuotedPost.PublishedAt != nil || post.QuotedPost.Media != nil || post.QuotedPost.Location != nil {
 				return errors.New("unavailable quoted post must not contain target data")
 			}
 			return nil

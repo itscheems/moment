@@ -170,3 +170,87 @@ func TestMissingAdministrativeTargetDoesNotInvalidateTheCaller(t *testing.T) {
 		t.Fatal("caller lost administrative access after selecting a missing account")
 	}
 }
+
+func TestPublicAuthorFeedIsIndependentOfAdministrationAndPrivateVisibility(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	ctx := context.Background()
+	outcome, err := fixture.accounts.SignIn(ctx, app.ExternalIdentity{Provider: "google", ProviderUserID: "feed-writer", DisplayName: "Feed Writer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := fixture.accounts.SetStatus(ctx, outcome.User.ID, domain.AccountActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberCtx := app.WithContentActor(ctx, member)
+	if _, err := fixture.posts.Create(fixture.ctx, app.CreatePostInput{ContentMD: "another author"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.posts.Create(memberCtx, app.CreatePostInput{ContentMD: "member public"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.posts.Create(memberCtx, app.CreatePostInput{ContentMD: "member private", Visibility: domain.VisibilityOnlyMe}); err != nil {
+		t.Fatal(err)
+	}
+	issued, err := fixture.accounts.CreateAPIToken(ctx, member.ID, "author feed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, probe := range []struct {
+		token string
+		count int
+	}{{"", 1}, {fixture.token, 1}, {issued.Value, 2}} {
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/posts?author_user_id="+member.ID, nil)
+		if probe.token != "" {
+			request.Header.Set("Authorization", "Bearer "+probe.token)
+		}
+		response := performRequest(fixture.engine, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("author feed=%d %s", response.Code, response.Body.String())
+		}
+		data := decodeDataMap(t, response)
+		items := data["items"].([]any)
+		if len(items) != probe.count {
+			t.Fatalf("author feed count=%d want%d", len(items), probe.count)
+		}
+		for _, raw := range items {
+			if raw.(map[string]any)["author"].(map[string]any)["user_id"] != member.ID {
+				t.Fatal("author feed included another account's content")
+			}
+		}
+	}
+}
+
+func TestQuotedPostKeepsItsAuthorSeparateFromTheQuotingAccount(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	ctx := context.Background()
+	outcome, err := fixture.accounts.SignIn(ctx, app.ExternalIdentity{Provider: "google", ProviderUserID: "quoted-author", DisplayName: "Original Writer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := fixture.accounts.SetStatus(ctx, outcome.User.ID, domain.AccountActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := fixture.posts.Create(app.WithContentActor(ctx, member), app.CreatePostInput{ContentMD: "original text"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"another account comments","quoted_post_id":"`+original.Post.Entry.ID.String()+`"}`)
+	request.Header.Set("Authorization", "Bearer "+fixture.token)
+	response := performRequest(fixture.engine, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("quote=%d %s", response.Code, response.Body.String())
+	}
+	data := decodeDataMap(t, response)
+	author := data["author"].(map[string]any)
+	quoted := data["quoted_post"].(map[string]any)
+	quotedAuthor := quoted["author"].(map[string]any)
+	if author["user_id"] == member.ID || quotedAuthor["user_id"] != member.ID || quotedAuthor["display_name"] != "Original Writer" {
+		t.Fatalf("quote identity=%v", data)
+	}
+	read := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/posts/"+data["id"].(string), nil))
+	if read.Code != http.StatusOK || decodeDataMap(t, read)["quoted_post"].(map[string]any)["author"].(map[string]any)["user_id"] != member.ID {
+		t.Fatalf("read quote=%d %s", read.Code, read.Body.String())
+	}
+}
