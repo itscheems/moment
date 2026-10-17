@@ -35,3 +35,11 @@ func directArchiveSubject(ctx context.Context) archive.Authorization {
 	}
 	return archive.Authorization{AccountID: user.ID, CredentialID: "local"}
 }
+
+func directContentActor(ctx context.Context) (domain.User, error) {
+	user, ok := app.ContentActor(ctx)
+	if !ok || domain.ValidateUserID(user.ID) != nil || !user.CanWritePublicContent() {
+		return domain.User{}, canonicalPublicError(string(domain.CodeUnauthorized), "an active account identity is required", nil, 0)
+	}
+	return user, nil
+}

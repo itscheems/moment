@@ -29,7 +29,7 @@ func TestMediaDirectAgentContractAndMaintenanceSafety(t *testing.T) {
 	runtimeState, dataDir := initializeSiteCLIData(t)
 	imagePath := writeCLIImage(t)
 	application := momentTestApplication()
-	addedOutput := execute(application, "", "media", "add", imagePath, "--data-dir", dataDir, "--json")
+	addedOutput := execute(application, "", "media", "add", imagePath, "--data-dir", dataDir, "--as", "writer", "--json")
 	if addedOutput.exit != ExitSuccess || addedOutput.stderr != "" {
 		t.Fatalf("add = %#v", addedOutput)
 	}
@@ -40,38 +40,38 @@ func TestMediaDirectAgentContractAndMaintenanceSafety(t *testing.T) {
 		t.Fatalf("added = %#v", added)
 	}
 
-	listed := commandData(t, execute(application, "", "media", "list", "--data-dir", dataDir, "--json"))
+	listed := commandData(t, execute(application, "", "media", "list", "--data-dir", dataDir, "--as", "writer", "--json"))
 	items := listed["items"].([]any)
 	if len(items) != 1 || items[0].(map[string]any)["referenced"] != false || items[0].(map[string]any)["reference_consistent"] != true {
 		t.Fatalf("list = %#v", listed)
 	}
-	verified := commandData(t, execute(application, "", "media", "verify", id, "--data-dir", dataDir, "--json"))
+	verified := commandData(t, execute(application, "", "media", "verify", id, "--data-dir", dataDir, "--as", "writer", "--json"))
 	if verified["total"] != float64(1) || verified["healthy"] != float64(1) {
 		t.Fatalf("verify = %#v", verified)
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "original.png")
-	got := commandData(t, execute(application, "", "media", "get", id, "--output", outputPath, "--data-dir", dataDir, "--json"))
+	got := commandData(t, execute(application, "", "media", "get", id, "--output", outputPath, "--data-dir", dataDir, "--as", "writer", "--json"))
 	if got["id"] != id || got["output_path"] != outputPath {
 		t.Fatalf("get = %#v", got)
 	}
 	if contents, err := os.ReadFile(outputPath); err != nil || !bytes.Equal(contents, mustRead(t, imagePath)) {
 		t.Fatalf("downloaded original = %d bytes, %v", len(contents), err)
 	}
-	conflict := execute(application, "", "media", "get", id, "--output", outputPath, "--data-dir", dataDir, "--json")
+	conflict := execute(application, "", "media", "get", id, "--output", outputPath, "--data-dir", dataDir, "--as", "writer", "--json")
 	if conflict.exit != ExitIO || decodeOneDocument(t, conflict.stdout)["error"].(map[string]any)["code"] != "MEDIA_IO_FAILED" {
 		t.Fatalf("get conflict = %#v", conflict)
 	}
 
-	dryRebuild := execute(application, "", "media", "rebuild-previews", "--dry-run", "--data-dir", dataDir, "--json")
+	dryRebuild := execute(application, "", "media", "rebuild-previews", "--dry-run", "--data-dir", dataDir, "--as", "writer", "--json")
 	if dryRebuild.exit != ExitSuccess || commandData(t, dryRebuild)["dry_run"] != true {
 		t.Fatalf("dry rebuild = %#v", dryRebuild)
 	}
-	unconfirmed := execute(application, "", "media", "rebuild-previews", "--data-dir", dataDir, "--json")
+	unconfirmed := execute(application, "", "media", "rebuild-previews", "--data-dir", dataDir, "--as", "writer", "--json")
 	if unconfirmed.exit != ExitInvalidInput || decodeOneDocument(t, unconfirmed.stdout)["error"].(map[string]any)["code"] != "INVALID_ARGUMENT" {
 		t.Fatalf("unconfirmed rebuild = %#v", unconfirmed)
 	}
-	confirmed := execute(application, "", "media", "rebuild-previews", "--yes", "--data-dir", dataDir, "--json")
+	confirmed := execute(application, "", "media", "rebuild-previews", "--yes", "--data-dir", dataDir, "--as", "writer", "--json")
 	if confirmed.exit != ExitSuccess {
 		t.Fatalf("confirmed rebuild = %#v", confirmed)
 	}
@@ -79,7 +79,7 @@ func TestMediaDirectAgentContractAndMaintenanceSafety(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	blocked := execute(application, "", "media", "list", "--timeout", "200ms", "--data-dir", dataDir, "--json")
+	blocked := execute(application, "", "media", "list", "--timeout", "200ms", "--data-dir", dataDir, "--as", "writer", "--json")
 	if err := exclusive.Release(); err != nil {
 		t.Fatal(err)
 	}
@@ -98,15 +98,15 @@ func TestMediaDirectAgentContractAndMaintenanceSafety(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = database.Close()
-	plan := commandData(t, execute(application, "", "media", "prune", "--dry-run", "--data-dir", dataDir, "--json"))
+	plan := commandData(t, execute(application, "", "media", "prune", "--dry-run", "--data-dir", dataDir, "--as", "writer", "--json"))
 	if plan["eligible"] != float64(1) || plan["deleted"] != float64(0) {
 		t.Fatalf("prune plan = %#v", plan)
 	}
-	pruned := commandData(t, execute(application, "", "media", "prune", "--yes", "--data-dir", dataDir, "--json"))
+	pruned := commandData(t, execute(application, "", "media", "prune", "--yes", "--data-dir", dataDir, "--as", "writer", "--json"))
 	if pruned["deleted"] != float64(1) {
 		t.Fatalf("pruned = %#v", pruned)
 	}
-	missing := execute(application, "", "media", "get", id, "--output", filepath.Join(t.TempDir(), "missing.png"), "--data-dir", dataDir, "--json")
+	missing := execute(application, "", "media", "get", id, "--output", filepath.Join(t.TempDir(), "missing.png"), "--data-dir", dataDir, "--as", "writer", "--json")
 	if missing.exit != ExitNotFound || decodeOneDocument(t, missing.stdout)["error"].(map[string]any)["code"] != "MEDIA_NOT_FOUND" {
 		t.Fatalf("missing = %#v", missing)
 	}
@@ -139,30 +139,30 @@ func TestMediaDirectAPIParityAndUnsupportedMaintenanceModes(t *testing.T) {
 	defer server.Close()
 	application := momentTestApplication()
 	imagePath := writeCLIImage(t)
-	direct := commandData(t, execute(application, "", "media", "add", imagePath, "--data-dir", dataDir, "--json"))
+	direct := commandData(t, execute(application, "", "media", "add", imagePath, "--data-dir", dataDir, "--as", "writer", "--json"))
 	t.Setenv("MOMENT_TOKEN", credential.Token)
 	api := commandData(t, execute(application, "", "--url", server.URL, "media", "add", imagePath, "--json"))
 	if !reflect.DeepEqual(direct, api) {
 		t.Fatalf("direct = %#v\napi = %#v", direct, api)
 	}
 	id := direct["media"].(map[string]any)["id"].(string)
-	directCaps := commandData(t, execute(application, "", "site", "capabilities", "--data-dir", dataDir, "--json"))
+	directCaps := commandData(t, execute(application, "", "site", "capabilities", "--data-dir", dataDir, "--as", "writer", "--json"))
 	apiCaps := commandData(t, execute(application, "", "--url", server.URL, "site", "capabilities", "--json"))
 	if !reflect.DeepEqual(directCaps, apiCaps) {
 		t.Fatal("capabilities parity drift")
 	}
-	directDry := commandData(t, execute(application, "", "media", "delete", id, "--data-dir", dataDir, "--dry-run", "--json"))
+	directDry := commandData(t, execute(application, "", "media", "delete", id, "--data-dir", dataDir, "--as", "writer", "--dry-run", "--json"))
 	apiDry := commandData(t, execute(application, "", "--url", server.URL, "media", "delete", id, "--dry-run", "--json"))
 	if !reflect.DeepEqual(directDry, apiDry) {
 		t.Fatal("delete dry-run parity drift")
 	}
-	denied := execute(application, "", "media", "delete", id, "--data-dir", dataDir, "--no-input", "--json")
+	denied := execute(application, "", "media", "delete", id, "--data-dir", dataDir, "--as", "writer", "--no-input", "--json")
 	if denied.exit != ExitInvalidInput {
 		t.Fatalf("unconfirmed delete: %#v", denied)
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "parity.png")
-	directGet := commandData(t, execute(application, "", "media", "get", id, "--output", outputPath, "--data-dir", dataDir, "--json"))
+	directGet := commandData(t, execute(application, "", "media", "get", id, "--output", outputPath, "--data-dir", dataDir, "--as", "writer", "--json"))
 	directBytes := mustRead(t, outputPath)
 	if err := os.Remove(outputPath); err != nil {
 		t.Fatal(err)
@@ -176,7 +176,7 @@ func TestMediaDirectAPIParityAndUnsupportedMaintenanceModes(t *testing.T) {
 	if removed["deleted"] != true {
 		t.Fatal("API deletion failed")
 	}
-	missing := execute(application, "", "media", "delete", id, "--data-dir", dataDir, "--yes", "--json")
+	missing := execute(application, "", "media", "delete", id, "--data-dir", dataDir, "--as", "writer", "--yes", "--json")
 	if missing.exit != ExitNotFound {
 		t.Fatalf("missing media: %#v", missing)
 	}
@@ -199,7 +199,7 @@ func TestMediaHelpAndCancellationContract(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	var stdout, stderr bytes.Buffer
-	exit := application.Execute(ctx, []string{"media", "list", "--data-dir", dataDir, "--json"}, Streams{Out: &stdout, Err: &stderr})
+	exit := application.Execute(ctx, []string{"media", "list", "--data-dir", dataDir, "--as", "writer", "--json"}, Streams{Out: &stdout, Err: &stderr})
 	if exit != ExitTimeout || decodeOneDocument(t, stdout.String())["error"].(map[string]any)["code"] != "CANCELLED" || stderr.Len() != 0 {
 		t.Fatalf("cancelled = %d %q %q", exit, stdout.String(), stderr.String())
 	}

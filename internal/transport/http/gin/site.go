@@ -167,6 +167,8 @@ func writeSiteError(ctx *gin.Context, err error) {
 		return
 	}
 	switch domainErr.Code {
+	case domain.CodeUnauthorized:
+		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeInvalidArgument, domain.CodeUsernameReserved:
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	// A conflict with the state of the world rather than a fault in what was

@@ -97,3 +97,11 @@ func attachContentAuthor(ctx context.Context, store any, post *Post) error {
 func ResolveContentActorID(ctx context.Context, store ContentAuthorStore) (string, error) {
 	return contentActorID(ctx, store)
 }
+
+func requireAdministrator(ctx context.Context) error {
+	user, present := ContentActor(ctx)
+	if !present || domain.ValidateUserID(user.ID) != nil || !user.CanWritePublicContent() || !user.IsAdmin() {
+		return domain.NewError(domain.CodeUnauthorized, "administrator access is required", nil)
+	}
+	return nil
+}

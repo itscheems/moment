@@ -298,7 +298,16 @@ func TestCommentCLIIdentityBoundaryErrorsCancellationHelpAndMaintenanceLease(t *
 		}
 	}
 
-	direct, err := openDirectCommentWrite(context.Background(), Invocation{target: directTarget{dataDir: fixture.dataDir}})
+	identityInvocation := Invocation{target: directTarget{dataDir: fixture.dataDir}}
+	accounts, identityDB, err := openDirectAccounts(context.Background(), identityInvocation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actorContext := cliFixtureContentContext(t, accounts)
+	if err := identityDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	direct, err := openDirectCommentWrite(actorContext, identityInvocation)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,4 +494,53 @@ func cliFixtureContentContext(t *testing.T, accounts *app.AccountService) contex
 		t.Fatal(err)
 	}
 	return app.WithContentActor(context.Background(), user)
+}
+
+func TestDirectCommentUsesTheExplicitAccountRatherThanTheSiteProfile(t *testing.T) {
+	fixture := newCommentCLIFixture(t)
+	application := momentTestApplication()
+	db, err := sqlitestore.Open(context.Background(), fixture.runtime, sqlitestore.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	accounts := testAccountService(t, db, fixture.runtime)
+	initial, err := accounts.ProfileAccount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := accounts.SignIn(context.Background(), app.ExternalIdentity{Provider: "google", ProviderUserID: "another-profile", DisplayName: "Another Profile"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := accounts.SetStatus(context.Background(), outcome.User.ID, domain.AccountActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.SelectSiteProfile(context.Background(), member.ID); err != nil {
+		t.Fatal(err)
+	}
+	created := commandData(t, execute(application, "", "comment", "create", fixture.postID, "--as", initial.Username, "--data-dir", fixture.dataDir, "--content", "explicit author", "--json"))
+	if created["author"].(map[string]any)["user_id"] != initial.ID {
+		t.Fatal("direct comment borrowed the selected site profile")
+	}
+	another := commandData(t, execute(application, "", "comment", "create", fixture.postID, "--as", member.Username, "--data-dir", fixture.dataDir, "--content", "member author", "--json"))
+	if another["author"].(map[string]any)["user_id"] != member.ID {
+		t.Fatal("direct member comment lost its author")
+	}
+	moderation := execute(application, "", "comment", "pin", fixture.postID, created["id"].(string), "--as", member.Username, "--data-dir", fixture.dataDir, "--yes", "--json")
+	if moderation.exit != ExitUnauthorized {
+		t.Fatalf("member obtained direct moderation rights: %+v", moderation)
+	}
+	image := writeCLIImage(t)
+	refused := execute(application, "", "comment", "create", fixture.postID, "--data-dir", fixture.dataDir, "--content", "missing actor", "--media", image, "--json")
+	if refused.exit != ExitUnauthorized {
+		t.Fatalf("missing direct identity=%+v", refused)
+	}
+	var count int
+	if err := db.ReadTx(context.Background(), func(q sqlitestore.Queries) error {
+		return q.QueryRowContext(context.Background(), `SELECT count(*) FROM media`).Scan(&count)
+	}); err != nil || count != 0 {
+		t.Fatalf("refused write uploaded media first: %d,%v", count, err)
+	}
 }

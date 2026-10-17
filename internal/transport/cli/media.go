@@ -45,7 +45,7 @@ func registerMedia(application *Application) {
 		Inputs:  "One readable local image up to 30 MiB or video up to 300 MiB; video duration is limited to five minutes. API mode authenticates through MOMENT_TOKEN or --token-file.",
 		Output:  "Managed media metadata, preview metadata, and explicit original/preview URLs.",
 		Errors:  "Invalid media uses stable MEDIA_* codes; missing HEIC/video processors return MEDIA_PROCESSOR_UNAVAILABLE; filesystem failures use exit code 6; cancellation uses exit code 9.",
-		Example: "moment media add ./fixtures/cat.jpg --data-dir ./moment-data --json",
+		Example: "moment --as writer media add ./fixtures/cat.jpg --data-dir ./moment-data --json",
 		Args:    exactArgs(1), Capability: CapabilityBoth, Run: runMediaAdd,
 	})
 	application.MustRegisterLeaf(LeafSpec{
@@ -120,6 +120,9 @@ func runMediaAdd(ctx context.Context, invocation Invocation, input CommandInput)
 	var meta map[string]any
 	switch invocation.Mode() {
 	case ModeDirect:
+		if _, err := directContentActor(ctx); err != nil {
+			return Result{}, err
+		}
 		direct, err := openDirectMedia(ctx, invocation)
 		if err != nil {
 			return Result{}, mediaCLIError(err)

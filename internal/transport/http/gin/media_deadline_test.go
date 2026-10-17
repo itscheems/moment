@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/auth"
 )
 
 func TestMediaDeadlinesAllowProgressPastServerBudget(t *testing.T) {
@@ -64,9 +65,17 @@ func TestMediaDeadlinesAllowProgressPastServerBudget(t *testing.T) {
 }
 
 func TestMediaUploadIdleTimeoutIsNotMissingFile(t *testing.T) {
-	_, store, _, _ := newMediaHTTPFixture(t)
+	_, store, token, state := newMediaHTTPFixture(t)
+	manager, err := auth.NewManager(state.Root, auth.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Load(); err != nil {
+		t.Fatal(err)
+	}
+	gate := NewGate(manager, testAccountsForRuntime(t, state))
 	router := gin.New()
-	router.POST("/upload", mediaDeadlines(true, 60*time.Millisecond, time.Second), uploadMedia(store))
+	router.POST("/upload", gate.RequireActiveAccount(), mediaDeadlines(true, 60*time.Millisecond, time.Second), uploadMedia(store))
 	server := httptest.NewServer(router)
 	defer server.Close()
 	reader, writer := io.Pipe()
@@ -78,6 +87,7 @@ func TestMediaUploadIdleTimeoutIsNotMissingFile(t *testing.T) {
 	}()
 	request, _ := http.NewRequest(http.MethodPost, server.URL+"/upload", reader)
 	request.Header.Set("Content-Type", "multipart/form-data; boundary=boundary")
+	request.Header.Set("Authorization", "Bearer "+token)
 	response, err := server.Client().Do(request)
 	if err != nil {
 		t.Fatal(err)

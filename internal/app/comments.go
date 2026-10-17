@@ -821,6 +821,9 @@ func (service *CommentService) changePin(ctx context.Context, entryID, commentID
 	if err := contextError(ctx); err != nil {
 		return CommentPin{}, err
 	}
+	if err := requireAdministrator(ctx); err != nil {
+		return CommentPin{}, err
+	}
 	if err := validateCommentID(entryID); err != nil {
 		return CommentPin{}, err
 	}

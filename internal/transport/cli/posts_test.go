@@ -603,7 +603,7 @@ func TestPostListDateCursorErrorsCancellationAndHelp(t *testing.T) {
 func TestDirectPostWriteHoldsAuthoritativeMaintenanceLease(t *testing.T) {
 	fixture := newPostCLIFixture(t)
 	invocation := Invocation{target: directTarget{dataDir: fixture.dataDir}}
-	direct, err := openDirectPostWrite(context.Background(), invocation)
+	direct, err := openDirectPostWrite(cliFixtureContentContext(t, testAccountService(t, fixture.database, fixture.runtime)), invocation)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,7 +24,7 @@ func registerComments(application *Application) {
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"comment", "list"}, ArgsUsage: "<post-id>", Short: "List one page of a comment thread",
 		Long:    "Read one keyset page of a flattened one-level thread through the selected local instance or public HTTP API.",
-		Inputs:  "Provide one canonical post ULID plus optional --cursor and --limit. Public API reads do not require an owner token.",
+		Inputs:  "Provide one canonical post ULID plus optional --cursor and --limit. Public API reads do not require an account token.",
 		Output:  "An ordered data.items array of roots followed by their inline replies, data.pinned, and nullable meta.next_cursor.",
 		Errors:  "Invalid IDs, invalid cursors, and missing posts return stable codes and non-zero exit statuses.",
 		Example: "moment comment list 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --limit 20 --json",
@@ -47,14 +47,14 @@ func registerComments(application *Application) {
 			flags.Int("limit", 0, "maximum replies to return (1-100)")
 		},
 	})
-	application.MustRegisterLeaf(commentCreateSpec("create", "Create an owner comment", "Create one top-level owner comment through the application service or authenticated owner API.", "moment comment create 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'owner note' --json", runCommentCreate))
+	application.MustRegisterLeaf(commentCreateSpec("create", "Create an owner comment", "Create one top-level owner comment through the application service or authenticated owner API.", "moment --as writer comment create 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'owner note' --json", runCommentCreate))
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"comment", "reply"}, ArgsUsage: "<post-id> <parent-comment-id>", Short: "Reply as the owner",
 		Long:    "Create one owner reply to a top-level comment through the shared one-level comment service.",
-		Inputs:  "Provide a post ULID, top-level parent comment ULID, comment content or location, optional --reply-to naming another comment in the same conversation, and optional --idempotency-key. CLI mutations always use owner identity.",
+		Inputs:  "Provide a post ULID, top-level parent comment ULID, comment content or location, optional --reply-to naming another comment in the same conversation, and optional --idempotency-key. Direct writes require --as; API writes use the authenticated account.",
 		Output:  "The canonical created owner comment and replay metadata.",
 		Errors:  "Missing/deleted parents, depth violations, disabled comments, and authentication failures use stable codes.",
-		Example: "moment comment reply 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --content 'thanks' --json",
+		Example: "moment --as writer comment reply 01ARZ3NDEKTSV4RRFFQ69G5FAV 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --content 'thanks' --json",
 		Args:    cobra.ExactArgs(2), Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
@@ -72,7 +72,7 @@ func registerComments(application *Application) {
 		Output:  "The canonical target comment plus deleted, dry_run, and replies_affected metadata.",
 		Errors:  "Missing comments, declined confirmation, cancellation, and authentication failures use stable codes.",
 		Safety:  "Destructive. --yes confirms intent only; --dry-run leaves the comment thread unchanged.",
-		Example: "moment comment delete 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --dry-run --json",
+		Example: "moment --as writer comment delete 01ARZ3NDEKTSV4RRFFQ69G5FAW --data-dir ./moment-data --dry-run --json",
 		Args:    cobra.ExactArgs(1), Capability: CapabilityBoth,
 		Policy: SafetyPolicy{Destructive: true, SupportsDryRun: true, Confirmation: "Delete this comment and any direct replies permanently?"},
 		Run:    runCommentDelete,
@@ -91,7 +91,7 @@ func commentPinSpec(verb, short string, active bool) LeafSpec {
 	return LeafSpec{
 		Path: []string{"comment", verb}, ArgsUsage: "<post-id> <comment-id>", Short: short,
 		Long:    long,
-		Inputs:  "Provide one post ULID and one top-level comment ULID. The mutation always uses owner identity.",
+		Inputs:  "Provide one post ULID and one top-level comment ULID. Direct writes require --as; pinning requires an administrator.",
 		Output:  "The canonical post_id and nullable pinned_comment_id selection.",
 		Errors:  "Invalid IDs, missing or cross-post comments, non-root targets, declined confirmation, and authentication failures use stable codes.",
 		Safety:  "Presentation mutation only; no comment content or timestamp is changed.",
@@ -107,7 +107,7 @@ func commentPinSpec(verb, short string, active bool) LeafSpec {
 func commentCreateSpec(verb, short, long, example string, run Handler) LeafSpec {
 	return LeafSpec{
 		Path: []string{"comment", verb}, ArgsUsage: "<post-id>", Short: short, Long: long,
-		Inputs:  "Provide one post ULID, comment content or location, and optional --idempotency-key. CLI mutations always create owner comments and never accept guest names or client IPs.",
+		Inputs:  "Provide one post ULID, comment content or location, and optional --idempotency-key. CLI mutations require an explicitly selected or authenticated account and never accept guest names or client IPs.",
 		Output:  "The canonical created owner comment and replay metadata.",
 		Errors:  "Content validation, disabled comments, missing posts, authentication, and idempotency conflicts use stable codes.",
 		Example: example, Args: cobra.ExactArgs(1), Capability: CapabilityBoth,
@@ -297,14 +297,11 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 		if err != nil {
 			return Result{}, err
 		}
-		// Direct mode is authorised by access to the data directory, not by a
-		// session, so there is nobody to read the author from. The owner is the
-		// account it writes as, and it is read rather than assumed.
-		owner, err := directProfileAccount(ctx, direct.database, direct.runtime)
+		author, err := directContentActor(ctx)
 		if err != nil {
-			return Result{}, commentCLIError(err)
+			return Result{}, err
 		}
-		result, err := direct.service.Create(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ReplyToCommentID: replyToID, ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey, Author: owner})
+		result, err := direct.service.Create(ctx, app.CreateCommentInput{EntryID: postID, ParentID: parentID, ReplyToCommentID: replyToID, ContentMD: content, Media: usages, Location: locationInput.Location, IdempotencyKey: idempotencyKey, Author: author})
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -491,25 +488,6 @@ type directCommentRuntime struct {
 	media       *media.Store
 	database    *sqlitestore.Database
 	maintenance *runtimefs.Lease
-	runtime     *runtimefs.Runtime
-}
-
-// directProfileAccount reads the account a direct-mode write is performed as.
-//
-// Direct mode is authorised by access to the data directory rather than by a
-// session, so there is no admitted caller to take an author from. The owner
-// account is that author, and reading it keeps the row honest rather than
-// stamping an id the CLI assumed.
-func directProfileAccount(ctx context.Context, database *sqlitestore.Database, runtimeState *runtimefs.Runtime) (domain.User, error) {
-	repository, err := sqlitestore.NewAccountRepository(database, runtimeState.Locks)
-	if err != nil {
-		return domain.User{}, err
-	}
-	service, err := app.NewAccountService(repository)
-	if err != nil {
-		return domain.User{}, err
-	}
-	return service.ProfileAccount(ctx)
 }
 
 func (runtime *directCommentRuntime) Close() error {
@@ -517,6 +495,9 @@ func (runtime *directCommentRuntime) Close() error {
 }
 
 func openDirectCommentWrite(ctx context.Context, invocation Invocation) (*directCommentRuntime, error) {
+	if _, err := directContentActor(ctx); err != nil {
+		return nil, err
+	}
 	target, err := invocation.DirectTransport()
 	if err != nil {
 		return nil, err
@@ -548,7 +529,7 @@ func openDirectCommentWrite(ctx context.Context, invocation Invocation) (*direct
 		_ = maintenance.Release()
 		return nil, err
 	}
-	return &directCommentRuntime{service: service, media: mediaStore, database: database, maintenance: maintenance, runtime: runtimeState}, nil
+	return &directCommentRuntime{service: service, media: mediaStore, database: database, maintenance: maintenance}, nil
 }
 
 func resolveCommentMediaInput(input postMediaInput, upload func(string) (domain.ID, error)) ([]domain.EntryMediaUsage, error) {

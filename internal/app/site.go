@@ -194,6 +194,9 @@ func (service *SiteService) Pin(ctx context.Context, id domain.ID) (SiteSettings
 	if err := contextError(ctx); err != nil {
 		return SiteSettings{}, err
 	}
+	if err := requireAdministrator(ctx); err != nil {
+		return SiteSettings{}, err
+	}
 	if _, err := domain.ParseID(id.String()); err != nil {
 		return SiteSettings{}, err
 	}
@@ -230,6 +233,9 @@ func (service *SiteService) Pin(ctx context.Context, id domain.ID) (SiteSettings
 // Unpin clears the singleton selection. Repeated clears are safe successes.
 func (service *SiteService) Unpin(ctx context.Context, expected ...domain.ID) (SiteSettings, error) {
 	if err := contextError(ctx); err != nil {
+		return SiteSettings{}, err
+	}
+	if err := requireAdministrator(ctx); err != nil {
 		return SiteSettings{}, err
 	}
 	var result SiteSettings

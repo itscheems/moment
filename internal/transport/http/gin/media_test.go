@@ -18,7 +18,9 @@ import (
 	"time"
 
 	gin "github.com/gin-gonic/gin"
+	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/auth"
+	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
 	"github.com/moment/moment/internal/runtimefs"
 	sqlitestore "github.com/moment/moment/internal/storage/sqlite"
@@ -102,16 +104,17 @@ func TestOwnerMediaUploadRequiresAuthenticationAndReturnsManagedURLs(t *testing.
 	}
 }
 
-func TestOwnerCanReadEarlyVideoPosterWithoutCachingIt(t *testing.T) {
+func TestUploaderCanReadEarlyVideoPosterWithoutCachingIt(t *testing.T) {
 	engine, _, _, _ := newMediaHTTPFixture(t)
 	posters := newUploadPosterCache()
 	const uploadID = "upload-0123456789abcdef"
 	poster := []byte{0xff, 0xd8, 0xff, 0xd9}
-	posters.put(uploadID, poster)
+	posters.put("0123456789abcdef0123456789abcdef", uploadID, poster)
 
 	router := gin.New()
 	router.GET("/poster/:uploadID", getUploadPoster(posters))
 	request := httptest.NewRequest(http.MethodGet, "/poster/"+uploadID, nil)
+	request = request.WithContext(app.WithContentActor(request.Context(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleMember, Status: domain.AccountActive}))
 	response := performRequest(router, request)
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/jpeg" ||
 		response.Header().Get("Cache-Control") != "no-store" || !bytes.Equal(response.Body.Bytes(), poster) {
@@ -197,3 +200,37 @@ func testGIF(t *testing.T) []byte {
 }
 
 func stringInt(value int) string { return strconv.Itoa(value) }
+
+func TestUploadPostersAreIsolatedByAccountEvenWhenUploadIDsCollide(t *testing.T) {
+	const uploadID = "shared-upload-0123456789"
+	first := domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleMember, Status: domain.AccountActive}
+	second := domain.User{ID: "fedcba9876543210fedcba9876543210", Role: domain.UserRoleAdmin, Status: domain.AccountActive}
+	cache := newUploadPosterCache()
+	cache.put(first.ID, uploadID, []byte("first poster"))
+	cache.put(second.ID, uploadID, []byte("second poster"))
+	router := gin.New()
+	router.GET("/poster/:uploadID", getUploadPoster(cache))
+	for _, user := range []domain.User{first, second} {
+		request := httptest.NewRequest(http.MethodGet, "/poster/"+uploadID, nil)
+		request = request.WithContext(app.WithContentActor(request.Context(), user))
+		response := performRequest(router, request)
+		expected := "first poster"
+		if user.ID == second.ID {
+			expected = "second poster"
+		}
+		if response.Code != http.StatusOK || response.Body.String() != expected {
+			t.Fatalf("cross-account poster=%d %q", response.Code, response.Body.String())
+		}
+	}
+	cache.remove(first.ID, uploadID)
+	if _, ok := cache.get(first.ID, uploadID); ok {
+		t.Fatal("removed poster remained visible")
+	}
+	if value, ok := cache.get(second.ID, uploadID); !ok || string(value) != "second poster" {
+		t.Fatal("one account removed another account's poster")
+	}
+	anonymous := performRequest(router, httptest.NewRequest(http.MethodGet, "/poster/"+uploadID, nil))
+	if anonymous.Code != http.StatusUnauthorized {
+		t.Fatal("anonymous caller read a private upload poster")
+	}
+}

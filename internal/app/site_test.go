@@ -262,30 +262,30 @@ func TestSitePinReplaceAndUnpinAreAtomicAndIdempotent(t *testing.T) {
 	}
 	service := newTestSiteService(t, transactions, false)
 
-	first, err := service.Pin(context.Background(), domain.ID(testPinnedPostID))
+	first, err := service.Pin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), domain.ID(testPinnedPostID))
 	if err != nil || first.PinnedPostID == nil || *first.PinnedPostID != testPinnedPostID {
 		t.Fatalf("first pin = %#v, err=%v", first, err)
 	}
-	replayed, err := service.Pin(context.Background(), domain.ID(testPinnedPostID))
+	replayed, err := service.Pin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), domain.ID(testPinnedPostID))
 	if err != nil || !reflect.DeepEqual(first, replayed) {
 		t.Fatalf("idempotent pin = %#v, err=%v", replayed, err)
 	}
-	replaced, err := service.Pin(context.Background(), domain.ID(testReplacementPostID))
+	replaced, err := service.Pin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), domain.ID(testReplacementPostID))
 	if err != nil || replaced.PinnedPostID == nil || *replaced.PinnedPostID != testReplacementPostID {
 		t.Fatalf("replacement pin = %#v, err=%v", replaced, err)
 	}
-	if _, err := service.Pin(context.Background(), domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAX")); !domain.HasCode(err, domain.CodePostNotFound) {
+	if _, err := service.Pin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), domain.ID("01ARZ3NDEKTSV4RRFFQ69G5FAX")); !domain.HasCode(err, domain.CodePostNotFound) {
 		t.Fatalf("missing pin error = %v", err)
 	}
-	stored, err := service.Get(context.Background())
+	stored, err := service.Get(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}))
 	if err != nil || stored.PinnedPostID == nil || *stored.PinnedPostID != testReplacementPostID {
 		t.Fatalf("failed pin changed state = %#v, err=%v", stored, err)
 	}
-	cleared, err := service.Unpin(context.Background())
+	cleared, err := service.Unpin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}))
 	if err != nil || cleared.PinnedPostID != nil {
 		t.Fatalf("unpin = %#v, err=%v", cleared, err)
 	}
-	repeated, err := service.Unpin(context.Background())
+	repeated, err := service.Unpin(WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}))
 	if err != nil || repeated.PinnedPostID != nil {
 		t.Fatalf("idempotent unpin = %#v, err=%v", repeated, err)
 	}

@@ -75,9 +75,9 @@ func registerPosts(application *Application) {
 		Inputs: "Provide --content, managed media, --quote, or a combination of them. Add either --location-name or a canonical --location-json path|-; media and location JSON cannot both read stdin. --visibility everyone|only_me chooses who may read the post (default everyone).",
 		Output: "The canonical created post and replay metadata.",
 		Errors: "Content validation, authentication, and idempotency conflicts use stable codes and exit statuses.",
-		Example: "moment post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
-			"moment post create --data-dir ./moment-data --media ./photo.jpg --idempotency-key demo-002 --json\n" +
-			"moment post create --data-dir ./moment-data --quote 01ARZ3NDEKTSV4RRFFQ69G5FAV --content '我的补充' --json",
+		Example: "moment --as writer post create --data-dir ./moment-data --content 'hello **moment**' --media ./cat.jpg --media-alt 'cat sleeping' --idempotency-key demo-001 --json\n" +
+			"moment --as writer post create --data-dir ./moment-data --media ./photo.jpg --idempotency-key demo-002 --json\n" +
+			"moment --as writer post create --data-dir ./moment-data --quote 01ARZ3NDEKTSV4RRFFQ69G5FAV --content '我的补充' --json",
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
 			flags.String("content", "", "authoritative UTF-8 Markdown content")
@@ -98,8 +98,8 @@ func registerPosts(application *Application) {
 		Inputs:    "Provide one post ULID and at least one content, media, location, link, or visibility change. Omitted location preserves it; --clear-location removes it.",
 		Output:    "The complete updated canonical post DTO.",
 		Errors:    "Invalid content, missing posts, and authentication failures use stable codes and exit statuses.",
-		Example: "moment post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'updated' --json\n" +
-			"printf '[]' | moment post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --media-manifest - --json",
+		Example: "moment --as writer post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --content 'updated' --json\n" +
+			"printf '[]' | moment --as writer post update 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --media-manifest - --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Flags: func(flags *pflag.FlagSet) {
@@ -120,7 +120,7 @@ func registerPosts(application *Application) {
 		Output:     "The canonical post that would be or was deleted, with dry_run or deleted metadata.",
 		Errors:     "Missing posts, declined confirmation, and authentication failures use stable codes and exit statuses.",
 		Safety:     "Destructive. --yes confirms intent only; --dry-run performs a read and leaves authority unchanged.",
-		Example:    "moment post delete 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --dry-run --json",
+		Example:    "moment --as writer post delete 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --dry-run --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
@@ -138,7 +138,7 @@ func registerPosts(application *Application) {
 		Inputs:     "Provide one canonical post ULID. Repeating the same repost is an idempotent success.",
 		Output:     "The complete canonical post DTO with reposted_at set.",
 		Errors:     "Invalid or absent posts and authentication failures use stable codes and exit statuses.",
-		Example:    "moment post repost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Example:    "moment --as writer post repost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -153,7 +153,7 @@ func registerPosts(application *Application) {
 		Inputs:     "Provide one canonical post ULID. Repeating the same removal is an idempotent success.",
 		Output:     "The complete canonical post DTO with reposted_at cleared.",
 		Errors:     "Invalid or absent posts and authentication failures use stable codes and exit statuses.",
-		Example:    "moment post unrepost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
+		Example:    "moment --as writer post unrepost 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Run: func(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -169,7 +169,7 @@ func registerPosts(application *Application) {
 		Output:     "The complete site settings DTO with pinned_post_id set to the selected post.",
 		Errors:     "Invalid or absent posts, declined confirmation, and authentication failures use stable codes and exit statuses.",
 		Safety:     "Destructive profile presentation change. --yes confirms replacement; no post content or timestamp is changed.",
-		Example:    "moment post pin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
+		Example:    "moment --as writer post pin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
@@ -187,7 +187,7 @@ func registerPosts(application *Application) {
 		Output:     "The complete site settings DTO with pinned_post_id cleared.",
 		Errors:     "Invalid IDs, declined confirmation, and authentication failures use stable codes and exit statuses.",
 		Safety:     "Destructive profile presentation change. --yes confirms removal; no post content is deleted.",
-		Example:    "moment post unpin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
+		Example:    "moment --as writer post unpin 01ARZ3NDEKTSV4RRFFQ69G5FAV --data-dir ./moment-data --yes --json",
 		Args:       cobra.ExactArgs(1),
 		Capability: CapabilityBoth,
 		Policy: SafetyPolicy{
@@ -1336,6 +1336,13 @@ func (runtime *directPostRuntime) Close() error {
 }
 
 func openDirectPostWrite(ctx context.Context, invocation Invocation) (*directPostRuntime, error) {
+	if _, err := directContentActor(ctx); err != nil {
+		return nil, err
+	}
+	return openDirectPostMaintenance(ctx, invocation)
+}
+
+func openDirectPostMaintenance(ctx context.Context, invocation Invocation) (*directPostRuntime, error) {
 	target, err := invocation.DirectTransport()
 	if err != nil {
 		return nil, err
