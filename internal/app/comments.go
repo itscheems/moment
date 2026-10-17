@@ -934,6 +934,14 @@ func (service *CommentService) delete(ctx context.Context, id domain.ID, actor *
 		if !found {
 			return commentNotFound(id)
 		}
+		if actor != nil {
+			if domain.ValidateUserID(actor.ID) != nil || !actor.CanWritePublicContent() {
+				return domain.NewError(domain.CodeUnauthorized, "an active account is required to remove comments", nil)
+			}
+			if err := requireReadableEntry(ctx, store, ViewerFor(*actor, true), record.EntryID); err != nil {
+				return err
+			}
+		}
 		if err := authorizeCommentRemoval(ctx, store, record, actor); err != nil {
 			return err
 		}

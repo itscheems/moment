@@ -61,12 +61,10 @@ func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T)
 	}
 	post := decodeDataMap(t, publish)
 	postID := post["id"].(string)
-	for _, path := range []string{"/api/v1/articles/" + postID, "/api/v1/owner/posts/" + postID} {
-		request := ownerRequest(http.MethodDelete, path, "")
-		request.Header.Set("Authorization", "Bearer "+fixture.token)
-		if response := performRequest(fixture.engine, request); response.Code == http.StatusOK {
-			t.Fatal("admin generic delete bypassed authorship")
-		}
+	adminEdit := ownerRequest(http.MethodPost, "/api/v1/articles/"+postID+"/draft", "")
+	adminEdit.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, adminEdit); response.Code == http.StatusOK {
+		t.Fatal("administrator opened another author's working copy")
 	}
 	withdrawn := performRequest(fixture.engine, memberCommentRequest(member, http.MethodPost, "/api/v1/articles/"+postID+"/unpublish", ""))
 	if withdrawn.Code != http.StatusOK {
@@ -77,5 +75,14 @@ func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T)
 	}
 	if response := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/posts", nil)); strings.Contains(response.Body.String(), postID) {
 		t.Fatal("withdrawn article remained in timeline")
+	}
+	republished := performRequest(fixture.engine, memberCommentRequest(member, http.MethodPost, "/api/v1/articles/drafts/"+id+"/publish", ""))
+	if republished.Code != http.StatusOK && republished.Code != http.StatusCreated {
+		t.Fatalf("republish=%d %s", republished.Code, republished.Body.String())
+	}
+	moderation := ownerRequest(http.MethodDelete, "/api/v1/owner/posts/"+postID, "")
+	moderation.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, moderation); response.Code != http.StatusOK {
+		t.Fatalf("administrator could not moderate published article: %d %s", response.Code, response.Body.String())
 	}
 }

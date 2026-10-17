@@ -44,6 +44,12 @@ func contentActorID(ctx context.Context, store any) (string, error) {
 
 func resolvedViewer(ctx context.Context, store any, viewer Viewer) (Viewer, error) {
 	if viewer.owner && viewer.userID == "" {
+		if user, present := ContentActor(ctx); present {
+			id, err := contentActorID(ctx, store)
+			viewer.userID = id
+			viewer.owner = user.IsOwner()
+			return viewer, err
+		}
 		if authors, ok := store.(ContentAuthorStore); ok {
 			id, err := authors.PrimaryAuthorID(ctx)
 			viewer.userID = id
@@ -59,9 +65,26 @@ func requireContentAuthor(ctx context.Context, store any, authorID string) error
 		return err
 	}
 	if id != authorID {
-		return domain.NewError(domain.CodeUnauthorized, "only the article author may manage it", nil)
+		return domain.NewError(domain.CodeUnauthorized, "only the content author may manage it", nil)
 	}
 	return nil
+}
+
+// requireContentRemoval separates an author's control from public moderation.
+// Administrative authority never grants access to another author's private work.
+func requireContentRemoval(ctx context.Context, store any, entry domain.Entry) error {
+	id, err := contentActorID(ctx, store)
+	if err != nil {
+		return err
+	}
+	if id == entry.AuthorUserID {
+		return nil
+	}
+	if user, present := ContentActor(ctx); present && user.IsOwner() &&
+		entry.Visibility == domain.VisibilityEveryone && entry.PublicationState != "unpublished" {
+		return nil
+	}
+	return domain.NewError(domain.CodeUnauthorized, "only the author or a public content moderator may remove this post", nil)
 }
 
 func readContentAuthors(ctx context.Context, store any, entries []domain.Entry) (map[string]CommentAuthorIdentity, error) {

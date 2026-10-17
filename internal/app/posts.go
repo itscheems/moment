@@ -388,18 +388,26 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 	result := CreatePostResult{}
 
 	err = service.transactions.Write(ctx, func(store PostStore) error {
+		authorID, err := contentActorID(ctx, store)
+		if err != nil {
+			return err
+		}
+		scope := postCreateScope(authorID)
 		if input.QuotedPostID != nil {
-			// The owner is the only writer, so the quoted target is theirs to
-			// see whatever its visibility; readers meet the quote through
-			// loadQuotedPost, which asks on their behalf.
-			if _, found, quoteErr := store.EntryByID(ctx, *input.QuotedPostID); quoteErr != nil {
+			target, found, quoteErr := store.EntryByID(ctx, *input.QuotedPostID)
+			if quoteErr != nil {
 				return quoteErr
-			} else if !found {
+			}
+			viewer, err := resolvedViewer(ctx, store, OwnerViewer())
+			if err != nil {
+				return err
+			}
+			if !found || !viewer.CanReadEntry(target) {
 				return postNotFound(*input.QuotedPostID)
 			}
 		}
 		if input.IdempotencyKey != "" {
-			record, found, storeErr := store.IdempotencyRecord(ctx, postCreateIdempotencyScope, input.IdempotencyKey)
+			record, found, storeErr := store.IdempotencyRecord(ctx, scope, input.IdempotencyKey)
 			if storeErr != nil {
 				return storeErr
 			}
@@ -462,7 +470,7 @@ func (service *PostService) Create(ctx context.Context, input CreatePostInput) (
 		if input.IdempotencyKey != "" {
 			if insertErr := store.InsertIdempotencyRecord(ctx, IdempotencyRecord{
 				AuthorUserID:       entry.AuthorUserID,
-				Scope:              postCreateIdempotencyScope,
+				Scope:              scope,
 				Key:                input.IdempotencyKey,
 				RequestHash:        requestHash,
 				ResponseResourceID: entry.ID,
@@ -508,8 +516,12 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 	var media []MediaUsageProjection
 	var post Post
 	err := service.transactions.Read(ctx, func(store PostStore) error {
+		authorID, err := contentActorID(ctx, store)
+		if err != nil {
+			return err
+		}
 		var storeErr error
-		record, found, storeErr = store.IdempotencyRecord(ctx, postCreateIdempotencyScope, input.IdempotencyKey)
+		record, found, storeErr = store.IdempotencyRecord(ctx, postCreateScope(authorID), input.IdempotencyKey)
 		if storeErr != nil || !found {
 			return storeErr
 		}
@@ -549,8 +561,13 @@ func (service *PostService) loadCreateReplay(ctx context.Context, input CreatePo
 	return CreatePostResult{Post: post, Replayed: true}, true, nil
 }
 
+// Retry keys belong to the account that issued them, across all post kinds.
+func postCreateScope(authorID string) string {
+	return postCreateIdempotencyScope + "." + authorID
+}
+
 func reconstructCreateReplay(input CreatePostInput, requestHash string, record IdempotencyRecord) (Post, error) {
-	if record.Scope != postCreateIdempotencyScope || record.Key != input.IdempotencyKey || !validRequestHash(record.RequestHash) {
+	if record.Scope != postCreateScope(record.AuthorUserID) || record.Key != input.IdempotencyKey || !validRequestHash(record.RequestHash) {
 		return Post{}, idempotencySnapshotError()
 	}
 	if record.RequestHash != requestHash {
@@ -678,10 +695,8 @@ func (service *PostService) SetReposted(ctx context.Context, id domain.ID, activ
 		if !found {
 			return postNotFound(id)
 		}
-		if entry.Kind == domain.KindArticle {
-			if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
-				return err
-			}
+		if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
+			return err
 		}
 		alreadyActive := entry.RepostedAt != nil
 		if alreadyActive != active {
@@ -991,10 +1006,8 @@ func (service *PostService) Update(ctx context.Context, input UpdatePostInput) (
 		if !found {
 			return postNotFound(input.ID)
 		}
-		if entry.Kind == domain.KindArticle {
-			if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
-				return err
-			}
+		if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
+			return err
 		}
 		currentMedia, mediaErr := store.EntryMediaUsages(ctx, input.ID)
 		if mediaErr != nil {
@@ -1161,10 +1174,8 @@ func (service *PostService) Delete(ctx context.Context, id domain.ID) (Post, err
 		if !found {
 			return postNotFound(id)
 		}
-		if entry.Kind == domain.KindArticle {
-			if err := requireContentAuthor(ctx, store, entry.AuthorUserID); err != nil {
-				return err
-			}
+		if err := requireContentRemoval(ctx, store, entry); err != nil {
+			return err
 		}
 		if view, storeErr = loadArticleView(ctx, store, entry); storeErr != nil {
 			return storeErr
