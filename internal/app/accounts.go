@@ -673,6 +673,11 @@ func (service *AccountService) SetStatus(ctx context.Context, userID string, sta
 			if _, err := sessions.RevokeUserSessions(ctx, userID, nowMS); err != nil {
 				return err
 			}
+			if credentials, ok := accounts.(AccountCredentialStore); ok {
+				if err := credentials.RevokeUserAPITokens(ctx, userID, nowMS); err != nil {
+					return err
+				}
+			}
 		}
 		user.Status = status
 		user.UpdatedAtMS = nowMS
