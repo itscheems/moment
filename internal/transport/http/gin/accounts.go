@@ -2,6 +2,7 @@ package ginhttp
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -11,52 +12,14 @@ import (
 	"github.com/moment/moment/internal/app"
 	"github.com/moment/moment/internal/domain"
 	"github.com/moment/moment/internal/media"
+	"github.com/moment/moment/internal/transport/accountdto"
 )
 
-// accountView is the public projection of one account.
-//
-// It deliberately mirrors commentdto.Author and app.MentionSuggestion field for
-// field, because all three answer the same question -- who is this -- and a
-// browser that can render one should not need a second shape to render another.
-type accountView struct {
-	UserID        string  `json:"user_id"`
-	Username      string  `json:"username"`
-	DisplayName   string  `json:"display_name"`
-	Bio           string  `json:"bio"`
-	AvatarMediaID *string `json:"avatar_media_id"`
-	CoverMediaID  *string `json:"cover_media_id"`
-	ProfileURL    string  `json:"profile_url"`
-}
+type accountView = accountdto.Public
+type privateAccountView = accountdto.Private
 
-// privateAccountView adds the fields an account may see about itself and
-// nobody else may see about it.
-type privateAccountView struct {
-	accountView
-	Role           string `json:"role"`
-	Status         string `json:"status"`
-	UsernameChosen bool   `json:"username_chosen"`
-}
-
-func publicAccount(user domain.User) accountView {
-	return accountView{
-		UserID:        user.ID,
-		Username:      user.Username,
-		DisplayName:   user.DisplayName,
-		Bio:           user.Bio,
-		AvatarMediaID: user.AvatarMediaID,
-		CoverMediaID:  user.CoverMediaID,
-		ProfileURL:    domain.ProfileURL(user.Username),
-	}
-}
-
-func privateAccount(user domain.User) privateAccountView {
-	return privateAccountView{
-		accountView:    publicAccount(user),
-		Role:           string(user.Role),
-		Status:         string(user.Status),
-		UsernameChosen: user.UsernameSetAtMS != nil,
-	}
-}
+func publicAccount(user domain.User) accountView         { return accountdto.PublicFromUser(user) }
+func privateAccount(user domain.User) privateAccountView { return accountdto.PrivateFromUser(user) }
 
 type accountSessionView struct {
 	ExpiresAt time.Time          `json:"expires_at"`
@@ -96,11 +59,11 @@ type identityView struct {
 }
 
 type profilePatch struct {
-	Username      *string `json:"username"`
-	DisplayName   *string `json:"display_name"`
-	Bio           *string `json:"bio"`
-	AvatarMediaID *string `json:"avatar_media_id"`
-	CoverMediaID  *string `json:"cover_media_id"`
+	Username      *string             `json:"username"`
+	DisplayName   *string             `json:"display_name"`
+	Bio           *string             `json:"bio"`
+	AvatarMediaID optionalStringField `json:"avatar_media_id"`
+	CoverMediaID  optionalStringField `json:"cover_media_id"`
 }
 
 type statusPatch struct {
@@ -148,6 +111,7 @@ func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store
 	administration.Use(gate.RequireAdmin())
 	administration.GET("", listAllAccounts(gate))
 	administration.PATCH("/:id", setAccountStatus(gate))
+	administration.PUT("/:id/role", setAccountRole(gate))
 }
 
 // publicAccountLookup answers /username. It reports only what a visitor may
@@ -231,11 +195,11 @@ func updateOwnProfile(gate *Gate) gin.HandlerFunc {
 			return
 		}
 		update := app.ProfileUpdate{Username: patch.Username, DisplayName: patch.DisplayName, Bio: patch.Bio}
-		if patch.AvatarMediaID != nil {
-			update.AvatarMediaID = &app.NullableString{Value: emptyToNil(patch.AvatarMediaID)}
+		if patch.AvatarMediaID.set {
+			update.AvatarMediaID = &app.NullableString{Value: emptyToNil(patch.AvatarMediaID.value)}
 		}
-		if patch.CoverMediaID != nil {
-			update.CoverMediaID = &app.NullableString{Value: emptyToNil(patch.CoverMediaID)}
+		if patch.CoverMediaID.set {
+			update.CoverMediaID = &app.NullableString{Value: emptyToNil(patch.CoverMediaID.value)}
 		}
 		updated, err := gate.accounts.UpdateProfile(ctx.Request.Context(), user.ID, update)
 		if err != nil {
@@ -397,7 +361,7 @@ func setAccountStatus(gate *Gate) gin.HandlerFunc {
 		}
 		updated, err := gate.accounts.SetStatus(ctx.Request.Context(), ctx.Param("id"), domain.AccountStatus(patch.Status))
 		if err != nil {
-			writeAccountError(ctx, err)
+			writeAdministrativeAccountError(ctx, err)
 			return
 		}
 		Success(ctx, http.StatusOK, privateAccount(updated), nil)
@@ -473,4 +437,38 @@ func setAccountPicture(gate *Gate, pictures *media.Store, kind string) gin.Handl
 		}
 		Success(ctx, http.StatusOK, privateAccount(updated), nil)
 	}
+}
+
+// setAccountRole changes current administrative rights without changing authorship.
+func setAccountRole(gate *Gate) gin.HandlerFunc {
+	return func(ctx *gin.Context) {
+		body, ok := readBody(ctx)
+		if !ok {
+			return
+		}
+		var patch struct {
+			Role string `json:"role"`
+		}
+		decoder := json.NewDecoder(strings.NewReader(string(body)))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&patch); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+			Failure(ctx, http.StatusBadRequest, "INVALID_ARGUMENT", "a JSON account role is required", nil)
+			return
+		}
+		user, err := gate.accounts.SetRole(ctx.Request.Context(), ctx.Param("id"), domain.UserRole(patch.Role))
+		if err != nil {
+			writeAdministrativeAccountError(ctx, err)
+			return
+		}
+		Success(ctx, http.StatusOK, privateAccount(user), nil)
+	}
+}
+
+func writeAdministrativeAccountError(ctx *gin.Context, err error) {
+	var failure *domain.Error
+	if errors.As(err, &failure) && failure.Code == domain.CodeAccountNotFound {
+		Failure(ctx, http.StatusNotFound, string(failure.Code), failure.Message, failure.Details)
+		return
+	}
+	writeAccountError(ctx, err)
 }

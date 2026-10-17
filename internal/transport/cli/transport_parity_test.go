@@ -62,8 +62,8 @@ func TestDirectAPIErrorParityPreservesCompleteCanonicalErrors(t *testing.T) {
 			execute(application, "", "--url", fixture.server.URL, "media", "get", missingMedia, "--output", apiPath, "--json"),
 		)
 		assertCanonicalParity(t,
-			execute(application, "", "site", "update", "--avatar-media-id", missingMedia, "--data-dir", fixture.dataDir, "--as", "writer", "--json"),
-			execute(application, "", "--url", fixture.server.URL, "site", "update", "--avatar-media-id", missingMedia, "--json"),
+			execute(application, "", "user", "update-profile", "--avatar-media-id", missingMedia, "--data-dir", fixture.dataDir, "--as", "writer", "--json"),
+			execute(application, "", "--url", fixture.server.URL, "user", "update-profile", "--avatar-media-id", missingMedia, "--json"),
 		)
 	})
 

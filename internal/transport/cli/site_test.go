@@ -55,14 +55,13 @@ func TestSiteDirectCommandsJSONFlagsAndStableErrors(t *testing.T) {
 
 	updatedOutput := execute(application, "", "site", "update", "--data-dir", dataDir,
 		"--title", "Jojo moments",
-		"--bio", "portable notes",
 		"--timezone", "Asia/Shanghai",
 		"--public-base-url", "HTTP://LOCALHOST:80/journal/",
 		"--comments-enabled=false",
 		"--json",
 	)
 	updated := commandData(t, updatedOutput)
-	if updated["title"] != "Jojo moments" || updated["bio"] != "portable notes" || updated["timezone"] != "Asia/Shanghai" ||
+	if updated["title"] != "Jojo moments" || updated["bio"] != "" || updated["timezone"] != "Asia/Shanghai" ||
 		updated["public_base_url"] != "http://localhost/journal" || updated["comments_enabled"] != false {
 		t.Fatalf("updated = %#v", updated)
 	}
@@ -90,14 +89,6 @@ func TestSiteDirectCommandsJSONFlagsAndStableErrors(t *testing.T) {
 		})
 	}
 
-	missingAvatar := execute(application, "", "site", "update", "--data-dir", dataDir, "--avatar-media-id", "01ARZ3NDEKTSV4RRFFQ69G5FAY", "--json")
-	if missingAvatar.exit != ExitNotFound || decodeOneDocument(t, missingAvatar.stdout)["error"].(map[string]any)["code"] != "MEDIA_NOT_FOUND" {
-		t.Fatalf("missing avatar = %#v", missingAvatar)
-	}
-	missingCover := execute(application, "", "site", "update", "--data-dir", dataDir, "--cover-media-id", "01ARZ3NDEKTSV4RRFFQ69G5FAY", "--json")
-	if missingCover.exit != ExitNotFound || decodeOneDocument(t, missingCover.stdout)["error"].(map[string]any)["code"] != "MEDIA_NOT_FOUND" {
-		t.Fatalf("missing cover = %#v", missingCover)
-	}
 }
 
 func TestSiteDirectAPIParityPublicGetAndAuthenticatedUpdate(t *testing.T) {
@@ -158,7 +149,7 @@ func TestSiteDirectAPIParityPublicGetAndAuthenticatedUpdate(t *testing.T) {
 		t.Fatalf("public API get stderr = %q", apiGet.stderr)
 	}
 
-	unauthorized := execute(application, "", "--url", server.URL, "site", "update", "--bio", "blocked", "--json")
+	unauthorized := execute(application, "", "--url", server.URL, "site", "update", "--title", "blocked", "--json")
 	if unauthorized.exit != ExitUnauthorized || decodeOneDocument(t, unauthorized.stdout)["error"].(map[string]any)["code"] != "ACCOUNT_TOKEN_REQUIRED" {
 		t.Fatalf("unauthorized = %#v", unauthorized)
 	}
@@ -171,13 +162,13 @@ func TestSiteDirectAPIParityPublicGetAndAuthenticatedUpdate(t *testing.T) {
 		t.Fatalf("API update = %#v, direct read = %#v", apiUpdated, directAfter)
 	}
 
-	tokenFile := filepath.Join(t.TempDir(), "owner.token")
+	tokenFile := filepath.Join(t.TempDir(), "account.token")
 	if err := os.WriteFile(tokenFile, []byte(credential.Token), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("MOMENT_TOKEN", "wrong")
-	fromFile := commandData(t, execute(application, "", "--url", server.URL, "--token-file", tokenFile, "site", "update", "--bio", "from token file", "--json"))
-	if fromFile["bio"] != "from token file" {
+	fromFile := commandData(t, execute(application, "", "--url", server.URL, "--token-file", tokenFile, "site", "update", "--title", "from token file", "--json"))
+	if fromFile["title"] != "from token file" {
 		t.Fatalf("token-file update = %#v", fromFile)
 	}
 }

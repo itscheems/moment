@@ -96,6 +96,11 @@ func (gate *Gate) admit(check func(domain.User) error) gin.HandlerFunc {
 			return
 		}
 		if failure := check(user); failure != nil {
+			var refusal *domain.Error
+			if errors.As(failure, &refusal) && refusal.Code == domain.CodeUnauthorized {
+				Failure(ctx, http.StatusForbidden, string(refusal.Code), refusal.Message, refusal.Details)
+				return
+			}
 			writeAccountError(ctx, failure)
 			return
 		}
@@ -280,6 +285,8 @@ func writeAccountError(ctx *gin.Context, err error) {
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeLastAdministrator, domain.CodeAccountInUse, domain.CodeInstanceAlreadyInitialized:
 		Failure(ctx, http.StatusConflict, string(domainErr.Code), domainErr.Message, domainErr.Details)
+	case domain.CodeMediaNotFound:
+		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeAPITokenNotFound:
 		Failure(ctx, http.StatusNotFound, string(domainErr.Code), domainErr.Message, nil)
 	case domain.CodeAccountSuspended:

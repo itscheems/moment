@@ -262,6 +262,7 @@ func TestPendingAccountIsRefusedByEveryOwnerScopedRoute(t *testing.T) {
 		{"posts", http.MethodDelete, "/api/v1/posts/" + post + "/pin"},
 		// site
 		{"site", http.MethodPatch, "/api/v1/site"},
+		{"site", http.MethodPut, "/api/v1/site/profile"},
 		// media
 		{"media", http.MethodPost, "/api/v1/media"},
 		{"media", http.MethodGet, "/api/v1/media/uploads/" + someULID + "/poster"},
@@ -288,6 +289,7 @@ func TestPendingAccountIsRefusedByEveryOwnerScopedRoute(t *testing.T) {
 		// accounts
 		{"accounts", http.MethodGet, "/api/v1/accounts"},
 		{"accounts", http.MethodPatch, "/api/v1/accounts/" + memberID},
+		{"accounts", http.MethodPut, "/api/v1/accounts/" + memberID + "/role"},
 	}
 
 	for _, route := range routes {

@@ -95,7 +95,7 @@ func newFixtureBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runtim
 	if err != nil {
 		return nil, err
 	}
-	site, err := app.NewSiteService(siteRepository, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: func() time.Time { return base }})
+	site, err := app.NewSiteService(siteRepository, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
 	if err != nil {
 		return nil, err
 	}
@@ -129,11 +129,14 @@ func (builder *fixtureBuilder) build(ctx context.Context) (Counts, error) {
 	timezone := "UTC"
 	commentsEnabled := true
 	if _, err := builder.site.Update(ctx, app.SiteUpdate{
-		Title: &title, Bio: &bio, Timezone: &timezone, CommentsEnabled: &commentsEnabled,
+		Title: &title, Timezone: &timezone, CommentsEnabled: &commentsEnabled,
 	}); err != nil {
 		return Counts{}, err
 	}
 
+	if _, err := builder.accounts.UpdateProfile(ctx, builder.actor.ID, app.ProfileUpdate{Bio: &bio}); err != nil {
+		return Counts{}, err
+	}
 	actual := Counts{}
 	var firstMedia *domain.ID
 	for entryIndex := int64(0); entryIndex < builder.recipe.Counts.Entries; entryIndex++ {
@@ -196,7 +199,7 @@ func (builder *fixtureBuilder) build(ctx context.Context) (Counts, error) {
 	}
 	if firstMedia != nil && builder.recipe.Name == "archive-roundtrip" {
 		value := firstMedia.String()
-		if _, err := builder.site.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &value}}); err != nil {
+		if _, err := builder.accounts.UpdateProfile(ctx, builder.actor.ID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &value}}); err != nil {
 			return Counts{}, err
 		}
 	}

@@ -90,3 +90,83 @@ func TestRetiredIdentityNamespaceHasNoAPIRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestAdministrativeAccessFollowsCurrentRoleAndNotDisplaySelection(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	ctx := context.Background()
+	initial, err := fixture.accounts.ProfileAccount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := fixture.accounts.SignIn(ctx, app.ExternalIdentity{Provider: "google", ProviderUserID: "profile-member", DisplayName: "Profile Member"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := fixture.accounts.SetStatus(ctx, outcome.User.ID, domain.AccountActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, err := fixture.accounts.CreateAPIToken(ctx, member.ID, "member session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, path, body, credential string) *httptest.ResponseRecorder {
+		request := jsonRequest(method, path, body)
+		request.Header.Set("Authorization", "Bearer "+credential)
+		return performRequest(fixture.engine, request)
+	}
+	selected := call(http.MethodPut, "/api/v1/site/profile", `{"user_id":"`+member.ID+`"}`, fixture.token)
+	if selected.Code != http.StatusOK || decodeDataMap(t, selected)["profile_user_id"] != member.ID {
+		t.Fatalf("display selection=%d %s", selected.Code, selected.Body.String())
+	}
+	for _, probe := range []struct{ path, body string }{
+		{"/api/v1/accounts/" + member.ID + "/role", `{"role":"admin"}`},
+		{"/api/v1/site/profile", `{"user_id":"` + initial.ID + `"}`},
+	} {
+		response := call(http.MethodPut, probe.path, probe.body, token.Value)
+		if response.Code != http.StatusForbidden || decodeError(t, response.Body).Error.Code != "UNAUTHORIZED" {
+			t.Fatalf("display identity gained administrative access=%d %s", response.Code, response.Body.String())
+		}
+	}
+	promoted := call(http.MethodPut, "/api/v1/accounts/"+member.ID+"/role", `{"role":"admin"}`, fixture.token)
+	if promoted.Code != http.StatusOK {
+		t.Fatalf("promotion=%d %s", promoted.Code, promoted.Body.String())
+	}
+	demoted := call(http.MethodPut, "/api/v1/accounts/"+initial.ID+"/role", `{"role":"member"}`, fixture.token)
+	if demoted.Code != http.StatusOK {
+		t.Fatalf("demotion=%d %s", demoted.Code, demoted.Body.String())
+	}
+	refused := call(http.MethodPatch, "/api/v1/site", `{"title":"stale role"}`, fixture.token)
+	if refused.Code != http.StatusForbidden {
+		t.Fatalf("old credential retained administrative rights=%d %s", refused.Code, refused.Body.String())
+	}
+	accepted := call(http.MethodPatch, "/api/v1/site", `{"title":"current administrator"}`, token.Value)
+	if accepted.Code != http.StatusOK {
+		t.Fatalf("existing member token did not acquire its current role=%d %s", accepted.Code, accepted.Body.String())
+	}
+	public := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/users/"+member.Username, nil))
+	if public.Code != http.StatusOK || decodeDataMap(t, public)["role"] != nil {
+		t.Fatalf("public role leaked=%d %s", public.Code, public.Body.String())
+	}
+}
+
+func TestMissingAdministrativeTargetDoesNotInvalidateTheCaller(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	const missing = "ffffffffffffffffffffffffffffffff"
+	for _, probe := range []struct{ path, body string }{
+		{"/api/v1/accounts/" + missing + "/role", `{"role":"member"}`},
+		{"/api/v1/site/profile", `{"user_id":"` + missing + `"}`},
+	} {
+		request := jsonRequest(http.MethodPut, probe.path, probe.body)
+		request.Header.Set("Authorization", "Bearer "+fixture.token)
+		response := performRequest(fixture.engine, request)
+		if response.Code != http.StatusNotFound || decodeError(t, response.Body).Error.Code != "ACCOUNT_NOT_FOUND" {
+			t.Fatalf("missing target=%d %s", response.Code, response.Body.String())
+		}
+	}
+	request := jsonRequest(http.MethodGet, "/api/v1/accounts", "")
+	request.Header.Set("Authorization", "Bearer "+fixture.token)
+	if response := performRequest(fixture.engine, request); response.Code != http.StatusOK {
+		t.Fatal("caller lost administrative access after selecting a missing account")
+	}
+}

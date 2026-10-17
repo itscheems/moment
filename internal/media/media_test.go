@@ -565,11 +565,11 @@ func TestPruneSerializesLateAvatarReferenceAndNeverDeletesReachableOriginal(t *t
 		t.Fatal(err)
 	}
 	setMediaClock(t, database, value.ID, now.Add(-24*time.Hour))
-	repository, err := sqlite.NewSiteRepository(database, runtimeState.Locks)
+	repository, err := sqlite.NewAccountRepository(database, runtimeState.Locks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	site, err := app.NewSiteService(repository, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: func() time.Time { return now }})
+	site, err := app.NewAccountService(repository, app.WithAccountClock(func() time.Time { return now }))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -589,7 +589,7 @@ func TestPruneSerializesLateAvatarReferenceAndNeverDeletesReachableOriginal(t *t
 	avatar := value.ID.String()
 	updated := make(chan error, 1)
 	go func() {
-		_, err := site.Update(context.Background(), app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}})
+		_, err := site.UpdateProfile(context.Background(), "0123456789abcdef0123456789abcdef", app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}})
 		updated <- err
 	}()
 	select {
@@ -611,10 +611,10 @@ func TestPruneSerializesLateAvatarReferenceAndNeverDeletesReachableOriginal(t *t
 		t.Fatal(err)
 	}
 	setMediaClock(t, database2, reachable.ID, now.Add(-48*time.Hour+time.Second))
-	repository2, _ := sqlite.NewSiteRepository(database2, runtimeState2.Locks)
-	site2, _ := app.NewSiteService(repository2, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: func() time.Time { return now }})
+	repository2, _ := sqlite.NewAccountRepository(database2, runtimeState2.Locks)
+	site2, _ := app.NewAccountService(repository2, app.WithAccountClock(func() time.Time { return now }))
 	reachableID := reachable.ID.String()
-	if _, err := site2.Update(context.Background(), app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &reachableID}}); err != nil {
+	if _, err := site2.UpdateProfile(context.Background(), "0123456789abcdef0123456789abcdef", app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &reachableID}}); err != nil {
 		t.Fatal(err)
 	}
 	result, err := store2.Prune(context.Background(), now, false)

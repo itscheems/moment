@@ -96,7 +96,7 @@ func TestCheckedInCapabilityMatrixMatchesEveryRegisteredLeaf(t *testing.T) {
 		"supported": true, "offline": true, "online_maintenance": true,
 		"deep_or_summary": true, "summary_only": true, "unsupported": true,
 	}
-	validAuth := map[string]bool{"none": true, "local_data_access": true, "account_token": true, "not_applicable": true}
+	validAuth := map[string]bool{"none": true, "local_data_access": true, "local_account": true, "account_token": true, "not_applicable": true}
 	for _, row := range matrix.Commands {
 		if row.Command <= previous {
 			t.Fatalf("matrix commands are not strictly sorted: %q after %q", row.Command, previous)
@@ -200,6 +200,8 @@ func TestEveryMatrixModeExecutesOrRejectsBeforeHandlerAndPrompt(t *testing.T) {
 		"link unfurl":          {"https://example.com/a"},
 		"login":                {"github"},
 		"user approve":         {"applicant"},
+		"user set-role":        {"applicant"},
+		"site set-profile":     {"applicant"},
 		"user suspend":         {"applicant"},
 		"user identities":      {"applicant"},
 		"user delete":          {"applicant"},

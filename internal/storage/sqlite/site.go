@@ -191,57 +191,18 @@ func (store siteStore) EntryExists(ctx context.Context, id domain.ID) (bool, err
 	return exists == 1, nil
 }
 
-// UpdateSiteSettings writes one caller's intent across the two tables that now
-// hold it. Both statements run on the caller's transaction, so a failure in
-// either leaves neither applied -- which is the property that keeps the site
-// row and the owner account from drifting apart.
+// UpdateSiteSettings writes properties of the site, never properties of an account.
 func (store siteStore) UpdateSiteSettings(ctx context.Context, settings app.SiteSettings) error {
-	result, err := store.queries.ExecContext(ctx, `
-UPDATE site_settings
-SET title = ?, timezone = ?, public_base_url = ?, pinned_entry_id = ?, comments_enabled = ?, registration_mode = ?
-WHERE id = 1`,
-		settings.Title, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.PinnedPostID), boolInteger(settings.CommentsEnabled), string(settings.RegistrationMode),
-	)
+	result, err := store.queries.ExecContext(ctx, `UPDATE site_settings SET title=?,timezone=?,public_base_url=?,pinned_entry_id=?,comments_enabled=?,registration_mode=? WHERE id=1`, settings.Title, settings.Timezone, optionalString(settings.PublicBaseURL), optionalString(settings.PinnedPostID), boolInteger(settings.CommentsEnabled), string(settings.RegistrationMode))
 	if err != nil {
 		return fmt.Errorf("update site settings: %w", err)
 	}
 	changed, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("inspect site settings update: %w", err)
+		return err
 	}
 	if changed != 1 {
 		return fmt.Errorf("site settings update changed %d rows", changed)
-	}
-
-	// Callers that only touch site fields -- pinning a post, for instance --
-	// leave UpdatedAtMS unset. Stamping zero would violate the account row's
-	// own constraint, so an unstamped write keeps whatever was already there
-	// rather than claiming the profile changed.
-	profile, err := store.queries.ExecContext(ctx, `
-UPDATE users
-SET username = ?, display_name = ?, bio = ?, avatar_media_id = ?, cover_media_id = ?,
-    updated_at_ms = CASE WHEN ? > 0 THEN ? ELSE updated_at_ms END
-WHERE id = (SELECT profile_user_id FROM site_settings WHERE id = 1)`,
-		settings.Username, settings.DisplayName, settings.Bio, optionalString(settings.AvatarMediaID), optionalString(settings.CoverMediaID),
-		settings.UpdatedAtMS, settings.UpdatedAtMS,
-	)
-	if err != nil {
-		// users_username_unique guards this column for every writer, so the
-		// owner renaming onto a member's handle lands here rather than in the
-		// account service's availability check. Reported the same way from
-		// both, because it is the same refusal and the settings form already
-		// knows what to say about it.
-		if isUniqueViolation(err) {
-			return domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})
-		}
-		return fmt.Errorf("update owner profile: %w", err)
-	}
-	changedProfile, err := profile.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("inspect owner profile update: %w", err)
-	}
-	if changedProfile != 1 {
-		return fmt.Errorf("owner profile update changed %d rows", changedProfile)
 	}
 	return nil
 }

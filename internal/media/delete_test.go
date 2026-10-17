@@ -21,10 +21,10 @@ func TestDeleteRefusesReferencesAndSupportsDryRun(t *testing.T) {
 	if err != nil || result.Deleted || !result.DryRun {
 		t.Fatalf("dry run: %+v %v", result, err)
 	}
-	repository, _ := sqlite.NewSiteRepository(database, runtimeState.Locks)
-	service, _ := app.NewSiteService(repository, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
+	repository, _ := sqlite.NewAccountRepository(database, runtimeState.Locks)
+	service, _ := app.NewAccountService(repository)
 	id := value.ID.String()
-	if _, err := service.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &id}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, "0123456789abcdef0123456789abcdef", app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &id}}); err != nil {
 		t.Fatal(err)
 	}
 	for _, dry := range []bool{true, false} {
@@ -39,7 +39,7 @@ func TestDeleteRefusesReferencesAndSupportsDryRun(t *testing.T) {
 	if err := asset.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: nil}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, "0123456789abcdef0123456789abcdef", app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: nil}}); err != nil {
 		t.Fatal(err)
 	}
 	result, err = store.Delete(ctx, value.ID, false)

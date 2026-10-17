@@ -136,7 +136,7 @@ func (service *AccountService) SelectSiteProfile(ctx context.Context, userID str
 			return err
 		}
 		if user.Status != domain.AccountActive {
-			return domain.NewError(domain.CodeAccountNotApproved, "the site profile must be an active account", nil)
+			return domain.NewError(domain.CodeInvalidArgument, "the site profile must be an active account", map[string]any{"field": "user_id"})
 		}
 		store, ok := accounts.(AccountAdministrationStore)
 		if !ok {

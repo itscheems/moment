@@ -174,6 +174,7 @@ func New(config Config) (*gin.Engine, error) {
 		// account, and belongs beside listing and removing them rather than
 		// beside signing in.
 		RegisterAccountRoutes(engine, gate, config.Media, CookieOptions{Secure: config.SecureCookies}, oauthConfig)
+		RegisterMentionRoutes(engine, gate)
 		RegisterOAuthRoutes(engine, gate, oauthConfig)
 		// Device sign-in registers unconditionally beside the browser flow, for
 		// the same reason: a provider that cannot do it answers 404 on its own
@@ -185,7 +186,6 @@ func New(config Config) (*gin.Engine, error) {
 			return nil, errors.New("site settings routes require account authentication")
 		}
 		RegisterSiteRoutes(engine, config.SiteSettings, gate, config.InstanceID, config.InstanceInitializedAt)
-		RegisterMentionRoutes(engine, gate)
 	}
 	if config.Media != nil {
 		if config.SessionSigner == nil {

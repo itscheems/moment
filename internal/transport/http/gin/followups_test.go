@@ -112,8 +112,8 @@ func TestSelectedMediaDeletionRejectsActiveMember(t *testing.T) {
 		request.AddCookie(session)
 		request.Header.Set(CSRFHeaderName, csrf)
 		response := performRequest(fixture.engine, request)
-		// Existing owner gates report UNAUTHORIZED for an authenticated non-owner.
-		if response.Code != http.StatusUnauthorized {
+		// An authenticated member receives a permission refusal.
+		if response.Code != http.StatusForbidden {
 			t.Fatalf("member delete: %d %s", response.Code, response.Body.String())
 		}
 	}

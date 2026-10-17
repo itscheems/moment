@@ -12,59 +12,34 @@ import (
 	"github.com/moment/moment/internal/runtimefs"
 )
 
-func TestSiteSettingsMigrationServiceAndAtomicAvatarValidation(t *testing.T) {
+func TestSiteConfigurationDoesNotWriteTheSelectedAccount(t *testing.T) {
 	ctx := testAccountContext()
-	database, runtimeState := openTestDatabase(t, Options{})
-	repository, err := NewSiteRepository(database, runtimeState.Locks)
+	db, state := openTestDatabase(t, Options{})
+	repo, _ := NewSiteRepository(db, state.Locks)
+	site, _ := app.NewSiteService(repo, app.SiteOptions{})
+	title := "Site configuration"
+	before, err := site.Get(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := app.NewSiteService(repository, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
-	if err != nil {
+	updated, err := site.Update(ctx, app.SiteUpdate{Title: &title})
+	if err != nil || updated.Title != title || updated.Username != before.Username || updated.DisplayName != before.DisplayName || updated.Bio != before.Bio {
+		t.Fatalf("site update=%+v,%v", updated, err)
+	}
+	if err := repo.Write(ctx, func(store app.SiteStore) error {
+		settings, err := store.SiteSettings(ctx)
+		if err != nil {
+			return err
+		}
+		settings.Username = "unrelated"
+		settings.DisplayName = "Changed person"
+		return store.UpdateSiteSettings(ctx, settings)
+	}); err != nil {
 		t.Fatal(err)
 	}
-
-	settings, err := service.Get(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if settings.Title != "Moment" || settings.Bio != "" || settings.Timezone == "" || !settings.CommentsEnabled || settings.PublicBaseURL != nil || settings.AvatarMediaID != nil {
-		t.Fatalf("fresh settings = %#v", settings)
-	}
-	if err := service.Ready(ctx); err != nil {
-		t.Fatalf("site readiness: %v", err)
-	}
-
-	insertManagedMedia(t, database, mediaOne)
-	title := "Portable identity"
-	avatar := mediaOne
-	comments := false
-	updated, err := service.Update(ctx, app.SiteUpdate{
-		Title:           &title,
-		AvatarMediaID:   &app.NullableString{Value: &avatar},
-		CommentsEnabled: &comments,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.AvatarMediaID == nil || *updated.AvatarMediaID != mediaOne || updated.CommentsEnabled {
-		t.Fatalf("updated = %#v", updated)
-	}
-
-	rollbackTitle := "must not persist"
-	missing := mediaTwo
-	if _, err := service.Update(ctx, app.SiteUpdate{
-		Title:         &rollbackTitle,
-		AvatarMediaID: &app.NullableString{Value: &missing},
-	}); !domain.HasCode(err, domain.CodeMediaNotFound) {
-		t.Fatalf("missing media error = %v", err)
-	}
-	after, err := service.Get(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.Title != title || after.AvatarMediaID == nil || *after.AvatarMediaID != mediaOne {
-		t.Fatalf("failed update partially persisted: %#v", after)
+	after, err := site.Get(ctx)
+	if err != nil || after.Username != before.Username || after.DisplayName != before.DisplayName {
+		t.Fatalf("site persistence changed an account=%+v,%v", after, err)
 	}
 }
 
@@ -174,7 +149,7 @@ VALUES (?, ?, ?, 'avatar.jpg', 'image/jpeg', 10, 32, 32, 1, 1)`, id, sha, path)
 // route reports its refusal as USERNAME_TAKEN. The owner's route wrapped the
 // same constraint failure as an opaque error, so the settings form was told
 // "operation failed" for a refusal it already carries the words for.
-func TestOwnerRenameOntoAMemberHandleIsReportedAsAConflict(t *testing.T) {
+func TestAccountRenameOntoAnotherHandleIsReportedAsAConflict(t *testing.T) {
 	ctx := testAccountContext()
 	database, runtimeState := openTestDatabase(t, Options{})
 
@@ -205,15 +180,18 @@ func TestOwnerRenameOntoAMemberHandleIsReportedAsAConflict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := site.Update(ctx, app.SiteUpdate{Username: &taken}); !domain.HasCode(err, domain.CodeUsernameTaken) {
+	if _, err := accounts.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{Username: &taken}); !domain.HasCode(err, domain.CodeUsernameTaken) {
 		t.Fatalf("rename onto a held handle = %v", err)
 	}
 
 	// The refused write left both rows alone, and a free handle still lands.
 	free := "itscheems"
-	saved, err := site.Update(ctx, app.SiteUpdate{Username: &free})
+	saved, err := accounts.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{Username: &free})
 	if err != nil || saved.Username != free {
 		t.Fatalf("free handle = %#v, err = %v", saved, err)
+	}
+	if projected, err := site.Get(ctx); err != nil || projected.Username != free {
+		t.Fatalf("site did not project the selected account: %+v,%v", projected, err)
 	}
 	held, err := accounts.Account(ctx, member.User.ID)
 	if err != nil || held.Username != taken {
@@ -266,5 +244,42 @@ func TestSiteRegistrationModeRoundTripsThroughTheRow(t *testing.T) {
 	}
 	if after.RegistrationMode != domain.RegistrationClosed || after.Title != title {
 		t.Fatalf("after unrelated write = %#v", after)
+	}
+}
+
+func TestAccountProfileTextValidationAndNormalizationRemainAtomic(t *testing.T) {
+	_, accounts := newAccountFixture(t)
+	ctx := testAccountContext()
+	before, err := accounts.Account(ctx, testAccountID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ptr := func(v string) *string { return &v }
+	for name, update := range map[string]app.ProfileUpdate{
+		"newline name":        {DisplayName: ptr("Che\nems")},
+		"tab name":            {DisplayName: ptr("Che\tems")},
+		"empty name":          {DisplayName: ptr("   ")},
+		"zero byte bio":       {Bio: ptr("\x00")},
+		"carriage return bio": {Bio: ptr("first\rsecond")},
+		"long bio":            {Bio: ptr(strings.Repeat("界", 501))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := accounts.UpdateProfile(ctx, before.ID, update); !domain.HasCode(err, domain.CodeInvalidArgument) {
+				t.Fatalf("invalid profile=%v", err)
+			}
+			after, err := accounts.Account(ctx, before.ID)
+			if err != nil || after.Username != before.Username || after.DisplayName != before.DisplayName || after.Bio != before.Bio {
+				t.Fatal("invalid profile update partially persisted")
+			}
+		})
+	}
+	saved, err := accounts.UpdateProfile(ctx, before.ID, app.ProfileUpdate{DisplayName: ptr("  Cheems  "), Bio: ptr(" first\nsecond ")})
+	if err != nil || saved.DisplayName != "Cheems" || saved.Bio != "first\nsecond" {
+		t.Fatalf("normalization=%+v,%v", saved, err)
+	}
+	for _, handle := range []string{"search", "api", "login", "assets", "archive", "profile"} {
+		if _, err := accounts.UpdateProfile(ctx, before.ID, app.ProfileUpdate{Username: &handle}); !domain.HasCode(err, domain.CodeUsernameReserved) {
+			t.Fatalf("reserved handle %q=%v", handle, err)
+		}
 	}
 }

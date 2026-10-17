@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/url"
 	"os"
@@ -40,9 +39,6 @@ type SiteSettings struct {
 	// reads it from the account review endpoint, which is already about
 	// exactly this.
 	RegistrationMode domain.RegistrationMode `json:"-"`
-	// UpdatedAtMS stamps the owner account row when a write touches profile
-	// fields. It is not part of the public projection.
-	UpdatedAtMS int64 `json:"-"`
 }
 
 // MentionSuggestion is the bounded public identity projection used by
@@ -62,23 +58,15 @@ type NullableString struct {
 
 // SiteUpdate contains transport-independent partial update intent.
 type SiteUpdate struct {
-	Username         *string
-	DisplayName      *string
 	Title            *string
-	Bio              *string
 	Timezone         *string
 	PublicBaseURL    *NullableString
-	AvatarMediaID    *NullableString
-	CoverMediaID     *NullableString
 	CommentsEnabled  *bool
 	RegistrationMode *string
 }
 
-// Empty reports whether an update carries no fields.
 func (update SiteUpdate) Empty() bool {
-	return update.Username == nil && update.DisplayName == nil && update.Title == nil && update.Bio == nil && update.Timezone == nil &&
-		update.PublicBaseURL == nil && update.AvatarMediaID == nil && update.CoverMediaID == nil && update.CommentsEnabled == nil &&
-		update.RegistrationMode == nil
+	return update.Title == nil && update.Timezone == nil && update.PublicBaseURL == nil && update.CommentsEnabled == nil && update.RegistrationMode == nil
 }
 
 // SiteStore is the transaction-bound settings persistence surface.
@@ -101,14 +89,12 @@ type SiteTransactions interface {
 // headers. Development instances may use loopback HTTP public URLs.
 type SiteOptions struct {
 	AllowDevelopmentLocalHTTP bool
-	Clock                     func() time.Time
 }
 
 // SiteService owns validation and atomic site settings changes.
 type SiteService struct {
 	transactions SiteTransactions
 	allowHTTP    bool
-	clock        func() time.Time
 }
 
 // NewSiteService constructs the shared settings authority.
@@ -116,13 +102,9 @@ func NewSiteService(transactions SiteTransactions, options SiteOptions) (*SiteSe
 	if transactions == nil {
 		return nil, errors.New("site transactions are required")
 	}
-	if options.Clock == nil {
-		options.Clock = time.Now
-	}
 	return &SiteService{
 		transactions: transactions,
 		allowHTTP:    options.AllowDevelopmentLocalHTTP,
-		clock:        options.Clock,
 	}, nil
 }
 
@@ -280,8 +262,7 @@ func (service *SiteService) Unpin(ctx context.Context, expected ...domain.ID) (S
 	return cloneSiteSettings(result), nil
 }
 
-// Update validates every supplied field before committing one complete row.
-// Missing or invalid managed media causes the entire PATCH to roll back.
+// Update applies site configuration without writing the selected account's profile.
 func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (SiteSettings, error) {
 	if err := contextError(ctx); err != nil {
 		return SiteSettings{}, err
@@ -293,7 +274,6 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 	if err != nil {
 		return SiteSettings{}, err
 	}
-
 	var result SiteSettings
 	err = service.transactions.Write(ctx, func(store SiteStore) error {
 		current, err := store.SiteSettings(ctx)
@@ -303,47 +283,8 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 		if err := service.validateStored(ctx, store, current); err != nil {
 			return err
 		}
-		next := applySiteUpdate(current, prepared)
-		// The owner's half of this value lives on the account row now, and
-		// that row records when it last changed. Stamping here rather than in
-		// the store keeps the clock in the one layer that owns it.
-		next.UpdatedAtMS = domain.TimeToMillis(domain.NormalizeTime(service.clock()))
-		for _, media := range []struct {
-			field string
-			id    *string
-		}{
-			{field: "avatar_media_id", id: next.AvatarMediaID},
-			{field: "cover_media_id", id: next.CoverMediaID},
-		} {
-			if media.id == nil {
-				continue
-			}
-			id, parseErr := domain.ParseID(*media.id)
-			if parseErr != nil {
-				return domain.NewError(domain.CodeInvalidArgument, media.field+" must be a valid managed media ID", map[string]any{"field": media.field})
-			}
-			exists, lookupErr := store.MediaExists(ctx, id)
-			if lookupErr != nil {
-				return lookupErr
-			}
-			if !exists {
-				return domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", id), map[string]any{"media_id": id.String()})
-			}
-		}
-		if err := store.UpdateSiteSettings(ctx, next); err != nil {
-			return err
-		}
-		if update.AvatarMediaID != nil || update.CoverMediaID != nil {
-			affected, affectedErr := uniqueMediaIDs(current.AvatarMediaID, next.AvatarMediaID, current.CoverMediaID, next.CoverMediaID)
-			if affectedErr != nil {
-				return domain.NewError(domain.CodeDataIntegrityFailed, "stored profile media ID is invalid", nil)
-			}
-			if err := store.ReconcileMediaReferences(ctx, affected, domain.NormalizeTime(service.clock())); err != nil {
-				return err
-			}
-		}
-		result = next
-		return nil
+		result = applySiteUpdate(current, prepared)
+		return store.UpdateSiteSettings(ctx, result)
 	})
 	if err != nil {
 		return SiteSettings{}, normalizeSiteRepositoryError(err)
@@ -352,68 +293,27 @@ func (service *SiteService) Update(ctx context.Context, update SiteUpdate) (Site
 }
 
 func (service *SiteService) prepare(update SiteUpdate) (SiteUpdate, error) {
-	prepared := update
-	// The owner edits the same three columns from two places -- here and
-	// PATCH /api/v1/account/profile -- so both go through the domain
-	// normalizers rather than restating the rules. A second copy of the rules
-	// is a second set of values one route accepts and the other refuses, and
-	// the column cannot hold both answers.
-	if update.Username != nil {
-		value, err := domain.NormalizeUsername(*update.Username)
-		if err != nil {
-			return SiteUpdate{}, err
-		}
-		prepared.Username = &value
-	}
-	if update.DisplayName != nil {
-		value, err := domain.NormalizeDisplayName(*update.DisplayName)
-		if err != nil {
-			return SiteUpdate{}, err
-		}
-		prepared.DisplayName = &value
-	}
 	if update.Title != nil && (strings.TrimSpace(*update.Title) == "" || len([]rune(*update.Title)) > 120) {
 		return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "title must contain 1 to 120 characters", map[string]any{"field": "title"})
-	}
-	if update.Bio != nil {
-		value, err := domain.NormalizeBio(*update.Bio)
-		if err != nil {
-			return SiteUpdate{}, err
-		}
-		prepared.Bio = &value
-	}
-	if update.RegistrationMode != nil {
-		if err := domain.ValidateRegistrationMode(domain.RegistrationMode(*update.RegistrationMode)); err != nil {
-			return SiteUpdate{}, err
-		}
 	}
 	if update.Timezone != nil {
 		if err := validateTimezone(*update.Timezone); err != nil {
 			return SiteUpdate{}, err
 		}
 	}
+	if update.RegistrationMode != nil {
+		if err := domain.ValidateRegistrationMode(domain.RegistrationMode(*update.RegistrationMode)); err != nil {
+			return SiteUpdate{}, err
+		}
+	}
 	if update.PublicBaseURL != nil && update.PublicBaseURL.Value != nil {
-		normalized, err := NormalizePublicBaseURL(*update.PublicBaseURL.Value, service.allowHTTP)
+		value, err := NormalizePublicBaseURL(*update.PublicBaseURL.Value, service.allowHTTP)
 		if err != nil {
 			return SiteUpdate{}, err
 		}
-		prepared.PublicBaseURL = &NullableString{Value: &normalized}
+		update.PublicBaseURL = &NullableString{Value: &value}
 	}
-	if update.AvatarMediaID != nil && update.AvatarMediaID.Value != nil {
-		value := strings.TrimSpace(*update.AvatarMediaID.Value)
-		if _, err := domain.ParseID(value); err != nil {
-			return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "avatar_media_id must be a valid managed media ID", map[string]any{"field": "avatar_media_id"})
-		}
-		prepared.AvatarMediaID = &NullableString{Value: &value}
-	}
-	if update.CoverMediaID != nil && update.CoverMediaID.Value != nil {
-		value := strings.TrimSpace(*update.CoverMediaID.Value)
-		if _, err := domain.ParseID(value); err != nil {
-			return SiteUpdate{}, domain.NewError(domain.CodeInvalidArgument, "cover_media_id must be a valid managed media ID", map[string]any{"field": "cover_media_id"})
-		}
-		prepared.CoverMediaID = &NullableString{Value: &value}
-	}
-	return prepared, nil
+	return update, nil
 }
 
 func (service *SiteService) validateStored(ctx context.Context, store SiteStore, settings SiteSettings) error {
@@ -479,29 +379,14 @@ func (service *SiteService) validateStored(ctx context.Context, store SiteStore,
 
 func applySiteUpdate(current SiteSettings, update SiteUpdate) SiteSettings {
 	next := cloneSiteSettings(current)
-	if update.Username != nil {
-		next.Username = *update.Username
-	}
-	if update.DisplayName != nil {
-		next.DisplayName = *update.DisplayName
-	}
 	if update.Title != nil {
 		next.Title = *update.Title
-	}
-	if update.Bio != nil {
-		next.Bio = *update.Bio
 	}
 	if update.Timezone != nil {
 		next.Timezone = *update.Timezone
 	}
 	if update.PublicBaseURL != nil {
 		next.PublicBaseURL = cloneString(update.PublicBaseURL.Value)
-	}
-	if update.AvatarMediaID != nil {
-		next.AvatarMediaID = cloneString(update.AvatarMediaID.Value)
-	}
-	if update.CoverMediaID != nil {
-		next.CoverMediaID = cloneString(update.CoverMediaID.Value)
 	}
 	if update.CommentsEnabled != nil {
 		next.CommentsEnabled = *update.CommentsEnabled

@@ -16,48 +16,45 @@ func TestAvatarReferenceClockIsContinuousAndTransactional(t *testing.T) {
 	firstRemoval := created.Add(2 * time.Hour)
 	clock := created.Add(time.Hour)
 	insertReferenceMedia(t, database, mediaOne, "a", created)
-	repository, err := NewSiteRepository(database, runtimeState.Locks)
+	repository, err := NewAccountRepository(database, runtimeState.Locks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := app.NewSiteService(repository, app.SiteOptions{
-		AllowDevelopmentLocalHTTP: true,
-		Clock:                     func() time.Time { return clock },
-	})
+	service, err := app.NewAccountService(repository, app.WithAccountClock(func() time.Time { return clock }))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	avatar := mediaOne
-	if _, err := service.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}}); err != nil {
 		t.Fatal(err)
 	}
 	assertMediaClock(t, database, mediaOne, nil)
 	clock = clock.Add(30 * time.Minute)
-	if _, err := service.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}}); err != nil {
 		t.Fatal(err)
 	}
 	assertMediaClock(t, database, mediaOne, nil)
 
 	clock = firstRemoval
-	if _, err := service.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{}}); err != nil {
 		t.Fatal(err)
 	}
 	assertMediaClock(t, database, mediaOne, &firstRemoval)
 
 	clock = firstRemoval.Add(6 * time.Hour)
-	if _, err := service.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{}}); err != nil {
 		t.Fatal(err)
 	}
 	assertMediaClock(t, database, mediaOne, &firstRemoval)
 
-	if _, err := service.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}}); err != nil {
 		t.Fatal(err)
 	}
 	assertMediaClock(t, database, mediaOne, nil)
 
 	clock = firstRemoval.Add(7 * time.Hour)
-	if _, err := service.Update(ctx, app.SiteUpdate{AvatarMediaID: &app.NullableString{}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{}}); err != nil {
 		t.Fatal(err)
 	}
 	assertMediaClock(t, database, mediaOne, &clock)
@@ -69,20 +66,20 @@ func TestCoverReferenceUsesCentralResolver(t *testing.T) {
 	created := time.UnixMilli(1_700_000_000_000)
 	removed := created.Add(time.Hour)
 	insertReferenceMedia(t, database, mediaOne, "d", created)
-	repository, err := NewSiteRepository(database, runtimeState.Locks)
+	repository, err := NewAccountRepository(database, runtimeState.Locks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := app.NewSiteService(repository, app.SiteOptions{Clock: func() time.Time { return removed }})
+	service, err := app.NewAccountService(repository, app.WithAccountClock(func() time.Time { return removed }))
 	if err != nil {
 		t.Fatal(err)
 	}
 	cover := mediaOne
-	if _, err := service.Update(ctx, app.SiteUpdate{CoverMediaID: &app.NullableString{Value: &cover}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{CoverMediaID: &app.NullableString{Value: &cover}}); err != nil {
 		t.Fatal(err)
 	}
 	assertMediaClock(t, database, mediaOne, nil)
-	if _, err := service.Update(ctx, app.SiteUpdate{CoverMediaID: &app.NullableString{}}); err != nil {
+	if _, err := service.UpdateProfile(ctx, testAccountID, app.ProfileUpdate{CoverMediaID: &app.NullableString{}}); err != nil {
 		t.Fatal(err)
 	}
 	assertMediaClock(t, database, mediaOne, &removed)

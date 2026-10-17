@@ -37,19 +37,12 @@ func newMentionFixture(t *testing.T) mentionFixture {
 	if err := manager.Load(); err != nil {
 		t.Fatal(err)
 	}
-	site, err := app.NewSiteService(&httpSiteTransactions{
-		settings: app.SiteSettings{Title: "Moment", Timezone: "UTC", CommentsEnabled: true},
-		media:    map[string]bool{},
-	}, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	accounts := testAccountsForRuntime(t, runtimeState)
 	engine, err := New(Config{
 		Assets:        testAssets(),
 		SessionSigner: manager,
 		Accounts:      accounts,
-		SiteSettings:  site,
 		Readiness:     func(context.Context) error { return nil },
 		RequestID:     func() string { return "req_mentions" },
 	})

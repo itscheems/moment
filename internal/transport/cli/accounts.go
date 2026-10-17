@@ -41,6 +41,8 @@ func accountViewOf(user domain.User) accountView {
 
 func registerAccounts(application *Application, appVersion string) {
 	registerAccountExport(application, appVersion)
+	registerAccountAdministration(application)
+	registerProfile(application)
 	application.MustRegisterLeaf(LeafSpec{
 		Path: []string{"user", "list"}, Short: "List the accounts on this site",
 		Long:       "Report every account with its role and status, so applications waiting on approval can be seen without a browser.",
@@ -278,15 +280,12 @@ func accountCLIError(err error) error {
 		return err
 	}
 	switch domainErr.Code {
-	case domain.CodeLastAdministrator, domain.CodeAccountInUse, domain.CodeInstanceAlreadyInitialized:
-		return NewCommandError(string(domainErr.Code), domainErr.Message, "resolve the account dependency before retrying", ExitConflict)
-	case domain.CodeAccountNotFound:
-		return NewCommandError(string(domainErr.Code), domainErr.Message, "run 'moment user list' to see the accounts on this site", ExitInvalidInput)
-	case domain.CodeInvalidArgument, domain.CodeUsernameTaken, domain.CodeUsernameReserved:
-		return NewCommandError(string(domainErr.Code), domainErr.Message, "correct the input and retry", ExitInvalidInput)
+	case domain.CodeLastAdministrator, domain.CodeAccountInUse, domain.CodeInstanceAlreadyInitialized, domain.CodeAccountNotFound, domain.CodeInvalidArgument, domain.CodeUsernameTaken, domain.CodeUsernameReserved, domain.CodeMediaNotFound:
+		return canonicalPublicError(string(domainErr.Code), domainErr.Message, domainErr.Details, 0)
 	default:
 		return err
 	}
+
 }
 
 func runAccountDelete(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {

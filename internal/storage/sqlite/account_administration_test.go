@@ -165,7 +165,7 @@ func TestDisplayAccountSelectionDoesNotTransferAdministration(t *testing.T) {
 	if _, err := accounts.SetStatus(ctx, member.ID, domain.AccountSuspended); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := accounts.SelectSiteProfile(ctx, member.ID); !domain.HasCode(err, domain.CodeAccountNotApproved) {
+	if _, err := accounts.SelectSiteProfile(ctx, member.ID); !domain.HasCode(err, domain.CodeInvalidArgument) {
 		t.Fatalf("inactive display account=%v", err)
 	}
 }

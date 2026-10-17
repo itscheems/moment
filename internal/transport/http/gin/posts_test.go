@@ -30,7 +30,8 @@ const (
 )
 
 type postHTTPFixture struct {
-	ctx context.Context
+	media *media.Store
+	ctx   context.Context
 	authenticationTestFixture
 	database *sqlitestore.Database
 	posts    *app.PostService
@@ -104,15 +105,17 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 		t.Fatal(err)
 	}
 	engine, err := New(Config{
-		Assets:        testAssets(),
-		SessionSigner: manager,
-		Accounts:      testAccounts(t, database, runtimeState),
-		SiteSettings:  site,
-		Posts:         posts,
-		Media:         mediaStore,
-		Search:        search,
-		RequestID:     func() string { return "req_posts" },
-		Limits:        BodyLimits{JSON: jsonLimit},
+		Assets:                testAssets(),
+		InstanceID:            runtimeState.Instance.ID,
+		InstanceInitializedAt: runtimeState.Instance.InitializedAt,
+		SessionSigner:         manager,
+		Accounts:              testAccounts(t, database, runtimeState),
+		SiteSettings:          site,
+		Posts:                 posts,
+		Media:                 mediaStore,
+		Search:                search,
+		RequestID:             func() string { return "req_posts" },
+		Limits:                BodyLimits{JSON: jsonLimit},
 		Readiness: func(ctx context.Context) error {
 			if err := database.Ready(ctx); err != nil {
 				return err
@@ -124,8 +127,9 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 		t.Fatal(err)
 	}
 	return postHTTPFixture{
+		media:                     mediaStore,
 		ctx:                       fixtureContentContext(t, testAccounts(t, database, runtimeState)),
-		authenticationTestFixture: authenticationTestFixture{manager: manager, accounts: testAccounts(t, database, runtimeState), token: issueTestAPIToken(t, testAccounts(t, database, runtimeState)), engine: engine, now: &now},
+		authenticationTestFixture: authenticationTestFixture{manager: manager, instanceID: runtimeState.Instance.ID, instanceInitializedAt: runtimeState.Instance.InitializedAt.UTC().Format(time.RFC3339Nano), accounts: testAccounts(t, database, runtimeState), token: issueTestAPIToken(t, testAccounts(t, database, runtimeState)), engine: engine, now: &now},
 		database:                  database,
 		posts:                     posts,
 		search:                    search,

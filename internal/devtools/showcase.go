@@ -453,13 +453,16 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 	commentsEnabled := true
 	registration := string(domain.RegistrationOpen)
 	avatarValue, coverValue := avatarID.String(), coverID.String()
-	if _, err := builder.site.Update(ctx, app.SiteUpdate{
-		Username: text(showcaseOwnerUsername), DisplayName: text(showcaseOwnerDisplayName), Title: text("小满的 Moment"),
-		Bio: text("在上海写代码、拍照、记录。偶尔去别的城市待几天。\nhttps://xiaoman.example"), Timezone: &timezone, CommentsEnabled: &commentsEnabled,
-		RegistrationMode: &registration, AvatarMediaID: &app.NullableString{Value: &avatarValue}, CoverMediaID: &app.NullableString{Value: &coverValue},
+	if _, err := builder.accounts.UpdateProfile(ctx, builder.actor.ID, app.ProfileUpdate{
+		Username: text(showcaseOwnerUsername), DisplayName: text(showcaseOwnerDisplayName),
+		Bio: text("在上海写代码、拍照、记录。偶尔去别的城市待几天。\nhttps://xiaoman.example"), AvatarMediaID: &app.NullableString{Value: &avatarValue}, CoverMediaID: &app.NullableString{Value: &coverValue},
 	}); err != nil {
 		return Counts{}, err
 	}
+	if _, err := builder.site.Update(ctx, app.SiteUpdate{Title: text("小满的 Moment"), Timezone: &timezone, CommentsEnabled: &commentsEnabled, RegistrationMode: &registration}); err != nil {
+		return Counts{}, err
+	}
+
 	settings, err := builder.site.Get(ctx)
 	if err != nil {
 		return Counts{}, err
@@ -792,7 +795,7 @@ func newShowcaseBuilderWithinLocks(target *Target, runtimeState *runtimefs.Runti
 	if err != nil {
 		return nil, err
 	}
-	site, err := app.NewSiteService(siteRepository, app.SiteOptions{AllowDevelopmentLocalHTTP: true, Clock: clock.Now})
+	site, err := app.NewSiteService(siteRepository, app.SiteOptions{AllowDevelopmentLocalHTTP: true})
 	if err != nil {
 		return nil, err
 	}

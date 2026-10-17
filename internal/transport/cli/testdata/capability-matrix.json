@@ -2092,6 +2092,42 @@
       "parity_strategy": "byte_identical_data"
     },
     {
+      "command": "site set-profile",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "site_settings_v1",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "byte_identical_data_and_effect"
+    },
+    {
       "command": "site update",
       "direct": {
         "availability": "supported",
@@ -2148,6 +2184,7 @@
       "expected_exits": [
         0,
         2,
+        3,
         4,
         6,
         7,
@@ -2179,6 +2216,7 @@
       "expected_exits": [
         0,
         2,
+        3,
         4,
         6,
         7,
@@ -2213,6 +2251,7 @@
       "expected_exits": [
         0,
         2,
+        3,
         4,
         5,
         6,
@@ -2245,6 +2284,7 @@
       "expected_exits": [
         0,
         2,
+        3,
         4,
         6,
         7,
@@ -2276,6 +2316,7 @@
       "expected_exits": [
         0,
         2,
+        3,
         4,
         6,
         7,
@@ -2284,6 +2325,42 @@
         10
       ],
       "parity_strategy": "api_mode_unsupported"
+    },
+    {
+      "command": "user set-role",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_data_access",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "account_v1",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "user suggest",
@@ -2309,6 +2386,7 @@
       "expected_exits": [
         0,
         2,
+        3,
         4,
         6,
         7,
@@ -2340,6 +2418,7 @@
       "expected_exits": [
         0,
         2,
+        3,
         4,
         6,
         7,
@@ -2348,6 +2427,42 @@
         10
       ],
       "parity_strategy": "api_mode_unsupported"
+    },
+    {
+      "command": "user update-profile",
+      "direct": {
+        "availability": "supported",
+        "auth": "local_account",
+        "locks": [
+          "maintenance:shared",
+          "media:shared"
+        ]
+      },
+      "api": {
+        "availability": "supported",
+        "auth": "account_token",
+        "locks": [
+          "server_managed"
+        ]
+      },
+      "destructive": {
+        "requires_yes": false,
+        "supports_dry_run": false
+      },
+      "output_schema": "private_account_v1",
+      "expected_exits": [
+        0,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "parity_strategy": "byte_identical_data_and_effect"
     },
     {
       "command": "version",

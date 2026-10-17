@@ -20,7 +20,7 @@ func TestUserSuggestDirectAPIParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	application := momentTestApplication()
-	updated := commandData(t, execute(application, "", "site", "update", "--data-dir", dataDir,
+	updated := commandData(t, execute(application, "", "user", "update-profile", "--as", "writer", "--data-dir", dataDir,
 		"--username", "cheems", "--display-name", "Cheems", "--json"))
 	if updated["username"] != "cheems" || updated["display_name"] != "Cheems" {
 		t.Fatalf("updated identity = %#v", updated)

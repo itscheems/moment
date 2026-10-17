@@ -96,6 +96,18 @@ func canonicalPublicError(code, message string, details map[string]any, httpStat
 	case "INVALID_ARGUMENT", "MODE_UNSUPPORTED":
 		exit = ExitInvalidInput
 		suggestion = "correct the named input or transport mode and retry"
+	case "ACCOUNT_NOT_FOUND":
+		exit = ExitNotFound
+		suggestion = "run 'moment user list' to see the accounts on this site"
+	case "LAST_ADMINISTRATOR", "ACCOUNT_IN_USE", "INSTANCE_ALREADY_INITIALIZED":
+		exit = ExitConflict
+		suggestion = "resolve the account dependency before retrying"
+	case "USERNAME_TAKEN":
+		exit = ExitConflict
+		suggestion = "choose an available username"
+	case "USERNAME_RESERVED":
+		exit = ExitInvalidInput
+		suggestion = "choose a username outside the application routes"
 	case "POST_NOT_FOUND":
 		exit = ExitNotFound
 		suggestion = "run 'moment post list --json' to inspect available posts"
