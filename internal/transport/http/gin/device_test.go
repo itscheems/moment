@@ -344,8 +344,8 @@ func TestDeviceLoginCannotBypassApproval(t *testing.T) {
 		method string
 		path   string
 	}{
-		{http.MethodGet, "/api/v1/owner/accounts"},
-		{http.MethodGet, "/api/v1/owner/accounts"},
+		{http.MethodGet, "/api/v1/accounts"},
+		{http.MethodGet, "/api/v1/accounts"},
 		{http.MethodPost, "/api/v1/account/tokens"},
 	} {
 		request := httptest.NewRequest(probe.method, probe.path, nil)

@@ -141,7 +141,7 @@ func TestBackupExportAPIParityHeaderValidationTruncationAndTimeout(t *testing.T)
 	t.Setenv("MOMENT_TOKEN", "owner-test-token")
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/api/v1/owner/export" || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Body == nil {
+		if request.URL.Path != "/api/v1/backups/export" || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Body == nil {
 			t.Errorf("request = %s %#v", request.URL.Path, request.Header)
 		}
 		writer.Header().Set("Content-Type", "application/zip")
@@ -630,7 +630,7 @@ func TestBackupImportAPIStrictSuccessAndMalformedResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/owner/import/commit" || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/json" {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/backups/import/commit" || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("request=%s %s %#v", request.Method, request.URL.Path, request.Header)
 		}
 		var body map[string]string
@@ -705,9 +705,9 @@ func TestBackupImportAPIArchivePlanAndSingleRequestRestore(t *testing.T) {
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		switch request.URL.Path {
-		case "/api/v1/owner/import/plan":
+		case "/api/v1/backups/import/plan":
 			_, _ = writer.Write(planBody)
-		case "/api/v1/owner/import/restore":
+		case "/api/v1/backups/import/restore":
 			if request.Header.Get("X-Moment-Archive-SHA256") != archiveSHA {
 				t.Errorf("restore expected sha header=%q", request.Header.Get("X-Moment-Archive-SHA256"))
 			}
@@ -736,11 +736,11 @@ func TestBackupImportAPIArchivePlanAndSingleRequestRestore(t *testing.T) {
 	}
 	mismatch := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
-		if request.URL.Path == "/api/v1/owner/import/plan" {
+		if request.URL.Path == "/api/v1/backups/import/plan" {
 			_, _ = writer.Write(planBody)
 			return
 		}
-		if request.URL.Path != "/api/v1/owner/import/restore" || request.Header.Get("X-Moment-Archive-SHA256") != archiveSHA {
+		if request.URL.Path != "/api/v1/backups/import/restore" || request.Header.Get("X-Moment-Archive-SHA256") != archiveSHA {
 			t.Errorf("mismatch restore request=%s sha=%q", request.URL.Path, request.Header.Get("X-Moment-Archive-SHA256"))
 		}
 		writer.WriteHeader(http.StatusUnprocessableEntity)
@@ -785,7 +785,7 @@ func TestBackupStatusAPIStrictParityAndMalformedResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.URL.Path != "/api/v1/owner/import/status" ||
+		if request.Method != http.MethodGet || request.URL.Path != "/api/v1/backups/import/status" ||
 			request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Body != http.NoBody {
 			t.Errorf("status request=%s %s %#v", request.Method, request.URL.Path, request.Header)
 		}
@@ -840,7 +840,7 @@ func TestBackupInspectAPIUploadParityErrorsAndTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/owner/import/inspect" || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/zip" {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/backups/import/inspect" || request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/zip" {
 			t.Errorf("request = %s %s %#v", request.Method, request.URL.Path, request.Header)
 		}
 		body, err := io.ReadAll(request.Body)

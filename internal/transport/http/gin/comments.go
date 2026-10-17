@@ -37,18 +37,18 @@ func RegisterCommentRoutes(engine *gin.Engine, service *app.CommentService, gate
 	// and they were one group until a second account could exist. Pinning
 	// somebody else's comment or removing it is the site owner's; writing one,
 	// and removing your own, belongs to any approved account.
-	authored := engine.Group("/api/v1/owner")
+	authored := engine.Group("/api/v1")
 	authored.Use(gate.RequireActiveAccount())
 	authored.POST("/posts/:id/comments", createComment(service))
 	authored.DELETE("/comments/:id", deleteComment(service))
 
-	moderation := engine.Group("/api/v1/owner")
+	moderation := engine.Group("/api/v1")
 	moderation.Use(gate.RequireAdmin())
-	moderation.PUT("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, true))
-	moderation.DELETE("/posts/:id/comments/:comment_id/pin", changeOwnerCommentPin(service, false))
+	moderation.PUT("/posts/:id/comments/:comment_id/pin", changeCommentPin(service, true))
+	moderation.DELETE("/posts/:id/comments/:comment_id/pin", changeCommentPin(service, false))
 }
 
-func changeOwnerCommentPin(service *app.CommentService, active bool) gin.HandlerFunc {
+func changeCommentPin(service *app.CommentService, active bool) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		if ctx.Request.URL.RawQuery != "" {
 			writeCommentError(ctx, invalidCommentArgument("comment pin does not accept query parameters", "query"))

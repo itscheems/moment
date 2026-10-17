@@ -40,12 +40,12 @@ func RegisterMediaRoutes(engine *gin.Engine, store *media.Store, gate *Gate) {
 	// owner's abandoned uploads reclaims these. What that does not bound is how
 	// fast somebody can produce them, which is the rate limit this instance
 	// still owes itself before registration opens to anyone.
-	uploads := engine.Group("/api/v1/owner")
+	uploads := engine.Group("/api/v1")
 	uploads.Use(gate.RequireActiveAccount())
-	engine.DELETE("/api/v1/owner/media/:id", gate.RequireAdmin(), deleteMedia(store))
+	engine.DELETE("/api/v1/media/:id", gate.RequireAdmin(), deleteMedia(store))
 	posters := newUploadPosterCache()
 	uploads.POST("/media", mediaDeadlines(true, mediaTransferIdle, mediaTransferMax), uploadMedia(store, posters))
-	uploads.GET("/media-uploads/:uploadID/poster", getUploadPoster(posters))
+	uploads.GET("/media/uploads/:uploadID/poster", getUploadPoster(posters))
 }
 
 const uploadIDHeader = "X-Moment-Upload-ID"

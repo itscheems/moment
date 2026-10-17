@@ -37,11 +37,11 @@ func TestLocationHTTPRequiresOwnerAndReturnsCanonicalSnapshots(t *testing.T) {
 	}
 	RegisterLocationRoutes(fixture.engine.(*gin.Engine), service, fixture.gate)
 
-	unauthorized := performRequest(fixture.engine, jsonRequest(http.MethodGet, "/api/v1/owner/locations/search?q=静安寺", ""))
+	unauthorized := performRequest(fixture.engine, jsonRequest(http.MethodGet, "/api/v1/locations/search?q=静安寺", ""))
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized = %d %s", unauthorized.Code, unauthorized.Body.String())
 	}
-	search := jsonRequest(http.MethodGet, "/api/v1/owner/locations/search?q=静安寺&latitude=31.23&longitude=121.47&limit=3", "")
+	search := jsonRequest(http.MethodGet, "/api/v1/locations/search?q=静安寺&latitude=31.23&longitude=121.47&limit=3", "")
 	search.Header.Set("Authorization", "Bearer "+fixture.token)
 	response := performRequest(fixture.engine, search)
 	if response.Code != http.StatusOK || resolver.searchBias == nil || resolver.searchBias.System != domain.CoordinateWGS84 {
@@ -53,7 +53,7 @@ func TestLocationHTTPRequiresOwnerAndReturnsCanonicalSnapshots(t *testing.T) {
 		t.Fatalf("item = %#v", item)
 	}
 
-	nearby := jsonRequest(http.MethodGet, "/api/v1/owner/locations/nearby?latitude=31.23&longitude=121.47", "")
+	nearby := jsonRequest(http.MethodGet, "/api/v1/locations/nearby?latitude=31.23&longitude=121.47", "")
 	nearby.Header.Set("Authorization", "Bearer "+fixture.token)
 	response = performRequest(fixture.engine, nearby)
 	if response.Code != http.StatusOK || resolver.nearby == nil {
@@ -61,10 +61,10 @@ func TestLocationHTTPRequiresOwnerAndReturnsCanonicalSnapshots(t *testing.T) {
 	}
 
 	for _, path := range []string{
-		"/api/v1/owner/locations/search?q=x&extra=1",
-		"/api/v1/owner/locations/search?q=x&latitude=1",
-		"/api/v1/owner/locations/nearby?latitude=91&longitude=0",
-		"/api/v1/owner/locations/nearby?latitude=1&longitude=2&limit=21",
+		"/api/v1/locations/search?q=x&extra=1",
+		"/api/v1/locations/search?q=x&latitude=1",
+		"/api/v1/locations/nearby?latitude=91&longitude=0",
+		"/api/v1/locations/nearby?latitude=1&longitude=2&limit=21",
 	} {
 		request := jsonRequest(http.MethodGet, path, "")
 		request.Header.Set("Authorization", "Bearer "+fixture.token)

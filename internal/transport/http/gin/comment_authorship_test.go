@@ -25,8 +25,8 @@ func TestAnApprovedMemberCannotModerateTheConversation(t *testing.T) {
 		method string
 		path   string
 	}{
-		"pinning a conversation":   {http.MethodPut, "/api/v1/owner/posts/01ARZ3NDEKTSV4RRFFQ69G5FAV/comments/01ARZ3NDEKTSV4RRFFQ69G5FB0/pin"},
-		"unpinning a conversation": {http.MethodDelete, "/api/v1/owner/posts/01ARZ3NDEKTSV4RRFFQ69G5FAV/comments/01ARZ3NDEKTSV4RRFFQ69G5FB0/pin"},
+		"pinning a conversation":   {http.MethodPut, "/api/v1/posts/01ARZ3NDEKTSV4RRFFQ69G5FAV/comments/01ARZ3NDEKTSV4RRFFQ69G5FB0/pin"},
+		"unpinning a conversation": {http.MethodDelete, "/api/v1/posts/01ARZ3NDEKTSV4RRFFQ69G5FAV/comments/01ARZ3NDEKTSV4RRFFQ69G5FB0/pin"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			response := performRequest(fixture.engine, memberCommentRequest(member, probe.method, probe.path, ""))
@@ -62,8 +62,8 @@ func TestAnApprovedMemberCannotDeleteAnotherAccountsReply(t *testing.T) {
 	reply := postOwnerComment(t, fixture, `{"content_md":"and the owner answers","parent_id":"`+rootID+`"}`)
 
 	for name, path := range map[string]string{
-		"removal": "/api/v1/owner/comments/" + rootID,
-		"preview": "/api/v1/owner/comments/" + rootID + "?dry_run=true",
+		"removal": "/api/v1/comments/" + rootID,
+		"preview": "/api/v1/comments/" + rootID + "?dry_run=true",
 	} {
 		t.Run(name, func(t *testing.T) {
 			response := performRequest(fixture.engine, memberCommentRequest(member, http.MethodDelete, path, ""))
@@ -91,7 +91,7 @@ func TestAnApprovedMemberCannotDeleteSomebodyElsesComment(t *testing.T) {
 		t.Fatalf("owner comment = %#v", owned)
 	}
 
-	response := performRequest(fixture.engine, memberCommentRequest(member, http.MethodDelete, "/api/v1/owner/comments/"+ownedID, ""))
+	response := performRequest(fixture.engine, memberCommentRequest(member, http.MethodDelete, "/api/v1/comments/"+ownedID, ""))
 	if response.Code != http.StatusForbidden || decodeError(t, response.Body).Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("member delete of the owner's comment = %d: %s", response.Code, response.Body.String())
 	}

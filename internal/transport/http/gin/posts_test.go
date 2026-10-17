@@ -125,7 +125,7 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 	}
 	return postHTTPFixture{
 		ctx:                       fixtureContentContext(t, testAccounts(t, database, runtimeState)),
-		authenticationTestFixture: authenticationTestFixture{manager: manager, token: issueTestAPIToken(t, testAccounts(t, database, runtimeState)), engine: engine, now: &now},
+		authenticationTestFixture: authenticationTestFixture{manager: manager, accounts: testAccounts(t, database, runtimeState), token: issueTestAPIToken(t, testAccounts(t, database, runtimeState)), engine: engine, now: &now},
 		database:                  database,
 		posts:                     posts,
 		search:                    search,
@@ -136,12 +136,12 @@ func newPostHTTPFixture(t *testing.T, jsonLimit int64) postHTTPFixture {
 
 func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	fixture := newPostHTTPFixture(t, 0)
-	unauthorized := performRequest(fixture.engine, jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"blocked"}`))
+	unauthorized := performRequest(fixture.engine, jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"blocked"}`))
 	if unauthorized.Code != http.StatusUnauthorized || decodeError(t, unauthorized.Body).Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("unauthorized = %d %s", unauthorized.Code, unauthorized.Body.String())
 	}
 
-	create := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"first **post**"}`)
+	create := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"first **post**"}`)
 	create.Header.Set("Authorization", "Bearer "+fixture.token)
 	create.Header.Set("Idempotency-Key", "post-http-001")
 	created := performRequest(fixture.engine, create)
@@ -157,7 +157,7 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	if media, ok := createdData["media"].([]any); !ok || media == nil || len(media) != 0 {
 		t.Fatalf("text-only post media = %#v", createdData["media"])
 	}
-	quote := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"my take","quoted_post_id":"`+id+`"}`)
+	quote := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"my take","quoted_post_id":"`+id+`"}`)
 	quote.Header.Set("Authorization", "Bearer "+fixture.token)
 	quote.Header.Set("Idempotency-Key", "post-http-quote-001")
 	quoted := performRequest(fixture.engine, quote)
@@ -170,12 +170,12 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	if !ok || quotedData["content_md"] != "my take" || quotedPost["id"] != id || quotedPost["content_md"] != "first **post**" {
 		t.Fatalf("quote DTO = %#v", quotedData)
 	}
-	duplicatePatch := jsonRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"content_md":"one","content_md":"two"}`)
+	duplicatePatch := jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, `{"content_md":"one","content_md":"two"}`)
 	duplicatePatch.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, duplicatePatch); response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 		t.Fatalf("duplicate PATCH = %d %s", response.Code, response.Body.String())
 	}
-	invalidPatch := jsonRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, string([]byte{'{', '"', 'c', 'o', 'n', 't', 'e', 'n', 't', '_', 'm', 'd', '"', ':', '"', 0xff, '"', '}'}))
+	invalidPatch := jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, string([]byte{'{', '"', 'c', 'o', 'n', 't', 'e', 'n', 't', '_', 'm', 'd', '"', ':', '"', 0xff, '"', '}'}))
 	invalidPatch.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, invalidPatch); response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 		t.Fatalf("invalid UTF-8 PATCH = %d %s", response.Code, response.Body.String())
@@ -185,14 +185,14 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 		t.Fatalf("invalid PATCH changed post: %s", unchanged.Body.String())
 	}
 
-	update := jsonRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"content_md":"edited"}`)
+	update := jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, `{"content_md":"edited"}`)
 	update.Header.Set("Authorization", "Bearer "+fixture.token)
 	updated := performRequest(fixture.engine, update)
 	if updated.Code != http.StatusOK || decodeDataMap(t, updated)["content_md"] != "edited" {
 		t.Fatalf("update = %d %s", updated.Code, updated.Body.String())
 	}
 
-	repostRequest := jsonRequest(http.MethodPut, "/api/v1/owner/posts/"+id+"/repost", "")
+	repostRequest := jsonRequest(http.MethodPut, "/api/v1/posts/"+id+"/repost", "")
 	repostRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	reposted := performRequest(fixture.engine, repostRequest)
 	repostedData := decodeDataMap(t, reposted)
@@ -210,7 +210,7 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	if len(linkedKinds) != 2 || !linkedKinds["original"] || !linkedKinds["repost"] {
 		t.Fatalf("repost timeline = %#v", timeline)
 	}
-	unrepostRequest := jsonRequest(http.MethodDelete, "/api/v1/owner/posts/"+id+"/repost", "")
+	unrepostRequest := jsonRequest(http.MethodDelete, "/api/v1/posts/"+id+"/repost", "")
 	unrepostRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	unreposted := performRequest(fixture.engine, unrepostRequest)
 	if unreposted.Code != http.StatusOK || decodeDataMap(t, unreposted)["reposted_at"] != nil {
@@ -227,7 +227,7 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 		t.Fatalf("unrepost timeline = %#v", timeline)
 	}
 
-	pinRequest := jsonRequest(http.MethodPut, "/api/v1/owner/posts/"+id+"/pin", "")
+	pinRequest := jsonRequest(http.MethodPut, "/api/v1/posts/"+id+"/pin", "")
 	pinRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	pinned := performRequest(fixture.engine, pinRequest)
 	if pinned.Code != http.StatusOK || decodeDataMap(t, pinned)["pinned_post_id"] != id {
@@ -237,7 +237,7 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 		t.Fatalf("stored pin = %#v, err=%v", settings.PinnedPostID, err)
 	}
 
-	replay := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"first **post**"}`)
+	replay := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"first **post**"}`)
 	replay.Header.Set("Authorization", "Bearer "+fixture.token)
 	replay.Header.Set("Idempotency-Key", "post-http-001")
 	replayed := performRequest(fixture.engine, replay)
@@ -245,7 +245,7 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 		t.Fatalf("replay after edit = %d %s", replayed.Code, replayed.Body.String())
 	}
 
-	conflict := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"different"}`)
+	conflict := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"different"}`)
 	conflict.Header.Set("Authorization", "Bearer "+fixture.token)
 	conflict.Header.Set("Idempotency-Key", "post-http-001")
 	conflicted := performRequest(fixture.engine, conflict)
@@ -253,7 +253,7 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 		t.Fatalf("conflict = %d %s", conflicted.Code, conflicted.Body.String())
 	}
 
-	deletedRequest := jsonRequest(http.MethodDelete, "/api/v1/owner/posts/"+id, "")
+	deletedRequest := jsonRequest(http.MethodDelete, "/api/v1/posts/"+id, "")
 	deletedRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	deleted := performRequest(fixture.engine, deletedRequest)
 	if deleted.Code != http.StatusOK || decodeDataMap(t, deleted)["content_md"] != "edited" {
@@ -262,7 +262,7 @@ func TestPostHTTPCRUDIdempotencyAndPublicDTO(t *testing.T) {
 	if settings, err := fixture.site.Get(context.Background()); err != nil || settings.PinnedPostID != nil {
 		t.Fatalf("delete did not clear pin = %#v, err=%v", settings.PinnedPostID, err)
 	}
-	replayAfterDeleteRequest := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"first **post**"}`)
+	replayAfterDeleteRequest := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"first **post**"}`)
 	replayAfterDeleteRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	replayAfterDeleteRequest.Header.Set("Idempotency-Key", "post-http-001")
 	replayAfterDelete := performRequest(fixture.engine, replayAfterDeleteRequest)
@@ -289,7 +289,7 @@ func TestPostHTTPMediaCanonicalPatchAndImmutableReplay(t *testing.T) {
 		`{"media_id":"` + postHTTPMediaOne + `","position":0,"alt_text":null},` +
 		`{"media_id":"` + postHTTPMediaOne + `","position":1,"alt_text":""},` +
 		`{"media_id":"` + postHTTPMediaTwo + `","position":2,"alt_text":"street at night"}]}`
-	request := jsonRequest(http.MethodPost, "/api/v1/owner/posts", body)
+	request := jsonRequest(http.MethodPost, "/api/v1/posts", body)
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
 	request.Header.Set("Idempotency-Key", "http-media-replay")
 	createdResponse := performRequest(fixture.engine, request)
@@ -313,14 +313,14 @@ func TestPostHTTPMediaCanonicalPatchAndImmutableReplay(t *testing.T) {
 	}
 	assertCanonicalHTTPMedia(t, list.Data.Items[0]["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
 
-	contentOnly := jsonRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"content_md":"edited content"}`)
+	contentOnly := jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, `{"content_md":"edited content"}`)
 	contentOnly.Header.Set("Authorization", "Bearer "+fixture.token)
 	contentUpdated := performRequest(fixture.engine, contentOnly)
 	if contentUpdated.Code != http.StatusOK {
 		t.Fatalf("content patch = %d %s", contentUpdated.Code, contentUpdated.Body.String())
 	}
 	assertCanonicalHTTPMedia(t, decodeDataMap(t, contentUpdated)["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
-	nullMedia := jsonRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"media":null}`)
+	nullMedia := jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, `{"media":null}`)
 	nullMedia.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, nullMedia); response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 		t.Fatalf("null media patch = %d %s", response.Code, response.Body.String())
@@ -328,7 +328,7 @@ func TestPostHTTPMediaCanonicalPatchAndImmutableReplay(t *testing.T) {
 	preservedAfterNull := decodeDataMap(t, performRequest(fixture.engine, jsonRequest(http.MethodGet, "/api/v1/posts/"+id, "")))
 	assertCanonicalHTTPMedia(t, preservedAfterNull["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
 
-	mediaOnly := jsonRequest(http.MethodPatch, "/api/v1/owner/posts/"+id,
+	mediaOnly := jsonRequest(http.MethodPatch, "/api/v1/posts/"+id,
 		`{"media":[{"media_id":"`+postHTTPMediaTwo+`","position":0,"alt_text":"replacement"}]}`)
 	mediaOnly.Header.Set("Authorization", "Bearer "+fixture.token)
 	replaced := performRequest(fixture.engine, mediaOnly)
@@ -338,7 +338,7 @@ func TestPostHTTPMediaCanonicalPatchAndImmutableReplay(t *testing.T) {
 	}
 	assertCanonicalHTTPMedia(t, replacedData["media"], []any{"replacement"}, []string{postHTTPMediaTwo})
 
-	clearRequest := jsonRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"media":[]}`)
+	clearRequest := jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, `{"media":[]}`)
 	clearRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	cleared := performRequest(fixture.engine, clearRequest)
 	if cleared.Code != http.StatusOK {
@@ -348,7 +348,7 @@ func TestPostHTTPMediaCanonicalPatchAndImmutableReplay(t *testing.T) {
 		t.Fatalf("cleared media = %#v", media)
 	}
 
-	replay := jsonRequest(http.MethodPost, "/api/v1/owner/posts", body)
+	replay := jsonRequest(http.MethodPost, "/api/v1/posts", body)
 	replay.Header.Set("Authorization", "Bearer "+fixture.token)
 	replay.Header.Set("Idempotency-Key", "http-media-replay")
 	replayed := performRequest(fixture.engine, replay)
@@ -357,12 +357,12 @@ func TestPostHTTPMediaCanonicalPatchAndImmutableReplay(t *testing.T) {
 	}
 	assertCanonicalHTTPMedia(t, decodeDataMap(t, replayed)["media"], []any{nil, "", "street at night"}, []string{postHTTPMediaOne, postHTTPMediaOne, postHTTPMediaTwo})
 
-	deleteRequest := jsonRequest(http.MethodDelete, "/api/v1/owner/posts/"+id, "")
+	deleteRequest := jsonRequest(http.MethodDelete, "/api/v1/posts/"+id, "")
 	deleteRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, deleteRequest); response.Code != http.StatusOK {
 		t.Fatalf("delete = %d %s", response.Code, response.Body.String())
 	}
-	replayAfterDelete := jsonRequest(http.MethodPost, "/api/v1/owner/posts", body)
+	replayAfterDelete := jsonRequest(http.MethodPost, "/api/v1/posts", body)
 	replayAfterDelete.Header.Set("Authorization", "Bearer "+fixture.token)
 	replayAfterDelete.Header.Set("Idempotency-Key", "http-media-replay")
 	response := performRequest(fixture.engine, replayAfterDelete)
@@ -392,7 +392,7 @@ func TestPostHTTPMediaStrictValidationAndRollback(t *testing.T) {
 		`{"content_md":"x","media":[` + strings.Join(tenth, ",") + `]}`,
 	}
 	for _, body := range invalidBodies {
-		request := jsonRequest(http.MethodPost, "/api/v1/owner/posts", body)
+		request := jsonRequest(http.MethodPost, "/api/v1/posts", body)
 		request.Header.Set("Authorization", "Bearer "+fixture.token)
 		response := performRequest(fixture.engine, request)
 		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
@@ -402,7 +402,7 @@ func TestPostHTTPMediaStrictValidationAndRollback(t *testing.T) {
 	assertHTTPTableCount(t, fixture.database, "entries", 0)
 	assertHTTPTableCount(t, fixture.database, "entry_media", 0)
 
-	missing := jsonRequest(http.MethodPost, "/api/v1/owner/posts",
+	missing := jsonRequest(http.MethodPost, "/api/v1/posts",
 		`{"content_md":"missing","media":[{"media_id":"`+postHTTPMediaTwo+`","position":0,"alt_text":null}]}`)
 	missing.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, missing); response.Code != http.StatusNotFound || decodeError(t, response.Body).Error.Code != "MEDIA_NOT_FOUND" {
@@ -420,7 +420,7 @@ END`)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	rollback := jsonRequest(http.MethodPost, "/api/v1/owner/posts",
+	rollback := jsonRequest(http.MethodPost, "/api/v1/posts",
 		`{"content_md":"rollback","media":[{"media_id":"`+postHTTPMediaOne+`","position":0,"alt_text":null}]}`)
 	rollback.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, rollback); response.Code != http.StatusInternalServerError || decodeError(t, response.Body).Error.Code != "INTERNAL" {
@@ -549,44 +549,44 @@ func TestPostHTTPDateCursorStrictBindingAndQueryValidation(t *testing.T) {
 func TestPostHTTPStrictBodyCSRFBodyLimitAndCancellation(t *testing.T) {
 	fixture := newPostHTTPFixture(t, 64)
 	for _, body := range []string{`{}`, `{"content_md":null}`, `{"content_md":"ok","extra":true}`, `{"content_md":"first","content_md":"second"}`, `{"content_md":"ok"} {}`} {
-		request := jsonRequest(http.MethodPost, "/api/v1/owner/posts", body)
+		request := jsonRequest(http.MethodPost, "/api/v1/posts", body)
 		request.Header.Set("Authorization", "Bearer "+fixture.token)
 		response := performRequest(fixture.engine, request)
 		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 			t.Fatalf("strict body %q = %d %s", body, response.Code, response.Body.String())
 		}
 	}
-	invalidUTF8 := jsonRequest(http.MethodPost, "/api/v1/owner/posts", string([]byte{'{', '"', 'c', 'o', 'n', 't', 'e', 'n', 't', '_', 'm', 'd', '"', ':', '"', 0xff, '"', '}'}))
+	invalidUTF8 := jsonRequest(http.MethodPost, "/api/v1/posts", string([]byte{'{', '"', 'c', 'o', 'n', 't', 'e', 'n', 't', '_', 'm', 'd', '"', ':', '"', 0xff, '"', '}'}))
 	invalidUTF8.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, invalidUTF8); response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 		t.Fatalf("invalid UTF-8 = %d %s", response.Code, response.Body.String())
 	}
-	wrongContentType := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"must not publish"}`)
+	wrongContentType := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"must not publish"}`)
 	wrongContentType.Header.Set("Authorization", "Bearer "+fixture.token)
 	wrongContentType.Header.Set("Content-Type", "text/plain")
 	if response := performRequest(fixture.engine, wrongContentType); response.Code != http.StatusUnsupportedMediaType || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 		t.Fatalf("wrong content type = %d %s", response.Code, response.Body.String())
 	}
-	duplicateHeader := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"duplicate header"}`)
+	duplicateHeader := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"duplicate header"}`)
 	duplicateHeader.Header.Set("Authorization", "Bearer "+fixture.token)
 	duplicateHeader.Header.Add("Idempotency-Key", "one")
 	duplicateHeader.Header.Add("Idempotency-Key", "two")
 	if response := performRequest(fixture.engine, duplicateHeader); response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 		t.Fatalf("duplicate idempotency header = %d %s", response.Code, response.Body.String())
 	}
-	tooLarge := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"this request is intentionally longer than the configured body limit"}`)
+	tooLarge := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"this request is intentionally longer than the configured body limit"}`)
 	tooLarge.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, tooLarge); response.Code != http.StatusRequestEntityTooLarge || decodeError(t, response.Body).Error.Code != "REQUEST_BODY_TOO_LARGE" {
 		t.Fatalf("body limit = %d %s", response.Code, response.Body.String())
 	}
 
 	cookie, session := exchangeAccountSession(t, fixture.authenticationTestFixture, fixture.token)
-	withoutCSRF := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"blocked"}`)
+	withoutCSRF := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"blocked"}`)
 	withoutCSRF.AddCookie(cookie)
 	if response := performRequest(fixture.engine, withoutCSRF); response.Code != http.StatusForbidden || decodeError(t, response.Body).Error.Code != "CSRF_INVALID" {
 		t.Fatalf("missing CSRF = %d %s", response.Code, response.Body.String())
 	}
-	withCSRF := jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"session post"}`)
+	withCSRF := jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"session post"}`)
 	withCSRF.AddCookie(cookie)
 	withCSRF.Header.Set(CSRFHeaderName, session["csrf_token"].(string))
 	if response := performRequest(fixture.engine, withCSRF); response.Code != http.StatusCreated {

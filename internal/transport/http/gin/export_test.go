@@ -48,7 +48,7 @@ func TestExportSessionSignerStrictInputAndDownloadHeaders(t *testing.T) {
 		func(request *http.Request) { request.Header.Set("Authorization", "Bearer "+fixture.token) },
 		func(request *http.Request) { request.AddCookie(cookie) },
 	} {
-		request, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/owner/export", http.NoBody)
+		request, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/backups/export", http.NoBody)
 		authorize(request)
 		response, err := server.Client().Do(request)
 		if err != nil {
@@ -65,15 +65,15 @@ func TestExportSessionSignerStrictInputAndDownloadHeaders(t *testing.T) {
 
 	before := calls.Load()
 	for _, request := range []*http.Request{
-		headerRequest(http.MethodGet, "/api/v1/owner/export?unexpected=1", fixture.token, nil),
-		headerRequest(http.MethodGet, "/api/v1/owner/export", fixture.token, strings.NewReader("body")),
+		headerRequest(http.MethodGet, "/api/v1/backups/export?unexpected=1", fixture.token, nil),
+		headerRequest(http.MethodGet, "/api/v1/backups/export", fixture.token, strings.NewReader("body")),
 	} {
 		response := performRequest(engine, request)
 		if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 			t.Fatalf("strict input response = %d %s", response.Code, response.Body.String())
 		}
 	}
-	malformed := httptest.NewRequest(http.MethodGet, "/api/v1/owner/export", nil)
+	malformed := httptest.NewRequest(http.MethodGet, "/api/v1/backups/export", nil)
 	malformed.AddCookie(cookie)
 	malformed.Header.Set("Authorization", "Bearer wrong")
 	if response := performRequest(engine, malformed); response.Code != http.StatusUnauthorized {

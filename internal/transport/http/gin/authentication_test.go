@@ -239,7 +239,7 @@ func TestPersonalPasswordUpdateRevokesTheAccountBrowserSessions(t *testing.T) {
 
 func TestGlobalCredentialManagementRoutesAreRemoved(t *testing.T) {
 	fixture := newAuthenticationTestFixture(t, false)
-	for _, item := range []struct{ method, path string }{{http.MethodGet, "/api/v1/owner/status"}, {http.MethodPost, "/api/v1/owner/token/rotate"}, {http.MethodPut, "/api/v1/owner/password"}} {
+	for _, item := range []struct{ method, path string }{{http.MethodGet, "/api/v1/status"}, {http.MethodPost, "/api/v1/token/rotate"}, {http.MethodPut, "/api/v1/password"}} {
 		request := jsonRequest(item.method, item.path, `{}`)
 		request.Header.Set("Authorization", "Bearer "+fixture.token)
 		if response := performRequest(fixture.engine, request); response.Code != http.StatusNotFound {

@@ -282,8 +282,8 @@ func TestOAuthSignInCreatesAPendingAccountThatCannotWrite(t *testing.T) {
 		method string
 		path   string
 	}{
-		{http.MethodGet, "/api/v1/owner/accounts"},
-		{http.MethodGet, "/api/v1/owner/accounts"},
+		{http.MethodGet, "/api/v1/accounts"},
+		{http.MethodGet, "/api/v1/accounts"},
 		{http.MethodPost, "/api/v1/account/tokens"},
 	} {
 		request := httptest.NewRequest(probe.method, probe.path, nil)
@@ -340,7 +340,7 @@ func TestPendingAccountCannotPromoteItself(t *testing.T) {
 
 	// And the owner's own control refuses it too.
 	escalate := httptest.NewRequest(http.MethodPatch,
-		"/api/v1/owner/accounts/"+envelope.Data.Account.UserID, strings.NewReader(`{"status":"active"}`))
+		"/api/v1/accounts/"+envelope.Data.Account.UserID, strings.NewReader(`{"status":"active"}`))
 	escalate.Header.Set("Content-Type", "application/json")
 	escalate.Header.Set(CSRFHeaderName, csrf)
 	escalate.AddCookie(session)

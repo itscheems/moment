@@ -64,7 +64,7 @@ func runLocationSearch(ctx context.Context, invocation Invocation, input Command
 	if err != nil {
 		return Result{}, err
 	}
-	return resolveLocationCommand(ctx, invocation, "/api/v1/owner/locations/search", query, point, limit, false)
+	return resolveLocationCommand(ctx, invocation, "/api/v1/locations/search", query, point, limit, false)
 }
 
 func runLocationNearby(ctx context.Context, invocation Invocation, input CommandInput) (Result, error) {
@@ -76,7 +76,7 @@ func runLocationNearby(ctx context.Context, invocation Invocation, input Command
 	if err != nil {
 		return Result{}, err
 	}
-	return resolveLocationCommand(ctx, invocation, "/api/v1/owner/locations/nearby", "", point, limit, true)
+	return resolveLocationCommand(ctx, invocation, "/api/v1/locations/nearby", "", point, limit, true)
 }
 
 func resolveLocationCommand(ctx context.Context, invocation Invocation, endpoint, query string, point *domain.GeoPoint, limit int, nearby bool) (Result, error) {

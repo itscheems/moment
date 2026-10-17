@@ -328,7 +328,7 @@ func runOwnerCommentCreate(ctx context.Context, invocation Invocation, input Com
 			payload["reply_to_comment_id"] = replyToID.String()
 		}
 		var status int
-		meta, status, err = commentAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/posts/"+postID.String()+"/comments", nil, payload, idempotencyKey, true, &comment)
+		meta, status, err = commentAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/posts/"+postID.String()+"/comments", nil, payload, idempotencyKey, true, &comment)
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -382,7 +382,7 @@ func runCommentDelete(ctx context.Context, invocation Invocation, input CommandI
 			query.Set("dry_run", "true")
 		}
 		var status int
-		meta, status, err = commentAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/owner/comments/"+id.String(), query, nil, "", true, &comment)
+		meta, status, err = commentAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/comments/"+id.String(), query, nil, "", true, &comment)
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}
@@ -436,7 +436,7 @@ func runCommentPinChange(ctx context.Context, invocation Invocation, input Comma
 			method = http.MethodDelete
 		}
 		var status int
-		meta, status, err = commentAPIRequest(ctx, invocation, method, "/api/v1/owner/posts/"+url.PathEscape(postID.String())+"/comments/"+url.PathEscape(commentID.String())+"/pin", nil, nil, "", true, &pin)
+		meta, status, err = commentAPIRequest(ctx, invocation, method, "/api/v1/posts/"+url.PathEscape(postID.String())+"/comments/"+url.PathEscape(commentID.String())+"/pin", nil, nil, "", true, &pin)
 		if err != nil {
 			return Result{}, commentCLIError(err)
 		}

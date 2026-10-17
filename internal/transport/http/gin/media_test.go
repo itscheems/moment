@@ -118,7 +118,7 @@ func TestOwnerCanReadEarlyVideoPosterWithoutCachingIt(t *testing.T) {
 		t.Fatalf("early poster response = %d headers=%v equal=%v", response.Code, response.Header(), bytes.Equal(response.Body.Bytes(), poster))
 	}
 
-	missing := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/owner/media-uploads/another-0123456789/poster", nil))
+	missing := performRequest(engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/uploads/another-0123456789/poster", nil))
 	if missing.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated early poster = %d", missing.Code)
 	}
@@ -172,7 +172,7 @@ func mediaUploadRequest(t *testing.T, contents []byte) *http.Request {
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/owner/media", &body)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/media", &body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	return request
 }

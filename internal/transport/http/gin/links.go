@@ -18,9 +18,9 @@ import (
 // visitor comment is never unfurled: doing so would turn an anonymous text box
 // into an outbound request trigger.
 func RegisterLinkRoutes(engine *gin.Engine, links *app.LinkPreviewService, gate *Gate) {
-	owner := engine.Group("/api/v1/owner/links")
-	owner.Use(gate.RequireAdmin())
-	owner.GET("/unfurl", unfurlLink(links))
+	previews := engine.Group("/api/v1/links")
+	previews.Use(gate.RequireActiveAccount())
+	previews.GET("/unfurl", unfurlLink(links))
 }
 
 func unfurlLink(links *app.LinkPreviewService) gin.HandlerFunc {

@@ -32,7 +32,7 @@ func TestCapabilitiesAndSelectedMediaDeletionHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	route := "/api/v1/owner/media/" + value.ID.String()
+	route := "/api/v1/media/" + value.ID.String()
 	if got := performRequest(engine, httptest.NewRequest(http.MethodDelete, route, nil)); got.Code != 401 {
 		t.Fatalf("unauth delete: %d", got.Code)
 	}
@@ -108,7 +108,7 @@ func TestSelectedMediaDeletionRejectsActiveMember(t *testing.T) {
 		t.Fatalf("member credential is not active: %d", got.Code)
 	}
 	for _, query := range []string{"", "?dry_run=true"} {
-		request := httptest.NewRequest(http.MethodDelete, "/api/v1/owner/media/"+id+query, nil)
+		request := httptest.NewRequest(http.MethodDelete, "/api/v1/media/"+id+query, nil)
 		request.AddCookie(session)
 		request.Header.Set(CSRFHeaderName, csrf)
 		response := performRequest(fixture.engine, request)
@@ -141,7 +141,7 @@ func TestAccountExportHTTPUsesAuthenticatedIdentityAndKeepsOwnerBoundary(t *test
 	}
 	// Members, including pending accounts, may export themselves but cannot
 	// select another account or access the full site backup.
-	for _, path := range []string{"/api/v1/account/export?account_id=someone", "/api/v1/owner/export"} {
+	for _, path := range []string{"/api/v1/account/export?account_id=someone", "/api/v1/backups/export"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		request.AddCookie(session)
 		got := performRequest(engine, request)

@@ -71,12 +71,12 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1
 		t.Fatal(err)
 	}
 
-	unauthorized := performRequest(engine, jsonRequest(http.MethodGet, "/api/v1/owner/doctor", ""))
+	unauthorized := performRequest(engine, jsonRequest(http.MethodGet, "/api/v1/diagnostics", ""))
 	if unauthorized.Code != http.StatusUnauthorized || decodeError(t, unauthorized.Body).Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("unauthorized=%d %s", unauthorized.Code, unauthorized.Body.String())
 	}
 
-	request := jsonRequest(http.MethodGet, "/api/v1/owner/doctor", "")
+	request := jsonRequest(http.MethodGet, "/api/v1/diagnostics", "")
 	request.Header.Set("Authorization", "Bearer "+token)
 	response := performRequest(engine, request)
 	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "no-store" {
@@ -114,7 +114,7 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1
 		}
 	}
 
-	for _, path := range []string{"/api/v1/owner/doctor?deep=true", "/api/v1/owner/doctor?unknown=1"} {
+	for _, path := range []string{"/api/v1/diagnostics?deep=true", "/api/v1/diagnostics?unknown=1"} {
 		strict := jsonRequest(http.MethodGet, path, "")
 		strict.Header.Set("Authorization", "Bearer "+token)
 		strictResponse := performRequest(engine, strict)
@@ -122,7 +122,7 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FC0', 'moment', 'CANARY_PRIVATE_POST_BODY', 1, 1
 			t.Fatalf("strict query %s = %d %s", path, strictResponse.Code, strictResponse.Body.String())
 		}
 	}
-	body := jsonRequest(http.MethodGet, "/api/v1/owner/doctor", `{"deep":true}`)
+	body := jsonRequest(http.MethodGet, "/api/v1/diagnostics", `{"deep":true}`)
 	body.Header.Set("Authorization", "Bearer "+token)
 	bodyResponse := performRequest(engine, body)
 	if bodyResponse.Code != http.StatusBadRequest || decodeError(t, bodyResponse.Body).Error.Code != "INVALID_ARGUMENT" {
@@ -148,7 +148,7 @@ func TestDoctorHTTPWrappedCancellationIsTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := jsonRequest(http.MethodGet, "/api/v1/owner/doctor", "")
+	request := jsonRequest(http.MethodGet, "/api/v1/diagnostics", "")
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
 	response := performRequest(engine, request)
 	if response.Code != http.StatusRequestTimeout || decodeError(t, response.Body).Error.Code != "TIMEOUT" {
@@ -172,7 +172,7 @@ func TestDoctorHTTPPanicIsRedactedAndConfigRequiresAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := jsonRequest(http.MethodGet, "/api/v1/owner/doctor", "")
+	request := jsonRequest(http.MethodGet, "/api/v1/diagnostics", "")
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
 	response := performRequest(engine, request)
 	if response.Code != http.StatusInternalServerError || decodeError(t, response.Body).Error.Code != "INTERNAL" {

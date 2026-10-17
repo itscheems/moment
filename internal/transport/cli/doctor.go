@@ -73,7 +73,7 @@ func runDoctor(ctx context.Context, invocation Invocation, input CommandInput) (
 	case ModeAPI:
 		var data []byte
 		var status int
-		data, meta, status, err = authenticatedAPIRawRequest(ctx, invocation, http.MethodGet, "/api/v1/owner/doctor", true)
+		data, meta, status, err = authenticatedAPIRawRequest(ctx, invocation, http.MethodGet, "/api/v1/diagnostics", true)
 		if err == nil && (status != http.StatusOK || !validDoctorAPIMeta(meta)) {
 			err = invalidAPIResponse()
 		}

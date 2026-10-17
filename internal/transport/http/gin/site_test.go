@@ -150,13 +150,13 @@ func TestSitePublicReadAndOwnerPatchTriState(t *testing.T) {
 		t.Fatalf("public meta = %#v", publicEnvelope.Meta)
 	}
 
-	unauthorized := performRequest(fixture.engine, jsonRequest(http.MethodPatch, "/api/v1/owner/site", `{"title":"blocked"}`))
+	unauthorized := performRequest(fixture.engine, jsonRequest(http.MethodPatch, "/api/v1/site", `{"title":"blocked"}`))
 	if unauthorized.Code != http.StatusUnauthorized || decodeError(t, unauthorized.Body).Error.Code != "UNAUTHORIZED" {
 		t.Fatalf("unauthorized status = %d", unauthorized.Code)
 	}
 
 	requestBody := `{"title":"Personal Moment","bio":"personal log","timezone":"Asia/Shanghai","public_base_url":"http://localhost:80/journal/","avatar_media_id":"` + httpAvatarID + `","cover_media_id":"` + httpAvatarID + `","comments_enabled":false}`
-	request := jsonRequest(http.MethodPatch, "/api/v1/owner/site", requestBody)
+	request := jsonRequest(http.MethodPatch, "/api/v1/site", requestBody)
 	request.Header.Set("Authorization", "Bearer "+fixture.token)
 	updated := performRequest(fixture.engine, request)
 	if updated.Code != http.StatusOK {
@@ -167,7 +167,7 @@ func TestSitePublicReadAndOwnerPatchTriState(t *testing.T) {
 		t.Fatalf("updated data = %#v", data)
 	}
 
-	clearRequest := jsonRequest(http.MethodPatch, "/api/v1/owner/site", `{"public_base_url":null,"avatar_media_id":null,"cover_media_id":null}`)
+	clearRequest := jsonRequest(http.MethodPatch, "/api/v1/site", `{"public_base_url":null,"avatar_media_id":null,"cover_media_id":null}`)
 	clearRequest.Header.Set("Authorization", "Bearer "+fixture.token)
 	cleared := performRequest(fixture.engine, clearRequest)
 	if cleared.Code != http.StatusOK {
@@ -191,7 +191,7 @@ func TestSitePatchStrictJSONCSRFAndCancellation(t *testing.T) {
 		"null nonnullable": `{"comments_enabled":null}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			request := jsonRequest(http.MethodPatch, "/api/v1/owner/site", body)
+			request := jsonRequest(http.MethodPatch, "/api/v1/site", body)
 			request.Header.Set("Authorization", "Bearer "+fixture.token)
 			response := performRequest(fixture.engine, request)
 			if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
@@ -204,12 +204,12 @@ func TestSitePatchStrictJSONCSRFAndCancellation(t *testing.T) {
 	}
 
 	cookie, session := exchangeAccountSession(t, fixture, fixture.token)
-	missingCSRF := jsonRequest(http.MethodPatch, "/api/v1/owner/site", `{"bio":"blocked"}`)
+	missingCSRF := jsonRequest(http.MethodPatch, "/api/v1/site", `{"bio":"blocked"}`)
 	missingCSRF.AddCookie(cookie)
 	if response := performRequest(fixture.engine, missingCSRF); response.Code != http.StatusForbidden || decodeError(t, response.Body).Error.Code != "CSRF_INVALID" {
 		t.Fatalf("missing CSRF status = %d, body = %s", response.Code, response.Body.String())
 	}
-	withCSRF := jsonRequest(http.MethodPatch, "/api/v1/owner/site", `{"bio":"from session"}`)
+	withCSRF := jsonRequest(http.MethodPatch, "/api/v1/site", `{"bio":"from session"}`)
 	withCSRF.AddCookie(cookie)
 	withCSRF.Header.Set(CSRFHeaderName, session["csrf_token"].(string))
 	if response := performRequest(fixture.engine, withCSRF); response.Code != http.StatusOK {
@@ -218,7 +218,7 @@ func TestSitePatchStrictJSONCSRFAndCancellation(t *testing.T) {
 
 	cancelledContext, cancel := context.WithCancel(context.Background())
 	cancel()
-	cancelled := jsonRequest(http.MethodPatch, "/api/v1/owner/site", `{"title":"cancelled"}`).WithContext(cancelledContext)
+	cancelled := jsonRequest(http.MethodPatch, "/api/v1/site", `{"title":"cancelled"}`).WithContext(cancelledContext)
 	cancelled.Header.Set("Authorization", "Bearer "+fixture.token)
 	response := performRequest(fixture.engine, cancelled)
 	if response.Code != http.StatusRequestTimeout || decodeError(t, response.Body).Error.Code != "CANCELLED" {
@@ -264,7 +264,7 @@ func TestSitePublicJSONContainsOnlyStableDTOFields(t *testing.T) {
 func TestOwnerSitePatchAnswersHandleRefusalsLikeTheAccountRoute(t *testing.T) {
 	fixture, transactions := newSiteHTTPFixture(t)
 
-	reserved := jsonRequest(http.MethodPatch, "/api/v1/owner/site", `{"username":"search"}`)
+	reserved := jsonRequest(http.MethodPatch, "/api/v1/site", `{"username":"search"}`)
 	reserved.Header.Set("Authorization", "Bearer "+fixture.token)
 	response := performRequest(fixture.engine, reserved)
 	if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "USERNAME_RESERVED" {
@@ -275,7 +275,7 @@ func TestOwnerSitePatchAnswersHandleRefusalsLikeTheAccountRoute(t *testing.T) {
 	}
 
 	transactions.updateErr = domain.NewError(domain.CodeUsernameTaken, "that username is taken", map[string]any{"field": "username"})
-	taken := jsonRequest(http.MethodPatch, "/api/v1/owner/site", `{"username":"meihua"}`)
+	taken := jsonRequest(http.MethodPatch, "/api/v1/site", `{"username":"meihua"}`)
 	taken.Header.Set("Authorization", "Bearer "+fixture.token)
 	response = performRequest(fixture.engine, taken)
 	if response.Code != http.StatusConflict || decodeError(t, response.Body).Error.Code != "USERNAME_TAKEN" {
@@ -294,7 +294,7 @@ func TestOwnerSitePatchWritesRegistrationModeWithoutPublishingIt(t *testing.T) {
 	fixture, transactions := newSiteHTTPFixture(t)
 
 	for _, mode := range []string{"open", "closed", "approval"} {
-		request := jsonRequest(http.MethodPatch, "/api/v1/owner/site", `{"registration_mode":"`+mode+`"}`)
+		request := jsonRequest(http.MethodPatch, "/api/v1/site", `{"registration_mode":"`+mode+`"}`)
 		request.Header.Set("Authorization", "Bearer "+fixture.token)
 		response := performRequest(fixture.engine, request)
 		if response.Code != http.StatusOK {
@@ -308,7 +308,7 @@ func TestOwnerSitePatchWritesRegistrationModeWithoutPublishingIt(t *testing.T) {
 		}
 	}
 
-	rejected := jsonRequest(http.MethodPatch, "/api/v1/owner/site", `{"registration_mode":"everyone"}`)
+	rejected := jsonRequest(http.MethodPatch, "/api/v1/site", `{"registration_mode":"everyone"}`)
 	rejected.Header.Set("Authorization", "Bearer "+fixture.token)
 	response := performRequest(fixture.engine, rejected)
 	if response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {

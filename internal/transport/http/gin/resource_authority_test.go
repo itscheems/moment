@@ -1,0 +1,92 @@
+package ginhttp
+
+import (
+	"context"
+	"github.com/moment/moment/internal/app"
+	"github.com/moment/moment/internal/domain"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
+
+func TestResourceRoutesLetActiveMembersWriteUnderTheirOwnIdentity(t *testing.T) {
+	fixture := newPostHTTPFixture(t, 0)
+	ctx := context.Background()
+	outcome, err := fixture.accounts.SignIn(ctx, app.ExternalIdentity{Provider: "google", ProviderUserID: "writer", DisplayName: "Member Writer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := fixture.accounts.SetStatus(ctx, outcome.User.ID, domain.AccountActive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued, err := fixture.accounts.CreateAPIToken(ctx, member.ID, "writer client")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, path, body, token string) *httptest.ResponseRecorder {
+		request := jsonRequest(method, path, body)
+		request.Header.Set("Authorization", "Bearer "+token)
+		return performRequest(fixture.engine, request)
+	}
+	created := call(http.MethodPost, "/api/v1/posts", `{"content_md":"member writes"}`, issued.Value)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("member post=%d %s", created.Code, created.Body.String())
+	}
+	post := decodeDataMap(t, created)
+	if post["author"].(map[string]any)["user_id"] != member.ID {
+		t.Fatal("post borrowed the display account identity")
+	}
+	id := post["id"].(string)
+	rewritten := call(http.MethodPatch, "/api/v1/posts/"+id, `{"content_md":"administrator rewrite"}`, fixture.token)
+	if rewritten.Code != http.StatusForbidden || decodeError(t, rewritten.Body).Error.Code != "UNAUTHORIZED" {
+		t.Fatalf("administrator rewrote another author=%d %s", rewritten.Code, rewritten.Body.String())
+	}
+	edited := call(http.MethodPatch, "/api/v1/posts/"+id, `{"content_md":"author edits"}`, issued.Value)
+	if edited.Code != http.StatusOK {
+		t.Fatalf("author edit=%d %s", edited.Code, edited.Body.String())
+	}
+	private := call(http.MethodPost, "/api/v1/posts", `{"content_md":"private member post","visibility":"only_me"}`, issued.Value)
+	if private.Code != http.StatusCreated {
+		t.Fatalf("private post=%d %s", private.Code, private.Body.String())
+	}
+	privateID := decodeDataMap(t, private)["id"].(string)
+	hidden := call(http.MethodGet, "/api/v1/posts/"+privateID, "", fixture.token)
+	if hidden.Code != http.StatusNotFound {
+		t.Fatalf("administrator read another author's private post=%d %s", hidden.Code, hidden.Body.String())
+	}
+	draft := call(http.MethodPost, "/api/v1/articles/drafts", `{"title":"member article","body":`+articleDraftBodyJSON+`}`, issued.Value)
+	if draft.Code != http.StatusCreated {
+		t.Fatalf("member article=%d %s", draft.Code, draft.Body.String())
+	}
+	draftID := decodeDataMap(t, draft)["id"].(string)
+	otherDraft := call(http.MethodGet, "/api/v1/articles/drafts/"+draftID, "", fixture.token)
+	if otherDraft.Code != http.StatusForbidden {
+		t.Fatalf("administrator read another author's draft=%d %s", otherDraft.Code, otherDraft.Body.String())
+	}
+	deleted := call(http.MethodDelete, "/api/v1/posts/"+id, "", fixture.token)
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("public moderation=%d %s", deleted.Code, deleted.Body.String())
+	}
+}
+
+func TestRetiredIdentityNamespaceHasNoAPIRoutes(t *testing.T) {
+	fixture := newFullEngineFixture(t)
+	token := issueTestAPIToken(t, fixture.accounts)
+	for _, probe := range []struct{ method, path string }{
+		{http.MethodPost, "/api/v1/owner/posts"},
+		{http.MethodGet, "/api/v1/owner/articles/drafts"},
+		{http.MethodPost, "/api/v1/owner/media"},
+		{http.MethodPatch, "/api/v1/owner/site"},
+		{http.MethodGet, "/api/v1/owner/accounts"},
+		{http.MethodGet, "/api/v1/owner/export"},
+		{http.MethodGet, "/api/v1/owner/doctor"},
+	} {
+		request := jsonRequest(probe.method, probe.path, `{}`)
+		request.Header.Set("Authorization", "Bearer "+token)
+		response := performRequest(fixture.engine, request)
+		if response.Code != http.StatusNotFound || decodeError(t, response.Body).Error.Code != "API_ROUTE_NOT_FOUND" {
+			t.Fatalf("retired route %s=%d %s", probe.path, response.Code, response.Body.String())
+		}
+	}
+}

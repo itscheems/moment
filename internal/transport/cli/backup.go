@@ -414,7 +414,7 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 	if err != nil {
 		return archive.Inspection{}, nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/inspect")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/backups/import/inspect")
 	if err != nil {
 		return archive.Inspection{}, nil, invalidArgument("the import inspection endpoint URL is invalid", "check --url and retry")
 	}
@@ -452,7 +452,7 @@ func uploadImportInspection(ctx context.Context, invocation Invocation, archiveP
 }
 
 func uploadImportPlan(ctx context.Context, invocation Invocation, archivePath string) (archive.ImportPlan, map[string]any, error) {
-	body, archiveBytes, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/plan", http.StatusOK, "", importArchiveIdentity{})
+	body, archiveBytes, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/backups/import/plan", http.StatusOK, "", importArchiveIdentity{})
 	if err != nil {
 		return archive.ImportPlan{}, nil, err
 	}
@@ -464,7 +464,7 @@ func uploadImportPlan(ctx context.Context, invocation Invocation, archivePath st
 }
 
 func restoreImportAPI(ctx context.Context, invocation Invocation, archivePath, expectedArchiveSHA string, identity importArchiveIdentity) (archive.CommitResult, map[string]any, error) {
-	body, _, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/owner/import/restore", http.StatusOK, expectedArchiveSHA, identity)
+	body, _, err := uploadImportArchive(ctx, invocation, archivePath, "/api/v1/backups/import/restore", http.StatusOK, expectedArchiveSHA, identity)
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
@@ -557,7 +557,7 @@ func commitImportAPI(ctx context.Context, invocation Invocation, stagingToken st
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/commit")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/backups/import/commit")
 	if err != nil {
 		return archive.CommitResult{}, nil, invalidArgument("the import commit endpoint URL is invalid", "check --url and retry")
 	}
@@ -606,7 +606,7 @@ func importStatusAPI(ctx context.Context, invocation Invocation) (archive.Commit
 	if err != nil {
 		return archive.CommitStatus{}, nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/status")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/backups/import/status")
 	if err != nil {
 		return archive.CommitStatus{}, nil, invalidArgument("the import status endpoint URL is invalid", "check --url and retry")
 	}
@@ -1368,7 +1368,7 @@ func backupProducer(_ context.Context, invocation Invocation, appVersion string)
 }
 
 func downloadExport(ctx context.Context, invocation Invocation, destination io.Writer) (archive.Summary, error) {
-	return downloadNamedExport(ctx, invocation, destination, "/api/v1/owner/export", archive.FormatHeaderValue)
+	return downloadNamedExport(ctx, invocation, destination, "/api/v1/backups/export", archive.FormatHeaderValue)
 }
 
 func downloadNamedExport(ctx context.Context, invocation Invocation, destination io.Writer, route, format string) (archive.Summary, error) {

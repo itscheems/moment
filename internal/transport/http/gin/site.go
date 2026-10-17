@@ -18,9 +18,9 @@ import (
 // mutation over one application service.
 func RegisterSiteRoutes(engine *gin.Engine, service *app.SiteService, gate *Gate, instanceID string, instanceInitializedAt time.Time) {
 	engine.GET("/api/v1/site", getSiteSettings(service, instanceID, instanceInitializedAt))
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireAdmin())
-	owner.PATCH("/site", updateSiteSettings(service))
+	settings := engine.Group("/api/v1")
+	settings.Use(gate.RequireAdmin())
+	settings.PATCH("/site", updateSiteSettings(service))
 }
 
 func getSiteSettings(service *app.SiteService, instanceID string, instanceInitializedAt time.Time) gin.HandlerFunc {

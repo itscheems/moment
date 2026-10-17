@@ -11,7 +11,7 @@ import (
 func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T) {
 	fixture := newCommentHTTPFixture(t, nil)
 	// This fixture uses one deterministic post id. Remove its initial comment target through the API before publishing another entry.
-	remove := jsonRequest(http.MethodDelete, "/api/v1/owner/posts/"+fixture.postID.String(), "")
+	remove := jsonRequest(http.MethodDelete, "/api/v1/posts/"+fixture.postID.String(), "")
 	remove.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, remove); response.Code != http.StatusOK {
 		t.Fatalf("prepare fixture=%s", response.Body.String())
@@ -32,7 +32,7 @@ func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T)
 	if replay.Code != http.StatusCreated || decodeDataMap(t, replay)["id"] != id {
 		t.Fatal("create replay duplicated a draft")
 	}
-	for _, prefix := range []string{"/api/v1", "/api/v1/owner"} {
+	for _, prefix := range []string{"/api/v1", "/api/v1"} {
 		ownerRead := jsonRequest(http.MethodGet, prefix+"/articles/drafts/"+id, "")
 		ownerRead.Header.Set("Authorization", "Bearer "+fixture.token)
 		if response := performRequest(fixture.engine, ownerRead); response.Code == http.StatusOK {
@@ -80,7 +80,7 @@ func TestApprovedAuthorManagesArticlesWithoutAdministratorOverride(t *testing.T)
 	if republished.Code != http.StatusOK && republished.Code != http.StatusCreated {
 		t.Fatalf("republish=%d %s", republished.Code, republished.Body.String())
 	}
-	moderation := jsonRequest(http.MethodDelete, "/api/v1/owner/posts/"+postID, "")
+	moderation := jsonRequest(http.MethodDelete, "/api/v1/posts/"+postID, "")
 	moderation.Header.Set("Authorization", "Bearer "+fixture.token)
 	if response := performRequest(fixture.engine, moderation); response.Code != http.StatusOK {
 		t.Fatalf("administrator could not moderate published article: %d %s", response.Code, response.Body.String())

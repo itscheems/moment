@@ -170,7 +170,7 @@ func TestBackupMergeDiscardAPIUsesPrivateCredentialAndStrictJSON(t *testing.T) {
 	}
 	t.Setenv("MOMENT_TOKEN", "owner-test-token")
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/owner/import/merge/discard" ||
+		if request.Method != http.MethodPost || request.URL.Path != "/api/v1/backups/import/merge/discard" ||
 			request.Header.Get("Authorization") != "Bearer owner-test-token" || request.Header.Get("Content-Type") != "application/json" {
 			t.Errorf("request=%s %s %#v", request.Method, request.URL.Path, request.Header)
 		}

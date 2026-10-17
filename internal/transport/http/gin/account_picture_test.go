@@ -161,7 +161,7 @@ func TestAccountPictureUploadRefusesWhatIsNotAPicture(t *testing.T) {
 	// What still gates it is approval, not rank: an account nobody has looked at
 	// yet cannot write bytes to this instance's disk.
 	t.Run("an approved account may write to the media pool", func(t *testing.T) {
-		request := pictureUpload(t, "/api/v1/owner/media", "portrait.png", testPictureBytes(t), session, csrf)
+		request := pictureUpload(t, "/api/v1/media", "portrait.png", testPictureBytes(t), session, csrf)
 		response := performRequest(fixture.engine, request)
 		if response.Code != http.StatusOK && response.Code != http.StatusCreated {
 			t.Fatalf("approved member could not upload = %d: %s", response.Code, response.Body.String())
@@ -236,7 +236,7 @@ func TestCommentAttachmentsFollowTheCommentGroupsAdmission(t *testing.T) {
 		request func() *http.Request
 	}{
 		{"media upload", func() *http.Request {
-			return pictureUpload(t, "/api/v1/owner/media", "attach.png", testPictureBytes(t), session, csrf)
+			return pictureUpload(t, "/api/v1/media", "attach.png", testPictureBytes(t), session, csrf)
 		}},
 	}
 	// The place lookup is the same change in the same direction, but this

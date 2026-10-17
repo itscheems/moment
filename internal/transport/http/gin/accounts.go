@@ -144,10 +144,10 @@ func RegisterAccountRoutes(engine *gin.Engine, gate *Gate, pictures *media.Store
 		uploads.POST("/cover", setAccountPicture(gate, pictures, "cover"))
 	}
 
-	owner := engine.Group("/api/v1/owner/accounts")
-	owner.Use(gate.RequireAdmin())
-	owner.GET("", listAllAccounts(gate))
-	owner.PATCH("/:id", setAccountStatus(gate))
+	administration := engine.Group("/api/v1/accounts")
+	administration.Use(gate.RequireAdmin())
+	administration.GET("", listAllAccounts(gate))
+	administration.PATCH("/:id", setAccountStatus(gate))
 }
 
 // publicAccountLookup answers /username. It reports only what a visitor may
@@ -381,7 +381,7 @@ func listAllAccounts(gate *Gate) gin.HandlerFunc {
 
 // setAccountStatus is the owner's approve, suspend and reinstate control. It is
 // the only route in the product that can change an account's status, and it
-// admits only the owner.
+// admits only the administration.
 func setAccountStatus(gate *Gate) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		body, read := readBody(ctx)

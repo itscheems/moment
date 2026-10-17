@@ -248,36 +248,36 @@ func TestPendingAccountIsRefusedByEveryOwnerScopedRoute(t *testing.T) {
 		path   string
 	}{
 		// comments (RequireActiveAccount)
-		{"comments", http.MethodPost, "/api/v1/owner/posts/" + post + "/comments"},
-		{"comments", http.MethodPut, "/api/v1/owner/posts/" + post + "/comments/" + someULID + "/pin"},
-		{"comments", http.MethodDelete, "/api/v1/owner/posts/" + post + "/comments/" + someULID + "/pin"},
-		{"comments", http.MethodDelete, "/api/v1/owner/comments/" + someULID},
+		{"comments", http.MethodPost, "/api/v1/posts/" + post + "/comments"},
+		{"comments", http.MethodPut, "/api/v1/posts/" + post + "/comments/" + someULID + "/pin"},
+		{"comments", http.MethodDelete, "/api/v1/posts/" + post + "/comments/" + someULID + "/pin"},
+		{"comments", http.MethodDelete, "/api/v1/comments/" + someULID},
 		// posts
-		{"posts", http.MethodPost, "/api/v1/owner/posts"},
-		{"posts", http.MethodPatch, "/api/v1/owner/posts/" + post},
-		{"posts", http.MethodDelete, "/api/v1/owner/posts/" + post},
-		{"posts", http.MethodPut, "/api/v1/owner/posts/" + post + "/repost"},
-		{"posts", http.MethodDelete, "/api/v1/owner/posts/" + post + "/repost"},
-		{"posts", http.MethodPut, "/api/v1/owner/posts/" + post + "/pin"},
-		{"posts", http.MethodDelete, "/api/v1/owner/posts/" + post + "/pin"},
+		{"posts", http.MethodPost, "/api/v1/posts"},
+		{"posts", http.MethodPatch, "/api/v1/posts/" + post},
+		{"posts", http.MethodDelete, "/api/v1/posts/" + post},
+		{"posts", http.MethodPut, "/api/v1/posts/" + post + "/repost"},
+		{"posts", http.MethodDelete, "/api/v1/posts/" + post + "/repost"},
+		{"posts", http.MethodPut, "/api/v1/posts/" + post + "/pin"},
+		{"posts", http.MethodDelete, "/api/v1/posts/" + post + "/pin"},
 		// site
-		{"site", http.MethodPatch, "/api/v1/owner/site"},
+		{"site", http.MethodPatch, "/api/v1/site"},
 		// media
-		{"media", http.MethodPost, "/api/v1/owner/media"},
-		{"media", http.MethodGet, "/api/v1/owner/media-uploads/" + someULID + "/poster"},
+		{"media", http.MethodPost, "/api/v1/media"},
+		{"media", http.MethodGet, "/api/v1/media/uploads/" + someULID + "/poster"},
 		// locations
-		{"locations", http.MethodGet, "/api/v1/owner/locations/search?q=x"},
-		{"locations", http.MethodGet, "/api/v1/owner/locations/nearby?lat=1&lng=1"},
+		{"locations", http.MethodGet, "/api/v1/locations/search?q=x"},
+		{"locations", http.MethodGet, "/api/v1/locations/nearby?lat=1&lng=1"},
 		// links
-		{"links", http.MethodGet, "/api/v1/owner/links/unfurl?url=https://example.test"},
+		{"links", http.MethodGet, "/api/v1/links/unfurl?url=https://example.test"},
 		// doctor
-		{"doctor", http.MethodGet, "/api/v1/owner/doctor"},
+		{"doctor", http.MethodGet, "/api/v1/diagnostics"},
 		// export
-		{"export", http.MethodGet, "/api/v1/owner/export"},
+		{"export", http.MethodGet, "/api/v1/backups/export"},
 		// import
-		{"import", http.MethodPost, "/api/v1/owner/import/inspect"},
-		{"import", http.MethodPost, "/api/v1/owner/import/commit"},
-		{"import", http.MethodGet, "/api/v1/owner/import/status"},
+		{"import", http.MethodPost, "/api/v1/backups/import/inspect"},
+		{"import", http.MethodPost, "/api/v1/backups/import/commit"},
+		{"import", http.MethodGet, "/api/v1/backups/import/status"},
 		// owner_auth
 		{"personal_tokens", http.MethodPost, "/api/v1/account/tokens"},
 		// Ending a session is deliberately absent. It used to sit here, and
@@ -286,8 +286,8 @@ func TestPendingAccountIsRefusedByEveryOwnerScopedRoute(t *testing.T) {
 		// gives up a power was standing behind the refusal that guards powers.
 		// TestPendingAccountKeepsItsOwnAllowedPowers covers it now.
 		// accounts
-		{"accounts", http.MethodGet, "/api/v1/owner/accounts"},
-		{"accounts", http.MethodPatch, "/api/v1/owner/accounts/" + memberID},
+		{"accounts", http.MethodGet, "/api/v1/accounts"},
+		{"accounts", http.MethodPatch, "/api/v1/accounts/" + memberID},
 	}
 
 	for _, route := range routes {
@@ -317,7 +317,7 @@ func TestPendingAccountCannotWriteAComment(t *testing.T) {
 	session, csrf, _ := fixture.signInPending(t)
 	post := fixture.postID.String()
 
-	create := httptest.NewRequest(http.MethodPost, "/api/v1/owner/posts/"+post+"/comments",
+	create := httptest.NewRequest(http.MethodPost, "/api/v1/posts/"+post+"/comments",
 		bytes.NewReader([]byte(`{"content_md":"let me in"}`)))
 	create.AddCookie(session)
 	create.Header.Set("Content-Type", "application/json")

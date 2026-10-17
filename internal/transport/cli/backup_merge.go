@@ -252,7 +252,7 @@ func mergeActionText(title string, counts map[string]int) string {
 }
 
 func uploadMergeInspection(ctx context.Context, invocation Invocation, archivePath string) (archive.MergeInspection, map[string]any, error) {
-	body, _, err := uploadImportArchiveBounded(ctx, invocation, archivePath, "/api/v1/owner/import/merge/plan", http.StatusCreated, "", importArchiveIdentity{}, mergeAPIResponseMax)
+	body, _, err := uploadImportArchiveBounded(ctx, invocation, archivePath, "/api/v1/backups/import/merge/plan", http.StatusCreated, "", importArchiveIdentity{}, mergeAPIResponseMax)
 	if err != nil {
 		return archive.MergeInspection{}, nil, err
 	}
@@ -300,7 +300,7 @@ func commitMergeAPI(ctx context.Context, invocation Invocation, document mergeSe
 	if err != nil {
 		return archive.CommitResult{}, nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/merge/commit")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/backups/import/merge/commit")
 	if err != nil {
 		return archive.CommitResult{}, nil, invalidArgument("the import merge endpoint URL is invalid", "check --url and retry")
 	}
@@ -343,7 +343,7 @@ func discardMergeAPI(ctx context.Context, invocation Invocation, stagingToken st
 	if err != nil {
 		return nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/import/merge/discard")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/backups/import/merge/discard")
 	if err != nil {
 		return nil, invalidArgument("the import merge discard endpoint URL is invalid", "check --url and retry")
 	}

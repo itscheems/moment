@@ -67,7 +67,7 @@ func unfurlLinkURL(ctx context.Context, invocation Invocation, raw string) (link
 	case ModeAPI:
 		values := url.Values{}
 		values.Set("url", raw)
-		meta, err = linkAPIRequest(ctx, invocation, "/api/v1/owner/links/unfurl", values, &card)
+		meta, err = linkAPIRequest(ctx, invocation, "/api/v1/links/unfurl", values, &card)
 		if err != nil {
 			return linkdto.Card{}, nil, linkCLIError(err)
 		}

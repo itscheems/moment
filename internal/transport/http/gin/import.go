@@ -53,34 +53,34 @@ type reviewImportCommitter interface {
 
 // RegisterImportInspectRoutes installs the owner-only raw ZIP upload endpoint.
 func RegisterImportInspectRoutes(engine *gin.Engine, inspector ImportInspector, gate *Gate) {
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireAdmin())
-	owner.POST("/import/inspect", inspectImport(inspector, gate))
+	backups := engine.Group("/api/v1/backups")
+	backups.Use(gate.RequireAdmin())
+	backups.POST("/import/inspect", inspectImport(inspector, gate))
 	if planner, ok := inspector.(importPlanner); ok {
-		owner.POST("/import/plan", planImport(planner, gate))
+		backups.POST("/import/plan", planImport(planner, gate))
 	}
 }
 
 // RegisterImportCommitRoutes installs the owner-only destructive commit and
 // polling status endpoints. Status intentionally accepts no token.
 func RegisterImportCommitRoutes(engine *gin.Engine, committer ImportCommitter, gate *Gate) {
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireAdmin())
-	owner.POST("/import/commit", commitImport(committer, gate))
+	backups := engine.Group("/api/v1/backups")
+	backups.Use(gate.RequireAdmin())
+	backups.POST("/import/commit", commitImport(committer, gate))
 	if restorer, ok := committer.(archiveImportCommitter); ok {
-		owner.POST("/import/restore", restoreImport(restorer, gate))
+		backups.POST("/import/restore", restoreImport(restorer, gate))
 	}
 	if merger, ok := committer.(mergeImportCommitter); ok {
-		owner.POST("/import/merge/plan", planMergeImport(merger, gate))
-		owner.POST("/import/merge/commit", commitMergeImport(merger, gate))
-		owner.POST("/import/merge/discard", discardMergeImport(merger, gate))
+		backups.POST("/import/merge/plan", planMergeImport(merger, gate))
+		backups.POST("/import/merge/commit", commitMergeImport(merger, gate))
+		backups.POST("/import/merge/discard", discardMergeImport(merger, gate))
 	}
 	if reviewer, ok := committer.(reviewImportCommitter); ok {
-		owner.POST("/import/review", reviewImport(reviewer, gate))
-		owner.POST("/import/review/replace", commitReviewedReplacement(reviewer, gate))
-		owner.POST("/import/review/media", getReviewMedia(reviewer, gate))
+		backups.POST("/import/review", reviewImport(reviewer, gate))
+		backups.POST("/import/review/replace", commitReviewedReplacement(reviewer, gate))
+		backups.POST("/import/review/media", getReviewMedia(reviewer, gate))
 	}
-	owner.GET("/import/status", importStatus(committer))
+	backups.GET("/import/status", importStatus(committer))
 }
 
 func reviewImport(reviewer reviewImportCommitter, gate *Gate) gin.HandlerFunc {

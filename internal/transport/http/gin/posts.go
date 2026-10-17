@@ -28,15 +28,15 @@ func RegisterPostRoutes(engine *gin.Engine, posts *app.PostService, site *app.Si
 	// when one is presented, widens what they return.
 	engine.GET("/api/v1/posts", listPosts(posts, site, gate))
 	engine.GET("/api/v1/posts/:id", getPost(posts, gate))
-	owner := engine.Group("/api/v1/owner")
-	owner.Use(gate.RequireAdmin())
-	owner.POST("/posts", createPost(posts))
-	owner.PATCH("/posts/:id", updatePost(posts))
-	owner.DELETE("/posts/:id", deletePost(posts))
-	owner.PUT("/posts/:id/repost", repostPost(posts, true))
-	owner.DELETE("/posts/:id/repost", repostPost(posts, false))
-	owner.PUT("/posts/:id/pin", pinPost(site))
-	owner.DELETE("/posts/:id/pin", unpinPost(site))
+	authored := engine.Group("/api/v1")
+	authored.Use(gate.RequireActiveAccount())
+	authored.POST("/posts", createPost(posts))
+	authored.PATCH("/posts/:id", updatePost(posts))
+	authored.DELETE("/posts/:id", deletePost(posts))
+	authored.PUT("/posts/:id/repost", repostPost(posts, true))
+	authored.DELETE("/posts/:id/repost", repostPost(posts, false))
+	engine.PUT("/api/v1/posts/:id/pin", gate.RequireAdmin(), pinPost(site))
+	engine.DELETE("/api/v1/posts/:id/pin", gate.RequireAdmin(), unpinPost(site))
 }
 
 func repostPost(posts *app.PostService, active bool) gin.HandlerFunc {
@@ -481,6 +481,8 @@ func writePostError(ctx *gin.Context, err error) {
 		return
 	}
 	switch domainErr.Code {
+	case domain.CodeUnauthorized:
+		Failure(ctx, http.StatusForbidden, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeInvalidArgument:
 		Failure(ctx, http.StatusBadRequest, string(domainErr.Code), domainErr.Message, domainErr.Details)
 	case domain.CodeContentEmpty, domain.CodeContentTooLarge, domain.CodeExternalImageNotAllowed:

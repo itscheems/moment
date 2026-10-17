@@ -87,7 +87,7 @@ func accountFailureFixture(t *testing.T, failure error) (http.Handler, string) {
 func TestBearerRejectsProtectedRoutesWhileTheAccountDatabaseIsUnreadable(t *testing.T) {
 	engine, token := brokenAccountsFixture(t)
 
-	for _, path := range []string{"/api/v1/owner/doctor", "/api/v1/account/security", "/api/v1/account/session"} {
+	for _, path := range []string{"/api/v1/diagnostics", "/api/v1/account/security", "/api/v1/account/session"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		request.Header.Set("Authorization", "Bearer "+token)
 		response := performRequest(engine, request)
@@ -100,7 +100,7 @@ func TestBearerRejectsProtectedRoutesWhileTheAccountDatabaseIsUnreadable(t *test
 	}
 
 	// Invalid credentials remain an authentication refusal, independently of storage.
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/owner/doctor", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/diagnostics", nil)
 	request.Header.Set("Authorization", "Bearer not-the-owner-token")
 	if response := performRequest(engine, request); response.Code != http.StatusUnauthorized {
 		t.Fatalf("a wrong token = %d, want 401: %s", response.Code, response.Body.String())

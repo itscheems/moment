@@ -23,7 +23,7 @@ func TestHiddenPostsAndTheirMediaAnswerOnlyToTheOwnerOverHTTP(t *testing.T) {
 	}
 	mediaID := decodeDataMap(t, uploaded)["media"].(map[string]any)["id"].(string)
 
-	create := asOwner(jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"shoreline secret","visibility":"only_me","media":[{"media_id":"`+mediaID+`","position":0,"alt_text":null}]}`))
+	create := asOwner(jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"shoreline secret","visibility":"only_me","media":[{"media_id":"`+mediaID+`","position":0,"alt_text":null}]}`))
 	created := performRequest(fixture.engine, create)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create = %d %s", created.Code, created.Body.String())
@@ -33,12 +33,12 @@ func TestHiddenPostsAndTheirMediaAnswerOnlyToTheOwnerOverHTTP(t *testing.T) {
 	if createdData["visibility"] != "only_me" {
 		t.Fatalf("created visibility = %v", createdData["visibility"])
 	}
-	public := asOwner(jsonRequest(http.MethodPost, "/api/v1/owner/posts", `{"content_md":"shoreline public"}`))
+	public := asOwner(jsonRequest(http.MethodPost, "/api/v1/posts", `{"content_md":"shoreline public"}`))
 	if response := performRequest(fixture.engine, public); response.Code != http.StatusCreated || decodeDataMap(t, response)["visibility"] != "everyone" {
 		t.Fatalf("public create = %d %s", response.Code, response.Body.String())
 	}
 	for _, body := range []string{`{"content_md":"x","visibility":"friends"}`, `{"content_md":"x","visibility":null}`, `{"content_md":"x","visibility":1}`} {
-		if response := performRequest(fixture.engine, asOwner(jsonRequest(http.MethodPost, "/api/v1/owner/posts", body))); response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
+		if response := performRequest(fixture.engine, asOwner(jsonRequest(http.MethodPost, "/api/v1/posts", body))); response.Code != http.StatusBadRequest || decodeError(t, response.Body).Error.Code != "INVALID_ARGUMENT" {
 			t.Fatalf("%s = %d %s", body, response.Code, response.Body.String())
 		}
 	}
@@ -86,7 +86,7 @@ func TestHiddenPostsAndTheirMediaAnswerOnlyToTheOwnerOverHTTP(t *testing.T) {
 
 	// Revealing the post is one PATCH with nothing else in it, and it takes
 	// the file with it.
-	reveal := asOwner(jsonRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"visibility":"everyone"}`))
+	reveal := asOwner(jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, `{"visibility":"everyone"}`))
 	revealed := performRequest(fixture.engine, reveal)
 	revealedData := decodeDataMap(t, revealed)
 	if revealed.Code != http.StatusOK || revealedData["visibility"] != "everyone" || revealedData["edited_at"] != nil {
@@ -99,7 +99,7 @@ func TestHiddenPostsAndTheirMediaAnswerOnlyToTheOwnerOverHTTP(t *testing.T) {
 	if shown.Code != http.StatusOK || shown.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
 		t.Fatalf("visitor media after reveal = %d cache=%q", shown.Code, shown.Header().Get("Cache-Control"))
 	}
-	if response := performRequest(fixture.engine, asOwner(jsonRequest(http.MethodPatch, "/api/v1/owner/posts/"+id, `{"visibility":"only_you"}`))); response.Code != http.StatusBadRequest {
+	if response := performRequest(fixture.engine, asOwner(jsonRequest(http.MethodPatch, "/api/v1/posts/"+id, `{"visibility":"only_you"}`))); response.Code != http.StatusBadRequest {
 		t.Fatalf("bad PATCH visibility = %d %s", response.Code, response.Body.String())
 	}
 }
@@ -113,14 +113,14 @@ func TestAMemberReadsHiddenPostsLikeAVisitor(t *testing.T) {
 	if response := performRequest(fixture.engine, memberCommentRequest(member, http.MethodGet, "/api/v1/posts/"+id, "")); response.Code != http.StatusOK {
 		t.Fatalf("member detail before hiding = %d %s", response.Code, response.Body.String())
 	}
-	hidden := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPatch, "/api/v1/owner/posts/"+id, `{"visibility":"only_me"}`))
+	hidden := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPatch, "/api/v1/posts/"+id, `{"visibility":"only_me"}`))
 	if hidden.Code != http.StatusOK || decodeDataMap(t, hidden)["visibility"] != "only_me" {
 		t.Fatalf("hide = %d %s", hidden.Code, hidden.Body.String())
 	}
 	for _, request := range []*http.Request{
 		memberCommentRequest(member, http.MethodGet, "/api/v1/posts/"+id, ""),
 		memberCommentRequest(member, http.MethodGet, "/api/v1/posts/"+id+"/comments", ""),
-		memberCommentRequest(member, http.MethodPost, "/api/v1/owner/posts/"+id+"/comments", `{"content_md":"hello?"}`),
+		memberCommentRequest(member, http.MethodPost, "/api/v1/posts/"+id+"/comments", `{"content_md":"hello?"}`),
 	} {
 		response := performRequest(fixture.engine, request)
 		if response.Code != http.StatusNotFound || decodeError(t, response.Body).Error.Code != "POST_NOT_FOUND" {
@@ -130,7 +130,7 @@ func TestAMemberReadsHiddenPostsLikeAVisitor(t *testing.T) {
 	if items := decodeDataMap(t, performRequest(fixture.engine, memberCommentRequest(member, http.MethodGet, "/api/v1/posts?limit=10", "")))["items"].([]any); len(items) != 0 {
 		t.Fatalf("member timeline = %#v", items)
 	}
-	note := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, "/api/v1/owner/posts/"+id+"/comments", `{"content_md":"note to self"}`))
+	note := performRequest(fixture.engine, ownerCommentRequest(fixture, http.MethodPost, "/api/v1/posts/"+id+"/comments", `{"content_md":"note to self"}`))
 	if note.Code != http.StatusCreated {
 		t.Fatalf("owner comment = %d %s", note.Code, note.Body.String())
 	}

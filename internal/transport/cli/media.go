@@ -322,7 +322,7 @@ func mediaAPIUpload(ctx context.Context, invocation Invocation, filename string,
 	if err := writer.Close(); err != nil {
 		return nil, err
 	}
-	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/owner/media")
+	endpoint, err := url.JoinPath(target.BaseURL().String(), "/api/v1/media")
 	if err != nil {
 		return nil, err
 	}
@@ -577,7 +577,7 @@ func runMediaDelete(ctx context.Context, invocation Invocation, input CommandInp
 		defer func() { _ = direct.Close() }()
 		result, err = direct.store.Delete(ctx, id, invocation.Safety().DryRun)
 	} else {
-		route := "/api/v1/owner/media/" + id.String()
+		route := "/api/v1/media/" + id.String()
 		if invocation.Safety().DryRun {
 			route += "?dry_run=true"
 		}

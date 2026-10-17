@@ -18,7 +18,7 @@ func RegisterLocationRoutes(engine *gin.Engine, locations *app.LocationService, 
 	// accounts, so the lookup behind the picker has to admit them too. These
 	// are reads against a third-party geocoder rather than writes to this
 	// instance, which is why approval is the whole of the bar.
-	places := engine.Group("/api/v1/owner/locations")
+	places := engine.Group("/api/v1/locations")
 	places.Use(gate.RequireActiveAccount())
 	places.GET("/search", searchLocations(locations))
 	places.GET("/nearby", nearbyLocations(locations))

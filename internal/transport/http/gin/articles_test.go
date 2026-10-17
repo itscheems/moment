@@ -19,7 +19,7 @@ func ownerCall(fixture postHTTPFixture, method, path, body string) *http.Request
 
 func createDraft(t *testing.T, fixture postHTTPFixture, title string) map[string]any {
 	t.Helper()
-	response := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts",
+	response := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/articles/drafts",
 		`{"title":"`+title+`","body":`+articleDraftBodyJSON+`}`))
 	if response.Code != http.StatusCreated {
 		t.Fatalf("create draft = %d %s", response.Code, response.Body.String())
@@ -32,8 +32,8 @@ func TestArticleDraftsAreOwnerOnlyAndRoundTrip(t *testing.T) {
 
 	// Nothing here is public: a draft is by definition not published.
 	for _, request := range []*http.Request{
-		httptest.NewRequest(http.MethodGet, "/api/v1/owner/articles/drafts", nil),
-		httptest.NewRequest(http.MethodPost, "/api/v1/owner/articles/drafts", strings.NewReader(`{"title":"x","body":`+articleDraftBodyJSON+`}`)),
+		httptest.NewRequest(http.MethodGet, "/api/v1/articles/drafts", nil),
+		httptest.NewRequest(http.MethodPost, "/api/v1/articles/drafts", strings.NewReader(`{"title":"x","body":`+articleDraftBodyJSON+`}`)),
 	} {
 		if response := performRequest(fixture.engine, request); response.Code != http.StatusUnauthorized {
 			t.Fatalf("anonymous access = %d %s", response.Code, response.Body.String())
@@ -49,7 +49,7 @@ func TestArticleDraftsAreOwnerOnlyAndRoundTrip(t *testing.T) {
 		t.Fatalf("a draft carries its body: %#v", draft)
 	}
 
-	listed := performRequest(fixture.engine, ownerCall(fixture, http.MethodGet, "/api/v1/owner/articles/drafts", ""))
+	listed := performRequest(fixture.engine, ownerCall(fixture, http.MethodGet, "/api/v1/articles/drafts", ""))
 	var envelope struct {
 		Data []map[string]any `json:"data"`
 	}
@@ -69,12 +69,12 @@ func TestReplacingADraftRefusesAStaleRevision(t *testing.T) {
 	id, _ := draft["id"].(string)
 	stale, _ := draft["updated_at"].(string)
 
-	first := performRequest(fixture.engine, ownerCall(fixture, http.MethodPut, "/api/v1/owner/articles/drafts/"+id,
+	first := performRequest(fixture.engine, ownerCall(fixture, http.MethodPut, "/api/v1/articles/drafts/"+id,
 		`{"title":"第二版","body":`+articleDraftBodyJSON+`,"expected_updated_at":"`+stale+`"}`))
 	if first.Code != http.StatusOK {
 		t.Fatalf("current write = %d %s", first.Code, first.Body.String())
 	}
-	second := performRequest(fixture.engine, ownerCall(fixture, http.MethodPut, "/api/v1/owner/articles/drafts/"+id,
+	second := performRequest(fixture.engine, ownerCall(fixture, http.MethodPut, "/api/v1/articles/drafts/"+id,
 		`{"title":"另一个页签","body":`+articleDraftBodyJSON+`,"expected_updated_at":"`+stale+`"}`))
 	if second.Code != http.StatusConflict {
 		t.Fatalf("stale write = %d %s", second.Code, second.Body.String())
@@ -89,7 +89,7 @@ func TestPublishingADraftPutsAnArticleOnTheTimeline(t *testing.T) {
 	draft := createDraft(t, fixture, "发布的文章")
 	id, _ := draft["id"].(string)
 
-	published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts/"+id+"/publish", ""))
+	published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/articles/drafts/"+id+"/publish", ""))
 	if published.Code != http.StatusCreated {
 		t.Fatalf("publish = %d %s", published.Code, published.Body.String())
 	}
@@ -108,7 +108,7 @@ func TestPublishingADraftPutsAnArticleOnTheTimeline(t *testing.T) {
 	}
 
 	// The draft is consumed.
-	if gone := performRequest(fixture.engine, ownerCall(fixture, http.MethodGet, "/api/v1/owner/articles/drafts/"+id, "")); gone.Code != http.StatusNotFound {
+	if gone := performRequest(fixture.engine, ownerCall(fixture, http.MethodGet, "/api/v1/articles/drafts/"+id, "")); gone.Code != http.StatusNotFound {
 		t.Fatalf("draft after publish = %d", gone.Code)
 	}
 
@@ -137,12 +137,12 @@ func TestPublishingADraftPutsAnArticleOnTheTimeline(t *testing.T) {
 
 func TestTimelineCanBeNarrowedToOneKind(t *testing.T) {
 	fixture := newPostHTTPFixture(t, 0)
-	if moment := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/posts", `{"content_md":"一条普通帖子"}`)); moment.Code != http.StatusCreated {
+	if moment := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/posts", `{"content_md":"一条普通帖子"}`)); moment.Code != http.StatusCreated {
 		t.Fatalf("create moment = %d %s", moment.Code, moment.Body.String())
 	}
 	draft := createDraft(t, fixture, "一篇文章")
 	id, _ := draft["id"].(string)
-	if published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts/"+id+"/publish", "")); published.Code != http.StatusCreated {
+	if published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/articles/drafts/"+id+"/publish", "")); published.Code != http.StatusCreated {
 		t.Fatalf("publish = %d %s", published.Code, published.Body.String())
 	}
 
@@ -183,11 +183,11 @@ func TestEditingAPublishedArticleUsesAWorkingCopy(t *testing.T) {
 	fixture := newPostHTTPFixture(t, 0)
 	draft := createDraft(t, fixture, "初版")
 	draftID, _ := draft["id"].(string)
-	published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts/"+draftID+"/publish", ""))
+	published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/articles/drafts/"+draftID+"/publish", ""))
 	post := decodeDataMap(t, published)
 	postID, _ := post["id"].(string)
 
-	opened := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/"+postID+"/draft", ""))
+	opened := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/articles/"+postID+"/draft", ""))
 	if opened.Code != http.StatusOK {
 		t.Fatalf("open working copy = %d %s", opened.Code, opened.Body.String())
 	}
@@ -198,7 +198,7 @@ func TestEditingAPublishedArticleUsesAWorkingCopy(t *testing.T) {
 	workingID, _ := working["id"].(string)
 	updatedAt, _ := working["updated_at"].(string)
 
-	saved := performRequest(fixture.engine, ownerCall(fixture, http.MethodPut, "/api/v1/owner/articles/drafts/"+workingID,
+	saved := performRequest(fixture.engine, ownerCall(fixture, http.MethodPut, "/api/v1/articles/drafts/"+workingID,
 		`{"title":"改过了","body":`+articleDraftBodyJSON+`,"expected_updated_at":"`+updatedAt+`"}`))
 	if saved.Code != http.StatusOK {
 		t.Fatalf("save working copy = %d %s", saved.Code, saved.Body.String())
@@ -210,7 +210,7 @@ func TestEditingAPublishedArticleUsesAWorkingCopy(t *testing.T) {
 		t.Fatalf("editing changed what readers see: %#v", liveArticle)
 	}
 
-	republished := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts/"+workingID+"/publish", ""))
+	republished := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/articles/drafts/"+workingID+"/publish", ""))
 	if republished.Code != http.StatusCreated {
 		t.Fatalf("republish = %d %s", republished.Code, republished.Body.String())
 	}
@@ -232,7 +232,7 @@ func TestSearchFindsAnArticleAndReturnsItsCard(t *testing.T) {
 	fixture := newPostHTTPFixture(t, 0)
 	draft := createDraft(t, fixture, "长安的荔枝")
 	id, _ := draft["id"].(string)
-	if published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts/"+id+"/publish", "")); published.Code != http.StatusCreated {
+	if published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/articles/drafts/"+id+"/publish", "")); published.Code != http.StatusCreated {
 		t.Fatalf("publish = %d %s", published.Code, published.Body.String())
 	}
 
@@ -266,12 +266,12 @@ func TestArticleStructuredReadCarriesInlineGeometryWithoutAttachments(t *testing
 	fixture := newPostHTTPFixture(t, 0)
 	insertPostHTTPMedia(t, fixture.database, postHTTPMediaOne, "a")
 	body := `{"schema_version":1,"type":"doc","content":[{"type":"image","attrs":{"media_id":"` + postHTTPMediaOne + `","alt":"河流"}},{"type":"image","attrs":{"media_id":"` + postHTTPMediaOne + `","alt":"同一河流"}}]}`
-	created := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts", `{"title":"图文","body":`+body+`}`))
+	created := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/articles/drafts", `{"title":"图文","body":`+body+`}`))
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create = %d %s", created.Code, created.Body.String())
 	}
 	draft := decodeDataMap(t, created)
-	published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/owner/articles/drafts/"+draft["id"].(string)+"/publish", `{"visibility":"only_me"}`))
+	published := performRequest(fixture.engine, ownerCall(fixture, http.MethodPost, "/api/v1/articles/drafts/"+draft["id"].(string)+"/publish", `{"visibility":"only_me"}`))
 	if published.Code != http.StatusCreated {
 		t.Fatalf("publish = %d %s", published.Code, published.Body.String())
 	}

@@ -224,7 +224,7 @@ func runPostRepostChange(ctx context.Context, invocation Invocation, input Comma
 			method = http.MethodDelete
 		}
 		var status int
-		meta, status, err = postAPIRequest(ctx, invocation, method, "/api/v1/owner/posts/"+url.PathEscape(id.String())+"/repost", nil, nil, "", true, &post)
+		meta, status, err = postAPIRequest(ctx, invocation, method, "/api/v1/posts/"+url.PathEscape(id.String())+"/repost", nil, nil, "", true, &post)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -414,7 +414,7 @@ func runPostCreate(ctx context.Context, invocation Invocation, input CommandInpu
 			payload.LinkCards = linkCardPayload(linkInput.Cards)
 		}
 		var status int
-		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/owner/posts", nil, payload, idempotencyKey, true, &post)
+		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPost, "/api/v1/posts", nil, payload, idempotencyKey, true, &post)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -529,7 +529,7 @@ func runPostUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 			payload.Visibility = &value
 		}
 		var status int
-		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/posts/"+id.String(), nil, payload, "", true, &post)
+		meta, status, err = postAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/posts/"+id.String(), nil, payload, "", true, &post)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -577,7 +577,7 @@ func runPostDelete(ctx context.Context, invocation Invocation, input CommandInpu
 		meta = map[string]any{"deleted": true}
 	case ModeAPI:
 		var status int
-		meta, status, err = postAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/owner/posts/"+id.String(), nil, nil, "", true, &post)
+		meta, status, err = postAPIRequest(ctx, invocation, http.MethodDelete, "/api/v1/posts/"+id.String(), nil, nil, "", true, &post)
 		if err != nil {
 			return Result{}, postCLIError(err)
 		}
@@ -616,7 +616,7 @@ func runPostPinChange(ctx context.Context, invocation Invocation, input CommandI
 		if !pin {
 			method = http.MethodDelete
 		}
-		meta, err = siteAPIRequest(ctx, invocation, method, "/api/v1/owner/posts/"+id.String()+"/pin", http.StatusOK, nil, true, &settings)
+		meta, err = siteAPIRequest(ctx, invocation, method, "/api/v1/posts/"+id.String()+"/pin", http.StatusOK, nil, true, &settings)
 		if err == nil {
 			if (pin && (settings.PinnedPostID == nil || *settings.PinnedPostID != id.String())) || (!pin && settings.PinnedPostID != nil) {
 				return Result{}, invalidAPIResponse()

@@ -103,7 +103,7 @@ func runSiteUpdate(ctx context.Context, invocation Invocation, input CommandInpu
 	case ModeDirect:
 		settings, err = directSiteUpdate(ctx, invocation, update)
 	case ModeAPI:
-		meta, err = siteAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/owner/site", http.StatusOK, payload, true, &settings)
+		meta, err = siteAPIRequest(ctx, invocation, http.MethodPatch, "/api/v1/site", http.StatusOK, payload, true, &settings)
 	default:
 		err = errors.New("unsupported site update transport")
 	}

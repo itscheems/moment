@@ -68,20 +68,20 @@ func (gate *Gate) RequireAccount() gin.HandlerFunc {
 func (gate *Gate) RequireActiveAccount() gin.HandlerFunc {
 	return gate.admit(func(user domain.User) error {
 		if !user.CanWritePublicContent() {
-			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by the site owner", nil)
+			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by an administrator", nil)
 		}
 		return nil
 	})
 }
 
-// RequireAdmin admits only the account that owns the site.
+// RequireAdmin admits active administrators, independently of content authorship.
 func (gate *Gate) RequireAdmin() gin.HandlerFunc {
 	return gate.admit(func(user domain.User) error {
 		if !user.CanWritePublicContent() {
-			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by the site owner", nil)
+			return domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by an administrator", nil)
 		}
 		if !user.IsAdmin() {
-			return domain.NewError(domain.CodeUnauthorized, "owner access is required", nil)
+			return domain.NewError(domain.CodeUnauthorized, "administrator access is required", nil)
 		}
 		return nil
 	})
