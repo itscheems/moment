@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -214,7 +215,13 @@ type ArchiveComment struct {
 
 // ArchiveMedia contains portable metadata plus the private source path needed
 // by the exporter. StoragePath is never serialized into the archive.
+type ArchiveMediaGrant struct {
+	UserID      string `json:"user_id"`
+	CreatedAtMS int64  `json:"created_at_ms"`
+}
+
 type ArchiveMedia struct {
+	Grants       []ArchiveMediaGrant
 	ID           string
 	SHA256       string
 	StoragePath  string
@@ -911,7 +918,9 @@ func (snapshot *ArchiveSnapshot) Media(ctx context.Context, yield func(ArchiveMe
 		return errors.New("archive media callback is required")
 	}
 	rows, err := snapshot.tx.QueryContext(ctx, `
-SELECT id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms
+SELECT id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms,
+ (SELECT json_group_array(json_object('user_id',granted.user_id,'created_at_ms',granted.created_at_ms)) FROM
+  (SELECT user_id,created_at_ms FROM media_grants WHERE media_id=media.id ORDER BY user_id) AS granted)
 FROM media
 WHERE `+mediaReferencedSQL+`
 ORDER BY sha256, id`)
@@ -921,8 +930,12 @@ ORDER BY sha256, id`)
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var value ArchiveMedia
-		if err := rows.Scan(&value.ID, &value.SHA256, &value.StoragePath, &value.OriginalName, &value.MIMEType, &value.ByteSize, &value.Width, &value.Height, &value.CreatedAtMS); err != nil {
+		var grants string
+		if err := rows.Scan(&value.ID, &value.SHA256, &value.StoragePath, &value.OriginalName, &value.MIMEType, &value.ByteSize, &value.Width, &value.Height, &value.CreatedAtMS, &grants); err != nil {
 			return fmt.Errorf("scan archive media: %w", err)
+		}
+		if err := json.Unmarshal([]byte(grants), &value.Grants); err != nil {
+			return fmt.Errorf("decode media grants: %w", err)
 		}
 		if err := yield(value); err != nil {
 			return err

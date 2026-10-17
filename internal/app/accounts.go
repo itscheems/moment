@@ -48,6 +48,7 @@ type AccountStore interface {
 	// this to the whole reference store would make every implementation carry
 	// methods it never calls.
 	MediaExists(ctx context.Context, id domain.ID) (bool, error)
+	MediaAvailableForAccount(context.Context, string, domain.ID) (bool, error)
 	ReconcileMediaReferences(ctx context.Context, ids []domain.ID, now time.Time) error
 }
 
@@ -631,7 +632,7 @@ func (service *AccountService) UpdateProfile(ctx context.Context, userID string,
 			if parseErr != nil {
 				return domain.NewError(domain.CodeInvalidArgument, field+" must be a valid managed media ID", map[string]any{"field": field})
 			}
-			exists, lookupErr := accounts.MediaExists(ctx, mediaID)
+			exists, lookupErr := accounts.MediaAvailableForAccount(ctx, user.ID, mediaID)
 			if lookupErr != nil {
 				return lookupErr
 			}

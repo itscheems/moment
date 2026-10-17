@@ -41,7 +41,7 @@ VALUES (?, 'article', NULL, 1, 1, 1, '', '0123456789abcdef0123456789abcdef')`, a
 	return first, second
 }
 
-func articleMediaID(t *testing.T, db *Database, fill string) string {
+func articleMediaID(t *testing.T, db *Database, fill string, uploaders ...string) string {
 	t.Helper()
 	sha := strings.Repeat(fill, 64)
 	id := "01ARZ3NDEKTSV4RRFFQ69G5F" + strings.ToUpper(fill) + "1"
@@ -49,6 +49,11 @@ func articleMediaID(t *testing.T, db *Database, fill string) string {
 INSERT INTO media (id, sha256, storage_path, original_name, mime_type, byte_size, width, height, created_at_ms, unreferenced_since_ms)
 VALUES (?, ?, ?, 'p.jpg', 'image/jpeg', 1024, 10, 10, 1, NULL)`,
 		id, sha, "media/original/"+sha[:2]+"/"+sha+".jpg")
+	uploader := testAccountID
+	if len(uploaders) > 0 {
+		uploader = uploaders[0]
+	}
+	mustWrite(t, db, `INSERT INTO media_grants(user_id,media_id,created_at_ms) VALUES(?,?,1)`, uploader, id)
 	return id
 }
 

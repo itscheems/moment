@@ -117,7 +117,7 @@ func TestSelectedMediaDeletionRejectsActiveMember(t *testing.T) {
 			t.Fatalf("member delete: %d %s", response.Code, response.Body.String())
 		}
 	}
-	if response := performRequest(fixture.engine, httptest.NewRequest(http.MethodGet, "/api/v1/media/"+id, nil)); response.Code != http.StatusOK {
+	if response := performRequest(fixture.engine, headerRequest(http.MethodGet, "/api/v1/media/"+id, fixture.token, nil)); response.Code != http.StatusOK {
 		t.Fatalf("member removed media: %d", response.Code)
 	}
 }

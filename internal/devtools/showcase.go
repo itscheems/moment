@@ -399,15 +399,15 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 	actual := Counts{}
 	pictureIndex := 0
 	var zeroID domain.ID
-	ingest := func(spec showcaseImage) (domain.ID, error) {
-		if err := builder.verify(ctx); err != nil {
+	ingest := func(ingestContext context.Context, spec showcaseImage) (domain.ID, error) {
+		if err := builder.verify(ingestContext); err != nil {
 			return zeroID, err
 		}
 		contents, err := showcasePNG(spec, builder.seed, pictureIndex)
 		if err != nil {
 			return zeroID, err
 		}
-		value, _, err := builder.media.Ingest(ctx, spec.fileName(pictureIndex), bytes.NewReader(contents))
+		value, _, err := builder.media.Ingest(ingestContext, spec.fileName(pictureIndex), bytes.NewReader(contents))
 		if err != nil {
 			return zeroID, fmt.Errorf("ingest %s: %w", spec.fileName(pictureIndex), err)
 		}
@@ -420,7 +420,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 	usagesFor := func(images []showcaseImage, alt func(int) *string) ([]domain.EntryMediaUsage, error) {
 		usages := make([]domain.EntryMediaUsage, 0, len(images))
 		for index, spec := range images {
-			id, err := ingest(spec)
+			id, err := ingest(ctx, spec)
 			if err != nil {
 				return nil, err
 			}
@@ -441,11 +441,11 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 	cover := panorama(195, 0)
 	cover.Name = "cover-owner.png"
 	builder.clock.now = anchor.AddDate(-7, 0, 0)
-	avatarID, err := ingest(avatar)
+	avatarID, err := ingest(ctx, avatar)
 	if err != nil {
 		return Counts{}, err
 	}
-	coverID, err := ingest(cover)
+	coverID, err := ingest(ctx, cover)
 	if err != nil {
 		return Counts{}, err
 	}
@@ -505,7 +505,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 			profile.Bio = text(member.bio)
 		}
 		if member.avatar != nil {
-			id, err := ingest(*member.avatar)
+			id, err := ingest(app.WithContentActor(ctx, outcome.User), *member.avatar)
 			if err != nil {
 				return Counts{}, err
 			}
@@ -564,14 +564,14 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 			card.Position = 0
 			card.CapturedAt = domain.TimeToMillis(at)
 			if post.link.thumbnail != nil {
-				id, err := ingest(*post.link.thumbnail)
+				id, err := ingest(ctx, *post.link.thumbnail)
 				if err != nil {
 					return Counts{}, err
 				}
 				card.ThumbnailMediaID = id.String()
 			}
 			if post.link.favicon != nil {
-				id, err := ingest(*post.link.favicon)
+				id, err := ingest(ctx, *post.link.favicon)
 				if err != nil {
 					return Counts{}, err
 				}
@@ -664,7 +664,7 @@ func (builder *fixtureBuilder) buildShowcase(ctx context.Context) (Counts, error
 	return actual, nil
 }
 
-func (builder *fixtureBuilder) createShowcaseComments(ctx context.Context, entryID domain.ID, postedAt time.Time, comments []showcaseComment, authors map[string]domain.User, ingest func(showcaseImage) (domain.ID, error), actual *Counts) (int64, error) {
+func (builder *fixtureBuilder) createShowcaseComments(ctx context.Context, entryID domain.ID, postedAt time.Time, comments []showcaseComment, authors map[string]domain.User, ingest func(context.Context, showcaseImage) (domain.ID, error), actual *Counts) (int64, error) {
 	created := make([]domain.ID, 0, len(comments))
 	var written int64
 	for index, comment := range comments {
@@ -698,7 +698,7 @@ func (builder *fixtureBuilder) createShowcaseComments(ctx context.Context, entry
 			}
 		}
 		for position, spec := range comment.images {
-			id, err := ingest(spec)
+			id, err := ingest(app.WithContentActor(ctx, author), spec)
 			if err != nil {
 				return written, err
 			}

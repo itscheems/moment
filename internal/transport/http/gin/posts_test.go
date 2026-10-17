@@ -634,6 +634,10 @@ INSERT INTO media (
     id, sha256, storage_path, original_name, mime_type, byte_size,
     width, height, created_at_ms, unreferenced_since_ms
 ) VALUES (?, ?, ?, 'fixture.jpg', 'image/jpeg', 10, 8, 8, 1, 1)`, id, sha, path)
+		if err != nil {
+			return err
+		}
+		_, err = queries.ExecContext(context.Background(), `INSERT INTO media_grants(user_id,media_id,created_at_ms) VALUES('0123456789abcdef0123456789abcdef',?,1)`, id)
 		return err
 	}); err != nil {
 		t.Fatal(err)

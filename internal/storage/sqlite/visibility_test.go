@@ -218,7 +218,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`, mediaTwo, strings.Repeat("b", 64), "m
 			t.Fatalf("%s: visibility = %q %v, want %q", why, got, err, want)
 		}
 	}
-	expect(mediaOne, domain.VisibilityEveryone, "unreferenced upload")
+	expect(mediaOne, domain.VisibilityOnlyMe, "unreferenced upload")
 	mustWrite(t, db, `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, entryTwo, mediaOne)
 	expect(mediaOne, domain.VisibilityOnlyMe, "referenced only by a hidden post")
 	mustWrite(t, db, `INSERT INTO entry_media (entry_id, media_id, position, alt_text) VALUES (?, ?, 0, NULL)`, entryOne, mediaOne)

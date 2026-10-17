@@ -334,7 +334,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		}
 		return fmt.Errorf("insert account: %w", err)
 	}
-	return nil
+	return store.grantProfileMedia(ctx, user)
 }
 
 func (store accountStore) LinkIdentity(ctx context.Context, identity domain.Identity) error {
@@ -425,7 +425,7 @@ WHERE id = ?`,
 	if changed != 1 {
 		return domain.NewError(domain.CodeAccountNotFound, "no such account", nil)
 	}
-	return nil
+	return store.grantProfileMedia(ctx, user)
 }
 
 func (store accountStore) SetStatus(ctx context.Context, userID string, status domain.AccountStatus, atMS int64) error {

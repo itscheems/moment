@@ -323,6 +323,7 @@ func (repository *MediaReferenceRepository) audience(ctx context.Context, id dom
 			draftAuthor = "draft.author_user_id = ?"
 			arguments = append(arguments, account)
 		}
+		arguments = append(arguments, account)
 		return queries.QueryRowContext(ctx, `
 WITH media_id_value(id) AS (VALUES (?))
 SELECT
@@ -354,9 +355,10 @@ SELECT
       JOIN entries AS entry ON entry.id = article.entry_id
       WHERE article.cover_media_id = ? AND `+public+`
     )
-    OR EXISTS (SELECT 1 FROM users AS account WHERE account.avatar_media_id = ?)
-    OR EXISTS (SELECT 1 FROM users AS account WHERE account.cover_media_id = ?)
+    OR EXISTS (SELECT 1 FROM users AS account WHERE account.avatar_media_id = ? AND account.status='active')
+    OR EXISTS (SELECT 1 FROM users AS account WHERE account.cover_media_id = ? AND account.status='active')
     OR EXISTS (SELECT 1 FROM article_drafts AS draft WHERE (draft.cover_media_id = ? OR EXISTS (SELECT 1 FROM article_draft_media AS usage WHERE usage.draft_id = draft.id AND usage.media_id = media_id_value.id)) AND `+draftAuthor+`)
+  OR EXISTS(SELECT 1 FROM media_grants AS access WHERE access.media_id=media_id_value.id AND access.user_id=?)
   ) FROM media_id_value`, arguments...).Scan(&referenced, &exposed)
 	})
 	if err != nil {
@@ -367,11 +369,11 @@ SELECT
 
 // Visibility projects the public audience for HTTP cache policy.
 func (repository *MediaReferenceRepository) Visibility(ctx context.Context, id domain.ID) (domain.Visibility, error) {
-	referenced, exposed, err := repository.audience(ctx, id, app.PublicViewer())
+	_, exposed, err := repository.audience(ctx, id, app.PublicViewer())
 	if err != nil {
 		return "", err
 	}
-	if referenced && !exposed {
+	if !exposed {
 		return domain.VisibilityOnlyMe, nil
 	}
 	return domain.VisibilityEveryone, nil
@@ -379,6 +381,6 @@ func (repository *MediaReferenceRepository) Visibility(ctx context.Context, id d
 
 // CanRead checks references against the actual account, including private drafts.
 func (repository *MediaReferenceRepository) CanRead(ctx context.Context, id domain.ID, viewer app.Viewer) (bool, error) {
-	referenced, exposed, err := repository.audience(ctx, id, viewer)
-	return !referenced || exposed, err
+	_, exposed, err := repository.audience(ctx, id, viewer)
+	return exposed, err
 }

@@ -560,7 +560,7 @@ func TestPruneExactWindowAndFailureOrdering(t *testing.T) {
 func TestPruneSerializesLateAvatarReferenceAndNeverDeletesReachableOriginal(t *testing.T) {
 	store, runtimeState, database := newTestStore(t, Limits{})
 	now := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
-	value, _, err := store.Ingest(context.Background(), "avatar.png", bytes.NewReader(encodeTransparentPNG(t, 20, 20)))
+	value, _, err := store.Ingest(app.WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), "avatar.png", bytes.NewReader(encodeTransparentPNG(t, 20, 20)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -606,7 +606,7 @@ func TestPruneSerializesLateAvatarReferenceAndNeverDeletesReachableOriginal(t *t
 	}
 
 	store2, runtimeState2, database2 := newTestStore(t, Limits{})
-	reachable, _, err := store2.Ingest(context.Background(), "reachable.png", bytes.NewReader(encodeTransparentPNG(t, 21, 21)))
+	reachable, _, err := store2.Ingest(app.WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive}), "reachable.png", bytes.NewReader(encodeTransparentPNG(t, 21, 21)))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -140,7 +140,7 @@ func TestWithdrawnArticleKeepsCommentsAndPrivateMedia(t *testing.T) {
 	alice := addContentTestAccount(t, db, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "alice")
 	bob := addContentTestAccount(t, db, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "bob")
 	a := app.WithContentActor(ctx, alice)
-	cover := domain.ID(articleMediaID(t, db, "a"))
+	cover := domain.ID(articleMediaID(t, db, "a", alice.ID))
 	draft, err := service.SaveArticleDraft(a, app.SaveArticleDraftInput{Title: "with comments", BodyJSON: draftBodyJSON("body"), CoverMediaID: &cover})
 	if err != nil {
 		t.Fatal(err)

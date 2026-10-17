@@ -593,3 +593,7 @@ func fixtureContentContext(t *testing.T, accounts *app.AccountService) context.C
 	}
 	return app.WithContentActor(context.Background(), user)
 }
+
+func (store *memoryAccounts) MediaAvailableForAccount(ctx context.Context, _ string, id domain.ID) (bool, error) {
+	return store.MediaExists(ctx, id)
+}

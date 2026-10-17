@@ -217,6 +217,7 @@ INSERT INTO media (
     byte_size, width, height, created_at_ms, unreferenced_since_ms
 )
 VALUES (?, ?, ?, 'reference.jpg', 'image/jpeg', 10, 32, 32, ?, ?)`, id, sha, path, created.UnixMilli(), created.UnixMilli())
+	mustWrite(t, database, `INSERT INTO media_grants(user_id,media_id,created_at_ms) VALUES(?,?,1)`, testAccountID, id)
 }
 
 func assertMediaClock(t *testing.T, database *Database, id string, want *time.Time) {

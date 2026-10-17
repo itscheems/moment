@@ -29,8 +29,17 @@ import (
 func TestMediaDeliveryHeadersConditionalsAndExplicitGIFOriginal(t *testing.T) {
 	engine, store, _, runtimeState := newMediaHTTPFixture(t)
 	original := testGIF(t)
-	value, preview, err := store.Ingest(context.Background(), "animated.gif", bytes.NewReader(original))
+	value, preview, err := store.Ingest(fixtureContentContext(t, testAccountsForRuntime(t, runtimeState)), "animated.gif", bytes.NewReader(original))
 	if err != nil {
+		t.Fatal(err)
+	}
+	accounts := testAccountsForRuntime(t, runtimeState)
+	profile, err := accounts.ProfileAccount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	avatar := value.ID.String()
+	if _, err := accounts.UpdateProfile(context.Background(), profile.ID, app.ProfileUpdate{AvatarMediaID: &app.NullableString{Value: &avatar}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(preview.Path); err != nil {
@@ -232,5 +241,23 @@ func TestUploadPostersAreIsolatedByAccountEvenWhenUploadIDsCollide(t *testing.T)
 	anonymous := performRequest(router, httptest.NewRequest(http.MethodGet, "/poster/"+uploadID, nil))
 	if anonymous.Code != http.StatusUnauthorized {
 		t.Fatal("anonymous caller read a private upload poster")
+	}
+}
+
+func TestUnreferencedUploadIsPrivateToItsUploaderAndNeverPubliclyCached(t *testing.T) {
+	engine, store, token, state := newMediaHTTPFixture(t)
+	ctx := fixtureContentContext(t, testAccountsForRuntime(t, state))
+	object, _, err := store.Ingest(ctx, "private-upload.gif", bytes.NewReader(testGIF(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := "/api/v1/media/" + object.ID.String()
+	anonymous := performRequest(engine, httptest.NewRequest(http.MethodGet, route, nil))
+	if anonymous.Code != http.StatusNotFound {
+		t.Fatalf("unreferenced upload exposed=%d", anonymous.Code)
+	}
+	own := performRequest(engine, headerRequest(http.MethodGet, route, token, nil))
+	if own.Code != http.StatusOK || !strings.HasPrefix(own.Header().Get("Cache-Control"), "private,") || strings.Contains(own.Header().Get("Cache-Control"), "immutable") {
+		t.Fatalf("private upload cache=%d %q", own.Code, own.Header().Get("Cache-Control"))
 	}
 }

@@ -313,7 +313,7 @@ func (store postStore) ProjectMediaUsages(ctx context.Context, inputs []domain.E
 	for _, input := range inputs {
 		var mimeType string
 		var width, height int64
-		if err := store.queries.QueryRowContext(ctx, `SELECT mime_type, width, height FROM media WHERE id = ?`, input.MediaID.String()).Scan(&mimeType, &width, &height); err != nil {
+		if err := store.queries.QueryRowContext(ctx, `SELECT media.mime_type,media.width,media.height FROM media JOIN media_grants AS access ON access.media_id=media.id WHERE media.id=? AND access.user_id=?`, input.MediaID.String(), contentMediaActorID(ctx)).Scan(&mimeType, &width, &height); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", input.MediaID), map[string]any{"media_id": input.MediaID.String()})
 			}
@@ -369,7 +369,7 @@ func (store postStore) checkMediaUsages(ctx context.Context, usages []domain.Ent
 	var totalBytes int64
 	for _, usage := range usages {
 		var byteSize int64
-		if err := store.queries.QueryRowContext(ctx, `SELECT byte_size FROM media WHERE id = ?`, usage.MediaID.String()).Scan(&byteSize); err != nil {
+		if err := store.queries.QueryRowContext(ctx, `SELECT media.byte_size FROM media JOIN media_grants AS access ON access.media_id=media.id WHERE media.id=? AND access.user_id=?`, usage.MediaID.String(), contentMediaActorID(ctx)).Scan(&byteSize); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", usage.MediaID), map[string]any{"media_id": usage.MediaID.String()})
 			}
@@ -391,7 +391,7 @@ func (store postStore) checkMediaPresent(ctx context.Context, id *domain.ID) err
 	}
 	var present int
 	if err := store.queries.QueryRowContext(ctx,
-		`SELECT 1 FROM media WHERE id = ?`, id.String()).Scan(&present); err != nil {
+		`SELECT 1 FROM media_grants WHERE media_id=? AND user_id=?`, id.String(), contentMediaActorID(ctx)).Scan(&present); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", id), map[string]any{"media_id": id.String()})
 		}

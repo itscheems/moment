@@ -854,7 +854,7 @@ func summarizePortable(ctx context.Context, archivePath string, document manifes
 	if err != nil {
 		return portableSummary{}, err
 	}
-	_, err = validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+	_, err = validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
 		if value.ByteSize > math.MaxInt64-result.mediaBytes {
 			return errors.New("portable media byte count overflows")
 		}
@@ -1219,7 +1219,7 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		files[file.Name] = file
 	}
 
-	_, err = validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+	_, err = validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
 		created, err := parsePortableTimestamp(value.CreatedAt)
 		if err != nil {
 			return err
@@ -1263,6 +1263,21 @@ func rebuildPortableGeneration(ctx context.Context, parent *runtimefs.Runtime, g
 		return err
 	}
 	if err := importPortableAccounts(ctx, importer, files, document, site); err != nil {
+		return err
+	}
+
+	if _, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], portableMediaFields, func(value mediaRecord, _ map[string]json.RawMessage) error {
+		grants, err := archiveMediaGrants(value.Grants)
+		if err != nil {
+			return err
+		}
+		for _, grant := range grants {
+			if err := importer.InsertMediaGrant(ctx, value.ID, grant); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 
@@ -1832,7 +1847,7 @@ func validatePortableGenerationTree(ctx context.Context, generation runtimefs.Ge
 	expected := map[string]bool{
 		".": true, "moment.db": false, "media": true, "media/original": true,
 	}
-	_, err = validateJSONLines[mediaRecord](ctx, mediaRecords, []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+	_, err = validateJSONLines[mediaRecord](ctx, mediaRecords, []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
 		storagePath, err := portableStoragePath(value.SHA256, value.MIMEType)
 		if err != nil {
 			return err
@@ -1975,7 +1990,7 @@ func validatePortableAuthority(ctx context.Context, snapshot *sqlitestore.Archiv
 		return errors.Join(errors.New("staged comments do not match the portable archive"), commentsErr)
 	}
 	expectedMedia := make([]mediaRecord, 0)
-	if _, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
+	if _, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}, func(value mediaRecord, _ map[string]json.RawMessage) error {
 		expectedMedia = append(expectedMedia, value)
 		return nil
 	}); err != nil {

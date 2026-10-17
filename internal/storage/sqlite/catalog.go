@@ -13,6 +13,11 @@ type expectedCatalogObject struct {
 }
 
 var requiredCatalogObjects = []expectedCatalogObject{
+	{name: "site_pin_insert_guard", kind: "trigger", table: "site_settings"},
+	{name: "site_pin_update_guard", kind: "trigger", table: "site_settings"},
+	{name: "entries_clear_unavailable_pin", kind: "trigger", table: "entries"},
+	{name: "media_grants", kind: "table", table: "media_grants"},
+	{name: "media_grants_media_idx", kind: "index", table: "media_grants"},
 	{name: "schema_migrations", kind: "table", table: "schema_migrations"},
 	{name: "entries", kind: "table", table: "entries"},
 	{name: "media", kind: "table", table: "media"},

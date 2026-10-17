@@ -444,6 +444,13 @@ func mediaAPIDownload(ctx context.Context, invocation Invocation, id domain.ID) 
 	if err != nil {
 		return media.Asset{}, err
 	}
+	token, err := apiToken(target, false)
+	if err != nil {
+		return media.Asset{}, err
+	}
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return media.Asset{}, err

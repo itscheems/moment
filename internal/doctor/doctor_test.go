@@ -495,8 +495,19 @@ VALUES ('01ARZ3NDEKTSV4RRFFQ69G5FD8', '标题', '{"schema_version":1,"type":"doc
 		{
 			name: "dangling pinned post", checkID: CheckSiteConfiguration, status: StatusFail, overall: OverallUnhealthy, failure: FailureIntegrity,
 			corrupt: func(t *testing.T, fixture doctorFixture) {
-				mutateDatabase(t, fixture.current.DatabasePath, `PRAGMA foreign_keys = OFF;
-UPDATE site_settings SET pinned_entry_id = '01ARZ3NDEKTSV4RRFFQ69G5FAV' WHERE id = 1`)
+				// Corrupt the row deliberately, then restore the normal guard so
+				// the diagnostic must find the bad reference rather than a missing trigger.
+				db, err := sql.Open("sqlite", fixture.current.DatabasePath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var guard string
+				err = db.QueryRow(`SELECT sql FROM sqlite_master WHERE name='site_pin_update_guard'`).Scan(&guard)
+				if closeErr := db.Close(); err != nil || closeErr != nil {
+					t.Fatal(errors.Join(err, closeErr))
+				}
+				mutateDatabase(t, fixture.current.DatabasePath, `PRAGMA foreign_keys=OFF; DROP TRIGGER site_pin_update_guard;
+UPDATE site_settings SET pinned_entry_id='01ARZ3NDEKTSV4RRFFQ69G5FAV' WHERE id=1;`+guard)
 			},
 		},
 		{

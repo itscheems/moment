@@ -930,3 +930,12 @@ func storedPublicationState(state string) string {
 	}
 	return state
 }
+
+// InsertMediaGrant restores account reuse rights after both referenced rows exist.
+func (importer *PortableImporter) InsertMediaGrant(ctx context.Context, mediaID string, value ArchiveMediaGrant) error {
+	if err := importer.requireOpen(); err != nil {
+		return err
+	}
+	_, err := importer.tx.ExecContext(ctx, `INSERT INTO media_grants(user_id,media_id,created_at_ms) VALUES(?,?,?)`, value.UserID, mediaID, value.CreatedAtMS)
+	return err
+}

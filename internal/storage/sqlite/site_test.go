@@ -141,6 +141,7 @@ INSERT INTO media (
     byte_size, width, height, created_at_ms, unreferenced_since_ms
 )
 VALUES (?, ?, ?, 'avatar.jpg', 'image/jpeg', 10, 32, 32, 1, 1)`, id, sha, path)
+	mustWrite(t, database, `INSERT INTO media_grants(user_id,media_id,created_at_ms) VALUES(?,?,1)`, testAccountID, id)
 }
 
 // The owner renaming onto a member's handle is a conflict, not a server fault.
@@ -281,5 +282,63 @@ func TestAccountProfileTextValidationAndNormalizationRemainAtomic(t *testing.T) 
 		if _, err := accounts.UpdateProfile(ctx, before.ID, app.ProfileUpdate{Username: &handle}); !domain.HasCode(err, domain.CodeUsernameReserved) {
 			t.Fatalf("reserved handle %q=%v", handle, err)
 		}
+	}
+}
+
+func TestPinningOnlyAcceptsPublicContentAndClearsWhenItBecomesPrivate(t *testing.T) {
+	ctx := testAccountContext()
+	db, state := openTestDatabase(t, Options{})
+	postRepo, _ := NewPostRepository(db, state.Locks)
+	posts, _ := app.NewPostService(postRepo)
+	siteRepo, _ := NewSiteRepository(db, state.Locks)
+	site, _ := app.NewSiteService(siteRepo, app.SiteOptions{})
+	hidden, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "private", Visibility: domain.VisibilityOnlyMe})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Pin(ctx, hidden.Post.Entry.ID); !domain.HasCode(err, domain.CodePostNotFound) {
+		t.Fatalf("private site pin=%v", err)
+	}
+	public, err := posts.Create(ctx, app.CreatePostInput{ContentMD: "public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Pin(ctx, public.Post.Entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	private := domain.VisibilityOnlyMe
+	if _, err := posts.Update(ctx, app.UpdatePostInput{ID: public.Post.Entry.ID, PreserveContent: true, Visibility: &private}); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := site.Get(ctx)
+	if err != nil || settings.PinnedPostID != nil {
+		t.Fatalf("private post remained pinned=%+v,%v", settings, err)
+	}
+}
+
+func TestWithdrawingAnArticleClearsItsSitePin(t *testing.T) {
+	ctx := testAccountContext()
+	db, state := openTestDatabase(t, Options{})
+	postRepo, _ := NewPostRepository(db, state.Locks)
+	posts, _ := app.NewPostService(postRepo, app.WithPostClock(func() time.Time { return time.UnixMilli(1000) }))
+	repo, _ := NewSiteRepository(db, state.Locks)
+	site, _ := app.NewSiteService(repo, app.SiteOptions{})
+	draft, err := posts.SaveArticleDraft(ctx, app.SaveArticleDraftInput{Title: "published article", BodyJSON: draftBodyJSON("article body")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	article, err := posts.PublishArticleDraft(ctx, app.PublishArticleDraftInput{DraftID: draft.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := site.Pin(ctx, article.Entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := posts.WithdrawArticle(ctx, article.Entry.ID); err != nil {
+		t.Fatal(err)
+	}
+	settings, err := site.Get(ctx)
+	if err != nil || settings.PinnedPostID != nil {
+		t.Fatalf("withdrawn article remained pinned=%+v,%v", settings, err)
 	}
 }

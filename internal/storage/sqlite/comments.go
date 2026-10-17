@@ -593,7 +593,7 @@ func (store commentStore) ReplaceCommentMediaUsages(ctx context.Context, comment
 	var aggregateBytes int64
 	for _, usage := range usages {
 		var byteSize int64
-		if err := store.queries.QueryRowContext(ctx, `SELECT byte_size FROM media WHERE id = ?`, usage.MediaID.String()).Scan(&byteSize); err != nil {
+		if err := store.queries.QueryRowContext(ctx, `SELECT media.byte_size FROM media JOIN media_grants AS access ON access.media_id=media.id WHERE media.id=? AND access.user_id=?`, usage.MediaID.String(), contentMediaActorID(ctx)).Scan(&byteSize); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return domain.NewError(domain.CodeMediaNotFound, fmt.Sprintf("media %s does not exist", usage.MediaID), map[string]any{"media_id": usage.MediaID.String()})
 			}

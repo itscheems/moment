@@ -283,6 +283,7 @@ func ResolvePortableMerge(plan MergePlan, selection MergeSelection, local, incom
 		result.Authority.Media = append(result.Authority.Media, output)
 		result.MediaSources[id] = MergeMediaSource{Origin: MergeMediaIncoming, Media: source}
 	}
+	mergeMediaPermissions(&result.Authority, local, incoming, mediaRemap)
 	result.Authority.Media = sortedMedia(result.Authority.Media)
 	return result, nil
 }
@@ -764,6 +765,13 @@ func rebuildResolvedMergeGeneration(ctx context.Context, parent *runtimefs.Runti
 				continue
 			}
 			if err := importer.InsertUser(ctx, value); err != nil {
+				return err
+			}
+		}
+	}
+	for _, value := range resolved.Authority.Media {
+		for _, grant := range value.Grants {
+			if err := importer.InsertMediaGrant(ctx, value.ID, grant); err != nil {
 				return err
 			}
 		}

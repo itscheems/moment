@@ -279,6 +279,7 @@ func (service *CommentService) Create(ctx context.Context, input CreateCommentIn
 	if !input.Author.CanWritePublicContent() {
 		return CreateCommentResult{}, domain.NewError(domain.CodeAccountNotApproved, "this account is waiting to be approved by an administrator", nil)
 	}
+	ctx = WithContentActor(ctx, input.Author)
 	input.AuthorName = input.Author.DisplayName
 	return service.create(ctx, input)
 }

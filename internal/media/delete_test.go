@@ -12,7 +12,7 @@ import (
 
 func TestDeleteRefusesReferencesAndSupportsDryRun(t *testing.T) {
 	store, runtimeState, database := newTestStore(t, Limits{})
-	ctx := context.Background()
+	ctx := app.WithContentActor(context.Background(), domain.User{ID: "0123456789abcdef0123456789abcdef", Role: domain.UserRoleAdmin, Status: domain.AccountActive})
 	value, _, err := store.Ingest(ctx, "image.png", bytes.NewReader(encodeTransparentPNG(t, 20, 20)))
 	if err != nil {
 		t.Fatal(err)

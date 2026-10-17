@@ -611,3 +611,28 @@ END;
 CREATE INDEX users_role_status_idx ON users(role, status);
 
 INSERT INTO search_index_state(id, normalizer_version, revision) VALUES (1, 0, 1);
+
+-- Grants record an account's right to reuse a deduplicated media object.
+-- They are not content references and do not keep abandoned uploads alive.
+CREATE TABLE media_grants (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    media_id TEXT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+    created_at_ms INTEGER NOT NULL CHECK (created_at_ms > 0),
+    PRIMARY KEY (user_id, media_id)
+) STRICT;
+CREATE INDEX media_grants_media_idx ON media_grants(media_id);
+
+-- A site-wide pin can only emphasize published, public content.
+CREATE TRIGGER site_pin_insert_guard BEFORE INSERT ON site_settings
+WHEN NEW.pinned_entry_id IS NOT NULL AND NOT EXISTS (
+ SELECT 1 FROM entries WHERE id=NEW.pinned_entry_id AND visibility='everyone' AND publication_state='published'
+)
+BEGIN SELECT RAISE(ABORT,'pinned entries must be public and published'); END;
+CREATE TRIGGER site_pin_update_guard BEFORE UPDATE OF pinned_entry_id ON site_settings
+WHEN NEW.pinned_entry_id IS NOT NULL AND NOT EXISTS (
+ SELECT 1 FROM entries WHERE id=NEW.pinned_entry_id AND visibility='everyone' AND publication_state='published'
+)
+BEGIN SELECT RAISE(ABORT,'pinned entries must be public and published'); END;
+CREATE TRIGGER entries_clear_unavailable_pin AFTER UPDATE OF visibility,publication_state ON entries
+WHEN NEW.visibility<>'everyone' OR NEW.publication_state<>'published'
+BEGIN UPDATE site_settings SET pinned_entry_id=NULL WHERE pinned_entry_id=NEW.id; END;

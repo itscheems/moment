@@ -767,16 +767,22 @@ type commentRecord struct {
 	Pinned           bool            `json:"pinned,omitempty"`
 }
 
+type mediaGrantRecord struct {
+	UserID    string `json:"user_id"`
+	CreatedAt string `json:"created_at"`
+}
+
 type mediaRecord struct {
-	ID           string `json:"id"`
-	SHA256       string `json:"sha256"`
-	ArchivePath  string `json:"archive_path"`
-	OriginalName string `json:"original_name"`
-	MIMEType     string `json:"mime_type"`
-	ByteSize     int64  `json:"byte_size"`
-	Width        uint32 `json:"width"`
-	Height       uint32 `json:"height"`
-	CreatedAt    string `json:"created_at"`
+	Grants       []mediaGrantRecord `json:"grants"`
+	ID           string             `json:"id"`
+	SHA256       string             `json:"sha256"`
+	ArchivePath  string             `json:"archive_path"`
+	OriginalName string             `json:"original_name"`
+	MIMEType     string             `json:"mime_type"`
+	ByteSize     int64              `json:"byte_size"`
+	Width        uint32             `json:"width"`
+	Height       uint32             `json:"height"`
+	CreatedAt    string             `json:"created_at"`
 }
 
 // The functions below are the single definition of how one authority row
@@ -1012,7 +1018,11 @@ func portableMediaRecord(value sqlitestore.ArchiveMedia) (mediaRecord, error) {
 	if err != nil {
 		return mediaRecord{}, err
 	}
-	return mediaRecord{
+	grants := make([]mediaGrantRecord, 0, len(value.Grants))
+	for _, grant := range value.Grants {
+		grants = append(grants, mediaGrantRecord{UserID: grant.UserID, CreatedAt: portableTime(grant.CreatedAtMS)})
+	}
+	return mediaRecord{Grants: grants,
 		ID: value.ID, SHA256: value.SHA256, ArchivePath: archivePath,
 		OriginalName: value.OriginalName, MIMEType: value.MIMEType,
 		ByteSize: value.ByteSize, Width: value.Width, Height: value.Height,
@@ -2292,7 +2302,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 	mediaIDs := make(map[string]struct{})
 	mediaSHAs := make(map[string]struct{})
 	lastMediaSHA, lastMediaID := "", ""
-	mediaCount, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at"}, func(value mediaRecord, fields map[string]json.RawMessage) error {
+	mediaCount, err := validateJSONLines[mediaRecord](ctx, files["data/media.jsonl"], []string{"id", "sha256", "archive_path", "original_name", "mime_type", "byte_size", "width", "height", "created_at", "grants"}, func(value mediaRecord, fields map[string]json.RawMessage) error {
 		if int64(len(mediaIDs)) >= document.Counts.Media {
 			return errors.New("media records exceed the manifest count")
 		}
@@ -2391,7 +2401,7 @@ func validatePortableRecords(ctx context.Context, files map[string]*zip.File, me
 			return errors.New("an article or draft picture refers to media absent from the archive")
 		}
 	}
-	return nil
+	return validatePortableMediaGrants(ctx, files)
 }
 
 // portableEntryFields and the two article field lists are the keys a reader
