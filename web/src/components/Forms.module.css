@@ -1,0 +1,2358 @@
+.eyebrow {
+  margin: 0;
+  color: var(--accent);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton,
+.loginGate button,
+.routeState button,
+.postActions button,
+.dialogTrigger {
+  min-block-size: var(--target-size);
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.primaryButton {
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
+}
+
+@media (hover: hover) {
+  .primaryButton:hover {
+    background: var(--button-primary-hover);
+  }
+}
+
+.secondaryButton {
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  background: transparent;
+}
+
+@media (hover: hover) {
+  .secondaryButton:hover {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
+}
+
+.secondaryButton {
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
+}
+
+.dangerButton {
+  color: #fff;
+  background: var(--danger);
+  transition: background-color 0.2s;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled,
+.dangerButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.loginGate {
+  max-inline-size: 33rem;
+  margin-inline: auto;
+  padding: clamp(2rem, 7vw, 4rem) var(--space-6);
+}
+
+.loginGate h2 {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.55rem, 5vw, 1.9rem);
+  font-weight: 750;
+  letter-spacing: -0.035em;
+}
+
+.loginGate > p:not(.eyebrow) {
+  margin: var(--space-4) 0 var(--space-6);
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.oauthOptions {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+}
+
+/* `.loginGate button` above resets the border for every button in this gate, so
+   these rules have to out-rank it from inside the same ancestor. */
+.loginGate .oauthButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.loginGate .oauthButton:focus-visible:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .loginGate .oauthButton:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
+}
+
+.loginGate .oauthButton:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+/* The Google mark is fixed four-color artwork and keeps its own fills; the
+   GitHub silhouette inherits the label colour. */
+.oauthButton svg {
+  flex: none;
+  inline-size: 24px;
+  block-size: 24px;
+}
+
+.oauthSeparator {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.oauthRule {
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+/* The separator already draws the divider above the form. */
+.oauthSeparator + .loginForm {
+  border-block-start: 0;
+  padding-block-start: 0;
+}
+
+.loginForm {
+  --login-field-gap: var(--space-3);
+  display: grid;
+  gap: var(--login-field-gap);
+  border-block-start: 1px solid var(--border-subtle);
+  padding-block-start: var(--space-5);
+}
+
+.loginForm label {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.tokenField {
+  position: relative;
+}
+
+.tokenField input {
+  min-block-size: 3rem;
+  inline-size: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-4) 4.5rem;
+  color: var(--text-primary);
+  background: var(--surface);
+  font-family: var(--font-utility);
+}
+
+.tokenField input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  outline: none;
+}
+
+.tokenField input[aria-invalid="true"],
+.tokenField input[aria-invalid="true"]:focus {
+  border-color: var(--danger);
+}
+
+.tokenField input[aria-invalid="true"]:focus {
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
+.tokenField button {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: var(--space-2);
+  min-block-size: auto;
+  border: 0;
+  padding-inline: var(--space-2);
+  color: var(--accent);
+  background: transparent;
+  font-size: var(--text-sm);
+}
+
+.loginForm small {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.loginForm code {
+  margin-inline-start: 0.25rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.loginForm p,
+.inlineNotice,
+.formError {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.loginMethodSwitch {
+  justify-self: center;
+  color: var(--accent);
+  background: transparent;
+  font-size: var(--text-sm);
+}
+
+.loginMethodSwitch:focus-visible {
+  background: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .loginMethodSwitch:hover:not(:disabled) {
+    background: var(--accent-soft);
+  }
+}
+
+.inlineNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-block: 1px solid var(--border-subtle);
+  padding-block: var(--space-3);
+}
+
+.inlineNotice button {
+  color: var(--danger);
+  background: transparent;
+}
+
+.composer {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  border-block-end: 1px solid var(--border-subtle);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+}
+
+.inlineComposer {
+  --motion-dialog: var(--motion-content);
+  --button-primary: #1d9bf0;
+  --button-primary-hover: #1a8cd8;
+  --button-primary-pressed: #177cc0;
+  --button-primary-disabled: #1d9bf0;
+  --button-primary-disabled-opacity: 0.5;
+  --button-primary-contrast: #fff;
+  --composer-tool-color: #829aab;
+  --composer-tool-hover: rgb(15 20 25 / 10%);
+  --composer-tool-pressed: rgb(15 20 25 / 20%);
+  --composer-tool-transform: none;
+  --composer-tool-filter: none;
+  --composer-toolbar-padding: 10px;
+  --audience-label-size: 14px;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  gap: 10px;
+  border-block-start: 0;
+  padding-block: var(--space-2);
+  font-family: var(--font-timeline);
+  font-feature-settings: normal;
+  letter-spacing: normal;
+  text-rendering: auto;
+}
+
+/* The avatar sits 16px below the composer's top edge, which puts it
+   6px below the top of the audience pill when the composer is open. */
+.inlineComposer .newTick {
+  align-self: stretch;
+  place-items: start center;
+  padding-block-start: var(--space-2);
+}
+
+.pageComposer {
+  min-block-size: 0;
+}
+
+.newTick {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  align-self: start;
+}
+
+.newTick > img,
+.newTick > span {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  font-size: 1rem;
+}
+
+.composerMain {
+  min-inline-size: 0;
+  padding: 0;
+}
+
+.composerForm {
+  position: relative;
+  display: grid;
+  margin-block-start: 0;
+}
+
+/* The audience pill's top edge is 10px below
+   the composer's top edge (6px above the avatar), and the first line of text
+   starts 26px below the pill's bottom edge. The textarea keeps its 8px top
+   padding, so the row's bottom margin carries the other 18px.
+
+   The row opens and shuts by animating its grid track between 0fr and 1fr,
+   with its margins and opacity in step, so the text below glides rather than
+   jumps. The inner box is the grid item that lets 0fr reach zero; it clips
+   with a margin so the pill's focus ring is not cut off while open. */
+.audienceRow {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-block: 2px 18px;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--motion-dialog) var(--ease-out),
+    margin-block-start var(--motion-dialog) var(--ease-out),
+    margin-block-end var(--motion-dialog) var(--ease-out),
+    opacity var(--motion-dialog) var(--ease-out),
+    visibility 0s linear 0s;
+}
+
+.audienceRow > div {
+  display: flex;
+  justify-content: flex-start;
+  min-block-size: 0;
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+
+.audienceRowCollapsed {
+  grid-template-rows: 0fr;
+  margin-block: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-dialog) var(--ease-out),
+    margin-block-start var(--motion-dialog) var(--ease-out),
+    margin-block-end var(--motion-dialog) var(--ease-out),
+    opacity var(--motion-dialog) var(--ease-out),
+    visibility 0s linear var(--motion-dialog);
+}
+
+.inlineComposer .audienceRow:not(.audienceRowCollapsed) {
+  margin-block-end: 12px;
+}
+
+.inlineComposer .composerEditor {
+  margin-block-start: 2px;
+}
+
+.inlineComposer
+  :is(.composerHighlight, .composerMentionMeasure, .composerEditor textarea) {
+  padding-block-start: 12px;
+  line-height: 24px;
+}
+
+.inlineComposer .composerEditor textarea {
+  min-block-size: 52px;
+}
+
+.replyAudienceRow {
+  display: grid;
+  grid-template-rows: 1fr;
+  margin-block: 12px;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows var(--motion-content) var(--ease-out),
+    margin-block var(--motion-content) var(--ease-out),
+    opacity var(--motion-content) var(--ease-out),
+    visibility 0s;
+}
+
+.replyAudienceRow > div {
+  display: grid;
+  min-block-size: 0;
+  overflow: visible;
+}
+
+.replyAudienceRowCollapsed {
+  grid-template-rows: 0fr;
+  margin-block: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows var(--motion-content) var(--ease-out),
+    margin-block var(--motion-content) var(--ease-out),
+    opacity var(--motion-content) var(--ease-out),
+    visibility 0s linear var(--motion-content);
+}
+
+.inlineComposer[data-expanded="true"] .inlineMedia {
+  margin-block-start: 0;
+}
+
+/* The page and edit composers have no header above the avatar, so the pill's
+   top edge lands 6px above the avatar's, inside the section's own padding. */
+.pageComposer .audienceRow {
+  margin-block-start: -6px;
+}
+
+.mentionSuggestions {
+  position: absolute;
+  z-index: var(--layer-popover);
+  inset-inline: 0;
+  inset-block-start: calc(100% - 0.5rem);
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+
+.mentionSuggestionsCaret {
+  inset-inline: auto;
+  inset-block-start: auto;
+  max-block-size: min(18rem, 42vh);
+  overflow-y: auto;
+  transform-origin: top left;
+  animation: mentionSuggestionsIn var(--motion-fast) var(--ease-out);
+}
+
+@keyframes mentionSuggestionsIn {
+  from {
+    opacity: 0;
+    transform: translateY(-0.25rem) scale(0.985);
+  }
+}
+
+.mentionSuggestion {
+  inline-size: 100%;
+  min-block-size: 4.25rem;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  border: 0;
+  border-radius: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  text-align: start;
+}
+
+.mentionSuggestion[aria-selected="true"] {
+  background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .mentionSuggestion:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.mentionSuggestion > :first-child {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+}
+
+.mentionSuggestion > span,
+.mentionSuggestion strong,
+.mentionSuggestion small {
+  min-inline-size: 0;
+  display: block;
+}
+
+.mentionSuggestion small {
+  color: var(--text-secondary);
+}
+
+.mentionSuggestion em {
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-style: normal;
+}
+
+.composerForm > label {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.composerEditor {
+  position: relative;
+  display: grid;
+  min-inline-size: 0;
+}
+
+.composerHighlight {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  padding: var(--space-2) 0 var(--space-3);
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  white-space: pre-wrap;
+}
+
+.composerMentionMeasure {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: visible;
+  padding: var(--space-2) 0 var(--space-3);
+  color: transparent;
+  font-size: 1.25rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  visibility: hidden;
+  white-space: pre-wrap;
+}
+
+.composerMentionMeasure span {
+  display: inline-block;
+  inline-size: 1px;
+  block-size: 1em;
+  vertical-align: text-bottom;
+}
+
+.composerMention {
+  color: var(--accent);
+}
+
+.composerEditor textarea {
+  position: relative;
+  z-index: 1;
+  field-sizing: content;
+  inline-size: 100%;
+  min-block-size: 2.75rem;
+  max-block-size: 18rem;
+  resize: none;
+  border: 0;
+  border-radius: 0;
+  padding: var(--space-2) 0 var(--space-3);
+  overflow-y: auto;
+  color: transparent;
+  caret-color: var(--text-primary);
+  background: transparent;
+  font-size: 1.25rem;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+  -webkit-text-fill-color: transparent;
+  transition: min-block-size var(--motion-fast) var(--ease-out);
+}
+
+.composerEditor textarea::placeholder {
+  color: var(--text-tertiary);
+  -webkit-text-fill-color: var(--text-tertiary);
+}
+
+.composerEditor textarea:focus-visible {
+  outline: none;
+}
+
+.pageComposer .composerForm textarea {
+  min-block-size: 8rem;
+}
+
+.pageComposer.composerHasMedia .composerForm textarea {
+  min-block-size: 2.75rem;
+  padding-block: var(--space-1) var(--space-2);
+}
+
+.pageComposer.composerHasMedia .composerHighlight,
+.pageComposer.composerHasMedia .composerMentionMeasure {
+  padding-block: var(--space-1) var(--space-2);
+}
+
+.composerGuidance {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.quoteComposerPreview {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  padding: var(--space-4);
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
+.quoteComposerPreview > header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-end: var(--space-2);
+}
+
+.quoteComposerPreview > header img,
+.quoteComposerPreview > header > :first-child {
+  inline-size: 2rem;
+  block-size: 2rem;
+}
+
+.quoteComposerPreview > header span {
+  color: var(--text-secondary);
+}
+
+.quoteComposerPreview > header button {
+  inline-size: 2.25rem;
+  block-size: 2.25rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  margin-inline-start: auto;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.quoteComposerPreview > header button:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .quoteComposerPreview > header button:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+}
+
+.quoteComposerPreview > header button svg,
+.quoteComposerLocation svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.quoteComposerLocation {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.composerCount {
+  justify-self: end;
+  margin: 0 0 var(--space-1);
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.countInvalid {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.storageNotice {
+  margin: var(--space-3) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+}
+
+.formError {
+  margin: var(--space-3) 0 0;
+}
+
+.formError a {
+  color: currentColor;
+  font-weight: 700;
+}
+
+/* The publish button is a 36px pill (1px transparent border included) with 16px
+   sides, at least as wide as it is tall, and a 15/20 bold label centred in
+   it. Its fills fade over 0.2s. */
+.composerPublishButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 36px;
+  min-block-size: 36px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  padding: 0 16px;
+  color: var(--button-primary-contrast);
+  background: var(--button-primary);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: normal;
+  line-height: 20px;
+  transition:
+    background-color 0.2s,
+    box-shadow 0.2s,
+    opacity var(--motion-fast) var(--ease-out);
+}
+
+@media (hover: hover) {
+  .composerPublishButton:hover:not(:disabled) {
+    background: var(--button-primary-hover);
+  }
+}
+
+.composerPublishButton:active:not(:disabled) {
+  background: var(--button-primary-pressed);
+}
+
+.primaryButton.composerPublishButton:disabled {
+  color: var(--button-primary-contrast);
+  background: var(--button-primary-disabled);
+  opacity: var(--button-primary-disabled-opacity);
+  cursor: not-allowed;
+}
+
+.srOnly {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.postMenu {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
+  margin-inline-start: auto;
+}
+
+.articleActions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.actionsMenuTrigger {
+  inline-size: var(--post-edge-action-size, 2.75rem);
+  block-size: var(--post-edge-action-size, 2.75rem);
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  margin-block: -0.75rem;
+  margin-inline-end: var(--post-menu-inline-offset, 0px);
+  padding: calc(
+    (
+        var(--post-edge-action-size, 2.75rem) -
+          var(--post-action-halo-size, var(--post-edge-action-size, 2.75rem))
+      ) /
+      2
+  );
+  color: var(--text-secondary);
+  background: transparent;
+  background-clip: content-box;
+  cursor: pointer;
+}
+
+.actionsMenuTrigger svg {
+  inline-size: var(--post-menu-icon-size, 1.15rem);
+  block-size: var(--post-menu-icon-size, 1.15rem);
+}
+
+.actionsMenuTrigger:focus-visible,
+.actionsMenuTrigger[data-popup-open] {
+  color: var(--accent);
+  background-color: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .actionsMenuTrigger:hover {
+    color: var(--accent);
+    background-color: var(--accent-soft);
+  }
+}
+
+.actionsMenuPositioner {
+  z-index: var(--layer-popover);
+}
+
+.actionsMenuPopup {
+  min-inline-size: 12rem;
+  overflow: hidden;
+  outline: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.75rem;
+  padding-block: var(--space-1);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: var(--transform-origin);
+  transition:
+    transform var(--motion-menu) var(--ease-out),
+    opacity var(--motion-menu) var(--ease-out);
+}
+
+.actionsMenuPopup[data-starting-style],
+.actionsMenuPopup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.98) translateY(-0.2rem);
+}
+
+.actionsMenuItem {
+  min-block-size: 2.75rem;
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  padding-inline: var(--space-4);
+  outline: 0;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.actionsMenuItem svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+
+.actionsMenuItem[data-highlighted] {
+  background: var(--surface-hover);
+}
+
+.actionsMenuDanger {
+  color: var(--danger);
+}
+
+.actionError {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: 2.25rem;
+  inset-inline-end: 0;
+  inline-size: max-content;
+  max-inline-size: min(18rem, calc(100vw - 2rem));
+  border-radius: 0.75rem;
+  padding: var(--space-2) var(--space-3);
+  color: #fff;
+  background: var(--danger);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--text-xs);
+}
+
+.routeState {
+  margin: 0;
+  padding: var(--space-8) var(--space-6) var(--space-8) 4.25rem;
+  color: var(--text-secondary);
+}
+
+.routeState button {
+  border: 1px solid var(--border-strong);
+  color: var(--accent);
+  background: transparent;
+}
+
+.dialogBackdrop {
+  position: fixed;
+  z-index: var(--layer-confirm);
+  inset: 0;
+  background: rgb(0 0 0 / 40%);
+  transition: opacity var(--motion-dialog) var(--ease-out);
+}
+
+.dialogViewport {
+  position: fixed;
+  z-index: calc(var(--layer-confirm) + 1);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.dialogPopup {
+  inline-size: min(100%, 27rem);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  padding: var(--space-6);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-dialog) var(--ease-out),
+    transform var(--motion-dialog) var(--ease-out);
+}
+
+.dialogBackdrop[data-starting-style],
+.dialogBackdrop[data-ending-style],
+.dialogPopup[data-starting-style],
+.dialogPopup[data-ending-style] {
+  opacity: 0;
+}
+
+.dialogPopup[data-starting-style],
+.dialogPopup[data-ending-style] {
+  transform: scale(0.96);
+}
+
+.dialogTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  font-weight: 600;
+}
+
+.dialogDescription {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.dialogError {
+  margin: var(--space-3) 0 0;
+  border-inline-start: 3px solid var(--danger);
+  border-radius: 0.25rem;
+  padding: var(--space-2) var(--space-3);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+/* Stacked, full width, the answer on top -- the reference's confirm sheet. */
+.dialogActions {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-start: var(--space-6);
+}
+
+.dialogActions .dangerButton {
+  background: var(--danger);
+}
+
+@media (hover: hover) {
+  .dialogActions .dangerButton:hover:not(:disabled) {
+    background: var(--danger-hover);
+  }
+}
+
+.dialogActions .dangerButton:active:not(:disabled) {
+  background: var(--danger-pressed);
+}
+
+/* The reference keeps the border grey and only tints the ground. */
+@media (hover: hover) {
+  .dialogActions .secondaryButton:hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--icon-button-hover);
+  }
+}
+
+.dialogActions .secondaryButton:active:not(:disabled) {
+  background: var(--icon-button-pressed);
+}
+
+.locationTrigger {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.locationTrigger:focus-visible,
+.locationTrigger[data-popup-open] {
+  background: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .locationTrigger:hover:not(:disabled) {
+    background: var(--accent-soft);
+  }
+}
+
+.locationTrigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.locationTrigger svg {
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+}
+
+.selectedLocation {
+  inline-size: fit-content;
+  max-inline-size: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  margin-block: 0 var(--space-2);
+  padding: 0.32rem 0.45rem 0.32rem 0.65rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.selectedLocation > svg,
+.selectedLocation button svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.selectedLocation > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectedLocation button {
+  inline-size: 1.75rem;
+  block-size: 1.75rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: currentColor;
+  background: transparent;
+  cursor: pointer;
+}
+
+.selectedLocation button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+@media (hover: hover) {
+  .selectedLocation button:hover {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+}
+
+.locationBackdrop {
+  position: fixed;
+  z-index: var(--layer-picker);
+  inset: 0;
+  background: rgb(15 20 25 / 32%);
+  transition: opacity var(--motion-dialog) var(--ease-out);
+}
+
+.locationViewport {
+  position: fixed;
+  z-index: calc(var(--layer-picker) + 1);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+
+.locationPopup {
+  inline-size: min(100%, 34rem);
+  max-block-size: min(44rem, calc(100dvh - 2rem));
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-panel);
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+  transform-origin: center;
+  transition:
+    opacity var(--motion-dialog) var(--ease-out),
+    transform var(--motion-dialog) var(--ease-out);
+}
+
+.locationPopup[data-starting-style],
+.locationPopup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.97) translateY(0.25rem);
+}
+
+.locationBackdrop[data-starting-style],
+.locationBackdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.locationHeader {
+  min-block-size: 3.5rem;
+  display: grid;
+  grid-template-columns: 2.75rem 1fr 2.75rem;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-2);
+}
+
+.locationHeader h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 750;
+  text-align: center;
+}
+
+.locationClose,
+.locationRemove,
+.locationBack,
+.locationFooter button {
+  border: 0;
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.locationClose {
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  padding: 0;
+}
+
+.locationClose:focus-visible {
+  background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .locationClose:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.locationClose svg {
+  inline-size: 1.2rem;
+  block-size: 1.2rem;
+}
+
+.locationRemove {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.locationSearch {
+  min-block-size: 2.75rem;
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  align-items: center;
+  gap: var(--space-2);
+  border-radius: 999px;
+  margin: 0 var(--space-4) var(--space-2);
+  padding-inline: var(--space-4);
+  color: var(--text-secondary);
+  background: var(--surface-muted);
+}
+
+.locationSearch svg {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+}
+
+.locationSearch input {
+  min-inline-size: 0;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  color: var(--text-primary);
+  background: transparent;
+  font: inherit;
+}
+
+.locationSearch:focus-within {
+  box-shadow: 0 0 0 1px var(--accent);
+  color: var(--accent);
+}
+
+.locationNearby,
+.locationResult {
+  inline-size: 100%;
+  min-block-size: 4rem;
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-3);
+  border: 0;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-primary);
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+
+.locationNearby:focus-visible,
+.locationResult:focus-visible {
+  background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .locationNearby:hover:not(:disabled),
+  .locationResult:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.locationNearby > span:first-child,
+.locationResult > span:first-child {
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.locationNearby svg,
+.locationResult svg {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+}
+
+.locationNearby strong,
+.locationNearby small,
+.locationResult strong,
+.locationResult small {
+  display: block;
+}
+
+.locationNearby strong,
+.locationResult strong {
+  overflow: hidden;
+  font-size: 0.9375rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locationNearby small,
+.locationResult small {
+  margin-block-start: 0.15rem;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.locationResults {
+  max-block-size: 22rem;
+  overflow-y: auto;
+  border-block-start: 1px solid var(--border-subtle);
+}
+
+.locationState,
+.locationError {
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-align: center;
+}
+
+.locationError {
+  padding-block: var(--space-3);
+  color: var(--danger);
+}
+
+.locationFooter {
+  min-block-size: 3.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-block-start: 1px solid var(--border-subtle);
+  padding-inline: var(--space-4);
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.locationFooter button {
+  min-block-size: var(--target-size);
+  padding: 0;
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.locationFooter a {
+  color: inherit;
+}
+
+.locationManual {
+  display: grid;
+  gap: var(--space-4);
+  border-block-start: 1px solid var(--border-subtle);
+  padding: var(--space-4);
+}
+
+.locationBack {
+  inline-size: fit-content;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+  color: var(--accent);
+}
+
+.locationBack svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+}
+
+.locationManual label,
+.locationManual label span {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.locationManual input {
+  min-block-size: 3rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline: var(--space-3);
+  color: var(--text-primary);
+  background: var(--surface);
+  font: inherit;
+}
+
+.locationManual input:focus {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+}
+
+.locationManual p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+}
+
+.locationManual > button:last-child {
+  justify-self: end;
+}
+
+@media (max-width: 719px) {
+  .loginGate {
+    padding: var(--space-8) var(--space-5);
+  }
+
+  .composer {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    gap: 0.7rem;
+    padding-inline: var(--space-3);
+  }
+
+  .composerMain {
+    padding-inline: 0;
+  }
+
+  .composerForm textarea {
+    min-block-size: 3.5rem;
+    font-size: 1.125rem;
+  }
+
+  .composerHighlight {
+    font-size: 1.125rem;
+  }
+
+  .composerMentionMeasure {
+    font-size: 1.125rem;
+  }
+
+  .pageComposer .composerForm textarea {
+    min-block-size: 7rem;
+  }
+
+  .routeState {
+    padding-inline: 4.5rem var(--space-4);
+  }
+
+  .dialogActions {
+    flex-direction: column-reverse;
+  }
+
+  .dialogActions button {
+    inline-size: 100%;
+  }
+
+  .locationViewport {
+    place-items: end center;
+    padding: 0;
+  }
+
+  .locationPopup {
+    inline-size: 100%;
+    max-block-size: min(85dvh, 44rem);
+    border-inline: 0;
+    border-block-end: 0;
+    border-radius: 1.25rem 1.25rem 0 0;
+  }
+
+  .locationPopup[data-starting-style],
+  .locationPopup[data-ending-style] {
+    transform: translateY(1.25rem);
+  }
+}
+
+@media (forced-colors: active) {
+  .composerHighlight {
+    display: none;
+  }
+
+  .composerEditor textarea {
+    color: CanvasText;
+    -webkit-text-fill-color: CanvasText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actionsMenuPopup,
+  .dialogBackdrop,
+  .locationBackdrop,
+  .dialogPopup,
+  .mentionSuggestionsCaret,
+  .audienceRow,
+  .audienceRowCollapsed,
+  .replyAudienceRow,
+  .replyAudienceRowCollapsed,
+  .draftsCheck,
+  .draftsCheck > span,
+  .draftsDelete {
+    transition: none;
+    animation: none;
+  }
+
+  /* No slide, so no need to hide what is already in place. */
+  .draftsCheck > span {
+    transform: none;
+  }
+
+  .locationPopup {
+    transition: none;
+  }
+
+  .composerPublishButton {
+    transition: none;
+  }
+}
+
+/* The composer preview shows the snapshot that will be stored, so it is a
+   compact row rather than a second rendering of the published card. */
+.composerLinkCard {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-panel);
+  margin-block-start: var(--space-3);
+  padding: var(--space-2);
+}
+
+.composerLinkThumbnail {
+  flex: 0 0 auto;
+  inline-size: 4.5rem;
+  block-size: 4.5rem;
+  border-radius: 0.6rem;
+  object-fit: cover;
+}
+
+.composerLinkText {
+  min-inline-size: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.composerLinkText p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerLinkSite {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.composerLinkTitle {
+  color: var(--text-primary);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.composerLinkRemove {
+  flex: 0 0 auto;
+  inline-size: 2rem;
+  block-size: 2rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.composerLinkRemove:focus-visible {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .composerLinkRemove:hover:not(:disabled) {
+    color: var(--text-primary);
+    background: var(--surface-hover);
+  }
+}
+
+.composerLinkRemove:disabled {
+  cursor: not-allowed;
+}
+
+.composerLinkRemove svg {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+
+.linkPreviewPending {
+  margin: var(--space-3) 0 0;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+}
+
+.usernameForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-block-start: var(--space-4);
+}
+
+.usernameForm label {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.usernameForm small {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.usernameField {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-action);
+  padding-inline-start: var(--space-3);
+  background: var(--surface);
+}
+
+.usernameField > span {
+  color: var(--text-tertiary);
+}
+
+.usernameField input {
+  min-block-size: var(--target-size);
+  flex: 1;
+  border: 0;
+  padding-inline-end: var(--space-3);
+  color: inherit;
+  background: transparent;
+  font: inherit;
+}
+
+.usernameField input:focus {
+  outline: none;
+}
+
+.usernameField:focus-within {
+  border-color: var(--accent);
+}
+
+/* The switch sits under the provider buttons and reads as one of them, so it
+   is centred on the same axis rather than left-aligned against nothing.
+   `.loginMethodSwitch` centres itself with justify-self, which needs a grid
+   parent -- as a child of the plain block above it, it silently did nothing. */
+.otherMethods {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-3);
+  margin-block-start: var(--space-4);
+}
+
+.otherMethods .secondaryButton {
+  inline-size: 100%;
+}
+
+/* The sign-in page stands on its own rather than inside the reading shell.
+   A visitor here is not browsing, and the sidebars offer navigation that every
+   destination behind them would bounce straight back to this page.
+
+   Artwork and content are separate siblings: the viewport sizes the artwork,
+   while only the action panel scrolls as the form grows. */
+.loginScreen {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  block-size: 100dvh;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+.loginSplit {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-block-size: 0;
+}
+
+/* The brand panel carries no information, so it is the first thing to go when
+   there is not room for both columns -- not stacked above the form, where it
+   would push the only actionable part of the page below the fold. */
+.brandPanel {
+  display: none;
+}
+
+/* Anchored to the top, not centred. Centred, the column re-centred every
+   time the form under the headline grew -- the session answer, then the
+   methods, then the provider buttons a request later -- and the headline
+   jumped 90px on each arrival. From the top, what arrives late extends
+   downwards and nothing already drawn moves; the offset keeps the block in
+   the upper third the centred layout put it in on an ordinary window. */
+.actionPanel {
+  --login-block-gap-max: var(--space-6);
+  --login-pad-top: clamp(4.5rem, calc((100dvh - 36rem) / 2), 10rem);
+  --login-pad-bottom: clamp(var(--space-4), 3dvh, var(--space-10));
+  position: relative;
+  min-block-size: 0;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: clamp(
+    var(--space-3),
+    calc((100dvh - 37.5rem) / 10),
+    var(--login-block-gap-max)
+  );
+  padding: var(--login-pad-top) var(--space-5) var(--login-pad-bottom);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.headlineBlock {
+  display: flex;
+  flex-shrink: 0;
+  inline-size: 100%;
+  max-inline-size: 22rem;
+  flex-direction: column;
+  gap: clamp(var(--space-2), 1.5dvh, var(--space-3));
+}
+
+/* The extended-heavy cut, which is the display face this layout is drawn
+   around. The tracking is reset because `:where(h1)` applies --tracking-display
+   globally and negative tracking reads as cramped on both this face and on
+   Chinese glyphs -- the same reason AppShell resets it. */
+.displayHeadline {
+  margin: 0;
+  font-family: var(--font-signin-display);
+  font-size: clamp(2.25rem, min(5vw, calc(12dvh - 2.25rem)), 3.75rem);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: normal;
+  word-break: break-word;
+  /* Suppress large selection highlights while keeping the headline available
+     to assistive technology, find-in-page, and browser translation. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.subHeadline {
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-signin-display);
+  font-size: clamp(1.125rem, 3dvh, var(--text-xl));
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: normal;
+}
+
+.loginScreen .loginGate {
+  flex-shrink: 0;
+  inline-size: 100%;
+  max-inline-size: 22rem;
+  margin: 0;
+  padding: 0;
+}
+
+.loginSubmitButton {
+  margin-block-start: calc(var(--space-3) - var(--login-field-gap));
+}
+
+.loginScreen .loginForm {
+  --login-field-gap: clamp(var(--space-2), 1.5dvh, var(--space-3));
+}
+
+.loginScreen .tokenField input {
+  min-block-size: clamp(var(--target-size), 6dvh, 3rem);
+}
+
+.loginScreen .oauthOptions {
+  gap: clamp(var(--space-2), 1.5dvh, var(--space-3));
+  margin-block-end: clamp(var(--space-2), 2dvh, var(--space-4));
+}
+
+.loginScreen .oauthSeparator {
+  margin-block-end: clamp(var(--space-2), 2dvh, var(--space-4));
+}
+
+.loginScreen .otherMethods {
+  margin-block-start: clamp(var(--space-2), 2dvh, var(--space-4));
+}
+
+/* The same 2.75rem arrow the shell's headers carry, pinned to the viewport.
+   Over the canvas it is the glyph with the shell's hover wash;
+   over the brand panel (the wide layout, below) it stands on a white disc. */
+.loginBack {
+  position: fixed;
+  z-index: 2;
+  inset-block-start: max(var(--space-3), env(safe-area-inset-top));
+  inset-inline-start: max(var(--space-3), env(safe-area-inset-left));
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text-primary);
+  background: var(--canvas);
+  transition: background-color var(--motion-fast) var(--ease-out);
+}
+
+.loginBack svg {
+  inline-size: 1.25rem;
+  block-size: 1.25rem;
+}
+
+.loginBack:focus-visible {
+  background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .loginBack:hover {
+    background: var(--surface-hover);
+  }
+}
+
+/* 1280 is one of this project's two shell breakpoints, so the tablet range gets
+   the single column rather than a 45vw panel with no room to breathe. */
+@media (min-width: 1280px) {
+  .loginSplit {
+    grid-template-columns: minmax(0, 1fr) 45%;
+  }
+
+  .brandPanel {
+    position: fixed;
+    z-index: 0;
+    inset-block: 0;
+    inset-inline-start: 0;
+    inline-size: 55%;
+    display: block;
+    background-color: var(--accent);
+    background-image: url("/login-banner.png");
+    background-position: center;
+    background-size: cover;
+  }
+
+  .actionPanel {
+    --login-block-gap-max: var(--space-8);
+    grid-column: 2;
+    align-items: start;
+    padding-inline: clamp(var(--space-8), 6vw, 4.5rem);
+  }
+
+  /* A white disc, lifted off the artwork by its shadow, with the arrow in
+     fixed dark ink: the picture is the same in every theme, so the control on
+     it does not follow the theme's text colour. The dark, blurred disc this
+     replaces read as a smudge on the busy picture; a solid white one reads as
+     a control. Hover darkens it the way the shell's washes do. */
+  .loginBack {
+    color: #0f1419;
+    background: #fff;
+    box-shadow:
+      0 1px 2px rgb(15 20 25 / 20%),
+      0 4px 12px rgb(15 20 25 / 12%);
+  }
+
+  .loginBack:focus-visible {
+    background: #eff3f4;
+  }
+
+  @media (hover: hover) {
+    .loginBack:hover {
+      background: #eff3f4;
+    }
+  }
+
+  .headlineBlock {
+    max-inline-size: 26rem;
+  }
+}
+
+@media (max-width: 719px) {
+  /* The top clears the corner arrow (12px down, 44px tall); the column is
+     anchored there as at every width. */
+  .actionPanel {
+    padding: calc(
+        max(var(--space-3), env(safe-area-inset-top)) + 2.75rem + var(--space-4)
+      )
+      max(var(--space-4), env(safe-area-inset-right))
+      max(var(--login-pad-bottom), env(safe-area-inset-bottom))
+      max(var(--space-4), env(safe-area-inset-left));
+  }
+}
+
+/* The compose screen's own way into 草稿. Quiet and to one side: it is a
+   door, not the thing on the page. */
+.pageDrafts {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  /* The way into an article sits at the start, the way back into kept text at
+     the end, and the row holds whichever of the two is there. */
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.pageArticleLink {
+  min-block-size: 2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-3);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.pageArticleLink svg {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+}
+
+@media (hover: hover) {
+  .pageArticleLink:hover {
+    background: var(--surface-hover);
+    color: var(--text-primary);
+  }
+}
+
+.pageDraftsToggle {
+  min-block-size: 2rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: var(--accent);
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.pageDraftsToggle:focus-visible {
+  background: var(--audience-hover);
+}
+
+@media (hover: hover) {
+  .pageDraftsToggle:hover {
+    background: var(--audience-hover);
+  }
+}
+
+.pageDraftsToggle:active {
+  background: var(--audience-pressed);
+}
+
+.pageDraftsEdit {
+  min-block-size: 2rem;
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-4);
+  color: var(--ink-button-contrast);
+  background: var(--ink-button);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.pageDraftsEdit:focus-visible {
+  background: var(--ink-button-hover);
+}
+
+@media (hover: hover) {
+  .pageDraftsEdit:hover {
+    background: var(--ink-button-hover);
+  }
+}
+
+.pageDraftsEdit:active {
+  background: var(--ink-button-pressed);
+}
+
+.pageDraftsToggle small {
+  min-inline-size: 1.125rem;
+  block-size: 1.125rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  padding-inline: 0.25rem;
+  color: var(--button-primary-contrast);
+  background: var(--accent);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.pageDraftsToggle svg {
+  inline-size: 1rem;
+  block-size: 1rem;
+  transition: transform var(--motion-fast) var(--ease-out);
+}
+
+.pageDraftsToggle[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.pageDraftsList {
+  grid-column: 1 / -1;
+  border-block: 1px solid var(--border-subtle);
+  /* Full bleed, the way the list reads inside the dialog: the rows are the
+     targets, and a row that stops short of the edge invites a press that
+     lands on nothing. */
+  margin-block-end: var(--space-2);
+  margin-inline: calc(0px - var(--space-4));
+}
+
+/* The section row under the 草稿 header: one tab per
+   kind, the chosen one named in ink with an accent bar under it, a hairline
+   under the row, and the whole tab as the target. Only 未发布 exists yet, so
+   it takes the row; a second tab splits it with no other change. */
+.draftsTabs {
+  border-block-end: 1px solid var(--border-subtle);
+}
+
+.draftsTabs > div {
+  display: flex;
+}
+
+.draftsTabs button {
+  position: relative;
+  min-block-size: 3.25rem;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  flex: 1 1 0;
+  border: 0;
+  padding-inline: var(--space-4);
+  color: var(--text-secondary);
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+@media (hover: hover) {
+  .draftsTabs button:hover {
+    background: var(--icon-button-hover);
+  }
+}
+
+.draftsTabs button[aria-selected="true"] {
+  color: var(--text-primary);
+  font-weight: 750;
+}
+
+/* The whole tab is the target, but the bar is as wide as the label -- which
+   is what the reference draws -- so it rides on the label rather than the
+   button. `align-items: stretch` above is what lets the label reach the
+   tab's bottom edge for it. */
+.draftsTabs button > span {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.draftsTabs button > span::after {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  block-size: 0.25rem;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.draftsTabs button[aria-selected="true"] > span::after {
+  opacity: 1;
+}
+
+/* The 草稿 view inside the compose dialog. Rows are the whole target, and
+   they say so under the pointer -- the hairline between them is not an
+   affordance, the ground lifting under the cursor is. */
+.draftsList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.draftsList li {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  border-block-start: 1px solid var(--border-subtle);
+  padding-inline: var(--space-2);
+  transition: background var(--motion-fast) var(--ease-out);
+}
+
+.draftsList li:first-child {
+  border-block-start: 0;
+}
+
+.draftsList li:focus-within {
+  background: var(--surface-hover);
+}
+
+@media (hover: hover) {
+  .draftsList li:hover {
+    background: var(--surface-hover);
+  }
+}
+
+/* One element for both states: opening a draft and picking one are the
+   same row, so entering the selection animates rather than relaying out. */
+.draftsRow {
+  min-inline-size: 0;
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  border: 0;
+  border-radius: var(--radius-action);
+  padding: 0;
+  background: transparent;
+  text-align: start;
+  cursor: pointer;
+}
+
+.draftsText {
+  min-inline-size: 0;
+  display: grid;
+  flex: 1 1 auto;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-2);
+}
+
+.draftsText > span {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.draftsText time {
+  color: var(--text-tertiary);
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+}
+
+.draftsDelete {
+  inline-size: var(--target-size);
+  block-size: var(--target-size);
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  align-self: center;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    inline-size 220ms var(--ease-out),
+    background-color 0.2s;
+}
+
+.draftsDelete:focus-visible {
+  color: var(--danger);
+  background: var(--icon-button-hover);
+}
+
+@media (hover: hover) {
+  .draftsDelete:hover {
+    color: var(--danger);
+    background: var(--icon-button-hover);
+  }
+}
+
+.draftsDelete:active {
+  background: var(--icon-button-pressed);
+}
+
+.draftsDelete svg {
+  inline-size: 1.15rem;
+  block-size: 1.15rem;
+}
+
+/* Quiet until the row is under the pointer, and always there for a finger
+   or a keyboard, which have no hover to reveal it with. */
+@media (hover: hover) {
+  .draftsDelete {
+    opacity: 0;
+  }
+
+  .draftsList li:hover .draftsDelete,
+  .draftsDelete:focus-visible {
+    opacity: 1;
+  }
+}
+
+.draftsEmpty {
+  margin: 0;
+  padding: var(--space-6) var(--space-4) var(--space-8);
+  color: var(--text-tertiary);
+  font-size: var(--text-sm);
+  line-height: 1.7;
+  text-align: center;
+}
+
+/* A 22px checkbox that keeps the page's own
+   colour inside it, in a round 36px halo that is the only part answering
+   the pointer. Checked, the box fills with the accent and the tick shows.
+
+   Its slot is what makes entering the selection readable: it widens from
+   nothing to 36px and the text moves over with it, so the push can be seen
+   rather than arriving already done. */
+.draftsCheck {
+  inline-size: 0;
+  block-size: 2.25rem;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 50%;
+  transition:
+    inline-size 220ms var(--ease-out),
+    background-color 0.2s;
+}
+
+.draftsRow[data-editing] .draftsCheck {
+  inline-size: 2.25rem;
+}
+
+.draftsCheck > span {
+  inline-size: 1.375rem;
+  block-size: 1.375rem;
+  display: grid;
+  place-items: center;
+  /* 2px of the page's secondary ink, not a hairline of --border-strong: at
+     this size a 1px #cfd9de outline reads as a placeholder rather than a
+     control waiting to be ticked. */
+  border: 2px solid var(--text-secondary);
+  border-radius: 0.3125rem;
+  /* The page's colour, not `transparent`: transparent let the halo's grey
+     through and filled the middle of the box with it. */
+  background: var(--surface);
+  transform: scale(0.55);
+  opacity: 0;
+  transition:
+    transform 220ms var(--ease-out),
+    opacity 140ms var(--ease-out),
+    border-color 0.2s,
+    background-color 0.2s;
+}
+
+.draftsRow[data-editing] .draftsCheck > span {
+  transform: none;
+  opacity: 1;
+}
+
+.draftsCheck svg {
+  inline-size: 0.875rem;
+  block-size: 0.875rem;
+  color: var(--accent-contrast);
+  opacity: 0;
+  transition: opacity 0.15s var(--ease-out);
+}
+
+@media (hover: hover) {
+  .draftsRow[data-editing] .draftsCheck:hover {
+    background: var(--checkbox-halo-hover);
+  }
+}
+
+@media (hover: hover) {
+  .draftsRow[data-editing]:active .draftsCheck:hover {
+    background: var(--checkbox-halo-pressed);
+  }
+}
+
+.draftsRow[aria-checked="true"] .draftsCheck > span {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.draftsRow[aria-checked="true"] .draftsCheck svg {
+  opacity: 1;
+}
+
+@media (hover: hover) {
+  .draftsRow[aria-checked="true"] .draftsCheck:hover {
+    background: var(--checkbox-on-halo-hover);
+  }
+}
+
+@media (hover: hover) {
+  .draftsRow[aria-checked="true"]:active .draftsCheck:hover {
+    background: var(--checkbox-on-halo-pressed);
+  }
+}
+
+/* The row's own delete folds away while editing, where the bottom bar does
+   that job for a whole selection. */
+.draftsList li[data-editing] .draftsDelete {
+  inline-size: 0;
+  opacity: 0;
+}
+
+/* 全选 on one side, 删除 on the other, as the reference has it. */
+.draftsSelection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-block-start: 1px solid var(--border-subtle);
+  padding: var(--space-2) var(--space-3);
+}
+
+.draftsSelectAll,
+.draftsDeletePicked {
+  min-block-size: 2.25rem;
+  border: 0;
+  border-radius: 999px;
+  padding-inline: var(--space-3);
+  background: transparent;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.draftsSelectAll {
+  color: var(--accent);
+}
+
+.draftsSelectAll:focus-visible {
+  background: var(--audience-hover);
+}
+
+@media (hover: hover) {
+  .draftsSelectAll:hover {
+    background: var(--audience-hover);
+  }
+}
+
+.draftsSelectAll:active {
+  background: var(--audience-pressed);
+}
+
+.draftsDeletePicked {
+  color: var(--danger);
+}
+
+.draftsDeletePicked:focus-visible {
+  background: var(--danger-soft);
+}
+
+@media (hover: hover) {
+  .draftsDeletePicked:hover:not(:disabled) {
+    background: var(--danger-soft);
+  }
+}
+
+.draftsDeletePicked:active:not(:disabled) {
+  background: var(--danger-soft-pressed);
+}
+
+/* Nothing picked, so nothing for it to do: it says so, and does not answer
+   the pointer at all. */
+.draftsDeletePicked:disabled {
+  color: var(--danger-disabled);
+  background: transparent;
+  cursor: default;
+}

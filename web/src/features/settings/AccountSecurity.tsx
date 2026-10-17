@@ -1,0 +1,213 @@
+import { useEffect, useState, type FormEvent } from "react";
+import {
+  accountSecurity,
+  createApiCredential,
+  listApiCredentials,
+  revokeApiCredential,
+  setAccountPassword,
+  type ApiCredential,
+} from "../../api/accounts";
+import { useNavigation } from "../../app/navigation";
+import { useSession } from "../auth/SessionProvider";
+import forms from "../../components/Forms.module.css";
+import styles from "./Settings.module.css";
+
+export function AccountSecurity({ instanceId }: { instanceId: string | null }) {
+  const { session, account, forgetSession, expireIfInvalidSession } =
+    useSession();
+  const navigation = useNavigation();
+  const [passwordEnabled, setPasswordEnabled] = useState(false);
+  const [password, setPassword] = useState("");
+  const [label, setLabel] = useState("");
+  const [tokens, setTokens] = useState<ApiCredential[]>([]);
+  const [receipt, setReceipt] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    void Promise.all([
+      accountSecurity(controller.signal),
+      listApiCredentials(controller.signal),
+    ])
+      .then(([security, list]) => {
+        if (controller.signal.aborted) return;
+        setPasswordEnabled(security.passwordEnabled);
+        setTokens(list);
+        setError(null);
+      })
+      .catch((next: unknown) => {
+        if (!controller.signal.aborted && !expireIfInvalidSession(next))
+          setError("登录凭据暂时无法读取，可以重试。");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [attempt, expireIfInvalidSession]);
+  async function savePassword(event: FormEvent) {
+    event.preventDefault();
+    if (!session || pending) return;
+    setPending("password");
+    setError(null);
+    try {
+      await setAccountPassword(session.csrfToken, password);
+      setPassword("");
+      forgetSession(instanceId);
+      navigation.navigate("/login?return=%2Fsettings%2Faccount");
+    } catch (next) {
+      if (!expireIfInvalidSession(next))
+        setError("密码没有更新，请检查输入后重试。");
+    } finally {
+      setPending(null);
+    }
+  }
+  async function issue(event: FormEvent) {
+    event.preventDefault();
+    if (!session || pending) return;
+    setPending("create");
+    setError(null);
+    try {
+      const created = await createApiCredential(session.csrfToken, label);
+      setReceipt(created.token);
+      setTokens((current) => [created.credential, ...current]);
+      setLabel("");
+    } catch (next) {
+      if (!expireIfInvalidSession(next)) setError("API 令牌没有创建，请重试。");
+    } finally {
+      setPending(null);
+    }
+  }
+  async function revoke(token: ApiCredential) {
+    if (!session || pending) return;
+    setPending(token.id);
+    setError(null);
+    try {
+      await revokeApiCredential(session.csrfToken, token.id);
+      setTokens((current) =>
+        current.map((item) =>
+          item.id === token.id ? { ...item, revoked_at_ms: Date.now() } : item,
+        ),
+      );
+    } catch (next) {
+      if (!expireIfInvalidSession(next)) setError("令牌未撤销，可以重试。");
+    } finally {
+      setPending(null);
+    }
+  }
+  return (
+    <section aria-label="密码和 API 令牌" className={styles.securitySection}>
+      <header className={styles.sectionHeader}>
+        <h2>密码和 API 令牌</h2>
+      </header>
+      {loading ? <p aria-busy="true">正在读取账号凭据…</p> : null}
+      {error ? (
+        <p className={forms.formError} role="alert">
+          {error}
+          <button
+            onClick={() => setAttempt((value) => value + 1)}
+            type="button"
+          >
+            重试
+          </button>
+        </p>
+      ) : null}
+      <form
+        className={styles.settingsForm}
+        onSubmit={(event) => void savePassword(event)}
+      >
+        <label>
+          新密码
+          <input
+            autoComplete="new-password"
+            disabled={pending !== null}
+            onChange={(event) => setPassword(event.target.value)}
+            required
+            type="password"
+            value={password}
+          />
+        </label>
+        <p>
+          {passwordEnabled
+            ? "修改密码后，需要在浏览器重新登录。"
+            : "设置密码后，可使用用户名和密码登录。"}
+        </p>
+        <button
+          className={forms.primaryButton}
+          disabled={!session || !password || pending !== null}
+          type="submit"
+        >
+          {pending === "password" ? "正在保存…" : "保存密码并重新登录"}
+        </button>
+      </form>
+      <h3>API 令牌</h3>
+      <p>每个令牌仅代表你的账号，并使用账号当前的权限。</p>
+      <form
+        className={styles.settingsForm}
+        onSubmit={(event) => void issue(event)}
+      >
+        <label>
+          令牌名称
+          <input
+            disabled={pending !== null || account?.status !== "active"}
+            maxLength={80}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder="例如：我的电脑"
+            value={label}
+          />
+        </label>
+        <button
+          className={forms.secondaryButton}
+          disabled={
+            !session || pending !== null || account?.status !== "active"
+          }
+          type="submit"
+        >
+          {pending === "create" ? "正在创建…" : "创建 API 令牌"}
+        </button>
+      </form>
+      {receipt ? (
+        <div className={styles.oneTimeCredential} role="status">
+          <p>请保存此令牌，它只显示这一次。</p>
+          <textarea aria-label="新 API 令牌" readOnly value={receipt} />
+          <button
+            className={forms.secondaryButton}
+            onClick={() =>
+              void navigator.clipboard
+                .writeText(receipt)
+                .catch(() => setError("未能复制，请选择令牌后手动复制。"))
+            }
+            type="button"
+          >
+            复制令牌
+          </button>
+          <button onClick={() => setReceipt(null)} type="button">
+            已保存，隐藏令牌
+          </button>
+        </div>
+      ) : null}
+      <ul className={styles.credentialList}>
+        {tokens.map((token) => (
+          <li key={token.id}>
+            <span>{token.label || "未命名令牌"}</span>
+            <span> · {new Date(token.created_at_ms).toLocaleDateString()}</span>
+            {token.revoked_at_ms === null ? (
+              <button
+                className={forms.secondaryButton}
+                disabled={pending !== null}
+                onClick={() => void revoke(token)}
+                type="button"
+              >
+                撤销 {token.label || "令牌"}
+              </button>
+            ) : (
+              <span> · 已撤销</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

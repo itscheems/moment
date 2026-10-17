@@ -8,7 +8,7 @@ describe("Icon", () => {
     ["home", "nav-home", "nav-home-active"],
     ["search", "nav-search", "nav-search-active"],
     ["archive", "nav-archive", "nav-archive-active"],
-    ["owner", "nav-profile", "nav-profile-active"],
+    ["account", "nav-profile", "nav-profile-active"],
     ["more", "nav-more", "nav-more-active"],
   ] as const)(
     "uses reusable navigation artwork for %s",

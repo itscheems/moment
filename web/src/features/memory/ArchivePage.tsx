@@ -83,12 +83,12 @@ function ArchiveMessage({
  */
 export function ArchivePage({
   api,
-  owner,
+  canPublish,
   search,
   site,
 }: {
   api: PublicApi;
-  owner: boolean;
+  canPublish: boolean;
   search: string;
   site: SiteIdentity;
 }) {
@@ -294,7 +294,7 @@ export function ArchivePage({
             emptyContext="archive"
             initialSearch={listSearch}
             key={anchor ?? "latest"}
-            owner={owner}
+            canPublish={canPublish}
             site={site}
           />
         </div>

@@ -1,3 +1,5 @@
+import { AccountIdentityPreview } from "../../components/AccountIdentityPreview";
+import { commentsApi } from "../../api/comments";
 import { Dialog } from "@base-ui/react/dialog";
 import { Menu } from "@base-ui/react/menu";
 import { Popover } from "@base-ui/react/popover";
@@ -12,7 +14,6 @@ import {
 import {
   PublicApiError,
   type PublicComment,
-  type PublicCommentAuthor,
   type SiteIdentity,
 } from "../../api/public";
 import { InternalLink } from "../../app/navigation";
@@ -20,7 +21,6 @@ import { SiteAvatar } from "../../components/SiteIdentity";
 import {
   ActionTooltip,
   ExactTimeTooltip,
-  SiteIdentityPreview,
 } from "../../components/TimelineInteractions";
 import { Icon } from "../../components/icons";
 import { notify } from "../../components/Feedback";
@@ -32,12 +32,13 @@ import { ImageGrid } from "../media/ImageGrid";
 import { useSession } from "../auth/SessionProvider";
 import { Reauthenticate, type ReplyBlock } from "./CommentComposer";
 import styles from "./Comments.module.css";
-import ownerStyles from "../owner/Owner.module.css";
+import formStyles from "../../components/Forms.module.css";
 
 function DeleteCommentDialog({
   postId,
   comment,
   replyCount,
+  cascadeAllowed,
   focusTarget,
   open,
   onOpenChange,
@@ -47,24 +48,25 @@ function DeleteCommentDialog({
   postId: string;
   comment: PublicComment;
   replyCount: number;
+  cascadeAllowed: boolean;
   focusTarget: RefObject<HTMLElement | null>;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   triggerRef: RefObject<HTMLButtonElement | null>;
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
 }) {
-  const owner = useSession();
-  const { api, session, expireIfInvalidSession } = owner;
+  const auth = useSession();
+  const { session, expireIfInvalidSession } = auth;
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authExpired, setAuthExpired] = useState(false);
   const pendingRef = useRef(false);
   const deletedRef = useRef(false);
   const root = comment.parentId === null;
-  const displayReauth = authExpired || (owner.state === "expired" && !session);
+  const displayReauth = authExpired || (auth.state === "expired" && !session);
   const displayedError =
     error ??
-    (displayReauth ? "所有者会话已过期。刷新身份后可在这里重新删除。" : null);
+    (displayReauth ? "登录会话已过期。刷新身份后可在这里重新删除。" : null);
 
   useDocumentScrollLock(open);
 
@@ -80,7 +82,7 @@ function DeleteCommentDialog({
     setPending(true);
     setError(null);
     try {
-      const result = await api.deleteComment(
+      const result = await commentsApi.deleteComment(
         session.csrfToken,
         postId,
         comment.id,
@@ -92,13 +94,17 @@ function DeleteCommentDialog({
     } catch (nextError) {
       if (expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("所有者会话已过期。刷新身份后可在这里重新删除。");
+        setError("登录会话已过期。刷新身份后可在这里重新删除。");
       } else {
         setError(
           nextError instanceof PublicApiError &&
             nextError.code === "COMMENT_NOT_FOUND"
             ? "这条回复已经不存在。关闭后重新加载列表。"
-            : "没有删除这条回复。列表保持不变，可以安全重试。",
+            : nextError instanceof PublicApiError &&
+                nextError.code === "UNAUTHORIZED" &&
+                nextError.details.replies_by_others
+              ? "这段对话包含他人的回复，需要管理员删除。"
+              : "没有删除这条回复。列表保持不变，可以安全重试。",
         );
       }
     } finally {
@@ -130,7 +136,7 @@ function DeleteCommentDialog({
               {root ? "删除这条回复？" : "删除这条回复？"}
             </Dialog.Title>
             <Dialog.Description className={styles.dialogDescription}>
-              {root && replyCount > 0
+              {root && replyCount > 0 && cascadeAllowed
                 ? `这条回复和它下面的 ${replyCount} 条回复都会永久删除。`
                 : "这条回复会从公开对话中永久删除。"}
             </Dialog.Description>
@@ -141,7 +147,7 @@ function DeleteCommentDialog({
             ) : null}
             {displayReauth ? (
               <Reauthenticate
-                inputId={`delete-${comment.id}-owner-token`}
+                inputId={`delete-${comment.id}-api-token`}
                 onReady={() => {
                   setAuthExpired(false);
                   setError(null);
@@ -165,7 +171,7 @@ function DeleteCommentDialog({
               >
                 {pending
                   ? "正在删除…"
-                  : root && replyCount > 0
+                  : root && replyCount > 0 && cascadeAllowed
                     ? "删除回复及其对话"
                     : root
                       ? "删除回复"
@@ -179,14 +185,16 @@ function DeleteCommentDialog({
   );
 }
 
-function CommentOwnerMenu({
+function CommentModerationMenu({
   comment,
   focusTarget,
   pinned,
   replyCount,
   onDeleted,
   onPinChange,
+  canModerate,
 }: {
+  canModerate: boolean;
   comment: PublicComment;
   focusTarget: RefObject<HTMLElement | null>;
   pinned: boolean;
@@ -194,7 +202,7 @@ function CommentOwnerMenu({
   onDeleted: (deleted: PublicComment, repliesAffected: number) => void;
   onPinChange: (pinnedCommentId: string | null) => void;
 }) {
-  const owner = useSession();
+  const auth = useSession();
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
@@ -205,18 +213,18 @@ function CommentOwnerMenu({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const root = comment.parentId === null;
   const displayReauth =
-    authExpired || (owner.state === "expired" && !owner.session);
+    authExpired || (auth.state === "expired" && !auth.session);
 
   useDocumentScrollLock(pinOpen);
 
   useEffect(() => {
-    if (!authExpired || !owner.session) return;
+    if (!authExpired || !auth.session) return;
     setAuthExpired(false);
     setError(null);
-  }, [authExpired, owner.session]);
+  }, [authExpired, auth.session]);
 
   const changePin = async () => {
-    if (!owner.session || pendingRef.current) {
+    if (!auth.session || pendingRef.current) {
       setAuthExpired(true);
       return;
     }
@@ -225,13 +233,13 @@ function CommentOwnerMenu({
     setError(null);
     try {
       const result = pinned
-        ? await owner.api.unpinComment(
-            owner.session.csrfToken,
+        ? await commentsApi.unpinComment(
+            auth.session.csrfToken,
             comment.postId,
             comment.id,
           )
-        : await owner.api.pinComment(
-            owner.session.csrfToken,
+        : await commentsApi.pinComment(
+            auth.session.csrfToken,
             comment.postId,
             comment.id,
           );
@@ -239,9 +247,9 @@ function CommentOwnerMenu({
       setPinOpen(false);
       notify(pinned ? "已取消置顶回复" : "已置顶回复");
     } catch (nextError) {
-      if (owner.expireIfInvalidSession(nextError)) {
+      if (auth.expireIfInvalidSession(nextError)) {
         setAuthExpired(true);
-        setError("所有者会话已过期。刷新身份后可在这里重试。");
+        setError("登录会话已过期。刷新身份后可在这里重试。");
       } else {
         setError("置顶状态没有改变，可以安全重试。");
       }
@@ -252,11 +260,11 @@ function CommentOwnerMenu({
   };
 
   return (
-    <div className={styles.commentOwnerMenu}>
+    <div className={styles.commentActionsMenu}>
       <Menu.Root onOpenChange={setMenuOpen} open={menuOpen}>
         <Menu.Trigger
           aria-label="回复操作"
-          className={ownerStyles.ownerMenuTrigger}
+          className={formStyles.actionsMenuTrigger}
           ref={triggerRef}
         >
           <Icon name="more" />
@@ -264,17 +272,17 @@ function CommentOwnerMenu({
         <Menu.Portal>
           <Menu.Positioner
             align="end"
-            className={ownerStyles.ownerMenuPositioner}
+            className={formStyles.actionsMenuPositioner}
             side="bottom"
             sideOffset={4}
           >
             <Menu.Popup
               aria-label="回复操作"
-              className={ownerStyles.ownerMenuPopup}
+              className={formStyles.actionsMenuPopup}
             >
-              {root ? (
+              {root && canModerate ? (
                 <Menu.Item
-                  className={ownerStyles.ownerMenuItem}
+                  className={formStyles.actionsMenuItem}
                   onClick={() => {
                     setMenuOpen(false);
                     setError(null);
@@ -286,7 +294,7 @@ function CommentOwnerMenu({
                 </Menu.Item>
               ) : null}
               <Menu.Item
-                className={`${ownerStyles.ownerMenuItem} ${ownerStyles.ownerMenuDanger}`}
+                className={`${formStyles.actionsMenuItem} ${formStyles.actionsMenuDanger}`}
                 onClick={() => {
                   setMenuOpen(false);
                   setDeleteOpen(true);
@@ -301,6 +309,7 @@ function CommentOwnerMenu({
       </Menu.Root>
 
       <DeleteCommentDialog
+        cascadeAllowed={canModerate}
         comment={comment}
         focusTarget={focusTarget}
         onDeleted={onDeleted}
@@ -344,7 +353,7 @@ function CommentOwnerMenu({
               ) : null}
               {displayReauth ? (
                 <Reauthenticate
-                  inputId={`pin-${comment.id}-owner-token`}
+                  inputId={`pin-${comment.id}-api-token`}
                   onReady={() => {
                     setAuthExpired(false);
                     setError(null);
@@ -361,7 +370,7 @@ function CommentOwnerMenu({
                 <button
                   aria-busy={pending || undefined}
                   className={styles.primaryAction}
-                  disabled={pending || !owner.session}
+                  disabled={pending || !auth.session}
                   onClick={() => void changePin()}
                   type="button"
                 >
@@ -383,18 +392,6 @@ function CommentOwnerMenu({
  * before it starts reading as a permanent state of that comment.
  */
 const REPLY_TARGET_FLASH_MS = 1400;
-
-/**
- * Whether a comment was written from the site owner's account.
- *
- * `author_kind` used to answer this. It is the axis being retired: its one
- * remaining job is marking rows a legacy guest wrote, and its value domain
- * stops meaning anything the day a second account exists. The resolved user id
- * is the stable answer, and today it gives exactly the same verdict.
- */
-function ownedBySite(author: PublicCommentAuthor, site: SiteIdentity): boolean {
-  return author.userId !== null && author.userId === site.ownerId;
-}
 
 /**
  * Clip the comment body and report whether anything is actually hidden.
@@ -487,11 +484,11 @@ function SignInToReplyPopover({
             onClick={(event) => event.stopPropagation()}
           >
             <Popover.Title className={styles.signInPopupTitle}>
-              {pending ? "正在等待站长批准" : "登录后回复"}
+              {pending ? "正在等待管理员批准" : "登录后回复"}
             </Popover.Title>
             <Popover.Description className={styles.signInPopupBody}>
               {pending
-                ? "你的账户正在等待站长批准，批准后就能留言。"
+                ? "你的账户正在等待管理员批准，批准后就能留言。"
                 : "发表回复需要登录。过往回复继续公开可读。"}
             </Popover.Description>
             {pending ? null : (
@@ -510,7 +507,9 @@ export function CommentItem({
   active = true,
   comment,
   site,
-  owner,
+  postAuthorUserId = null,
+  canModerate,
+  canDelete = false,
   pinned,
   replyRoot,
   canReply = true,
@@ -524,7 +523,9 @@ export function CommentItem({
   active?: boolean;
   comment: PublicComment;
   site: SiteIdentity;
-  owner: boolean;
+  postAuthorUserId?: string | null;
+  canModerate: boolean;
+  canDelete?: boolean;
   pinned: boolean;
   replyRoot: PublicComment | null;
   /**
@@ -547,13 +548,10 @@ export function CommentItem({
 }) {
   const created = formatMomentDate(comment.createdAt, site.timezone);
   const root = comment.parentId === null;
-  // Everything the byline shows comes from this one projection, which the
-  // server resolved. Reading the site identity for owner rows and the stored
-  // string for the rest is what let the CLI and the browser print two
-  // different author names for the same comment.
   const author = comment.author;
   const authorName = author.displayName;
-  const ownerAccount = ownedBySite(author, site);
+  const isPostAuthor =
+    author.userId !== null && author.userId === postAuthorUserId;
   // A legacy guest row carries a free-text name and nothing else — no profile
   // to open, so no links and no preview card. The parser guarantees the three
   // reference fields arrive together; this narrows them for the renderer.
@@ -561,12 +559,6 @@ export function CommentItem({
     author.username !== null && author.profileUrl !== null
       ? { profileUrl: author.profileUrl, username: author.username }
       : null;
-  // The face is read from the same projection as the name, for every account
-  // and not just the owner's. It used to come from the site identity, which is
-  // the owner's own picture — site.avatar_media_id reads that account's row —
-  // so every member fell through to a letter while the server was already
-  // shipping their avatar_media_id. A comment author has no cover of its own;
-  // SiteAvatar does not read one.
   const authorFace = {
     displayName: authorName,
     avatarMediaId: author.avatarMediaId,
@@ -665,8 +657,9 @@ export function CommentItem({
       tabIndex={-1}
     >
       <article aria-label={`${authorName}的回复`}>
-        {owner ? (
-          <CommentOwnerMenu
+        {canModerate || canDelete ? (
+          <CommentModerationMenu
+            canModerate={canModerate}
             comment={comment}
             focusTarget={focusTarget}
             onDeleted={onDeleted}
@@ -675,17 +668,10 @@ export function CommentItem({
             replyCount={replyCount}
           />
         ) : null}
-        {/*
-         * Only the owner gets the hover card, for the reason the byline below
-         * gives: the card wants a whole SiteIdentity, and this site's is the
-         * owner's. The picture itself needs no such lookup, so it is drawn for
-         * everybody.
-         */}
-        {ownerAccount && account ? (
-          <SiteIdentityPreview site={site}>{avatar}</SiteIdentityPreview>
-        ) : (
-          avatar
-        )}
+        {}
+        <AccountIdentityPreview author={author}>
+          {avatar}
+        </AccountIdentityPreview>
         {pinned ? (
           <p className={styles.pinnedCommentMark}>
             <Icon name="pin" />
@@ -695,33 +681,15 @@ export function CommentItem({
         <header className={styles.commentByline} ref={headerRef}>
           {account ? (
             <>
-              {/*
-               * `SiteIdentityPreview` wants a whole `SiteIdentity` — cover and
-               * bio included — and the comment author projection has neither.
-               * The owner is the only account that can comment today, so the
-               * site identity is the author's identity and passing it is
-               * correct rather than convenient. Do not synthesise one for any
-               * other user id: it would quietly show this site's cover and bio
-               * under somebody else's name the day accounts arrive. That day
-               * this needs a real lookup by username.
-               */}
-              {ownerAccount ? (
-                <SiteIdentityPreview site={site}>
-                  <InternalLink
-                    className={styles.commentAuthor}
-                    href={account.profileUrl}
-                  >
-                    {authorName}
-                  </InternalLink>
-                </SiteIdentityPreview>
-              ) : (
+              {}
+              <AccountIdentityPreview author={author}>
                 <InternalLink
                   className={styles.commentAuthor}
                   href={account.profileUrl}
                 >
                   {authorName}
                 </InternalLink>
-              )}
+              </AccountIdentityPreview>
               <InternalLink
                 className={styles.commentHandle}
                 href={account.profileUrl}
@@ -732,8 +700,8 @@ export function CommentItem({
           ) : (
             <strong>{authorName}</strong>
           )}
-          {ownerAccount ? (
-            <span className={styles.ownerBadge}>所有者</span>
+          {isPostAuthor ? (
+            <span className={styles.authorBadge}>作者</span>
           ) : null}
           <span aria-hidden="true">·</span>
           <ExactTimeTooltip exact={created.absolute}>

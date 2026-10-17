@@ -1,3 +1,4 @@
+import { mediaApi } from "../../../api/media";
 import { Menu } from "@base-ui/react/menu";
 import { Tooltip } from "@base-ui/react/tooltip";
 import type { EditorEvents } from "@tiptap/core";
@@ -25,10 +26,10 @@ import { notify } from "../../../components/Feedback";
 import { Icon } from "../../../components/icons";
 import { mediaPreviewUrl } from "../../../api/mediaUrls";
 import { SiteAvatar, siteDisplayName } from "../../../components/SiteIdentity";
-import { AudienceSelector } from "../../owner/AudienceSelector";
+import { AudienceSelector } from "../../compose/AudienceSelector";
 import { useSession } from "../../auth/SessionProvider";
-import { announceOwnerPost } from "../../owner/postEvents";
-import { ConfirmDialog } from "../../owner/ConfirmDialog";
+import { announcePostChanged } from "../../posts/postEvents";
+import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import {
   ArticleDraftApi,
   MAX_ARTICLE_TITLE_CODE_POINTS,
@@ -97,11 +98,11 @@ export function ArticleEditor({
   onBack?: () => void;
   onToggleFocus?: () => void;
 }) {
-  const owner = useSession();
+  const auth = useSession();
   const location = useNavigation();
   const api = useMemo(() => new ArticleDraftApi(), []);
   const publicApi = useMemo(() => new PublicApi(), []);
-  const csrfToken = owner.session?.csrfToken ?? "";
+  const csrfToken = auth.session?.csrfToken ?? "";
 
   const [loadState, setLoadState] = useState<{
     draftId: string | null;
@@ -167,19 +168,19 @@ export function ArticleEditor({
     [],
   );
 
-  const uploadOwner = useRef(owner);
-  uploadOwner.current = owner;
+  const uploadSession = useRef(auth);
+  uploadSession.current = auth;
   const extensions = useMemo(
     () =>
       articleEditorExtensions({
         upload: async (file, onProgress, signal) => {
-          const current = uploadOwner.current;
+          const current = uploadSession.current;
           const token = current.session?.csrfToken;
           if (!token) throw new Error("登录状态已经失效。");
           const id = createIdempotencyKey();
           setUploads((tasks) => [...tasks, { id, failed: null }]);
           try {
-            const media = await current.api.uploadMedia(
+            const media = await mediaApi.uploadMedia(
               token,
               file,
               (percent) => onProgress?.({ progress: percent }),
@@ -226,9 +227,6 @@ export function ArticleEditor({
     lastChangeAt.current = at;
     setChangeTick((tick) => tick + 1);
     setSaveState((current) =>
-      // A conflict is a question the owner has not answered yet. Typing on is
-      // allowed; quietly resuming the saves that would overwrite the other
-      // copy is not.
       current.kind === "conflict" ? current : { kind: "dirty" },
     );
   }, []);
@@ -316,7 +314,7 @@ export function ArticleEditor({
           setLoadState({ draftId, phase: "gone" });
           return;
         }
-        owner.expireIfInvalidSession(error);
+        auth.expireIfInvalidSession(error);
         setLoadError(articleDraftErrorMessage(error));
         setLoadState({ draftId, phase: "ready" });
       }
@@ -325,9 +323,6 @@ export function ArticleEditor({
       abandoned = true;
       controller.abort();
     };
-    // `owner` is deliberately not a dependency: it is read for its
-    // session-expiry hook only, and re-running this on every session tick
-    // would reload the draft over what is being typed.
   }, [api, publicApi, draftId, editor]);
 
   const refreshDrafts = useCallback(async () => {
@@ -337,7 +332,7 @@ export function ArticleEditor({
       setDrafts(listed);
       setRailError(null);
     } catch (error) {
-      owner.expireIfInvalidSession(error);
+      auth.expireIfInvalidSession(error);
       setRailError(articleDraftErrorMessage(error));
     } finally {
       setRailLoading(false);
@@ -460,7 +455,7 @@ export function ArticleEditor({
             });
             return null;
           }
-          owner.expireIfInvalidSession(error);
+          auth.expireIfInvalidSession(error);
           const message = articleDraftErrorMessage(error);
           setSaveState({ kind: "failed", message });
           if (reason === "force") notify(message, { type: "error" });
@@ -644,7 +639,7 @@ export function ArticleEditor({
       coverUpload.current = controller;
       setCoverBusy(true);
       try {
-        const uploaded = await owner.api.uploadMedia(
+        const uploaded = await mediaApi.uploadMedia(
           csrfToken,
           file,
           undefined,
@@ -664,7 +659,7 @@ export function ArticleEditor({
           controller.signal.aborted
         )
           return;
-        owner.expireIfInvalidSession(error);
+        auth.expireIfInvalidSession(error);
         notify(
           error instanceof PublicApiError
             ? error.message
@@ -681,7 +676,7 @@ export function ArticleEditor({
         }
       }
     },
-    [csrfToken, owner, markChanged],
+    [csrfToken, auth, markChanged],
   );
 
   const publish = useCallback(async () => {
@@ -711,7 +706,7 @@ export function ArticleEditor({
         publishKey.current,
         visibility,
       );
-      announceOwnerPost({
+      announcePostChanged({
         kind: stored.publishedEntryId ? "updated" : "created",
         post,
       });
@@ -720,7 +715,7 @@ export function ArticleEditor({
       if (onPublished) onPublished(post);
       else location.replace(`/m/${encodeURIComponent(post.id)}`);
     } catch (error) {
-      owner.expireIfInvalidSession(error);
+      auth.expireIfInvalidSession(error);
       notify(articleDraftErrorMessage(error), { type: "error" });
       // A refused publish is a new attempt, not a replay of the refused one.
       publishKey.current = createIdempotencyKey();
@@ -768,7 +763,7 @@ export function ArticleEditor({
     } catch (error) {
       firstChangeAt.current = unsavedSince;
       setSaveState(saveState);
-      owner.expireIfInvalidSession(error);
+      auth.expireIfInvalidSession(error);
       notify(articleDraftErrorMessage(error), { type: "error" });
     } finally {
       setDiscarding(false);
@@ -791,7 +786,7 @@ export function ArticleEditor({
       firstChangeAt.current = 0;
       setSaveState({ kind: "saved", at: stored.updatedAt });
     } catch (error) {
-      owner.expireIfInvalidSession(error);
+      auth.expireIfInvalidSession(error);
       notify(articleDraftErrorMessage(error), { type: "error" });
     } finally {
       setResolving(false);
@@ -813,7 +808,7 @@ export function ArticleEditor({
       setSaveState({ kind: "dirty" });
       setChangeTick((tick) => tick + 1);
     } catch (error) {
-      owner.expireIfInvalidSession(error);
+      auth.expireIfInvalidSession(error);
       notify(articleDraftErrorMessage(error), { type: "error" });
     } finally {
       setResolving(false);

@@ -25,10 +25,10 @@ export function TimelineLoading() {
 
 export function PublicEmpty({
   context = "timeline",
-  owner = false,
+  canPublish = false,
 }: {
   context?: "timeline" | "profile" | "archive";
-  owner?: boolean;
+  canPublish?: boolean;
 }) {
   // An archive list positioned before the first post is empty for a reason
   // of its own: nothing is older than where it starts. That is not "write
@@ -48,7 +48,7 @@ export function PublicEmpty({
       </section>
     );
   }
-  const description = owner
+  const description = canPublish
     ? "写下第一段 Moment，它会出现在这里，也会进入你的公开归档。"
     : context === "profile"
       ? "这个个人资料还没有公开 Moment；之后发布的内容会按时间出现在这里。"
@@ -58,7 +58,7 @@ export function PublicEmpty({
       <div>
         <h2>还没有 Moment</h2>
         <p>{description}</p>
-        {owner ? (
+        {canPublish ? (
           <div className={styles.actions}>
             <InternalLink className={styles.action} href="/compose">
               发布第一条 Moment

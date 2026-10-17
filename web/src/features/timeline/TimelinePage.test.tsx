@@ -18,7 +18,7 @@ import { SessionProvider } from "../auth/SessionProvider";
 import { TimelinePage } from "./TimelinePage";
 
 const site: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
+  profileUserId: "00000000000000000000000000000000",
   username: "owner",
   displayName: "Moment",
   title: "乔乔的 Moment",
@@ -35,6 +35,13 @@ const site: SiteIdentity = {
 
 function post(id: string, content: string) {
   return {
+    author: {
+      user_id: "00000000000000000000000000000000",
+      username: "owner",
+      display_name: "Moment",
+      avatar_media_id: null,
+      profile_url: "/owner",
+    },
     id,
     kind: "moment",
     content_md: content,
@@ -92,13 +99,17 @@ function ownerStatus(): Response {
   );
 }
 
-function renderTimeline(api: PublicApi, initialSearch = "", owner = false) {
+function renderTimeline(
+  api: PublicApi,
+  initialSearch = "",
+  canPublish = false,
+) {
   return render(
     <NavigationProvider>
       <TimelinePage
         api={api}
         initialSearch={initialSearch}
-        owner={owner}
+        canPublish={canPublish}
         site={site}
       />
     </NavigationProvider>,
@@ -146,7 +157,7 @@ describe("public timeline", () => {
     const repostedAt = "2026-08-16T06:00:00.000Z";
     let active = false;
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-repost",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -156,8 +167,35 @@ describe("public timeline", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url === "/api/v1/owner/status") return ownerStatus();
-        if (url === `/api/v1/owner/posts/${id}/repost`) {
+        if (url === "/api/v1/account/session")
+          return new Response(
+            JSON.stringify({
+              data: {
+                csrf_token: "csrf-repost",
+                expires_at: "2999-08-11T01:00:00.000Z",
+                account: {
+                  user_id: site.profileUserId,
+                  username: site.username,
+                  display_name: site.displayName,
+                  bio: site.bio,
+                  avatar_media_id: null,
+                  cover_media_id: null,
+                  role: "admin",
+                  status: "active",
+                  username_chosen: true,
+                  profile_url: "/owner",
+                },
+                limits: {
+                  profile_picture_bytes: 8388608,
+                  display_name_length: 80,
+                  bio_length: 500,
+                },
+              },
+              meta: { request_id: "session" },
+            }),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        if (url === `/api/v1/posts/${id}/repost`) {
           active = init?.method === "PUT";
           return new Response(
             JSON.stringify({
@@ -186,7 +224,7 @@ describe("public timeline", () => {
                 )
               }
               initialSearch=""
-              owner
+              canPublish
               site={site}
             />
           </NavigationProvider>
@@ -385,7 +423,7 @@ describe("public timeline", () => {
     // Replying needs an account, so the composer only appears for a signed-in
     // browser; without this the dialog would offer sign-in instead.
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-reply",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -393,9 +431,7 @@ describe("public timeline", () => {
     );
     const item = post("01K2ABCDEF0123456789ABCDE0", "直接在时间流回复");
     const fetcher = vi.fn(async (input: RequestInfo | URL) =>
-      String(input) === "/api/v1/owner/status"
-        ? ownerStatus()
-        : page([item], null),
+      String(input) === "/api/v1/status" ? ownerStatus() : page([item], null),
     );
     vi.stubGlobal("fetch", fetcher);
     vi.spyOn(window, "scrollY", "get").mockReturnValue(360);

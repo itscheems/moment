@@ -25,11 +25,11 @@ import { Icon } from "../../../components/icons";
 import { notify } from "../../../components/Feedback";
 import { useMediaQuery } from "../../../components/useMediaQuery";
 import { useSession } from "../../auth/SessionProvider";
-import { ConfirmDialog } from "../../owner/ConfirmDialog";
+import { ConfirmDialog } from "../../../components/ConfirmDialog";
 import {
-  announceOwnerPost,
+  announcePostChanged,
   listenForPublishedPosts,
-} from "../../owner/postEvents";
+} from "../../posts/postEvents";
 import { writeToClipboard } from "../../../components/content/notion/lib/clipboard";
 import {
   ArticleDraftApi,
@@ -93,7 +93,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
   const authorSite: SiteIdentity = account
     ? {
         ...site,
-        ownerId: account.userId,
+        profileUserId: account.userId,
         username: account.username,
         displayName: account.displayName,
         avatarMediaId: account.avatarMediaId,
@@ -104,7 +104,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
 
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
-      const owner = accountId.current;
+      const canPublish = accountId.current;
       const sequence = ++generation.current;
       const revision = draftRevision.current;
       try {
@@ -115,7 +115,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
         if (
           signal?.aborted ||
           sequence !== generation.current ||
-          owner !== accountId.current
+          canPublish !== accountId.current
         )
           return;
         setDrafts((previous) => {
@@ -168,7 +168,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
     setLoading(true);
     void refresh(controller.signal);
     const changed = (
-      notice?: import("../../owner/postEvents").PublishedPostNotice,
+      notice?: import("../../posts/postEvents").PublishedPostNotice,
     ) => {
       if (notice?.authorId && notice.authorId !== accountId.current) return;
       if (notice?.action === "unpublished" || notice?.action === "deleted")
@@ -208,13 +208,13 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
       return;
     }
     const controller = new AbortController();
-    const owner = accountId.current;
+    const canPublish = accountId.current;
     setReading(null);
     setReadError(null);
     void api
       .readManaged(route.id, controller.signal)
       .then((post) => {
-        if (!controller.signal.aborted && owner === accountId.current)
+        if (!controller.signal.aborted && canPublish === accountId.current)
           setReading(post);
       })
       .catch((error) => {
@@ -268,7 +268,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
     if (creating.current || !csrf) return;
     creating.current = true;
     setBusy(true);
-    const owner = accountId.current;
+    const canPublish = accountId.current;
     createKey.current ??= crypto.randomUUID();
     try {
       const draft = await api.create(
@@ -276,7 +276,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
         { title: "", body: emptyArticleDocument(), coverMediaId: null },
         createKey.current,
       );
-      if (owner !== accountId.current) return;
+      if (canPublish !== accountId.current) return;
       createKey.current = null;
       saved(draft);
       navigation.navigate(articleDraftPath(draft.id), { preserveScroll: true });
@@ -310,7 +310,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
       setPublished((previous) =>
         previous.filter((item) => item.id !== post.id),
       );
-      announceOwnerPost({ kind: "deleted", post });
+      announcePostChanged({ kind: "deleted", post });
       announceChange(post.id, "unpublished");
       navigation.replace(articleDraftPath(draft.id));
       notify("文章已移至草稿。");
@@ -333,7 +333,7 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
         setPublished((previous) =>
           previous.filter((row) => row.id !== item.id),
         );
-        announceOwnerPost({ kind: "deleted", post: item as PublicPost });
+        announcePostChanged({ kind: "deleted", post: item as PublicPost });
       } else {
         await api.discard(csrf, item.id);
         setDrafts((previous) => previous.filter((row) => row.id !== item.id));
@@ -364,10 +364,10 @@ export default function ArticleWorkspace({ site }: { site: SiteIdentity }) {
   const loadMore = async () => {
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
-    const owner = accountId.current;
+    const canPublish = accountId.current;
     try {
       const page = await api.published(cursor);
-      if (owner !== accountId.current) return;
+      if (canPublish !== accountId.current) return;
       setPublished((previous) => [
         ...previous,
         ...page.items.filter(

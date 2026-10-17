@@ -25,7 +25,7 @@ function comment(
     postId,
     parentId,
     depth: parentId ? 1 : 0,
-    authorKind: "owner",
+
     authorName: "Owner",
     author: {
       userId: "0123456789abcdef0123456789abcdef",

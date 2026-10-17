@@ -224,12 +224,6 @@
   grid-row: auto;
 }
 
-/*
- * The preview lays five to nine pictures out the way the post will: the
- * nine-grid, three square tiles to a row with a short last row, so the owner
- * sees the shape they are about to publish. The list grows a row at a time
- * instead of keeping the fixed height the smaller counts use.
- */
 .mediaEditorList[data-media-count="5"],
 .mediaEditorList[data-media-count="6"],
 .mediaEditorList[data-media-count="7"],

@@ -11,8 +11,8 @@ import commentsCss from "../features/comments/Comments.module.css?inline";
 import mediaCss from "../features/media/Media.module.css?inline";
 import datePickerCss from "../features/memory/DatePicker.module.css?inline";
 import memoryCss from "../features/memory/Memory.module.css?inline";
-import ownerCss from "../features/owner/Owner.module.css?inline";
-import settingsCss from "../features/owner/Settings.module.css?inline";
+import formsCss from "../components/Forms.module.css?inline";
+import settingsCss from "../features/settings/Settings.module.css?inline";
 import postCss from "../features/posts/PostPresentation.module.css?inline";
 import profileEditorCss from "../features/profile/ProfileEditor.module.css?inline";
 import profileCss from "../features/profile/ProfilePage.module.css?inline";
@@ -292,7 +292,7 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain("--motion-content: 240ms");
     expect(themeMenuCss).toContain("var(--motion-menu)");
     expect(interactionsCss).toContain("var(--motion-popover)");
-    expect(ownerCss).toContain("var(--motion-dialog)");
+    expect(formsCss).toContain("var(--motion-dialog)");
     expect(postCss).toContain("var(--motion-content)");
   });
 
@@ -308,7 +308,7 @@ describe("visual foundation contract", () => {
     expect(interactionsCss).toContain("min-block-size: 3rem");
     expect(mediaCss).toContain("min-block-size: var(--target-size)");
     expect(commentsCss).toContain("min-block-size: var(--target-size)");
-    expect(ownerCss).toContain("min-block-size: var(--target-size)");
+    expect(formsCss).toContain("min-block-size: var(--target-size)");
   });
 
   // The grid used to be one rounded panel whose shared background showed
@@ -411,15 +411,15 @@ describe("visual foundation contract", () => {
     expect(identityCss).toMatch(
       /\._avatar_[\w-]+,\s*\._avatarFallback_[\w-]+\s*\{[^}]*inline-size: 2\.5rem;[^}]*block-size: 2\.5rem;/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._inlineComposer_[\w-]+\s*\{[^}]*grid-template-columns: 2\.5rem minmax\(0, 1fr\)/s,
     );
     // 8px of section padding plus 8px here puts the avatar 16px below the
     // composer's top edge in both the closed and the open composer.
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*\{[^}]*align-self: stretch;[^}]*place-items: start center;[^}]*padding-block-start: var\(--space-2\)/s,
     );
-    expect(ownerCss).not.toMatch(
+    expect(formsCss).not.toMatch(
       /\._inlineComposer_[\w-]+\s+\._newTick_[\w-]+\s*>[^{]*\{/,
     );
   });
@@ -489,13 +489,13 @@ describe("visual foundation contract", () => {
   });
 
   it("uses contrast-safe state tokens on publish and selected-date actions", () => {
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._composerPublishButton_[\w-]+\s*\{[^}]*color: var\(--button-primary-contrast\);[^}]*background: var\(--button-primary\);[^}]*opacity var\(--motion-fast\)/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._composerPublishButton_[\w-]+:active:not\(:disabled\)\s*\{[^}]*background: var\(--button-primary-pressed\)/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._primaryButton_[\w-]+\._composerPublishButton_[\w-]+:disabled\s*\{[^}]*color: var\(--button-primary-contrast\);[^}]*background: var\(--button-primary-disabled\);[^}]*opacity: var\(--button-primary-disabled-opacity\)/s,
     );
     expect(datePickerCss).toMatch(
@@ -504,7 +504,7 @@ describe("visual foundation contract", () => {
     expect(datePickerCss).toMatch(
       /\._days_[\w-]+ button\[aria-pressed="true"\]:active\s*\{[^}]*background: var\(--button-primary-pressed\)/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\._composerPublishButton_[\w-]+\s*\{\s*transition: none/,
     );
   });
@@ -514,16 +514,16 @@ describe("visual foundation contract", () => {
   // corner arrow stands on a plain white disc over the artwork, not the
   // dark blurred one that read as a smudge.
   it("keeps the sign-in page still while it loads and its arrow on a white disc", () => {
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._actionPanel_[\w-]+\s*\{[^}]*position: relative;[^}]*justify-content: flex-start;/s,
     );
-    expect(ownerCss).not.toMatch(
+    expect(formsCss).not.toMatch(
       /\._actionPanel_[\w-]+\s*\{[^}]*justify-content: center/s,
     );
-    expect(ownerCss).not.toMatch(
+    expect(formsCss).not.toMatch(
       /\._loginBack_[\w-]+[^{]*\{[^}]*backdrop-filter/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._loginBack_[\w-]+\s*\{[^}]*color: #0f1419;[^}]*background: #fff;[^}]*box-shadow:/s,
     );
   });
@@ -586,7 +586,7 @@ describe("visual foundation contract", () => {
     // The lookbehind matters: without it `-webkit-user-select: none` satisfies
     // the match on its own, and the unprefixed property -- the one that
     // actually governs -- could be lost with the assertion still green.
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._displayHeadline_[\w-]+\s*\{[^}]*(?<!-)user-select: none/s,
     );
   });
@@ -596,10 +596,10 @@ describe("visual foundation contract", () => {
   // with justify-self, which does nothing without a grid parent -- the kind of
   // regression that leaves the page looking wrong and every test green.
   it("centres the alternative sign-in methods on the provider buttons' axis", () => {
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._otherMethods_[\w-]+\s*\{[^}]*display: grid;[^}]*justify-items: center;/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._loginMethodSwitch_[\w-]+\s*\{[^}]*justify-self: center/s,
     );
   });
@@ -608,14 +608,14 @@ describe("visual foundation contract", () => {
     expect(globalCss).toContain("--layer-picker: 100");
     expect(globalCss).toContain("--layer-lightbox: 110");
     expect(globalCss).toContain("--layer-confirm: 130");
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._locationBackdrop_[\w-]+\s*\{[^}]*z-index: var\(--layer-picker\)/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._locationViewport_[\w-]+\s*\{[^}]*z-index: calc\(var\(--layer-picker\) \+ 1\)/s,
     );
-    expect(ownerCss).toContain("z-index: var(--layer-confirm)");
-    expect(ownerCss).toContain("z-index: calc(var(--layer-confirm) + 1)");
+    expect(formsCss).toContain("z-index: var(--layer-confirm)");
+    expect(formsCss).toContain("z-index: calc(var(--layer-confirm) + 1)");
   });
 
   it("aligns profile media menus with the mention suggestion surface", () => {
@@ -697,36 +697,36 @@ describe("visual foundation contract", () => {
     }
     // Only the ring around the box fills; the box keeps the page's colour,
     // or the halo's grey shows through the middle of it.
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._draftsCheck_[\w-]+:hover\s*\{[^}]*background: var\(--checkbox-halo-hover\)/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._draftsRow_[\w-]+\[aria-checked="true"\] \._draftsCheck_[\w-]+:hover\s*\{[^}]*background: var\(--checkbox-on-halo-hover\)/s,
     );
     // The slot widens rather than appearing, so the push can be seen.
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._draftsCheck_[\w-]+\s*\{[^}]*inline-size: 0;[^}]*transition:\s*inline-size 220ms var\(--ease-out\)/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._draftsRow_[\w-]+\[data-editing\] \._draftsCheck_[\w-]+\s*\{[^}]*inline-size: 2\.25rem/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\._draftsCheck_[\w-]+,[\s\S]*?transition: none/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._draftsCheck_[\w-]+ > span\s*\{[^}]*border: 2px solid var\(--text-secondary\);[^}]*background: var\(--surface\)/s,
     );
     // The dialog keeps its size when it turns over.
     expect(appCss).toMatch(
       /\._composeDialog_[\w-]+\s*\{[^}]*min-block-size: 18\.5rem/s,
     );
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(
       /\._draftsDeletePicked_[\w-]+:disabled\s*\{[^}]*color: var\(--danger-disabled\);[^}]*background: transparent;[^}]*cursor: default/s,
     );
     // Stacked full width with the answer on top, and the reference's own
     // greys on the way out.
-    expect(ownerCss).toMatch(/\._dialogActions_[\w-]+\s*\{[^}]*display: grid/s);
-    expect(ownerCss).toMatch(
+    expect(formsCss).toMatch(/\._dialogActions_[\w-]+\s*\{[^}]*display: grid/s);
+    expect(formsCss).toMatch(
       /\._dialogActions_[\w-]+ \._secondaryButton_[\w-]+:hover:not\(:disabled\)\s*\{[^}]*background: var\(--icon-button-hover\)/s,
     );
   });

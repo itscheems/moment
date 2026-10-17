@@ -150,10 +150,7 @@ it("uses the shared profile card for a native mention atom", async () => {
             bio: "沿河散步",
             avatarMediaId: null,
             coverMediaId: null,
-            role: "member",
             profileUrl: "/linlin",
-            status: null,
-            usernameChosen: null,
           },
         ]}
       >
@@ -305,7 +302,7 @@ it("replaces only a mention query in the middle of prose, preserving its suffix 
         JSON.stringify({
           data: [
             {
-              owner_id: "00000000000000000000000000000000",
+              user_id: "00000000000000000000000000000000",
               username: "xiaoman",
               display_name: "小满",
               avatar_media_id: null,

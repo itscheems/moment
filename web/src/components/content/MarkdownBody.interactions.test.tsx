@@ -95,9 +95,6 @@ describe("MarkdownBody", () => {
   });
 
   it("links a handle that is not the owner's", () => {
-    // The composer's autocomplete searches every approved account, so a name
-    // it offered has to arrive as a link. Recognising only the owner left a
-    // member's handle as grey text in the middle of a sentence about them.
     render(<MarkdownBody html="<p>@owner 和 @linlin 都在。</p>" />);
 
     expect(screen.getByRole("link", { name: "@owner" })).toHaveAttribute(
@@ -254,10 +251,6 @@ describe("links written into rendered markdown", () => {
   });
 });
 
-// A mention is text an author typed, not a reference anything checked. This
-// instance shipped with the handle `owner` and its owner renamed, so every
-// `@owner` written before that names nobody -- and reading as a link sent
-// people to a profile page that answers "no such user".
 describe("a mention that names nobody", () => {
   afterEach(() => {
     cleanup();
@@ -288,7 +281,7 @@ describe("a mention that names nobody", () => {
                 bio: "沿河散步",
                 avatar_media_id: null,
                 cover_media_id: null,
-                role: "member",
+
                 profile_url: "/linlin",
               },
             }),

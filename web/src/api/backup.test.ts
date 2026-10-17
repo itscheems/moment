@@ -1,3 +1,4 @@
+import { BackupsApi } from "./backups";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,7 +8,6 @@ import {
   makeReviewIdentity,
   makeReviewUser,
 } from "../test/archiveFixtures";
-import { OwnerApi } from "./owner";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -33,7 +33,7 @@ function planData(archiveBytes: number) {
   const required = base + safety;
   return {
     dry_run: true,
-    format_version: 1,
+    format_version: 2,
     archive_sha256: archiveSHA,
     counts: makeImportCounts({ entries: 1, comments: 2, media: 1 }),
     time_range: {
@@ -82,7 +82,7 @@ function mergePlanData() {
       base_generation: "gen-old",
       base_authority_sha256: baseAuthoritySHA,
       incoming_authority_sha256: incomingAuthoritySHA,
-      owner_id: "00000000000000000000000000000000",
+      profile_user_id: "00000000000000000000000000000000",
       expires_at: "2999-08-11T02:00:00Z",
       summary: {
         unchanged: 0,
@@ -316,12 +316,16 @@ describe("backup and restore owner API", () => {
     const file = new File(["zip bytes"], "hostile <name>.zip", {
       type: "text/plain",
     });
-    const api = new OwnerApi(vi.fn() as typeof fetch);
+
     const progress = vi.fn();
-    const pending = api.planImport("csrf-owner", file, progress);
+    const pending = new BackupsApi(vi.fn() as typeof fetch).planImport(
+      "csrf-owner",
+      file,
+      progress,
+    );
     const request = FakeArchiveRequest.requests[0];
 
-    expect(request.url).toBe("/api/v1/owner/import/plan");
+    expect(request.url).toBe("/api/v1/backups/import/plan");
     expect(request.withCredentials).toBe(true);
     expect(request.sent).toBe(file);
     expect(request.headers).toEqual(
@@ -340,12 +344,6 @@ describe("backup and restore owner API", () => {
     );
     expect(progress).toHaveBeenCalledWith(50);
     request.respond(planData(file.size));
-    // Written out rather than built from the same factory the fixture used.
-    // Comparing makeImportCounts(x) to makeImportCounts(x) passes whatever the
-    // decoder does with the fields -- including dropping them -- and passes
-    // just as happily if the factory's own defaults change underneath both
-    // sides. These are the numbers an owner reads before an irreversible
-    // replacement, so the test states them.
     await expect(pending).resolves.toMatchObject({
       archiveSHA256: archiveSHA,
       counts: {
@@ -362,20 +360,15 @@ describe("backup and restore owner API", () => {
     expect(progress).toHaveBeenLastCalledWith(100);
   });
 
-  /**
-   * The archive counts the server sends today, decoded whole.
-   *
-   * Hand-written three-field fixtures kept this green while every real
-   * response threw: the account dimensions are the ones an owner most needs
-   * before a replacement, and they are exactly the ones an exact-key check
-   * rejects the moment the server starts sending them.
-   */
   it("accepts every dimension the archive counts now carry", async () => {
     const file = new File(["zip bytes"], "counts.zip", {
       type: "application/zip",
     });
-    const api = new OwnerApi(vi.fn() as typeof fetch);
-    const pending = api.planImport("csrf-owner", file);
+
+    const pending = new BackupsApi(vi.fn() as typeof fetch).planImport(
+      "csrf-owner",
+      file,
+    );
     const data = planData(file.size);
     data.counts = makeImportCounts({
       entries: 1,
@@ -398,8 +391,6 @@ describe("backup and restore owner API", () => {
       articleDrafts: 0,
       identities: 3,
     });
-    // The replacement side is the same object read through a second call site,
-    // and an owner deciding whether to overwrite needs both halves of it.
     expect(plan.replacement.counts).toEqual({
       entries: 8,
       comments: 13,
@@ -442,7 +433,7 @@ describe("backup and restore owner API", () => {
       "comment",
       "comment-1",
       () => makeReviewComment(),
-      { pinned: false, author_kind: "guest" },
+      { pinned: false },
     ],
     [
       "account",
@@ -464,8 +455,11 @@ describe("backup and restore owner API", () => {
       const file = new File(["zip bytes"], "review.zip", {
         type: "application/zip",
       });
-      const api = new OwnerApi(vi.fn() as typeof fetch);
-      const pending = api.planMergeImport("csrf-owner", file);
+
+      const pending = new BackupsApi(vi.fn() as typeof fetch).planMergeImport(
+        "csrf-owner",
+        file,
+      );
       const data = mergePlanData();
       data.plan.summary = {
         unchanged: 0,
@@ -520,10 +514,13 @@ describe("backup and restore owner API", () => {
         meta: { request_id: "req_merge" },
       }),
     );
-    const api = new OwnerApi(fetcher as typeof fetch);
-    const pending = api.planMergeImport("csrf-owner", file);
+
+    const pending = new BackupsApi(fetcher as typeof fetch).planMergeImport(
+      "csrf-owner",
+      file,
+    );
     const request = FakeArchiveRequest.requests[0];
-    expect(request.url).toBe("/api/v1/owner/import/merge/plan");
+    expect(request.url).toBe("/api/v1/backups/import/merge/plan");
     request.respond(mergePlanData(), 201);
     const inspection = await pending;
     expect(inspection).toMatchObject({
@@ -535,14 +532,14 @@ describe("backup and restore owner API", () => {
     });
     inspection.plan.default_selection.items[0].action = "keep_both";
     await expect(
-      api.commitMergeImport(
+      new BackupsApi(fetcher as typeof fetch).commitMergeImport(
         "csrf-owner",
         inspection.stagingToken,
         inspection.plan.default_selection,
       ),
     ).resolves.toMatchObject({ phase: "succeeded" });
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/owner/import/merge/commit",
+      "/api/v1/backups/import/merge/commit",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
@@ -559,10 +556,13 @@ describe("backup and restore owner API", () => {
       }),
     );
     await expect(
-      api.discardMergeImport("csrf-owner", inspection.stagingToken),
+      new BackupsApi(fetcher as typeof fetch).discardMergeImport(
+        "csrf-owner",
+        inspection.stagingToken,
+      ),
     ).resolves.toBeUndefined();
     expect(fetcher).toHaveBeenLastCalledWith(
-      "/api/v1/owner/import/merge/discard",
+      "/api/v1/backups/import/merge/discard",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ staging_token: mergeToken }),
@@ -572,9 +572,11 @@ describe("backup and restore owner API", () => {
 
   it("rejects a merge plan whose summary or default selection is inconsistent", async () => {
     const file = new File(["zip bytes"], "merge.zip");
-    const api = new OwnerApi(vi.fn() as typeof fetch);
 
-    const badSummary = api.planMergeImport("csrf", file);
+    const badSummary = new BackupsApi(vi.fn() as typeof fetch).planMergeImport(
+      "csrf",
+      file,
+    );
     const summaryData = mergePlanData();
     summaryData.plan.summary.conflict = 3;
     FakeArchiveRequest.requests[0].respond(summaryData, 201);
@@ -582,7 +584,9 @@ describe("backup and restore owner API", () => {
       code: "API_RESPONSE_INVALID",
     });
 
-    const badSelection = api.planMergeImport("csrf", file);
+    const badSelection = new BackupsApi(
+      vi.fn() as typeof fetch,
+    ).planMergeImport("csrf", file);
     const selectionData = mergePlanData();
     selectionData.plan.default_selection.items[0].action = "skip";
     FakeArchiveRequest.requests[1].respond(selectionData, 201);
@@ -593,8 +597,11 @@ describe("backup and restore owner API", () => {
 
   it("rejects duplicate JSON keys and inconsistent preview arithmetic", async () => {
     const file = new File(["zip bytes"], "backup.zip");
-    const api = new OwnerApi(vi.fn() as typeof fetch);
-    const duplicate = api.planImport("csrf", file);
+
+    const duplicate = new BackupsApi(vi.fn() as typeof fetch).planImport(
+      "csrf",
+      file,
+    );
     const data = JSON.stringify(planData(file.size));
     FakeArchiveRequest.requests[0].respondRaw(
       `{"data":${data},"data":${data},"meta":{"request_id":"req_import"}}`,
@@ -603,7 +610,10 @@ describe("backup and restore owner API", () => {
       code: "API_RESPONSE_INVALID",
     });
 
-    const inconsistent = api.planImport("csrf", file);
+    const inconsistent = new BackupsApi(vi.fn() as typeof fetch).planImport(
+      "csrf",
+      file,
+    );
     const broken = planData(file.size);
     broken.disk.required_additional_bytes += 1;
     FakeArchiveRequest.requests[1].respond(broken);
@@ -614,7 +624,7 @@ describe("backup and restore owner API", () => {
 
   it("fails closed on noncanonical plan success envelopes", async () => {
     const file = new File(["zip bytes"], "backup.zip");
-    const api = new OwnerApi(vi.fn() as typeof fetch);
+
     const attempts: Array<(request: FakeArchiveRequest) => void> = [
       (request) => request.respond(planData(file.size), 201),
       (request) => {
@@ -655,7 +665,10 @@ describe("backup and restore owner API", () => {
     ];
 
     for (const respond of attempts) {
-      const pending = api.planImport("csrf", file);
+      const pending = new BackupsApi(vi.fn() as typeof fetch).planImport(
+        "csrf",
+        file,
+      );
       respond(FakeArchiveRequest.requests.at(-1)!);
       await expect(pending).rejects.toMatchObject({
         code: "API_RESPONSE_INVALID",
@@ -665,8 +678,11 @@ describe("backup and restore owner API", () => {
 
   it("settles an invalid no-body XHR status instead of hanging", async () => {
     const file = new File(["zip bytes"], "backup.zip");
-    const api = new OwnerApi(vi.fn() as typeof fetch);
-    const pending = api.planImport("csrf", file);
+
+    const pending = new BackupsApi(vi.fn() as typeof fetch).planImport(
+      "csrf",
+      file,
+    );
     FakeArchiveRequest.requests[0].respondRaw("", 204);
     await expect(pending).rejects.toMatchObject({
       code: "API_RESPONSE_INVALID",
@@ -685,13 +701,16 @@ describe("backup and restore owner API", () => {
           meta: { request_id: "req_two" },
         }),
       );
-    const api = new OwnerApi(fetcher as typeof fetch);
 
-    await expect(api.importStatus()).resolves.toMatchObject({
+    await expect(
+      new BackupsApi(fetcher as typeof fetch).importStatus(),
+    ).resolves.toMatchObject({
       phase: "claimed",
       updatedAt: "2026-08-11T01:30:00.1Z",
     });
-    await expect(api.importStatus()).resolves.toMatchObject({
+    await expect(
+      new BackupsApi(fetcher as typeof fetch).importStatus(),
+    ).resolves.toMatchObject({
       phase: "needs_attention",
       completedAt: "2026-08-11T01:30:01.1Z",
       errorCode: "DATA_INTEGRITY_FAILED",
@@ -719,14 +738,16 @@ describe("backup and restore owner API", () => {
         json({ data: invalid, meta: { request_id: "req_status" } }),
       );
     }
-    const api = new OwnerApi(fetcher as typeof fetch);
+
     for (let index = 0; index < invalidStatuses.length; index += 1) {
-      await expect(api.importStatus()).rejects.toMatchObject({
+      await expect(
+        new BackupsApi(fetcher as typeof fetch).importStatus(),
+      ).rejects.toMatchObject({
         code: "API_RESPONSE_INVALID",
       });
     }
     for (const [url, init] of fetcher.mock.calls) {
-      expect(url).toBe("/api/v1/owner/import/status");
+      expect(url).toBe("/api/v1/backups/import/status");
       expect(init.method).toBe("GET");
       expect(init.body).toBeUndefined();
       expect(new Headers(init.headers).has("X-CSRF-Token")).toBe(false);
@@ -736,10 +757,14 @@ describe("backup and restore owner API", () => {
 
   it("restores only the same file bound to the planned SHA and canonical success", async () => {
     const file = new File(["zip bytes"], "backup.zip");
-    const api = new OwnerApi(vi.fn() as typeof fetch);
-    const pending = api.restoreImport("csrf", file, archiveSHA);
+
+    const pending = new BackupsApi(vi.fn() as typeof fetch).restoreImport(
+      "csrf",
+      file,
+      archiveSHA,
+    );
     const request = FakeArchiveRequest.requests[0];
-    expect(request.url).toBe("/api/v1/owner/import/restore");
+    expect(request.url).toBe("/api/v1/backups/import/restore");
     expect(request.sent).toBe(file);
     expect(request.headers.get("X-Moment-Archive-SHA256")).toBe(archiveSHA);
     request.respond({ status: statusData("succeeded") });
@@ -752,15 +777,24 @@ describe("backup and restore owner API", () => {
 
   it("rejects a non-success restore response and aborts exactly once", async () => {
     const file = new File(["zip bytes"], "backup.zip");
-    const api = new OwnerApi(vi.fn() as typeof fetch);
-    const nonSuccess = api.restoreImport("csrf", file, archiveSHA);
+
+    const nonSuccess = new BackupsApi(vi.fn() as typeof fetch).restoreImport(
+      "csrf",
+      file,
+      archiveSHA,
+    );
     FakeArchiveRequest.requests[0].respond({ status: statusData("claimed") });
     await expect(nonSuccess).rejects.toMatchObject({
       code: "API_RESPONSE_INVALID",
     });
 
     const controller = new AbortController();
-    const aborted = api.planImport("csrf", file, undefined, controller.signal);
+    const aborted = new BackupsApi(vi.fn() as typeof fetch).planImport(
+      "csrf",
+      file,
+      undefined,
+      controller.signal,
+    );
     const request = FakeArchiveRequest.requests[1];
     controller.abort();
     await expect(aborted).rejects.toMatchObject({ code: "CANCELLED" });

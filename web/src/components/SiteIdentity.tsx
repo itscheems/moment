@@ -3,13 +3,6 @@ import { mediaPreviewUrl } from "../api/mediaUrls";
 import type { PublicPost, SiteIdentity } from "../api/public";
 import styles from "./SiteIdentity.module.css";
 
-/**
- * The parts of an identity that a rendered face needs.
- *
- * A site and an account both satisfy it, which is what lets one avatar, one
- * cover and one handle serve every profile on the instance instead of the
- * owner's alone.
- */
 export interface IdentityFace {
   displayName: string;
   title?: string;
@@ -94,17 +87,13 @@ export function postAuthorSite(
   site: SiteIdentity,
 ): SiteIdentity {
   const author = post.author;
-  if (!author?.userId || !author.username) return site;
-  const sameAccount = author.userId === site.ownerId;
   return {
     ...site,
-    ownerId: author.userId,
-    username: author.username,
-    displayName: author.displayName,
-    avatarMediaId: author.avatarMediaId,
-    // Author projections omit profile details; the site already has the
-    // owner's, but those details must not follow another account's identity.
-    bio: sameAccount ? site.bio : "",
-    coverMediaId: sameAccount ? site.coverMediaId : null,
+    profileUserId: author?.userId ?? "",
+    username: author?.username ?? "",
+    displayName: author?.displayName ?? "未知作者",
+    avatarMediaId: author?.avatarMediaId ?? null,
+    bio: "",
+    coverMediaId: null,
   };
 }

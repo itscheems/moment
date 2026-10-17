@@ -2,19 +2,22 @@ import "@testing-library/jest-dom/vitest";
 import {
   cleanup,
   fireEvent,
-  render,
+  render as renderRaw,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ReactElement } from "react";
 import type { PublicPost, SiteIdentity } from "../../api/public";
 import { mediaPreviewUrl } from "../../api/mediaUrls";
+import { MentionProvider } from "../../app/mentions";
+import { makeAccountLimits } from "../../test/accountFixtures";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";
-import ownerCss from "../owner/Owner.module.css?inline";
+import formsCss from "../../components/Forms.module.css?inline";
 import { PostPresentation } from "./PostPresentation";
 import contentCss from "../../components/content/notion.scss?inline";
 import postCss from "./PostPresentation.module.css?inline";
@@ -30,7 +33,7 @@ afterEach(() => {
 });
 
 const site: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
+  profileUserId: "00000000000000000000000000000000",
   username: "owner",
   displayName: "Moment",
   title: "乔乔的 Moment",
@@ -45,6 +48,50 @@ const site: SiteIdentity = {
   instanceInitializedAt: null,
 };
 
+const memberIdentity = {
+  userId: "1".repeat(32),
+  username: "aming",
+  displayName: "阿明",
+  bio: "",
+  avatarMediaId: null,
+  coverMediaId: null,
+  profileUrl: "/aming",
+};
+let previewIdentities = [site, memberIdentity];
+beforeEach(() => {
+  previewIdentities = [site, memberIdentity];
+});
+function render(element: ReactElement) {
+  return renderRaw(
+    <MentionProvider identities={previewIdentities}>{element}</MentionProvider>,
+  );
+}
+function accountSessionResponse() {
+  return new Response(
+    JSON.stringify({
+      data: {
+        csrf_token: "csrf-pin",
+        expires_at: "2999-08-11T01:00:00.000Z",
+        account: {
+          user_id: site.profileUserId,
+          username: site.username,
+          display_name: site.displayName,
+          bio: site.bio,
+          avatar_media_id: null,
+          cover_media_id: null,
+          role: "admin",
+          status: "active",
+          username_chosen: true,
+          profile_url: "/owner",
+        },
+        limits: makeAccountLimits(),
+      },
+      meta: { request_id: "account" },
+    }),
+    { headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function makePost(
   contentMd: string,
   contentHtml: string,
@@ -54,6 +101,13 @@ function makePost(
     id: "01K2ABCDEF0123456789ABCDE0",
     kind: "moment",
     contentMd,
+    author: {
+      userId: site.profileUserId,
+      username: site.username,
+      displayName: site.displayName,
+      avatarMediaId: site.avatarMediaId,
+      profileUrl: "/owner",
+    },
     article: null,
     contentHtml,
     createdAt: "2026-08-10T01:00:00.000Z",
@@ -497,9 +551,13 @@ describe("shared post presentation", () => {
     ).toBeNull();
   });
 
-  it("keeps the owner repost state and count visible in detail", () => {
+  it("keeps the author repost state and count visible in detail", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => accountSessionResponse()),
+    );
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-detail-repost",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -512,7 +570,7 @@ describe("shared post presentation", () => {
           <NavigationProvider>
             <PostPresentation
               detail
-              owner
+              canPublish
               post={{
                 ...makePost("已转发", "<p>已转发</p>"),
                 repostedAt: "2026-08-10T02:00:00.000Z",
@@ -524,10 +582,12 @@ describe("shared post presentation", () => {
       </FeedbackProvider>,
     );
 
-    const repost = screen.getByRole("button", { name: "转发这条 Moment" });
+    const repost = await screen.findByRole("button", {
+      name: "转发这条 Moment",
+    });
     expect(repost).toHaveAttribute("aria-pressed", "true");
     expect(within(repost).getByText("1")).toHaveAttribute("data-repost-count");
-    window.sessionStorage.removeItem("moment.owner.session.v1");
+    window.sessionStorage.removeItem("moment.auth.session.v2");
   });
 
   it("optically aligns the reply glyph without shrinking its hit target", () => {
@@ -565,11 +625,11 @@ describe("shared post presentation", () => {
     expect(postCss).toMatch(
       /\._shareAction_[\w-]+\s*\{[^}]*grid-column: 4;[^}]*justify-self: end/,
     );
-    expect(ownerCss).toMatch(
-      /\._ownerPostMenu_[\w-]+\s*\{[^}]*margin-inline-start: auto/,
+    expect(formsCss).toMatch(
+      /\._postMenu_[\w-]+\s*\{[^}]*margin-inline-start: auto/,
     );
-    expect(ownerCss).toMatch(
-      /\._ownerMenuTrigger_[\w-]+\s*\{[^}]*inline-size: var\(--post-edge-action-size, 2\.75rem\);[^}]*block-size: var\(--post-edge-action-size, 2\.75rem\)/,
+    expect(formsCss).toMatch(
+      /\._actionsMenuTrigger_[\w-]+\s*\{[^}]*inline-size: var\(--post-edge-action-size, 2\.75rem\);[^}]*block-size: var\(--post-edge-action-size, 2\.75rem\)/,
     );
     expect(postCss).toMatch(
       /\._detail_[\w-]+ \._postActions_[\w-]+\s*\{[^}]*max-inline-size: none/,
@@ -747,13 +807,14 @@ describe("shared post presentation", () => {
       ...site,
       coverMediaId: "01K2ABCDEF0123456789ABCDE8",
     };
+    previewIdentities = [ownerSite, memberIdentity];
     render(
       <NavigationProvider>
         <PostPresentation
           post={{
             ...makePost("查看作者", "<p>查看作者</p>"),
             author: {
-              userId: site.ownerId,
+              userId: site.profileUserId,
               username: site.username,
               displayName: site.displayName,
               avatarMediaId: site.avatarMediaId,
@@ -900,7 +961,7 @@ describe("shared post presentation", () => {
 
   it("confirms and publishes a singleton profile pin from the owner menu", async () => {
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-pin",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -911,8 +972,9 @@ describe("shared post presentation", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (url === "/api/v1/account/session") return accountSessionResponse();
         requests.push({ url, method: init?.method ?? "GET" });
-        if (url === "/api/v1/owner/status") {
+        if (url === "/api/v1/status") {
           return new Response(
             JSON.stringify({
               data: {
@@ -927,13 +989,13 @@ describe("shared post presentation", () => {
           );
         }
         if (
-          url === "/api/v1/owner/posts/01K2ABCDEF0123456789ABCDE0/pin" &&
+          url === "/api/v1/posts/01K2ABCDEF0123456789ABCDE0/pin" &&
           init?.method === "PUT"
         ) {
           return new Response(
             JSON.stringify({
               data: {
-                owner_id: site.ownerId,
+                profile_user_id: site.profileUserId,
                 username: site.username,
                 display_name: site.displayName,
                 title: site.title,
@@ -960,7 +1022,7 @@ describe("shared post presentation", () => {
           <NavigationProvider>
             <PostPresentation
               onSiteChanged={onSiteChanged}
-              owner
+              canPublish
               post={makePost("可置顶", "<p>可置顶</p>")}
               site={site}
             />
@@ -969,7 +1031,7 @@ describe("shared post presentation", () => {
       </FeedbackProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
+    fireEvent.click(await screen.findByRole("button", { name: "更多操作" }));
     fireEvent.click(
       await screen.findByRole("menuitem", { name: "置顶到个人资料" }),
     );
@@ -985,16 +1047,16 @@ describe("shared post presentation", () => {
       pinnedPostId: "01K2ABCDEF0123456789ABCDE0",
     });
     expect(requests).toContainEqual({
-      url: "/api/v1/owner/posts/01K2ABCDEF0123456789ABCDE0/pin",
+      url: "/api/v1/posts/01K2ABCDEF0123456789ABCDE0/pin",
       method: "PUT",
     });
     expect(screen.getByText("已置顶到个人资料")).toBeInTheDocument();
-    window.sessionStorage.removeItem("moment.owner.session.v1");
+    window.sessionStorage.removeItem("moment.auth.session.v2");
   });
 
   it("reposts from the owner toolbar and exposes the persisted count", async () => {
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-repost",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -1005,8 +1067,9 @@ describe("shared post presentation", () => {
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
+        if (url === "/api/v1/account/session") return accountSessionResponse();
         requests.push({ url, method: init?.method ?? "GET" });
-        if (url === "/api/v1/owner/status") {
+        if (url === "/api/v1/status") {
           return new Response(
             JSON.stringify({
               data: {
@@ -1021,7 +1084,7 @@ describe("shared post presentation", () => {
           );
         }
         if (
-          url === "/api/v1/owner/posts/01K2ABCDEF0123456789ABCDE0/repost" &&
+          url === "/api/v1/posts/01K2ABCDEF0123456789ABCDE0/repost" &&
           init?.method === "PUT"
         ) {
           return new Response(
@@ -1057,7 +1120,7 @@ describe("shared post presentation", () => {
         <SessionProvider>
           <NavigationProvider>
             <PostPresentation
-              owner
+              canPublish
               post={makePost("可转发", "<p>可转发</p>")}
               site={site}
             />
@@ -1082,7 +1145,7 @@ describe("shared post presentation", () => {
       ),
     ).toHaveAttribute("data-repost-count");
     expect(requests).toContainEqual({
-      url: "/api/v1/owner/posts/01K2ABCDEF0123456789ABCDE0/repost",
+      url: "/api/v1/posts/01K2ABCDEF0123456789ABCDE0/repost",
       method: "PUT",
     });
     expect(screen.getByText("已转发到时间流顶部")).toBeInTheDocument();
@@ -1096,6 +1159,6 @@ describe("shared post presentation", () => {
     expect(new URLSearchParams(window.location.search).get("quote")).toBe(
       "01K2ABCDEF0123456789ABCDE0",
     );
-    window.sessionStorage.removeItem("moment.owner.session.v1");
+    window.sessionStorage.removeItem("moment.auth.session.v2");
   });
 });

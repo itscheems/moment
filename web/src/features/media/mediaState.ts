@@ -1,4 +1,6 @@
-import type { PostMediaInput, UploadedMedia } from "../../api/owner";
+import { type PostMediaInput } from "../../api/client";
+import { type UploadedMedia } from "../../api/media";
+
 import { mediaOriginalUrl, mediaPreviewUrl } from "../../api/mediaUrls";
 import type { PublicMediaUsage } from "../../api/public";
 import { PublicApiError } from "../../api/public";

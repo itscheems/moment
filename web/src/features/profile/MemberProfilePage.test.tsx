@@ -13,9 +13,12 @@ import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider } from "../auth/SessionProvider";
 import { MemberProfilePage } from "./MemberProfilePage";
-import { makeAccountLimits } from "../../test/accountFixtures";
+import {
+  makeSiteIdentity,
+  makeAccountLimits,
+} from "../../test/accountFixtures";
 
-const sessionKey = "moment.owner.session.v1";
+const sessionKey = "moment.auth.session.v2";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -33,7 +36,6 @@ function memberEnvelope() {
       bio: "在这里记下路过的天气",
       avatar_media_id: null,
       cover_media_id: null,
-      role: "member",
       profile_url: "/linlin",
     },
     meta: { request_id: "req_user" },
@@ -95,7 +97,11 @@ function mount(api: PublicApi, username: string) {
     <FeedbackProvider>
       <NavigationProvider>
         <SessionProvider>
-          <MemberProfilePage api={api} username={username} />
+          <MemberProfilePage
+            site={makeSiteIdentity()}
+            api={api}
+            username={username}
+          />
         </SessionProvider>
       </NavigationProvider>
     </FeedbackProvider>,
@@ -154,7 +160,13 @@ describe("member profile", () => {
     // uses, rather than to an empty strip that reads as a failed image.
     expect(container.querySelector('[class*="coverFallback"]')).not.toBeNull();
     expect(container.querySelector("img[alt='']")).toBeNull();
-    expect(requested).toEqual(["/api/v1/users/linlin"]);
+    expect(requested[0]).toBe("/api/v1/users/linlin");
+    expect(
+      requested.some(
+        (url) =>
+          url.startsWith("/api/v1/posts?") && url.includes("author_user_id="),
+      ),
+    ).toBe(true);
     // A reader who is not this account gets an identity and nothing to press.
     expect(screen.queryByRole("button", { name: "编辑资料" })).toBeNull();
   });

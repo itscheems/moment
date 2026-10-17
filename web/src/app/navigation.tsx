@@ -51,7 +51,7 @@ interface NavigationContextValue extends NavigationLocation {
    */
   restoreCurrentEntry: (placeFresh?: () => void) => boolean;
   setNavigationBlocker: (
-    owner: symbol,
+    canPublish: symbol,
     blocker: NavigationBlocker | null,
   ) => void;
 }
@@ -142,11 +142,11 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setNavigationBlocker = useCallback(
-    (owner: symbol, blocker: NavigationBlocker | null) => {
+    (canPublish: symbol, blocker: NavigationBlocker | null) => {
       if (blocker) {
-        navigationBlockers.current.set(owner, blocker);
+        navigationBlockers.current.set(canPublish, blocker);
       } else {
-        navigationBlockers.current.delete(owner);
+        navigationBlockers.current.delete(canPublish);
       }
     },
     [],

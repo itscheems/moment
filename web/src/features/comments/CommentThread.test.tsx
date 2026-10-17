@@ -28,10 +28,10 @@ const postId = "01K2ABCDEF0123456789ABCDE0";
 const rootId = "01K2ABCDEF0123456789ABCDE1";
 const replyId = "01K2ABCDEF0123456789ABCDE2";
 const createdId = "01K2ABCDEF0123456789ABCDE3";
-const sessionKey = "moment.owner.session.v1";
+const sessionKey = "moment.auth.session.v2";
 
 const site: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
+  profileUserId: "00000000000000000000000000000000",
   username: "owner",
   displayName: "Moment",
   title: "乔乔的 Moment",
@@ -47,6 +47,13 @@ const site: SiteIdentity = {
 };
 
 const post: PublicPost = {
+  author: {
+    userId: "00000000000000000000000000000000",
+    username: "owner",
+    displayName: "Moment",
+    avatarMediaId: null,
+    profileUrl: "/owner",
+  },
   id: postId,
   kind: "moment",
   contentMd: "一段需要回应的 Moment",
@@ -68,7 +75,7 @@ function comment(
   content: string,
   options: {
     parentId?: string | null;
-    owner?: boolean;
+    canPublish?: boolean;
     authorName?: string;
     createdAt?: string;
     media?: Array<{
@@ -83,23 +90,21 @@ function comment(
   } = {},
 ) {
   const parentId = options.parentId ?? null;
-  const authorName = options.authorName ?? (options.owner ? "Owner" : "访客");
+  const authorName =
+    options.authorName ?? (options.canPublish ? "Owner" : "访客");
   return {
     id,
     post_id: postId,
     parent_id: parentId,
     depth: parentId ? 1 : 0,
-    author_kind: options.owner ? "owner" : "guest",
+
     author_name: authorName,
     author: {
-      user_id: options.owner ? site.ownerId : null,
-      username: options.owner ? site.username : null,
-      // The server resolves an owner comment's name from the site identity,
-      // never from the placeholder stored on the row. Mirroring that here is
-      // what makes these fixtures a faithful stand-in for a real response.
-      display_name: options.owner ? site.displayName : authorName,
+      user_id: options.canPublish ? site.profileUserId : null,
+      username: options.canPublish ? site.username : null,
+      display_name: options.canPublish ? site.displayName : authorName,
       avatar_media_id: null,
-      profile_url: options.owner ? `/${site.username}` : null,
+      profile_url: options.canPublish ? `/${site.username}` : null,
     },
     reply_to: null,
     reply_count: 0,
@@ -207,7 +212,7 @@ function measuredRect(height: number): DOMRect {
 const root = comment(rootId, "顶级回应");
 const reply = comment(replyId, "已有一级回复", {
   parentId: rootId,
-  owner: true,
+  canPublish: true,
   createdAt: "2026-08-10T01:04:00Z",
 });
 
@@ -291,7 +296,7 @@ function accountSessionEnvelope(username = "owner") {
         bio: "",
         avatar_media_id: null,
         cover_media_id: null,
-        role: "owner",
+        role: "admin",
         profile_url: `/${username}`,
         status: "active",
         username_chosen: true,
@@ -319,17 +324,24 @@ function installApi(
     init: RequestInit | undefined,
   ) => Response | Promise<Response> | undefined,
 ) {
+  let cookieAuthenticated = Boolean(window.sessionStorage.getItem(sessionKey));
   const fetcher = vi.fn(
     async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const response = await handler(url, init);
+      if (
+        url === "/api/v1/login/session" &&
+        init?.method === "POST" &&
+        response?.ok
+      )
+        cookieAuthenticated = true;
       if (response) return response;
       if (url === "/api/v1/account/session") {
-        return window.sessionStorage.getItem(sessionKey)
+        return cookieAuthenticated
           ? json(accountSessionEnvelope())
           : json(signedOutEnvelope(), 401);
       }
-      if (url === "/api/v1/owner/status") {
+      if (url === "/api/v1/status") {
         // SessionProvider throws away a stored session the moment status answers
         // 401, so a preauthenticated test has to be answered as signed in
         // unless it deliberately handles this route itself.
@@ -345,11 +357,11 @@ function installApi(
 }
 
 function ExpireOwnerControl() {
-  const owner = useSession();
+  const auth = useSession();
   return (
     <button
       onClick={() =>
-        owner.expireIfInvalidSession(
+        auth.expireIfInvalidSession(
           new PublicApiError("expired", {
             code: "UNAUTHORIZED",
             status: 401,
@@ -376,6 +388,7 @@ function renderThread(
           api={new PublicApi()}
           onCountChange={onCountChange}
           postId={postId}
+          post={post}
           site={currentSite}
         />
       </SessionProvider>
@@ -384,7 +397,9 @@ function renderThread(
 }
 
 async function chooseFirstCommentAction(name: string) {
-  fireEvent.click(screen.getAllByRole("button", { name: "回复操作" })[0]);
+  await act(async () => {
+    fireEvent.click(screen.getAllByRole("button", { name: "回复操作" })[0]);
+  });
   fireEvent.click(
     await screen.findByRole("menuitem", { name }, { timeout: 3_000 }),
   );
@@ -567,7 +582,7 @@ describe("public comment thread", () => {
       }
       if (url.endsWith("/comments") && init?.method === "POST") {
         return success(
-          comment(createdId, "新回复", { owner: true }),
+          comment(createdId, "新回复", { canPublish: true }),
           { replayed: false },
           201,
         );
@@ -593,14 +608,14 @@ describe("public comment thread", () => {
   // both and has to render once.
   it("renders the pinned conversation once and pages the rest of the roots", async () => {
     const secondRootId = "01K2ABCDEF0123456789ABCDF1";
-    const pinnedRoot = comment(rootId, "被置顶的回应", { owner: true });
+    const pinnedRoot = comment(rootId, "被置顶的回应", { canPublish: true });
     const fetcher = installApi((url, init) => {
       if (!url.includes("/comments") || init?.method === "POST")
         return undefined;
       if (url.includes("cursor=page2")) {
         return success(
           {
-            items: [comment(secondRootId, "第二页的根", { owner: true })],
+            items: [comment(secondRootId, "第二页的根", { canPublish: true })],
             pinned_comment_id: rootId,
             pinned: [pinnedRoot],
           },
@@ -648,7 +663,7 @@ describe("public comment thread", () => {
         if (attempts === 1) return json({}, 503);
         return success(
           {
-            items: [comment(secondRootId, "终于来了", { owner: true })],
+            items: [comment(secondRootId, "终于来了", { canPublish: true })],
             pinned_comment_id: null,
             pinned: null,
           },
@@ -657,7 +672,7 @@ describe("public comment thread", () => {
       }
       return success(
         {
-          items: [comment(rootId, "第一页", { owner: true })],
+          items: [comment(rootId, "第一页", { canPublish: true })],
           pinned_comment_id: null,
           pinned: null,
         },
@@ -687,12 +702,12 @@ describe("public comment thread", () => {
   it("offers a root's unread replies and appends them behind the loaded ones", async () => {
     const laterReplyId = "01K2ABCDEF0123456789ABCDF2";
     const root = {
-      ...comment(rootId, "有很多回复", { owner: true }),
+      ...comment(rootId, "有很多回复", { canPublish: true }),
       reply_count: 2,
     };
     const firstReply = comment(replyId, "第一条回复", {
       parentId: rootId,
-      owner: true,
+      canPublish: true,
     });
     const fetcher = installApi((url, init) => {
       if (init?.method === "POST") return undefined;
@@ -704,7 +719,7 @@ describe("public comment thread", () => {
             items: [
               comment(laterReplyId, "第二条回复", {
                 parentId: rootId,
-                owner: true,
+                canPublish: true,
               }),
             ],
           },
@@ -904,7 +919,7 @@ describe("public comment thread", () => {
   it("stores and renders an owner reply location as structured post-style data", async () => {
     preauthenticate();
     const fetcher = installApi((url, init) => {
-      if (url === "/api/v1/owner/status") {
+      if (url === "/api/v1/status") {
         return success({
           initialized: true,
           password_enabled: false,
@@ -918,7 +933,7 @@ describe("public comment thread", () => {
       if (url.endsWith("/comments") && init?.method === "POST") {
         return success(
           comment(createdId, "", {
-            owner: true,
+            canPublish: true,
             location: { name: "书房", display_name: "书房" },
           }),
           { replayed: false },
@@ -1107,16 +1122,16 @@ describe("public comment thread", () => {
     // typing a reply is the worst possible moment, so the composer never
     // appears -- and neither does a login link, which would send somebody who
     // is already signed in around a loop.
-    expect(await screen.findByText("正在等待站长批准")).toBeVisible();
+    expect(await screen.findByText("正在等待管理员批准")).toBeVisible();
     expect(
-      screen.getByText("你的账户正在等待站长批准，批准后就能留言。"),
+      screen.getByText("你的账户正在等待管理员批准，批准后就能留言。"),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("回复内容")).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "登录" })).toBeNull();
 
     fireEvent.click(screen.getAllByRole("button", { name: /^回复 / })[0]);
     const prompt = await screen.findByRole("dialog");
-    expect(within(prompt).getByText("正在等待站长批准")).toBeInTheDocument();
+    expect(within(prompt).getByText("正在等待管理员批准")).toBeInTheDocument();
     expect(within(prompt).queryByRole("link", { name: "登录" })).toBeNull();
   });
 
@@ -1212,7 +1227,7 @@ describe("public comment thread", () => {
   it("keeps owner location selection available in dialog and inline comment replies", async () => {
     preauthenticate();
     installApi((url, init) => {
-      if (url === "/api/v1/owner/status") {
+      if (url === "/api/v1/status") {
         return success({
           initialized: true,
           password_enabled: false,
@@ -1372,7 +1387,7 @@ describe("public comment thread", () => {
         return success(
           comment(createdId, "新一级回复", {
             parentId: rootId,
-            owner: true,
+            canPublish: true,
             createdAt: "2026-08-10T01:05:00Z",
           }),
           { replayed: false },
@@ -1394,9 +1409,6 @@ describe("public comment thread", () => {
         name: "回复 Moment",
       }),
     );
-    // The composer names the handle it will record, not the display name the
-    // byline shows: an owner comment resolves to @owner, and that is what the
-    // reply is stored against.
     const replyForm = screen.getByRole("form", {
       name: "回复 @owner",
     });
@@ -1506,7 +1518,7 @@ describe("public comment thread", () => {
       }
       if (url.endsWith("/comments") && init?.method === "POST") {
         return success(
-          comment(createdId, "带图回应", { owner: true, media: [usage] }),
+          comment(createdId, "带图回应", { canPublish: true, media: [usage] }),
           { replayed: false },
           201,
         );
@@ -1535,7 +1547,7 @@ describe("public comment thread", () => {
     await waitFor(() => expect(FakeCommentUploadRequest.last).not.toBeNull());
     const upload = FakeCommentUploadRequest.last;
     expect(upload?.method).toBe("POST");
-    expect(upload?.url).toBe("/api/v1/owner/media");
+    expect(upload?.url).toBe("/api/v1/media");
     expect(upload?.sent).toBeInstanceOf(FormData);
     upload?.respond({
       data: {
@@ -1591,7 +1603,7 @@ describe("public comment thread", () => {
       if (url.endsWith("/comments") && init?.method === "POST") {
         return success(
           comment(createdId, "失败后重试", {
-            owner: true,
+            canPublish: true,
             media: [
               {
                 media_id: mediaId,
@@ -1728,7 +1740,7 @@ describe("public comment thread", () => {
 
     resolveCreate(
       success(
-        comment(createdId, "只发表一次", { owner: true }),
+        comment(createdId, "只发表一次", { canPublish: true }),
         { replayed: false },
         201,
       ),
@@ -1767,7 +1779,7 @@ describe("public comment thread", () => {
     let submissions = 0;
     const keys: string[] = [];
     installApi((url, init) => {
-      if (url === "/api/v1/owner/status") {
+      if (url === "/api/v1/status") {
         return success({
           initialized: true,
           password_enabled: false,
@@ -1778,12 +1790,12 @@ describe("public comment thread", () => {
       if (url.endsWith("/comments") && init?.method !== "POST") {
         return success({ items: [] });
       }
-      if (url.includes("/owner/posts/") && init?.method === "POST") {
+      if (url.includes("/posts/") && init?.method === "POST") {
         submissions += 1;
         keys.push(new Headers(init.headers).get("Idempotency-Key") ?? "");
         if (submissions === 1) throw new TypeError("offline");
         return success(
-          comment(createdId, "Owner 重试", { owner: true }),
+          comment(createdId, "Owner 重试", { canPublish: true }),
           { replayed: false },
           201,
         );
@@ -1838,7 +1850,7 @@ describe("public comment thread", () => {
       const createTokens: Array<string | null> = [];
       const createBodies: Array<Record<string, unknown>> = [];
       installApi((url, init) => {
-        if (url === "/api/v1/owner/status") {
+        if (url === "/api/v1/status") {
           return success({
             initialized: true,
             password_enabled: false,
@@ -1855,11 +1867,11 @@ describe("public comment thread", () => {
             expires_at: "2999-08-11T01:00:00Z",
           });
         }
-        if (url.includes("/owner/posts/") && init?.method === "POST") {
+        if (url.includes("/posts/") && init?.method === "POST") {
           createTokens.push(new Headers(init.headers).get("X-CSRF-Token"));
           createBodies.push(JSON.parse(String(init.body)));
           return success(
-            comment(createdId, content, { owner: true, parentId }),
+            comment(createdId, content, { canPublish: true, parentId }),
             { replayed: false },
             201,
           );
@@ -1881,7 +1893,7 @@ describe("public comment thread", () => {
       expect(within(surface).getByRole("alert")).toHaveTextContent(
         "文字已保留",
       );
-      const credential = within(surface).getByLabelText("所有者令牌");
+      const credential = within(surface).getByLabelText("API 令牌");
       fireEvent.change(credential, { target: { value: "new-owner-token" } });
       fireEvent.click(
         within(surface).getByRole("button", { name: "刷新身份" }),
@@ -1917,7 +1929,7 @@ describe("public comment thread", () => {
     preauthenticate();
     vi.spyOn(window, "scrollY", "get").mockReturnValue(615);
     installApi((url, init) => {
-      if (url === "/api/v1/owner/status") {
+      if (url === "/api/v1/status") {
         return success({
           initialized: true,
           password_enabled: false,
@@ -1928,7 +1940,7 @@ describe("public comment thread", () => {
       if (url.endsWith("/comments") && init?.method !== "DELETE") {
         return success({ items: [root, reply] });
       }
-      if (url.endsWith(`/owner/comments/${rootId}`)) {
+      if (url.endsWith(`/comments/${rootId}`)) {
         return success(root, {
           deleted: true,
           dry_run: false,
@@ -1939,7 +1951,7 @@ describe("public comment thread", () => {
     renderThread();
 
     await screen.findByText("已有一级回复");
-    expect(screen.getAllByText("所有者")).toHaveLength(2);
+    expect(screen.getAllByText("作者")).toHaveLength(1);
     expect(screen.getByText("Moment")).toBeInTheDocument();
     await chooseFirstCommentAction("删除");
     expect(await screen.findByRole("dialog")).toHaveTextContent(
@@ -1968,7 +1980,7 @@ describe("public comment thread", () => {
       createdAt: "2026-08-10T01:02:00Z",
     });
     const fetcher = installApi((url, init) => {
-      if (url === "/api/v1/owner/status") {
+      if (url === "/api/v1/status") {
         return success({
           initialized: true,
           password_enabled: false,
@@ -2020,7 +2032,7 @@ describe("public comment thread", () => {
     let deletes = 0;
     const deleteTokens: Array<string | null> = [];
     installApi((url, init) => {
-      if (url === "/api/v1/owner/status") {
+      if (url === "/api/v1/status") {
         return success({
           initialized: true,
           password_enabled: false,
@@ -2037,7 +2049,7 @@ describe("public comment thread", () => {
           expires_at: "2999-08-11T01:00:00Z",
         });
       }
-      if (url.endsWith(`/owner/comments/${rootId}`)) {
+      if (url.endsWith(`/comments/${rootId}`)) {
         deletes += 1;
         deleteTokens.push(new Headers(init?.headers).get("X-CSRF-Token"));
         return deletes === 1
@@ -2056,7 +2068,7 @@ describe("public comment thread", () => {
     fireEvent.click(await screen.findByRole("button", { name: "删除回复" }));
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("刷新身份后可在这里重新删除");
-    fireEvent.change(within(dialog).getByLabelText("所有者令牌"), {
+    fireEvent.change(within(dialog).getByLabelText("API 令牌"), {
       target: { value: "new-owner-token" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));
@@ -2076,7 +2088,7 @@ describe("public comment thread", () => {
     preauthenticate();
     const deleteTokens: Array<string | null> = [];
     installApi((url, init) => {
-      if (url === "/api/v1/owner/status") {
+      if (url === "/api/v1/status") {
         return success({
           initialized: true,
           password_enabled: false,
@@ -2093,7 +2105,7 @@ describe("public comment thread", () => {
           expires_at: "2999-08-11T01:00:00Z",
         });
       }
-      if (url.endsWith(`/owner/comments/${rootId}`)) {
+      if (url.endsWith(`/comments/${rootId}`)) {
         deleteTokens.push(new Headers(init?.headers).get("X-CSRF-Token"));
         return success(root, {
           deleted: true,
@@ -2112,7 +2124,7 @@ describe("public comment thread", () => {
     expect(
       within(dialog).getByRole("button", { name: "删除回复" }),
     ).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText("所有者令牌"), {
+    fireEvent.change(within(dialog).getByLabelText("API 令牌"), {
       target: { value: "new-owner-token" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "刷新身份" }));
@@ -2131,5 +2143,41 @@ describe("public comment thread", () => {
     await waitFor(() =>
       expect(screen.getByRole("heading", { name: "回复" })).toHaveFocus(),
     );
+  });
+  it("allows an active member to delete their own reply without offering pin controls", async () => {
+    preauthenticate();
+    const own = {
+      ...comment(rootId, "我的回复", { canPublish: true }),
+      reply_count: 0,
+    };
+    installApi((url, init) => {
+      if (url === "/api/v1/account/session") {
+        const payload = accountSessionEnvelope();
+        payload.data.account.role = "member";
+        return json(payload);
+      }
+      if (url.endsWith("/comments") && init?.method !== "DELETE")
+        return success({ items: [own] });
+      if (url.endsWith(`/comments/${rootId}`) && init?.method === "DELETE")
+        return success(own, {
+          deleted: true,
+          dry_run: false,
+          replies_affected: 0,
+        });
+    });
+    renderThread();
+    await screen.findByText("我的回复");
+    fireEvent.click(screen.getByRole("button", { name: "回复操作" }));
+    expect(
+      await screen.findByRole("menuitem", { name: "删除" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "置顶回复" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "删除" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "删除回复",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByText("我的回复")).toBeNull());
   });
 });

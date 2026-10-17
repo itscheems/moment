@@ -8,7 +8,6 @@ import {
   articleFocusPath,
   articleFocusIdFromPath,
   isComposePath,
-  movedComposePath,
   profileFeedPath,
   profileFromPath,
   resolveRoute,
@@ -21,14 +20,12 @@ describe("route boundaries", () => {
     ["/search", "search"],
     ["/archive", "archive"],
     ["/login", "login"],
-    ["/compose", "owner-compose"],
-    ["/compose/post/media", "owner-compose"],
-    ["/compose/drafts", "owner-compose"],
-    // Still resolves, so an entry already in somebody's history renders
-    // while the app corrects its address.
-    ["/owner/compose", "owner-compose"],
-    ["/owner/m/01JABC/edit", "owner-edit"],
-    ["/owner/settings", "owner-settings"],
+    ["/compose", "compose"],
+    ["/compose/post/media", "compose"],
+    ["/compose/drafts", "compose"],
+    ["/owner/compose", "not-found"],
+    ["/m/01JABC/edit", "edit"],
+    ["/settings/account", "settings"],
     ["/profile", "profile"],
     ["/itscheems", "profile"],
     ["/itscheems/all", "profile"],
@@ -55,9 +52,9 @@ describe("route boundaries", () => {
     ["/archive", "archive"],
     ["/archive/", "archive"],
     ["/login", "login"],
-    ["/owner/settings", "owner-settings"],
-    ["/compose", "owner-compose"],
-    ["/compose/", "owner-compose"],
+    ["/settings/account", "settings"],
+    ["/compose", "compose"],
+    ["/compose/", "compose"],
     ["/m/01JABC", "detail"],
     ["/", "home"],
   ])("keeps %s out of the root handle route (%s)", (pathname, id) => {
@@ -98,7 +95,7 @@ describe("published article focus addresses", () => {
       title: "文章",
       href: "/m/01K2ABC",
     });
-    expect(resolveRoute(href).ownerOnly).not.toBe(true);
+    expect(resolveRoute(href).activeAccountOnly).not.toBe(true);
     expect(articleFocusIdFromPath(`${href}/`)).toBe("01K2ABC");
   });
 
@@ -121,34 +118,6 @@ describe("published article focus addresses", () => {
   });
 });
 
-// Composing moved out from under /owner: it is what the site is for, not an
-// administrative corner of it. The old addresses still resolve so history
-// entries render, and say where they moved to.
-describe("the address composing moved from", () => {
-  it.each([
-    ["/owner/compose", "/compose"],
-    ["/owner/compose/", "/compose"],
-    ["/owner/compose/drafts", "/compose/drafts"],
-    ["/owner/compose/drafts/", "/compose/drafts"],
-  ])("sends %s to %s", (from, to) => {
-    expect(movedComposePath(from)).toBe(to);
-  });
-
-  it("leaves every other address alone", () => {
-    for (const pathname of [
-      "/",
-      COMPOSE_PATH,
-      "/compose/drafts",
-      "/owner/settings",
-    ]) {
-      expect(movedComposePath(pathname)).toBeNull();
-    }
-  });
-});
-
-// `/owner/login` was the sign-in address until signing in stopped being an
-// owner action. It is gone rather than aliased: an address that keeps working
-// keeps being linked, and this one names a thing the product no longer has.
 describe("the retired owner sign-in address", () => {
   it("no longer resolves to the sign-in page", () => {
     expect(resolveRoute("/owner/login").id).not.toBe("login");
@@ -188,13 +157,15 @@ describe("where an article is written", () => {
   });
 
   it("does not take the moment composer's addresses with it", () => {
-    expect(resolveRoute(COMPOSE_PATH).id).toBe("owner-compose");
-    expect(resolveRoute("/compose/drafts").id).toBe("owner-compose");
+    expect(resolveRoute(COMPOSE_PATH).id).toBe("compose");
+    expect(resolveRoute("/compose/drafts").id).toBe("compose");
     expect(isComposePath(ARTICLE_COMPOSE_PATH)).toBe(false);
   });
 
   it("uses account permissions rather than an owner-only route", () => {
-    expect(resolveRoute(ARTICLE_COMPOSE_PATH).ownerOnly).toBeUndefined();
+    expect(
+      resolveRoute(ARTICLE_COMPOSE_PATH).activeAccountOnly,
+    ).toBeUndefined();
   });
 });
 
@@ -207,11 +178,22 @@ describe("article workspace resource boundaries", () => {
     "/compose/articles/drafts/01K2ABC/focus",
   ])("resolves %s independently of site ownership", (path) => {
     expect(resolveRoute(path).id).toBe("article-workspace");
-    expect(resolveRoute(path).ownerOnly).toBeUndefined();
+    expect(resolveRoute(path).activeAccountOnly).toBeUndefined();
   });
   it("keeps the draft identity when entering focus", () => {
     expect(
       articleDraftIdFromPath("/compose/articles/drafts/01K2ABC/focus"),
     ).toBe("01K2ABC");
+  });
+});
+
+describe("retired identity routes", () => {
+  it.each([
+    "/owner/compose",
+    "/owner/compose/drafts",
+    "/owner/settings",
+    "/owner/m/id/edit",
+  ])("does not expose %s", (pathname) => {
+    expect(resolveRoute(pathname).id).toBe("not-found");
   });
 });

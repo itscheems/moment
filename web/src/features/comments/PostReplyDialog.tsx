@@ -13,7 +13,7 @@ import {
   type PublicPost,
   type SiteIdentity,
 } from "../../api/public";
-import { SiteAvatar } from "../../components/SiteIdentity";
+import { postAuthorSite, SiteAvatar } from "../../components/SiteIdentity";
 import { Icon } from "../../components/icons";
 import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { MarkdownBody } from "../../components/content/MarkdownBody";
@@ -46,6 +46,7 @@ export function PostReplyDialog({
   triggerRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const canCompose = useCanComment();
+  const author = postAuthorSite(post, site);
   const [closedByServer, setClosedByServer] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const canComment = commentsEnabled && !closedByServer;
@@ -84,23 +85,23 @@ export function PostReplyDialog({
               </Dialog.Title>
             </header>
             <article
-              aria-label={`${site.displayName}发布的 Moment`}
+              aria-label={`${author.displayName}发布的 Moment`}
               className={styles.replyContext}
             >
               <span aria-hidden="true" className={styles.replyContextAvatar}>
-                <SiteAvatar site={site} />
+                <SiteAvatar site={author} />
               </span>
               <div>
                 <p className={styles.replyContextByline}>
-                  <strong>{site.displayName}</strong>
-                  <span>@{site.username}</span>
+                  <strong>{author.displayName}</strong>
+                  <span>@{author.username}</span>
                 </p>
                 <MarkdownBody
                   className={styles.replyContextContent}
                   html={post.contentHtml}
                 />
                 <p className={styles.replyContextTarget}>
-                  正在回复 <span>@{site.username}</span>
+                  正在回复 <span>@{author.username}</span>
                 </p>
               </div>
             </article>

@@ -11,7 +11,7 @@ import {
   reconcileTimelineEvent,
   timelineItemKey,
 } from "../timeline/timelineItems";
-import type { OwnerPostEvent } from "../owner/postEvents";
+import type { PostChangeEvent } from "../posts/postEvents";
 
 function pageVisible(): boolean {
   return document.visibilityState !== "hidden";
@@ -79,7 +79,7 @@ export class ProfileTimeline {
     moment: new Set(),
     article: new Set(),
   };
-  private events = new Map<string, OwnerPostEvent>();
+  private events = new Map<string, PostChangeEvent>();
   private disposed = false;
   active: ProfileFilter = "all";
   beforeMerge?: () => void;
@@ -118,7 +118,7 @@ export class ProfileTimeline {
     }
     return next;
   }
-  apply(event: OwnerPostEvent) {
+  apply(event: PostChangeEvent) {
     this.events.set(event.post.id, event);
     this.beforeMerge?.();
     for (const filter of profileFilters) {

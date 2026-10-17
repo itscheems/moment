@@ -15,14 +15,6 @@ export function isAllowedArticleHref(value: string): boolean {
   return ["http", "https", "mailto"].includes(scheme[1].toLowerCase());
 }
 
-/**
- * What the owner typed, turned into a destination.
- *
- * A bare host reads as a place on the web, not as a path on this site: an
- * owner who types "example.com" means https://example.com, and storing it as
- * a relative path would point the link at a page of their own that does not
- * exist.
- */
 export function normalizeArticleHref(value: string): string | null {
   const trimmed = value.trim();
   if (trimmed === "") return null;

@@ -49,7 +49,7 @@ function primaryNavFor(profileHref: string): NavItem[] {
     {
       label: "个人资料",
       href: profileHref,
-      icon: "owner",
+      icon: "account",
       active: ["profile"],
     },
     {
@@ -65,9 +65,7 @@ const publishNav: NavItem = {
   label: "发布",
   href: "/compose",
   icon: "compose",
-  // Writing an article is composing, so the nav says so rather than going
-  // blank while the owner is in the middle of one.
-  active: ["owner-compose", "article-workspace"],
+  active: ["compose", "article-workspace"],
 };
 
 const HOME_SCROLL_DURATION_MS = 260;
@@ -134,24 +132,15 @@ function useHomeScrollToTop() {
   }, []);
 }
 
-function ownerNav(settingsAvailable: boolean): NavItem {
+function accountNav(settingsAvailable: boolean): NavItem {
   return {
-    label: "所有者",
-    href: settingsAvailable ? "/owner/settings" : "/login",
-    icon: "owner",
-    active: ["login", "owner-settings", "owner-edit"],
+    label: "账号",
+    href: settingsAvailable ? "/settings/account" : "/login",
+    icon: "account",
+    active: ["login", "settings", "edit"],
   };
 }
 
-/**
- * The account this browser is signed in as, at the foot of the rail.
- *
- * It replaced a nav row reading "所有者", which named a rank rather than a
- * person and said the same thing whoever was reading it. What belongs in the
- * corner of a signed-in app is who you are, and a way to act on that -- so the
- * row shows the face and the handle, and opens the menu that everything else
- * about the account can be hung from.
- */
 function AccountRail({
   account,
   onSignOut,
@@ -166,7 +155,7 @@ function AccountRail({
   const { navigate } = useNavigation();
   // Nobody is signed in, so there is no face to show and one thing to offer.
   if (!account) {
-    return <NavLink item={ownerNav(settingsAvailable)} route={route} />;
+    return <NavLink item={accountNav(settingsAvailable)} route={route} />;
   }
   // SiteAvatar reads an identity face, and an account is one: the cover is
   // never drawn at this size, so it travels only to satisfy the shape.
@@ -222,7 +211,7 @@ function AccountRail({
             </Menu.Item>
             <Menu.Item
               className={styles.mobileAccountItem}
-              onClick={() => navigate("/owner/settings")}
+              onClick={() => navigate("/settings/account")}
             >
               <Icon name="settings" />
               <span>设置</span>
@@ -342,14 +331,14 @@ function NavLink({ item, route }: { item: NavItem; route: AppRoute }) {
 function LeftRail({
   route,
   site,
-  ownerSettingsAvailable,
+  accountSettingsAvailable,
   profileHref,
   account,
   onSignOut,
 }: {
   route: AppRoute;
   site: SiteIdentity;
-  ownerSettingsAvailable: boolean;
+  accountSettingsAvailable: boolean;
   profileHref: string;
   account: Account | null;
   onSignOut: () => void;
@@ -396,7 +385,7 @@ function LeftRail({
               account={account}
               onSignOut={onSignOut}
               route={route}
-              settingsAvailable={ownerSettingsAvailable}
+              settingsAvailable={accountSettingsAvailable}
             />
           </div>
         </div>
@@ -434,16 +423,16 @@ function MemoryRail({
 }
 
 function MobileAccountMenu({
-  ownerSettingsAvailable,
+  accountSettingsAvailable,
   site,
   profileHref,
 }: {
-  ownerSettingsAvailable: boolean;
+  accountSettingsAvailable: boolean;
   site: SiteIdentity;
   profileHref: string;
 }) {
   const { navigate } = useNavigation();
-  const ownerItem = ownerNav(ownerSettingsAvailable);
+  const accountItem = accountNav(accountSettingsAvailable);
 
   return (
     <Menu.Root>
@@ -464,7 +453,7 @@ function MobileAccountMenu({
               className={styles.mobileAccountItem}
               onClick={() => navigate(profileHref)}
             >
-              <Icon name="owner" />
+              <Icon name="account" />
               <span>个人资料</span>
             </Menu.Item>
             <Menu.Item
@@ -476,12 +465,10 @@ function MobileAccountMenu({
             </Menu.Item>
             <Menu.Item
               className={styles.mobileAccountItem}
-              onClick={() => navigate(ownerItem.href)}
+              onClick={() => navigate(accountItem.href)}
             >
               <Icon name="settings" />
-              <span>
-                {ownerSettingsAvailable ? "所有者设置" : "所有者登录"}
-              </span>
+              <span>{accountSettingsAvailable ? "账号设置" : "账号登录"}</span>
             </Menu.Item>
           </Menu.Popup>
         </Menu.Positioner>
@@ -491,10 +478,10 @@ function MobileAccountMenu({
 }
 
 function MobileNavigation({
-  ownerSettingsAvailable,
+  accountSettingsAvailable,
   route,
 }: {
-  ownerSettingsAvailable: boolean;
+  accountSettingsAvailable: boolean;
   route: AppRoute;
 }) {
   const mobileViewport = useMediaQuery(MOBILE_VIEWPORT_QUERY);
@@ -502,7 +489,7 @@ function MobileNavigation({
   const items: NavItem[] = [
     ...primaryNavFor(DEFAULT_PROFILE_HREF).slice(0, 3),
     publishNav,
-    ownerNav(ownerSettingsAvailable),
+    accountNav(accountSettingsAvailable),
   ];
   return (
     <nav
@@ -522,7 +509,7 @@ export function AppShell({
   state,
   site,
   children,
-  ownerSettingsAvailable = false,
+  accountSettingsAvailable = false,
   profileHref = DEFAULT_PROFILE_HREF,
   account = null,
   onSignOut = () => {},
@@ -531,7 +518,7 @@ export function AppShell({
   state: string | null;
   site: SiteIdentity;
   children?: ReactNode;
-  ownerSettingsAvailable?: boolean;
+  accountSettingsAvailable?: boolean;
   profileHref?: string;
   account?: Account | null;
   onSignOut?: () => void;
@@ -562,7 +549,7 @@ export function AppShell({
               <LeftRail
                 account={account}
                 onSignOut={onSignOut}
-                ownerSettingsAvailable={ownerSettingsAvailable}
+                accountSettingsAvailable={accountSettingsAvailable}
                 profileHref={profileHref}
                 route={route}
                 site={site}
@@ -577,8 +564,8 @@ export function AppShell({
                 {route.id === "detail" ||
                 focusReading ||
                 route.id === "profile" ||
-                route.id === "owner-edit" ||
-                route.id === "owner-compose" ? (
+                route.id === "edit" ||
+                route.id === "compose" ? (
                   <InternalLink
                     aria-label={focusReading ? "退出全屏阅读" : "返回时间流"}
                     className={styles.backLink}
@@ -600,7 +587,7 @@ export function AppShell({
                   </InternalLink>
                 ) : (
                   <MobileAccountMenu
-                    ownerSettingsAvailable={ownerSettingsAvailable}
+                    accountSettingsAvailable={accountSettingsAvailable}
                     profileHref={profileHref}
                     site={site}
                   />
@@ -631,7 +618,7 @@ export function AppShell({
                   {focusReading ? <ThemeToggle headerAction /> : null}
                 </span>
                 {route.id !== "detail" &&
-                route.id !== "owner-edit" &&
+                route.id !== "edit" &&
                 !focusReading ? (
                   <span className={styles.headerTheme}>
                     <ThemeMenu site={site} />
@@ -646,7 +633,7 @@ export function AppShell({
           </div>
           {!focusReading && !focusWriting ? (
             <MobileNavigation
-              ownerSettingsAvailable={ownerSettingsAvailable}
+              accountSettingsAvailable={accountSettingsAvailable}
               route={route}
             />
           ) : null}

@@ -13,7 +13,7 @@ import { PublicApi, type SiteIdentity } from "../../api/public";
 import { NavigationProvider } from "../../app/navigation";
 import { FeedbackProvider } from "../../components/Feedback";
 import { SessionProvider, useSession } from "../auth/SessionProvider";
-import { announceOwnerPost } from "../owner/postEvents";
+import { announcePostChanged } from "../posts/postEvents";
 import { ProfilePage } from "./ProfilePage";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
@@ -21,7 +21,7 @@ const pinnedId = "01K2ABCDEF0123456789ABCDE0";
 const otherId = "01K2ABCDEF0123456789ABCDE1";
 
 const site: SiteIdentity = {
-  ownerId: "00000000000000000000000000000000",
+  profileUserId: "00000000000000000000000000000000",
   username: "owner",
   displayName: "Moment",
   title: "Moment",
@@ -38,6 +38,13 @@ const site: SiteIdentity = {
 
 function post(id: string, text: string) {
   return {
+    author: {
+      user_id: "00000000000000000000000000000000",
+      username: "owner",
+      display_name: "Moment",
+      avatar_media_id: null,
+      profile_url: "/owner",
+    },
     id,
     kind: "moment",
     content_md: text,
@@ -62,13 +69,13 @@ function accountSessionEnvelope() {
       expires_at: "2999-08-11T01:00:00.000Z",
       csrf_token: "csrf-profile",
       account: {
-        user_id: site.ownerId,
+        user_id: site.profileUserId,
         username: site.username,
         display_name: site.displayName,
         bio: "",
         avatar_media_id: null,
         cover_media_id: null,
-        role: "owner",
+        role: "admin",
         profile_url: `/${site.username}`,
         status: "active",
         username_chosen: true,
@@ -79,17 +86,10 @@ function accountSessionEnvelope() {
   };
 }
 
-/**
- * What the owner context believes its own address is.
- *
- * The left rail and the /profile redirect both read it, and neither renders
- * inside this page -- so the probe is how a test standing here can tell that
- * a rename reached the account the viewer is signed in as.
- */
 function AccountProbe() {
-  const owner = useSession();
+  const auth = useSession();
   return (
-    <p data-testid="viewer-profile-url">{owner.account?.profileUrl ?? ""}</p>
+    <p data-testid="viewer-profile-url">{auth.account?.profileUrl ?? ""}</p>
   );
 }
 
@@ -141,9 +141,16 @@ describe("profile page", () => {
 
     expect(await screen.findByText("原有内容")).toBeInTheDocument();
     act(() => {
-      announceOwnerPost({
+      announcePostChanged({
         kind: "created",
         post: {
+          author: {
+            userId: "00000000000000000000000000000000",
+            username: "owner",
+            displayName: "Moment",
+            avatarMediaId: null,
+            profileUrl: "/owner",
+          },
           id: pinnedId,
           kind: "moment",
           contentMd: "刚刚发布的引用",
@@ -171,7 +178,7 @@ describe("profile page", () => {
     const original = post(otherId, "个人资料里的原帖");
     const repostedAt = "2026-08-16T06:00:00.000Z";
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-repost",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -184,7 +191,7 @@ describe("profile page", () => {
         if (url === "/api/v1/account/session") {
           return json(accountSessionEnvelope());
         }
-        if (url === "/api/v1/owner/status") {
+        if (url === "/api/v1/status") {
           return json({
             data: {
               initialized: true,
@@ -196,7 +203,7 @@ describe("profile page", () => {
           });
         }
         if (
-          url === `/api/v1/owner/posts/${otherId}/repost` &&
+          url === `/api/v1/posts/${otherId}/repost` &&
           init?.method === "PUT"
         ) {
           return json({
@@ -251,7 +258,7 @@ describe("profile page", () => {
     // Replying needs an account, so the composer only appears for a signed-in
     // browser; without this the dialog would offer sign-in instead.
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-reply",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -260,7 +267,7 @@ describe("profile page", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) =>
-        String(input) === "/api/v1/owner/status"
+        String(input) === "/api/v1/status"
           ? json({
               data: {
                 initialized: true,
@@ -414,7 +421,7 @@ describe("profile page", () => {
 
   it("offers the owner a first-publish action from an empty profile", async () => {
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-profile",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -539,20 +546,10 @@ describe("profile page", () => {
     expect(window.location.search).toBe("?loaded_through=cursor-one");
   });
 
-  /**
-   * A handle is the address of this page, so renaming from it moved the owner
-   * off the URL they were standing on.
-   *
-   * The site branch of the editor handed the saved identity upward and stopped
-   * there. App re-rendered with the new username against the old pathname,
-   * decided this was somebody else's profile, and asked the server for a handle
-   * that had just stopped existing. MemberProfilePage.adopt had solved exactly
-   * this for members; the owner's page had no equivalent.
-   */
   it("follows the owner's handle when it is renamed from their own page", async () => {
     window.history.replaceState({}, "", "/owner");
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-rename",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -565,7 +562,7 @@ describe("profile page", () => {
         if (url === "/api/v1/account/session") {
           return json(accountSessionEnvelope());
         }
-        if (url === "/api/v1/owner/status") {
+        if (url === "/api/v1/status") {
           return json({
             data: {
               initialized: true,
@@ -576,20 +573,16 @@ describe("profile page", () => {
             meta: { request_id: "req_owner" },
           });
         }
-        if (url === "/api/v1/owner/site") {
+        if (url === "/api/v1/account/profile") {
           return json({
             data: {
-              owner_id: site.ownerId,
+              ...accountSessionEnvelope().data.account,
               username: "cheems2",
               display_name: site.displayName,
-              title: site.title,
               bio: site.bio,
-              timezone: site.timezone,
-              public_base_url: null,
               avatar_media_id: null,
               cover_media_id: null,
-              pinned_post_id: null,
-              comments_enabled: true,
+              profile_url: "/cheems2",
             },
             meta: { request_id: "req_rename" },
           });
@@ -785,7 +778,7 @@ describe("profile page", () => {
   it("leaves the /profile alias alone when the handle changes", async () => {
     window.history.replaceState({}, "", "/profile");
     window.sessionStorage.setItem(
-      "moment.owner.session.v1",
+      "moment.auth.session.v2",
       JSON.stringify({
         csrf_token: "csrf-alias",
         expires_at: "2999-08-11T01:00:00.000Z",
@@ -798,7 +791,7 @@ describe("profile page", () => {
         if (url === "/api/v1/account/session") {
           return json(accountSessionEnvelope());
         }
-        if (url === "/api/v1/owner/status") {
+        if (url === "/api/v1/status") {
           return json({
             data: {
               initialized: true,
@@ -809,20 +802,16 @@ describe("profile page", () => {
             meta: { request_id: "req_owner" },
           });
         }
-        if (url === "/api/v1/owner/site") {
+        if (url === "/api/v1/account/profile") {
           return json({
             data: {
-              owner_id: site.ownerId,
+              ...accountSessionEnvelope().data.account,
               username: "cheems3",
               display_name: site.displayName,
-              title: site.title,
               bio: site.bio,
-              timezone: site.timezone,
-              public_base_url: null,
               avatar_media_id: null,
               cover_media_id: null,
-              pinned_post_id: null,
-              comments_enabled: true,
+              profile_url: "/cheems3",
             },
             meta: { request_id: "req_rename" },
           });

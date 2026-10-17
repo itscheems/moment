@@ -174,8 +174,8 @@ describe("shared Tiptap document rendering", () => {
       coverMediaId: null,
       role: "member",
       profileUrl: "/linlin",
-      status: null,
-      usernameChosen: null,
+      status: "active",
+      usernameChosen: true,
     };
     const doc: ArticleDocument = {
       schema_version: 2,

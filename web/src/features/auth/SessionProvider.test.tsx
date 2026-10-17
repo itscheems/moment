@@ -12,8 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SessionProvider, useSession } from "./SessionProvider";
 import { makeAccountLimits } from "../../test/accountFixtures";
 
-const channelName = "moment.owner.session.sync.v1";
-const sessionKey = "moment.owner.session.v1";
+const channelName = "moment.auth.session.sync.v2";
+const sessionKey = "moment.auth.session.v2";
 
 class FakeBroadcastChannel {
   static channels = new Map<string, Set<FakeBroadcastChannel>>();
@@ -79,7 +79,10 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function accountSession(csrfToken: string) {
+function accountSession(
+  csrfToken: string,
+  overrides: Record<string, unknown> = {},
+) {
   return json({
     data: {
       csrf_token: csrfToken,
@@ -91,10 +94,11 @@ function accountSession(csrfToken: string) {
         bio: "",
         avatar_media_id: null,
         cover_media_id: null,
-        role: "owner",
+        role: "admin",
         status: "active",
         username_chosen: true,
         profile_url: "/owner",
+        ...overrides,
       },
       limits: makeAccountLimits(),
     },
@@ -103,20 +107,20 @@ function accountSession(csrfToken: string) {
 }
 
 function Probe({ name }: { name: string }) {
-  const owner = useSession();
+  const auth = useSession();
   return (
     <section aria-label={name}>
-      <output data-testid={`${name}-state`}>{owner.state}</output>
+      <output data-testid={`${name}-state`}>{auth.state}</output>
       <output data-testid={`${name}-csrf`}>
-        {owner.session?.csrfToken ?? "none"}
+        {auth.session?.csrfToken ?? "none"}
       </output>
       <output data-testid={`${name}-account`}>
-        {owner.account?.username ?? "none"}
+        {auth.account?.username ?? "none"}
       </output>
-      <button onClick={() => void owner.login("bearer-secret")} type="button">
+      <button onClick={() => void auth.login("bearer-secret")} type="button">
         login {name}
       </button>
-      <button onClick={() => owner.forgetSession(null)} type="button">
+      <button onClick={() => auth.forgetSession(null)} type="button">
         forget {name}
       </button>
     </section>
@@ -128,11 +132,12 @@ describe("account session cross-tab repair", () => {
     window.sessionStorage.clear();
     FakeBroadcastChannel.reset();
     vi.stubGlobal("BroadcastChannel", FakeBroadcastChannel);
+    let cookieAuthenticated = false;
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url === "/api/v1/owner/status") {
+        if (url === "/api/v1/status") {
           return json({
             data: {
               initialized: true,
@@ -143,6 +148,7 @@ describe("account session cross-tab repair", () => {
           });
         }
         if (url === "/api/v1/login/session" && init?.method === "POST") {
+          cookieAuthenticated = true;
           return json({
             data: {
               csrf_token: "csrf-newest",
@@ -151,6 +157,20 @@ describe("account session cross-tab repair", () => {
             meta: {},
           });
         }
+        if (url === "/api/v1/account/session")
+          return cookieAuthenticated
+            ? accountSession("csrf-newest")
+            : json(
+                {
+                  error: {
+                    code: "UNAUTHORIZED",
+                    message: "sign in",
+                    details: {},
+                    request_id: "guest",
+                  },
+                },
+                401,
+              );
         return json({}, 404);
       }),
     );
@@ -289,6 +309,10 @@ describe("account session cross-tab repair", () => {
   });
 
   it("keeps the newest CSRF when two responder tabs answer out of order", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => accountSession("csrf-from-new-tab")),
+    );
     render(
       <SessionProvider>
         <Probe name="requester" />
@@ -356,5 +380,47 @@ describe("account session cross-tab repair", () => {
     );
     view.unmount();
     expect(FakeBroadcastChannel.channels.get(channelName)?.size ?? 0).toBe(0);
+  });
+  it("resolves another account after a sibling tab replaces the cookie session", async () => {
+    let second = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        second
+          ? accountSession("csrf-second", {
+              user_id: "1".repeat(32),
+              username: "second",
+              display_name: "Second",
+              profile_url: "/second",
+              role: "member",
+            })
+          : accountSession("csrf-first"),
+      ),
+    );
+    render(
+      <SessionProvider>
+        <Probe name="switch" />
+      </SessionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("switch-account")).toHaveTextContent("owner"),
+    );
+    second = true;
+    const peer = new FakeBroadcastChannel(channelName);
+    peer.postMessage({
+      type: "offer-session",
+      request_id: null,
+      session: {
+        csrf_token: "csrf-second",
+        expires_at: "2999-08-11T01:00:00.000Z",
+        issued_at: Date.now() + 1000,
+        version: "another-account-0001",
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("switch-account")).toHaveTextContent("second"),
+    );
+    expect(screen.getByTestId("switch-csrf")).toHaveTextContent("csrf-second");
+    peer.close();
   });
 });

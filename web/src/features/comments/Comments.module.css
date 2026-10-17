@@ -298,7 +298,7 @@
 }
 
 .commentForm header > span,
-.ownerBadge {
+.authorBadge {
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 0.14rem 0.48rem;
@@ -1131,14 +1131,14 @@
   content: none;
 }
 
-.commentOwnerMenu {
+.commentActionsMenu {
   position: absolute;
   z-index: 1;
   inset-block-start: var(--space-3);
   inset-inline-end: var(--space-3);
 }
 
-.commentOwnerMenu > button {
+.commentActionsMenu > button {
   --post-edge-action-size: 2.25rem;
   margin-block: -0.5rem;
 }
@@ -1190,7 +1190,7 @@
   font-weight: 700;
 }
 
-.ownerBadge {
+.authorBadge {
   border-color: var(--accent);
   color: var(--accent);
 }
