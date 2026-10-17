@@ -20,9 +20,7 @@
 }
 
 .mediaControls,
-.mediaToolbar,
-.editorActions,
-.altModes {
+.mediaToolbar {
   display: flex;
   align-items: center;
 }
@@ -90,7 +88,6 @@
 
 .mediaToolbar button,
 .editorRemove,
-.editorActions button,
 .lightboxClose,
 .lightboxNav,
 .lightboxOriginal {
@@ -162,7 +159,6 @@
 }
 
 .mediaToolbar button:disabled,
-.editorActions button:disabled,
 .lightboxNav:disabled,
 .lightboxOriginal:disabled {
   opacity: 0.5;
@@ -492,6 +488,26 @@
   box-shadow: 0 0 0 2px var(--accent);
 }
 
+.editorEdit {
+  position: absolute;
+  z-index: 2;
+  inset-block-start: 4px;
+  inset-inline-start: 4px;
+  min-block-size: 32px;
+  border: 0;
+  border-radius: 9999px;
+  padding: 0 16px;
+  color: #fff;
+  background: rgb(15 20 25 / 75%);
+  font: 700 14px/20px var(--font-timeline);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .editorEdit:hover:not(:disabled) {
+    background: rgb(39 44 48 / 75%);
+  }
+}
+
 .editorRemove {
   position: absolute;
   z-index: 2;
@@ -641,538 +657,7 @@
   }
 }
 
-/* "Add description": one quiet text action directly under the picture.
-   No rules and no box. This replaced a <details> whose `border-block` drew a
-   hairline above *and* below itself, with the toolbar's own rule 8px below
-   that -- three lines stacked in the gap between the picture and the
-   toolbar. The only hairline left there is the toolbar's, which separates
-   the post from the actions on it. */
-.mediaDescribe {
-  min-block-size: var(--target-size);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  border: 0;
-  border-radius: 999px;
-  margin-block: var(--space-1) var(--space-2);
-  margin-inline-start: calc(0px - var(--space-2));
-  padding-inline: var(--space-2);
-  color: var(--text-secondary);
-  background: transparent;
-  font-size: var(--text-sm);
-  font-weight: 650;
-  cursor: pointer;
-  transition:
-    color var(--motion-fast) var(--ease-out),
-    background var(--motion-fast) var(--ease-out);
-}
-
-.mediaDescribe:focus-visible {
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
 @media (hover: hover) {
-  .mediaDescribe:hover:not(:disabled) {
-    color: var(--accent);
-    background: var(--accent-soft);
-  }
-}
-
-.mediaDescribe:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.mediaDescribe svg {
-  inline-size: 1.15rem;
-  block-size: 1.15rem;
-  flex: 0 0 auto;
-}
-
-.mediaDescribe small {
-  color: var(--text-tertiary);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
-  font-weight: 500;
-}
-
-/* The description sheet. Above the composer overlay (z 91) because it is
-   opened from inside it. */
-.describeBackdrop {
-  position: fixed;
-  z-index: var(--layer-confirm);
-  inset: 0;
-  background: rgb(91 112 131 / 40%);
-  transition: opacity var(--motion-dialog) var(--ease-out);
-}
-
-.describeBackdrop[data-starting-style],
-.describeBackdrop[data-ending-style] {
-  opacity: 0;
-}
-
-.describeViewport {
-  position: fixed;
-  z-index: calc(var(--layer-confirm) + 1);
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: var(--space-4);
-}
-
-.describePopup {
-  inline-size: min(34rem, 100%);
-  max-block-size: min(46rem, calc(100dvh - 2rem));
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-radius: 1rem;
-  color: var(--text-primary);
-  background: var(--surface);
-  box-shadow: var(--shadow-popover);
-  transition:
-    opacity var(--motion-dialog) var(--ease-out),
-    transform var(--motion-dialog) var(--ease-out);
-}
-
-.describePopup:focus,
-.describePopup:focus-visible {
-  outline: none;
-}
-
-.describePopup[data-starting-style],
-.describePopup[data-ending-style] {
-  opacity: 0;
-  transform: scale(0.96);
-}
-
-.describeHeader {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  border-block-end: 1px solid var(--border-subtle);
-  padding: var(--space-2) var(--space-3);
-}
-
-.describeHeader h2 {
-  min-inline-size: 0;
-  flex: 1 1 auto;
-  margin: 0;
-  overflow: hidden;
-  font-size: var(--text-lg);
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Paging sits where the eye already is when it finishes a description: at
-   the end of the header, next to the way out. */
-.describePager {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
-  gap: var(--space-1);
-}
-
-.describePager span {
-  min-inline-size: 2.75rem;
-  color: var(--text-tertiary);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
-
-.describePager button {
-  inline-size: 2.25rem;
-  block-size: 2.25rem;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  padding: 0;
-  color: var(--text-secondary);
-  background: transparent;
-  cursor: pointer;
-  transition:
-    color var(--motion-fast) var(--ease-out),
-    background-color 0.2s;
-}
-
-.describePager button:focus-visible {
-  color: var(--accent);
-  background: var(--audience-hover);
-}
-
-@media (hover: hover) {
-  .describePager button:hover:not(:disabled) {
-    color: var(--accent);
-    background: var(--audience-hover);
-  }
-}
-
-.describePager button:active:not(:disabled) {
-  background: var(--audience-pressed);
-}
-
-.describePager button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.describePager svg {
-  inline-size: 1.1rem;
-  block-size: 1.1rem;
-}
-
-.describeBack {
-  inline-size: var(--target-size);
-  block-size: var(--target-size);
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  padding: 0;
-  color: var(--text-primary);
-  background: transparent;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.describeBack:focus-visible {
-  background: var(--icon-button-hover);
-}
-
-@media (hover: hover) {
-  .describeBack:hover {
-    background: var(--icon-button-hover);
-  }
-}
-
-.describeBack:active {
-  background: var(--icon-button-pressed);
-}
-
-.describeBack svg {
-  inline-size: 1.25rem;
-  block-size: 1.25rem;
-}
-
-.describeDone {
-  min-block-size: 2.25rem;
-  flex: 0 0 auto;
-  border: 0;
-  border-radius: 999px;
-  padding-inline: var(--space-4);
-  color: var(--button-primary-contrast);
-  background: var(--button-primary);
-  font-weight: 700;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
-}
-
-.describeDone:focus-visible {
-  background: var(--button-primary-hover);
-}
-
-@media (hover: hover) {
-  .describeDone:hover {
-    background: var(--button-primary-hover);
-  }
-}
-
-.describeDone:active {
-  background: var(--accent-pressed, var(--button-primary-hover));
-  filter: brightness(0.94);
-}
-
-.describeBody {
-  min-block-size: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: var(--space-4) var(--space-4) var(--space-5);
-}
-
-/* The picture being described, at a size worth describing. The sheet used
-   to name it ("第 2 张图片") and leave the writer to remember which one
-   that was. */
-.describeStage {
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: 1rem;
-  background: var(--surface-muted);
-  aspect-ratio: 4 / 3;
-}
-
-.describeStage img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: contain;
-}
-
-.describeStagePending {
-  color: var(--text-tertiary);
-  font-size: var(--text-sm);
-}
-
-.describeCaption {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  margin: var(--space-3) 0 0;
-}
-
-.describeCaption strong {
-  color: var(--text-primary);
-  font-size: var(--text-sm);
-}
-
-.describeCaption span {
-  color: var(--text-tertiary);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
-}
-
-.altHint {
-  margin: var(--space-2) 0 0;
-  color: var(--text-tertiary);
-  font-size: var(--text-xs);
-  line-height: 1.6;
-}
-
-.describeFooter {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  border-block-start: 1px solid var(--border-subtle);
-  padding: var(--space-2) var(--space-3);
-}
-
-/* Where the writer is in the set, and a one-press way to any other picture
-   rather than paging past the ones between. */
-.describeRail {
-  min-inline-size: 0;
-  list-style: none;
-  display: flex;
-  flex: 1 1 auto;
-  gap: var(--space-2);
-  overflow-x: auto;
-  margin: 0;
-  padding: var(--space-1) 0;
-  scrollbar-width: none;
-}
-
-.describeRail::-webkit-scrollbar {
-  display: none;
-}
-
-.describeRail button {
-  position: relative;
-  inline-size: 2.75rem;
-  block-size: 2.75rem;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border: 0;
-  border-radius: var(--radius-action);
-  padding: 0;
-  color: var(--text-tertiary);
-  background: var(--surface-muted);
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
-  cursor: pointer;
-  opacity: 0.55;
-  outline-offset: 2px;
-  transition:
-    opacity var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out),
-    transform var(--motion-fast) var(--ease-out);
-}
-
-.describeRail img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
-}
-
-.describeRail button:focus-visible {
-  opacity: 1;
-  transform: translateY(-1px);
-}
-
-@media (hover: hover) {
-  .describeRail button:hover {
-    opacity: 1;
-    transform: translateY(-1px);
-  }
-}
-
-.describeRail button:active {
-  transform: scale(0.94);
-}
-
-.describeRail button[aria-current] {
-  box-shadow:
-    0 0 0 2px var(--surface),
-    0 0 0 4px var(--accent);
-  opacity: 1;
-}
-
-/* A description still missing, said without words: the same dot the tile
-   grid would use if it had room for one. */
-.describeRail button[data-undescribed]::after {
-  position: absolute;
-  inset-block-end: 0.1875rem;
-  inset-inline-end: 0.1875rem;
-  inline-size: 0.4375rem;
-  block-size: 0.4375rem;
-  border: 1px solid var(--surface);
-  border-radius: 50%;
-  background: var(--accent);
-  content: "";
-}
-
-.altFieldset {
-  border: 0;
-  margin: var(--space-2) 0 0;
-  padding: 0;
-}
-
-.altFieldset legend {
-  position: absolute;
-  inline-size: 1px;
-  block-size: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-
-.altInput > span {
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: 650;
-}
-
-.altModes {
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-block-start: var(--space-3);
-}
-
-/* Three choices that read as choices: a pill each, the chosen one filled.
-   Loose radio dots in a row gave no target to aim at and no feedback for
-   the pointer on its way there. */
-.altModes label {
-  min-block-size: 2.25rem;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  padding-inline: var(--space-3);
-  color: var(--text-secondary);
-  background: transparent;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition:
-    color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out),
-    background var(--motion-fast) var(--ease-out);
-}
-
-@media (hover: hover) {
-  .altModes label:hover {
-    border-color: var(--border-strong);
-    background: var(--surface-hover);
-  }
-}
-
-.altModes label[data-checked] {
-  border-color: transparent;
-  color: var(--accent);
-  background: var(--accent-soft);
-  font-weight: 650;
-}
-
-/* The chosen pill answers the pointer too. Its filled ground already wins
-   over the hover ground, so it says yes with a ring instead -- measured,
-   it was the one control on the sheet that went dead under the cursor. */
-@media (hover: hover) {
-  .altModes label[data-checked]:hover {
-    box-shadow: inset 0 0 0 1px var(--accent);
-  }
-}
-
-.altModes label:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.altModes input {
-  accent-color: var(--accent);
-}
-
-.altInput {
-  display: grid;
-  gap: var(--space-2);
-  margin-block-start: var(--space-2);
-}
-
-.altInput textarea {
-  inline-size: 100%;
-  resize: vertical;
-  border: 1px solid var(--border-strong);
-  border-radius: 0.75rem;
-  padding: var(--space-2) var(--space-3);
-  color: var(--text-primary);
-  background: var(--surface);
-  line-height: 1.5;
-}
-
-/* The field says it has the caret with its own border, the way the
-   reference does. The browser's ring is a heavy blue halo around a box
-   that is already outlined, and it lands there on a programmatic focus --
-   choosing 填写描述 puts the caret in the box, which is not the reader
-   reaching for it with the keyboard. */
-.altInput textarea:focus,
-.altInput textarea:focus-visible {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-  outline: none;
-}
-
-.altInput textarea[aria-invalid="true"] {
-  border-color: var(--danger);
-}
-
-.altInput textarea[aria-invalid="true"]:focus {
-  border-color: var(--danger);
-  box-shadow: 0 0 0 1px var(--danger);
-}
-
-.altInput small {
-  justify-self: end;
-}
-
-.editorActions {
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  margin: 0;
-}
-
-.editorActions button {
-  min-block-size: var(--target-size);
-  padding-inline: var(--space-2);
-  font-size: var(--text-xs);
-}
-
-@media (hover: hover) {
-  .editorActions button:hover:not(:disabled),
   .lightboxOriginal:hover:not(:disabled) {
     color: var(--accent);
     background: var(--surface-hover);
@@ -1183,31 +668,6 @@
   .mediaEditorList {
     gap: var(--space-2);
     block-size: clamp(12rem, 72vw, 18rem);
-  }
-
-  /* A phone header has room for the title, the paging and the way out --
-     but only just: at 390px the default paddings pushed 完成 onto two
-     lines and dropped 填写描述 onto a row of its own. */
-  .describeHeader {
-    gap: var(--space-1);
-    padding-inline: var(--space-2);
-  }
-
-  .describePager button {
-    inline-size: 2rem;
-    block-size: 2rem;
-  }
-
-  .describePager span {
-    min-inline-size: 2.25rem;
-  }
-
-  .describeBody {
-    padding-inline: var(--space-3);
-  }
-
-  .altModes label {
-    padding-inline: var(--space-2);
   }
 }
 

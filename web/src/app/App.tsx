@@ -47,6 +47,7 @@ import { NavigationProvider, useNavigation } from "./navigation";
 import {
   COMPOSE_DRAFTS_PATH,
   COMPOSE_PATH,
+  COMPOSE_MEDIA_PATH,
   movedArticleComposePath,
   articleFocusIdFromPath,
   isComposeDraftsPath,
@@ -126,13 +127,21 @@ function PublicApp() {
     overlayFrom: { pathname: string; search: string } | null;
   } | null>(null);
   const expiryRedirected = useRef(false);
+  const surfaceLocation = location.panel?.from ?? location;
   const contentLocation =
     reauthLocation &&
     (loginRoute ||
       (location.pathname === reauthLocation.pathname &&
         location.search === reauthLocation.search))
       ? reauthLocation
-      : location;
+      : surfaceLocation;
+
+  useEffect(() => {
+    // Files are intentionally not stored in text drafts. A cold media URL has
+    // no buffer to edit, so return to composing rather than an empty modal.
+    if (location.pathname === COMPOSE_MEDIA_PATH && !location.panel)
+      location.replace(COMPOSE_PATH);
+  }, [location]);
   const requestedRoute = resolveRoute(contentLocation.pathname);
   // Composing is a dialog wherever the page has room for one, whether it was
   // opened from the timeline or the address was loaded cold. Reloading it used
@@ -544,8 +553,8 @@ function PublicApp() {
         ) : null}
         {hasTimeline ? (
           <div hidden={route.id !== "home"}>
-            {siteIdentityReady && !mobileViewport && ownerCapable ? (
-              <div className={styles.homeComposer}>
+            {siteIdentityReady && ownerCapable ? (
+              <div className={styles.homeComposer} hidden={mobileViewport}>
                 <Composer
                   active={route.id === "home"}
                   site={site}

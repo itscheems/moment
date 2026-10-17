@@ -442,7 +442,7 @@ describe("App shell and public routes", () => {
     },
   );
 
-  it("uses five distinct mobile destinations and omits the inline owner composer", async () => {
+  it("uses five distinct mobile destinations and hides the inline owner composer", async () => {
     const item = post("01K2ABCDEF0123456789ABCDE0", "手机首屏的第一条");
     preauthenticate();
     vi.mocked(window.matchMedia).mockImplementation((query) =>
@@ -471,7 +471,7 @@ describe("App shell and public routes", () => {
     expect(article).not.toBeNull();
     expect(
       container.querySelector('section[aria-label="发布 Moment"]'),
-    ).toBeNull();
+    ).not.toBeVisible();
     expect(
       Array.from(mobileNavigation?.querySelectorAll("a") ?? [], (link) =>
         link.getAttribute("aria-label"),

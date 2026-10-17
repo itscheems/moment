@@ -22,6 +22,7 @@ describe("route boundaries", () => {
     ["/archive", "archive"],
     ["/login", "login"],
     ["/compose", "owner-compose"],
+    ["/compose/post/media", "owner-compose"],
     ["/compose/drafts", "owner-compose"],
     // Still resolves, so an entry already in somebody's history renders
     // while the app corrects its address.

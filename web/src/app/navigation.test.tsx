@@ -38,6 +38,23 @@ function NavigationHarness({
   return (
     <div>
       <output data-testid="location">{navigation.pathname}</output>
+      <output data-testid="panel">
+        {navigation.panel?.from.pathname ?? "none"}
+      </output>
+      <button
+        type="button"
+        onClick={() =>
+          navigation.openPanel("/compose/post/media", "media-editor")
+        }
+      >
+        Media editor
+      </button>
+      <button
+        type="button"
+        onClick={() => navigation.closePanel("media-editor")}
+      >
+        Close media
+      </button>
       <output data-testid="overlay">
         {navigation.overlayFrom?.pathname ?? "none"}
       </output>
@@ -153,6 +170,28 @@ describe("guarded navigation history", () => {
     // Ordinary navigation still opens at the top.
     fireEvent.click(screen.getByRole("button", { name: "Navigate" }));
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
+  });
+
+  it("keeps a child editor in history without triggering the form's leave guard", async () => {
+    const blocker = vi.fn(() => false);
+    render(
+      <NavigationProvider>
+        <NavigationHarness blockers={[blocker]} />
+      </NavigationProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Media editor" }));
+    expect(window.location.pathname).toBe("/compose/post/media");
+    expect(screen.getByTestId("panel")).toHaveTextContent("/previous");
+    expect(blocker).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Close media" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/previous"));
+    expect(blocker).not.toHaveBeenCalled();
+    act(() => window.history.forward());
+    await waitFor(() =>
+      expect(screen.getByTestId("panel")).toHaveTextContent("/previous"),
+    );
+    expect(window.location.pathname).toBe("/compose/post/media");
+    expect(blocker).not.toHaveBeenCalled();
   });
 
   it("tracks an internal overlay without treating a refreshed URL as layered", () => {

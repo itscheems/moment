@@ -19,6 +19,10 @@ interface LocationSnapshot {
 
 interface NavigationLocation extends LocationSnapshot {
   overlayFrom: LocationSnapshot | null;
+  panel: {
+    key: string;
+    from: LocationSnapshot & { overlayFrom: LocationSnapshot | null };
+  } | null;
 }
 
 interface NavigationContextValue extends NavigationLocation {
@@ -35,6 +39,9 @@ interface NavigationContextValue extends NavigationLocation {
    * background rather than taking the overlay itself as one.
    */
   navigateOverlay: (href: string, from?: LocationSnapshot | null) => void;
+  /** A child editor over the same mounted form, so opening it cannot discard work. */
+  openPanel: (href: string, key: string) => void;
+  closePanel: (key: string) => void;
   goBack: (fallback: string) => void;
   replaceTimelineProgress: (cursor: string, name?: ProgressName) => void;
   /**
@@ -57,6 +64,7 @@ interface MomentHistoryState {
   momentFresh?: boolean;
   momentInternal?: boolean;
   momentOverlayFrom?: LocationSnapshot;
+  momentPanel?: NonNullable<NavigationLocation["panel"]>;
   momentScrollY?: number;
 }
 
@@ -78,8 +86,16 @@ function locationSnapshot(
       ? (state as MomentHistoryState)
       : null;
   const overlay = history?.momentOverlayFrom;
+  const panel = history?.momentPanel;
   return {
     ...currentLocation(),
+    panel:
+      includeOverlay &&
+      typeof panel?.key === "string" &&
+      typeof panel.from?.pathname === "string" &&
+      typeof panel.from.search === "string"
+        ? panel
+        : null,
     overlayFrom:
       includeOverlay &&
       typeof overlay?.pathname === "string" &&
@@ -141,6 +157,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       href: string,
       overlayFrom: LocationSnapshot | null = null,
       preserveScroll = false,
+      panel: NavigationLocation["panel"] = null,
     ) => {
       const activeFocusKey =
         document.activeElement instanceof HTMLElement
@@ -161,6 +178,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
           momentFresh: !preserveScroll,
           momentInternal: true,
           momentOverlayFrom: overlayFrom ?? undefined,
+          momentPanel: panel ?? undefined,
           momentScrollY: preserveScroll ? window.scrollY : 0,
         },
         "",
@@ -215,6 +233,26 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     },
     [canLeave, commitNavigation],
   );
+
+  const openPanel = useCallback(
+    (href: string, key: string) => {
+      const current = locationSnapshot(window.history.state);
+      const from = current.panel?.from ?? {
+        pathname: current.pathname,
+        search: current.search,
+        overlayFrom: current.overlayFrom,
+      };
+      commitNavigation(href, current.overlayFrom, true, { key, from });
+    },
+    [commitNavigation],
+  );
+
+  const closePanel = useCallback((key: string) => {
+    const panel = locationSnapshot(window.history.state).panel;
+    if (panel?.key !== key) return;
+    suppressNextPopGuard.current = true;
+    window.history.back();
+  }, []);
 
   const replaceTimelineProgress = useCallback(
     (cursor: string, name: ProgressName = "loaded_through") => {
@@ -272,7 +310,15 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    let previous = locationSnapshot(window.history.state);
     const onPopState = (event: PopStateEvent) => {
+      const next = locationSnapshot(event.state);
+      const sameSurface = (a: NavigationLocation, b: NavigationLocation) =>
+        a.panel?.from.pathname === b.pathname &&
+        a.panel.from.search === b.search;
+      const panelTransition =
+        sameSurface(previous, next) || sameSurface(next, previous);
+      previous = next;
       if (suppressNextPopGuard.current) {
         suppressNextPopGuard.current = false;
         setLocation(locationSnapshot(event.state));
@@ -280,7 +326,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
         return;
       }
       const resume = () => window.history.back();
-      if (!canLeave(resume)) {
+      if (!panelTransition && !canLeave(resume)) {
         suppressNextPopGuard.current = true;
         window.history.go(1);
         return;
@@ -290,7 +336,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [canLeave]);
+  }, [canLeave, location]);
 
   useEffect(() => {
     const previousScrollRestoration = window.history.scrollRestoration;
@@ -329,6 +375,8 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       navigate,
       replace,
       navigateOverlay,
+      openPanel,
+      closePanel,
       goBack,
       replaceTimelineProgress,
       restoreCurrentEntry,
@@ -339,6 +387,8 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       navigate,
       replace,
       navigateOverlay,
+      openPanel,
+      closePanel,
       goBack,
       replaceTimelineProgress,
       restoreCurrentEntry,
@@ -358,6 +408,10 @@ export function useNavigation(): NavigationContextValue {
     throw new Error("useNavigation must be used within NavigationProvider");
   }
   return value;
+}
+
+export function useOptionalNavigation(): NavigationContextValue | null {
+  return useContext(NavigationContext);
 }
 
 export function InternalLink({

@@ -15,20 +15,18 @@ import {
   useReducedMotion,
 } from "motion/react";
 
-import { Dialog } from "@base-ui/react/dialog";
-
 import { Icon } from "../../components/icons";
-import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { mediaPosterUrl } from "../../api/mediaUrls";
 import type { ComposerMediaItem } from "./mediaState";
 import {
   MAX_MEDIA_COUNT,
-  MAX_ALT_CODE_POINTS,
   isVideoMimeType,
   selectMediaFiles,
 } from "./mediaState";
 import { MediaLightbox, type MediaLightboxItem } from "./MediaLightbox";
 import styles from "./Media.module.css";
+import { canCropMedia } from "./mediaCrop";
+import { MediaDescriptionEditor } from "./MediaDescriptionEditor";
 
 const MEDIA_SPRING = {
   type: "spring" as const,
@@ -115,6 +113,7 @@ export function MediaComposer({
   onRemove,
   onRetry,
   footerAction,
+  beforeToolbar,
   toolbarAction,
   compact = false,
   divider = false,
@@ -133,6 +132,7 @@ export function MediaComposer({
   onRemove: (key: string) => void;
   onRetry: (key: string) => void;
   footerAction?: ReactNode;
+  beforeToolbar?: ReactNode;
   toolbarAction?: ReactNode;
   compact?: boolean;
   /** Draw the rule above the toolbar even in the compact layout. */
@@ -150,17 +150,16 @@ export function MediaComposer({
     null,
   );
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [editRequest, setEditRequest] = useState<{
+    key: string;
+    version: number;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLButtonElement>(null);
   const actionRefs = useRef(new Map<string, HTMLButtonElement>());
-  // Where focus goes after the list changes under it. `remove` hands focus
-  // to a neighbouring tile; a reorder keeps it on the button that was
-  // pressed, because reordering happens inside the description sheet and
-  // its focus trap would immediately pull focus back out of a tile behind
-  // it.
-  const focusAfterChange = useRef<
-    { key: string | null; action: "remove" | "up" | "down" } | undefined
-  >(undefined);
+  const focusAfterChange = useRef<{ key: string | null } | undefined>(
+    undefined,
+  );
   const previousUploadStates = useRef(
     new Map(items.map((item) => [item.key, item.state])),
   );
@@ -169,22 +168,6 @@ export function MediaComposer({
     () => new Set(),
   );
   const containsVideo = items.some((item) => isVideoMimeType(item.mimeType));
-  const undescribed = items.filter((item) => item.altMode === "missing").length;
-  // The description sheet shows one picture at a time. It holds the item's key rather
-  // than its index so that reordering carries the page with the picture the
-  // writer is looking at, and so that a removal cannot silently swap in the
-  // neighbour underneath the open sheet.
-  const [describeKey, setDescribeKey] = useState<string | null>(null);
-  const describePopupRef = useRef<HTMLDivElement>(null);
-  const describeTextRef = useRef<HTMLTextAreaElement>(null);
-  const describeIndex =
-    describeKey === null
-      ? -1
-      : items.findIndex((item) => item.key === describeKey);
-  const describing = describeIndex >= 0;
-  const described = describing ? items[describeIndex] : null;
-  useDocumentScrollLock(describing);
-
   const selectedItemIndex = items.findIndex((item) => item.key === selectedKey);
   const selectedIndex =
     selectedKey === null || selectedItemIndex < 0 ? null : selectedItemIndex;
@@ -231,30 +214,12 @@ export function MediaComposer({
   }, [items, selectedKey]);
 
   useEffect(() => {
-    if (describeKey !== null && describeIndex < 0) setDescribeKey(null);
-  }, [describeIndex, describeKey]);
-
-  useEffect(() => {
     if (focusAfterChange.current === undefined) return;
     const target = focusAfterChange.current;
     focusAfterChange.current = undefined;
     window.requestAnimationFrame(() => {
-      if (!target.key) {
-        pickerRef.current?.focus();
-        return;
-      }
-      if (target.action === "remove") {
-        actionRefs.current.get(`${target.key}:remove`)?.focus();
-        return;
-      }
-      // The pressed button, unless the move just reached an end and
-      // disabled it -- then its opposite, which is where the next press
-      // would go anyway.
-      const pressed = actionRefs.current.get(`${target.key}:${target.action}`);
-      const opposite = actionRefs.current.get(
-        `${target.key}:${target.action === "up" ? "down" : "up"}`,
-      );
-      (pressed && !pressed.disabled ? pressed : opposite)?.focus();
+      if (!target.key) pickerRef.current?.focus();
+      else actionRefs.current.get(`${target.key}:remove`)?.focus();
     });
   }, [items]);
 
@@ -322,23 +287,11 @@ export function MediaComposer({
     event.currentTarget.value = "";
   };
 
-  const move = (from: number, to: number) => {
-    const next = [...items];
-    const [item] = next.splice(from, 1);
-    next.splice(to, 0, item);
-    focusAfterChange.current = {
-      key: item.key,
-      action: to < from ? "up" : "down",
-    };
-    onChange(next, `已将第 ${from + 1} 张移到第 ${to + 1} 张。`);
-  };
-
   const remove = (index: number) => {
     const item = items[index];
     if (!item) return;
     focusAfterChange.current = {
       key: items[index + 1]?.key ?? items[index - 1]?.key ?? null,
-      action: "remove",
     };
     if (selectedKey === item.key) setSelectedKey(null);
     onRemove(item.key);
@@ -455,6 +408,24 @@ export function MediaComposer({
                         </span>
                       )}
                     </button>
+                    {canCropMedia(item) ? (
+                      <button
+                        type="button"
+                        aria-label={`Edit image ${index + 1}`}
+                        className={styles.editorEdit}
+                        disabled={
+                          disabled || !present || !editorPreviewAvailable
+                        }
+                        onClick={() =>
+                          setEditRequest((current) => ({
+                            key: item.key,
+                            version: (current?.version ?? 0) + 1,
+                          }))
+                        }
+                      >
+                        Edit
+                      </button>
+                    ) : null}
                     <button
                       aria-label={
                         isVideo
@@ -561,340 +532,14 @@ export function MediaComposer({
         </div>
       ) : null}
       {items.length > 0 ? (
-        <Dialog.Root
-          onOpenChange={(open) => {
-            if (!open) {
-              setDescribeKey(null);
-              return;
-            }
-            // Open on the first picture that still needs describing: the
-            // action says how many are missing, so pressing it should land
-            // on one of them rather than on page one every time.
-            const first =
-              items.find((item) => item.altMode === "missing") ?? items[0];
-            setDescribeKey(first?.key ?? null);
-          }}
-          open={describing}
-        >
-          {/* One quiet description action under the picture: no rules,
-              no box, no disclosure triangle.
-              This used to be a <details> whose `border-block` drew a hairline
-              above *and* below itself, with the toolbar's own rule 8px under
-              that -- three lines stacked in the gap between the picture and
-              the toolbar. The count rides on the same line, and only while
-              something still needs describing. */}
-          <Dialog.Trigger className={styles.mediaDescribe} disabled={disabled}>
-            <Icon name="description" />
-            <span>添加描述</span>
-            {undescribed > 0 ? <small>{undescribed} 项未描述</small> : null}
-          </Dialog.Trigger>
-          <Dialog.Portal>
-            <Dialog.Backdrop className={styles.describeBackdrop} />
-            <Dialog.Viewport className={styles.describeViewport}>
-              {/* One picture per page, paged from the header. The sheet used
-                  to stack all nine items as a list of
-                  radio groups and textareas, which asked the writer to hold
-                  the running order in their head and buried the picture each
-                  description was about. */}
-              <Dialog.Popup
-                className={styles.describePopup}
-                // The sheet itself, not the first control in it: Base UI
-                // focuses the leading tabbable by default, which put a ring
-                // on the back arrow every time the sheet opened under the
-                // mouse. A description already being written keeps the
-                // caret instead.
-                initialFocus={() =>
-                  describeTextRef.current ?? describePopupRef.current
-                }
-                ref={describePopupRef}
-              >
-                <header className={styles.describeHeader}>
-                  <Dialog.Close
-                    aria-label="返回"
-                    className={styles.describeBack}
-                  >
-                    <Icon name="back" />
-                  </Dialog.Close>
-                  <Dialog.Title>
-                    编辑{containsVideo ? "媒体" : "图片"}描述
-                  </Dialog.Title>
-                  {items.length > 1 ? (
-                    <div className={styles.describePager}>
-                      <button
-                        aria-label={containsVideo ? "上一项媒体" : "上一张图片"}
-                        disabled={describeIndex <= 0}
-                        onClick={() =>
-                          setDescribeKey(items[describeIndex - 1]?.key ?? null)
-                        }
-                        type="button"
-                      >
-                        <Icon name="chevron-left" />
-                      </button>
-                      <span aria-live="polite">
-                        {describeIndex + 1} / {items.length}
-                      </span>
-                      <button
-                        aria-label={containsVideo ? "下一项媒体" : "下一张图片"}
-                        disabled={describeIndex >= items.length - 1}
-                        onClick={() =>
-                          setDescribeKey(items[describeIndex + 1]?.key ?? null)
-                        }
-                        type="button"
-                      >
-                        <Icon name="chevron-right" />
-                      </button>
-                    </div>
-                  ) : null}
-                  <Dialog.Close className={styles.describeDone}>
-                    完成
-                  </Dialog.Close>
-                </header>
-                {described
-                  ? (() => {
-                      const item = described;
-                      const index = describeIndex;
-                      const isVideo = isVideoMimeType(item.mimeType);
-                      const itemLabel = isVideo
-                        ? `第 ${index + 1} 项视频`
-                        : `第 ${index + 1} 张图片`;
-                      // Too long is a state the writer made; empty is one
-                      // they have not filled yet. Flagging the box red the
-                      // instant it appears calls their own next move a
-                      // mistake -- publishing still refuses an empty one,
-                      // with a sentence that says what to do.
-                      const providedInvalid =
-                        item.altMode === "provided" &&
-                        Array.from(item.altText).length > MAX_ALT_CODE_POINTS;
-                      const stageUrl = isVideo
-                        ? (item.processingPosterUrl ??
-                          (item.mediaId ? mediaPosterUrl(item.mediaId) : null))
-                        : item.localPreviewUrl || item.previewUrl || null;
-                      return (
-                        <>
-                          <div className={styles.describeBody}>
-                            <div className={styles.describeStage}>
-                              {stageUrl ? (
-                                <img alt="" decoding="async" src={stageUrl} />
-                              ) : (
-                                <span className={styles.describeStagePending}>
-                                  {isVideo ? "视频封面处理中" : "预览处理中"}
-                                </span>
-                              )}
-                            </div>
-                            <p className={styles.describeCaption}>
-                              <strong>{itemLabel}</strong>
-                              <span>
-                                {item.state === "queued" ? "等待上传" : null}
-                                {item.state === "uploading"
-                                  ? `处理中 ${item.progress}%`
-                                  : null}
-                                {item.state === "ready" ? "已就绪" : null}
-                                {item.state === "failed" ? "上传失败" : null}
-                              </span>
-                            </p>
-                            <fieldset
-                              className={styles.altFieldset}
-                              disabled={disabled}
-                            >
-                              <legend>{itemLabel}描述（可选）</legend>
-                              <div className={styles.altModes}>
-                                {(
-                                  [
-                                    ["missing", "暂未描述"],
-                                    ["decorative", "纯装饰"],
-                                    ["provided", "填写描述"],
-                                  ] as const
-                                ).map(([mode, label]) => (
-                                  <label
-                                    data-checked={
-                                      item.altMode === mode ? "" : undefined
-                                    }
-                                    key={mode}
-                                  >
-                                    <input
-                                      checked={item.altMode === mode}
-                                      name={`${item.key}-alt-mode`}
-                                      onChange={() => {
-                                        const next = items.map((candidate) =>
-                                          candidate.key === item.key
-                                            ? {
-                                                ...candidate,
-                                                altMode: mode,
-                                                error: null,
-                                              }
-                                            : candidate,
-                                        );
-                                        onChange(
-                                          next,
-                                          `${itemLabel}已设为${label}。`,
-                                        );
-                                      }}
-                                      type="radio"
-                                    />
-                                    {label}
-                                  </label>
-                                ))}
-                              </div>
-                              {item.altMode === "provided" ? (
-                                <label className={styles.altInput}>
-                                  <span>
-                                    {isVideo ? "描述视频内容" : "描述图片内容"}
-                                  </span>
-                                  <textarea
-                                    aria-invalid={providedInvalid}
-                                    // Choosing 填写描述 is a request to write
-                                    // one, so the caret goes where the
-                                    // writing happens. Mounting is the only
-                                    // moment this fires, so paging between
-                                    // pictures never steals the focus.
-                                    autoFocus
-                                    onChange={(event) =>
-                                      onChange(
-                                        items.map((candidate) =>
-                                          candidate.key === item.key
-                                            ? {
-                                                ...candidate,
-                                                altText: event.target.value,
-                                                error: null,
-                                              }
-                                            : candidate,
-                                        ),
-                                        `已更新${itemLabel}描述。`,
-                                      )
-                                    }
-                                    placeholder={
-                                      isVideo
-                                        ? "简要描述视频内容"
-                                        : "简要描述图片内容"
-                                    }
-                                    ref={describeTextRef}
-                                    rows={3}
-                                    value={item.altText}
-                                  />
-                                  <small>
-                                    {Array.from(item.altText).length} /{" "}
-                                    {MAX_ALT_CODE_POINTS}
-                                  </small>
-                                </label>
-                              ) : (
-                                <p className={styles.altHint}>
-                                  {item.altMode === "decorative"
-                                    ? "读屏软件会跳过这一项。"
-                                    : "描述会读给使用读屏软件的人听，也会在加载失败时顶替这张图。"}
-                                </p>
-                              )}
-                            </fieldset>
-                          </div>
-                          {items.length > 1 ? (
-                            <footer className={styles.describeFooter}>
-                              {/* The running order, and a way to jump straight
-                                to a picture instead of paging past the ones
-                                in between. A dot marks the ones still
-                                without a description. */}
-                              <ol className={styles.describeRail}>
-                                {items.map((candidate, candidateIndex) => {
-                                  const thumbnail = isVideoMimeType(
-                                    candidate.mimeType,
-                                  )
-                                    ? (candidate.processingPosterUrl ??
-                                      (candidate.mediaId
-                                        ? mediaPosterUrl(candidate.mediaId)
-                                        : null))
-                                    : candidate.localPreviewUrl ||
-                                      candidate.previewUrl ||
-                                      null;
-                                  const label = isVideoMimeType(
-                                    candidate.mimeType,
-                                  )
-                                    ? `第 ${candidateIndex + 1} 项视频`
-                                    : `第 ${candidateIndex + 1} 张图片`;
-                                  return (
-                                    <li key={candidate.key}>
-                                      <button
-                                        aria-current={
-                                          candidate.key === item.key
-                                            ? "true"
-                                            : undefined
-                                        }
-                                        aria-label={label}
-                                        data-undescribed={
-                                          candidate.altMode === "missing"
-                                            ? ""
-                                            : undefined
-                                        }
-                                        onClick={() =>
-                                          setDescribeKey(candidate.key)
-                                        }
-                                        type="button"
-                                      >
-                                        {thumbnail ? (
-                                          <img
-                                            alt=""
-                                            decoding="async"
-                                            loading="lazy"
-                                            src={thumbnail}
-                                          />
-                                        ) : (
-                                          <span aria-hidden="true">
-                                            {candidateIndex + 1}
-                                          </span>
-                                        )}
-                                      </button>
-                                    </li>
-                                  );
-                                })}
-                              </ol>
-                              <div className={styles.editorActions}>
-                                <button
-                                  data-media-action="up"
-                                  data-media-key={item.key}
-                                  disabled={disabled || index === 0}
-                                  onClick={() => move(index, index - 1)}
-                                  ref={(node) => {
-                                    const refKey = `${item.key}:up`;
-                                    if (node)
-                                      actionRefs.current.set(refKey, node);
-                                    else actionRefs.current.delete(refKey);
-                                  }}
-                                  type="button"
-                                >
-                                  上移
-                                  <span className={styles.srOnly}>
-                                    {itemLabel}
-                                  </span>
-                                </button>
-                                <button
-                                  data-media-action="down"
-                                  data-media-key={item.key}
-                                  disabled={
-                                    disabled || index === items.length - 1
-                                  }
-                                  onClick={() => move(index, index + 1)}
-                                  ref={(node) => {
-                                    const refKey = `${item.key}:down`;
-                                    if (node)
-                                      actionRefs.current.set(refKey, node);
-                                    else actionRefs.current.delete(refKey);
-                                  }}
-                                  type="button"
-                                >
-                                  下移
-                                  <span className={styles.srOnly}>
-                                    {itemLabel}
-                                  </span>
-                                </button>
-                              </div>
-                            </footer>
-                          ) : null}
-                        </>
-                      );
-                    })()
-                  : null}
-              </Dialog.Popup>
-            </Dialog.Viewport>
-          </Dialog.Portal>
-        </Dialog.Root>
+        <MediaDescriptionEditor
+          editRequest={editRequest}
+          items={items}
+          disabled={disabled}
+          onChange={onChange}
+        />
       ) : null}
+      {beforeToolbar}
       <div className={styles.mediaControls}>
         <div className={styles.mediaToolbar}>
           <button

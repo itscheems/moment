@@ -24,6 +24,7 @@ export interface AppRoute {
 // for, so it answers at the top level. "compose" is a reserved handle
 // (internal/domain/user.go), so this cannot shadow a profile.
 export const COMPOSE_PATH = "/compose";
+export const COMPOSE_MEDIA_PATH = "/compose/post/media";
 export const COMPOSE_DRAFTS_PATH = "/compose/drafts";
 // Writing an article is composing, so it lives under the same top-level
 // address rather than under /owner: what a page is for decides where it sits,
@@ -89,7 +90,11 @@ function matchesPath(pathname: string, path: string): boolean {
 }
 
 export function isComposePath(pathname: string): boolean {
-  return matchesPath(pathname, COMPOSE_PATH) || isComposeDraftsPath(pathname);
+  return (
+    matchesPath(pathname, COMPOSE_PATH) ||
+    matchesPath(pathname, COMPOSE_MEDIA_PATH) ||
+    isComposeDraftsPath(pathname)
+  );
 }
 
 const ARTICLE_DRAFT_PATTERN =
