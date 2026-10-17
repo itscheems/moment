@@ -41,6 +41,12 @@ vi.mock("react-easy-crop", async (importOriginal) => {
         >
           Decoded
         </button>
+        <button onClick={() => props.onCropChange({ x: 20, y: 10 })}>
+          Move image
+        </button>
+        <button onClick={() => props.onCropChange({ x: 0, y: 0 })}>
+          Hidden layout position
+        </button>
         <button
           onClick={() => {
             props.onCropChange({ x: NaN, y: Infinity });
@@ -75,6 +81,21 @@ afterEach(() => {
 });
 const state = () => JSON.parse(screen.getByTestId("engine").textContent!);
 describe("cropper loading boundary", () => {
+  it("ignores hidden-panel measurements without losing its selected position", () => {
+    const props = { source: "/image.png", disabled: false, onChange: vi.fn() };
+    const { rerender } = render(<MediaCropPanel {...props} active />);
+    fireEvent.click(screen.getByRole("button", { name: "Decoded" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move image" }));
+    const before = state();
+    rerender(<MediaCropPanel {...props} active={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Before decode" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Hidden layout position" }),
+    );
+    expect(state()).toEqual(before);
+    rerender(<MediaCropPanel {...props} active />);
+    expect(state()).toEqual(before);
+  });
   it("ignores measurements before decoding and accepts the decoded image ratio", () => {
     render(
       <MediaCropPanel

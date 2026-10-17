@@ -381,6 +381,13 @@
   min-block-size: 0;
   object-fit: contain;
 }
+
+.cropPreview {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
+}
 .pending {
   color: var(--text-secondary);
   font-size: 13px;

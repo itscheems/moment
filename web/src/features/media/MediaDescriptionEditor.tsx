@@ -40,30 +40,35 @@ function CropPreview({
   selection: MediaCropSelection;
   alt: string;
 }) {
-  const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState(false);
-  useEffect(() => {
-    const controller = new AbortController();
-    let preview: string | null = null;
-    void createMediaCrop(source, selection.area, controller.signal)
-      .then((file) => {
-        preview = URL.createObjectURL(file);
-        setUrl(preview);
-      })
-      .catch((e) => {
-        if (e.name !== "AbortError") setError(true);
-      });
-    return () => {
-      controller.abort();
-      if (preview) URL.revokeObjectURL(preview);
-    };
-  }, [source.url, source.name, source.mimeType, selection.area]);
-  return url ? (
-    <img alt={alt} src={url} />
-  ) : (
-    <span className={styles.pending}>
-      {error ? "Unable to preview this crop." : "Preparing media…"}
-    </span>
+  const clipId = useId();
+  const [failedSource, setFailedSource] = useState<string | null>(null);
+  const { area, percentages } = selection;
+  if (failedSource === source.url)
+    return <span className={styles.pending}>Unable to preview this crop.</span>;
+  // Preview the existing decoded source. File encoding belongs to Save, not
+  // to tab changes or paging through images.
+  return (
+    <svg
+      aria-label={alt}
+      className={styles.cropPreview}
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      viewBox={`${area.x} ${area.y} ${area.width} ${area.height}`}
+    >
+      <defs>
+        <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
+          <rect x={area.x} y={area.y} width={area.width} height={area.height} />
+        </clipPath>
+      </defs>
+      <image
+        clipPath={`url(#${clipId})`}
+        height={(area.height * 100) / percentages.height}
+        href={source.url}
+        onError={() => setFailedSource(source.url)}
+        preserveAspectRatio="none"
+        width={(area.width * 100) / percentages.width}
+      />
+    </svg>
   );
 }
 
@@ -334,9 +339,10 @@ export function MediaDescriptionEditor({
                   ALT
                 </Tabs.Tab>
               </Tabs.List>
-              <Tabs.Panel value="crop" className={styles.tabPanel}>
+              <Tabs.Panel value="crop" className={styles.tabPanel} keepMounted>
                 {item && cropAllowed ? (
                   <MediaCropPanel
+                    active={currentTab === "crop"}
                     key={item.key}
                     source={sourceOf(item).url}
                     initial={crops[item.key] ?? item.cropSelection}
@@ -350,7 +356,7 @@ export function MediaDescriptionEditor({
                   />
                 ) : null}
               </Tabs.Panel>
-              <Tabs.Panel value="alt" className={styles.tabPanel}>
+              <Tabs.Panel value="alt" className={styles.tabPanel} keepMounted>
                 <div className={styles.stage}>
                   {item && crops[item.key] ? (
                     <CropPreview

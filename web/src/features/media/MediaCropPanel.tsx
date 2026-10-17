@@ -11,11 +11,13 @@ export function MediaCropPanel({
   source,
   initial,
   disabled,
+  active = true,
   onChange,
 }: {
   source: string;
   initial?: MediaCropSelection;
   disabled: boolean;
+  active?: boolean;
   onChange: (selection: MediaCropSelection) => void;
 }) {
   const [stage, setStage] = useState<HTMLDivElement | null>(null);
@@ -58,6 +60,10 @@ export function MediaCropPanel({
     let previousHeight = 0;
     const observer = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect;
+      if (width <= 0 || height <= 0) {
+        interacted.current = false;
+        return;
+      }
       if (width === previousWidth && height === previousHeight) return;
       previousWidth = width;
       previousHeight = height;
@@ -86,7 +92,7 @@ export function MediaCropPanel({
     ? Math.max(cropSize.width / media.width, cropSize.height / media.height)
     : 1;
   useEffect(() => {
-    if (!media || !percentages.current) return;
+    if (!active || !media || !percentages.current) return;
     const restored = getInitialCropFromCroppedAreaPercentages(
       percentages.current,
       media,
@@ -97,7 +103,7 @@ export function MediaCropPanel({
     );
     setCrop(restored.crop);
     setZoom(Math.max(0, Math.min(2, Math.log2(restored.zoom / minZoom))));
-  }, [media, width, ratio, minZoom]);
+  }, [active, media, width, ratio, minZoom]);
   const choose = (value: MediaCropAspect) => {
     interacted.current = true;
     percentages.current = undefined;
@@ -132,13 +138,13 @@ export function MediaCropPanel({
             mediaProps={{ onError: () => setError(true) }}
             setMediaSize={acceptMediaSize}
             onCropChange={(next) => {
-              if (Number.isFinite(next.x) && Number.isFinite(next.y))
+              if (active && Number.isFinite(next.x) && Number.isFinite(next.y))
                 setCrop((current) =>
                   current.x === next.x && current.y === next.y ? current : next,
                 );
             }}
             onZoomChange={(value) => {
-              if (Number.isFinite(value) && value > 0)
+              if (active && Number.isFinite(value) && value > 0)
                 setZoom(Math.max(0, Math.min(2, Math.log2(value / minZoom))));
             }}
             onInteractionStart={() => {
@@ -148,6 +154,7 @@ export function MediaCropPanel({
             onWheelRequest={() => !disabled}
             onCropComplete={(area, pixels) => {
               if (
+                active &&
                 interacted.current &&
                 [
                   area.x,
@@ -192,6 +199,7 @@ export function MediaCropPanel({
         <div className={styles.zoom}>
           <Icon name="zoom-out" />
           <Slider.Root
+            key={active ? "visible" : "hidden"}
             className={styles.zoomSlider}
             value={zoom}
             min={0}
