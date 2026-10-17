@@ -36,6 +36,7 @@
   /* A cover with unusual proportions still must not take the whole screen. */
   max-block-size: 26rem;
   object-fit: cover;
+  aspect-ratio: 5 / 2;
 }
 
 .coverBadge {
@@ -182,7 +183,7 @@
   block-size: auto;
   border-radius: 0.75rem;
   object-fit: cover;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 5 / 2;
   margin-block-end: 0.25rem;
 }
 

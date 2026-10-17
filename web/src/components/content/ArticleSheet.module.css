@@ -1,5 +1,7 @@
 .sheet {
   --article-inset: 3rem;
+  --article-title-color: #0f1419;
+  --article-title-placeholder: #757575;
   inline-size: min(100%, 44.25rem);
   min-inline-size: 0;
   margin-inline: auto;
@@ -19,24 +21,28 @@
   padding: 0;
   overflow: hidden;
   resize: none;
-  color: inherit;
+  color: var(--article-title-color);
   background: transparent;
-  font-family: var(--font-body);
-  font-size: 2.25rem;
-  font-weight: 700;
-  line-height: 1.22;
-  letter-spacing: -0.025em;
+  font-family: var(--font-timeline);
+  font-size: 2.125rem;
+  font-weight: 800;
+  line-height: 2.75rem;
+  letter-spacing: normal;
   overflow-wrap: anywhere;
 }
 .heading textarea:focus {
   outline: none;
 }
 .heading textarea::placeholder {
-  color: var(--text-tertiary);
+  color: var(--article-title-placeholder);
+}
+:root:is([data-theme="dim"], [data-theme="lights-out"]) .sheet {
+  --article-title-color: var(--tt-theme-text);
+  --article-title-placeholder: var(--text-tertiary);
 }
 .byline {
-  min-block-size: 2.5rem;
-  margin-block: 1.25rem 2rem;
+  min-block-size: 1.5rem;
+  margin-block: 2rem;
 }
 .body {
   min-inline-size: 0;
@@ -77,7 +83,7 @@
 .cover {
   position: relative;
   inline-size: calc(100% + 2 * var(--article-inset));
-  margin: -3rem calc(-1 * var(--article-inset)) 2.5rem;
+  margin: -3rem calc(-1 * var(--article-inset)) 3rem;
   overflow: hidden;
   background: var(--surface-muted);
 }
@@ -85,7 +91,7 @@
   display: block;
   inline-size: 100%;
   block-size: auto;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: 5 / 2;
   object-fit: cover;
 }
 @media (max-width: 719px) {
@@ -95,9 +101,6 @@
   .sheet {
     --article-inset: 2rem;
     padding-block-start: 2rem;
-  }
-  .heading :where(h1, textarea) {
-    font-size: 1.875rem;
   }
   .cover {
     margin-block-start: -2rem;

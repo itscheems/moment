@@ -34,26 +34,35 @@ export function siteDisplayName(site: IdentityFace): string {
 export function SiteAvatar({
   site,
   eager = false,
+  size,
 }: {
   site: IdentityFace;
   eager?: boolean;
+  size?: number;
 }) {
   const title = siteDisplayName(site);
+  const dimensions =
+    size === undefined ? undefined : { width: size, height: size };
   if (site.avatarMediaId) {
     return (
       <img
         alt=""
         className={styles.avatar}
         decoding="async"
-        height="44"
+        height={size ?? 44}
         loading={eager ? "eager" : "lazy"}
         src={mediaPreviewUrl(site.avatarMediaId)}
-        width="44"
+        width={size ?? 44}
+        style={dimensions}
       />
     );
   }
   return (
-    <span aria-hidden="true" className={styles.avatarFallback}>
+    <span
+      aria-hidden="true"
+      className={styles.avatarFallback}
+      style={dimensions}
+    >
       {Array.from(title)[0]?.toLocaleUpperCase() ?? "M"}
     </span>
   );
