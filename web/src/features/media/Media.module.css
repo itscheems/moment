@@ -40,6 +40,7 @@
    fades the rule in and eases the toolbar down by the same padding the page
    composer keeps permanently. */
 .compactComposer .mediaControls {
+  position: relative;
   min-block-size: var(--target-size);
   border-block-start: 1px solid transparent;
   margin-block-start: -1px;
@@ -50,14 +51,28 @@
     padding-block-start var(--motion-dialog) var(--ease-out);
 }
 
+.compactComposer .mediaControls::before {
+  position: absolute;
+  inset-block-start: -1px;
+  inset-inline: -18px 18px;
+  block-size: 1px;
+  background: transparent;
+  content: "";
+  pointer-events: none;
+  transition: background-color var(--motion-dialog) var(--ease-out);
+}
+
 .compactComposer .mediaToolbar {
   margin-inline-start: calc(0px - var(--space-2));
 }
 
 .compactComposer.dividedComposer .mediaControls {
-  border-block-start-color: var(--border-subtle);
   margin-block-start: 0;
-  padding-block-start: var(--space-2);
+  padding-block-start: var(--composer-toolbar-padding, var(--space-2));
+}
+
+.compactComposer.dividedComposer .mediaControls::before {
+  background: var(--border-subtle);
 }
 
 .mediaToolbar {
@@ -103,7 +118,7 @@
   justify-content: center;
   border-radius: 50%;
   padding: 0;
-  color: #829aab;
+  color: var(--composer-tool-color, #829aab);
   background: transparent;
   transition:
     transform 0.15s ease,
@@ -114,24 +129,24 @@
 
 .mediaToolbar button:focus-visible,
 .mediaToolbar button[data-popup-open] {
-  color: #829aab;
-  background: rgb(15 20 25 / 10%);
-  transform: scale(1.12);
+  color: var(--composer-tool-color, #829aab);
+  background: var(--composer-tool-hover, rgb(15 20 25 / 10%));
+  transform: var(--composer-tool-transform, scale(1.12));
 }
 
 @media (hover: hover) {
   .mediaToolbar button:hover:not(:disabled) {
-    color: #829aab;
-    background: rgb(15 20 25 / 10%);
-    transform: scale(1.12);
+    color: var(--composer-tool-color, #829aab);
+    background: var(--composer-tool-hover, rgb(15 20 25 / 10%));
+    transform: var(--composer-tool-transform, scale(1.12));
   }
 }
 
 .mediaToolbar button:active:not(:disabled) {
-  color: #829aab;
-  background: rgb(15 20 25 / 7%);
-  filter: brightness(0.7);
-  transform: scale(1.12);
+  color: var(--composer-tool-color, #829aab);
+  background: var(--composer-tool-pressed, rgb(15 20 25 / 7%));
+  filter: var(--composer-tool-filter, brightness(0.7));
+  transform: var(--composer-tool-transform, scale(1.12));
 }
 
 .editorRemove:active:not(:disabled),

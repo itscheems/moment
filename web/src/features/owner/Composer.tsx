@@ -34,6 +34,7 @@ import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import {
   altValue,
   applyUpload,
+  isVideoMimeType,
   itemsFromPost,
   mediaInput,
   mediaValidation,
@@ -46,6 +47,7 @@ import {
   type ComposerMediaItem,
 } from "../media/mediaState";
 import { AudienceSelector, audienceLabel } from "./AudienceSelector";
+import { ReplyAudience } from "./ReplyAudience";
 import { ComposerLinkCard } from "./ComposerLinkCard";
 import { useLinkPreview } from "./useLinkPreview";
 import { LocationPicker, SelectedLocationChip } from "./LocationPicker";
@@ -202,13 +204,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     // and the toolbar rule appear when the owner steps in and go away again
     // when they step out with nothing written.
     //
-    // Focus is the signal, and the audience card is the one thing that can
+    // Focus is the signal, and the settings cards are the things that can
     // hold the composer open without it: the card lives in a portal, and it
     // takes focus with it while it is up. Nothing else needs a hand, because
     // a press inside the composer never moves focus in the first place (see
     // the section's mousedown handler).
     const [focusWithin, setFocusWithin] = useState(false);
     const [audienceOpen, setAudienceOpen] = useState(false);
+    const openSettingsRef = useRef(
+      new Set<"audience" | "replies" | "location">(),
+    );
     const audienceCloseFrameRef = useRef<number | null>(null);
     const [dirty, setDirty] = useState(false);
     const [pending, setPending] = useState(false);
@@ -312,6 +317,38 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       location !== null ||
       quotedPost !== null ||
       linkPreview.card !== null;
+
+    const onSettingsOpenChange = (
+      setting: "audience" | "replies" | "location",
+      open: boolean,
+    ) => {
+      if (audienceCloseFrameRef.current !== null) {
+        window.cancelAnimationFrame(audienceCloseFrameRef.current);
+        audienceCloseFrameRef.current = null;
+      }
+      if (open) {
+        openSettingsRef.current.add(setting);
+        setAudienceOpen(true);
+      }
+    };
+
+    const onSettingsOpenChangeComplete = (
+      setting: "audience" | "replies" | "location",
+      open: boolean,
+    ) => {
+      if (open) return;
+      openSettingsRef.current.delete(setting);
+      if (openSettingsRef.current.size > 0) return;
+      // Base UI returns focus when the exit transition finishes. Keep the
+      // empty editor expanded until then so its trigger never becomes inert
+      // while the card is still returning focus.
+      audienceCloseFrameRef.current = window.requestAnimationFrame(() => {
+        audienceCloseFrameRef.current = null;
+        if (mountedRef.current && openSettingsRef.current.size === 0) {
+          setAudienceOpen(false);
+        }
+      });
+    };
 
     useEffect(() => {
       if (!quotedPostId || variant === "edit") {
@@ -585,22 +622,24 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
             );
           },
           controller.signal,
-          (processingPosterUrl) => {
-            if (
-              !mountedRef.current ||
-              mediaUploadsRef.current.get(key) !== controller
-            ) {
-              URL.revokeObjectURL(processingPosterUrl);
-              return;
-            }
-            replaceMedia(
-              mediaItemsRef.current.map((item) =>
-                item.key === key && item.state === "uploading"
-                  ? { ...item, processingPosterUrl }
-                  : item,
-              ),
-            );
-          },
+          isVideoMimeType(current.mimeType)
+            ? (processingPosterUrl) => {
+                if (
+                  !mountedRef.current ||
+                  mediaUploadsRef.current.get(key) !== controller
+                ) {
+                  URL.revokeObjectURL(processingPosterUrl);
+                  return;
+                }
+                replaceMedia(
+                  mediaItemsRef.current.map((item) =>
+                    item.key === key && item.state === "uploading"
+                      ? { ...item, processingPosterUrl }
+                      : item,
+                  ),
+                );
+              }
+            : undefined,
         );
         if (
           !mountedRef.current ||
@@ -1235,27 +1274,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                       setDirty(true);
                     }
                   }}
-                  onOpenChange={(open) => {
-                    if (audienceCloseFrameRef.current !== null) {
-                      window.cancelAnimationFrame(
-                        audienceCloseFrameRef.current,
-                      );
-                      audienceCloseFrameRef.current = null;
-                    }
-                    if (open) {
-                      setAudienceOpen(true);
-                      return;
-                    }
-                    // The card hands focus back to the pill as it closes.
-                    // Letting go of the composer only on the next frame means
-                    // that hand-back has happened first, so choosing an
-                    // audience never shuts an empty composer.
-                    audienceCloseFrameRef.current =
-                      window.requestAnimationFrame(() => {
-                        audienceCloseFrameRef.current = null;
-                        if (mountedRef.current) setAudienceOpen(false);
-                      });
-                  }}
+                  onOpenChange={(open) =>
+                    onSettingsOpenChange("audience", open)
+                  }
+                  onOpenChangeComplete={(open) =>
+                    onSettingsOpenChangeComplete("audience", open)
+                  }
                   value={visibility}
                 />
               </div>
@@ -1461,8 +1485,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 无法载入要引用的 Moment，请返回后重试。
               </p>
             ) : null}
+            {variant === "inline" ? (
+              <div
+                aria-hidden={
+                  !expanded || visibility !== "everyone" ? true : undefined
+                }
+                className={`${styles.replyAudienceRow} ${expanded && visibility === "everyone" ? "" : styles.replyAudienceRowCollapsed}`}
+                inert={!expanded || visibility !== "everyone"}
+              >
+                <div>
+                  <ReplyAudience
+                    disabled={pending}
+                    onOpenChange={(open) =>
+                      onSettingsOpenChange("replies", open)
+                    }
+                    onOpenChangeComplete={(open) =>
+                      onSettingsOpenChangeComplete("replies", open)
+                    }
+                  />
+                </div>
+              </div>
+            ) : null}
             <MediaComposer
               compact={variant === "inline"}
+              className={variant === "inline" ? styles.inlineMedia : undefined}
               disabled={pending}
               divider={variant === "inline" && expanded}
               footerAction={
@@ -1488,6 +1534,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 <LocationPicker
                   api={api}
                   disabled={pending || !session}
+                  onOpenChange={(open) =>
+                    onSettingsOpenChange("location", open)
+                  }
+                  onOpenChangeComplete={(open) =>
+                    onSettingsOpenChangeComplete("location", open)
+                  }
                   onChange={(nextLocation) => {
                     allowLeaveRef.current = false;
                     setLocation(nextLocation);
