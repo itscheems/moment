@@ -544,8 +544,8 @@ function PublicApp() {
         ) : null}
         {hasTimeline ? (
           <div hidden={route.id !== "home"}>
-            {siteIdentityReady && !mobileViewport && ownerCapable ? (
-              <div className={styles.homeComposer}>
+            {siteIdentityReady && ownerCapable ? (
+              <div className={styles.homeComposer} hidden={mobileViewport}>
                 <Composer
                   active={route.id === "home"}
                   site={site}

@@ -1485,28 +1485,30 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 无法载入要引用的 Moment，请返回后重试。
               </p>
             ) : null}
-            {variant === "inline" ? (
-              <div
-                aria-hidden={
-                  !expanded || visibility !== "everyone" ? true : undefined
-                }
-                className={`${styles.replyAudienceRow} ${expanded && visibility === "everyone" ? "" : styles.replyAudienceRowCollapsed}`}
-                inert={!expanded || visibility !== "everyone"}
-              >
-                <div>
-                  <ReplyAudience
-                    disabled={pending}
-                    onOpenChange={(open) =>
-                      onSettingsOpenChange("replies", open)
-                    }
-                    onOpenChangeComplete={(open) =>
-                      onSettingsOpenChangeComplete("replies", open)
-                    }
-                  />
-                </div>
-              </div>
-            ) : null}
             <MediaComposer
+              beforeToolbar={
+                variant === "inline" ? (
+                  <div
+                    aria-hidden={
+                      !expanded || visibility !== "everyone" ? true : undefined
+                    }
+                    className={`${styles.replyAudienceRow} ${expanded && visibility === "everyone" ? "" : styles.replyAudienceRowCollapsed}`}
+                    inert={!expanded || visibility !== "everyone"}
+                  >
+                    <div>
+                      <ReplyAudience
+                        disabled={pending}
+                        onOpenChange={(open) =>
+                          onSettingsOpenChange("replies", open)
+                        }
+                        onOpenChangeComplete={(open) =>
+                          onSettingsOpenChangeComplete("replies", open)
+                        }
+                      />
+                    </div>
+                  </div>
+                ) : null
+              }
               compact={variant === "inline"}
               className={variant === "inline" ? styles.inlineMedia : undefined}
               disabled={pending}

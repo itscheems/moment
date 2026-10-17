@@ -412,7 +412,7 @@ describe("visual foundation contract", () => {
       /\._avatar_[\w-]+,\s*\._avatarFallback_[\w-]+\s*\{[^}]*inline-size: 2\.5rem;[^}]*block-size: 2\.5rem;/s,
     );
     expect(ownerCss).toMatch(
-      /\._inlineComposer_[\w-]+\s*\{[^}]*grid-template-columns: 3rem minmax\(0, 1fr\)/s,
+      /\._inlineComposer_[\w-]+\s*\{[^}]*grid-template-columns: 2\.5rem minmax\(0, 1fr\)/s,
     );
     // 8px of section padding plus 8px here puts the avatar 16px below the
     // composer's top edge in both the closed and the open composer.
@@ -728,15 +728,6 @@ describe("visual foundation contract", () => {
     expect(ownerCss).toMatch(/\._dialogActions_[\w-]+\s*\{[^}]*display: grid/s);
     expect(ownerCss).toMatch(
       /\._dialogActions_[\w-]+ \._secondaryButton_[\w-]+:hover:not\(:disabled\)\s*\{[^}]*background: var\(--icon-button-hover\)/s,
-    );
-  });
-
-  // A programmatic focus -- choosing 填写描述 puts the caret in the box --
-  // paints the browser's ring, which reads as a halo around a box that is
-  // already outlined. The field says it has the caret itself instead.
-  it("gives the description field its own focus mark, not the browser's", () => {
-    expect(mediaCss).toMatch(
-      /\._altInput_[\w-]+ textarea:focus,[\s\S]*?\{[^}]*border-color: var\(--accent\);[^}]*outline: none/s,
     );
   });
 

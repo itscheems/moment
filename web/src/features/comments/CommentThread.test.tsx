@@ -1522,12 +1522,11 @@ describe("public comment thread", () => {
     fireEvent.change(screen.getByLabelText("媒体文件"), {
       target: { files: [file] },
     });
-    fireEvent.click(screen.getByRole("button", { name: /添加描述/ }));
-    fireEvent.click(screen.getByLabelText("填写描述"));
-    fireEvent.change(screen.getByPlaceholderText("简要描述图片内容"), {
+    fireEvent.click(screen.getByRole("button", { name: "Add descriptions" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Description" }), {
       target: { value: "night sky" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     fireEvent.click(screen.getByRole("button", { name: "发表回复" }));
 
     await waitFor(() => expect(FakeCommentUploadRequest.last).not.toBeNull());
