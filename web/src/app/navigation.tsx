@@ -33,6 +33,8 @@ interface NavigationContextValue extends NavigationLocation {
    * inside the app still goes back inside the app.
    */
   replace: (href: string, overlayFrom?: LocationSnapshot | null) => void;
+  /** Synchronizes a position within the mounted page without adding history or scrolling. */
+  replaceWithinPage: (href: string) => void;
   /**
    * Opens `href` over what is on screen now, or over `from` when the caller
    * knows better -- a second face of the same overlay keeps the first one's
@@ -223,6 +225,15 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const replaceWithinPage = useCallback((href: string) => {
+    window.history.replaceState(
+      { ...historyState(), momentScrollY: window.scrollY },
+      "",
+      href,
+    );
+    setLocation(locationSnapshot(window.history.state));
+  }, []);
+
   const navigateOverlay = useCallback(
     function navigateToOverlay(href: string, from?: LocationSnapshot | null) {
       if (!canLeave(() => navigateToOverlay(href, from))) return;
@@ -374,6 +385,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       ...location,
       navigate,
       replace,
+      replaceWithinPage,
       navigateOverlay,
       openPanel,
       closePanel,
@@ -386,6 +398,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
       location,
       navigate,
       replace,
+      replaceWithinPage,
       navigateOverlay,
       openPanel,
       closePanel,

@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -30,13 +31,13 @@ function accountSessionEnvelope() {
       csrf_token: "csrf-members",
       account: {
         user_id: profileUserID,
-        username: "owner",
+        username: "admin",
         display_name: "站长",
         bio: "",
         avatar_media_id: null,
         cover_media_id: null,
         role: "admin",
-        profile_url: "/owner",
+        profile_url: "/admin",
         status: "active",
         username_chosen: true,
       },
@@ -51,13 +52,13 @@ function rosterEnvelope(registrationMode: string, memberStatus = "pending") {
     data: [
       {
         user_id: profileUserID,
-        username: "owner",
+        username: "admin",
         display_name: "站长",
         bio: "",
         avatar_media_id: null,
         cover_media_id: null,
         role: "admin",
-        profile_url: "/owner",
+        profile_url: "/admin",
         status: "active",
         username_chosen: true,
       },
@@ -99,6 +100,15 @@ function renderMembers(strict = false) {
     </SessionProvider>
   );
   return render(strict ? <StrictMode>{tree}</StrictMode> : tree);
+}
+
+async function openMemberMenu(name: string) {
+  const trigger = await screen.findByRole("button", { name: `管理 ${name}` });
+  await waitFor(() => expect(trigger).toBeEnabled());
+  trigger.focus();
+  fireEvent.keyDown(trigger, { key: "ArrowDown", code: "ArrowDown" });
+  await waitFor(() => expect(trigger).toHaveAttribute("aria-expanded", "true"));
+  return trigger;
 }
 
 describe("members section", () => {
@@ -151,14 +161,18 @@ describe("members section", () => {
 
     // The row moves on, which only happens if the update after the request
     // was allowed through.
-    expect(await screen.findByText("已启用")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "管理 林林" }).closest("li"),
+      ).toHaveTextContent("已启用"),
+    );
     // And the controls that remain are usable rather than latched off.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "停用" })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "管理 林林" })).toBeEnabled(),
     );
   });
 
-  it("reads the registration policy and writes the owner's choice", async () => {
+  it("reads the registration policy and writes the administrator's choice", async () => {
     const bodies: unknown[] = [];
     const fetcher = install(async (url, init) => {
       if (url === "/api/v1/account/session") {
@@ -172,7 +186,7 @@ describe("members section", () => {
         return json({
           data: {
             profile_user_id: profileUserID,
-            username: "owner",
+            username: "admin",
             display_name: "站长",
             title: "Moment",
             bio: "",
@@ -190,6 +204,9 @@ describe("members section", () => {
     });
     renderMembers();
 
+    fireEvent.click(
+      await screen.findByRole("button", { name: "更改加入方式" }),
+    );
     const approval = await screen.findByRole("radio", { name: /需要审核/ });
     expect(approval).toBeChecked();
     const closed = screen.getByRole("radio", { name: /关闭注册/ });
@@ -231,6 +248,9 @@ describe("members section", () => {
     });
     renderMembers();
 
+    fireEvent.click(
+      await screen.findByRole("button", { name: "更改加入方式" }),
+    );
     const open = await screen.findByRole("radio", { name: /开放注册/ });
     expect(open).toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: /关闭注册/ }));
@@ -239,5 +259,121 @@ describe("members section", () => {
       "注册方式没有保存",
     );
     expect(open).toBeChecked();
+  });
+
+  it("filters by status and searches names without requesting the roster again", async () => {
+    const fetcher = install(async (url) => {
+      if (url === "/api/v1/account/session")
+        return json(accountSessionEnvelope());
+      if (url === "/api/v1/accounts") return json(rosterEnvelope("approval"));
+      return json({}, 404);
+    });
+    renderMembers();
+    const search = await screen.findByRole("searchbox", { name: "搜索成员" });
+    fireEvent.change(search, { target: { value: "LINLIN" } });
+    const roster = screen.getByRole("list", { name: "站点成员" });
+    expect(within(roster).getByText("林林")).toBeVisible();
+    expect(within(roster).queryByText("站长")).toBeNull();
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "筛选成员" })).getByRole(
+        "button",
+        { name: /已启用/ },
+      ),
+    );
+    expect(screen.getByText("没有找到匹配的成员")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "清除成员搜索" }));
+    expect(screen.getByRole("list", { name: "站点成员" })).toHaveTextContent(
+      "站长",
+    );
+    expect(screen.queryByRole("button", { name: "管理 林林" })).toBeNull();
+    expect(
+      fetcher.mock.calls.filter(([url]) => url === "/api/v1/accounts"),
+    ).toHaveLength(1);
+  });
+
+  it("confirms suspension and restores focus when cancelled without writing", async () => {
+    const fetcher = install(async (url) => {
+      if (url === "/api/v1/account/session")
+        return json(accountSessionEnvelope());
+      if (url === "/api/v1/accounts")
+        return json(rosterEnvelope("approval", "active"));
+      return json({}, 404);
+    });
+    renderMembers();
+    const trigger = await openMemberMenu("林林");
+    fireEvent.click(await screen.findByRole("menuitem", { name: "停用账号" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("已发布的内容会保留");
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "取消" }),
+      ).toHaveFocus(),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(
+      fetcher.mock.calls.some(([, init]) => init?.method === "PATCH"),
+    ).toBe(false);
+  });
+
+  it("keeps a failed role change open and lets the administrator retry", async () => {
+    let writes = 0;
+    install(async (url, init) => {
+      if (url === "/api/v1/account/session")
+        return json(accountSessionEnvelope());
+      if (url === "/api/v1/accounts")
+        return json(rosterEnvelope("approval", "active"));
+      if (
+        url === `/api/v1/accounts/${memberID}/role` &&
+        init?.method === "PUT"
+      ) {
+        writes += 1;
+        expect(JSON.parse(String(init.body))).toEqual({ role: "admin" });
+        return writes === 1
+          ? json({ error: { code: "INTERNAL", message: "try again" } }, 500)
+          : json({
+              data: {
+                ...rosterEnvelope("approval", "active").data[1],
+                role: "admin",
+              },
+              meta: { request_id: "role" },
+            });
+      }
+      return json({}, 404);
+    });
+    renderMembers();
+    await openMemberMenu("林林");
+    fireEvent.click(
+      await screen.findByRole("menuitem", { name: "设为管理员" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "设为管理员" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "没有保存",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(
+      screen.getByRole("button", { name: "管理 林林" }).closest("li"),
+    ).toHaveTextContent("管理员");
+    expect(writes).toBe(2);
+  });
+
+  it("makes the last active administrator's required role explicit", async () => {
+    install(async (url) => {
+      if (url === "/api/v1/account/session")
+        return json(accountSessionEnvelope());
+      if (url === "/api/v1/accounts") return json(rosterEnvelope("approval"));
+      return json({}, 404);
+    });
+    renderMembers();
+    await openMemberMenu("站长");
+    expect(
+      await screen.findByRole("menuitem", { name: "设为成员" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    await waitFor(() =>
+      expect(screen.getByText("至少保留一位已启用的管理员")).toBeVisible(),
+    );
   });
 });

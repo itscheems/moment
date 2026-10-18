@@ -1,44 +1,35 @@
-import { setAccountRole } from "../../api/accounts";
-import { accountsApi } from "../../api/accounts";
+import { Dialog } from "@base-ui/react/dialog";
+import { Collapsible } from "@base-ui/react/collapsible";
+import { Menu } from "@base-ui/react/menu";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { accountsApi, setAccountRole } from "../../api/accounts";
 import { siteApi } from "../../api/site";
-import { type RegistrationMode } from "../../api/client";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-
+import type { RegistrationMode } from "../../api/client";
 import {
   PublicApiError,
   type Account,
   type AccountStatus,
+  type AccountRole,
 } from "../../api/public";
+import { notify } from "../../components/Feedback";
+import { Icon } from "../../components/icons";
+import { SiteAvatar } from "../../components/SiteIdentity";
+import { useDocumentScrollLock } from "../../components/useDocumentScrollLock";
 import { useSession } from "../auth/SessionProvider";
-import styles from "./Settings.module.css";
+import forms from "../../components/Forms.module.css";
+import settings from "./Settings.module.css";
+import styles from "./Members.module.css";
 
 const statusLabels: Record<AccountStatus, string> = {
   pending: "待批准",
   active: "已启用",
   suspended: "已停用",
 };
-
-const statusTones: Record<AccountStatus, string> = {
-  pending: "pending",
-  active: "neutral",
-  suspended: "danger",
+const statusOrder: Record<AccountStatus, number> = {
+  pending: 0,
+  active: 1,
+  suspended: 2,
 };
-
-/**
- * What each registration policy actually does, said in full.
- *
- * Three words on three buttons would not distinguish them: the difference
- * between "open" and "approval" is whether a stranger who signs in can write
- * something the whole site reads before anybody has looked at them, and that
- * is the decision being made here.
- */
 const registrationChoices: {
   mode: RegistrationMode;
   label: string;
@@ -47,43 +38,155 @@ const registrationChoices: {
   {
     mode: "open",
     label: "开放注册",
-    detail: "任何人用第三方账号登录后即可直接发言。",
+    detail: "新账号登录后即可发布内容和回复。",
   },
   {
     mode: "approval",
     label: "需要审核",
-    detail: "新账户可以登录和阅读，要等你批准之后才能公开发言。",
+    detail: "新账号可以登录和阅读，经你批准后才能发布内容。",
   },
   {
     mode: "closed",
     label: "关闭注册",
-    detail: "不再接受新账户，已有账户仍可登录。",
+    detail: "暂停接受新账号，已有账号仍可登录。",
   },
 ];
-
-// Anyone waiting on a decision comes first: the list exists so that nobody sits
-// unnoticed behind a page of accounts that need nothing.
-const statusOrder: Record<AccountStatus, number> = {
-  pending: 0,
-  active: 1,
-  suspended: 2,
+type MemberChange =
+  | { kind: "status"; value: AccountStatus }
+  | { kind: "role"; value: AccountRole };
+type Decision = {
+  entry: Account;
+  change: MemberChange;
+  returnFocus?: HTMLElement | null;
 };
+type ActionFailure = Decision & { message: string };
 
-function ordered(accounts: Account[]): Account[] {
-  return [...accounts].sort((left, right) => {
-    const rank =
-      statusOrder[left.status ?? "active"] -
-      statusOrder[right.status ?? "active"];
-    return rank !== 0 ? rank : left.username.localeCompare(right.username);
-  });
+function MemberRow({
+  entry,
+  current,
+  lastAdmin,
+  busy,
+  onChange,
+  onConfirm,
+}: {
+  entry: Account;
+  current: boolean;
+  lastAdmin: boolean;
+  busy: string | null;
+  onChange: (entry: Account, change: MemberChange) => Promise<boolean>;
+  onConfirm: (decision: Decision) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const pending = busy === entry.userId;
+  const ask = (change: MemberChange) => {
+    setMenuOpen(false);
+    onConfirm({ entry, change, returnFocus: triggerRef.current });
+  };
+  const apply = async () => {
+    if (await onChange(entry, { kind: "status", value: "active" }))
+      window.requestAnimationFrame(() => {
+        const target =
+          triggerRef.current ?? document.getElementById("members-roster-title");
+        target?.focus({ preventScroll: true });
+      });
+  };
+  return (
+    <li
+      aria-busy={pending}
+      className={styles.memberRow}
+      data-status={entry.status}
+    >
+      <SiteAvatar site={entry} size={40} />
+      <div className={styles.identity}>
+        <div className={styles.nameLine}>
+          <strong>{entry.displayName}</strong>
+          {current ? <span className={styles.self}>你</span> : null}
+        </div>
+        <span className={styles.handle}>@{entry.username}</span>
+        <div className={styles.memberMeta}>
+          <span className={styles.status} data-status={entry.status}>
+            {statusLabels[entry.status]}
+          </span>
+          {entry.role === "admin" ? <span>管理员</span> : null}
+          {pending ? <span role="status">正在保存…</span> : null}
+        </div>
+      </div>
+      <div className={styles.rowActions}>
+        {!current && entry.status !== "active" ? (
+          <button
+            className={
+              entry.status === "pending"
+                ? forms.primaryButton
+                : forms.secondaryButton
+            }
+            disabled={busy !== null}
+            onClick={() => void apply()}
+            type="button"
+          >
+            {pending ? "处理中…" : entry.status === "pending" ? "批准" : "恢复"}
+          </button>
+        ) : null}
+        <Menu.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <Menu.Trigger
+            aria-label={`管理 ${entry.displayName}`}
+            className={forms.actionsMenuTrigger}
+            disabled={busy !== null}
+            ref={triggerRef}
+          >
+            <Icon name="ellipsis" />
+          </Menu.Trigger>
+          <Menu.Portal>
+            <Menu.Positioner
+              align="end"
+              side="bottom"
+              sideOffset={4}
+              className={forms.actionsMenuPositioner}
+            >
+              <Menu.Popup
+                aria-label={`${entry.displayName} 的管理操作`}
+                className={forms.actionsMenuPopup}
+              >
+                <Menu.Item
+                  className={forms.actionsMenuItem}
+                  disabled={lastAdmin}
+                  onClick={() =>
+                    ask({
+                      kind: "role",
+                      value: entry.role === "admin" ? "member" : "admin",
+                    })
+                  }
+                >
+                  <Icon name="account" />
+                  <span>
+                    {entry.role === "admin" ? "设为成员" : "设为管理员"}
+                  </span>
+                </Menu.Item>
+                {lastAdmin ? (
+                  <p className={styles.menuHint}>至少保留一位已启用的管理员</p>
+                ) : null}
+                {!current && entry.status === "active" ? (
+                  <Menu.Item
+                    className={`${forms.actionsMenuItem} ${forms.actionsMenuDanger}`}
+                    onClick={() => ask({ kind: "status", value: "suspended" })}
+                  >
+                    <Icon name="close" />
+                    <span>停用账号</span>
+                  </Menu.Item>
+                ) : null}
+              </Menu.Popup>
+            </Menu.Positioner>
+          </Menu.Portal>
+        </Menu.Root>
+      </div>
+    </li>
+  );
 }
 
 export function MembersSection({
   onWaitingChange,
-}: {
-  onWaitingChange?: (waiting: number) => void;
-} = {}) {
-  const { api, session, account, applyAccount, expireIfInvalidSession } =
+}: { onWaitingChange?: (waiting: number) => void } = {}) {
+  const { session, account, applyAccount, expireIfInvalidSession } =
     useSession();
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [registrationMode, setRegistrationMode] =
@@ -92,24 +195,31 @@ export function MembersSection({
   const [registrationError, setRegistrationError] = useState<string | null>(
     null,
   );
+  const [registrationNotice, setRegistrationNotice] = useState<string | null>(
+    null,
+  );
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const mountedRef = useRef(true);
-
-  // Claimed on every mount, not only released on unmount. StrictMode mounts,
-  // unmounts and mounts again in development, so a cleanup-only ref stays
-  // false for the rest of the component's life -- and every button in the
-  // roster is disabled while `busy` is set, which the guarded `finally` would
-  // then never clear.
+  const [actionFailure, setActionFailure] = useState<ActionFailure | null>(
+    null,
+  );
+  const [notice, setNotice] = useState<string | null>(null);
+  const [decision, setDecision] = useState<Decision | null>(null);
+  const [filter, setFilter] = useState<"all" | AccountStatus>("all");
+  const [query, setQuery] = useState("");
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const mounted = useRef(false);
+  const pendingWrite = useRef(false);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  useDocumentScrollLock(decision !== null);
   useEffect(() => {
-    mountedRef.current = true;
+    mounted.current = true;
     return () => {
-      mountedRef.current = false;
+      mounted.current = false;
     };
   }, []);
-
   useEffect(() => {
     const controller = new AbortController();
     setFailed(false);
@@ -121,92 +231,66 @@ export function MembersSection({
         setRegistrationMode(next.registrationMode);
       })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        if (!expireIfInvalidSession(error)) setFailed(true);
+        if (!controller.signal.aborted && !expireIfInvalidSession(error))
+          setFailed(true);
       });
     return () => controller.abort();
-  }, [api, attempt, expireIfInvalidSession]);
-
-  const waiting = useMemo(
-    () =>
-      (accounts ?? []).filter(
-        (entry) => entry.role !== "admin" && entry.status === "pending",
-      ).length,
+  }, [attempt, expireIfInvalidSession]);
+  const counts = useMemo(
+    () => ({
+      all: accounts?.length ?? 0,
+      pending:
+        accounts?.filter((entry) => entry.status === "pending").length ?? 0,
+      active:
+        accounts?.filter((entry) => entry.status === "active").length ?? 0,
+      suspended:
+        accounts?.filter((entry) => entry.status === "suspended").length ?? 0,
+    }),
     [accounts],
   );
-
-  useEffect(() => onWaitingChange?.(waiting), [onWaitingChange, waiting]);
-
-  const decide = useCallback(
-    async (userId: string, status: AccountStatus) => {
-      if (!session || busy) return;
-      setBusy(userId);
-      setActionError(null);
-      try {
-        const saved = await accountsApi.updateAccountStatus(
-          session.csrfToken,
-          userId,
-          status,
-        );
-        if (!mountedRef.current) return;
-        setAccounts(
-          (current) =>
-            current?.map((entry) =>
-              entry.userId === saved.userId ? saved : entry,
-            ) ?? null,
-        );
-      } catch (error) {
-        if (!mountedRef.current) return;
-        setActionError(
-          expireIfInvalidSession(error)
-            ? "会话已过期。请重新登录后再处理成员。"
-            : "这次改动没有保存，成员状态保持原样，可以重试。",
-        );
-      } finally {
-        if (mountedRef.current) setBusy(null);
-      }
-    },
-    [api, busy, expireIfInvalidSession, session],
+  useEffect(
+    () => onWaitingChange?.(counts.pending),
+    [onWaitingChange, counts.pending],
   );
+  const activeAdmins =
+    accounts?.filter(
+      (entry) => entry.role === "admin" && entry.status === "active",
+    ).length ?? 0;
+  const search = query.trim().toLocaleLowerCase();
+  const visible = (accounts ?? [])
+    .filter(
+      (entry) =>
+        (filter === "all" || entry.status === filter) &&
+        (!search ||
+          `${entry.displayName} @${entry.username}`
+            .toLocaleLowerCase()
+            .includes(search)),
+    )
+    .sort(
+      (left, right) =>
+        statusOrder[left.status] - statusOrder[right.status] ||
+        left.username.localeCompare(right.username),
+    );
 
-  const chooseRegistration = useCallback(
-    async (next: RegistrationMode) => {
-      if (!session || registrationPending || next === registrationMode) return;
-      setRegistrationPending(true);
-      setRegistrationError(null);
-      try {
-        await siteApi.updateSite(session.csrfToken, { registrationMode: next });
-        if (!mountedRef.current) return;
-        // The site read this page holds does not carry the mode -- it is not
-        // public -- so the server's acceptance is the confirmation, and this
-        // is the copy that was accepted.
-        setRegistrationMode(next);
-      } catch (error) {
-        if (!mountedRef.current) return;
-        setRegistrationError(
-          expireIfInvalidSession(error)
-            ? "会话已过期。请重新登录后再修改注册方式。"
-            : "注册方式没有保存，站点仍按原来的规则处理新账户，可以重试。",
-        );
-      } finally {
-        if (mountedRef.current) setRegistrationPending(false);
-      }
-    },
-    [
-      api,
-      expireIfInvalidSession,
-      registrationMode,
-      registrationPending,
-      session,
-    ],
-  );
-
-  const changeRole = async (entry: Account, role: "admin" | "member") => {
-    if (!session || busy) return;
+  async function changeMember(
+    entry: Account,
+    change: MemberChange,
+  ): Promise<boolean> {
+    if (!session || pendingWrite.current) return false;
+    pendingWrite.current = true;
     setBusy(entry.userId);
-    setActionError(null);
+    setActionFailure(null);
+    setNotice(null);
     try {
-      const saved = await setAccountRole(session.csrfToken, entry.userId, role);
+      const saved =
+        change.kind === "role"
+          ? await setAccountRole(session.csrfToken, entry.userId, change.value)
+          : await accountsApi.updateAccountStatus(
+              session.csrfToken,
+              entry.userId,
+              change.value,
+            );
+      if (!mounted.current) return false;
       setAccounts(
         (current) =>
           current?.map((user) =>
@@ -214,146 +298,351 @@ export function MembersSection({
           ) ?? null,
       );
       if (saved.userId === account?.userId) applyAccount(saved);
+      const message =
+        change.kind === "role"
+          ? `已将 ${saved.displayName} 设为${saved.role === "admin" ? "管理员" : "成员"}。`
+          : `已${change.value === "suspended" ? "停用" : entry.status === "pending" ? "批准" : "恢复"} ${saved.displayName}。`;
+      setNotice(message);
+      notify(message, { id: "members-action" });
+      return true;
     } catch (error) {
-      if (!expireIfInvalidSession(error))
-        setActionError(
+      if (mounted.current && !expireIfInvalidSession(error)) {
+        const message =
           error instanceof PublicApiError && error.code === "LAST_ADMINISTRATOR"
             ? "至少需要保留一位已启用的管理员。"
-            : "权限未更改，可以重试。",
-        );
+            : "这次改动没有保存，账号保持原样。请重试。";
+        setActionFailure({ entry, change, message });
+        notify(message, { id: "members-action", type: "error" });
+      }
+      return false;
     } finally {
-      setBusy(null);
+      pendingWrite.current = false;
+      if (mounted.current) setBusy(null);
     }
-  };
-  let roster: ReactNode;
-  if (failed) {
-    roster = (
-      <div className={styles.inlineError} role="alert">
-        <span>暂时无法读取成员列表。</span>
-        <button
-          className={styles.quietButton}
-          onClick={() => setAttempt((value) => value + 1)}
-          type="button"
-        >
-          重试
-        </button>
-      </div>
-    );
-  } else if (accounts === null) {
-    roster = <p aria-busy="true">正在读取成员…</p>;
-  } else if (accounts.length === 0) {
-    roster = <p className={styles.accountEmpty}>本站目前只有你一个账户。</p>;
-  } else {
-    roster = (
-      <>
-        <ul className={styles.accountList}>
-          {ordered(accounts).map((entry) => {
-            const status = entry.status ?? "active";
-            const governable = entry.userId !== account?.userId;
-            return (
-              <li className={styles.accountRow} key={entry.userId}>
-                <span className={styles.accountRowMain}>
-                  <strong>{entry.displayName}</strong>
-                  <small>@{entry.username}</small>
-                </span>
-                <span
-                  className={styles.accountBadge}
-                  data-tone={statusTones[status]}
-                >
-                  {entry.role === "admin"
-                    ? `管理员 · ${statusLabels[status]}`
-                    : statusLabels[status]}
-                </span>
-                <select
-                  aria-label={`权限：${entry.displayName}`}
-                  className={styles.roleSelect}
-                  disabled={!session || busy !== null}
-                  onChange={(event) => {
-                    const role = event.target.value;
-                    if (role === "admin" || role === "member")
-                      void changeRole(entry, role);
-                  }}
-                  value={entry.role}
-                >
-                  <option value="member">成员</option>
-                  <option value="admin">管理员</option>
-                </select>
-                {governable ? (
-                  <span className={styles.accountRowActions}>
-                    {status === "pending" ? (
-                      <button
-                        className={styles.primaryButton}
-                        disabled={!session || busy !== null}
-                        onClick={() => void decide(entry.userId, "active")}
-                        type="button"
-                      >
-                        批准
-                      </button>
-                    ) : null}
-                    {status === "active" ? (
-                      <button
-                        className={styles.quietButton}
-                        disabled={!session || busy !== null}
-                        onClick={() => void decide(entry.userId, "suspended")}
-                        type="button"
-                      >
-                        停用
-                      </button>
-                    ) : null}
-                    {status === "suspended" ? (
-                      <button
-                        className={styles.secondaryButton}
-                        disabled={!session || busy !== null}
-                        onClick={() => void decide(entry.userId, "active")}
-                        type="button"
-                      >
-                        恢复
-                      </button>
-                    ) : null}
-                  </span>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-        {actionError ? (
-          <p className={styles.fieldError} role="alert">
-            {actionError}
-          </p>
-        ) : null}
-      </>
-    );
   }
-
+  async function chooseRegistration(next: RegistrationMode) {
+    if (!session || registrationPending || next === registrationMode) return;
+    setRegistrationPending(true);
+    setRegistrationError(null);
+    setRegistrationNotice(null);
+    try {
+      await siteApi.updateSite(session.csrfToken, { registrationMode: next });
+      if (!mounted.current) return;
+      setRegistrationMode(next);
+      const label = registrationChoices.find(
+        (choice) => choice.mode === next,
+      )?.label;
+      setRegistrationNotice(`已保存：${label}`);
+      notify(`加入方式已更新为${label}。`, { id: "registration-mode" });
+    } catch (error) {
+      if (mounted.current && !expireIfInvalidSession(error)) {
+        const message =
+          "注册方式没有保存，站点仍按原来的规则处理新账号，可以重试。";
+        setRegistrationError(message);
+        notify(message, { id: "registration-mode", type: "error" });
+      }
+    } finally {
+      if (mounted.current) setRegistrationPending(false);
+    }
+  }
+  const confirmLabel =
+    decision?.change.kind === "role"
+      ? decision.change.value === "admin"
+        ? "设为管理员"
+        : "设为成员"
+      : "停用账号";
+  const confirmationError =
+    decision && actionFailure?.entry.userId === decision.entry.userId
+      ? actionFailure.message
+      : null;
   return (
-    <>
+    <section aria-labelledby="members-title" className={styles.membersSection}>
+      <header className={`${settings.sectionHeader} ${styles.heading}`}>
+        <div>
+          <h2 id="members-title">成员管理</h2>
+          <p>审核新成员，管理账号状态与权限。</p>
+        </div>
+        {counts.pending > 0 ? (
+          <span className={styles.waitingCount}>{counts.pending} 位待审核</span>
+        ) : null}
+      </header>
       {registrationMode ? (
-        <fieldset className={styles.registrationModes}>
-          <legend>谁可以加入</legend>
-          {registrationChoices.map((choice) => (
-            <label className={styles.registrationMode} key={choice.mode}>
-              <input
-                checked={registrationMode === choice.mode}
-                disabled={!session || registrationPending}
-                name="registration-mode"
-                onChange={() => void chooseRegistration(choice.mode)}
-                type="radio"
-                value={choice.mode}
-              />
-              <span>
-                <strong>{choice.label}</strong>
-                <small>{choice.detail}</small>
-              </span>
-            </label>
-          ))}
-          {registrationError ? (
-            <p className={styles.fieldError} role="alert">
-              {registrationError}
-            </p>
-          ) : null}
-        </fieldset>
+        <Collapsible.Root
+          className={styles.policyPanel}
+          open={policyOpen}
+          onOpenChange={setPolicyOpen}
+        >
+          <div className={styles.policySummary}>
+            <div>
+              <h3>
+                加入方式 ·{" "}
+                {
+                  registrationChoices.find(
+                    (choice) => choice.mode === registrationMode,
+                  )?.label
+                }
+              </h3>
+              <p>
+                {
+                  registrationChoices.find(
+                    (choice) => choice.mode === registrationMode,
+                  )?.detail
+                }
+              </p>
+            </div>
+            <Collapsible.Trigger
+              aria-label={policyOpen ? "收起加入方式" : "更改加入方式"}
+              className={styles.policyTrigger}
+            >
+              <span>{policyOpen ? "收起" : "更改"}</span>
+              <Icon name="chevron-down" />
+            </Collapsible.Trigger>
+          </div>
+          <Collapsible.Panel className={styles.policyDetails}>
+            <fieldset
+              className={styles.registrationModes}
+              aria-busy={registrationPending}
+            >
+              <legend>谁可以加入</legend>
+              <p className={styles.sectionNote}>
+                选择新账号加入站点的方式，更改后自动保存。
+              </p>
+              <div className={styles.policyOptions}>
+                {registrationChoices.map((choice) => (
+                  <label
+                    className={styles.registrationMode}
+                    key={choice.mode}
+                    data-selected={registrationMode === choice.mode}
+                  >
+                    <input
+                      checked={registrationMode === choice.mode}
+                      disabled={!session || registrationPending}
+                      name="registration-mode"
+                      onChange={() => void chooseRegistration(choice.mode)}
+                      type="radio"
+                      value={choice.mode}
+                    />
+                    <span>
+                      <strong>{choice.label}</strong>
+                      <small>{choice.detail}</small>
+                    </span>
+                    {registrationMode === choice.mode ? (
+                      <Icon name="check" />
+                    ) : null}
+                  </label>
+                ))}
+              </div>
+              <p aria-live="polite" className={styles.policyFeedback}>
+                {registrationPending ? "正在保存加入方式…" : registrationNotice}
+              </p>
+              {registrationError ? (
+                <p className={forms.formError} role="alert">
+                  {registrationError}
+                </p>
+              ) : null}
+            </fieldset>
+          </Collapsible.Panel>
+        </Collapsible.Root>
       ) : null}
-      {roster}
-    </>
+      <div className={styles.rosterHeader}>
+        <h3 id="members-roster-title" tabIndex={-1}>
+          站点成员
+        </h3>
+        {accounts ? <span>{counts.all} 个账号</span> : null}
+      </div>
+      {failed ? (
+        <div className={styles.emptyState} role="alert">
+          <Icon name="info" />
+          <strong>暂时无法读取成员列表</strong>
+          <p>请检查网络连接后重试。</p>
+          <button
+            className={forms.secondaryButton}
+            onClick={() => setAttempt((value) => value + 1)}
+            type="button"
+          >
+            重试
+          </button>
+        </div>
+      ) : accounts === null ? (
+        <div className={styles.loadingState} aria-busy="true" role="status">
+          正在读取成员…
+          <span />
+          <span />
+          <span />
+        </div>
+      ) : (
+        <>
+          <div className={styles.searchField}>
+            <Icon name="search" />
+            <input
+              aria-label="搜索成员"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索昵称或用户名"
+              type="search"
+              value={query}
+            />
+            {query ? (
+              <button
+                aria-label="清除成员搜索"
+                onClick={() => setQuery("")}
+                type="button"
+              >
+                <Icon name="close" />
+              </button>
+            ) : null}
+          </div>
+          <div aria-label="筛选成员" className={styles.filters} role="group">
+            {(["all", "pending", "active", "suspended"] as const).map(
+              (value) => (
+                <button
+                  aria-pressed={filter === value}
+                  key={value}
+                  onClick={() => setFilter(value)}
+                  type="button"
+                >
+                  {value === "all" ? "全部" : statusLabels[value]}
+                  <span>{counts[value]}</span>
+                </button>
+              ),
+            )}
+          </div>
+          {visible.length > 0 ? (
+            <ul aria-label="站点成员" className={styles.memberList}>
+              {visible.map((entry) => (
+                <MemberRow
+                  key={entry.userId}
+                  entry={entry}
+                  current={entry.userId === account?.userId}
+                  lastAdmin={
+                    entry.role === "admin" &&
+                    entry.status === "active" &&
+                    activeAdmins <= 1
+                  }
+                  busy={busy}
+                  onChange={changeMember}
+                  onConfirm={(next) => {
+                    returnFocusRef.current = next.returnFocus ?? null;
+                    setActionFailure(null);
+                    setDecision(next);
+                  }}
+                />
+              ))}
+            </ul>
+          ) : (
+            <div className={styles.emptyState}>
+              <Icon name="account" />
+              <strong>
+                {search
+                  ? "没有找到匹配的成员"
+                  : filter === "pending"
+                    ? "没有待审核的成员"
+                    : "这里还没有成员"}
+              </strong>
+              <p>
+                {search
+                  ? "试试其他昵称或用户名。"
+                  : filter === "pending"
+                    ? "新的加入申请会显示在这里。"
+                    : "可以切换到其他状态查看。"}
+              </p>
+              {search ? (
+                <button
+                  className={forms.secondaryButton}
+                  onClick={() => setQuery("")}
+                  type="button"
+                >
+                  清除搜索
+                </button>
+              ) : null}
+            </div>
+          )}
+        </>
+      )}
+      {!decision && actionFailure ? (
+        <div className={styles.actionError} role="alert">
+          <span>{actionFailure.message}</span>
+          <button
+            onClick={() =>
+              void changeMember(actionFailure.entry, actionFailure.change)
+            }
+            disabled={busy !== null}
+            type="button"
+          >
+            重试
+          </button>
+        </div>
+      ) : null}
+      <p className={styles.announcement} role="status">
+        {notice}
+      </p>
+      <Dialog.Root
+        open={decision !== null}
+        onOpenChange={(open) => {
+          if (!open && !busy) {
+            setDecision(null);
+            setActionFailure(null);
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Backdrop className={forms.dialogBackdrop} />
+          <Dialog.Viewport className={forms.dialogViewport}>
+            <Dialog.Popup
+              className={forms.dialogPopup}
+              initialFocus={cancelRef}
+              finalFocus={returnFocusRef}
+            >
+              <Dialog.Title className={forms.dialogTitle}>
+                {confirmLabel}：{decision?.entry.displayName}？
+              </Dialog.Title>
+              <Dialog.Description className={forms.dialogDescription}>
+                {decision?.change.kind === "status"
+                  ? "停用后，该账号将无法登录或发布新内容。已发布的内容会保留。"
+                  : decision?.change.value === "admin"
+                    ? "管理员可以管理站点、成员和备份。其他账号的私密内容与草稿仍仅作者可见。"
+                    : "该账号将不再拥有站点管理权限，已发布的内容会保留。"}
+              </Dialog.Description>
+              {confirmationError ? (
+                <p className={forms.dialogError} role="alert">
+                  {confirmationError}
+                </p>
+              ) : null}
+              <div className={forms.dialogActions}>
+                <button
+                  className={
+                    decision?.change.kind === "status"
+                      ? forms.dangerButton
+                      : forms.primaryButton
+                  }
+                  disabled={busy !== null}
+                  onClick={() => {
+                    if (decision)
+                      void changeMember(decision.entry, decision.change).then(
+                        (saved) => {
+                          if (saved) setDecision(null);
+                        },
+                      );
+                  }}
+                  type="button"
+                >
+                  {busy
+                    ? "正在保存…"
+                    : confirmationError
+                      ? "重试"
+                      : confirmLabel}
+                </button>
+                <Dialog.Close
+                  className={forms.secondaryButton}
+                  disabled={busy !== null}
+                  ref={cancelRef}
+                >
+                  取消
+                </Dialog.Close>
+              </div>
+            </Dialog.Popup>
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
+    </section>
   );
 }
