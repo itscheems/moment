@@ -248,7 +248,7 @@
   position: sticky;
   z-index: var(--layer-header);
   inset-block-start: 0;
-  block-size: 3.3125rem;
+  block-size: var(--shell-header-height);
   display: flex;
   align-items: center;
   gap: var(--space-3);

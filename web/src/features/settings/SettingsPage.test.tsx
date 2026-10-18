@@ -178,7 +178,24 @@ it("uses distinct settings addresses and sends only site fields when saving", as
       comments_enabled: true,
     },
   ]);
-  expect(screen.queryByRole("heading", { name: "个人资料" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "个人资料" })).toBeInTheDocument();
+});
+it("keeps account fields mounted when moving between settings sections", async () => {
+  installApi("admin");
+  render(<App />);
+  const field = await screen.findByLabelText("令牌名称");
+  fireEvent.change(field, { target: { value: "尚未创建的令牌" } });
+  const nav = screen.getByRole("navigation", { name: "设置分类" });
+  fireEvent.click(within(nav).getByRole("link", { name: "站点" }));
+  expect(window.location.pathname).toBe("/settings/site");
+  expect(screen.getByLabelText("令牌名称")).toBe(field);
+  expect(field).toHaveValue("尚未创建的令牌");
+  expect(
+    screen.getByRole("heading", { name: "备份与恢复" }),
+  ).toBeInTheDocument();
+  fireEvent.click(within(nav).getByRole("link", { name: "账号" }));
+  expect(window.location.pathname).toBe("/settings/account");
+  expect(field).toHaveValue("尚未创建的令牌");
 });
 it("selects a display account independently of its member role", async () => {
   window.history.replaceState({}, "", "/settings/site");

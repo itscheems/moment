@@ -9,10 +9,13 @@ import { ProfileEditor } from "../profile/ProfileEditor";
 import { AccountSecurity } from "./AccountSecurity";
 import { MembersSection } from "./MembersSection";
 import { BackupRestore } from "./BackupRestore";
+import {
+  useSettingsSections,
+  type SettingsSection,
+} from "./useSettingsSections";
 import forms from "../../components/Forms.module.css";
 import styles from "./Settings.module.css";
 
-type SettingsSection = "account" | "site" | "members" | "backups";
 const titles: Record<SettingsSection, string> = {
   account: "账号",
   site: "站点",
@@ -23,9 +26,11 @@ const titles: Record<SettingsSection, string> = {
 function SiteConfiguration({
   site,
   onSaved,
+  active,
 }: {
   site: SiteIdentity;
   onSaved: (site: SiteIdentity) => void;
+  active: boolean;
 }) {
   const { session, expireIfInvalidSession } = useSession();
   const [title, setTitle] = useState(site.title);
@@ -38,6 +43,7 @@ function SiteConfiguration({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
+    if (!active) return;
     const controller = new AbortController();
     void accountsApi
       .accounts(controller.signal)
@@ -49,7 +55,7 @@ function SiteConfiguration({
           setError("展示账号列表暂时无法读取。");
       });
     return () => controller.abort();
-  }, [expireIfInvalidSession]);
+  }, [active, expireIfInvalidSession]);
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!session || pending) return;
@@ -135,7 +141,7 @@ function SiteConfiguration({
             value={url}
           />
         </label>
-        <label>
+        <label className={styles.toggleField}>
           <input
             checked={comments}
             disabled={pending}
@@ -152,34 +158,36 @@ function SiteConfiguration({
           {pending ? "正在保存…" : "保存站点设置"}
         </button>
       </form>
-      <h3>首页展示账号</h3>
-      <p>
-        选择首页使用的昵称、简介和图片。展示账号可以是普通成员，其管理权限不会因此变化。
-      </p>
-      <label>
-        展示账号
-        <select
-          disabled={pending || roster.length === 0}
-          onChange={(event) => setProfile(event.target.value)}
-          value={profile}
+      <div className={styles.siteProfile}>
+        <h3>首页展示账号</h3>
+        <p>
+          选择首页使用的昵称、简介和图片。展示账号可以是普通成员，其管理权限不会因此变化。
+        </p>
+        <label>
+          展示账号
+          <select
+            disabled={pending || roster.length === 0}
+            onChange={(event) => setProfile(event.target.value)}
+            value={profile}
+          >
+            {roster
+              .filter((user) => user.status === "active")
+              .map((user) => (
+                <option key={user.userId} value={user.userId}>
+                  {user.displayName} @{user.username}
+                </option>
+              ))}
+          </select>
+        </label>
+        <button
+          className={forms.secondaryButton}
+          disabled={!session || pending || profile === site.profileUserId}
+          onClick={() => void selectProfile()}
+          type="button"
         >
-          {roster
-            .filter((user) => user.status === "active")
-            .map((user) => (
-              <option key={user.userId} value={user.userId}>
-                {user.displayName} @{user.username}
-              </option>
-            ))}
-        </select>
-      </label>
-      <button
-        className={forms.secondaryButton}
-        disabled={!session || pending || profile === site.profileUserId}
-        onClick={() => void selectProfile()}
-        type="button"
-      >
-        更新展示账号
-      </button>
+          更新展示账号
+        </button>
+      </div>
       {error ? (
         <p className={forms.formError} role="alert">
           {error}
@@ -200,12 +208,10 @@ export function SettingsPage({
   const navigation = useNavigation();
   const { account, applyAccount } = useSession();
   const [restoreBusy, setRestoreBusy] = useState(false);
-  const requested = navigation.pathname.split("/")[2];
-  const section: SettingsSection =
-    requested === "site" || requested === "members" || requested === "backups"
-      ? requested
-      : "account";
+  const [waiting, setWaiting] = useState(0);
   const admin = isAdministrator(account);
+  const { section, navRef, contentRef, goToSection } =
+    useSettingsSections(admin);
   const sections: SettingsSection[] = admin
     ? ["account", "site", "members", "backups"]
     : ["account"];
@@ -223,27 +229,29 @@ export function SettingsPage({
   }
   return (
     <div className={styles.settingsPage}>
-      <nav aria-label="设置分类" className={styles.settingsNav}>
+      <nav aria-label="设置分类" className={styles.settingsNav} ref={navRef}>
         {sections.map((item) => (
           <a
-            aria-current={section === item ? "page" : undefined}
+            aria-current={section === item ? "location" : undefined}
             href={`/settings/${item}`}
             key={item}
-            onClick={(event) => {
-              event.preventDefault();
-              navigation.navigate(`/settings/${item}`);
-            }}
+            onClick={(event) => goToSection(event, item)}
           >
             {titles[item]}
+            {item === "members" && waiting > 0 ? (
+              <span aria-hidden="true" className={styles.navBadge}>
+                {waiting}
+              </span>
+            ) : null}
           </a>
         ))}
       </nav>
-      <div className={styles.settingsContent}>
+      <div className={styles.settingsContent} ref={contentRef}>
         {section !== "account" && !admin ? (
           <p role="alert">此设置需要管理员权限。</p>
         ) : null}
-        {section === "account" && account ? (
-          <>
+        {account ? (
+          <div className={styles.settingsGroup} id="settings-account">
             <section aria-label="个人资料">
               <header className={styles.sectionHeader}>
                 <h2>个人资料</h2>
@@ -264,18 +272,30 @@ export function SettingsPage({
                 onSignedOut={() => navigation.navigate("/login")}
               />
             </section>
-          </>
+          </div>
         ) : null}
-        {section === "site" && admin ? (
-          <SiteConfiguration site={site} onSaved={onSaved} />
+        {admin ? (
+          <div className={styles.settingsGroup} id="settings-site">
+            <SiteConfiguration
+              site={site}
+              onSaved={onSaved}
+              active={section === "site"}
+            />
+          </div>
         ) : null}
-        {section === "members" && admin ? <MembersSection /> : null}
-        {section === "backups" && admin ? (
-          <BackupRestore
-            instanceId={site.instanceId}
-            settingsBlocked={false}
-            onRestoreBusyChange={setRestoreBusy}
-          />
+        {admin ? (
+          <div className={styles.settingsGroup} id="settings-members">
+            <MembersSection onWaitingChange={setWaiting} />
+          </div>
+        ) : null}
+        {admin ? (
+          <div className={styles.settingsGroup} id="settings-backups">
+            <BackupRestore
+              instanceId={site.instanceId}
+              settingsBlocked={false}
+              onRestoreBusyChange={setRestoreBusy}
+            />
+          </div>
         ) : null}
         {restoreBusy && section === "backups" ? (
           <p aria-live="polite">正在检查备份状态…</p>

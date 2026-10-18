@@ -68,8 +68,14 @@ function NavigationHarness({
         Replace
       </button>
       <button
+        onClick={() => navigation.replaceWithinPage("/settings/site")}
+        type="button"
+      >
+        Sync section
+      </button>
+      <button
         onClick={() =>
-          navigation.navigate("/owner/articles", { preserveScroll: true })
+          navigation.navigate("/compose/articles", { preserveScroll: true })
         }
         type="button"
       >
@@ -95,6 +101,33 @@ describe("guarded navigation history", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("synchronizes a section address without adding history, resetting scroll, or leaving the page", () => {
+    const blocker = vi.fn(() => false);
+    window.history.replaceState(
+      { momentInternal: true, momentFocusKey: "field", momentScrollY: 10 },
+      "",
+      "/settings/account",
+    );
+    vi.spyOn(window, "scrollY", "get").mockReturnValue(640);
+    const entries = window.history.length;
+    render(
+      <NavigationProvider>
+        <NavigationHarness blockers={[blocker]} />
+      </NavigationProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Sync section" }));
+    expect(screen.getByTestId("location")).toHaveTextContent("/settings/site");
+    expect(window.location.pathname).toBe("/settings/site");
+    expect(window.history.length).toBe(entries);
+    expect(window.history.state).toMatchObject({
+      momentInternal: true,
+      momentFocusKey: "field",
+      momentScrollY: 640,
+    });
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    expect(blocker).not.toHaveBeenCalled();
   });
 
   it("keeps every blocker and requires all of them to approve", () => {
@@ -161,7 +194,7 @@ describe("guarded navigation history", () => {
     expect(window.location.pathname).toBe("/previous");
     allowed = true;
     act(() => resume?.());
-    expect(window.location.pathname).toBe("/owner/articles");
+    expect(window.location.pathname).toBe("/compose/articles");
     expect(window.history.state).toMatchObject({
       momentScrollY: 640,
       momentFresh: false,
